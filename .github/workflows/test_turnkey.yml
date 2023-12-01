@@ -65,8 +65,7 @@ jobs:
           rm -rf ~/.cache/turnkey
           turnkey examples/cli/scripts/two_models.py
           rm -rf ~/.cache/turnkey
-          # TODO: sample.onnx test is commented because it throws an error in CI
-          # turnkey examples/cli/onnx/sample.onnx
+          turnkey examples/cli/onnx/hello_world.onnx
 
           # E2E tests
           cd test/

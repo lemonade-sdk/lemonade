@@ -214,28 +214,26 @@ multiple_invocations.py:
 
 ## ONNX Benchmarking
 
-If you already happen to have an ONNX file, `turnkey` can benchmark it for you. We can demonstrate this with the ONNX file in `examples/cli/onnx/sample.onnx`.
+If you already happen to have an ONNX file, `turnkey` can benchmark it for you. We can demonstrate this with the ONNX file in `examples/cli/onnx/hello_world.onnx`.
 
 Run the following command:
 
 ```
-turnkey onnx/sample.onnx
+turnkey onnx/hello_world.onnx
 ```
 
 To get a result like:
 
 ```
-Building "sample"
-    ✓ Receiving ONNX Model   
-    ✓ Finishing up   
-
-Woohoo! Saved to ~/turnkeyml/examples/cli/onnx/tmp_cache/sample
-
-Info: Benchmarking on local x86...
-
-Info: Performance of build sample on x86 device Intel(R) Xeon(R) CPU @ 2.20GHz is:
-        Mean Latency: 0.042 milliseconds (ms)
-        Throughput: 23921.9 inferences per second (IPS)
+hello_world.onnx:
+        Model Type:     ONNX File (.onnx)
+        Parameters:     60 (240.0 B)
+        Input Shape:    'x': (11,)
+        Hash:           17ecd07e
+        Build dir:      /home/jfowers/.cache/turnkey/hello_world_17ecd07e
+        Status:         Successfully benchmarked on AMD Ryzen 9 7940HS w/ Radeon 780M Graphics (ort v1.15.1) 
+                        Mean Latency:   0.007   milliseconds (ms)
+                        Throughput:     152240.4        inferences per second (IPS)
 ```
 
 # Thanks!
