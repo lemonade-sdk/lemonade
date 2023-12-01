@@ -4,6 +4,8 @@ from turnkeyml.parser import parse
 from transformers import MegatronBertModel, AutoConfig
 import torch
 
+torch.manual_seed(0)
+
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
     ["pretrained", "batch_size", "max_seq_length"]
@@ -28,4 +30,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

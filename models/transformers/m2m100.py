@@ -1,8 +1,9 @@
-
 # labels: name::m2m100 author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
 from transformers import M2M100Model, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -29,4 +30,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

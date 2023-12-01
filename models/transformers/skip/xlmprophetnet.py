@@ -1,9 +1,10 @@
-
 # labels: name::xlmprophetnet author::transformers task::Generative_AI license::apache-2.0
 # Skip reason: Input error
 from turnkeyml.parser import parse
 from transformers import XLMProphetNetModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -12,9 +13,13 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = XLMProphetNetModel.from_pretrained("patrickvonplaten/xprophetnet-large-uncased-standalone")
+    model = XLMProphetNetModel.from_pretrained(
+        "patrickvonplaten/xprophetnet-large-uncased-standalone"
+    )
 else:
-    config = AutoConfig.from_pretrained("patrickvonplaten/xprophetnet-large-uncased-standalone")
+    config = AutoConfig.from_pretrained(
+        "patrickvonplaten/xprophetnet-large-uncased-standalone"
+    )
     model = XLMProphetNetModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
@@ -30,4 +35,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

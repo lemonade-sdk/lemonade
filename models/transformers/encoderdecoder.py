@@ -1,8 +1,9 @@
-
 # labels: name::encoderdecoder author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
 from transformers import EncoderDecoderModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -11,7 +12,9 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = EncoderDecoderModel.from_pretrained("patrickvonplaten/bert2bert_cnn_daily_mail")
+    model = EncoderDecoderModel.from_pretrained(
+        "patrickvonplaten/bert2bert_cnn_daily_mail"
+    )
 else:
     config = AutoConfig.from_pretrained("patrickvonplaten/bert2bert_cnn_daily_mail")
     model = EncoderDecoderModel(config)
@@ -26,4 +29,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

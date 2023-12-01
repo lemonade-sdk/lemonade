@@ -1,8 +1,9 @@
-
 # labels: name::gptneox author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
 from transformers import GPTNeoXModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -11,9 +12,13 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = GPTNeoXModel.from_pretrained("trl-internal-testing/tiny-random-GPTNeoXForCausalLM")
+    model = GPTNeoXModel.from_pretrained(
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"
+    )
 else:
-    config = AutoConfig.from_pretrained("trl-internal-testing/tiny-random-GPTNeoXForCausalLM")
+    config = AutoConfig.from_pretrained(
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"
+    )
     model = GPTNeoXModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
@@ -28,4 +33,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

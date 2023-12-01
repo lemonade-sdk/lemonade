@@ -1,8 +1,9 @@
-
 # labels: name::mega author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
 from transformers import MegaModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -17,7 +18,6 @@ else:
     model = MegaModel(config)
 
 
-
 inputs = {
     "input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
     "attention_mask": torch.ones(batch_size, max_seq_length, dtype=torch.float),
@@ -26,4 +26,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

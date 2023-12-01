@@ -1,8 +1,9 @@
-
 # labels: name::robertaprelayernorm author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
 from transformers import RobertaPreLayerNormModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -11,7 +12,9 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = RobertaPreLayerNormModel.from_pretrained("andreasmadsen/efficient_mlm_m0.40")
+    model = RobertaPreLayerNormModel.from_pretrained(
+        "andreasmadsen/efficient_mlm_m0.40"
+    )
 else:
     config = AutoConfig.from_pretrained("andreasmadsen/efficient_mlm_m0.40")
     model = RobertaPreLayerNormModel(config)
@@ -28,4 +31,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    

@@ -1,9 +1,10 @@
-
 # labels: name::qdqbert author::transformers task::Generative_AI license::apache-2.0
 # Skip reason: Input error
 from turnkeyml.parser import parse
 from transformers import QDQBertModel, AutoConfig
 import torch
+
+torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -29,4 +30,3 @@ inputs = {
 
 # Call model
 model(**inputs)
-    
