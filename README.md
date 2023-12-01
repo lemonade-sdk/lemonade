@@ -2,8 +2,7 @@
 
 [![Turnkey tests](https://github.com/onnx/turnkeyml/actions/workflows/test_turnkey.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
 [![Build API tests](https://github.com/onnx/turnkeyml/actions/workflows/test_build_api.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
-[![Turnkey GPU tests](https://github.com/onnx/turnkeyml/actions/workflows/test_gpu_turnkey.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
-[![OS - Linux](https://img.shields.io/badge/OS-Linux-blue?logo=linux&logoColor=white)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")ADD WINDOWS
+[![OS - Windows | Linux](https://img.shields.io/badge/OS-windows%20%7C%20linux-blue)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 [![Made with Python](https://img.shields.io/badge/Python-3.8,3.10-blue?logo=python&logoColor=white)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 
 
@@ -22,7 +21,7 @@ pip install turnkeyml
 turnkey my_model.py
 ```
 
-The [installation guide](ADDLINK), [tutorials](ADDLINK), and [user guide](ADDLINK) have everything you need to know.
+The [installation guide](https://github.com/onnx/turnkeyml/blob/main/docs/install.md), [tutorials](https://github.com/onnx/turnkeyml/tree/main/examples/cli), and [user guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md) have everything you need to know.
 
 ## Use Cases
 
@@ -30,7 +29,7 @@ TurnkeyML is designed to support the following use cases. Of course, it is also 
 
 | Use Case               | Description |
 |------------------------|-------------|
-| ONNX Model Zoo         | Export thousands of ONNX files across different opsets and data types. This is how we generated the contents of the new [ONNX Model Zoo](ADDLINK). |
+| ONNX Model Zoo         | Export thousands of ONNX files across different opsets and data types. This is how we generated the contents of the new [ONNX Model Zoo](https://github.com/onnx/models). |
 | Performance validation | Measure latency and throughput in hardware across devices and runtimes to understand product-market fit. |
 | Functional coverage    | Measure the functional coverage of toolchain/hardware combinations over a large corpus of models (e.g., how many models are supported by a novel compiler?). |
 | Stress testing         | Run millions of inferences across thousands of models and log all the results to find the bugs in a HW/SW stack. |
@@ -146,7 +145,7 @@ Summary spreadsheet saved at /home/jfowers/2023-11-30.csv
 
 You're probably starting to get the idea :rocket:
 
-There's a lot more features you can learn about in the [tutorials](ADDLINK) and [user guide](ADDLINK).
+There's a lot more features you can learn about in the [tutorials](https://github.com/onnx/turnkeyml/tree/main/examples/cli) and [user guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md).
 
 ## What's Inside
 
@@ -157,9 +156,9 @@ The TurnkeyML framework has 5 core components:
 - **Reporting tool**: Visualize statistics about the models, builds, and invocations.  
 - **Models corpus**: Hundreds of popular PyTorch models that are ready for use with `turnkey`.
 
-All of this is seamlessly integrated together such that a command like `turnkey repo/models/corpus/script.py` gets you all of the functionality in one shot. Or you can access functionality piecemeal with commands and APIs like `turnkey analyze script.py` or `build_model(my_model_instance)`. The [tutorials](ADDLINK) show off the individual features.
+All of this is seamlessly integrated together such that a command like `turnkey repo/models/corpus/script.py` gets you all of the functionality in one shot. Or you can access functionality piecemeal with commands and APIs like `turnkey analyze script.py` or `build_model(my_model_instance)`. The [tutorials](https://github.com/onnx/turnkeyml/tree/main/examples/cli) show off the individual features.
 
-You can read more about the code organization [here](ADDLINK).
+You can read more about the code organization [here](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
 
 ## Extensibility
 
@@ -173,7 +172,7 @@ You can read more about the code organization [here](ADDLINK).
 
 This repository is home to a diverse corpus of hundreds of models. We are actively working on increasing the number of models in our model library. You can see the set of models in each category by clicking on the corresponding badge.
 
-Evaluating a new model is as simple as taking a Python script that instantiates and invokes a PyTorch `torch.nn.module` and call `turnkey` on it. Read about model contributions [here](ADDLINK).
+Evaluating a new model is as simple as taking a Python script that instantiates and invokes a PyTorch `torch.nn.module` and call `turnkey` on it. Read about model contributions [here](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-model).
 
 ### Plugins
 
@@ -186,7 +185,7 @@ If you need more, the TurnkeyML plugin API lets you extend the build and runtime
 > turnkey my_model.py --sequence my-custom-sequence --device my-custom-device --runtime my-custom-runtime --rt-args my-custom-args
 ```
 
-All of the built-in sequences, runtimes, and devices are implemented against the plugin API. Check out this [example plugin](ADDLINK) and the [plugin API guide](ADDLINK).
+All of the built-in sequences, runtimes, and devices are implemented against the plugin API. Check out the [example plugins](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins) and the [plugin API guide](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin).
 
 ## Contributing
 
@@ -194,8 +193,8 @@ We are actively seeking collaborators from across the industry. If you would lik
 
 ## Maintainers
 
-This project is sponsored by the [ONNX Model Zoo](ADDLINK) special interest group (SIG). It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us at [turnkeyml@???.com](ADDLINK) or by filing an [issue](ADDLINK).
+This project is sponsored by the [ONNX Model Zoo](https://github.com/onnx/models) special interest group (SIG). It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us by filing an [issue](https://github.com/onnx/turnkeyml/issues).
 
 ## License
 
-This project is licensed under the [Apache 2.0 License](ADDLINK).
+This project is licensed under the [Apache 2.0 License](https://github.com/onnx/turnkeyml/blob/main/LICENSE).

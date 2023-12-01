@@ -11,12 +11,12 @@ The TurnkeyML source code has a few major top-level directories:
 - `models`: the corpora of models that makes up the TurnkeyML models (see [the models readme](https://github.com/onnx/turnkeyml/blob/main/models/readme.md)).
   - Each subdirectory under `models` represents a corpus of models pulled from somewhere on the internet. For example, `models/torch_hub` is a corpus of models from [Torch Hub](https://github.com/pytorch/hub).
 - `src/turnkey`: source code for the TurnkeyML tools (see [Benchmarking Tools](#benchmarking-tools) for a description of how the code is used).
-  - `src/turnkeyml/analysis`: functions for profiling a model script, discovering model instances, and invoking `benchmark_model()` on those instances.
-  - `src/turnkeyml/api`: implements the benchmarking APIs.
-  - `src/turnkeyml/cli`: implements the `turnkey` CLI.
+  - `src/turnkeyml/analyze`: functions for profiling a model script, discovering model instances, and invoking `benchmark_model()` on those instances.
+  - `src/turnkeyml/run`: implements the runtime and device plugin APIs and the built-in runtimes and devices.
+  - `src/turnkeyml/cli`: implements the `turnkey` CLI and reporting tool.
   - `src/turnkeyml/common`: functions common to the other modules.
   - `src/turnkeyml/version.py`: defines the package version number.
-- `src/turnkeyml/build`: source code for the build API (see [Model Build Tool](#model-build-tool))
+  - `src/turnkeyml/build`: source code for the build API (see [Model Build Tool](#model-build-tool))
 - `test`: tests for the TurnkeyML tools.
   - `test/analysis.py`: tests focusing on the analysis of model scripts.
   - `test/cli.py`: tests focusing on top-level CLI features.
@@ -88,4 +88,3 @@ The `State` class keeps track of the state of a `build_model()` build. `State` i
 
 1. Easily pass critical information between `Stages` in a standardized way
 1. Facilitate debugging by keeping the latest information and build decisions in one place on disk
-1. Make it easy to collect and report statistics across a large number of builds
