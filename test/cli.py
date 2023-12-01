@@ -132,14 +132,10 @@ def assert_success_of_builds(
     check_perf: bool = False,
     check_opset: Optional[int] = None,
     check_iteration_count: Optional[int] = None,
-    runtime: str = "ort",
     check_onnx_file_count: Optional[int] = None,
 ) -> int:
     # Figure out the build name by surveying the build cache
     # for a build that includes test_script_name in the name
-    # TODO: simplify this code when
-    # https://github.com/onnx/turnkeyml/issues/16
-    # is done
     builds = filesystem.get_all(cache_dir)
     builds_found = 0
 

@@ -132,7 +132,7 @@ def populate_onnx_model_info(onnx_model) -> Dict:
         )
     except ValueError:
         # Models >2GB on disk cannot have their model size measured this
-        # way and will throw a ValueError https://github.com/onnx/turnkeyml/issues/318
+        # way and will throw a ValueError https://github.com/onnx/turnkeyml/issues/41
         pass
 
     return result_dict

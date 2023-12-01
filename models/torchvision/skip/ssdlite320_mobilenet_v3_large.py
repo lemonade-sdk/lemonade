@@ -6,7 +6,7 @@ https://pytorch.org/vision/stable/models/ssdlite.html
 
 # Skip reason: triggers a bug in analysis where two models are discovered during
 # profiling instead of one.
-# Reinstate this model once https://github.com/onnx/turnkeyml/issues/239 is fixed
+# Reinstate this model once https://github.com/onnx/turnkeyml/issues/22 is fixed
 
 
 # Models discovered during profiling:

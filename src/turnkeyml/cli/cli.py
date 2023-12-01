@@ -432,9 +432,6 @@ def main():
         help="Commands for managing the models",
     )
 
-    # Design note: the `models` command is simple right now, however some additional ideas
-    #    are documented in https://github.com/onnx/turnkeyml/issues/247
-
     models_subparsers = models_parser.add_subparsers(
         title="models",
         help="Commands for managing the models",

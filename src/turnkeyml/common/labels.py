@@ -14,9 +14,6 @@ def to_dict(label_list: List[str]) -> Dict[str, List[str]]:
             label_value = label_value.split(",")
             label_dict[label_key] = label_value
         except ValueError:
-            # FIXME: Create a proper warning for this once we have the right
-            # infrastructure for doing so.
-            # https://github.com/onnx/turnkeyml/issues/55
             printing.log_warning(
                 (
                     f"Malformed label {item} found. "
