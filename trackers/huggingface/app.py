@@ -61,7 +61,7 @@ def add_faq() -> None:
         (
             "All TurnkeyML results have been generated using the <b>turnkey</b> tool v1.0.0, which is part "
             "of the TurnkeyML Github Repository. You can learn more about it "
-            '<a href="https://github.com/aig-bench/onnxmodelzoo">here</a>.'
+            '<a href="https://github.com/onnx/turnkeyml">here</a>.'
         ),
     )
     faq.add_section(
@@ -71,7 +71,7 @@ def add_faq() -> None:
             "<b>nvidia</b>: NVIDIA A100 40GB on Google Cloud (a2-highgpu-1g) and TensorRT version 22.12-py3.",
             (
                 "You can find more details about the methodology "
-                '<a href="https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md">here</a>.'
+                '<a href="https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md">here</a>.'
             ),
         ],
     )
@@ -86,7 +86,7 @@ def add_faq() -> None:
             (
                 "Results are currently being validated. You can have a look at our current validation "
                 "tasks and other limitations "
-                '<a href="https://github.com/aig-bench/onnxmodelzoo/labels/validation">here</a>.'
+                '<a href="https://github.com/onnx/turnkeyml/labels/validation">here</a>.'
             ),
         ],
     )
@@ -117,7 +117,7 @@ def add_faq() -> None:
             "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, "
             "OUT OF OR IN CONNECTION WITH THE BENCHMARK OR THE USE OR OTHER DEALINGS IN THE "
             "BENCHMARK. Read more about it "
-            '<a href="https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/LICENSE">here</a>.'
+            '<a href="https://github.com/onnx/turnkeyml/blob/main/LICENSE">here</a>.'
         ),
     )
 
@@ -126,7 +126,6 @@ def add_faq() -> None:
 
 # Add all filters to sidebar
 with st.sidebar:
-
     st.markdown("# Filters")
 
     # Get all reports of a given test type

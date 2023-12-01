@@ -63,14 +63,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           conda install pylint
-          pip install -e toolchain
+          pip install -e .
           pip install transformers
           python -m pip check
       - name: Test with unittest
         shell: bash -el {0}
         run: |
           # E2E tests
-          python toolchain/test/gpu.py
+          python test/gpu.py
   deallocate_vm:
     needs: build_and_test
     if: always()

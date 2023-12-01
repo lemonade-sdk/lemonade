@@ -7,11 +7,12 @@ from turnkeyml.run.basert import BaseRT
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.build as build
 from turnkeyml.run.onnxrt.within_conda import dummy_inputs
-from turnkeyml.common.performance import MeasuredPerformance, Device
+from turnkeyml.common.performance import MeasuredPerformance
 from turnkeyml.common.filesystem import Stats
 
 
 combined_rt_name = "example-combined-rt"
+
 
 class CombinedExampleRT(BaseRT):
     def __init__(
@@ -45,6 +46,9 @@ class CombinedExampleRT(BaseRT):
             model=model,
             inputs=inputs,
         )
+
+        self.throughput_ips = None
+        self.mean_latency_ms = None
 
     def _setup(self):
         # The BaseRT abstract base class requires us to overload this function,
@@ -109,4 +113,7 @@ class CombinedExampleRT(BaseRT):
 
     @property
     def device_name(self) -> str:
-        return f"Device Family {self.device_type.family}, Device Part {self.device_type.part}, Device Configuration {self.device_type.config}"
+        return (
+            f"Device Family {self.device_type.family}, Device Part {self.device_type.part}, "
+            f"Device Configuration {self.device_type.config}"
+        )

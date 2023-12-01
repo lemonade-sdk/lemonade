@@ -5,9 +5,9 @@ This chapter of the `turnkey` CLI tutorial focuses on techniques to customize th
 - [How to customize the build process with Sequences](#sequence-file)
 
 The tutorial chapters are:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` CLI arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` CLI arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` CLI arguments that customize the model discovery process to help streamline your workflow.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` CLI arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
 1. Customizing Builds (this document): `turnkey` CLI arguments that customize build behavior to unlock new workflows.
 
 # Build Tutorials
@@ -33,7 +33,7 @@ hello_world.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/hello_world.py, line 29
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/hello_world.py, line 29
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
                 Status:         Model successfully built!
@@ -45,12 +45,12 @@ Woohoo! The 'benchmark' command is complete.
 
 You can see that the model is discovered and built, but no benchmark took place.
 
-> See the [Build Only documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#build-only) for more details.
+> See the [Build Only documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#build-only) for more details.
 
 # Thanks!
 
 Now that you have completed this tutorial, make sure to check out the other tutorials if you want to learn more:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
 1. Customizing Builds (this document): `turnkey` arguments that customize build behavior to unlock new workflows.

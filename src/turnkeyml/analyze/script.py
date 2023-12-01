@@ -203,7 +203,7 @@ def explore_invocation(
 
         relative_path = tracer_args.input.replace(
             fs.MODELS_DIR,
-            f"https://github.com/aigdat/onnxmodelzoo/tree/{git_hash}/toolchain/models",
+            f"https://github.com/onnx/turnkeyml/tree/{git_hash}/models",
         ).replace("\\", "/")
         stats.save_stat(fs.Keys.MODEL_SCRIPT, relative_path)
 

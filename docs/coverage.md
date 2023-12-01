@@ -10,7 +10,7 @@ On your main `tkml` environment, run `pip install coverage`.
 
 ### Gathering Results
 
-To gather results, cd into the test folder on `toolchain\test` and call `coverage run` on each of the tests as shown below.
+To gather results, cd into the test folder on `REPO_ROOT/test` and call `coverage run` on each of the tests as shown below.
 
 ```
 coverage run --data-file=.coverage_unit -m unittest unit.py

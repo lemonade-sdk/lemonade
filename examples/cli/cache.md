@@ -9,10 +9,10 @@ This chapter of the `turnkey` CLI tutorials is focused on understanding, inspect
 - [How to keep your filesystem from filling up with build artifacts](#lean-cache)
 
 The tutorial chapters are:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
 1. Working with the Cache (this document): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
 
 # Cache Tutorials
 
@@ -20,7 +20,7 @@ All of the tutorials assume that your current working directory is in the same l
 
 ## Cache Directory
 
-By default, the tools use `~/.cache/turnkey/` as the location for the cache (see the [Build documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#build) for more details).
+By default, the tools use `~/.cache/turnkey/` as the location for the cache (see the [Build documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#build) for more details).
 
 However, you might want to set the cache location for any number of reasons. For example, you might want to keep the results from benchmarking one corpus of models separate from the results from another corpus.
 
@@ -34,11 +34,11 @@ When that command completes, you can use the `ls` command to see that `tmp_cache
 
 See the Cache Commands tutorials below to see what you can do with the cache.
 
-> See the [Cache Directory documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#cache-directory) for more details.
+> See the [Cache Directory documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#cache-directory) for more details.
 
 ## Cache List Command
 
-This tutorial assumes you have completed the [Cache Directory](#cache-directory) and [Benchmark Multiple Scripts documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#benchmark-multiple-scripts) tutorials, and that the `tmp_cache` directory exists at your command line location.
+This tutorial assumes you have completed the [Cache Directory](#cache-directory) and [Benchmark Multiple Scripts documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#benchmark-multiple-scripts) tutorials, and that the `tmp_cache` directory exists at your command line location.
 
 You can use the `cache list` command to see what builds are available in your cache:
 
@@ -113,7 +113,7 @@ Info: Builds available in cache tmp_cache:
 hello_world_479b1332  
 ```
 
-> See the [Cache Commands documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#cache-commands) for more details.
+> See the [Cache Commands documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#cache-commands) for more details.
 
 ## Lean Cache
 
@@ -170,14 +170,14 @@ total 20K
    0 -rw-r--r-- 1 jfowers    0 Feb 16 08:14 log_set_success.txt
 ```
 
-> See the [Lean Cache documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#lean-cache) for more details.
+> See the [Lean Cache documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#lean-cache) for more details.
 
 > _Note_: If you want to get rid of build artifacts after the build is done, you can run `turnkey cache clean build_name`.
 
 # Thanks!
 
 Now that you have completed this tutorial, make sure to check out the other tutorials if you want to learn more:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
 1. Working with the Cache (this document): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.

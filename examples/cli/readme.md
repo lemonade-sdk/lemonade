@@ -1,16 +1,16 @@
 # Learning the `turnkey` CLI
 
-This document is a tutorial for exploring the different features of the `turnkey` command line interface (CLI). You can learn the details of those features in the [Tools User Guide](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md) and learn about their implementation in the [Code Organization Guide](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/code.md).
+This document is a tutorial for exploring the different features of the `turnkey` command line interface (CLI). You can learn the details of those features in the [Tools User Guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md) and learn about their implementation in the [Code Organization Guide](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
 
 We've created this tutorial document because `turnkey` is a CLI that benchmarks the contents of `.py` scripts. So all of the `.py` scripts in the `examples/cli/scripts` directory are meant to be fed into `turnkey` to demonstrate some specific functionality.
 
-Once you've familiarized yourself with these features, head over to the [`models` directory](https://github.com/aig-bench/onnxmodelzoo/tree/main/models) to learn how to use `turnkey` with real world machine learning models.
+Once you've familiarized yourself with these features, head over to the [`models` directory](https://github.com/onnx/turnkeyml/tree/main/models) to learn how to use `turnkey` with real world machine learning models.
 
 The tutorials are organized into a few chapters:
 1. Getting Started (this document)
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `cache`.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
 
 In this tutorial you will learn things such as:
 - [How to benchmark BERT with one command](#just-benchmark-bert)
@@ -29,7 +29,7 @@ models=$(turnkey models location --quiet)
 turnkey $models/transformers/bert.py
 ```
 
-> _Note_: You will need to [install the models benchmark requirements](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/install.md#turnkeyml-models-requirements), if you haven't already.
+> _Note_: You will need to [install the models benchmark requirements](https://github.com/onnx/turnkeyml/blob/main/docs/install.md#turnkeyml-models-requirements), if you haven't already.
 
 This will produce a result that looks like this, which shows you the performance of BERT-Base on your CPU:
 
@@ -40,7 +40,7 @@ bert.py:
         model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          BertModel (<class 'transformers.models.bert.modeling_bert.BertModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/models/transformers/bert.py, line 18
+                Location:       /home/jfowers/turnkeyml/models/transformers/bert.py, line 18
                 Parameters:     109,482,240 (208.8 MB)
                 Hash:           d59172a2
                 Status:         Successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz (ort v1.14.1)
@@ -53,7 +53,7 @@ bert.py:
 
 All of the following tutorials assume that your current working directory is in the same location as this readme file (`examples/cli`).
 
-These tutorials assume you have used the [cloning install](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/install.md#cloning-install) since that provides you with the required tutorial files in `examples/cli/scripts`.
+These tutorials also assume you have [installed from source](https://github.com/onnx/turnkeyml/blob/main/docs/install.md) since that provides you with the required tutorial files in `examples/cli/scripts`.
 
 ## Hello World
 
@@ -80,7 +80,7 @@ hello_world.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/hello_world.py, line 29
+                Location:       /home/jfowers/turnkeyml/examples/cli/hello_world.py, line 29
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -113,7 +113,7 @@ hello_world.py:
 	pytorch_model (executed 1x)
 		Model Type:	Pytorch (torch.nn.Module)
 		Class:		SmallModel (<class 'hello_world.SmallModel'>)
-		Location:	/home/jfowers/onnxmodelzoo/toolchain/examples/cli/hello_world.py, line 29
+		Location:	/home/jfowers/turnkeyml/examples/cli/hello_world.py, line 29
 		Parameters:	55 (<0.1 MB)
 		Hash:		479b1332
 		Status:		Model successfully benchmarked on NVIDIA A100-SXM4-40GB
@@ -146,7 +146,7 @@ two_models.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/two_models.py, line 32
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 32
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -156,7 +156,7 @@ two_models.py:
         another_pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/two_models.py, line 40
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 40
                 Parameters:     510 (<0.1 MB)
                 Hash:           215ca1e3
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -194,7 +194,7 @@ multiple_invocations.py:
         pytorch_model
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'multiple_invocations.SmallModel'>)
-                Location:       /home/dhnoronha/onnxmodelzoo/toolchain/examples/cli/scripts/multiple_invocations.py, line 40
+                Location:       /home/dhnoronha/turnkeyml/examples/cli/scripts/multiple_invocations.py, line 40
                 Parameters:     60 (<0.1 MB)
 
                 With input shape 1 (executed 2x)
@@ -229,7 +229,7 @@ Building "sample"
     ✓ Receiving ONNX Model   
     ✓ Finishing up   
 
-Woohoo! Saved to ~/onnxmodelzoo/toolchain/examples/cli/onnx/tmp_cache/sample
+Woohoo! Saved to ~/turnkeyml/examples/cli/onnx/tmp_cache/sample
 
 Info: Benchmarking on local x86...
 
@@ -241,6 +241,6 @@ Info: Performance of build sample on x86 device Intel(R) Xeon(R) CPU @ 2.20GHz i
 # Thanks!
 
 Now that you have completed this tutorial, make sure to check out the other tutorials if you want to learn more:
-1. [Guiding Model Discovery](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Guiding Model Discovery](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments that customize build behavior to unlock new workflows.

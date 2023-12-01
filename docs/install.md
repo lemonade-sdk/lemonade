@@ -32,13 +32,13 @@ conda activate tkml
 First, make sure you have a copy of the repository locally:
 
 ```
-git clone https://github.com/aig-bench/onnxmodelzoo.git
+git clone https://github.com/onnx/turnkeyml.git
 ```
 
 Then, simply pip install the TurnkeyML package:
 
 ```
-pip install -e onnxmodelzoo/toolchain
+pip install -e turnkeyml
 ```
 
 You are now done installing TurnkeyML! 
@@ -47,15 +47,15 @@ If you are planning to use the `turnkey` tools with the TurnkeyML models or Slur
 
 ## TurnkeyML Models Requirements
 
-The TurnkeyML models are located at `install_path/toolchain/models`, which we refer to as `models/` in most of the guides.
+The TurnkeyML models are located at `install_path/models`, which we refer to as `models/` in most of the guides.
 
 > _Note_: The `turnkey models location` command and `turnkey.common.filesystem.MODELS_DIR` are useful ways to locate the `models` directory. If you perform PyPI installation, we recommend that you take an additional step like this:
 
 ```
 (tkml) jfowers:~$ turnkey models location
 
-Info: The TurnkeyML models directory is: ~/onnxmodelzoo/toolchain/models
-(tkml) jfowers:~$ export models=~/onnxmodelzoo/toolchain/models
+Info: The TurnkeyML models directory is: ~/turnkeyml/models
+(tkml) jfowers:~$ export models=~/turnkeyml/models
 ```
 
 The `turnkeyml` package only requires the packages to run the tools. If you want to run the models as well, you will also have to install the models' requirements. 
@@ -72,11 +72,11 @@ Slurm is an open source workload manager for clusters. If you would like to use 
 
 ### Setup your Slurm environment
 
-Ensure that your onnxmodelzoo folder and your conda installation are both inside a shared volume that can be accessed by Slurm.
+Ensure that your turnkeyml clone and your conda installation are both inside a shared volume that can be accessed by Slurm.
 Then, run the following command and wait for the Slurm job to finish:
 
 ```
-sbatch --mem=128000 toolchain/src/turnkeyml/cli/setup_venv.sh
+sbatch --mem=128000 src/turnkeyml/cli/setup_venv.sh
 ```
 
 ### Get an API token from Huggingface.co (optional)

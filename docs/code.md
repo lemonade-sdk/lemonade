@@ -8,7 +8,7 @@ The TurnkeyML source code has a few major top-level directories:
   - `examples/api`: examples scripts that invoke the benchmarking API to get the performance of models.
   - `examples/cli`: tutorial series starting in `examples/cli/readme.md` to help learn the `turnkey` CLI.
     - `examples/cli/scripts`: example scripts that can be fed as input into the `turnkey` CLI. These scripts each have a docstring that recommends one or more `turnkey` CLI commands to try out.
-- `models`: the corpora of models that makes up the TurnkeyML models (see [the models readme](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/models/readme.md)).
+- `models`: the corpora of models that makes up the TurnkeyML models (see [the models readme](https://github.com/onnx/turnkeyml/blob/main/models/readme.md)).
   - Each subdirectory under `models` represents a corpus of models pulled from somewhere on the internet. For example, `models/torch_hub` is a corpus of models from [Torch Hub](https://github.com/pytorch/hub).
 - `src/turnkey`: source code for the TurnkeyML tools (see [Benchmarking Tools](#benchmarking-tools) for a description of how the code is used).
   - `src/turnkeyml/analysis`: functions for profiling a model script, discovering model instances, and invoking `benchmark_model()` on those instances.
@@ -23,14 +23,14 @@ The TurnkeyML source code has a few major top-level directories:
 
 # Benchmarking Tools
 
-TurnkeyML provides two main tools, the `turnkey` CLI and benchmarking APIs. Instructions for how to use these tools are documented in the [Tools User Guide](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md), while this section is about how the source code is invoked to implement the tools. All of the code below is located under `src/turnkeyml/`.
+TurnkeyML provides two main tools, the `turnkey` CLI and benchmarking APIs. Instructions for how to use these tools are documented in the [Tools User Guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md), while this section is about how the source code is invoked to implement the tools. All of the code below is located under `src/turnkeyml/`.
 
-1. The `turnkey` CLI is the comprehensive frontend that wraps all the other code. It is implemented in [cli/cli.py](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/src/turnkeyml/cli/cli.py).
-1. The default command for `turnkey` CLI runs the `benchmark_files()` API, which is implemented in [files_api.py](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/src/turnkeyml/files_api.py).
+1. The `turnkey` CLI is the comprehensive frontend that wraps all the other code. It is implemented in [cli/cli.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/cli/cli.py).
+1. The default command for `turnkey` CLI runs the `benchmark_files()` API, which is implemented in [files_api.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/files_api.py).
     - Other CLI commands are also implemented in `cli/`, for example the `report` command is implemented in `cli/report.py`.
-1. The `benchmark_files()` API takes in a set of scripts, each of which should invoke at least one model instance, to evaluate and passes each into the `evaluate_script()` function for analysis, which is implemented in [analyze/script.py](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/src/turnkeyml/analyze/script.py).
-1. `evaluate_script()` uses a profiler to discover the model instances in the script, and passes each into the `benchmark_model()` API, which is defined in [model_api.py](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/src/turnkeyml/model_api.py).
-1. The `benchmark_model()` API prepares the model for benchmarking (e.g., exporting and optimizing an ONNX file), which creates an instance of a `*Model` class, where `*` can be CPU, GPU, etc. The `*Model` classes are defined in [run/](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/src/turnkeyml/run/).
+1. The `benchmark_files()` API takes in a set of scripts, each of which should invoke at least one model instance, to evaluate and passes each into the `evaluate_script()` function for analysis, which is implemented in [analyze/script.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/analyze/script.py).
+1. `evaluate_script()` uses a profiler to discover the model instances in the script, and passes each into the `benchmark_model()` API, which is defined in [model_api.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/model_api.py).
+1. The `benchmark_model()` API prepares the model for benchmarking (e.g., exporting and optimizing an ONNX file), which creates an instance of a `*Model` class, where `*` can be CPU, GPU, etc. The `*Model` classes are defined in [run/](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/run/).
 1. The `*Model` classes provide a `.benchmark()` method that benchmarks the model on the device and returns an instance of the `MeasuredPerformance` class, which includes the performance statistics acquired during benchmarking.
 1. `benchmark_model()` and the `*Model` classes are built using [`build_model()`](#model-build-tool)
 

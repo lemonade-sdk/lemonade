@@ -1,6 +1,6 @@
 # TurnkeyML Models
 
-This directory contains the TurnkeyML models, which is a large collection of models that can be evaluated using the [`turnkey` CLI tool](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md).
+This directory contains the TurnkeyML models, which is a large collection of models that can be evaluated using the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md).
 
 ## Table of Contents
 
@@ -21,9 +21,7 @@ This directory contains the TurnkeyML models, which is a large collection of mod
 The TurnkeyML collection is made up of several corpora of models (_corpora_ is the plural of _corpus_... we had to look it up too). Each corpus is named after the online repository that the models were sourced from. Each corpus gets its own subdirectory in the `models` directory. 
 
 The corpora are:
-- `diffusers`: models from the [Huggingface `diffusers` library](https://huggingface.co/docs/diffusers/index), including the models that make up Stable Diffusion.
 - `graph_convolutions`: Graph Neural Network (GNN) models from a variety of publications. See the docstring on each .py file for the source.
-- `popular_on_huggingface`: hundreds of the most-downloaded models from the [Huggingface models repository](https://huggingface.co/models).
 - `selftest`: a small corpus with small models that can be used for testing out the tools.
 - `torch_hub`: a variety of models, including many image classification models, from the [Torch Hub repository](https://github.com/pytorch/hub).
 - `torchvision`: image recognition models from the [`torchvision` library](https://pytorch.org/vision/stable/index.html).
@@ -36,9 +34,9 @@ The corpora are:
 ### Prerequisites
 
 Before running the benchmark we suggest you:
-1. Install the `turnkey` package by following the [install instructions](https://github.com/aig-bench/onnxmodelzoo/tree/main/docs/install.md).
-1. Go through the [`turnkey` CLI tutorials](https://github.com/aig-bench/onnxmodelzoo/tree/main/examples/cli/readme.md).
-1. Familiarize yourself with the [`turnkey` CLI tool](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/turnkey_user_guide.md) documentation.
+1. Install the `turnkey` package by following the [install instructions](https://github.com/onnx/turnkeyml/tree/main/docs/install.md).
+1. Go through the [`turnkey` CLI tutorials](https://github.com/onnx/turnkeyml/tree/main/examples/cli/readme.md).
+1. Familiarize yourself with the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey_user_guide.md) documentation.
 
 You must also run the following command to install all of the models' dependencies into your Python environment.
 
@@ -49,13 +47,13 @@ You must also run the following command to install all of the models' dependenci
 Once you have fulfilled the prerequisites, you can evaluate one model from the benchmark with a command like this:
 
 ```
-cd OMZ_ROOT/toolchain/models # OMZ_ROOT is where you cloned onnxmodelzoo
+cd REPO_ROOT/models # REPO_ROOT is where you cloned turnkeyml
 turnkey selftest/linear.py
 ```
 
-You can also run the entire all models in one shot with:
+You can also run all models in one shot with:
 ```
-cd OMZ_ROOT/toolchain/models # OMZ_ROOT is where you cloned onnxmodelzoo
+cd REPO_ROOT/models # REPO_ROOT is where you cloned turnkeyml
 turnkey */*.py
 ```
 

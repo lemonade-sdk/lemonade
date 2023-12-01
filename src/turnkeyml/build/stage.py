@@ -268,7 +268,7 @@ class Sequence(Stage):
             build_model() is running a build on a model that already built successfully, which
             should not happen because the build should have loaded from cache or rebuilt from scratch.
             If you are using custom Stages and Sequences then you have some debugging to do. Otherwise,
-            please file an issue at https://github.com/aig-bench/onnxmodelzoo/issues
+            please file an issue at https://github.com/onnx/turnkeyml/issues
             """
             raise exp.Error(msg)
 

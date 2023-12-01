@@ -1,8 +1,8 @@
 # Tools User Guide
 
-The TurnkeyML package provides a CLI, `turnkey`, and Python API for benchmarking machine learning and deep learning models. This document reviews the functionality provided by the package. If you are looking for repo and code organization, you can find that [here](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/code.md).
+The TurnkeyML package provides a CLI, `turnkey`, and Python API for benchmarking machine learning and deep learning models. This document reviews the functionality provided by the package. If you are looking for repo and code organization, you can find that [here](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
 
-For a hands-on learning approach, check out the [`turnkey` CLI tutorials](#https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md).
+For a hands-on learning approach, check out the [`turnkey` CLI tutorials](#https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md).
 
 The tools currently support the following combinations of runtimes and devices:
 
@@ -54,11 +54,11 @@ The `turnkey` CLI performs the following steps:
 2. [Build](#build): call the `benchmark_files()` [API](#the-turnkey-api) to prepare each model for benchmarking
 3. [Benchmark](#benchmark): call the `benchmark_model()` [API](#the-turnkey-api) on each model to gather performance statistics
 
-_Note_: The benchmarking methodology is defined [here](#benchmark). If you are looking for more detailed instructions on how to install turnkey, you can find that [here](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/install.md).
+_Note_: The benchmarking methodology is defined [here](#benchmark). If you are looking for more detailed instructions on how to install turnkey, you can find that [here](https://github.com/onnx/turnkeyml/blob/main/docs/install.md).
 
-> For a detailed example, see the [CLI Hello World tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#hello-world).
+> For a detailed example, see the [CLI Hello World tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#hello-world).
 
-> `turnkey` can also benchmark ONNX files with a command like `turnkey your_model.onnx`. See the [CLI ONNX tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#onnx-benchmarking) for details. However, the majority of this document focuses on the use case of passing .py scripts as input to `turnkey`.
+> `turnkey` can also benchmark ONNX files with a command like `turnkey your_model.onnx`. See the [CLI ONNX tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#onnx-benchmarking) for details. However, the majority of this document focuses on the use case of passing .py scripts as input to `turnkey`.
 
 # The TurnkeyML API
 
@@ -68,7 +68,7 @@ Most of the functionality provided by the `turnkey` CLI is also available in the
   - The main difference is that `benchmark_model()` does not include the [Analysis](#analysis) feature, and `benchmark_files()` does.
 - `turnkey.build_model(model, inputs)` is used to programmatically [build](#build) a model instance through a sequence of model-to-model transformations (e.g., starting with an fp32 PyTorch model and ending with an fp16 ONNX model). 
 
-Generally speaking, the `turnkey` CLI is a command line interface for the `benchmark_files()` API, which internally calls `benchmark_model()`, which in turn calls `build_model()`. You can read more about this code organization [here](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/code.md).
+Generally speaking, the `turnkey` CLI is a command line interface for the `benchmark_files()` API, which internally calls `benchmark_model()`, which in turn calls `build_model()`. You can read more about this code organization [here](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
 
 For an example of `benchmark_model()`, the following script:
 
@@ -139,7 +139,7 @@ A **runtime** is a piece of software that executes a model on a device.
 
 > _Note_: the `turnkey` CLI and `benchmark_files()` API both run your entire python script(s) whenever python script(s) are passed as input files. Please ensure that these scripts are safe to run, especially if you got them from the internet.
 
-> See the [Multiple Models per Script tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#multiple-models-per-script) for a detailed example of how analysis can discover multiple models from a single script.
+> See the [Multiple Models per Script tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#multiple-models-per-script) for a detailed example of how analysis can discover multiple models from a single script.
 
 ## Model Hashes
 
@@ -255,7 +255,7 @@ Also available as API arguments:
 - `benchmark_files(device=...)`
 - `benchmark_model(device=...)`.
 
-> For a detailed example, see the [CLI Nvidia tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#nvidia-benchmarking).
+> For a detailed example, see the [CLI Nvidia tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#nvidia-benchmarking).
 
 ### Runtimes
 
@@ -324,7 +324,7 @@ Examples:
 - `turnkey selected_models.txt`
   - Benchmark all models listed inside the text file.
 
-> See the [Benchmark Multiple Scripts tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md#benchmark-multiple-scripts) for a detailed example.
+> See the [Benchmark Multiple Scripts tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md#benchmark-multiple-scripts) for a detailed example.
 
 You can also leverage model hashes (see [Model Hashes](#model-hashes)) to filter which models in a script will be acted on, in the following manner:
   - `turnkey example.py::hash_0` will only benchmark the model corresponding to `hash_0`.
@@ -332,7 +332,7 @@ You can also leverage model hashes (see [Model Hashes](#model-hashes)) to filter
 
 > _Note_: Using bash regular expressions and filtering model by hashes are mutually exclusive. To filter models by hashes, provide the full path of the Python script rather than a regular expression.
 
-> See the [Filtering Model Hashes tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md#filtering-model-hashes) for a detailed example.
+> See the [Filtering Model Hashes tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md#filtering-model-hashes) for a detailed example.
 
 Additionally, you can leverage labels (see [Labels](#labels)) to filter which models in a script will be acted on, in the following manner:
   - `turnkey *.py --labels test_group::a` will only benchmark the scripts labels with `test_group::a`.
@@ -355,9 +355,9 @@ Usage:
 Available as an API argument:
 - `benchmark_files(use_slurm=True/False)` (default False)
 
-> _Note_: Requires setting up Slurm as shown [here](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/install.md).
+> _Note_: Requires setting up Slurm as shown [here](https://github.com/onnx/turnkeyml/blob/main/docs/install.md).
 
-> _Note_: while `--use-slurm` is implemented, and we use it for our own purposes, it has some limitations and we do not recommend using it. Currently, `turnkey` has some Slurm to be configuration assumptions that we have not documented yet. Please contact the developers by [filing an issue](https://github.com/aig-bench/onnxmodelzoo/issues/new) if you need Slurm support for your project.
+> _Note_: while `--use-slurm` is implemented, and we use it for our own purposes, it has some limitations and we do not recommend using it. Currently, `turnkey` has some Slurm to be configuration assumptions that we have not documented yet. Please contact the developers by [filing an issue](https://github.com/onnx/turnkeyml/issues/new) if you need Slurm support for your project.
 
 > _Note_: Slurm mode applies a timeout to each job, and will cancel the job move if the timeout is exceeded. See [Set the Timeout](#set-the-timeout)
 
@@ -384,7 +384,7 @@ Also available as API arguments:
 - `benchmark_model(cache_dir=...)`
 - `build_model(cache_dir=...)`
 
-> See the [Cache Directory tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md#cache-directory) for a detailed example.
+> See the [Cache Directory tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#cache-directory) for a detailed example.
 
 ### Lean Cache
 
@@ -396,7 +396,7 @@ Also available as API arguments:
 
 > _Note_: useful for benchmarking many models, since the `build` artifacts from the models can take up a significant amount of hard drive space.
 
-> See the [Lean Cache tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md#lean-cache) for a detailed example.
+> See the [Lean Cache tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#lean-cache) for a detailed example.
 
 ### Rebuild Policy
 
@@ -435,7 +435,7 @@ Usage:
 Also available as an API argument:
 - `benchmark_files(script_args=...)`
 
-> See the [Parameters documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/models/readme.md#parameters) for a detailed example.
+> See the [Parameters documentation](https://github.com/onnx/turnkeyml/blob/main/models/readme.md#parameters) for a detailed example.
 
 ### Maximum Analysis Depth
 
@@ -449,7 +449,7 @@ Also available as an API argument:
 
 > _Note_: `--max-depth` values greater than 0 are only supported for PyTorch models.
 
-> See the [Maximum Analysis Depth tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md#maximum-analysis-depth) for a detailed example.
+> See the [Maximum Analysis Depth tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md#maximum-analysis-depth) for a detailed example.
 
 ### ONNX Opset
 
@@ -489,7 +489,7 @@ Usage:
 Also available as an API argument: 
 - `benchmark_files(analyze_only=True/False)` (default False)
 
-> See the [Analyze Only tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/discovery.md#analyze-only) for a detailed example.
+> See the [Analyze Only tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/discovery.md#analyze-only) for a detailed example.
 
 ### Build Only
 
@@ -505,13 +505,13 @@ Also available as API arguments:
 - `benchmark_files(build_only=True/False)` (default False)
 - `benchmark_model(build_only=True/False)` (default False)
 
-> See the [Build Only tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md#build-only) for a detailed example.
+> See the [Build Only tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md#build-only) for a detailed example.
 
 ### Custom Runtime Arguments
 
 Users can pass arbitrary arguments into a runtime, as long as the target runtime supports those arguments, by using the `--rt-args` argument.
 
-None of the built-in runtimes support such arguments, however plugin contributors can use this interface to add arguments to their custom runtimes. See [plugins contribution guideline](https://github.com/aigdat/onnxmodelzoo/blob/main/toolchain/docs/contribute.md#contributing-a-plugin) for details.
+None of the built-in runtimes support such arguments, however plugin contributors can use this interface to add arguments to their custom runtimes. See [plugins contribution guideline](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin) for details.
 
 Also available as API arguments:
 - `benchmark_files(rt_args=Dict)` (default None)
@@ -529,7 +529,7 @@ The `cache` commands help you manage the `turnkey cache` and get information abo
 
 > _Note_: `cache list` is not available as an API.
 
-> See the [Cache Commands tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md#cache-commands) for a detailed example.
+> See the [Cache Commands tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#cache-commands) for a detailed example.
 
 ### `cache stats` Command
 
@@ -540,7 +540,7 @@ The `cache` commands help you manage the `turnkey cache` and get information abo
 
 > _Note_: `cache stats` is not available as an API.
 
-> See the [Cache Commands tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md#cache-commands) for a detailed example.
+> See the [Cache Commands tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#cache-commands) for a detailed example.
 
 ### `cache delete` Command
 
@@ -552,7 +552,7 @@ The `cache` commands help you manage the `turnkey cache` and get information abo
 
 > _Note_: `cache delete` is not available as an API.
 
-> See the [Cache Commands tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md#cache-commands) for a detailed example.
+> See the [Cache Commands tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#cache-commands) for a detailed example.
 
 ### `cache clean` Command
 
@@ -585,7 +585,7 @@ The `models` commands help you work with the turnkey models provided in the pack
 
 ### `locate models` Command
 
-`turnkey models location` prints out the location of the [models directory](https://github.com/aig-bench/onnxmodelzoo/tree/main/models) with over 1000 models. It presents the following options:
+`turnkey models location` prints out the location of the [models directory](https://github.com/onnx/turnkeyml/tree/main/models) with over 1000 models. It presents the following options:
 
 - `--quiet` Command output will only include the directory path
 
@@ -677,7 +677,7 @@ The tools support a variety of built-in build sequences, runtimes, and devices (
 
 A turnkey plugin is a pip-installable package that implements support for building a model using a custom sequence and/or benchmarking a model on a [device](#device) with a [runtime](#runtime). These packages must adhere to a specific plugin template. 
 
-For more details on implementing a plugin, please refer to the [plugins contribution guideline](https://github.com/aigdat/onnxmodelzoo/blob/main/toolchain/docs/contribute.md#contributing-a-plugin)
+For more details on implementing a plugin, please refer to the [plugins contribution guideline](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin)
 
 # Build API Arguments
 

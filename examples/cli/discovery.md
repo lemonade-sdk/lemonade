@@ -7,10 +7,10 @@ This chapter of the `turnkey` CLI tutorial is focused on how to guide the tool a
 - [How to filter which models are passed to the build and benchmark operations](#filtering-model-hashes)
 
 The tutorial chapters are:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
 1. Guiding Model Discovery (this document): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `turnkey cache`.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
 
 # Model Discovery Tutorials
 
@@ -35,7 +35,7 @@ hello_world.py:
         pytorch_model (executed 1x - 0.00s)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/hello_world.py, line 29
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/hello_world.py, line 29
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
 
@@ -46,7 +46,7 @@ Woohoo! The 'benchmark' command is complete.
 
 You can see that the model is discovered, and some stats are printed, but no build or benchmark took place.
 
-> See the [Analyze Only documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#analyze-only) for more details.
+> See the [Analyze Only documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#analyze-only) for more details.
 
 ## Benchmark Multiple Scripts
 
@@ -74,7 +74,7 @@ hello_world.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/hello_world.py, line 29
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/hello_world.py, line 29
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -85,7 +85,7 @@ two_models.py:
         another_pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/two_models.py, line 40
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 40
                 Parameters:     510 (<0.1 MB)
                 Hash:           215ca1e3
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -96,7 +96,7 @@ max_depth.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          TwoLayerModel (<class 'max_depth.TwoLayerModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/max_depth.py, line 41
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/max_depth.py, line 41
                 Parameters:     85 (<0.1 MB)
                 Hash:           80b93950
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -119,7 +119,7 @@ two_models.py
 max_depth.py
 ```
 
-> See the [Benchmark Multiple Scripts documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#benchmark-multiple-scripts) for more details.
+> See the [Benchmark Multiple Scripts documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#benchmark-multiple-scripts) for more details.
 
 ## Maximum Analysis Depth
 
@@ -133,7 +133,7 @@ For example, if you run this command:
 turnkey benchmark scripts/max_depth.py
 ```
 
-You will get a result that looks very similar to the [Hello World tutorial](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#hello-world) tutorial. However, if you peek into `max_depth.py`, you can see that there are two `torch.nn.Linear` modules that make up the top-level model.
+You will get a result that looks very similar to the [Hello World tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#hello-world) tutorial. However, if you peek into `max_depth.py`, you can see that there are two `torch.nn.Linear` modules that make up the top-level model.
 
 You can analyze and benchmark those `torch.nn.Linear` modules with this command:
 
@@ -150,7 +150,7 @@ max_depth.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          TwoLayerModel (<class 'max_depth.TwoLayerModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/max_depth.py, line 41
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/max_depth.py, line 41
                 Parameters:     85 (<0.1 MB)
                 Hash:           80b93950
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -179,15 +179,15 @@ max_depth.py:
 
 You can see that the two instances of `torch.nn.Linear`, `fc` and `fc2`, are benchmarked in addition to the top-level model, `pytorch_model`.
 
-> See the [Max Depth documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#maximum-analysis-depth) for more details.
+> See the [Max Depth documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#maximum-analysis-depth) for more details.
 
 
 
 ## Filtering Model Hashes
 
-When you ran the example from the [Multiple Models per Script](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#multiple-models-per-script) tutorial, you saw that `turnkey` discovered, built, and benchmarked two models. What if you only wanted to build and benchmark one of the models?
+When you ran the example from the [Multiple Models per Script](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#multiple-models-per-script) tutorial, you saw that `turnkey` discovered, built, and benchmarked two models. What if you only wanted to build and benchmark one of the models?
 
-You can leverage the model hashes feature of `turnkey` to filter which models are acted on. You can see in the result from [Multiple Models per Script](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md#multiple-models-per-script) that the two models, `pytorch_model` and `another_pytorch_model`, have hashes `479b1332` and `215ca1e3`, respectively.
+You can leverage the model hashes feature of `turnkey` to filter which models are acted on. You can see in the result from [Multiple Models per Script](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#multiple-models-per-script) that the two models, `pytorch_model` and `another_pytorch_model`, have hashes `479b1332` and `215ca1e3`, respectively.
 
 If you wanted to only build and benchmark `another_pytorch_model`, you could use this command, which filters `two_models.py` with the hash `215ca1e3`:
 
@@ -204,14 +204,14 @@ two_models.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/two_models.py, line 32
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 32
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
 
         another_pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/two_models.py, line 40
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 40
                 Parameters:     510 (<0.1 MB)
                 Hash:           215ca1e3
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -227,7 +227,7 @@ Woohoo! The 'benchmark' command is complete.
 
 You can see that both models are discovered, but only `another_pytorch_model` was built and benchmarked.
 
-> See the [Input Script documentation](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#input-script) for more details.
+> See the [Input Script documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#input-script) for more details.
 
 ## Filtering Model Labels
 
@@ -248,7 +248,7 @@ hello_world.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
                 Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/onnxmodelzoo/toolchain/examples/cli/scripts/hello_world.py, line 30
+                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/hello_world.py, line 30
                 Parameters:     55 (<0.1 MB)
                 Hash:           479b1332
                 Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
@@ -263,7 +263,7 @@ Woohoo! The 'benchmark' command is complete.
 # Thanks!
 
 Now that you have completed this tutorial, make sure to check out the other tutorials if you want to learn more:
-1. [Getting Started](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/readme.md)
+1. [Getting Started](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md)
 1. Guiding Model Discovery (this document): `turnkey` arguments that customize the model discovery process to help streamline your workflow.
-1. [Working with the Cache](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `cache`.
-1. [Customizing Builds](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.
+1. [Working with the Cache](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md): `turnkey` arguments and commands that help you understand, inspect, and manipulate the `cache`.
+1. [Customizing Builds](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md): `turnkey` arguments that customize build behavior to unlock new workflows.

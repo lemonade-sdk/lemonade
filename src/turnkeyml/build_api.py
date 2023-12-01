@@ -60,7 +60,7 @@ def build_model(
             part within a family, or configuration of a part model, respectively.
 
         More information is available in the Tools User Guide:
-            https://github.com/aigdat/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md
+            https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md
     """
 
     # Allow monitor to be globally disabled by an environment variable

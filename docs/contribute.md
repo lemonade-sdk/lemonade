@@ -4,7 +4,7 @@ Hello and welcome to the project! 🎉
 
 We're thrilled that you're considering contributing to the project. This project is a collaborative effort and we welcome contributors from everyone.
 
-Before you start, please take a few moments to read through these guidelines. They are designed to make the contribution process easy and effective for everyone involved. Also take a look at the [code organization](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/code.md) for a bird's eye view of the repository.
+Before you start, please take a few moments to read through these guidelines. They are designed to make the contribution process easy and effective for everyone involved. Also take a look at the [code organization](https://github.com/onnx/turnkeyml/blob/main/docs/code.md) for a bird's eye view of the repository.
 
 The guidelines document is organized as the following sections:
 - [Contributing a model](#contributing-a-model)
@@ -18,13 +18,13 @@ The guidelines document is organized as the following sections:
 
 ## Contributing a model
 
-One of the easiest ways to contribute is to add a model to the benchmark. To do so, simply add a `.py` file to the `models/` directory that instantiates and calls a supported type of model (see [Tools User Guide](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md) to learn more). The automated benchmarking infrastructure will do the rest!
+One of the easiest ways to contribute is to add a model to the benchmark. To do so, simply add a `.py` file to the `models/` directory that instantiates and calls a supported type of model (see [Tools User Guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md) to learn more). The automated benchmarking infrastructure will do the rest!
 
 ## Contributing a plugin
 
-TurnkeyML supports a variety of built-in build sequences, runtimes, and devices (see the [Devices and Runtimes table](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#devices-runtimes-table)). You can contribute a plugin to add support for a different build sequence, runtime, or device of your choosing.
+TurnkeyML supports a variety of built-in build sequences, runtimes, and devices (see the [Devices and Runtimes table](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#devices-runtimes-table)). You can contribute a plugin to add support for a different build sequence, runtime, or device of your choosing.
 
-A turnkey plugin is a pip-installable package that implements support for building a model using a custom sequence and/or benchmarking a model on a [device](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#device) with a [runtime](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#runtime). These packages must adhere to a specific interface that is documented below. 
+A turnkey plugin is a pip-installable package that implements support for building a model using a custom sequence and/or benchmarking a model on a [device](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#device) with a [runtime](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#runtime). These packages must adhere to a specific interface that is documented below. 
 
 ### Plugin Directory Layout
 
@@ -60,12 +60,12 @@ We require the following naming scheme:
 
 Plugins can implement one or more runtimes. 
 
-> See [example_rt](https://github.com/aig-bench/onnxmodelzoo/tree/main/toolchain/examples/cli/plugins/example_rt) for an example of a minimal runtime plug in. This example is used below to help explain the interface.
+> See [example_rt](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_rt) for an example of a minimal runtime plug in. This example is used below to help explain the interface.
 
 To add a runtime to a plugin:
 
 1. Pick a unique name, `<runtime_name>` for each runtime that will be supported by the plugin.
-    - This name will be used in the `turnkey --runtime <runtime_name>` [argument](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#runtimes)
+    - This name will be used in the `turnkey --runtime <runtime_name>` [argument](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#runtimes)
     - For example, a runtime named `example-rt` would be invoked with `turnkey --runtime example-rt`
 
 1. Populate the [Implements Dictionary](#implements-dictionary) with a per-runtime dictionary with the following fields:
@@ -75,7 +75,7 @@ To add a runtime to a plugin:
         - Each supported part within a device family must be defined as a dictionary.
         - Each supported configuration within a device model must be defined as a list.
         - Example: `"supported_devices": {"family1":{"part1":["config1","config2"]}}`.
-        - See [example_combined](https://github.com/aig-bench/onnxmodelzoo/tree/main/toolchain/examples/cli/plugins/example_combined) for a plugin implementation example that leverages this feature.
+        - See [example_combined](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_combined) for a plugin implementation example that leverages this feature.
       - Note: If a device is already supported by the tools, this simply adds support for another runtime to that device. If the device is _not_  already supported by the tools, this also adds support for that device and it will start to appear as an option for the `turnkey --device  <device_name>` argument.
     - `"build_required": Bool`: indicates whether the `build_model()` API should be called on the `model` and `inputs`.
     - `"docker_required": Bool`: indicates whether benchmarking is implemented through a docker container.
@@ -101,12 +101,12 @@ To add a runtime to a plugin:
 
 Plugins can implement one or more build sequences. 
 
-> See [example_seq](https://github.com/aig-bench/onnxmodelzoo/tree/main/toolchain/examples/cli/plugins/example_seq) for an example of a minimal sequence plug in. This example is used below to help explain the interface.
+> See [example_seq](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_seq) for an example of a minimal sequence plug in. This example is used below to help explain the interface.
 
 To add a build sequence to a plugin:
 
 1. Pick a unique name, `<sequence_name>` for each sequence that will be supported by the plugin.
-    - This name will be used in the `turnkey --sequence <sequence_name>` [argument](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#sequence)
+    - This name will be used in the `turnkey --sequence <sequence_name>` [argument](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#sequence)
     - For example, a sequence named `example-seq` would be invoked with `turnkey --sequence example-seq`
 
 1. Populate the [Implements Dictionary](#implements-dictionary) with a per-sequence dictionary with the following fields:
@@ -147,7 +147,7 @@ implements = {
 
 ### Runtime Class
 
-A runtime class inherits the abstract base class [`BaseRT`](https://github.com/aig-bench/onnxmodelzoo/tree/main/toolchain/src/turnkeyml/run/basert.py) and implements a one or more [runtimes](#runtime) to provide benchmarking support for one or more [devices](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/tools_user_guide.md#devices). 
+A runtime class inherits the abstract base class [`BaseRT`](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/run/basert.py) and implements a one or more [runtimes](#runtime) to provide benchmarking support for one or more [devices](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#devices). 
 
 `BaseRT` has 4 methods that plugin developers must overload: 
 - `_setup()`: any code that should be called prior to benchmarking as a one-time setup. Called automatically at the end of  `BaseRT.__init__()`.
@@ -179,7 +179,7 @@ Where:
 
 API users can pass an arbitrary dictionary of arguments, e.g., `benchmark_files(rt_args=Dict[str, Union[str, List[str]]])`.
 
-See [example_combined](https://github.com/aig-bench/onnxmodelzoo/tree/main/toolchain/examples/cli/plugins/example_combined) for an example.
+See [example_combined](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_combined) for an example.
 
 ### Execute Method
 
@@ -204,17 +204,17 @@ If you wish to contribute to any other part of the repository such as examples o
 
 ## Issues
 
-Please file any bugs or feature requests you have as an [Issue](https://github.com/aig-bench/onnxmodelzoo/issues) and we will take a look.
+Please file any bugs or feature requests you have as an [Issue](https://github.com/onnx/turnkeyml/issues) and we will take a look.
 
 ## Pull Requests
 
-Contribute code by creating a pull request (PR). Your PR will be reviewed by one of the [repo maintainers](https://github.com/aig-bench/onnxmodelzoo/blob/main/CODEOWNERS).
+Contribute code by creating a pull request (PR). Your PR will be reviewed by one of the [repo maintainers](https://github.com/onnx/turnkeyml/blob/main/CODEOWNERS).
 
-Please have a discussion with the team before making major changes. The best way to start such a discussion is to file an [Issue](https://github.com/aig-bench/onnxmodelzoo/issues) and seek a response from one of the [repo maintainers](https://github.com/aig-bench/onnxmodelzoo/blob/main/CODEOWNERS).
+Please have a discussion with the team before making major changes. The best way to start such a discussion is to file an [Issue](https://github.com/onnx/turnkeyml/issues) and seek a response from one of the [repo maintainers](https://github.com/onnx/turnkeyml/blob/main/CODEOWNERS).
 
 ## Testing
 
-Tests are defined in `tests/` and run automatically on each PR, as defined in our [testing action](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/.github/workflows/test.yml). This action performs both linting and unit testing and must succeed before code can be merged.
+Tests are defined in `tests/` and run automatically on each PR, as defined in our [testing action](https://github.com/onnx/turnkeyml/blob/main/.github/workflows/test.yml). This action performs both linting and unit testing and must succeed before code can be merged.
 
 We don't have any fancy testing framework set up yet. If you want to run tests locally:
 - Activate a `conda` environment that has `turnkey` (this package) installed.
@@ -224,4 +224,4 @@ We don't have any fancy testing framework set up yet. If you want to run tests l
 
 ## Versioning
 
-We use semantic versioning, as described in [versioning.md](https://github.com/aig-bench/onnxmodelzoo/blob/main/toolchain/docs/versioning.md).
+We use semantic versioning, as described in [versioning.md](https://github.com/onnx/turnkeyml/blob/main/docs/versioning.md).

@@ -32,9 +32,9 @@ fi
 
 # Install turnkey and model requirements
 cd "$TURNKEY_PATH" || exit
-pip install -e toolchain
+pip install -e .
 if [[ "$SKIP_REQUIREMENTS_INSTALL" != "True" ]]
 then
-    cd toolchain/models || exit
+    cd models || exit
     pip install -r requirements.txt
 fi

@@ -433,7 +433,7 @@ def main():
     )
 
     # Design note: the `models` command is simple right now, however some additional ideas
-    #    are documented in https://github.com/aig-bench/onnxmodelzoo/issues/247
+    #    are documented in https://github.com/onnx/turnkeyml/issues/247
 
     models_subparsers = models_parser.add_subparsers(
         title="models",
