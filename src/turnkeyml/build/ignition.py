@@ -1,5 +1,4 @@
 from typing import Optional, List, Tuple, Union, Dict, Any, Type, Callable
-from collections.abc import Collection
 import sys
 import os
 import copy
@@ -258,7 +257,6 @@ def load_or_make_state(
     monitor: bool,
     model: build.UnionValidModelInstanceTypes = None,
     inputs: Optional[Dict[str, Any]] = None,
-    quantization_samples: Optional[Collection] = None,
     state_type: Type = build.State,
     cache_validation_func: Callable = validate_cached_model,
     extra_state_args: Optional[Dict] = None,
@@ -280,7 +278,6 @@ def load_or_make_state(
         "cache_dir": cache_dir,
         "config": config,
         "model_type": model_type,
-        "quantization_samples": quantization_samples,
     }
 
     # Ensure that `rebuild` has a valid value
@@ -305,50 +302,6 @@ def load_or_make_state(
                     config.build_name,
                     state_type=state_type,
                 )
-
-                # if the previous build is using quantization while the current is not
-                # or vice versa
-                if state.quantization_samples and quantization_samples is None:
-                    if rebuild == "never":
-                        msg = (
-                            f"Model {config.build_name} was built in a previous call to "
-                            "build_model() with post-training quantization sample enabled."
-                            "However, post-training quantization is not enabled in the "
-                            "current build. Rebuild is necessary but currently the rebuild"
-                            "policy is set to 'never'. "
-                        )
-                        raise exp.CacheError(msg)
-
-                    msg = (
-                        f"Model {config.build_name} was built in a previous call to "
-                        "build_model() with post-training quantization sample enabled."
-                        "However, post-training quantization is not enabled in the "
-                        "current build. Starting a fresh build."
-                    )
-
-                    printing.log_info(msg)
-                    return _begin_fresh_build(state_args, state_type)
-
-                if not state.quantization_samples and quantization_samples is not None:
-                    if rebuild == "never":
-                        msg = (
-                            f"Model {config.build_name} was built in a previous call to "
-                            "build_model() with post-training quantization sample disabled."
-                            "However, post-training quantization is enabled in the "
-                            "current build. Rebuild is necessary but currently the rebuild"
-                            "policy is set to 'never'. "
-                        )
-                        raise exp.CacheError(msg)
-
-                    msg = (
-                        f"Model {config.build_name} was built in a previous call to "
-                        "build_model() with post-training quantization sample disabled."
-                        "However, post-training quantization is enabled in the "
-                        "current build. Starting a fresh build."
-                    )
-
-                    printing.log_info(msg)
-                    return _begin_fresh_build(state_args, state_type)
 
             except exp.StateError as e:
                 problem = (
@@ -500,7 +453,6 @@ def model_intake(
     user_model,
     user_inputs,
     user_sequence: Optional[stage.Sequence],
-    user_quantization_samples: Optional[Collection] = None,
 ) -> Tuple[Any, Any, stage.Sequence, build.ModelType, str]:
     # Model intake structure options:
     # user_model
@@ -550,18 +502,11 @@ def model_intake(
 
         sequence = copy.deepcopy(user_sequence)
         if sequence is None:
-            if user_quantization_samples:
-                if model_type != build.ModelType.PYTORCH:
-                    raise exp.IntakeError(
-                        "Currently, post training quantization only supports Pytorch models."
-                    )
-                sequence = sequences.pytorch_with_quantization
-            else:
-                sequence = stage.Sequence(
-                    "top_level_sequence",
-                    "Top Level Sequence",
-                    [sequences.onnx_fp32],
-                )
+            sequence = stage.Sequence(
+                "top_level_sequence",
+                "Top Level Sequence",
+                [sequences.onnx_fp32],
+            )
 
         # If there is an ExportPlaceholder Stage in the sequence, replace it with
         # a framework-specific export Stage.

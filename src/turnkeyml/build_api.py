@@ -1,6 +1,5 @@
 import os
 from typing import Optional, List, Dict, Any
-from collections.abc import Collection
 import turnkeyml.build.ignition as ignition
 import turnkeyml.build.stage as stage
 import turnkeyml.common.printing as printing
@@ -17,7 +16,6 @@ def build_model(
     monitor: Optional[bool] = None,
     rebuild: Optional[str] = None,
     sequence: Optional[List[stage.Stage]] = None,
-    quantization_samples: Collection = None,
     onnx_opset: Optional[int] = None,
     device: Optional[str] = None,
 ) -> build.State:
@@ -48,11 +46,6 @@ def build_model(
             - None: Falls back to default
         sequence: Override the default sequence of build stages. Power
             users only.
-        quantization_samples: If set, performs post-training quantization
-            on the ONNX model using the provided samplesIf the previous build used samples
-            that are different to the samples used in current build, the "rebuild"
-            argument needs to be manually set to "always" in the current build
-            in order to create a new ONNX file.
         onnx_opset: ONNX opset to use during ONNX export.
         device: Specific device target to take into account during the build sequence.
             Use the format "device_family", "device_family::part", or
@@ -96,7 +89,6 @@ def build_model(
         model,
         inputs,
         sequence,
-        user_quantization_samples=quantization_samples,
     )
 
     # Get the state of the model from the cache if a valid build is available
@@ -109,7 +101,6 @@ def build_model(
         monitor=monitor_setting,
         model=model_locked,
         inputs=inputs_locked,
-        quantization_samples=quantization_samples,
     )
 
     # Return a cached build if possible, otherwise prepare the model State for
@@ -123,8 +114,6 @@ def build_model(
         )
 
         return state
-
-    state.quantization_samples = quantization_samples
 
     sequence_locked.show_monitor(config, state.monitor)
     state = sequence_locked.launch(state)

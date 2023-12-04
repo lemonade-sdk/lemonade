@@ -8,7 +8,6 @@ import platform
 import subprocess
 import enum
 from typing import Optional, Any, List, Dict, Union, Type
-from collections.abc import Collection
 import dataclasses
 import hashlib
 import pkg_resources
@@ -259,8 +258,6 @@ class State:
     # Results of a successful build
     results: Any = None
 
-    quantization_samples: Optional[Collection] = None
-
     def __post_init__(self):
         if self.uid is None:
             self.uid = unique_id()
@@ -308,16 +305,6 @@ class State:
 
         state_dict["model_type"] = self.model_type.value
         state_dict["build_status"] = self.build_status.value
-
-        # During actual execution, quantization_samples in the state
-        # stores the actual quantization samples.
-        # However, we do not save quantization samples
-        # Instead, we save a boolean to indicate whether the model
-        # stored has been quantized by some samples.
-        if self.quantization_samples:
-            state_dict["quantization_samples"] = True
-        else:
-            state_dict["quantization_samples"] = False
 
         return state_dict
 
@@ -524,7 +511,7 @@ def get_system_info():
     # Get OS Version
     try:
         info_dict["OS Version"] = platform.platform()
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         info_dict["Error OS Version"] = str(e)
 
     if os_type == "Windows":
@@ -537,7 +524,7 @@ def get_system_info():
                 .strip()
             )
             info_dict["Processor"] = proc_info
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Processor"] = str(e)
 
         # Get OEM System Information
@@ -549,7 +536,7 @@ def get_system_info():
                 .strip()
             )
             info_dict["OEM System"] = oem_info
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error OEM System"] = str(e)
 
         # Get Physical Memory in GB
@@ -564,7 +551,7 @@ def get_system_info():
             )
             mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
             info_dict["Physical Memory"] = f"{mem_info_gb} GB"
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Physical Memory"] = str(e)
 
     elif os_type == "Linux":
@@ -586,7 +573,7 @@ def get_system_info():
                     .strip()
                 )
                 info_dict["OEM System"] = oem_info
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 info_dict["Error OEM System (WSL)"] = str(e)
 
         else:
@@ -602,7 +589,7 @@ def get_system_info():
                     .replace("\n", " ")
                 )
                 info_dict["OEM System"] = oem_info
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 info_dict["Error OEM System"] = str(e)
 
         # Get CPU Information
@@ -612,7 +599,7 @@ def get_system_info():
                 if "Model name:" in line:
                     info_dict["Processor"] = line.split(":")[1].strip()
                     break
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Processor"] = str(e)
 
         # Get Memory Information
@@ -625,7 +612,7 @@ def get_system_info():
             )
             mem_info_gb = round(int(mem_info) / 1024, 2)
             info_dict["Memory Info"] = f"{mem_info_gb} GB"
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Memory Info"] = str(e)
 
     else:
@@ -635,9 +622,10 @@ def get_system_info():
     try:
         installed_packages = pkg_resources.working_set
         info_dict["Python Packages"] = [
-            f"{i.key}=={i.version}" for i in installed_packages # pylint: disable=not-an-iterable
+            f"{i.key}=={i.version}"
+            for i in installed_packages  # pylint: disable=not-an-iterable
         ]
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         info_dict["Error Python Packages"] = str(e)
 
     return info_dict
