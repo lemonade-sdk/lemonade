@@ -333,6 +333,8 @@ class Keys:
     MODEL_NAME = "model_name"
     # References the per-build stats section
     BUILDS = "builds"
+    # Catch-all for storing a file's labels
+    LABELS = "labels"
     # Author of the model
     AUTHOR = "author"
     # Class type of the model

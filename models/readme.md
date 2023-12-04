@@ -114,7 +114,7 @@ Example:
 # labels: author::google test_group::daily,monthly
 ```
      
-Labels are saved in your cache directory and can later be retrieved using the function `turnkey.common.labels.load_from_cache()`, which receives the `cache_dir` and `build_name` as inputs and returns the labels as a dictionary. 
+Labels are saved in your cache directory in the `turnkey_stats.yaml` file under the "labels" key.
 
 ### Parameters
 

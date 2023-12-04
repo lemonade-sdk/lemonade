@@ -138,11 +138,6 @@ def explore_invocation(
                     inputs[all_args[i]] = args[i]
         invocation_info.inputs = inputs
 
-    # Save model labels
-    if model_info.model_type != build.ModelType.ONNX_FILE:
-        tracer_args.labels["class"] = [f"{type(model_info.model).__name__}"]
-    labels.save_to_cache(tracer_args.cache_dir, build_name, tracer_args.labels)
-
     # If the user has not provided a specific runtime, select the runtime
     # based on the device provided.
     if tracer_args.runtime is None:
@@ -182,12 +177,15 @@ def explore_invocation(
         fs.Keys.PARAMETERS,
         model_info.params,
     )
+    if model_info.model_type != build.ModelType.ONNX_FILE:
+        stats.save_stat(fs.Keys.CLASS, type(model_info.model).__name__)
     if fs.Keys.AUTHOR in tracer_args.labels:
         stats.save_stat(fs.Keys.AUTHOR, tracer_args.labels[fs.Keys.AUTHOR][0])
-    if fs.Keys.CLASS in tracer_args.labels:
-        stats.save_stat(fs.Keys.CLASS, tracer_args.labels[fs.Keys.CLASS][0])
     if fs.Keys.TASK in tracer_args.labels:
         stats.save_stat(fs.Keys.TASK, tracer_args.labels[fs.Keys.TASK][0])
+
+    # Save all of the lables in one place
+    stats.save_stat(fs.Keys.LABELS, tracer_args.labels)
 
     # If the input script is a built-in TurnkeyML model, make a note of
     # which one

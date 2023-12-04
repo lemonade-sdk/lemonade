@@ -311,9 +311,10 @@ class Testing(unittest.TestCase):
         ]
         linear_summary = summary[1]
         assert len(summary) == len(test_scripts)
-        assert all(
-            elem in linear_summary for elem in expected_cols
-        ), f"Looked for each of {expected_cols} in {linear_summary.keys()}"
+        for elem in expected_cols:
+            assert (
+                elem in linear_summary
+            ), f"Couldn't find expected key {elem} in results spreadsheet"
 
         # Check whether all rows we expect to be populated are actually populated
         assert (

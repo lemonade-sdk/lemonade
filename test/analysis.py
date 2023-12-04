@@ -36,8 +36,7 @@ except ImportError as e:
 # filesystem access
 
 test_scripts_dot_py = {
-    "linear_pytorch.py": """
-# labels: test_group::selftest license::mit framework::pytorch tags::selftest,small
+    "linear_pytorch.py": """# labels: test_group::selftest license::mit framework::pytorch tags::selftest,small
 import torch
 import argparse
 
@@ -235,8 +234,10 @@ class Testing(unittest.TestCase):
             ]
         )
         build_name = f"linear_pytorch_{model_hash}"
-        labels_found = labels.load_from_cache(cache_dir, build_name) != {}
-        assert cache_is_lean(cache_dir, build_name) and labels_found
+        labels_found = filesystem.Stats(cache_dir, build_name).stats[
+            filesystem.Keys.LABELS
+        ]
+        assert cache_is_lean(cache_dir, build_name) and labels_found != {}, labels_found
 
     def test_06_generic_args(self):
         output = run_cli(
