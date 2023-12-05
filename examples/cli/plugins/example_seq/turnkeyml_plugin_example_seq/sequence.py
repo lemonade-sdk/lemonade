@@ -43,7 +43,6 @@ example_sequence = Sequence(
     stages=[
         export.ExportPlaceholder(),
         ExampleStage(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )

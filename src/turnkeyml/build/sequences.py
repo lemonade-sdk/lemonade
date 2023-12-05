@@ -9,7 +9,6 @@ optimize_fp16 = stage.Sequence(
         export.ExportPlaceholder(),
         export.OptimizeOnnxModel(),
         export.ConvertOnnxToFp16(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )
@@ -20,7 +19,6 @@ optimize_fp32 = stage.Sequence(
     [
         export.ExportPlaceholder(),
         export.OptimizeOnnxModel(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )
@@ -30,7 +28,6 @@ onnx_fp32 = stage.Sequence(
     "Base Sequence",
     [
         export.ExportPlaceholder(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )

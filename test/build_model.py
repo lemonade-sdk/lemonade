@@ -232,38 +232,6 @@ def scriptmodule_functional_check():
     return state.build_status == build.Status.SUCCESSFUL_BUILD
 
 
-def full_compile_individual_stages():
-    build_name = "full_compile_individual_stages"
-    build_model(
-        pytorch_model,
-        inputs,
-        build_name=build_name,
-        rebuild="always",
-        monitor=False,
-        sequence=stage.Sequence(
-            "ExportPytorchModel_seq", "", [export.ExportPytorchModel()]
-        ),
-        cache_dir=cache_location,
-    )
-    build_model(
-        build_name=build_name,
-        sequence=stage.Sequence("OptimizeModel_seq", "", [export.OptimizeOnnxModel()]),
-        cache_dir=cache_location,
-    )
-    build_model(
-        build_name=build_name,
-        sequence=stage.Sequence("Fp16Conversion_seq", "", [export.ConvertOnnxToFp16()]),
-        cache_dir=cache_location,
-    )
-    state = build_model(
-        build_name=build_name,
-        sequence=stage.Sequence("SuccessStage_seq", "", [export.SuccessStage()]),
-        cache_dir=cache_location,
-    )
-
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
-
-
 def custom_stage():
     build_name = "custom_stage"
 
@@ -299,7 +267,6 @@ def custom_stage():
             export.ExportPytorchModel(),
             export.OptimizeOnnxModel(),
             my_custom_stage,
-            export.SuccessStage(),
         ],
     )
 
@@ -536,9 +503,6 @@ class Testing(unittest.TestCase):
 
     def test_007_full_compilation_hummingbird_xgb(self):
         assert full_compilation_hummingbird_xgb()
-
-    def test_008_full_compile_individual_stages(self):
-        assert full_compile_individual_stages()
 
     def test_009_custom_stage(self):
         assert custom_stage()

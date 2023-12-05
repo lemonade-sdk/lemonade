@@ -44,7 +44,6 @@ onnx_sequence = stage.Sequence(
         export.ExportPytorchModel(),
         export.OptimizeOnnxModel(),
         # export.ConvertOnnxToFp16(),  #<-- This is the step we want to skip
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )

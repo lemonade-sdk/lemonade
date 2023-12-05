@@ -620,23 +620,3 @@ class ConvertOnnxToFp16(stage.Stage):
             raise exp.StageError(msg)
 
         return state
-
-
-class SuccessStage(stage.Stage):
-    """
-    Stage that sets state.build_status = build.Status.SUCCESSFUL_BUILD,
-    indicating that the build sequence has completed all of the requested build stages.
-    """
-
-    def __init__(self):
-        super().__init__(
-            unique_name="set_success",
-            monitor_message="Finishing up",
-        )
-
-    def fire(self, state: build.State):
-        state.build_status = build.Status.SUCCESSFUL_BUILD
-
-        state.results = copy.deepcopy(state.intermediate_results)
-
-        return state
