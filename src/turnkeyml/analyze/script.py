@@ -22,13 +22,9 @@ import turnkeyml.analyze.status as status
 import turnkeyml.analyze.util as util
 import turnkeyml.common.tf_helpers as tf_helpers
 import turnkeyml.common.labels as labels
-from turnkeyml.model_api import benchmark_model
+from turnkeyml.build_api import build_model
 import turnkeyml.common.filesystem as fs
-from turnkeyml.run.devices import (
-    DEVICE_RUNTIME_MAP,
-    DEFAULT_RUNTIME,
-    SUPPORTED_RUNTIMES,
-)
+import turnkeyml.run.devices as plugins
 
 
 class Action(Enum):
@@ -88,6 +84,15 @@ def _store_traceback(invocation_info: util.UniqueInvocationInfo):
     invocation_info.status_message = " ".join(invocation_info.status_message.split())
 
 
+def set_status_on_exception(build_state: build.State, stats: fs.Stats):
+    # We get `state` when the build tool succeeds, so we can use that to identify
+    # whether the exception was thrown during build or benchmark
+    if not build_state:
+        stats.save_model_eval_stat(fs.Keys.BUILD_STATUS, fs.FunctionStatus.FAILED)
+    else:
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.FAILED)
+
+
 def explore_invocation(
     model_inputs: dict,
     model_info: util.ModelInfo,
@@ -138,21 +143,28 @@ def explore_invocation(
                     inputs[all_args[i]] = args[i]
         invocation_info.inputs = inputs
 
+    # Create a build directory in the cache
+    fs.make_build_dir(tracer_args.cache_dir, build_name)
+
     # If the user has not provided a specific runtime, select the runtime
     # based on the device provided.
-    if tracer_args.runtime is None:
-        selected_runtime = DEVICE_RUNTIME_MAP[tracer_args.device][DEFAULT_RUNTIME]
-    else:
-        selected_runtime = tracer_args.runtime
+    (
+        selected_runtime,
+        runtime_info,
+        sequence_selected,
+    ) = plugins.select_runtime_and_sequence(
+        tracer_args.device,
+        tracer_args.runtime,
+        tracer_args.sequence,
+    )
 
-    runtime_info = SUPPORTED_RUNTIMES[selected_runtime]
     if "status_stats" in runtime_info.keys():
         invocation_info.stats_keys = runtime_info["status_stats"]
     else:
         invocation_info.stats_keys = []
 
     # Create an ID for the build stats by combining the device and runtime.
-    # We don't need more info in the evaluation_id because changes to benchmark_model()
+    # We don't need more info in the evaluation_id because changes to build_model()
     # arguments (e.g., sequence) will trigger a rebuild, which is intended to replace the
     # build stats so long as the device and runtime have not changed.
     evaluation_id = f"{tracer_args.device}_{selected_runtime}"
@@ -183,6 +195,13 @@ def explore_invocation(
         stats.save_model_stat(fs.Keys.AUTHOR, tracer_args.labels[fs.Keys.AUTHOR][0])
     if fs.Keys.TASK in tracer_args.labels:
         stats.save_model_stat(fs.Keys.TASK, tracer_args.labels[fs.Keys.TASK][0])
+
+    # Save the system information used for this evaluation
+    system_info = build.get_system_info()
+    stats.save_model_stat(
+        fs.Keys.SYSTEM_INFO,
+        system_info,
+    )
 
     # Save all of the lables in one place
     stats.save_model_stat(fs.Keys.LABELS, tracer_args.labels)
@@ -219,72 +238,120 @@ def explore_invocation(
         tracer_args.iterations,
     )
 
+    if model_info.model_type == build.ModelType.PYTORCH_COMPILED:
+        invocation_info.status_message = (
+            "Skipping model compiled using torch.compile(). "
+            "turnkey requires models to be in eager mode "
+            "(regardless of what runtime you have selected)."
+        )
+        invocation_info.status_message_color = printing.Colors.WARNING
+
+        return
+
+    build_state = None
     perf = None
     try:
-        if model_info.model_type == build.ModelType.PYTORCH_COMPILED:
-            invocation_info.status_message = (
-                "Skipping model compiled using torch.compile(). "
-                "turnkey requires models to be in eager mode "
-                "(regardless of what runtime you have selected)."
-            )
-            invocation_info.status_message_color = printing.Colors.WARNING
-        else:
-            # Indicate that the benchmark is running. If the build fails for any reason,
+        # Run the build tool (if needed by the runtime)
+        if runtime_info["build_required"]:
+            # Indicate that the build is running. If the build fails for any reason,
             # we will try to catch the exception and note it in the stats.
             # If a concluded build still has a status of "running", this means
             # there was an uncaught exception.
-            stats.save_model_eval_stat(
-                fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.RUNNING
+            stats.save_model_eval_stat(fs.Keys.BUILD_STATUS, fs.FunctionStatus.RUNNING)
+
+            build_state = build_model(
+                model=model_info.model,
+                inputs=inputs,
+                evaluation_id=evaluation_id,
+                build_name=build_name,
+                cache_dir=tracer_args.cache_dir,
+                rebuild=tracer_args.rebuild,
+                sequence=sequence_selected,
+                onnx_opset=tracer_args.onnx_opset,
+                device=tracer_args.device,
             )
 
-            perf = benchmark_model(
-                model_info.model,
-                inputs,
-                evaluation_id=evaluation_id,
-                device=tracer_args.device,
-                runtime=selected_runtime,
-                build_name=build_name,
-                iterations=tracer_args.iterations,
-                cache_dir=tracer_args.cache_dir,
-                build_only=Action.BENCHMARK not in tracer_args.actions,
-                lean_cache=tracer_args.lean_cache,
-                sequence=tracer_args.sequence,
-                onnx_opset=tracer_args.onnx_opset,
-                rebuild=tracer_args.rebuild,
-                rt_args=tracer_args.rt_args,
+            stats.save_model_eval_stat(
+                fs.Keys.BUILD_STATUS, fs.FunctionStatus.SUCCESSFUL
             )
-            if Action.BENCHMARK in tracer_args.actions:
-                invocation_info.status_message = "Model successfully benchmarked!"
-                invocation_info.performance = perf
-                invocation_info.status_message_color = printing.Colors.OKGREEN
+
+            model_to_benchmark = build_state.results[0]
+
+            # Analyze the onnx file (if any) and save statistics
+            util.analyze_onnx(
+                build_name=build_name,
+                cache_dir=tracer_args.cache_dir,
+                stats=stats,
+            )
+        else:
+            model_to_benchmark = model_info.model
+
+        # Run the benchmark tool (if requested by the user)
+        if Action.BENCHMARK in tracer_args.actions:
+            if tracer_args.rt_args is None:
+                rt_args_to_use = {}
             else:
-                invocation_info.status_message = "Model successfully built!"
-                invocation_info.status_message_color = printing.Colors.OKGREEN
+                rt_args_to_use = tracer_args.rt_args
+
+            stats.save_model_eval_stat(
+                fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.RUNNING
+            )
+
+            model_handle = runtime_info["RuntimeClass"](
+                cache_dir=tracer_args.cache_dir,
+                build_name=build_name,
+                stats=stats,
+                iterations=tracer_args.iterations,
+                model=model_to_benchmark,
+                inputs=inputs,
+                device_type=tracer_args.device,
+                runtime=selected_runtime,
+                **rt_args_to_use,
+            )
+            perf = model_handle.benchmark()
+
+            for key, value in vars(perf).items():
+                stats.save_model_eval_stat(
+                    key=key,
+                    value=value,
+                )
+
+            stats.save_model_eval_stat(
+                fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.SUCCESSFUL
+            )
+
+            invocation_info.status_message = "Model successfully benchmarked!"
+            invocation_info.performance = perf
+            invocation_info.status_message_color = printing.Colors.OKGREEN
+        else:
+            invocation_info.status_message = "Model successfully built!"
+            invocation_info.status_message_color = printing.Colors.OKGREEN
 
     except exp.StageError as e:
         invocation_info.status_message = f"Build Error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        set_status_on_exception(build_state, stats)
 
         _store_traceback(invocation_info)
 
     except exp.SkipBuild:
         # SkipBuild is an exception that the build_model() API will raise
         # when it is skipping a previously-failed build when rebuild=never is set
+
+        # NOTE: skipping a build should never update build or benchmark status
+
         invocation_info.status_message = (
             "Build intentionally skipped because rebuild=never"
         )
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.KILLED)
-
     except exp.ArgError as e:
-        # ArgError indicates that some argument to benchmark_model() was
+        # ArgError indicates that some argument to build_model() or BaseRT was
         # illegal. In that case we want to halt execution so that users can
         # fix their arguments.
 
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        set_status_on_exception(build_state, stats)
 
         raise e
 
@@ -292,7 +359,7 @@ def explore_invocation(
         invocation_info.status_message = f"Error: {e}."
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        set_status_on_exception(build_state, stats)
 
         _store_traceback(invocation_info)
 
@@ -302,66 +369,19 @@ def explore_invocation(
         invocation_info.status_message = f"Unknown turnkey error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        set_status_on_exception(build_state, stats)
 
         _store_traceback(invocation_info)
-    else:
-        # If there was no exception then we consider the build to be a success
-        stats.save_model_eval_stat(
-            fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.SUCCESSFUL
-        )
 
     finally:
         # Ensure that stdout/stderr is not being forwarded before updating status
         util.stop_logger_forward()
 
-        system_info = build.get_system_info()
-        stats.save_model_stat(
-            fs.Keys.SYSTEM_INFO,
-            system_info,
-        )
-        if model_info.model_type != build.ModelType.PYTORCH_COMPILED:
-            # We have this if-block because torch-compiled model instances
-            # are not legal input to this function. So when we encounter one,
-            # we want to exit the function as quickly as possible, without
-            # doing any of the logic that follows this comment.
+        status.update(tracer_args.models_found, build_name, tracer_args.cache_dir)
 
-            # ONNX stats that we want to save into the build's turnkey_stats.yaml file
-            # so that they can be easily accessed by the report command later
-            if fs.Keys.ONNX_FILE in stats.evaluation_stats.keys():
-                # Just in case the ONNX file was generated on a different machine:
-                # strip the state's cache dir, then prepend the current cache dir
-                final_onnx_file = fs.rebase_cache_dir(
-                    stats.evaluation_stats[fs.Keys.ONNX_FILE],
-                    build_name,
-                    tracer_args.cache_dir,
-                )
-
-                onnx_ops_counter = util.get_onnx_ops_list(final_onnx_file)
-                onnx_model_info = util.populate_onnx_model_info(final_onnx_file)
-                onnx_input_dimensions = util.onnx_input_dimensions(final_onnx_file)
-
-                stats.save_model_stat(
-                    fs.Keys.ONNX_OPS_COUNTER,
-                    onnx_ops_counter,
-                )
-                stats.save_model_stat(
-                    fs.Keys.ONNX_MODEL_INFO,
-                    onnx_model_info,
-                )
-                stats.save_model_stat(
-                    fs.Keys.ONNX_INPUT_DIMENSIONS,
-                    onnx_input_dimensions,
-                )
-
-            if perf:
-                for key, value in vars(perf).items():
-                    stats.save_model_eval_stat(
-                        key=key,
-                        value=value,
-                    )
-
-            status.update(tracer_args.models_found, build_name, tracer_args.cache_dir)
+        if tracer_args.lean_cache:
+            printing.log_info("Removing build artifacts...")
+            fs.clean_output_dir(tracer_args.cache_dir, build_name)
 
 
 def get_model_hash(
@@ -610,7 +630,7 @@ def explore_frame(
             )
             invocation_info.executed = invocation_info.executed + 1
 
-            # Call benchmark_model() if this is the first time the model is being executed
+            # Call explore_invocation() if this is the first time the model is being executed
             # and this model has been selected by the user
             if (
                 invocation_info.executed == 1
@@ -623,7 +643,7 @@ def explore_frame(
                     invocation_info=invocation_info,
                     tracer_args=tracer_args,
                 )
-                # Ensure that benchmark_model() doesn't interfere with our execution count
+                # Ensure that explore_invocation() doesn't interfere with our execution count
                 model_info.executed = 1
 
             build_name = fs.get_build_name(
@@ -795,7 +815,7 @@ def evaluate_script(tracer_args: TracerArgs) -> Dict[str, util.ModelInfo]:
                 "torch.jit.script(",
                 "torch.jit.script() is not supported by turnkey CLI and benchmark_files() API, "
                 "however torch.jit.script() is being called in your script."
-                "You can try passing your model instance into the benchmark_model() API instead. ",
+                "You can try passing your model instance into the build_model() API instead. ",
             )
         ]
     ):

@@ -222,9 +222,16 @@ def _begin_fresh_build(
     # start with a fresh State.
     stats = filesystem.Stats(state_args["cache_dir"], state_args["config"].build_name)
 
+    build_dir = build.output_dir(
+        state_args["cache_dir"], state_args["config"].build_name
+    )
+
     filesystem.rmdir(
-        build.output_dir(state_args["cache_dir"], state_args["config"].build_name),
-        exclude=stats.file,
+        build_dir,
+        excludes=[
+            stats.file,
+            os.path.join(build_dir, filesystem.BUILD_MARKER),
+        ],
     )
     state = state_type(**state_args)
     state.save()

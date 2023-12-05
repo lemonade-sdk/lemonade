@@ -118,19 +118,8 @@ def build_model(
     sequence_locked.show_monitor(config, state.monitor)
     state = sequence_locked.launch(state)
 
-    if state.build_status == build.Status.SUCCESSFUL_BUILD:
-        printing.log_success(
-            f"\n    Saved to **{build.output_dir(state.cache_dir, config.build_name)}**"
-        )
+    printing.log_success(
+        f"\n    Saved to **{build.output_dir(state.cache_dir, config.build_name)}**"
+    )
 
-        return state
-
-    else:
-        printing.log_success(
-            f"Build Sequence {sequence_locked.unique_name} completed successfully"
-        )
-        msg = """
-        build_model() only returns a Model instance if the Sequence includes a Stage
-        that sets state.build_status=turnkey.common.build.Status.SUCCESSFUL_BUILD.
-        """
-        printing.log_warning(msg)
+    return state

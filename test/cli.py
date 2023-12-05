@@ -389,7 +389,7 @@ class Testing(unittest.TestCase):
 
         for test_script in common.test_scripts_dot_py.keys():
             script_name = common.strip_dot_py(test_script)
-            assert script_name in f.getvalue()
+            assert script_name in f.getvalue(), f"{script_name} {f.getvalue()}"
 
     def test_006_cli_delete(self):
         # NOTE: this is not a unit test, it relies on other command
@@ -976,6 +976,7 @@ class Testing(unittest.TestCase):
             "--process-isolation",
             "--timeout",
             "10",
+            "--build-only",
         ]
         with patch.object(sys, "argv", flatten(testargs)):
             turnkeycli()
@@ -1000,8 +1001,8 @@ class Testing(unittest.TestCase):
         try:
             timeout_summary = summary[0]
 
-            assert timeout_summary["benchmark_status"] == "killed", timeout_summary[
-                "benchmark_status"
+            assert timeout_summary["build_status"] == "killed", timeout_summary[
+                "build_status"
             ]
         except IndexError:
             # Edge case where the CSV is empty because the build timed out before

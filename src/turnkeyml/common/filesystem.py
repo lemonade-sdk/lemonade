@@ -39,22 +39,29 @@ BUILD_MARKER = ".turnkeybuild"
 MODELS_DIR = importlib.util.find_spec("turnkeyml_models").submodule_search_locations[0]
 
 
-def rmdir(folder, exclude: Optional[str] = None):
+def rmdir(folder, excludes: Optional[List[str]] = None):
     """
     Remove the contents of a directory from the filesystem.
-    If `exclude=<name>`, the directory itself and the file named <name>
+    If `<name>` is in `excludes`, the directory itself and the file named <name>
     are kept. Otherwise, the entire directory is removed.
     """
+
+    # Use an empty list by default
+    if excludes:
+        excludes_to_use = excludes
+    else:
+        excludes_to_use = []
+
     if os.path.isdir(folder):
         for filename in os.listdir(folder):
             file_path = os.path.join(folder, filename)
-            if file_path != exclude:
+            if file_path not in excludes_to_use:
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.unlink(file_path)
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)
 
-        if exclude is None:
+        if excludes is None:
             shutil.rmtree(folder)
 
         return True
@@ -347,11 +354,13 @@ class Keys:
     SYSTEM_INFO = "system_info"
     # Path to the built-in model script used as input
     MODEL_SCRIPT = "builtin_model_script"
-    # Indicates a benchmark's status: running, successful, failed, or killed
+    # Indicates status of the most recent build tool run: FunctionStatus
+    BUILD_STATUS = "build_status"
+    # Indicates status of the most recent benchmark tool run: FunctionStatus
     BENCHMARK_STATUS = "benchmark_status"
 
 
-class BenchmarkStatus:
+class FunctionStatus:
     RUNNING = "running"
     SUCCESSFUL = "successful"
     FAILED = "failed"

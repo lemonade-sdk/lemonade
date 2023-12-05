@@ -84,14 +84,14 @@ def summary_spreadsheets(args) -> None:
                                 for subkey, subvalue in value.items():
                                     evaluation_stats[subkey] = subvalue
 
-                            # If a build is still marked as "running" at reporting time, it
+                            # If a build or benchmark is still marked as "running" at
+                            # reporting time, it
                             # must have been killed by a time out, out-of-memory (OOM), or some
                             # other uncaught exception
                             if (
-                                key == fs.Keys.BENCHMARK_STATUS
-                                and value == fs.BenchmarkStatus.RUNNING
-                            ):
-                                value = fs.BenchmarkStatus.KILLED
+                                key == fs.Keys.BUILD_STATUS or fs.Keys.BENCHMARK_STATUS
+                            ) and value == fs.FunctionStatus.RUNNING:
+                                value = fs.FunctionStatus.KILLED
 
                             evaluation_stats[key] = value
 
