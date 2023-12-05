@@ -152,40 +152,40 @@ def explore_invocation(
         invocation_info.stats_keys = []
 
     # Create an ID for the build stats by combining the device and runtime.
-    # We don't need more info in the stats_id because changes to benchmark_model()
+    # We don't need more info in the evaluation_id because changes to benchmark_model()
     # arguments (e.g., sequence) will trigger a rebuild, which is intended to replace the
     # build stats so long as the device and runtime have not changed.
-    stats_id = f"{tracer_args.device}_{selected_runtime}"
+    evaluation_id = f"{tracer_args.device}_{selected_runtime}"
 
     stats = fs.Stats(
         tracer_args.cache_dir,
         build_name,
-        stats_id,
+        evaluation_id,
     )
     invocation_info.stats = stats
 
     # Stats that apply to the model, regardless of build
-    stats.save_stat(
+    stats.save_model_stat(
         fs.Keys.HASH,
         model_info.hash,
     )
-    stats.save_stat(
+    stats.save_model_stat(
         fs.Keys.MODEL_NAME,
         tracer_args.script_name,
     )
-    stats.save_stat(
+    stats.save_model_stat(
         fs.Keys.PARAMETERS,
         model_info.params,
     )
     if model_info.model_type != build.ModelType.ONNX_FILE:
-        stats.save_stat(fs.Keys.CLASS, type(model_info.model).__name__)
+        stats.save_model_stat(fs.Keys.CLASS, type(model_info.model).__name__)
     if fs.Keys.AUTHOR in tracer_args.labels:
-        stats.save_stat(fs.Keys.AUTHOR, tracer_args.labels[fs.Keys.AUTHOR][0])
+        stats.save_model_stat(fs.Keys.AUTHOR, tracer_args.labels[fs.Keys.AUTHOR][0])
     if fs.Keys.TASK in tracer_args.labels:
-        stats.save_stat(fs.Keys.TASK, tracer_args.labels[fs.Keys.TASK][0])
+        stats.save_model_stat(fs.Keys.TASK, tracer_args.labels[fs.Keys.TASK][0])
 
     # Save all of the lables in one place
-    stats.save_stat(fs.Keys.LABELS, tracer_args.labels)
+    stats.save_model_stat(fs.Keys.LABELS, tracer_args.labels)
 
     # If the input script is a built-in TurnkeyML model, make a note of
     # which one
@@ -203,18 +203,18 @@ def explore_invocation(
             fs.MODELS_DIR,
             f"https://github.com/onnx/turnkeyml/tree/{git_hash}/models",
         ).replace("\\", "/")
-        stats.save_stat(fs.Keys.MODEL_SCRIPT, relative_path)
+        stats.save_model_stat(fs.Keys.MODEL_SCRIPT, relative_path)
 
     # Build-specific stats
-    stats.add_build_stat(
+    stats.save_model_eval_stat(
         fs.Keys.DEVICE_TYPE,
         tracer_args.device,
     )
-    stats.add_build_stat(
+    stats.save_model_eval_stat(
         fs.Keys.RUNTIME,
         selected_runtime,
     )
-    stats.add_build_stat(
+    stats.save_model_eval_stat(
         fs.Keys.ITERATIONS,
         tracer_args.iterations,
     )
@@ -233,12 +233,14 @@ def explore_invocation(
             # we will try to catch the exception and note it in the stats.
             # If a concluded build still has a status of "running", this means
             # there was an uncaught exception.
-            stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.RUNNING)
+            stats.save_model_eval_stat(
+                fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.RUNNING
+            )
 
             perf = benchmark_model(
                 model_info.model,
                 inputs,
-                stats_id=stats_id,
+                evaluation_id=evaluation_id,
                 device=tracer_args.device,
                 runtime=selected_runtime,
                 build_name=build_name,
@@ -263,7 +265,7 @@ def explore_invocation(
         invocation_info.status_message = f"Build Error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
 
         _store_traceback(invocation_info)
 
@@ -275,14 +277,14 @@ def explore_invocation(
         )
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.KILLED)
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.KILLED)
 
     except exp.ArgError as e:
         # ArgError indicates that some argument to benchmark_model() was
         # illegal. In that case we want to halt execution so that users can
         # fix their arguments.
 
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
 
         raise e
 
@@ -290,7 +292,7 @@ def explore_invocation(
         invocation_info.status_message = f"Error: {e}."
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
 
         _store_traceback(invocation_info)
 
@@ -300,19 +302,21 @@ def explore_invocation(
         invocation_info.status_message = f"Unknown turnkey error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
+        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.FAILED)
 
         _store_traceback(invocation_info)
     else:
         # If there was no exception then we consider the build to be a success
-        stats.add_build_stat(fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.SUCCESSFUL)
+        stats.save_model_eval_stat(
+            fs.Keys.BENCHMARK_STATUS, fs.BenchmarkStatus.SUCCESSFUL
+        )
 
     finally:
         # Ensure that stdout/stderr is not being forwarded before updating status
         util.stop_logger_forward()
 
         system_info = build.get_system_info()
-        stats.save_stat(
+        stats.save_model_stat(
             fs.Keys.SYSTEM_INFO,
             system_info,
         )
@@ -324,11 +328,11 @@ def explore_invocation(
 
             # ONNX stats that we want to save into the build's turnkey_stats.yaml file
             # so that they can be easily accessed by the report command later
-            if fs.Keys.ONNX_FILE in stats.build_stats.keys():
+            if fs.Keys.ONNX_FILE in stats.evaluation_stats.keys():
                 # Just in case the ONNX file was generated on a different machine:
                 # strip the state's cache dir, then prepend the current cache dir
                 final_onnx_file = fs.rebase_cache_dir(
-                    stats.build_stats[fs.Keys.ONNX_FILE],
+                    stats.evaluation_stats[fs.Keys.ONNX_FILE],
                     build_name,
                     tracer_args.cache_dir,
                 )
@@ -337,22 +341,22 @@ def explore_invocation(
                 onnx_model_info = util.populate_onnx_model_info(final_onnx_file)
                 onnx_input_dimensions = util.onnx_input_dimensions(final_onnx_file)
 
-                stats.save_stat(
+                stats.save_model_stat(
                     fs.Keys.ONNX_OPS_COUNTER,
                     onnx_ops_counter,
                 )
-                stats.save_stat(
+                stats.save_model_stat(
                     fs.Keys.ONNX_MODEL_INFO,
                     onnx_model_info,
                 )
-                stats.save_stat(
+                stats.save_model_stat(
                     fs.Keys.ONNX_INPUT_DIMENSIONS,
                     onnx_input_dimensions,
                 )
 
             if perf:
                 for key, value in vars(perf).items():
-                    stats.add_build_stat(
+                    stats.save_model_eval_stat(
                         key=key,
                         value=value,
                     )

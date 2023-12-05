@@ -87,7 +87,7 @@ To add a runtime to a plugin:
     - `"RuntimeClass": <class_name>`, where `<class_name>` is a unique name for a Python class that inherits `BaseRT` and implements the runtime.
       - For example, `"RuntimeClass": ExampleRT` implements the `example` runtime.
       - The interface for the runtime class is defined in [Runtime Class](#runtime-class) below.
-    - (Optional) `"status_stats": List[str]`: a list of keys from the build stats that should be printed out at the end of benchmarking in the CLI's `Status` output. These keys, and corresponding values, must be set in the runtime class using `self.stats.add_build_stat(key, value)`.
+    - (Optional) `"status_stats": List[str]`: a list of keys from the build stats that should be printed out at the end of benchmarking in the CLI's `Status` output. These keys, and corresponding values, must be set in the runtime class using `self.stats.save_model_eval_stat(key, value)`.
     - (Optional) `"requirement_check": Callable`: a callable that runs before each benchmark. This may be used to check whether the device selected is available and functional before each benchmarking run. Exceptions raised during this callable will halt the benchmark of all selected files.
 
 1. Populate the package with the following files (see [Plugin Directory Layout](#plugin-directory-layout)):

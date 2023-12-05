@@ -273,8 +273,8 @@ class Sequence(Stage):
             raise exp.Error(msg)
 
         # Collect telemetry for the build
-        stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-        stats.add_build_stat(
+        stats = fs.Stats(state.cache_dir, state.config.build_name, state.evaluation_id)
+        stats.save_model_eval_stat(
             fs.Keys.ALL_BUILD_STAGES,
             self.get_names(),
         )
@@ -292,7 +292,7 @@ class Sequence(Stage):
                 # Collect telemetry about the stage
                 execution_time = time.time() - start_time
 
-                stats.add_build_sub_stat(
+                stats.save_model_eval_sub_stat(
                     parent_key=fs.Keys.COMPLETED_BUILD_STAGES,
                     key=stage.unique_name,
                     value=execution_time,

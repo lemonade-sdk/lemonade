@@ -13,6 +13,7 @@ from turnkeyml.run.tensorrt.execute import (
     average_power_and_utilization,
 )
 
+
 def _get_nvidia_driver_version():
     try:
         output = subprocess.check_output(["nvidia-smi"], text=True)
@@ -23,10 +24,12 @@ def _get_nvidia_driver_version():
                 # Extract and return the driver version
                 return line.split(":")[1].strip().split()[0]
 
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         return str(e)
 
     return "Driver not found"
+
+
 class TensorRT(BaseRT):
     def __init__(
         self,
@@ -88,7 +91,7 @@ class TensorRT(BaseRT):
 
         # Add the GPU driver version to the stats file before execution
         gpu_driver_version = _get_nvidia_driver_version()
-        self.stats.add_build_stat("gpu_driver_version", gpu_driver_version)
+        self.stats.save_model_eval_stat("gpu_driver_version", gpu_driver_version)
         power_thread.start()
 
         run(

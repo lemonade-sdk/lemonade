@@ -198,7 +198,7 @@ def print_invocation(
         if unique_invocation.stats_keys is not None:
             for key in unique_invocation.stats_keys:
                 nice_key = _pretty_print_key(key)
-                value = unique_invocation.stats.build_stats[key]
+                value = unique_invocation.stats.evaluation_stats[key]
                 printing.logn(f"{ident}\t\t\t{nice_key}:\t{value}")
         print()
     else:

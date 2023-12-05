@@ -217,9 +217,8 @@ class ConvertHummingbirdModel(stage.Stage):
         np.save(state.original_inputs_file, state.inputs)
 
         state.intermediate_results = [output_path]
-        stats = fs.Stats(state.cache_dir, state.config.build_name)
-        stats.add_sub_stat(
-            state.stats_id,
+        stats = fs.Stats(state.cache_dir, state.config.build_name, state.evaluation_id)
+        stats.save_model_eval_stat(
             fs.Keys.ONNX_FILE,
             output_path,
         )

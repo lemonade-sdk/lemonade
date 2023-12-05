@@ -11,7 +11,7 @@ def build_model(
     model: build.UnionValidModelInstanceTypes = None,
     inputs: Optional[Dict[str, Any]] = None,
     build_name: Optional[str] = None,
-    stats_id: Optional[str] = "build",
+    evaluation_id: Optional[str] = "build",
     cache_dir: str = filesystem.DEFAULT_CACHE_DIR,
     monitor: Optional[bool] = None,
     rebuild: Optional[str] = None,
@@ -30,7 +30,7 @@ def build_model(
         build_name: Unique name for the model that will be
             used to store the ONNX file and build state on disk. Defaults to the
             name of the file that calls build_model().
-        stats_id: Unique name for build statistics that should persist across multiple
+        evaluation_id: Unique name for evaluation statistics that should persist across multiple
             builds of the same model.
         cache_dir: Directory to use as the cache for this build. Output files
             from this build will be stored at cache_dir/build_name/
@@ -94,7 +94,7 @@ def build_model(
     # Get the state of the model from the cache if a valid build is available
     state = ignition.load_or_make_state(
         config=config,
-        stats_id=stats_id,
+        evaluation_id=evaluation_id,
         cache_dir=parsed_cache_dir,
         rebuild=rebuild or build.DEFAULT_REBUILD_POLICY,
         model_type=model_type,

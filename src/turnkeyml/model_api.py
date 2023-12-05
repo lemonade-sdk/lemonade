@@ -21,7 +21,7 @@ def benchmark_model(
     inputs: Dict[str, Any],
     build_name: str,
     iterations: int = 100,
-    stats_id: str = "build",
+    evaluation_id: str = "build",
     cache_dir: str = filesystem.DEFAULT_CACHE_DIR,
     device: str = "x86",
     runtime: Optional[str] = None,
@@ -88,7 +88,7 @@ def benchmark_model(
             build_model(
                 model=model,
                 inputs=inputs,
-                stats_id=stats_id,
+                evaluation_id=evaluation_id,
                 build_name=build_name,
                 cache_dir=cache_dir,
                 rebuild=rebuild,
@@ -105,7 +105,7 @@ def benchmark_model(
                 rt_args_to_use = rt_args
 
             printing.log_info(f"Benchmarking on {device}...")
-            stats = filesystem.Stats(cache_dir, build_name, stats_id)
+            stats = filesystem.Stats(cache_dir, build_name, evaluation_id)
             model_handle = runtime_info["RuntimeClass"](
                 cache_dir=cache_dir,
                 build_name=build_name,

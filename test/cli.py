@@ -149,7 +149,7 @@ def assert_success_of_builds(
                 stats = filesystem.Stats(
                     build_state.cache_dir,
                     build_state.config.build_name,
-                    build_state.stats_id,
+                    build_state.evaluation_id,
                 )
                 assert build_state.build_status == build.Status.SUCCESSFUL_BUILD
                 script_build_found = True
@@ -161,11 +161,11 @@ def assert_success_of_builds(
                     ), f"{build_state.info.__dict__[info_property[0]]} == {info_property[1]}"
 
                 if check_perf:
-                    assert stats.build_stats["mean_latency"] > 0
-                    assert stats.build_stats["throughput"] > 0
+                    assert stats.evaluation_stats["mean_latency"] > 0
+                    assert stats.evaluation_stats["throughput"] > 0
 
                 if check_iteration_count:
-                    iterations = stats.build_stats["iterations"]
+                    iterations = stats.evaluation_stats["iterations"]
                     assert iterations == check_iteration_count
 
                 if check_opset:

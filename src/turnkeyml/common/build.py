@@ -221,7 +221,7 @@ class State:
     monitor: bool = False
     rebuild: str = ""
     cache_dir: str = ""
-    stats_id: str = ""
+    evaluation_id: str = ""
 
     # User-provided args that will not be saved as part of state.yaml
     model: UnionValidModelInstanceTypes = None
