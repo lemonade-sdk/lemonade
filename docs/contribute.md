@@ -14,6 +14,7 @@ The guidelines document is organized as the following sections:
 - [Pull Requests](#pull-requests)
 - [Testing](#testing)
 - [Versioning](#versioning)
+- [Public APIs](#public-apis)
 
 
 ## Contributing a model
@@ -225,3 +226,46 @@ We don't have any fancy testing framework set up yet. If you want to run tests l
 ## Versioning
 
 We use semantic versioning, as described in [versioning.md](https://github.com/onnx/turnkeyml/blob/main/docs/versioning.md).
+
+## Public APIs
+
+The following public APIs are available for developers. The maintainers aspire to change these as infrequently as possible, and doing so will require an update to the package's major version number.
+
+- From the top-level `__init__.py`:
+    - `turnkeycli`: the `main()` function of the `turnkey` CLI
+    - `benchmark_files()`: the top-level API called by the CLI's `benchmark` command
+    - `build_model()`: API for building a model with a Sequence
+    - `load_state()`: API for loading the state of a previous build
+    - `turnkeyml.version`: The package version number
+- From the `run` module:
+    - The `BaseRT` class: abstract base class used in all runtime plugins
+- From the `common.filesystem` module:
+    - `get_available_builds()`: list the builds in a turnkey cache
+    - `make_cache_dir()`: create a turnkey cache
+    - `MODELS_DIR`: the location of turnkey's model corpus on disk
+    - `Stats`: handle for saving and reading evaluation statistics
+    - `Keys`: reserves keys in the evaluation statistics
+- From the `common.printing` module:
+    - `log_info()`: print an info statement in the style of the turnkey APIs/CLIs 
+    - `log_warning()`: print a warning statement in the style of the turnkey APIs/CLIs
+    - `log_error()`: print an error statement in the style of the turnkey APIs/CLIs
+ - From the `build.export` module:
+    - `onnx_dir()`: location on disk of a build's ONNX files
+    - `ExportPlaceholder(Stage)`: build Stage for exporting models to ONNX
+    - `OptimizeOnnxModel(Stage)`: build Stage for using ONNX Runtime to optimize an ONNX model
+    - `ConvertOnnxToFp16(Stage)`: build Stage for using ONNX ML Tools to downcast an ONNX model to fp16
+ - From the `build.stage` module:
+    - The `Sequence` class: ordered collection of build Stages that define a build flow
+    - The `Stage` class: abstract base class that is used to define a model-to-model transformation 
+ - From the `common.build` module:
+    - The `State` class: data structure that holds the inputs, outputs, and intermediate values for a Sequence 
+ - From the `common.exceptions` module:
+    - `StageError`: exception raised when something goes wrong during a Stage
+    - `ModelRuntimeError`: exception raised when something goes wrong running a model in hardware
+ - From `run.plugin_helpers` everything
+    - `get_python_path()`: returns the Python executable
+    - `run_subprocess()`: execute a command in a subprocess
+    - `logged_subprocess()`: execute a command in a subprocess while capturing all terminal outputs to a file
+    - `CondaError`: exception raised when something goes wrong in a Conda environment created by TurnkeyML 
+    - `SubprocessError`: exception raised when something goes wrong in a subprocess created by TurnkeyML
+    - `HardwareError`: exception raised when something goes wrong in hardware managed by TurnkeyML

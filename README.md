@@ -8,7 +8,7 @@
 
 We are on a mission to understand and use as many models as possible while leveraging the right toolchain and AI hardware for the job in every scenario. 
 
-Evaluating a deep learning model with a familiar toolchain and hardware accelerator is pretty straightforward. Scaling these evaluations to get apples-to-applies insights across a landscape of millions of permutations of models, toolchains, and hardware targets is not straightforward. Not without help, anyways.
+Evaluating a deep learning model with a familiar toolchain and hardware accelerator is pretty straightforward. Scaling these evaluations to get apples-to-apples insights across a landscape of millions of permutations of models, toolchains, and hardware targets is not straightforward. Not without help, anyways.
 
 TurnkeyML is a *tools framework* that integrates models, toolchains, and hardware backends to make evaluation and actuation of this landscape as simple as turning a key.
 
