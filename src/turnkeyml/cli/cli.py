@@ -210,6 +210,7 @@ def main():
     )
 
     benchmark_parser.add_argument(
+        "-b",
         "--build-only",
         dest="build_only",
         help="Stop this command after the build phase",

@@ -27,13 +27,13 @@ The [installation guide](https://github.com/onnx/turnkeyml/blob/main/docs/instal
 
 TurnkeyML is designed to support the following use cases. Of course, it is also quite flexible, so we are sure you will come up with some use cases of your own too.
 
-| Use Case               | Description |
-|------------------------|-------------|
-| ONNX Model Zoo         | Export thousands of ONNX files across different opsets and data types. This is how we generated the contents of the new [ONNX Model Zoo](https://github.com/onnx/models). |
-| Performance validation | Measure latency and throughput in hardware across devices and runtimes to understand product-market fit. |
-| Functional coverage    | Measure the functional coverage of toolchain/hardware combinations over a large corpus of models (e.g., how many models are supported by a novel compiler?). |
-| Stress testing         | Run millions of inferences across thousands of models and log all the results to find the bugs in a HW/SW stack. |
-| Model insights         | Analyze a model to learn its parameter count, input shapes, which ONNX ops it uses, etc. |
+| Use Case               | Description | Recipe |
+|------------------------|-------------|---------|
+| ONNX Model Zoo         | Export thousands of ONNX files across different ONNX opsets. This is how we generated the contents of the new [ONNX Model Zoo](https://github.com/onnx/models). | `turnkey */*.py -b --onnx-opset 16` <br /> `turnkey */*.py -b --onnx-opset 17` |
+| Performance validation | Measure latency and throughput in hardware across devices and runtimes to understand product-market fit. | `turnkey model.py --runtime ort` <br /> `turnkey model.py --runtime torch-eager` <br />`turnkey cache report` |
+| Functional coverage    | Measure the functional coverage of toolchain/hardware combinations over a large corpus of models (e.g., how many models are supported by a novel compiler?). | `turnkey transformers/*.py --sequence MY_COMPILER` <br />`turnkey cache report` |
+| Stress testing         | Run millions of inferences across thousands of models and log all the results to find the bugs in a HW/SW stack. | `turnkey timm/*.py --iterations 1000 --device MY_DEVICE --runtime MY_RUNTIME` |
+| Model insights         | Analyze a model to learn its parameter count, input shapes, which ONNX ops it uses, etc. | `turnkey model.py` <br /> `turnkey cache stats MY_BUILD`|
 
 
 
