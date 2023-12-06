@@ -1,7 +1,7 @@
 """
 This script is an example of a sequence.py file for Sequence Plugin. Such a sequence.py 
 can be used to redefine the build phase of the turnkey CLI, benchmark_files(),
-and benchmark_model() to have any custom behavior.
+and build_model() to have any custom behavior.
 
 In this example sequence.py file we are setting the build sequence to simply
 export from pytorch to ONNX. This differs from the default build sequence, which
@@ -43,7 +43,6 @@ example_sequence = Sequence(
     stages=[
         export.ExportPlaceholder(),
         ExampleStage(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )

@@ -1,6 +1,5 @@
 import os
 from typing import Optional, List, Dict, Any
-from collections.abc import Collection
 import turnkeyml.build.ignition as ignition
 import turnkeyml.build.stage as stage
 import turnkeyml.common.printing as printing
@@ -12,12 +11,11 @@ def build_model(
     model: build.UnionValidModelInstanceTypes = None,
     inputs: Optional[Dict[str, Any]] = None,
     build_name: Optional[str] = None,
-    stats_id: Optional[str] = "build",
+    evaluation_id: Optional[str] = "build",
     cache_dir: str = filesystem.DEFAULT_CACHE_DIR,
     monitor: Optional[bool] = None,
     rebuild: Optional[str] = None,
     sequence: Optional[List[stage.Stage]] = None,
-    quantization_samples: Collection = None,
     onnx_opset: Optional[int] = None,
     device: Optional[str] = None,
 ) -> build.State:
@@ -32,7 +30,7 @@ def build_model(
         build_name: Unique name for the model that will be
             used to store the ONNX file and build state on disk. Defaults to the
             name of the file that calls build_model().
-        stats_id: Unique name for build statistics that should persist across multiple
+        evaluation_id: Unique name for evaluation statistics that should persist across multiple
             builds of the same model.
         cache_dir: Directory to use as the cache for this build. Output files
             from this build will be stored at cache_dir/build_name/
@@ -48,11 +46,6 @@ def build_model(
             - None: Falls back to default
         sequence: Override the default sequence of build stages. Power
             users only.
-        quantization_samples: If set, performs post-training quantization
-            on the ONNX model using the provided samplesIf the previous build used samples
-            that are different to the samples used in current build, the "rebuild"
-            argument needs to be manually set to "always" in the current build
-            in order to create a new ONNX file.
         onnx_opset: ONNX opset to use during ONNX export.
         device: Specific device target to take into account during the build sequence.
             Use the format "device_family", "device_family::part", or
@@ -96,20 +89,18 @@ def build_model(
         model,
         inputs,
         sequence,
-        user_quantization_samples=quantization_samples,
     )
 
     # Get the state of the model from the cache if a valid build is available
     state = ignition.load_or_make_state(
         config=config,
-        stats_id=stats_id,
+        evaluation_id=evaluation_id,
         cache_dir=parsed_cache_dir,
         rebuild=rebuild or build.DEFAULT_REBUILD_POLICY,
         model_type=model_type,
         monitor=monitor_setting,
         model=model_locked,
         inputs=inputs_locked,
-        quantization_samples=quantization_samples,
     )
 
     # Return a cached build if possible, otherwise prepare the model State for
@@ -124,24 +115,11 @@ def build_model(
 
         return state
 
-    state.quantization_samples = quantization_samples
-
     sequence_locked.show_monitor(config, state.monitor)
     state = sequence_locked.launch(state)
 
-    if state.build_status == build.Status.SUCCESSFUL_BUILD:
-        printing.log_success(
-            f"\n    Saved to **{build.output_dir(state.cache_dir, config.build_name)}**"
-        )
+    printing.log_success(
+        f"\n    Saved to **{build.output_dir(state.cache_dir, config.build_name)}**"
+    )
 
-        return state
-
-    else:
-        printing.log_success(
-            f"Build Sequence {sequence_locked.unique_name} completed successfully"
-        )
-        msg = """
-        build_model() only returns a Model instance if the Sequence includes a Stage
-        that sets state.build_status=turnkey.common.build.Status.SUCCESSFUL_BUILD.
-        """
-        printing.log_warning(msg)
+    return state

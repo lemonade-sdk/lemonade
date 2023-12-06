@@ -39,22 +39,29 @@ BUILD_MARKER = ".turnkeybuild"
 MODELS_DIR = importlib.util.find_spec("turnkeyml_models").submodule_search_locations[0]
 
 
-def rmdir(folder, exclude: Optional[str] = None):
+def rmdir(folder, excludes: Optional[List[str]] = None):
     """
     Remove the contents of a directory from the filesystem.
-    If `exclude=<name>`, the directory itself and the file named <name>
+    If `<name>` is in `excludes`, the directory itself and the file named <name>
     are kept. Otherwise, the entire directory is removed.
     """
+
+    # Use an empty list by default
+    if excludes:
+        excludes_to_use = excludes
+    else:
+        excludes_to_use = []
+
     if os.path.isdir(folder):
         for filename in os.listdir(folder):
             file_path = os.path.join(folder, filename)
-            if file_path != exclude:
+            if file_path not in excludes_to_use:
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.unlink(file_path)
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)
 
-        if exclude is None:
+        if excludes is None:
             shutil.rmtree(folder)
 
         return True
@@ -331,8 +338,10 @@ class Keys:
     DEVICE_TYPE = "device_type"
     # Name of the model
     MODEL_NAME = "model_name"
-    # References the per-build stats section
-    BUILDS = "builds"
+    # References the per-evaluation stats section
+    EVALUATIONS = "evaluations"
+    # Catch-all for storing a file's labels
+    LABELS = "labels"
     # Author of the model
     AUTHOR = "author"
     # Class type of the model
@@ -345,11 +354,13 @@ class Keys:
     SYSTEM_INFO = "system_info"
     # Path to the built-in model script used as input
     MODEL_SCRIPT = "builtin_model_script"
-    # Indicates a benchmark's status: running, successful, failed, or killed
+    # Indicates status of the most recent build tool run: FunctionStatus
+    BUILD_STATUS = "build_status"
+    # Indicates status of the most recent benchmark tool run: FunctionStatus
     BENCHMARK_STATUS = "benchmark_status"
 
 
-class BenchmarkStatus:
+class FunctionStatus:
     RUNNING = "running"
     SUCCESSFUL = "successful"
     FAILED = "failed"
@@ -357,15 +368,15 @@ class BenchmarkStatus:
 
 
 class Stats:
-    def __init__(self, cache_dir: str, build_name: str, stats_id: str = None):
+    def __init__(self, cache_dir: str, build_name: str, evaluation_id: str = None):
         output_dir = build.output_dir(cache_dir, build_name)
 
         self.file = os.path.join(output_dir, "turnkey_stats.yaml")
-        self.stats_id = stats_id
+        self.evaluation_id = evaluation_id
 
         os.makedirs(output_dir, exist_ok=True)
         if not os.path.exists(self.file):
-            initial = {Keys.BUILDS: {}}
+            initial = {Keys.EVALUATIONS: {}}
             _save_yaml(initial, self.file)
 
     @property
@@ -389,7 +400,7 @@ class Stats:
 
             self._set_key(dict[keys[0]], keys[1:], value)
 
-    def save_stat(self, key: str, value):
+    def save_model_stat(self, key: str, value):
         """
         Save statistics to an yaml file in the build directory
         """
@@ -400,36 +411,25 @@ class Stats:
 
         _save_yaml(stats_dict, self.file)
 
-    def add_sub_stat(self, parent_key: str, key: str, value):
-        """
-        Save nested statistics to an yaml file in the build directory
-
-        stats[parent_key][key] = value
-        """
-
+    def save_model_eval_stat(self, key: str, value):
         stats_dict = self.stats
 
-        self._set_key(stats_dict, [parent_key, key], value)
+        self._set_key(stats_dict, [Keys.EVALUATIONS, self.evaluation_id, key], value)
 
         _save_yaml(stats_dict, self.file)
 
-    def add_build_stat(self, key: str, value):
+    def save_model_eval_sub_stat(self, parent_key: str, key: str, value):
         stats_dict = self.stats
 
-        self._set_key(stats_dict, [Keys.BUILDS, self.stats_id, key], value)
-
-        _save_yaml(stats_dict, self.file)
-
-    def add_build_sub_stat(self, parent_key: str, key: str, value):
-        stats_dict = self.stats
-
-        self._set_key(stats_dict, [Keys.BUILDS, self.stats_id, parent_key, key], value)
+        self._set_key(
+            stats_dict, [Keys.EVALUATIONS, self.evaluation_id, parent_key, key], value
+        )
 
         _save_yaml(stats_dict, self.file)
 
     @property
-    def build_stats(self):
-        return self.stats[Keys.BUILDS][self.stats_id]
+    def evaluation_stats(self):
+        return self.stats[Keys.EVALUATIONS][self.evaluation_id]
 
 
 def print_cache_dir(_=None):

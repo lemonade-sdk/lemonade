@@ -15,7 +15,6 @@ import turnkeyml.common.exceptions as exp
 import turnkeyml.common.build as build
 import turnkeyml.build.tensor_helpers as tensor_helpers
 import turnkeyml.build.onnx_helpers as onnx_helpers
-import turnkeyml.build.quantization_helpers as quant_helpers
 import turnkeyml.common.filesystem as fs
 
 
@@ -74,13 +73,6 @@ def converted_onnx_file(state: build.State):
     return os.path.join(
         onnx_dir(state),
         f"{state.config.build_name}-op{state.config.onnx_opset}-opt-f16.onnx",
-    )
-
-
-def quantized_onnx_file(state: build.State):
-    return os.path.join(
-        onnx_dir(state),
-        f"{state.config.build_name}-op{state.config.onnx_opset}-opt-quantized_int8.onnx",
     )
 
 
@@ -189,8 +181,10 @@ class ReceiveOnnxModel(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
+            stats = fs.Stats(
+                state.cache_dir, state.config.build_name, state.evaluation_id
+            )
+            stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,
             )
@@ -315,8 +309,10 @@ class ExportPytorchModel(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
+            stats = fs.Stats(
+                state.cache_dir, state.config.build_name, state.evaluation_id
+            )
+            stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,
             )
@@ -436,8 +432,10 @@ class ExportKerasModel(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
+            stats = fs.Stats(
+                state.cache_dir, state.config.build_name, state.evaluation_id
+            )
+            stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,
             )
@@ -500,8 +498,10 @@ class OptimizeOnnxModel(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
+            stats = fs.Stats(
+                state.cache_dir, state.config.build_name, state.evaluation_id
+            )
+            stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,
             )
@@ -571,9 +571,8 @@ class ConvertOnnxToFp16(stage.Stage):
         inputs_file = state.original_inputs_file
         if os.path.isfile(inputs_file):
             inputs = np.load(inputs_file, allow_pickle=True)
-            to_downcast = False if state.quantization_samples else True
             inputs_converted = tensor_helpers.save_inputs(
-                inputs, inputs_file, downcast=to_downcast
+                inputs, inputs_file, downcast=True
             )
         else:
             raise exp.StageError(
@@ -605,8 +604,10 @@ class ConvertOnnxToFp16(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
+            stats = fs.Stats(
+                state.cache_dir, state.config.build_name, state.evaluation_id
+            )
+            stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,
             )
@@ -617,77 +618,5 @@ class ConvertOnnxToFp16(stage.Stage):
             More information may be available in the log file at **{self.logfile_path}**
             """
             raise exp.StageError(msg)
-
-        return state
-
-
-class QuantizeONNXModel(stage.Stage):
-    """
-    Stage that takes an ONNX model and a dataset of quantization samples as inputs,
-    and performs static post-training quantization to the model to int8 precision.
-
-    Expected inputs:
-     - state.model is a path to the ONNX model
-     - state.quantization_dataset is a dataset that is used for static quantization
-
-    Outputs:
-     - A *_quantized.onnx file => the quantized onnx model.
-    """
-
-    def __init__(self):
-        super().__init__(
-            unique_name="quantize_onnx",
-            monitor_message="Quantizing ONNX model",
-        )
-
-    def fire(self, state: build.State):
-        input_path = state.intermediate_results[0]
-        output_path = quantized_onnx_file(state)
-
-        quant_helpers.quantize(
-            input_file=input_path,
-            data=state.quantization_samples,
-            output_file=output_path,
-        )
-
-        # Check that the converted model is still valid
-        success_msg = "\tSuccess quantizing ONNX model to int8"
-        fail_msg = "\tFailed quantizing ONNX model to int8"
-
-        if check_model(output_path, success_msg, fail_msg):
-            state.intermediate_results = [output_path]
-
-            stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-            stats.add_build_stat(
-                fs.Keys.ONNX_FILE,
-                output_path,
-            )
-        else:
-            msg = f"""
-            Attempted to use {state.quantization_dataset} to statically quantize
-            model to int8 datatype, however this operation was not successful.
-            More information may be available in the log file at **{self.logfile_path}**
-            """
-            raise exp.StageError(msg)
-
-        return state
-
-
-class SuccessStage(stage.Stage):
-    """
-    Stage that sets state.build_status = build.Status.SUCCESSFUL_BUILD,
-    indicating that the build sequence has completed all of the requested build stages.
-    """
-
-    def __init__(self):
-        super().__init__(
-            unique_name="set_success",
-            monitor_message="Finishing up",
-        )
-
-    def fire(self, state: build.State):
-        state.build_status = build.Status.SUCCESSFUL_BUILD
-
-        state.results = copy.deepcopy(state.intermediate_results)
 
         return state

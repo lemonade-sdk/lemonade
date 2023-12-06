@@ -149,7 +149,7 @@ def assert_success_of_builds(
                 stats = filesystem.Stats(
                     build_state.cache_dir,
                     build_state.config.build_name,
-                    build_state.stats_id,
+                    build_state.evaluation_id,
                 )
                 assert build_state.build_status == build.Status.SUCCESSFUL_BUILD
                 script_build_found = True
@@ -161,11 +161,11 @@ def assert_success_of_builds(
                     ), f"{build_state.info.__dict__[info_property[0]]} == {info_property[1]}"
 
                 if check_perf:
-                    assert stats.build_stats["mean_latency"] > 0
-                    assert stats.build_stats["throughput"] > 0
+                    assert stats.evaluation_stats["mean_latency"] > 0
+                    assert stats.evaluation_stats["throughput"] > 0
 
                 if check_iteration_count:
-                    iterations = stats.build_stats["iterations"]
+                    iterations = stats.evaluation_stats["iterations"]
                     assert iterations == check_iteration_count
 
                 if check_opset:
@@ -261,103 +261,7 @@ class Testing(unittest.TestCase):
 
         assert_success_of_builds(test_scripts, cache_dir)
 
-    def test_021_cli_report(self):
-        # NOTE: this is not a unit test, it relies on other command
-        # If this test is failing, make sure the following tests are passing:
-        # - test_cli_corpus
-
-        test_scripts = common.test_scripts_dot_py.keys()
-
-        # Build the test corpus so we have builds to report
-        testargs = [
-            "turnkey",
-            "benchmark",
-            bash(f"{corpus_dir}/*.py"),
-            "--cache-dir",
-            cache_dir,
-        ]
-        with patch.object(sys, "argv", flatten(testargs)):
-            turnkeycli()
-
-        testargs = [
-            "turnkey",
-            "cache",
-            "report",
-            "--cache-dir",
-            cache_dir,
-        ]
-        with patch.object(sys, "argv", testargs):
-            turnkeycli()
-
-        # Read generated CSV file
-        summary_csv_path = report.get_report_name()
-        with open(summary_csv_path, "r", encoding="utf8") as summary_csv:
-            summary = list(csv.DictReader(summary_csv))
-
-        # Check if csv file contains all expected rows and columns
-        expected_cols = [
-            "model_name",
-            "author",
-            "class",
-            "parameters",
-            "hash",
-            "runtime",
-            "device_type",
-            "device",
-            "mean_latency",
-            "throughput",
-            "all_build_stages",
-            "completed_build_stages",
-        ]
-        linear_summary = summary[1]
-        assert len(summary) == len(test_scripts)
-        assert all(
-            elem in linear_summary for elem in expected_cols
-        ), f"Looked for each of {expected_cols} in {linear_summary.keys()}"
-
-        # Check whether all rows we expect to be populated are actually populated
-        assert (
-            linear_summary["model_name"] == "linear2"
-        ), f"Wrong model name found {linear_summary['model_name']}"
-        assert (
-            linear_summary["author"] == "turnkey"
-        ), f"Wrong author name found {linear_summary['author']}"
-        assert (
-            linear_summary["class"] == "TwoLayerModel"
-        ), f"Wrong class found {linear_summary['model_class']}"
-        assert (
-            linear_summary["hash"] == "80b93950"
-        ), f"Wrong hash found {linear_summary['hash']}"
-        assert (
-            linear_summary["runtime"] == "ort"
-        ), f"Wrong runtime found {linear_summary['runtime']}"
-        assert (
-            linear_summary["device_type"] == "x86"
-        ), f"Wrong device type found {linear_summary['device_type']}"
-        assert (
-            float(linear_summary["mean_latency"]) > 0
-        ), f"latency must be >0, got {linear_summary['x86_latency']}"
-        assert (
-            float(linear_summary["throughput"]) > 100
-        ), f"throughput must be >100, got {linear_summary['throughput']}"
-
-        # Make sure the report.get_dict() API works
-        result_dict = report.get_dict(
-            summary_csv_path, ["all_build_stages", "completed_build_stages"]
-        )
-        for result in result_dict.values():
-            # All of the models should have exported to ONNX, so the "onnx_exported" value
-            # should be True for all of them
-            assert "export_pytorch" in yaml.safe_load(result["all_build_stages"])
-            assert (
-                "export_pytorch"
-                in yaml.safe_load(result["completed_build_stages"]).keys()
-            )
-            assert (
-                yaml.safe_load(result["completed_build_stages"])["export_pytorch"] > 0
-            )
-
-    def test_005_cli_list(self):
+    def test_004_cli_list(self):
         # NOTE: this is not a unit test, it relies on other command
         # If this test is failing, make sure the following tests are passing:
         # - test_cli_corpus
@@ -388,9 +292,9 @@ class Testing(unittest.TestCase):
 
         for test_script in common.test_scripts_dot_py.keys():
             script_name = common.strip_dot_py(test_script)
-            assert script_name in f.getvalue()
+            assert script_name in f.getvalue(), f"{script_name} {f.getvalue()}"
 
-    def test_006_cli_delete(self):
+    def test_005_cli_delete(self):
         # NOTE: this is not a unit test, it relies on other command
         # If this test is failing, make sure the following tests are passing:
         # - test_cli_corpus
@@ -452,7 +356,7 @@ class Testing(unittest.TestCase):
             script_name = common.strip_dot_py(test_script)
             assert script_name not in f.getvalue()
 
-    def test_007_cli_stats(self):
+    def test_006_cli_stats(self):
         # NOTE: this is not a unit test, it relies on other command
         # If this test is failing, make sure the following tests are passing:
         # - test_cli_corpus
@@ -530,7 +434,7 @@ class Testing(unittest.TestCase):
                 ]
                 assert isinstance(stats_dict["task"], str), stats_dict["task"]
 
-    def test_008_cli_version(self):
+    def test_007_cli_version(self):
         # Get the version number
         with redirect_stdout(io.StringIO()) as f:
             testargs = [
@@ -543,7 +447,7 @@ class Testing(unittest.TestCase):
         # Make sure we get back a 3-digit number
         assert len(f.getvalue().split(".")) == 3
 
-    def test_009_cli_turnkey_args(self):
+    def test_008_cli_turnkey_args(self):
         # NOTE: this is not a unit test, it relies on other command
         # If this test is failing, make sure the following tests are passing:
         # - test_cli_single
@@ -569,7 +473,7 @@ class Testing(unittest.TestCase):
 
     # TODO: Investigate why this test is failing only on Windows CI failing
     @unittest.skipIf(platform.system() == "Windows", "Windows CI only failure")
-    def test_011_cli_benchmark(self):
+    def test_009_cli_benchmark(self):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
@@ -587,7 +491,7 @@ class Testing(unittest.TestCase):
 
     # TODO: Investigate why this test is non-deterministically failing
     @unittest.skip("Flaky test")
-    def test_013_cli_labels(self):
+    def test_010_cli_labels(self):
         # Only build models labels with test_group::a
         testargs = [
             "turnkey",
@@ -637,7 +541,7 @@ class Testing(unittest.TestCase):
         assert state_files == ["linear_d5b1df11_state", "linear2_80b93950_state"]
 
     @unittest.skip("Needs re-implementation")
-    def test_014_report_on_failed_build(self):
+    def test_011_report_on_failed_build(self):
         testargs = [
             "turnkey",
             bash(f"{corpus_dir}/linear.py"),
@@ -679,7 +583,7 @@ class Testing(unittest.TestCase):
         ), "Wrong number of parameters found in report"
         assert summary[0]["hash"] == "d5b1df11", "Wrong hash found in report"
 
-    def test_015_runtimes(self):
+    def test_012_runtimes(self):
         # Attempt to benchmark using an invalid runtime
         with self.assertRaises(exceptions.ArgError):
             testargs = [
@@ -728,7 +632,7 @@ class Testing(unittest.TestCase):
 
     # TODO: Investigate why this test is only failing on Windows CI
     @unittest.skipIf(platform.system() == "Windows", "Windows CI only failure")
-    def test_016_cli_onnx_opset(self):
+    def test_013_cli_onnx_opset(self):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
@@ -751,7 +655,7 @@ class Testing(unittest.TestCase):
             [test_script], cache_dir, None, check_perf=True, check_opset=user_opset
         )
 
-    def test_016_cli_iteration_count(self):
+    def test_014_cli_iteration_count(self):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
@@ -776,7 +680,7 @@ class Testing(unittest.TestCase):
             check_iteration_count=test_iterations,
         )
 
-    def test_017_cli_process_isolation(self):
+    def test_015_cli_process_isolation(self):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
@@ -798,7 +702,7 @@ class Testing(unittest.TestCase):
         "Skipping, as torch.compile is not supported on Windows"
         "Revisit when torch.compile for Windows is supported",
     )
-    def test_018_skip_compiled(self):
+    def test_016_skip_compiled(self):
         test_script = "compiled.py"
         testargs = [
             "turnkey",
@@ -816,14 +720,14 @@ class Testing(unittest.TestCase):
         # One of those is compiled and should be skipped.
         assert builds_found == 1
 
-    def test_019_invalid_file_type(self):
+    def test_017_invalid_file_type(self):
         # Ensure that we get an error when running turnkey with invalid input_files
         with self.assertRaises(exceptions.ArgError):
             testargs = ["turnkey", "gobbledegook"]
             with patch.object(sys, "argv", flatten(testargs)):
                 turnkeycli()
 
-    def test_020_cli_export_only(self):
+    def test_018_cli_export_only(self):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
@@ -841,7 +745,7 @@ class Testing(unittest.TestCase):
 
         assert_success_of_builds([test_script], cache_dir, check_onnx_file_count=1)
 
-    def test_022_cli_onnx_model(self):
+    def test_019_cli_onnx_model(self):
         """
         Manually export an ONNX file, then feed it into the CLI
         """
@@ -870,7 +774,7 @@ class Testing(unittest.TestCase):
 
         assert_success_of_builds([build_name], cache_dir)
 
-    def test_023_cli_onnx_model_opset(self):
+    def test_020_cli_onnx_model_opset(self):
         """
         Manually export an ONNX file with a non-defualt opset, then feed it into the CLI
         """
@@ -903,7 +807,7 @@ class Testing(unittest.TestCase):
 
         assert_success_of_builds([build_name], cache_dir)
 
-    def test_024_args_encode_decode(self):
+    def test_021_args_encode_decode(self):
         """
         Test the encoding and decoding of arguments that follow the
         ["arg1::[value1,value2]","arg2::value1","flag_arg"]' format
@@ -915,7 +819,7 @@ class Testing(unittest.TestCase):
             reencoded_value == encoded_value
         ), f"input: {encoded_value}, decoded: {decoded_value}, reencoded_value: {reencoded_value}"
 
-    def test_025_benchmark_non_existent_file(self):
+    def test_022_benchmark_non_existent_file(self):
         # Ensure we get an error when benchmarking a non existent file
         with self.assertRaises(exceptions.ArgError):
             filename = "thou_shall_not_exist.py"
@@ -924,7 +828,7 @@ class Testing(unittest.TestCase):
                 with patch.object(sys, "argv", testargs):
                     turnkeycli()
 
-    def test_026_benchmark_non_existent_file_prefix(self):
+    def test_023_benchmark_non_existent_file_prefix(self):
         # Ensure we get an error when benchmarking a non existent file
         with self.assertRaises(exceptions.ArgError):
             file_prefix = "non_existent_prefix_*.py"
@@ -933,7 +837,7 @@ class Testing(unittest.TestCase):
                 with patch.object(sys, "argv", testargs):
                     turnkeycli()
 
-    def test_027_input_text_file(self):
+    def test_024_input_text_file(self):
         """
         Ensure that we can intake .txt files
         """
@@ -954,7 +858,7 @@ class Testing(unittest.TestCase):
             builds_found == 3
         ), f"Expected 3 builds (1 for linear.py, 2 for linear2.py), but got {builds_found}."
 
-    def test_028_cli_timeout(self):
+    def test_025_cli_timeout(self):
         """
         Make sure that the --timeout option and its associated reporting features work.
 
@@ -975,6 +879,7 @@ class Testing(unittest.TestCase):
             "--process-isolation",
             "--timeout",
             "10",
+            "--build-only",
         ]
         with patch.object(sys, "argv", flatten(testargs)):
             turnkeycli()
@@ -999,13 +904,110 @@ class Testing(unittest.TestCase):
         try:
             timeout_summary = summary[0]
 
-            assert timeout_summary["benchmark_status"] == "killed", timeout_summary[
-                "benchmark_status"
+            assert timeout_summary["build_status"] == "killed", timeout_summary[
+                "build_status"
             ]
         except IndexError:
             # Edge case where the CSV is empty because the build timed out before
             # the stats.yaml was created, which in turn means the CSV is empty
             pass
+
+    def test_026_cli_report(self):
+        # NOTE: this is not a unit test, it relies on other command
+        # If this test is failing, make sure the following tests are passing:
+        # - test_cli_corpus
+
+        test_scripts = common.test_scripts_dot_py.keys()
+
+        # Build the test corpus so we have builds to report
+        testargs = [
+            "turnkey",
+            "benchmark",
+            bash(f"{corpus_dir}/*.py"),
+            "--cache-dir",
+            cache_dir,
+        ]
+        with patch.object(sys, "argv", flatten(testargs)):
+            turnkeycli()
+
+        testargs = [
+            "turnkey",
+            "cache",
+            "report",
+            "--cache-dir",
+            cache_dir,
+        ]
+        with patch.object(sys, "argv", testargs):
+            turnkeycli()
+
+        # Read generated CSV file
+        summary_csv_path = report.get_report_name()
+        with open(summary_csv_path, "r", encoding="utf8") as summary_csv:
+            summary = list(csv.DictReader(summary_csv))
+
+        # Check if csv file contains all expected rows and columns
+        expected_cols = [
+            "model_name",
+            "author",
+            "class",
+            "parameters",
+            "hash",
+            "runtime",
+            "device_type",
+            "device",
+            "mean_latency",
+            "throughput",
+            "all_build_stages",
+            "completed_build_stages",
+        ]
+        linear_summary = summary[1]
+        assert len(summary) == len(test_scripts)
+        for elem in expected_cols:
+            assert (
+                elem in linear_summary
+            ), f"Couldn't find expected key {elem} in results spreadsheet"
+
+        # Check whether all rows we expect to be populated are actually populated
+        assert (
+            linear_summary["model_name"] == "linear2"
+        ), f"Wrong model name found {linear_summary['model_name']}"
+        assert (
+            linear_summary["author"] == "turnkey"
+        ), f"Wrong author name found {linear_summary['author']}"
+        assert (
+            linear_summary["class"] == "TwoLayerModel"
+        ), f"Wrong class found {linear_summary['model_class']}"
+        assert (
+            linear_summary["hash"] == "80b93950"
+        ), f"Wrong hash found {linear_summary['hash']}"
+        assert (
+            linear_summary["runtime"] == "ort"
+        ), f"Wrong runtime found {linear_summary['runtime']}"
+        assert (
+            linear_summary["device_type"] == "x86"
+        ), f"Wrong device type found {linear_summary['device_type']}"
+        assert (
+            float(linear_summary["mean_latency"]) > 0
+        ), f"latency must be >0, got {linear_summary['x86_latency']}"
+        assert (
+            float(linear_summary["throughput"]) > 100
+        ), f"throughput must be >100, got {linear_summary['throughput']}"
+
+        # Make sure the report.get_dict() API works
+        result_dict = report.get_dict(
+            summary_csv_path, ["all_build_stages", "completed_build_stages"]
+        )
+        for result in result_dict.values():
+            # All of the models should have exported to ONNX, so the "onnx_exported" value
+            # should be True for all of them
+            assert "export_pytorch" in yaml.safe_load(result["all_build_stages"])
+            assert (
+                "export_pytorch"
+                in yaml.safe_load(result["completed_build_stages"]).keys()
+            )
+            assert (
+                yaml.safe_load(result["completed_build_stages"])["export_pytorch"] > 0
+            )
 
 
 if __name__ == "__main__":

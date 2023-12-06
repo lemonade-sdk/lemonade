@@ -41,7 +41,6 @@ Name                                      Stmts   Miss Branch BrPart  Cover   Mi
 --------------------------------------------------------------------------------------------------------
 \turnkeyml\build\__init__.py                 0      0      0      0   100%
 \turnkeyml\build\onnx_helpers.py            70     34     28      2    45%   15-21, 28-87, 92, 95-100
-\turnkeyml\build\quantization_helpers.py    29     20     18      0    19%   13-30, 35, 50-78
 \turnkeyml\build\sequences.py               15      1      8      2    87%   62->61, 65
 \turnkeyml\build\tensor_helpers.py          47     26     34      4    41%   17-44, 57, 61, 63-74, 78
 \turnkeyml\build_api.py                     31      9      8      3    64%   68-71, 120-125, 140-147

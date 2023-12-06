@@ -1,4 +1,3 @@
-import os
 from typing import Dict, List
 import turnkeyml.common.printing as printing
 
@@ -42,36 +41,6 @@ def load_from_file(file_path: str) -> Dict[str, List[str]]:
         return to_dict(label_list)
     else:
         return {}
-
-
-def load_from_cache(cache_dir: str, build_name: str) -> Dict[str, List[str]]:
-    """
-    Loads labels from the cache directory
-    """
-    # Open file
-    file_path = os.path.join(cache_dir, "labels", f"{build_name}.txt")
-    with open(file_path, encoding="utf-8") as f:
-        first_line = f.readline()
-
-    # Return label dict
-    label_list = first_line.replace("\n", "").split(" ")
-    return to_dict(label_list)
-
-
-def save_to_cache(cache_dir: str, build_name: str, label_dict: Dict[str, List[str]]):
-    """
-    Save labels as a stand-alone file as part of the cache directory
-    """
-    labels_list = [f"{k}::{','.join(label_dict[k])}" for k in label_dict.keys()]
-
-    # Create labels folder if it doesn't exist
-    labels_dir = os.path.join(cache_dir, "labels")
-    os.makedirs(labels_dir, exist_ok=True)
-
-    # Save labels to cache
-    file_path = os.path.join(labels_dir, f"{build_name}.txt")
-    with open(file_path, "w", encoding="utf8") as fp:
-        fp.write(" ".join(labels_list))
 
 
 def is_subset(label_dict_a: Dict[str, List[str]], label_dict_b: Dict[str, List[str]]):

@@ -3,7 +3,7 @@
 This directory contains documentation for the TurnkeyML project:
 - [code.md](https://github.com/onnx/turnkeyml/blob/main/docs/code.md): Code organization for the benchmark and tools.
 - [install.md](https://github.com/onnx/turnkeyml/blob/main/docs/install.md): Installation instructions for the tools.
-- [tools_user_guide.md](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md): User guide for the tools: `turnkey` CLI, `benchmark_files()`, and `benchmark_model()`.
+- [tools_user_guide.md](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md): User guide for the tools: the `turnkey` CLI and the `benchmark_files()` and `build_model()` APIs.
 - [versioning.md](https://github.com/onnx/turnkeyml/blob/main/docs/versioning.md): Defines the semantic versioning rules for the `turnkey` package.
 
 There is more useful documentation available in:

@@ -8,7 +8,6 @@ import platform
 import subprocess
 import enum
 from typing import Optional, Any, List, Dict, Union, Type
-from collections.abc import Collection
 import dataclasses
 import hashlib
 import pkg_resources
@@ -19,7 +18,6 @@ import numpy as np
 import sklearn.base
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.tf_helpers as tf_helpers
-import turnkeyml.run.plugin_helpers as plugin_helpers
 from turnkeyml.version import __version__ as turnkey_version
 
 
@@ -222,7 +220,7 @@ class State:
     monitor: bool = False
     rebuild: str = ""
     cache_dir: str = ""
-    stats_id: str = ""
+    evaluation_id: str = ""
 
     # User-provided args that will not be saved as part of state.yaml
     model: UnionValidModelInstanceTypes = None
@@ -258,8 +256,6 @@ class State:
 
     # Results of a successful build
     results: Any = None
-
-    quantization_samples: Optional[Collection] = None
 
     def __post_init__(self):
         if self.uid is None:
@@ -308,16 +304,6 @@ class State:
 
         state_dict["model_type"] = self.model_type.value
         state_dict["build_status"] = self.build_status.value
-
-        # During actual execution, quantization_samples in the state
-        # stores the actual quantization samples.
-        # However, we do not save quantization samples
-        # Instead, we save a boolean to indicate whether the model
-        # stored has been quantized by some samples.
-        if self.quantization_samples:
-            state_dict["quantization_samples"] = True
-        else:
-            state_dict["quantization_samples"] = False
 
         return state_dict
 
@@ -458,65 +444,6 @@ class Logger:
         pass
 
 
-def logged_subprocess(
-    cmd: List[str],
-    cwd: str = os.getcwd(),
-    env: Optional[Dict] = None,
-    log_file_path: Optional[str] = None,
-    log_to_std_streams: bool = True,
-    log_to_file: bool = True,
-) -> None:
-    """
-    This function calls a subprocess and sends the logs to either a file, stdout/stderr, or both.
-
-    cmd             Command that will run o a sbprocess
-    cwd             Working directory from where the subprocess should run
-    env             Evironment to be used by the subprocess (useful for passing env vars)
-    log_file_path   Where logs will be stored
-    log_to_file     Whether or not to store the subprocess's stdout/stderr into a file
-    log_to_std      Whether or not to print subprocess's stdout/stderr to the screen
-    """
-    if env is None:
-        env = os.environ.copy()
-    if log_to_file and log_file_path is None:
-        raise ValueError("log_file_path must be set when log_to_file is True")
-
-    log_stdout = ""
-    log_stderr = ""
-    try:
-        proc = subprocess.run(
-            cmd,
-            check=True,
-            env=env,
-            capture_output=True,
-            cwd=cwd,
-        )
-    except Exception as e:  # pylint: disable=broad-except
-        log_stdout = e.stdout.decode("utf-8")  # pylint: disable=no-member
-        log_stderr = e.stderr.decode("utf-8")  # pylint: disable=no-member
-        raise plugin_helpers.CondaError(
-            f"Exception {e} encountered, \n\nstdout was: "
-            f"\n{log_stdout}\n\n and stderr was: \n{log_stderr}"
-        )
-    else:
-        log_stdout = proc.stdout.decode("utf-8")
-        log_stderr = proc.stderr.decode("utf-8")
-    finally:
-        if log_to_std_streams:
-            # Print log to stdout
-            # This might be useful when this subprocess is being logged externally
-            print(log_stdout, file=sys.stdout)
-            print(log_stderr, file=sys.stdout)
-        if log_to_file:
-            log = f"{log_stdout}\n{log_stderr}"
-            with open(
-                log_file_path,
-                "w",
-                encoding="utf-8",
-            ) as f:
-                f.write(log)
-
-
 def get_system_info():
     os_type = platform.system()
     info_dict = {}
@@ -524,7 +451,7 @@ def get_system_info():
     # Get OS Version
     try:
         info_dict["OS Version"] = platform.platform()
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         info_dict["Error OS Version"] = str(e)
 
     if os_type == "Windows":
@@ -537,7 +464,7 @@ def get_system_info():
                 .strip()
             )
             info_dict["Processor"] = proc_info
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Processor"] = str(e)
 
         # Get OEM System Information
@@ -549,7 +476,7 @@ def get_system_info():
                 .strip()
             )
             info_dict["OEM System"] = oem_info
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error OEM System"] = str(e)
 
         # Get Physical Memory in GB
@@ -564,7 +491,7 @@ def get_system_info():
             )
             mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
             info_dict["Physical Memory"] = f"{mem_info_gb} GB"
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Physical Memory"] = str(e)
 
     elif os_type == "Linux":
@@ -586,7 +513,7 @@ def get_system_info():
                     .strip()
                 )
                 info_dict["OEM System"] = oem_info
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 info_dict["Error OEM System (WSL)"] = str(e)
 
         else:
@@ -602,7 +529,7 @@ def get_system_info():
                     .replace("\n", " ")
                 )
                 info_dict["OEM System"] = oem_info
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 info_dict["Error OEM System"] = str(e)
 
         # Get CPU Information
@@ -612,7 +539,7 @@ def get_system_info():
                 if "Model name:" in line:
                     info_dict["Processor"] = line.split(":")[1].strip()
                     break
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Processor"] = str(e)
 
         # Get Memory Information
@@ -625,7 +552,7 @@ def get_system_info():
             )
             mem_info_gb = round(int(mem_info) / 1024, 2)
             info_dict["Memory Info"] = f"{mem_info_gb} GB"
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             info_dict["Error Memory Info"] = str(e)
 
     else:
@@ -635,9 +562,10 @@ def get_system_info():
     try:
         installed_packages = pkg_resources.working_set
         info_dict["Python Packages"] = [
-            f"{i.key}=={i.version}" for i in installed_packages # pylint: disable=not-an-iterable
+            f"{i.key}=={i.version}"
+            for i in installed_packages  # pylint: disable=not-an-iterable
         ]
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         info_dict["Error Python Packages"] = str(e)
 
     return info_dict

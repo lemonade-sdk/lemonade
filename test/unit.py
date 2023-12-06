@@ -101,8 +101,8 @@ class Testing(unittest.TestCase):
         traceback_error_cmd = f"raise ValueError('{traceback_error_msg}')"
 
         # Perform basic test (no exceptions inside logger)
-        cmd = ["python","-c",f"import sys\n{inside_stdout_cmd}\n{inside_sterr_cmd}"]
-        build.logged_subprocess(cmd=cmd, log_file_path=logfile_path)
+        cmd = ["python", "-c", f"import sys\n{inside_stdout_cmd}\n{inside_sterr_cmd}"]
+        plugin_helpers.logged_subprocess(cmd=cmd, log_file_path=logfile_path)
 
         # Make sure we captured everything we intended to capture
         with open(logfile_path, "r", encoding="utf-8") as file:
@@ -111,9 +111,13 @@ class Testing(unittest.TestCase):
         assert inside_sterr_msg in log_contents
 
         # Perform test with exceptions inside the logger
-        cmd = ["python","-c",f"import sys\n{inside_stdout_cmd}\n{inside_sterr_cmd}\n{traceback_error_cmd}"]
+        cmd = [
+            "python",
+            "-c",
+            f"import sys\n{inside_stdout_cmd}\n{inside_sterr_cmd}\n{traceback_error_cmd}",
+        ]
         with self.assertRaises(plugin_helpers.CondaError):
-            build.logged_subprocess(cmd=cmd, log_file_path=logfile_path)
+            plugin_helpers.logged_subprocess(cmd=cmd, log_file_path=logfile_path)
 
         # Make sure we captured everything we intended to capture
         with open(logfile_path, "r", encoding="utf-8") as file:
@@ -126,16 +130,24 @@ class Testing(unittest.TestCase):
         subprocess_env = os.environ.copy()
         expected_env_var_value = "Expected Value"
         subprocess_env["TEST_ENV_VAR"] = expected_env_var_value
-        cmd = ["python","-c",f'import os\nprint(os.environ["TEST_ENV_VAR"])']
-        build.logged_subprocess(cmd=cmd, log_file_path=logfile_path, env=subprocess_env)
+        cmd = ["python", "-c", f'import os\nprint(os.environ["TEST_ENV_VAR"])']
+        plugin_helpers.logged_subprocess(
+            cmd=cmd, log_file_path=logfile_path, env=subprocess_env
+        )
         with open(logfile_path, "r", encoding="utf-8") as file:
             log_contents = file.read()
         assert expected_env_var_value in log_contents
 
         # Test log_to_std_streams
-        cmd = ["python","-c",f'print("{outside_stdout_msg}")\nprint("{outside_stderr_msg}")']
+        cmd = [
+            "python",
+            "-c",
+            f'print("{outside_stdout_msg}")\nprint("{outside_stderr_msg}")',
+        ]
         with build.Logger("", logfile_path):
-            build.logged_subprocess(cmd=cmd, log_to_std_streams=True, log_to_file=False)
+            plugin_helpers.logged_subprocess(
+                cmd=cmd, log_to_std_streams=True, log_to_file=False
+            )
         with open(logfile_path, "r", encoding="utf-8") as file:
             log_contents = file.read()
         assert outside_stdout_msg in log_contents

@@ -9,7 +9,6 @@ optimize_fp16 = stage.Sequence(
         export.ExportPlaceholder(),
         export.OptimizeOnnxModel(),
         export.ConvertOnnxToFp16(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )
@@ -20,7 +19,6 @@ optimize_fp32 = stage.Sequence(
     [
         export.ExportPlaceholder(),
         export.OptimizeOnnxModel(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )
@@ -30,19 +28,6 @@ onnx_fp32 = stage.Sequence(
     "Base Sequence",
     [
         export.ExportPlaceholder(),
-        export.SuccessStage(),
-    ],
-    enable_model_validation=True,
-)
-
-pytorch_with_quantization = stage.Sequence(
-    "pytorch_export_sequence_with_quantization",
-    "Exporting PyTorch Model and Quantizing Exported ONNX",
-    [
-        export.ExportPytorchModel(),
-        export.OptimizeOnnxModel(),
-        export.QuantizeONNXModel(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )

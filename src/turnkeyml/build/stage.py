@@ -2,6 +2,7 @@ import abc
 import sys
 import time
 import os
+import copy
 from typing import List, Tuple
 from multiprocessing import Process
 import psutil
@@ -108,8 +109,7 @@ class Stage(abc.ABC):
 
         # Set the build status to BUILD_RUNNING to indicate that a Stage
         # started running. This allows us to test whether the Stage exited
-        # unexpectedly, before it was able to set FAILED_BUILD, SUCCESSFUL_BUILD,
-        # or PARTIAL_BUILD
+        # unexpectedly, before it was able to set FAILED_BUILD
         state.build_status = build.Status.BUILD_RUNNING
 
         self.logfile_path = os.path.join(
@@ -137,11 +137,16 @@ class Stage(abc.ABC):
         else:
             self.status_line(successful=True, verbosity=state.monitor)
 
-            # Set the build status PARTIAL_BUILD, indicating that the stage
-            # ran successfully, unless the stage set SUCCESSFUL_BUILD, in which
-            # case leave the build status alone.
-            if state.build_status != build.Status.SUCCESSFUL_BUILD:
-                state.build_status = build.Status.PARTIAL_BUILD
+            # Stages should not set build.Status.SUCCESSFUL_BUILD, as that is
+            # reserved for Sequence.launch()
+            if state.build_status == build.Status.SUCCESSFUL_BUILD:
+                raise exp.StageError(
+                    "TurnkeyML Stages are not allowed to set "
+                    "`state.build_status == build.Status.SUCCESSFUL_BUILD`, "
+                    "however that has happened. If you are a plugin developer, "
+                    "do not do this. If you are a user, please file an issue at "
+                    "https://github.com/onnx/turnkeyml/issues."
+                )
 
         finally:
             if state.monitor:
@@ -273,8 +278,8 @@ class Sequence(Stage):
             raise exp.Error(msg)
 
         # Collect telemetry for the build
-        stats = fs.Stats(state.cache_dir, state.config.build_name, state.stats_id)
-        stats.add_build_stat(
+        stats = fs.Stats(state.cache_dir, state.config.build_name, state.evaluation_id)
+        stats.save_model_eval_stat(
             fs.Keys.ALL_BUILD_STAGES,
             self.get_names(),
         )
@@ -292,7 +297,7 @@ class Sequence(Stage):
                 # Collect telemetry about the stage
                 execution_time = time.time() - start_time
 
-                stats.add_build_sub_stat(
+                stats.save_model_eval_sub_stat(
                     parent_key=fs.Keys.COMPLETED_BUILD_STAGES,
                     key=stage.unique_name,
                     value=execution_time,
@@ -314,6 +319,14 @@ class Sequence(Stage):
 
         else:
             state.current_build_stage = None
+            state.build_status = build.Status.SUCCESSFUL_BUILD
+
+            # We use a deepcopy here because the Stage framework supports
+            # intermediate_results of any type, including model objects in memory.
+            # The deepcopy ensures that we are providing a result that users
+            # are free to take any action with.
+            state.results = copy.deepcopy(state.intermediate_results)
+
             return state
 
     def status_line(self, successful, verbosity):

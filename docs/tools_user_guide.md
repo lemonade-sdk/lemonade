@@ -51,8 +51,8 @@ Where `your_script.py` is a Python script that instantiates and executes a PyTor
 
 The `turnkey` CLI performs the following steps:
 1. [Analysis](#analysis): profile the Python script to identify the PyTorch models within
-2. [Build](#build): call the `benchmark_files()` [API](#the-turnkey-api) to prepare each model for benchmarking
-3. [Benchmark](#benchmark): call the `benchmark_model()` [API](#the-turnkey-api) on each model to gather performance statistics
+2. [Build](#build): call the `build_models()` [API](#the-turnkey-api) to prepare each model for benchmarking
+3. [Benchmark](#benchmark): call the `BaseRT.benchmark()` method on each model to gather performance statistics
 
 _Note_: The benchmarking methodology is defined [here](#benchmark). If you are looking for more detailed instructions on how to install turnkey, you can find that [here](https://github.com/onnx/turnkeyml/blob/main/docs/install.md).
 
@@ -64,31 +64,11 @@ _Note_: The benchmarking methodology is defined [here](#benchmark). If you are l
 
 Most of the functionality provided by the `turnkey` CLI is also available in the the API:
 - `turnkey.benchmark_files()` provides the same benchmarking functionality as the `turnkey` CLI: it takes a list of files and target device, and returns performance results.
-- `turnkey.benchmark_model()` provides a subset of this functionality: it takes a model and its inputs, and returns performance results.
-  - The main difference is that `benchmark_model()` does not include the [Analysis](#analysis) feature, and `benchmark_files()` does.
 - `turnkey.build_model(model, inputs)` is used to programmatically [build](#build) a model instance through a sequence of model-to-model transformations (e.g., starting with an fp32 PyTorch model and ending with an fp16 ONNX model). 
 
-Generally speaking, the `turnkey` CLI is a command line interface for the `benchmark_files()` API, which internally calls `benchmark_model()`, which in turn calls `build_model()`. You can read more about this code organization [here](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
+Generally speaking, the `turnkey` CLI is a command line interface for the `benchmark_files()` API which in turn calls `build_model()` and then performs benchmarking using `BaseRT.benchmark()`. You can read more about this code organization [here](https://github.com/onnx/turnkeyml/blob/main/docs/code.md).
 
-For an example of `benchmark_model()`, the following script:
-
-```python
-from turnkeyml import benchmark_model
-
-model = YourModel() # Instantiate a torch.nn.module
-results = model(**inputs)
-perf = benchmark_model(model, inputs)
-```
-
-Will print an output like this:
-
-```
-> Performance of YourModel on device Intel® Xeon® Platinum 8380 is:
-> latency: 0.033 ms
-> throughput: 21784.8 ips
-```
-
-`benchmark_model()` returns a `MeasuredPerformance` object that includes members:
+`BaseRT.benchmark()` returns a `MeasuredPerformance` object that includes members:
  - `latency_units`: unit of time used for measuring latency, which is set to `milliseconds (ms)`.
  - `mean_latency`: average benchmarking latency, measured in `latency_units`.
  - `throughput_units`: unit used for measuring throughput, which is set to `inferences per second (IPS)`.
@@ -135,7 +115,7 @@ A **runtime** is a piece of software that executes a model on a device.
 
 **Analysis** is the process by which `benchmark_files()` inspects a Python script or ONNX file and identifies the models within.
 
-`benchmark_files()` performs analysis by running and profiling your file(s). When a model object (see [Model](#model) is encountered, it is inspected to gather statistics (such as the number of parameters in the model) and/or pass it to the `benchmark_model()` API for benchmarking.
+`benchmark_files()` performs analysis by running and profiling your file(s). When a model object (see [Model](#model) is encountered, it is inspected to gather statistics (such as the number of parameters in the model) and/or passed to the build and benchmark APIs.
 
 > _Note_: the `turnkey` CLI and `benchmark_files()` API both run your entire python script(s) whenever python script(s) are passed as input files. Please ensure that these scripts are safe to run, especially if you got them from the internet.
 
@@ -205,12 +185,14 @@ The *build cache* is a location on disk that holds all of the artifacts from you
 
 ## Benchmark
 
-*Benchmark* is the process by which the `benchmark_model()` API collects performance statistics about a [model](#model). Specifically, `benchmark_model()` takes a [build](#build) of a model and executes it on a target device using target runtime software (see [Devices and Runtimes](#devices-and-runtimes)).
+*Benchmark* is the process by which `BaseRT.benchmark()` collects performance statistics about a [model](#model). `BaseRT` is an abstract base class that defines the common benchmarking infrastructure that TurnkeyML provides across devices and runtimes.
 
-By default, `benchmark_model()` will run the model 100 times to collect the following statistics:
+Specifically, `BaseRT.benchmark()` takes a [build](#build) of a model and executes it on a target device using target runtime software (see [Devices and Runtimes](#devices-and-runtimes)).
+
+By default, `BaseRT.benchmark()` will run the model 100 times to collect the following statistics:
 1. Mean Latency, in milliseconds (ms): the average time it takes the runtime/device combination to execute the model/inputs combination once. This includes the time spent invoking the device and transferring the model's inputs and outputs between host memory and the device (when applicable).
 1. Throughput, in inferences per second (IPS):  the number of times the model/inputs combination can be executed on the runtime/device combination per second.
-    > - _Note_: `benchmark_model()` is not aware of whether `inputs` is a single input or a batch of inputs. If your `inputs` is actually a batch of inputs, you should multiply `benchmark_model()`'s reported IPS by the batch size.
+    > - _Note_: `BaseRT.benchmark()` is not aware of whether `inputs` is a single input or a batch of inputs. If your `inputs` is actually a batch of inputs, you should multiply `BaseRT.benchmark()`'s reported IPS by the batch size.
 
 # Devices and Runtimes
 
@@ -226,7 +208,7 @@ If you are using a remote machine, it must:
 - include the target device
 - have `miniconda`, `python>=3.8`, and `docker>=20.10` installed
 
-When you call `turnkey` CLI or `benchmark_model()`, the following actions are performed on your behalf:
+When you call `turnkey` CLI or `benchmark_files()`, the following actions are performed on your behalf:
 1. Perform a `build`, which exports all models from the script to ONNX and prepares for benchmarking.
 1. Set up the benchmarking environment by loading a container and/or setting up a conda environment.
 1. Run the benchmarks.
@@ -253,7 +235,6 @@ Valid values of `TYPE` include:
 
 Also available as API arguments: 
 - `benchmark_files(device=...)`
-- `benchmark_model(device=...)`.
 
 > For a detailed example, see the [CLI Nvidia tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/readme.md#nvidia-benchmarking).
 
@@ -274,9 +255,8 @@ Each device type has its own default runtime, as indicated below.
 
 This feature is also be available as an API argument: 
 - `benchmark_files(runtime=[...])`
-- `benchmark_model(runtime=...)`
 
-> _Note_: Inputs to `torch-eager` and `torch-compiled` are not downcasted to FP16 by default. Downcast inputs before benchmarking for a fair comparison between runtimes.
+> _Note_: Inputs to `torch-eager` and `torch-compiled` are not downcasted to FP16 by default. You must perform your own downcast or quantization of inputs if needed for apples-to-apples comparisons with other runtimes.
 
 # Additional Commands and Options
 
@@ -381,7 +361,6 @@ Process isolation mode applies a timeout to each subprocess. The default timeout
 
 Also available as API arguments:
 - `benchmark_files(cache_dir=...)`
-- `benchmark_model(cache_dir=...)`
 - `build_model(cache_dir=...)`
 
 > See the [Cache Directory tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/cache.md#cache-directory) for a detailed example.
@@ -392,7 +371,6 @@ Also available as API arguments:
 
 Also available as API arguments: 
 - `benchmark_files(lean_cache=True/False, ...)` (default False)
-- `benchmark_model(lean_cache=True/False, ...)` (default False)
 
 > _Note_: useful for benchmarking many models, since the `build` artifacts from the models can take up a significant amount of hard drive space.
 
@@ -409,7 +387,6 @@ Takes one of the following values:
 
 Also available as API arguments: 
 - `benchmark_files(rebuild=...)`
-- `benchmark_model(rebuild=...)`
 - `build_model(rebuild=...)`
 
 ### Sequence
@@ -421,7 +398,6 @@ Usage:
 
 Also available as API arguments:
 - `benchmark_files(sequence=...)`
-- `benchmark_model(sequence=...)`
 - `build_model(sequence=...)`
 
 ### Set Script Arguments
@@ -460,7 +436,6 @@ Usage:
 
 Also available as API arguments:
 - `benchmark_files(onnx_opset=...)`
-- `benchmark_model(onnx_opset=...)`
 - `build_model(onnx_opset=...)`
 
 > _Note_: ONNX opset can also be set by an environment variable. The --onnx-opset argument takes precedence over the environment variable. See [TURNKEY_ONNX_OPSET](#set-the-onnx-opset).
@@ -474,11 +449,10 @@ Usage:
 
 Also available as API arguments:
 - `benchmark_files(iterations=...)`
-- `benchmark_model(iterations=...)`
 
 ### Analyze Only
 
-Instruct `turnkey` or `benchmark_model()` to only run the [Analysis](#analysis) phase of the `benchmark` command.
+Instruct `turnkey` or `benchmark_files()` to only run the [Analysis](#analysis) phase of the `benchmark` command.
 
 Usage:
 - `turnkey benchmark INPUT_FILES --analyze-only`
@@ -493,7 +467,7 @@ Also available as an API argument:
 
 ### Build Only
 
-Instruct `turnkey`, `benchmark_files()`, or `benchmark_model()` to only run the [Analysis](#analysis) and [Build](#build) phases of the `benchmark` command.
+Instruct `turnkey` or `benchmark_files()` to only run the [Analysis](#analysis) and [Build](#build) phases of the `benchmark` command.
 
 Usage:
 - `turnkey benchmark INPUT_FILES --build-only`
@@ -503,7 +477,6 @@ Usage:
 
 Also available as API arguments:
 - `benchmark_files(build_only=True/False)` (default False)
-- `benchmark_model(build_only=True/False)` (default False)
 
 > See the [Build Only tutorial](https://github.com/onnx/turnkeyml/blob/main/examples/cli/build.md#build-only) for a detailed example.
 
@@ -515,7 +488,6 @@ None of the built-in runtimes support such arguments, however plugin contributor
 
 Also available as API arguments:
 - `benchmark_files(rt_args=Dict)` (default None)
-- `benchmark_model(rt_args=Dict)` (default None)
 
 ## Cache Commands
 
@@ -635,7 +607,7 @@ export TURNKEY_DEBUG=True
 
 ### Set the ONNX Opset
 
-By default, `turnkey`, `benchmark_files()`, and `benchmark_model()` will use the default ONNX opset defined in `turnkey.common.build.DEFAULT_ONNX_OPSET`. You can set a different default ONNX opset by setting the `TURNKEY_ONNX_OPSET` environment variable.
+By default, `turnkey`, `benchmark_files()`, and `build_model()` will use the default ONNX opset defined in `turnkey.common.build.DEFAULT_ONNX_OPSET`. You can set a different default ONNX opset by setting the `TURNKEY_ONNX_OPSET` environment variable.
 
 For example:
 

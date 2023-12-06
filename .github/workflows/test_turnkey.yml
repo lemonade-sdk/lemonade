@@ -53,8 +53,6 @@ jobs:
           # turnkey examples
           # Note: we clear the default cache location prior to each example run
           rm -rf ~/.cache/turnkey
-          python examples/model_api/hello_world.py
-          rm -rf ~/.cache/turnkey
           python examples/files_api/onnx_opset.py --onnx-opset 15
           rm -rf ~/.cache/turnkey
           turnkey examples/cli/scripts/hello_world.py
@@ -71,7 +69,6 @@ jobs:
           cd test/
           python cli.py
           python analysis.py
-          python model_api.py
       - name: Test example plugins
         shell: bash -el {0}
         run: |

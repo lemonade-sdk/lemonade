@@ -1,9 +1,12 @@
 from typing import Optional
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import turnkeyml.run.onnxrt as onnxrt
 import turnkeyml.run.tensorrt as tensorrt
 import turnkeyml.run.torchrt as torchrt
 import turnkeyml.common.plugins as plugins
+from turnkeyml.build.stage import Sequence
+import turnkeyml.build.sequences as sequences
+import turnkeyml.common.exceptions as exp
 
 
 def supported_devices_list(data: Dict, parent_key: str = "") -> List:
@@ -72,3 +75,63 @@ def apply_default_runtime(device: str, runtime: Optional[str] = None):
         return DEVICE_RUNTIME_MAP[device][DEFAULT_RUNTIME]
     else:
         return runtime
+
+
+def _check_suggestion(value: str):
+    return (
+        f"You may need to check the spelling of '{value}', install a "
+        "plugin, or update the turnkeyml package."
+    )
+
+
+def select_runtime_and_sequence(
+    device: str, runtime: Optional[str], sequence: Optional[Sequence]
+) -> Tuple[str, str, Sequence]:
+    selected_runtime = apply_default_runtime(device, runtime)
+
+    # Validate device and runtime selections
+    if device not in SUPPORTED_DEVICES:
+        raise exp.ArgError(
+            f"Device argument '{device}' is not one of the available "
+            f"supported devices {SUPPORTED_DEVICES}\n"
+            f"{_check_suggestion(device)}"
+        )
+    if selected_runtime not in DEVICE_RUNTIME_MAP[device]:
+        raise exp.ArgError(
+            f"Runtime argument '{selected_runtime}' is not one of the available "
+            f"runtimes supported for device '{device}': {DEVICE_RUNTIME_MAP[device]}\n"
+            f"{_check_suggestion(selected_runtime)}"
+        )
+
+    # Get the plugin module for the selected runtime
+    runtime_info = SUPPORTED_RUNTIMES[selected_runtime]
+
+    # Perform a build, if necessary
+    if runtime_info["build_required"]:
+        # Get the build sequence that will be used for the model
+        if sequence is None:
+            # Automatically choose a Sequence based on what the runtime expects
+            sequence_selected = runtime_info["default_sequence"]
+        else:
+            # User-specified Sequence
+            if isinstance(sequence, str):
+                # Sequence is defined by a plugin
+                if sequence in sequences.SUPPORTED_SEQUENCES.keys():
+                    sequence_selected = sequences.SUPPORTED_SEQUENCES[sequence]
+                else:
+                    raise ValueError(
+                        f"Sequence argument {sequence} is not one of the "
+                        "available sequences installed: "
+                        f"{sequences.SUPPORTED_SEQUENCES.keys()} \n"
+                        f"{_check_suggestion(sequence)}"
+                    )
+
+            elif isinstance(sequence, Sequence):
+                # Sequence is a user-defined instance of Sequence
+                sequence_selected = sequence
+
+    else:
+        # Sequence is only needed for builds
+        sequence_selected = None
+
+    return selected_runtime, runtime_info, sequence_selected

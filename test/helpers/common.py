@@ -1,4 +1,3 @@
-
 import os
 import shutil
 from typing import Dict
@@ -101,13 +100,13 @@ output = model(**inputs)
 }
 
 
-def create_test_dir(key:str, test_scripts: Dict = None):
+def create_test_dir(key: str, test_scripts: Dict = None):
     # Define paths to be used
     base_dir = os.path.dirname(os.path.abspath(__file__))
     cache_dir = os.path.join(base_dir, "generated", f"{key}_cache_dir")
     corpus_dir = os.path.join(base_dir, "generated", f"test_corpus")
-    
-    # Delete folders if they exist and 
+
+    # Delete folders if they exist and
     if os.path.isdir(cache_dir):
         shutil.rmtree(cache_dir)
     if os.path.isdir(corpus_dir):
@@ -124,8 +123,10 @@ def create_test_dir(key:str, test_scripts: Dict = None):
 
     return cache_dir, corpus_dir
 
+
 def strip_dot_py(test_script_file: str) -> str:
     return test_script_file.split(".")[0]
+
 
 def get_stats_and_state(
     test_script: str,
@@ -141,8 +142,8 @@ def get_stats_and_state(
             stats = filesystem.Stats(
                 build_state.cache_dir,
                 build_state.config.build_name,
-                build_state.stats_id,
+                build_state.evaluation_id,
             )
-            return stats.build_stats, build_state
+            return stats.evaluation_stats, build_state
 
     raise Exception(f"Stats not found for {test_script}")

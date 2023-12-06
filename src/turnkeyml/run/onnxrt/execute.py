@@ -8,7 +8,6 @@ import subprocess
 import json
 from statistics import mean
 import platform
-import turnkeyml.common.build as build
 import turnkeyml.run.plugin_helpers as plugin_helpers
 
 ORT_VERSION = "1.15.1"
@@ -84,7 +83,7 @@ def execute_benchmark(
     ]
 
     # Execute command and log stdout/stderr
-    build.logged_subprocess(
+    plugin_helpers.logged_subprocess(
         cmd=cmd,
         cwd=os.path.dirname(output_dir),
         log_to_std_streams=False,

@@ -27,7 +27,6 @@ combined_example_sequence = Sequence(
     stages=[
         export.ExportPlaceholder(),
         CombinedExampleStage(),
-        export.SuccessStage(),
     ],
     enable_model_validation=True,
 )
