@@ -67,7 +67,7 @@ bert.py:
 Let's say you want a fp16 ONNX file of the same model: incorporate the ONNX ML Tools fp16 converter tool into the build sequence, and the `Build dir` will contain the ONNX file you seek:
 
 ```
-> turnkey build bert.py --sequence optimize-fp16
+> turnkey bert.py --sequence optimize-fp16 --build-only
 ```
 
 ```
