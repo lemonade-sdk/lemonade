@@ -99,7 +99,9 @@ def main():
         return file_name
 
     benchmark_parser = subparsers.add_parser(
-        "benchmark", help="Benchmark the performance of one or more models"
+        "benchmark",
+        help="Benchmark the performance of one or more models",
+        description="Analyze, build, and then benchmark the model(s) within input file(s).",
     )
     benchmark_parser.set_defaults(func=benchmark_command)
 
@@ -110,7 +112,156 @@ def main():
         type=lambda file: check_extension(("py", "onnx", "txt"), file),
     )
 
-    slurm_or_processes_group = benchmark_parser.add_mutually_exclusive_group()
+    toolchain_select_group = benchmark_parser.add_argument_group(
+        "Select which phase(s) of the toolchain to run "
+        "(default is to run analyze, build, and benchmark)"
+    )
+
+    toolchain_select_group.add_argument(
+        "-a",
+        "--analyze-only",
+        dest="analyze_only",
+        help="Stop this command after the analyze phase",
+        action="store_true",
+    )
+
+    toolchain_select_group.add_argument(
+        "-b",
+        "--build-only",
+        dest="build_only",
+        help="Stop this command after the analyze and build phases",
+        action="store_true",
+    )
+
+    analyze_group = benchmark_parser.add_argument_group(
+        "Options that specifically apply to the `analyze` phase of the toolflow"
+    )
+
+    analyze_group.add_argument(
+        "--labels",
+        dest="labels",
+        help="Only benchmark the scripts that have the provided labels",
+        nargs="*",
+        default=[],
+    )
+
+    analyze_group.add_argument(
+        "--script-args",
+        dest="script_args",
+        type=str,
+        help="Arguments to pass into the target script(s)",
+    )
+
+    analyze_group.add_argument(
+        "--max-depth",
+        dest="max_depth",
+        type=int,
+        default=0,
+        help="Maximum depth to analyze within the model structure of the target script(s)",
+    )
+
+    both_build_benchmark_group = benchmark_parser.add_argument_group(
+        "Options that apply to both the `build` and `benchmark` phases of the toolflow"
+    )
+
+    benchmark_default_device = "x86"
+    both_build_benchmark_group.add_argument(
+        "--device",
+        choices=SUPPORTED_DEVICES,
+        dest="device",
+        help="Type of hardware device to be used for the benchmark "
+        f'(defaults to "{benchmark_default_device}")',
+        required=False,
+        default=benchmark_default_device,
+    )
+
+    both_build_benchmark_group.add_argument(
+        "--runtime",
+        choices=SUPPORTED_RUNTIMES.keys(),
+        dest="runtime",
+        help="Software runtime that will be used to collect the benchmark. "
+        "Must be compatible with the selected device. "
+        "Automatically selects a sequence if `--sequence` is not used."
+        "If this argument is not set, the default runtime of the selected device will be used.",
+        required=False,
+        default=None,
+    )
+
+    both_build_benchmark_group.add_argument(
+        "-d",
+        "--cache-dir",
+        dest="cache_dir",
+        help="Build cache directory where the resulting build directories will "
+        f"be stored (defaults to {filesystem.DEFAULT_CACHE_DIR})",
+        required=False,
+        default=filesystem.DEFAULT_CACHE_DIR,
+    )
+
+    both_build_benchmark_group.add_argument(
+        "--lean-cache",
+        dest="lean_cache",
+        help="Delete all build artifacts except for log files when the command completes",
+        action="store_true",
+    )
+
+    build_group = benchmark_parser.add_argument_group(
+        "Options that apply specifically to the `build` phase of the toolflow"
+    )
+
+    build_group.add_argument(
+        "--sequence",
+        choices=SUPPORTED_SEQUENCES.keys(),
+        dest="sequence",
+        help="Name of a build sequence that will define the model-to-model transformations, "
+        "used to build the models. Each runtime has a default sequence that it uses.",
+        required=False,
+        default=None,
+    )
+
+    build_group.add_argument(
+        "--rebuild",
+        choices=build.REBUILD_OPTIONS,
+        dest="rebuild",
+        help=f"Sets the cache rebuild policy (defaults to {build.DEFAULT_REBUILD_POLICY})",
+        required=False,
+        default=build.DEFAULT_REBUILD_POLICY,
+    )
+
+    build_group.add_argument(
+        "--onnx-opset",
+        dest="onnx_opset",
+        type=int,
+        default=None,
+        help=f"ONNX opset used when creating ONNX files (default={build.DEFAULT_ONNX_OPSET}). "
+        "Not applicable when input model is already a .onnx file.",
+    )
+
+    benchmark_group = benchmark_parser.add_argument_group(
+        "Options that apply specifically to the `benchmark` phase of the toolflow"
+    )
+
+    benchmark_group.add_argument(
+        "--iterations",
+        dest="iterations",
+        type=int,
+        default=100,
+        help="Number of execution iterations of the model to capture\
+              the benchmarking performance (e.g., mean latency)",
+    )
+
+    benchmark_group.add_argument(
+        "--rt-args",
+        dest="rt_args",
+        type=str,
+        nargs="*",
+        help="Optional arguments provided to the runtime being used",
+    )
+
+    all_toolflows_group = benchmark_parser.add_argument_group(
+        "Options that apply to all toolflows"
+    )
+
+    slurm_or_processes_group = all_toolflows_group.add_mutually_exclusive_group()
 
     slurm_or_processes_group.add_argument(
         "--use-slurm",
@@ -126,136 +277,13 @@ def main():
         action="store_true",
     )
 
-    benchmark_parser.add_argument(
-        "--lean-cache",
-        dest="lean_cache",
-        help="Delete all build artifacts except for log files when the command completes",
-        action="store_true",
-    )
-
-    benchmark_parser.add_argument(
-        "-d",
-        "--cache-dir",
-        dest="cache_dir",
-        help="Build cache directory where the resulting build directories will "
-        f"be stored (defaults to {filesystem.DEFAULT_CACHE_DIR})",
-        required=False,
-        default=filesystem.DEFAULT_CACHE_DIR,
-    )
-
-    benchmark_parser.add_argument(
-        "--labels",
-        dest="labels",
-        help="Only benchmark the scripts that have the provided labels",
-        nargs="*",
-        default=[],
-    )
-
-    benchmark_parser.add_argument(
-        "--sequence",
-        choices=SUPPORTED_SEQUENCES.keys(),
-        dest="sequence",
-        help="Name of a build sequence that will define the model-to-model transformations, "
-        "used to build the models. Each runtime has a default sequence that it uses.",
-        required=False,
-        default=None,
-    )
-
-    benchmark_parser.add_argument(
-        "--rebuild",
-        choices=build.REBUILD_OPTIONS,
-        dest="rebuild",
-        help=f"Sets the cache rebuild policy (defaults to {build.DEFAULT_REBUILD_POLICY})",
-        required=False,
-        default=build.DEFAULT_REBUILD_POLICY,
-    )
-
-    benchmark_default_device = "x86"
-    benchmark_parser.add_argument(
-        "--device",
-        choices=SUPPORTED_DEVICES,
-        dest="device",
-        help="Type of hardware device to be used for the benchmark "
-        f'(defaults to "{benchmark_default_device}")',
-        required=False,
-        default=benchmark_default_device,
-    )
-
-    benchmark_parser.add_argument(
-        "--runtime",
-        choices=SUPPORTED_RUNTIMES.keys(),
-        dest="runtime",
-        help="Software runtime that will be used to collect the benchmark. "
-        "Must be compatible with the selected device. "
-        "Automatically selects a sequence if `--sequence` is not used."
-        "If this argument is not set, the default runtime of the selected device will be used.",
-        required=False,
-        default=None,
-    )
-
-    benchmark_parser.add_argument(
-        "--iterations",
-        dest="iterations",
-        type=int,
-        default=100,
-        help="Number of execution iterations of the model to capture\
-              the benchmarking performance (e.g., mean latency)",
-    )
-
-    benchmark_parser.add_argument(
-        "--analyze-only",
-        dest="analyze_only",
-        help="Stop this command after the analysis phase",
-        action="store_true",
-    )
-
-    benchmark_parser.add_argument(
-        "-b",
-        "--build-only",
-        dest="build_only",
-        help="Stop this command after the build phase",
-        action="store_true",
-    )
-
-    benchmark_parser.add_argument(
-        "--script-args",
-        dest="script_args",
-        type=str,
-        help="Arguments to pass into the target script(s)",
-    )
-
-    benchmark_parser.add_argument(
-        "--max-depth",
-        dest="max_depth",
-        type=int,
-        default=0,
-        help="Maximum depth to analyze within the model structure of the target script(s)",
-    )
-
-    benchmark_parser.add_argument(
-        "--onnx-opset",
-        dest="onnx_opset",
-        type=int,
-        default=None,
-        help=f"ONNX opset used when creating ONNX files (default={build.DEFAULT_ONNX_OPSET}). "
-        "Not applicable when input model is already a .onnx file.",
-    )
-
-    benchmark_parser.add_argument(
+    all_toolflows_group.add_argument(
         "--timeout",
         type=int,
         default=None,
         help="Build timeout, in seconds, after which a build will be canceled "
         f"(default={DEFAULT_TIMEOUT_SECONDS}). Only "
         "applies when --process-isolation or --use-slurm is also used.",
-    )
-
-    benchmark_parser.add_argument(
-        "--rt-args",
-        dest="rt_args",
-        type=str,
-        nargs="*",
-        help="Optional arguments provided to the runtime being used",
     )
 
     #######################################
