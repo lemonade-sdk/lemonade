@@ -17,8 +17,9 @@ from turnkeyml.cli.spawn import DEFAULT_TIMEOUT_SECONDS
 
 class MyParser(argparse.ArgumentParser):
     def error(self, message):
-        sys.stderr.write("error: %s\n" % message)
-        self.print_help()
+        sys.stderr.write(f"error: {message}\n\n")
+        sys.stderr.write(f"Run '{self.prog} --help' for more information\n\n")
+        self.print_usage(sys.stderr)
         sys.exit(2)
 
 
