@@ -722,7 +722,7 @@ class Testing(unittest.TestCase):
 
     def test_017_invalid_file_type(self):
         # Ensure that we get an error when running turnkey with invalid input_files
-        with self.assertRaises(exceptions.ArgError):
+        with self.assertRaises(SystemExit):
             testargs = ["turnkey", "gobbledegook"]
             with patch.object(sys, "argv", flatten(testargs)):
                 turnkeycli()
