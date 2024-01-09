@@ -6,6 +6,7 @@ import sys
 import copy
 from typing import Union
 import torch
+import torch.onnx.verification
 import numpy as np
 import onnxruntime
 import onnxmltools
@@ -279,9 +280,45 @@ class ExportPytorchModel(stage.Stage):
         default_warnings = warnings.showwarning
         warnings.showwarning = _warn_to_stdout
 
+        stats = fs.Stats(
+            state.cache_dir, state.config.build_name, state.evaluation_id
+        )
+
+        # Verify if the exported model matches the input torch model
+        try:
+            # The `torch.onnx.verification.find_mismatch()` takes input arguments to the
+            # model as `input_args (Tuple[Any, ...])`
+            export_verification = torch.onnx.verification.find_mismatch(
+                state.model,
+                tuple(state.inputs.values()),
+                opset_version=state.config.onnx_opset)
+
+            # `export_verification.has_mismatch()` returns True if a mismatch is found and
+            # False otherwise. If no mismatch is found,# `is_export_valid` is set to "Valid",
+            # indicating successful verification.
+            # If a mismatch is found, `is_export_valid` is set to "Invalid", indicating
+            # the verification failed.
+            if not export_verification.has_mismatch():
+                is_export_valid = "valid"
+            else:
+                is_export_valid = "invalid"
+
+        # The except block catches any type of exception that might occur during the
+        # verification process. If any exception occurs,`is_export_valid` is set to
+        # "Unverified", indicating that the verification process could not be completed,
+        # and therefore the model's export status is unverified.
+        except Exception:  # pylint: disable=broad-except
+            is_export_valid = "unverified"
+
+        stats.save_model_eval_stat(
+                fs.Keys.TORCH_ONNX_EXPORT_VALIDITY,
+                is_export_valid,
+        )
+
         # Export the model to ONNX
         output_path = base_onnx_file(state)
         os.makedirs(onnx_dir(state), exist_ok=True)
+
         torch.onnx.export(
             state.model,
             dummy_inputs,
@@ -309,9 +346,6 @@ class ExportPytorchModel(stage.Stage):
         if check_model(output_path, success_msg, fail_msg):
             state.intermediate_results = [output_path]
 
-            stats = fs.Stats(
-                state.cache_dir, state.config.build_name, state.evaluation_id
-            )
             stats.save_model_eval_stat(
                 fs.Keys.ONNX_FILE,
                 output_path,

@@ -358,7 +358,9 @@ class Keys:
     BUILD_STATUS = "build_status"
     # Indicates status of the most recent benchmark tool run: FunctionStatus
     BENCHMARK_STATUS = "benchmark_status"
-
+    # Indicates the match between the TorchScript IR graph and
+    # the exported onnx model (verified with torch.onnx.verification)
+    TORCH_ONNX_EXPORT_VALIDITY = "torch_export_validity"
 
 class FunctionStatus:
     RUNNING = "running"
