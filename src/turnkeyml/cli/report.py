@@ -108,17 +108,17 @@ def summary_spreadsheets(args) -> None:
                 if header not in column_headers:
                     column_headers.append(header)
 
-        # Add each build to the report
-        for evaluation_stats in all_evaluation_stats:
-            # Start with a dictionary where all of the values are "-". If a build
-            # has a value for each key we will fill it in, and otherwise the "-"
-            # will indicate that no value was available
-            result = {k: "-" for k in column_headers}
+    # Add each build to the report
+    for evaluation_stats in all_evaluation_stats:
+        # Start with a dictionary where all of the values are "-". If a build
+        # has a value for each key we will fill it in, and otherwise the "-"
+        # will indicate that no value was available
+        result = {k: "-" for k in column_headers}
 
-            for key in column_headers:
-                result[key] = _good_get(evaluation_stats, key)
+        for key in column_headers:
+            result[key] = _good_get(evaluation_stats, key)
 
-            report.append(result)
+        report.append(result)
 
     # Populate results spreadsheet
     with open(report_path, "w", newline="", encoding="utf8") as spreadsheet:
