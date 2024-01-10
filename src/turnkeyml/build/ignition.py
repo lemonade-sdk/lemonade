@@ -157,10 +157,7 @@ def validate_cached_model(
     )
     if build_conditions_changed:
         # Show an error if build_name is not specified for different models on the same script
-        if (
-            state.uid == build.unique_id()
-            and state.build_status != build.Status.PARTIAL_BUILD
-        ):
+        if state.uid == build.unique_id():
             msg = (
                 "You are building multiple different models in the same script "
                 "without specifying a unique build_model(..., build_name=) for each build."
@@ -201,8 +198,9 @@ def validate_cached_model(
                 result.append(msg)
     else:
         if (
-            state.build_status == build.Status.FAILED_BUILD
-            or state.build_status == build.Status.BUILD_RUNNING
+            state.build_status == build.FunctionStatus.ERROR
+            or state.build_status == build.FunctionStatus.INCOMPLETE
+            or state.build_status == build.FunctionStatus.KILLED
         ) and turnkey_version == state.turnkey_version:
             msg = (
                 "build_model() has detected that you already attempted building "
@@ -324,7 +322,7 @@ def load_or_make_state(
 
             if (
                 model_type == build.ModelType.UNKNOWN
-                and state.build_status == build.Status.SUCCESSFUL_BUILD
+                and state.build_status == build.FunctionStatus.SUCCESSFUL
             ):
                 msg = (
                     "Model caching is disabled for successful builds against custom Sequences. "
@@ -335,7 +333,7 @@ def load_or_make_state(
                 return _begin_fresh_build(state_args, state_type)
             elif (
                 model_type == build.ModelType.UNKNOWN
-                and state.build_status == build.Status.PARTIAL_BUILD
+                and state.build_status == build.FunctionStatus.INCOMPLETE
             ):
                 msg = (
                     f"Model {config.build_name} was partially built in a previous call to "

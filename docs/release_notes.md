@@ -8,6 +8,83 @@ We are tracking two types of major changes:
 
 If you are creating the release notes for a new version, please see the [template](#template-version-majorminorpatch). Release notes should capture all of the significant changes since the last numbered package release.
 
+# Version 1.1.0
+
+This version focuses on improving the clarity of the telemetry reported.
+
+## Users
+
+### User Improvements
+
+- ONNX files exported from PyTorch models now have a `torch_export_validity` key in their stats/report files that indicates whether the `torch.onnx.verification.find_mismatch()` API could find any issue with the exported ONNX file. Possible values:
+  - `valid`: passed verification.
+  - `invalid`: failed verification.
+  - `unverified`: turnkey was unable to complete the verification process.
+- Stats and report CSV files split `stages_completed` into stage status and duration.
+- Build, benchmark, and stage status values in the stat and report files now use the same terminology values:
+
+```
+class FunctionStatus(enum.Enum):
+    """
+    Status values that are assigned to stages, builds, benchmarks, and other
+    functionality to help the user understand whether that function completed
+    successfully or not.
+    """
+
+    # SUCCESSFUL means the stage/build/benchmark completed successfully.
+    SUCCESSFUL = "successful"
+
+    # ERROR means the stage/build/benchmark failed and threw some error that
+    # was caught by turnkey. You should proceed by looking at the build
+    # logs to see what happened.
+
+    ERROR = "error"
+
+    # KILLED means the build/benchmark failed because the system killed it. This can
+    # happen because of an out-of-memory (OOM), timeout, system shutdown, etc.
+    # You should proceed by re-running the build and keeping an eye on it to observe
+    # why it is being killed (e.g., watch the RAM utilization to diagnose an OOM).
+    KILLED = "killed"
+
+    # The NOT_STARTED status is applied to all stages/builds/benchmarks at startup.
+    # It will be replaced by one of the other status values if the stage/build/benchmark
+    # has a chance to start running.
+    # A value of NOT_STARTED in the report CSV indicates that the stage/build/benchmark
+    # never had a chance to start because turnkey exited before that functionality had
+    # a chance to start running.
+    NOT_STARTED = "not_started"
+
+    # INCOMPLETE indicates that a stage/build/benchmark started running and did not complete.
+    # Each stage, build, and benchmark are marked as INCOMPLETE when they start running.
+    # If you open the turnkey_stats.yaml file while the stage/build/benchmark
+    # is still running, the status will show as INCOMPLETE. If the stage/build/benchmark
+    # is killed without the chance to do any stats cleanup, the status will continue to
+    # show as INCOMPLETE in turnkey_stats.yaml.
+    # When the report CSV is created, any instance of an INCOMPLETE stage/build/benchmark
+    # status will be replaced by KILLED.
+    INCOMPLETE = "incomplete"
+```
+
+- The CLI help page for the `benchmark` command has been reorganized for clarity (try `turnkey benchmark -h`).
+- The CLI now provides more helpful errors when the user provides arguments incorrectly.
+- Fixed a bug where multi-cache reporting could repeat entries in the report CSV file.
+
+
+## User Breaking Changes
+
+- Previous turnkey caches are not compatible with this version and must be rebuilt.
+- The status terminology changes documented above mean that stats/reports from pre-v1.1.0 builds are not directly comparable to post-v1.1.0 builds.
+
+## Developers
+
+### Developer Improvements
+
+None
+
+### Developer Breaking Changes
+
+- `build.Status` and `filesystem.FunctionStatus` have both been removed, and replaced with `build.FunctionStatus` which is the union of those two Enums.
+
 # Version 1.0.0
 
 This version focuses on cleaning up technical debts and most of the changes are not visible to users. It removes cumbersome requirements for developers, removes unused features to streamline the codebase, and also clarifying some API naming schemes.

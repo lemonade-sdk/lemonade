@@ -105,7 +105,7 @@ def build_model(
 
     # Return a cached build if possible, otherwise prepare the model State for
     # a build
-    if state.build_status == build.Status.SUCCESSFUL_BUILD:
+    if state.build_status == build.FunctionStatus.SUCCESSFUL:
         # Successful builds can be loaded from cache and returned with
         # no additional steps
         additional_msg = " (build_name auto-selected)" if config.auto_name else ""

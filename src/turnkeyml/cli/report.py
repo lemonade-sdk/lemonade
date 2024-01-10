@@ -7,6 +7,7 @@ import yaml
 import pandas as pd
 import turnkeyml.common.printing as printing
 import turnkeyml.common.filesystem as fs
+import turnkeyml.common.build as bd
 
 
 def get_report_name(prefix: str = "") -> str:
@@ -67,46 +68,47 @@ def summary_spreadsheets(args) -> None:
                     # load the yaml into a dict
                     model_stats = yaml.load(stream, Loader=yaml.FullLoader)
 
-                    # create a separate dict for each build
-                    for build in model_stats[fs.Keys.EVALUATIONS].values():
+                    # create a separate dict for each evaluation
+                    for evaluation in model_stats[fs.Keys.EVALUATIONS].values():
                         evaluation_stats = {}
 
-                        # Copy all of the stats for the model that are common across builds
+                        # Copy all of the stats for the model that are common across evaluation
                         for key, value in model_stats.items():
                             if key != fs.Keys.EVALUATIONS:
                                 evaluation_stats[key] = value
 
-                        # Copy the build-specific stats
-                        for key, value in build.items():
-                            # Break each value in "completed build stages" into its own column
-                            # to make analysis easier
-                            if key == fs.Keys.COMPLETED_BUILD_STAGES:
-                                for subkey, subvalue in value.items():
-                                    evaluation_stats[subkey] = subvalue
-
-                            # If a build or benchmark is still marked as "running" at
-                            # reporting time, it
-                            # must have been killed by a time out, out-of-memory (OOM), or some
-                            # other uncaught exception
+                        # Copy the evaluation-specific stats
+                        for key, value in evaluation.items():
+                            # If a build or benchmark is still marked as "incomplete" at
+                            # reporting time, it must have been killed by a time out,
+                            # out-of-memory (OOM), or some other uncaught exception
                             if (
-                                key == fs.Keys.BUILD_STATUS or fs.Keys.BENCHMARK_STATUS
-                            ) and value == fs.FunctionStatus.RUNNING:
-                                value = fs.FunctionStatus.KILLED
+                                (
+                                    key == fs.Keys.BUILD_STATUS
+                                    or fs.Keys.BENCHMARK_STATUS
+                                )
+                                or fs.Keys.STAGE_STATUS in key
+                            ) and value == bd.FunctionStatus.INCOMPLETE.value:
+                                value = bd.FunctionStatus.KILLED.value
 
-                            evaluation_stats[key] = value
+                            # Add stats ensuring that those are all in lower case
+                            evaluation_stats[key.lower()] = value
 
                         all_evaluation_stats.append(evaluation_stats)
                 except yaml.scanner.ScannerError:
                     continue
 
-        # Scan the build stats to determine the set of columns for the CSV file.
-        # The CSV will have one column for every key in any build stats dict.
-        column_headers = []
-        for evaluation_stats in all_evaluation_stats:
-            # Add any key that isn't already in column_headers
-            for header in evaluation_stats.keys():
-                if header not in column_headers:
-                    column_headers.append(header)
+    # Scan the build stats to determine the set of columns for the CSV file.
+    # The CSV will have one column for every key in any build stats dict.
+    column_headers = []
+    for evaluation_stats in all_evaluation_stats:
+        # Add any key that isn't already in column_headers
+        for header in evaluation_stats.keys():
+            if header not in column_headers:
+                column_headers.append(header)
+
+    # Sort all columns alphabetically
+    column_headers = sorted(column_headers)
 
     # Add each build to the report
     for evaluation_stats in all_evaluation_stats:

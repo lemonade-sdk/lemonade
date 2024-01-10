@@ -151,7 +151,7 @@ def assert_success_of_builds(
                     build_state.config.build_name,
                     build_state.evaluation_id,
                 )
-                assert build_state.build_status == build.Status.SUCCESSFUL_BUILD
+                assert build_state.build_status == build.FunctionStatus.SUCCESSFUL
                 script_build_found = True
                 builds_found += 1
 
@@ -555,7 +555,7 @@ class Testing(unittest.TestCase):
 
         # Ensure test failed
         build_state = build.load_state(state_path=filesystem.get_all(cache_dir)[0])
-        assert build_state.build_status != build.Status.SUCCESSFUL_BUILD
+        assert build_state.build_status != build.FunctionStatus.SUCCESSFUL
 
         # Generate report
         testargs = [
@@ -957,8 +957,7 @@ class Testing(unittest.TestCase):
             "device",
             "mean_latency",
             "throughput",
-            "all_build_stages",
-            "completed_build_stages",
+            "selected_sequence_of_stages",
         ]
         linear_summary = summary[1]
         assert len(summary) == len(test_scripts)
@@ -995,19 +994,27 @@ class Testing(unittest.TestCase):
 
         # Make sure the report.get_dict() API works
         result_dict = report.get_dict(
-            summary_csv_path, ["all_build_stages", "completed_build_stages"]
+            summary_csv_path,
+            [
+                "selected_sequence_of_stages",
+                "stage_duration:export_pytorch",
+                "stage_status:export_pytorch",
+            ],
         )
         for result in result_dict.values():
-            # All of the models should have exported to ONNX, so the "onnx_exported" value
-            # should be True for all of them
-            assert "export_pytorch" in yaml.safe_load(result["all_build_stages"])
-            assert (
-                "export_pytorch"
-                in yaml.safe_load(result["completed_build_stages"]).keys()
-            )
-            assert (
-                yaml.safe_load(result["completed_build_stages"])["export_pytorch"] > 0
-            )
+            # All of the models should have exported to ONNX
+            assert "export_pytorch" in result["selected_sequence_of_stages"]
+            assert result["stage_status:export_pytorch"] == "successful", result[
+                "stage_status:export_pytorch"
+            ]
+            try:
+                assert int(result["stage_duration:export_pytorch"]) > 0, result[
+                    "stage_duration:export_pytorch"
+                ]
+            except ValueError:
+                # Catch the case where the value is "-" and therefore can't be
+                # converted to an int
+                assert result["stage_duration:export_pytorch"] == "-"
 
 
 if __name__ == "__main__":

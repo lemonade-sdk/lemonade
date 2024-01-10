@@ -322,11 +322,7 @@ class Keys:
     # ONNX model input tensor dimensions
     ONNX_INPUT_DIMENSIONS = "onnx_input_dimensions"
     # List of all build stages in the Sequence
-    ALL_BUILD_STAGES = "all_build_stages"
-    # Map of build stages that completed successfully to the
-    # execution time for that stage. We can figure out if any build
-    # stages failed if all_build_stages != completed_build_stages.keys().
-    COMPLETED_BUILD_STAGES = "completed_build_stages"
+    SELECTED_SEQUENCE_OF_STAGES = "selected_sequence_of_stages"
     # Location of the most up-to-date ONNX file for this build. If the
     # build completed successfully, this is the final ONNX file.
     ONNX_FILE = "onnx_file"
@@ -361,12 +357,12 @@ class Keys:
     # Indicates the match between the TorchScript IR graph and
     # the exported onnx model (verified with torch.onnx.verification)
     TORCH_ONNX_EXPORT_VALIDITY = "torch_export_validity"
-
-class FunctionStatus:
-    RUNNING = "running"
-    SUCCESSFUL = "successful"
-    FAILED = "failed"
-    KILLED = "killed"
+    # Prefix for reporting the execution duration of a stage
+    # In the report this will look like stage_duration:STAGE_NAME
+    STAGE_DURATION = "stage_duration"
+    # Prefix for reporting the execution status of a stage
+    # In the report this will look like stage_status:STAGE_NAME
+    STAGE_STATUS = "stage_status"
 
 
 class Stats:

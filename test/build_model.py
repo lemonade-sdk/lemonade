@@ -105,7 +105,7 @@ def full_compilation_pytorch_model():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_keras_subclass_model():
@@ -118,7 +118,7 @@ def full_compilation_keras_subclass_model():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_keras_sequential_model():
@@ -131,7 +131,7 @@ def full_compilation_keras_sequential_model():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_onnx_model():
@@ -152,7 +152,7 @@ def full_compilation_onnx_model():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_hummingbird_rf():
@@ -167,7 +167,7 @@ def full_compilation_hummingbird_rf():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_hummingbird_xgb():
@@ -182,7 +182,7 @@ def full_compilation_hummingbird_xgb():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_hummingbird_lgbm():
@@ -197,7 +197,7 @@ def full_compilation_hummingbird_lgbm():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def full_compilation_hummingbird_kn():
@@ -212,7 +212,7 @@ def full_compilation_hummingbird_kn():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def scriptmodule_functional_check():
@@ -229,7 +229,7 @@ def scriptmodule_functional_check():
         monitor=False,
         cache_dir=cache_location,
     )
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 def custom_stage():
@@ -280,7 +280,7 @@ def custom_stage():
         cache_dir=cache_location,
     )
 
-    return state.build_status == build.Status.SUCCESSFUL_BUILD
+    return state.build_status == build.FunctionStatus.SUCCESSFUL
 
 
 class FullyCustomStage(stage.Stage):
@@ -580,7 +580,7 @@ class Testing(unittest.TestCase):
             sequence=sequences.optimize_fp16,
         )
 
-        assert state.build_status == build.Status.SUCCESSFUL_BUILD
+        assert state.build_status == build.FunctionStatus.SUCCESSFUL
 
         onnx_model = onnx.load(state.results[0])
         model_opset = getattr(onnx_model.opset_import[0], "version", None)
@@ -599,7 +599,7 @@ class Testing(unittest.TestCase):
             sequence=sequences.onnx_fp32,
         )
 
-        assert state.build_status == build.Status.SUCCESSFUL_BUILD
+        assert state.build_status == build.FunctionStatus.SUCCESSFUL
         assert os.path.exists(export.base_onnx_file(state))
         assert not os.path.exists(export.opt_onnx_file(state))
 
@@ -635,7 +635,7 @@ class Testing(unittest.TestCase):
         )
 
         # Make sure the build was successful
-        assert state.build_status == build.Status.SUCCESSFUL_BUILD
+        assert state.build_status == build.FunctionStatus.SUCCESSFUL
 
         # Get ONNX file's opset
         onnx_model = onnx.load(onnx_file)

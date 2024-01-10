@@ -88,9 +88,13 @@ def set_status_on_exception(build_state: build.State, stats: fs.Stats):
     # We get `state` when the build tool succeeds, so we can use that to identify
     # whether the exception was thrown during build or benchmark
     if not build_state:
-        stats.save_model_eval_stat(fs.Keys.BUILD_STATUS, fs.FunctionStatus.FAILED)
+        stats.save_model_eval_stat(
+            fs.Keys.BUILD_STATUS, build.FunctionStatus.ERROR.value
+        )
     else:
-        stats.save_model_eval_stat(fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.FAILED)
+        stats.save_model_eval_stat(
+            fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.ERROR.value
+        )
 
 
 def explore_invocation(
@@ -248,6 +252,14 @@ def explore_invocation(
 
         return
 
+    # Initialize build and benchmark status to "not started"
+    stats.save_model_eval_stat(
+        fs.Keys.BUILD_STATUS, build.FunctionStatus.NOT_STARTED.value
+    )
+    stats.save_model_eval_stat(
+        fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.NOT_STARTED.value
+    )
+
     build_state = None
     perf = None
     try:
@@ -257,7 +269,9 @@ def explore_invocation(
             # we will try to catch the exception and note it in the stats.
             # If a concluded build still has a status of "running", this means
             # there was an uncaught exception.
-            stats.save_model_eval_stat(fs.Keys.BUILD_STATUS, fs.FunctionStatus.RUNNING)
+            stats.save_model_eval_stat(
+                fs.Keys.BUILD_STATUS, build.FunctionStatus.INCOMPLETE.value
+            )
 
             build_state = build_model(
                 model=model_info.model,
@@ -272,7 +286,7 @@ def explore_invocation(
             )
 
             stats.save_model_eval_stat(
-                fs.Keys.BUILD_STATUS, fs.FunctionStatus.SUCCESSFUL
+                fs.Keys.BUILD_STATUS, build.FunctionStatus.SUCCESSFUL.value
             )
 
             model_to_benchmark = build_state.results[0]
@@ -294,7 +308,7 @@ def explore_invocation(
                 rt_args_to_use = tracer_args.rt_args
 
             stats.save_model_eval_stat(
-                fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.RUNNING
+                fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.INCOMPLETE.value
             )
 
             model_handle = runtime_info["RuntimeClass"](
@@ -317,7 +331,7 @@ def explore_invocation(
                 )
 
             stats.save_model_eval_stat(
-                fs.Keys.BENCHMARK_STATUS, fs.FunctionStatus.SUCCESSFUL
+                fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.SUCCESSFUL.value
             )
 
             invocation_info.status_message = "Model successfully benchmarked!"

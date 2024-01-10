@@ -14,6 +14,7 @@ from helpers import common
 # Create a cache directory a directory with test models
 cache_dir, corpus_dir = common.create_test_dir("plugins")
 
+
 class Testing(unittest.TestCase):
     def setUp(self) -> None:
         filesystem.rmdir(cache_dir)
@@ -41,11 +42,14 @@ class Testing(unittest.TestCase):
         _, build_state = common.get_stats_and_state(test_script, cache_dir)
 
         # Check if build was successful
-        assert build_state.build_status == build.Status.SUCCESSFUL_BUILD
+        assert build_state.build_status == build.FunctionStatus.SUCCESSFUL
 
         # Check if default part and config were assigned
         expected_device = "example_family::part1::config1"
-        assert build_state.config.device == expected_device, f"Got {build_state.config.device}, expected {expected_device}"
+        assert (
+            build_state.config.device == expected_device
+        ), f"Got {build_state.config.device}, expected {expected_device}"
+
 
 if __name__ == "__main__":
     unittest.main()
