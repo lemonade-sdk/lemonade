@@ -1,0 +1,13 @@
+# This file is a log of any destrutive changes that have been made to the
+# turnkey models corpus.
+
+# models_renamed is a dictionary of dictionaries. At the top level, the keys
+#   are the corpus names. At the leaf level, the keys are original model names
+#   and the values are the new model names.
+# models_deleted is a list of models that have been removed from the corpus
+
+models_renamed:
+  - transformers
+    - funnelbase : funnel_small_base
+models_deleted:
+    - None

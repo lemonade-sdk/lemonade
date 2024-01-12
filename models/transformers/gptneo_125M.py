@@ -1,9 +1,7 @@
-# labels: name::gptneox author::transformers task::Generative_AI license::apache-2.0
+# labels: name::gpt_neo_125M author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import GPTNeoXModel, AutoConfig
+from transformers import GPTNeoForCausalLM, AutoConfig
 import torch
-
-torch.manual_seed(0)
 
 # Parsing command-line arguments
 pretrained, batch_size, max_seq_length = parse(
@@ -12,10 +10,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = GPTNeoXModel.from_pretrained("EleutherAI/gpt-neox-20b")
+    model = GPTNeoForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
 else:
-    config = AutoConfig.from_pretrained("EleutherAI/gpt-neox-20b")
-    model = GPTNeoXModel(config)
+    config = AutoConfig.from_pretrained("EleutherAI/gpt-neo-125M")
+    model = GPTNeoForCausalLM(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings

@@ -19,3 +19,4 @@ scipy
 numpy
 timm
 fvcore
+sacremoses

@@ -1,7 +1,6 @@
-# labels: name::fsmt author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Input Error
+# labels: name::dpr_reader author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import FSMTModel, AutoConfig
+from transformers import DPRReader, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,10 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = FSMTModel.from_pretrained("facebook/wmt19-ru-en")
+    model = DPRReader.from_pretrained("facebook/dpr-reader-single-nq-base")
 else:
-    config = AutoConfig.from_pretrained("facebook/wmt19-ru-en")
-    model = FSMTModel(config)
+    config = AutoConfig.from_pretrained("facebook/dpr-reader-single-nq-base")
+    model = DPRReader(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings

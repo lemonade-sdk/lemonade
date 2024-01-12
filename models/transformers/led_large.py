@@ -1,6 +1,6 @@
-# labels: name::gptneox author::transformers task::Generative_AI license::apache-2.0
+# labels: name::led_large author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import GPTNeoXModel, AutoConfig
+from transformers import LEDModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -12,13 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = GPTNeoXModel.from_pretrained("EleutherAI/gpt-neox-20b")
+    model = LEDModel.from_pretrained("allenai/led-large-16384")
 else:
-    config = AutoConfig.from_pretrained("EleutherAI/gpt-neox-20b")
-    model = GPTNeoXModel(config)
-
-# Make sure the user's sequence length fits within the model's maximum
-assert max_seq_length <= model.config.max_position_embeddings
+    config = AutoConfig.from_pretrained("allenai/led-large-16384")
+    model = LEDModel(config)
 
 
 inputs = {
