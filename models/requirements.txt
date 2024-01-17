@@ -20,3 +20,4 @@ numpy
 timm
 fvcore
 sacremoses
+sentencepiece

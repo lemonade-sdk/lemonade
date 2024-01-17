@@ -8,6 +8,13 @@ We are tracking two types of major changes:
 
 If you are creating the release notes for a new version, please see the [template](#template-version-majorminorpatch). Release notes should capture all of the significant changes since the last numbered package release.
 
+# Version 1.1.1
+
+This is a small release that:
+- Adds hundreds of new Transformer models, bringing the `models/transformers` corpus from 78 to 289 total models.
+- Changes the pytorch ONNX export validation criteria from their default tolerances (which was very strict) to instead match the tolerances recommended by PyTorch.
+
+
 # Version 1.1.0
 
 This version focuses on improving the clarity of the telemetry reported.

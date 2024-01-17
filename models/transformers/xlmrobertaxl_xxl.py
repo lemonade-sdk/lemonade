@@ -1,7 +1,7 @@
-# labels: name::qdqbertlmhead author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Requires Nvidia package
+# labels: name::xlmrobertaxl_xxl author::transformers task::Generative_AI license::apache-2.0
+# Skip reason: Model not found
 from turnkeyml.parser import parse
-from transformers import QDQBertLMHeadModel, AutoConfig
+from transformers import XLMRobertaXLModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,10 +13,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = QDQBertLMHeadModel.from_pretrained("bert-base-cased")
+    model = XLMRobertaXLModel.from_pretrained("facebook/xlm-roberta-xxl")
 else:
-    config = AutoConfig.from_pretrained("bert-base-cased")
-    model = QDQBertLMHeadModel(config)
+    config = AutoConfig.from_pretrained("facebook/xlm-roberta-xxl")
+    model = XLMRobertaXLModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings

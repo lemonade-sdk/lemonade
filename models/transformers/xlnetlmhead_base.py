@@ -1,6 +1,6 @@
-# labels: name::luke author::transformers task::Generative_AI license::apache-2.0
+# labels: name::xlnetlmhead_base author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import LukeModel, AutoConfig
+from transformers import XLNetLMHeadModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -12,14 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = LukeModel.from_pretrained("studio-ousia/luke-base")
+    model = XLNetLMHeadModel.from_pretrained("xlnet-base-cased")
 else:
-    config = AutoConfig.from_pretrained("studio-ousia/luke-base")
-    model = LukeModel(config)
-
-# Make sure the user's sequence length fits within the model's maximum
-assert max_seq_length <= model.config.max_position_embeddings
-
+    config = AutoConfig.from_pretrained("xlnet-base-cased")
+    model = XLNetLMHeadModel(config)
 
 inputs = {
     "input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),

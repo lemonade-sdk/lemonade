@@ -1,7 +1,6 @@
-# labels: name::xlmprophetnet author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Input error
+# labels: name::longformer_large author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import XLMProphetNetModel, AutoConfig
+from transformers import LongformerModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,14 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = XLMProphetNetModel.from_pretrained(
-        "patrickvonplaten/xprophetnet-large-uncased-standalone"
-    )
+    model = LongformerModel.from_pretrained("allenai/longformer-large-4096")
 else:
-    config = AutoConfig.from_pretrained(
-        "patrickvonplaten/xprophetnet-large-uncased-standalone"
-    )
-    model = XLMProphetNetModel(config)
+    config = AutoConfig.from_pretrained("allenai/longformer-large-4096")
+    model = LongformerModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings
@@ -28,7 +23,6 @@ assert max_seq_length <= model.config.max_position_embeddings
 
 inputs = {
     "input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
-    "decoder_input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
     "attention_mask": torch.ones(batch_size, max_seq_length, dtype=torch.float),
 }
 

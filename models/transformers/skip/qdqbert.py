@@ -1,5 +1,5 @@
 # labels: name::qdqbert author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Input error
+# Skip reason: Requires Nvidia package
 from turnkeyml.parser import parse
 from transformers import QDQBertModel, AutoConfig
 import torch

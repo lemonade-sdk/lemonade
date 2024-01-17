@@ -1,7 +1,6 @@
-# labels: name::qdqbertlmhead author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Requires Nvidia package
+# labels: name::mixtral_7bx8 author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import QDQBertLMHeadModel, AutoConfig
+from transformers import AutoModelForCausalLM, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,10 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = QDQBertLMHeadModel.from_pretrained("bert-base-cased")
+    model = AutoModelForCausalLM.from_pretrained("mistralai/Mixtral-8x7B-v0.1")
 else:
-    config = AutoConfig.from_pretrained("bert-base-cased")
-    model = QDQBertLMHeadModel(config)
+    config = AutoConfig.from_pretrained("mistralai/Mixtral-8x7B-v0.1")
+    model = AutoModelForCausalLM.from_config(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings

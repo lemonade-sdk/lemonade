@@ -1,7 +1,6 @@
-# labels: name::xlmrobertaxl author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Model not found
+# labels: name::m2m100_1B2 author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import XLMRobertaXLModel, AutoConfig
+from transformers import M2M100Model, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,10 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = XLMRobertaXLModel.from_pretrained("xlm-roberta-xlarge")
+    model = M2M100Model.from_pretrained("facebook/m2m100_1.2B")
 else:
-    config = AutoConfig.from_pretrained("xlm-roberta-xlarge")
-    model = XLMRobertaXLModel(config)
+    config = AutoConfig.from_pretrained("facebook/m2m100_1.2B")
+    model = M2M100Model(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings
@@ -24,6 +23,7 @@ assert max_seq_length <= model.config.max_position_embeddings
 
 inputs = {
     "input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
+    "decoder_input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
     "attention_mask": torch.ones(batch_size, max_seq_length, dtype=torch.float),
 }
 

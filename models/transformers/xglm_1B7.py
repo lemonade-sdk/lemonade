@@ -1,7 +1,6 @@
-# labels: name::qdqbertlmhead author::transformers task::Generative_AI license::apache-2.0
-# Skip reason: Requires Nvidia package
+# labels: name::xglm_1B7 author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import QDQBertLMHeadModel, AutoConfig
+from transformers import XGLMModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -13,10 +12,10 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = QDQBertLMHeadModel.from_pretrained("bert-base-cased")
+    model = XGLMModel.from_pretrained("facebook/xglm-1.7B")
 else:
-    config = AutoConfig.from_pretrained("bert-base-cased")
-    model = QDQBertLMHeadModel(config)
+    config = AutoConfig.from_pretrained("facebook/xglm-1.7B")
+    model = XGLMModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
 assert max_seq_length <= model.config.max_position_embeddings

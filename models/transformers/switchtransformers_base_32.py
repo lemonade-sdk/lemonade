@@ -1,6 +1,6 @@
-# labels: name::luke author::transformers task::Generative_AI license::apache-2.0
+# labels: name::switchtransformers_base_32 author::transformers task::Generative_AI license::apache-2.0
 from turnkeyml.parser import parse
-from transformers import LukeModel, AutoConfig
+from transformers import SwitchTransformersModel, AutoConfig
 import torch
 
 torch.manual_seed(0)
@@ -12,17 +12,15 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = LukeModel.from_pretrained("studio-ousia/luke-base")
+    model = SwitchTransformersModel.from_pretrained("google/switch-base-32")
 else:
-    config = AutoConfig.from_pretrained("studio-ousia/luke-base")
-    model = LukeModel(config)
-
-# Make sure the user's sequence length fits within the model's maximum
-assert max_seq_length <= model.config.max_position_embeddings
+    config = AutoConfig.from_pretrained("google/switch-base-32")
+    model = SwitchTransformersModel(config)
 
 
 inputs = {
     "input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
+    "decoder_input_ids": torch.ones(batch_size, max_seq_length, dtype=torch.long),
     "attention_mask": torch.ones(batch_size, max_seq_length, dtype=torch.float),
 }
 
