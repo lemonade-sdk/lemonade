@@ -317,6 +317,8 @@ class Keys:
     PARAMETERS = "parameters"
     # Histogram of ONNX operators used in the model
     ONNX_OPS_COUNTER = "onnx_ops_counter"
+    # Total number of FLOPs in the model.
+    ONNX_TOTAL_FLOPS = "onnx_total_flops"
     # ONNX model info: IR version, opset, and size on disk (KiB)
     ONNX_MODEL_INFO = "onnx_model_information"
     # ONNX model input tensor dimensions
