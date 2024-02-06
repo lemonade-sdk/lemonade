@@ -292,9 +292,11 @@ class Sequence(Stage):
             stats.save_model_eval_stat(stage.duration_key, "-")
 
         # Run the build
-        start_time = time.time()
-        try:
-            for stage in self.stages:
+        for stage in self.stages:
+            start_time = time.time()
+
+            try:
+
                 # Set status as incomplete, since stage just started
                 stats.save_model_eval_stat(
                     stage.status_key, build.FunctionStatus.INCOMPLETE.value
@@ -306,46 +308,50 @@ class Sequence(Stage):
                 # Run the stage
                 state = stage.fire_helper(state)
 
-                # Set status as successful
+            # Broad exception is desirable as we want to capture
+            # all exceptions (including those we can't anticipate)
+            except Exception as e: # pylint: disable=broad-except
+
+                # Update Stage Status
+                stats.save_model_eval_stat(
+                    stage.status_key, build.FunctionStatus.ERROR.value
+                )
+
+                # Advance the cursor below the monitor so
+                # we can print an error message
+                stage_depth_in_sequence = self.get_depth() - self.get_names().index(
+                    stage.unique_name  # pylint: disable=undefined-loop-variable
+                )
+                stdout_lines_to_advance = stage_depth_in_sequence - 2
+                cursor_down = "\n" * stdout_lines_to_advance
+
+                print(cursor_down)
+
+                printing.log_error(e)
+
+                raise
+
+            else:
+                # Update Stage Status
                 stats.save_model_eval_stat(
                     stage.status_key, build.FunctionStatus.SUCCESSFUL.value
                 )
 
-        except exp.StageError as e:
-            # Advance the cursor below the monitor so
-            # we can print an error message
-            stage_depth_in_sequence = self.get_depth() - self.get_names().index(
-                stage.unique_name  # pylint: disable=undefined-loop-variable
-            )
-            stdout_lines_to_advance = stage_depth_in_sequence - 2
-            cursor_down = "\n" * stdout_lines_to_advance
+            finally:
+                # Store stage duration
+                execution_time = time.time() - start_time
+                stats.save_model_eval_stat(stage.duration_key, execution_time)
 
-            print(cursor_down)
+        state.current_build_stage = None
+        state.build_status = build.FunctionStatus.SUCCESSFUL
 
-            printing.log_error(e)
+        # We use a deepcopy here because the Stage framework supports
+        # intermediate_results of any type, including model objects in memory.
+        # The deepcopy ensures that we are providing a result that users
+        # are free to take any action with.
+        state.results = copy.deepcopy(state.intermediate_results)
 
-            stats.save_model_eval_stat(
-                stage.status_key, build.FunctionStatus.ERROR.value
-            )
-
-            raise
-
-        else:
-            state.current_build_stage = None
-            state.build_status = build.FunctionStatus.SUCCESSFUL
-
-            # We use a deepcopy here because the Stage framework supports
-            # intermediate_results of any type, including model objects in memory.
-            # The deepcopy ensures that we are providing a result that users
-            # are free to take any action with.
-            state.results = copy.deepcopy(state.intermediate_results)
-
-            return state
-
-        finally:
-            # Collect telemetry about the stage
-            execution_time = time.time() - start_time
-            stats.save_model_eval_stat(stage.duration_key, execution_time)
+        return state
 
     def status_line(self, successful, verbosity):
         """

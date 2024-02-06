@@ -998,23 +998,23 @@ class Testing(unittest.TestCase):
             [
                 "selected_sequence_of_stages",
                 "stage_duration:export_pytorch",
+                "stage_duration:optimize_onnx",
                 "stage_status:export_pytorch",
+                "stage_status:optimize_onnx"
             ],
         )
         for result in result_dict.values():
-            # All of the models should have exported to ONNX
-            assert "export_pytorch" in result["selected_sequence_of_stages"]
-            assert result["stage_status:export_pytorch"] == "successful", result[
-                "stage_status:export_pytorch"
-            ]
-            try:
-                assert int(result["stage_duration:export_pytorch"]) > 0, result[
-                    "stage_duration:export_pytorch"
-                ]
-            except ValueError:
-                # Catch the case where the value is "-" and therefore can't be
-                # converted to an int
-                assert result["stage_duration:export_pytorch"] == "-"
+            # All of the models should have exported to ONNX and optimized the ONNX model
+            for stage in ["export_pytorch","optimize_onnx"]:
+                assert stage in result["selected_sequence_of_stages"]
+                duration = result[f"stage_duration:{stage}"]
+                status = result[f"stage_status:{stage}"]
+                assert status == "successful", f"Unexpected status {status} for stage '{stage}'"
+                try:
+                    assert float(duration) > 0, f"Stage {stage} has invalid duration '{duration}'"
+                except ValueError:
+                    # Catch the case where the value is not numeric
+                    assert False, f"Stage {stage} has invalid duration {duration}"
 
 
 if __name__ == "__main__":
