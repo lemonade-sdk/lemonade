@@ -8,6 +8,19 @@ We are tracking two types of major changes:
 
 If you are creating the release notes for a new version, please see the [template](#template-version-majorminorpatch). Release notes should capture all of the significant changes since the last numbered package release.
 
+# Version 1.1.2
+
+This release improves the quality of analytics data produced by TurnkeyML. 
+
+## Improvements
+- Most models will report a FLOP count that can be used to reason about FLOPS utilization, arithmetic intensity, etc.
+- Evaluations that experience a timeout will now report their status more specifically as `timeout` instead of `killed`.
+
+## Bugs Fixed
+- Evaluations in process isolation mode that are killed or time out will now respect the `--lean-cache` option.
+- The duration of all Stages in the Sequence are now correctly reported.
+- Fixes an issue where Analysis could raise an uncaught exception on compiled torch models in `torch >= 2.2.0`.
+
 # Version 1.1.1
 
 This is a small release that:
