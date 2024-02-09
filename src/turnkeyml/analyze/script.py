@@ -180,6 +180,11 @@ def explore_invocation(
     )
     invocation_info.stats = stats
 
+    # Print the evaluation ID so that we can access it in case this process is killed
+    print(
+        f"Capturing statistics in turnkey_stats.yaml under evaluation ID: {evaluation_id}"
+    )
+
     # Stats that apply to the model, regardless of build
     stats.save_model_stat(
         fs.Keys.HASH,
@@ -534,18 +539,20 @@ def explore_frame(
             # A previously-found model might have been compiled
             # Update that information if needed
             if model_type == build.ModelType.PYTORCH_COMPILED:
-                tracer_args.models_found[
-                    local_var.turnkey_hash
-                ].model_type = build.ModelType.PYTORCH_COMPILED
+                tracer_args.models_found[local_var.turnkey_hash].model_type = (
+                    build.ModelType.PYTORCH_COMPILED
+                )
 
             # Starting in version 2.2.0, torch dynamo added wrappers to callbacks
             # while tracing frames, which conflicts with TurnkeML's analysis. Here,
             # we supress errors caused by those callback wrappers and only raise an
             # error if the compiled model actually tries to execute within TurnkeyML.
-            td = torch._dynamo # pylint: disable=protected-access
+            td = torch._dynamo  # pylint: disable=protected-access
             td.config.suppress_errors = True
             if hasattr(td.eval_frame, "guarded_backend_cache"):
-                td.eval_frame.guarded_backend_cache.skip_backend_check_for_run_only_mode = True
+                td.eval_frame.guarded_backend_cache.skip_backend_check_for_run_only_mode = (
+                    True
+                )
 
             return
 
@@ -632,14 +639,14 @@ def explore_frame(
             model_info = tracer_args.models_found[model_hash]
 
             if invocation_hash not in model_info.unique_invocations:
-                model_info.unique_invocations[
-                    invocation_hash
-                ] = util.UniqueInvocationInfo(
-                    hash=invocation_hash,
-                    is_target=invocation_hash in tracer_args.targets
-                    or len(tracer_args.targets) == 0,
-                    input_shapes=input_shapes,
-                    parent_hash=parent_invocation_hash,
+                model_info.unique_invocations[invocation_hash] = (
+                    util.UniqueInvocationInfo(
+                        hash=invocation_hash,
+                        is_target=invocation_hash in tracer_args.targets
+                        or len(tracer_args.targets) == 0,
+                        input_shapes=input_shapes,
+                        parent_hash=parent_invocation_hash,
+                    )
                 )
             model_info.last_unique_invocation_executed = invocation_hash
 

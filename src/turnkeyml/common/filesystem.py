@@ -367,14 +367,20 @@ class Keys:
     STAGE_STATUS = "stage_status"
 
 
+def stats_file(cache_dir: str, build_name: str):
+    """
+    Returns the expected location of the turnkey stats file
+    """
+    dir = build.output_dir(cache_dir, build_name)
+    return os.path.join(dir, "turnkey_stats.yaml")
+
+
 class Stats:
     def __init__(self, cache_dir: str, build_name: str, evaluation_id: str = None):
-        output_dir = build.output_dir(cache_dir, build_name)
-
-        self.file = os.path.join(output_dir, "turnkey_stats.yaml")
+        self.file = stats_file(cache_dir, build_name)
         self.evaluation_id = evaluation_id
 
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(os.path.dirname(self.file), exist_ok=True)
         if not os.path.exists(self.file):
             initial = {Keys.EVALUATIONS: {}}
             _save_yaml(initial, self.file)

@@ -25,6 +25,7 @@ import turnkeyml.common.build as build
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.exceptions as exceptions
 import turnkeyml.build.export as export
+import turnkeyml.cli.spawn as spawn
 from turnkeyml.cli.parser_helpers import decode_args, encode_args
 from helpers import common
 
@@ -684,18 +685,32 @@ class Testing(unittest.TestCase):
         # Test the first model in the corpus
         test_script = list(common.test_scripts_dot_py.keys())[0]
 
-        testargs = [
-            "turnkey",
-            "benchmark",
-            os.path.join(corpus_dir, test_script),
-            "--cache-dir",
-            cache_dir,
-            "--process-isolation",
-        ]
-        with patch.object(sys, "argv", testargs):
-            turnkeycli()
+        with redirect_stdout(io.StringIO()) as f:
+            testargs = [
+                "turnkey",
+                "benchmark",
+                os.path.join(corpus_dir, test_script),
+                "--cache-dir",
+                cache_dir,
+                "--process-isolation",
+            ]
+            with patch.object(sys, "argv", testargs):
+                turnkeycli()
 
-        assert_success_of_builds([test_script], cache_dir, None, check_perf=True)
+            assert_success_of_builds([test_script], cache_dir, None, check_perf=True)
+
+            # We use certain key phrases in stdout to perform cleanup in the event
+            # that a turnkey subprocess does not complete.
+            # These checks make sure that those key phrases are not removed
+            output = f.getvalue().split("\n")
+            evaluation_id = None
+            build_name = None
+            for line in output:
+                evaluation_id = spawn.parse_evaluation_id(line, evaluation_id)
+                build_name = spawn.parse_build_name(line, build_name)
+
+            assert evaluation_id is not None
+            assert build_name is not None
 
     @unittest.skipIf(
         platform.system() == "Windows",
@@ -904,7 +919,7 @@ class Testing(unittest.TestCase):
         try:
             timeout_summary = summary[0]
 
-            assert timeout_summary["build_status"] == "killed", timeout_summary[
+            assert timeout_summary["build_status"] == "timeout", timeout_summary[
                 "build_status"
             ]
         except IndexError:

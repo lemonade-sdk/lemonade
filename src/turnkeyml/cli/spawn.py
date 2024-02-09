@@ -8,12 +8,100 @@ import pathlib
 import time
 import shlex
 import platform
+from threading import Event, Lock, Thread
+from time import monotonic
 import getpass
 from typing import List, Optional, Dict, Union
 from enum import Enum
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.printing as printing
+import turnkeyml.common.build as build
 from turnkeyml.cli.parser_helpers import encode_args
+
+
+class WatchdogTimer(Thread):
+    """
+    Run *callback* in *timeout* seconds unless the timer is restarted.
+
+    This is needed because Popen natively supports streaming output to the terminal,
+    checking that output, and timeouts--but not all 3 at the same time.
+
+    We use this function to provide a timeout while leveraging Popen's native ability
+    to stream and check output.
+    """
+
+    def __init__(self, timeout, callback, *args, timer=monotonic, **kwargs):
+        super().__init__(**kwargs)
+        self.timeout = timeout
+        self.callback = callback
+        self.args = args
+        self.timer = timer
+        self.cancelled = Event()
+        self.blocked = Lock()
+        self.timeout_reached = False
+        self.deadline = None
+
+    def run(self):
+        # Don't start the timer until `.start()` is called
+        self.restart()
+        # Wait until timeout happens or the timer is canceled
+        while not self.cancelled.wait(self.deadline - self.timer()):
+            with self.blocked:
+                if self.deadline <= self.timer() and not self.cancelled.is_set():
+                    self.timeout_reached = True
+                    return self.callback(*self.args)
+
+    def restart(self):
+        self.deadline = self.timer() + self.timeout
+
+    def cancel(self):
+        self.cancelled.set()
+
+
+def parse_evaluation_id(line: str, current_value: str)  -> Optional[str]:
+    """
+    Parse the evaluation ID from a line of turnkey process output.
+    Used to clean up after a turnkey subprocess is killed.
+    """
+
+    if "Capturing statistics in turnkey_stats.yaml" in line:
+        # This indicates a stats file was created for this evaluation
+        # Expected phrase: "Capturing statistics in turnkey_stats.yaml
+        #   under evaluation ID: {evaluation_id}"
+        return line.replace(
+            "Capturing statistics in turnkey_stats.yaml under evaluation ID: ", ""
+        ).rstrip()
+    else:
+        # Don't replace a previously-parsed value with None
+        # if we have already found one
+        if current_value is not None:
+            return current_value
+        return None
+
+
+def parse_build_name(line: str, current_value: str) -> Optional[str]:
+    """
+    Parse the build directory from a line of turnkey process output.
+    Used to clean up after a turnkey subprocess is killed.
+    """
+
+    if "Build dir:" in line:
+        # This declares the name of the build directory
+        # 'Build' directories are created for any evaluation, even
+        # if there is not actually a build (e.g., torch-eager runtime benchmark),
+        # which is why we use this line to find the build directory.
+        # Expected phrase:
+        #   "Build dir:      {cache_dir}/{build_name}"
+        return os.path.basename(
+            os.path.normpath(line.replace("Build dir:", "").rstrip())
+        )
+    else:
+        # Don't replace a previously-parsed value with None
+        # if we have already found one
+        if current_value is not None:
+            return current_value
+        return None
+
 
 if os.environ.get("TURNKEY_TIMEOUT_SECONDS"):
     timeout_env_var = os.environ.get("TURNKEY_TIMEOUT_SECONDS")
@@ -94,6 +182,7 @@ def run_turnkey(
     op: str,
     file_name: str,
     target: Target,
+    cache_dir: str,
     timeout: Optional[int] = DEFAULT_TIMEOUT_SECONDS,
     working_dir: str = os.getcwd(),
     ml_cache_dir: Optional[str] = os.environ.get("SLURM_ML_CACHE"),
@@ -117,6 +206,10 @@ def run_turnkey(
     }
 
     invocation_args = f"{op} {file_name}"
+
+    # Add cache_dir to kwargs so that it gets processed
+    # with the other arguments
+    kwargs["cache_dir"] = cache_dir
 
     for key, value in kwargs.items():
         if value is not None:
@@ -175,18 +268,117 @@ def run_turnkey(
 
         # Launch a subprocess for turnkey to evaluate the script
         try:
-            subprocess.check_call(command, stderr=subprocess.STDOUT, timeout=timeout)
+            process_output = []
+            with subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+            ) as p:
+                # Create our own watchdog timer in a thread
+                # This is needed because the `for line in p.stdout` is a blocking
+                # call that is incompatible with Popen's native timeout features
+                watchdog = WatchdogTimer(timeout, callback=p.kill, daemon=True)
+                watchdog.start()
+
+                # Print the subprocess's output to the command line as it comes in,
+                # while also storing it in a variable so that we can analyze it
+                # in the event that the subprocess is killed
+                for line in p.stdout:
+                    print(line, end="")
+                    process_output.append(line)
+
+                p.wait()
+                watchdog.cancel()
+
+                # If the subprocess was killed, raise an exception that provides more
+                # detail about why it was killed
+                if watchdog.timeout_reached:
+                    evaluation_status = build.FunctionStatus.TIMEOUT
+                    raise subprocess.TimeoutExpired(p.args, timeout)
+
+                if p.returncode != 0:
+                    evaluation_status = build.FunctionStatus.KILLED
+                    raise subprocess.CalledProcessError(p.returncode, p.args)
+
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            # If the subprocess was killed, we will attempt to figure out what happened,
+            # provide helpful error messages and information, and clean up the
+            # turnkey cache as much as possible.
+
+            # Print some newlines so that our error messages don't end up in the
+            # middle of the status monitor
+            print("\n\n")
             printing.log_error(
-                "Process was terminated with the error shown below. "
-                f"turnkey will move on to the next input.\n{e}"
+                "The turnkey subprocess was terminated with the error shown below. "
+                f"turnkey will move on to the next input.\n\n{e}"
             )
 
-            if "Signals.SIGKILL: 9" in str(e):
+            # If an evaluation failed, it will be the last build mentioned in the
+            # subprocess's stdout. We look for the last instance because sometimes
+            # a single input file will contain multiple models, and therefore multiple
+            # builds.
+            # NOTE: the turnkey status outputs use the term "build" to refer to both
+            # builds and benchmarks, we collectively we refer to as evaluations here
+            build_name = None
+            evaluation_id = None
+            for line in process_output:
+                evaluation_id = parse_evaluation_id(line, evaluation_id)
+                build_name = parse_build_name(line, build_name)
+
+            # Perform fault handling if we found a failed evaluation
+            if build_name:
                 printing.log_info(
-                    "It is possible your computer ran out of memory while attempting to evaluate "
-                    f"{file_name}. You can check this by repeating the experiment "
-                    "while using `top` to monitor memory utilization."
+                    f"Detected failed build {build_name}. "
+                    "The parent process will attempt to clean up."
                 )
+
+                # Cleaning the cache is the last step in evaluation
+                # If a "lean cache" evaluation was killed, it is safe to assume we still
+                # need to clean the cache
+                # It is also harmless to run clean_output_dir() again even if the subprocess
+                # did have a chance to run it before the subprocess was killed
+                if "--lean-cache" in command:
+                    printing.log_info("Removing build artifacts...")
+                    filesystem.clean_output_dir(cache_dir, build_name)
+
+                # Perform fault handling within the stats file if there is a stats
+                # file and we know the evaluation ID of the failed evaluation
+                if (
+                    os.path.isfile(filesystem.stats_file(cache_dir, build_name))
+                    and evaluation_id
+                ):
+                    try:
+                        # Amend the stats with a specific function status if possible
+                        if isinstance(e, subprocess.TimeoutExpired):
+                            evaluation_status = build.FunctionStatus.TIMEOUT
+                        else:
+                            evaluation_status = build.FunctionStatus.KILLED
+
+                        stats = filesystem.Stats(
+                            cache_dir,
+                            build_name,
+                            evaluation_id,
+                        )
+
+                        for key in stats.evaluation_stats.keys():
+                            if (
+                                stats.evaluation_stats[key]
+                                == build.FunctionStatus.INCOMPLETE.value
+                            ):
+                                stats.save_model_eval_stat(key, evaluation_status.value)
+
+                    except Exception as stats_exception:  # pylint: disable=broad-except
+                        printing.log_info(
+                            "Stats file found, but unable to perform cleanup due to "
+                            f"exception: {stats_exception}"
+                        )
+
+            else:
+                printing.log_info(
+                    "Turnkey subprocess was killed before any "
+                    "build or benchmark could start."
+                )
+
     else:
         raise ValueError(f"Unsupported value for target: {target}.")

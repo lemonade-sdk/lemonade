@@ -13,13 +13,19 @@ import turnkeyml.common.filesystem as fs
 
 
 def _spinner(message):
-    parent_pid = os.getppid()
-    while psutil.pid_exists(parent_pid):
-        for cursor in ["   ", ".  ", ".. ", "..."]:
-            time.sleep(0.5)
-            status = f"      {message}{cursor}\r"
-            sys.stdout.write(status)
-            sys.stdout.flush()
+    try:
+        parent_process = psutil.Process(pid=os.getppid())
+        while parent_process.status() == psutil.STATUS_RUNNING:
+            for cursor in ["   ", ".  ", ".. ", "..."]:
+                time.sleep(0.5)
+                status = f"      {message}{cursor}\r"
+                sys.stdout.write(status)
+                sys.stdout.flush()
+    except psutil.NoSuchProcess:
+        # If the parent process stopped existing, we can
+        # safely assume the spinner no longer needs to spin
+        # NOTE: this only seems to be needed on Windows
+        pass
 
 
 def _name_is_file_safe(name: str):
@@ -310,7 +316,7 @@ class Sequence(Stage):
 
             # Broad exception is desirable as we want to capture
             # all exceptions (including those we can't anticipate)
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
 
                 # Update Stage Status
                 stats.save_model_eval_stat(

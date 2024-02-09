@@ -153,8 +153,12 @@ class FunctionStatus(enum.Enum):
 
     ERROR = "error"
 
+    # TIMEOUT means the stage/build/benchmark failed because it exceeded the timeout
+    # set for the turnkey command.
+    TIMEOUT = "timeout"
+
     # KILLED means the build/benchmark failed because the system killed it. This can
-    # happen because of an out-of-memory (OOM), timeout, system shutdown, etc.
+    # happen because of an out-of-memory (OOM), system shutdown, etc.
     # You should proceed by re-running the build and keeping an eye on it to observe
     # why it is being killed (e.g., watch the RAM utilization to diagnose an OOM).
     KILLED = "killed"
