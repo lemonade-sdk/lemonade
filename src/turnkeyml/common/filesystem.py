@@ -365,6 +365,12 @@ class Keys:
     # Prefix for reporting the execution status of a stage
     # In the report this will look like stage_status:STAGE_NAME
     STAGE_STATUS = "stage_status"
+    # Parent key that holds all of the arguments to turnkey's
+    # evaluate_file() API
+    EVALUATION_ARGS = "turnkey_args"
+    # Records the date and time of the evaluation after analysis but before
+    # build and benchmark
+    TIMESTAMP = "timestamp"
 
 
 def stats_file(cache_dir: str, build_name: str):
