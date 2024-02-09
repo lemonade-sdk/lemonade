@@ -58,7 +58,7 @@ class TorchRT(BaseRT):
             # First ensure we have the required version of Pytorch
             clean_torch_version = self.runtime_version.split("+")[0]
             if version.parse(clean_torch_version) < version.parse("2.0.0"):
-                exp.BenchmarkException(
+                raise exp.BenchmarkException(
                     (
                         f"{self.runtime} can only be used with Pytorch 2.0.0 or above. "
                         f"However, version {self.runtime_version} was found."

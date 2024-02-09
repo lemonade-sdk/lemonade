@@ -84,10 +84,13 @@ def _store_traceback(invocation_info: util.UniqueInvocationInfo):
     invocation_info.status_message = " ".join(invocation_info.status_message.split())
 
 
-def set_status_on_exception(build_state: build.State, stats: fs.Stats):
+def set_status_on_exception(
+    build_required: bool, build_state: build.State, stats: fs.Stats
+):
     # We get `state` when the build tool succeeds, so we can use that to identify
     # whether the exception was thrown during build or benchmark
-    if not build_state:
+    # We also take into account whether a build was requested
+    if build_required and not build_state:
         stats.save_model_eval_stat(
             fs.Keys.BUILD_STATUS, build.FunctionStatus.ERROR.value
         )
@@ -257,13 +260,17 @@ def explore_invocation(
 
         return
 
-    # Initialize build and benchmark status to "not started"
-    stats.save_model_eval_stat(
-        fs.Keys.BUILD_STATUS, build.FunctionStatus.NOT_STARTED.value
-    )
-    stats.save_model_eval_stat(
-        fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.NOT_STARTED.value
-    )
+    # Initialize build and benchmark status to "not started" if
+    # that action is part of the evaluation
+    if runtime_info["build_required"]:
+        stats.save_model_eval_stat(
+            fs.Keys.BUILD_STATUS, build.FunctionStatus.NOT_STARTED.value
+        )
+
+    if Action.BENCHMARK in tracer_args.actions:
+        stats.save_model_eval_stat(
+            fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.NOT_STARTED.value
+        )
 
     build_state = None
     perf = None
@@ -350,7 +357,7 @@ def explore_invocation(
         invocation_info.status_message = f"Build Error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(build_state, stats)
+        set_status_on_exception(runtime_info["build_required"], build_state, stats)
 
         _store_traceback(invocation_info)
 
@@ -370,7 +377,7 @@ def explore_invocation(
         # illegal. In that case we want to halt execution so that users can
         # fix their arguments.
 
-        set_status_on_exception(build_state, stats)
+        set_status_on_exception(runtime_info["build_required"], build_state, stats)
 
         raise e
 
@@ -378,7 +385,7 @@ def explore_invocation(
         invocation_info.status_message = f"Error: {e}."
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(build_state, stats)
+        set_status_on_exception(runtime_info["build_required"], build_state, stats)
 
         _store_traceback(invocation_info)
 
@@ -388,7 +395,7 @@ def explore_invocation(
         invocation_info.status_message = f"Unknown turnkey error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(build_state, stats)
+        set_status_on_exception(runtime_info["build_required"], build_state, stats)
 
         _store_traceback(invocation_info)
 
