@@ -127,9 +127,13 @@ def get_onnx_total_flops(onnx_model) -> Union[int, None]:
     from multiply-accumulates (MACs) where FLOPs == 2 * MACs.
     """
     try:
-        model = onnx.shape_inference.infer_shapes(
-            onnx.load(onnx_model), strict_mode=True, data_prop=True
+        onnx.shape_inference.infer_shapes_path(
+            model_path=onnx_model,
+            output_path=onnx_model,
+            strict_mode=True,
+            data_prop=True,
         )
+        model = onnx.load(onnx_model, load_external_data=False)
     except Exception as e:  # pylint: disable=broad-except
         printing.log_warning(f"Failed to get ONNX FLOPs from {onnx_model}: {str(e)}")
         return None
