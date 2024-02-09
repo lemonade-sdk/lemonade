@@ -12,9 +12,9 @@ pretrained, batch_size, max_seq_length = parse(
 
 # Model and input configurations
 if pretrained:
-    model = GPTJModel.from_pretrained("EleutherAI/gpt-j-6B")
+    model = GPTJModel.from_pretrained("hf-internal-testing/tiny-random-gptj")
 else:
-    config = AutoConfig.from_pretrained("EleutherAI/gpt-j-6B")
+    config = AutoConfig.from_pretrained("hf-internal-testing/tiny-random-gptj")
     model = GPTJModel(config)
 
 # Make sure the user's sequence length fits within the model's maximum
