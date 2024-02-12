@@ -98,7 +98,7 @@ class TensorRT(BaseRT):
             output_dir=output_dir,
             onnx_file=onnx_file,
             outputs_file=outputs_file,
-            errors_file=os.path.join(output_dir, "nvidia_error_log.txt"),
+            errors_file=self.logfile_path,
             iterations=self.iterations,
             start_event=start_event,
             stop_event=stop_event,

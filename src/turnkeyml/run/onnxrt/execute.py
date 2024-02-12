@@ -1,6 +1,7 @@
 """
 The following script is used to get the latency and outputs of a given run on the x86 CPUs.
 """
+
 # pylint: disable = no-name-in-module
 # pylint: disable = import-error
 import os
@@ -64,12 +65,12 @@ def execute_benchmark(
     output_dir: str,
     conda_env_name: str,
     iterations: int,
+    benchmarking_log_file: str,
 ):
     """Execute the benchmark script and retrieve the output."""
 
     python_in_env = plugin_helpers.get_python_path(conda_env_name)
     iterations_file = os.path.join(output_dir, "per_iteration_latency.json")
-    benchmarking_log_file = os.path.join(output_dir, "ort_benchmarking_log.txt")
 
     cmd = [
         python_in_env,

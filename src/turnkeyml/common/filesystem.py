@@ -371,6 +371,15 @@ class Keys:
     # Records the date and time of the evaluation after analysis but before
     # build and benchmark
     TIMESTAMP = "timestamp"
+    # Records the logfile of any failed stage/benchmark
+    ERROR_LOG = "error_log"
+
+
+def _clean_logfile(logfile_lines: List[str]) -> List[str]:
+    """
+    Remove the whitespace and empty lines from an array of logfile lines
+    """
+    return "\n".join([line.rstrip() for line in logfile_lines if line.rstrip()])
 
 
 def stats_file(cache_dir: str, build_name: str):
@@ -442,6 +451,34 @@ class Stats:
     @property
     def evaluation_stats(self):
         return self.stats[Keys.EVALUATIONS][self.evaluation_id]
+
+    def save_eval_error_log(self, logfile_path):
+        if os.path.exists(logfile_path):
+            with open(logfile_path, "r", encoding="utf-8") as f:
+                full_log = f.readlines()
+
+                # Log files can be quite large, so we will just record the beginning
+                # and ending lines. Users can always open the log file if they
+                # want to see the full log.
+                start_cutoff = 5
+                end_cutoff = -30
+                max_full_length = start_cutoff + abs(end_cutoff)
+
+                if len(full_log) > max_full_length:
+                    log_start = _clean_logfile(full_log[:start_cutoff])
+                    log_end = _clean_logfile(full_log[end_cutoff:])
+                    truncation_notice = (
+                        "NOTICE: This copy of the log has been truncated to the first "
+                        f"{start_cutoff} and last {abs(end_cutoff)} lines "
+                        f"to save space. Please see {logfile_path} "
+                        "to see the full log.\n"
+                    )
+
+                    stats_log = log_start + truncation_notice + log_end
+                else:
+                    stats_log = _clean_logfile(full_log)
+
+                self.save_model_eval_stat(Keys.ERROR_LOG, stats_log)
 
 
 def print_cache_dir(_=None):

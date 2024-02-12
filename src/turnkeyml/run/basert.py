@@ -76,6 +76,9 @@ class BaseRT(ABC):
         self.outputs_filename = "outputs.json"
         self.runtimes_supported = runtimes_supported
         self.execute_function = execute_function
+        self.logfile_path = os.path.join(
+            self.local_output_dir, f"{runtime}_benchmark_log.txt"
+        )
 
         # Validate runtime is supported
         if runtime not in runtimes_supported:

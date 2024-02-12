@@ -84,6 +84,7 @@ class OnnxRT(BaseRT):
             output_dir=output_dir,
             conda_env_name=conda_env_name,
             iterations=self.iterations,
+            benchmarking_log_file=self.logfile_path,
         )
 
     @property

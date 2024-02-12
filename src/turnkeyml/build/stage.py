@@ -323,6 +323,9 @@ class Sequence(Stage):
                     stage.status_key, build.FunctionStatus.ERROR.value
                 )
 
+                # Save the log file for the failed stage to stats for easy reference
+                stats.save_eval_error_log(stage.logfile_path)
+
                 # Advance the cursor below the monitor so
                 # we can print an error message
                 stage_depth_in_sequence = self.get_depth() - self.get_names().index(

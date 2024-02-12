@@ -148,8 +148,15 @@ def _store_traceback(invocation_info: util.UniqueInvocationInfo):
 
 
 def set_status_on_exception(
-    build_required: bool, build_state: build.State, stats: fs.Stats
+    build_required: bool,
+    build_state: build.State,
+    stats: fs.Stats,
+    benchmark_logfile_path: str,
 ):
+    """
+    Determine whether an exception was caused by build or benchmark,
+    and then record statistics to help with debugging.
+    """
     # We get `state` when the build tool succeeds, so we can use that to identify
     # whether the exception was thrown during build or benchmark
     # We also take into account whether a build was requested
@@ -157,10 +164,16 @@ def set_status_on_exception(
         stats.save_model_eval_stat(
             fs.Keys.BUILD_STATUS, build.FunctionStatus.ERROR.value
         )
+
+        # NOTE: The log file for the failed build stage should have
+        # already been saved to stats
     else:
         stats.save_model_eval_stat(
             fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.ERROR.value
         )
+
+        # Also save the benchmark log file to the stats
+        stats.save_eval_error_log(benchmark_logfile_path)
 
 
 def explore_invocation(
@@ -352,6 +365,7 @@ def explore_invocation(
 
     build_state = None
     perf = None
+    benchmark_logfile_path = None
     try:
         # Run the build tool (if needed by the runtime)
         if runtime_info["build_required"]:
@@ -401,7 +415,7 @@ def explore_invocation(
                 fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.INCOMPLETE.value
             )
 
-            model_handle = runtime_info["RuntimeClass"](
+            runtime_handle = runtime_info["RuntimeClass"](
                 cache_dir=tracer_args.cache_dir,
                 build_name=build_name,
                 stats=stats,
@@ -412,7 +426,8 @@ def explore_invocation(
                 runtime=selected_runtime,
                 **rt_args_to_use,
             )
-            perf = model_handle.benchmark()
+            benchmark_logfile_path = runtime_handle.logfile_path
+            perf = runtime_handle.benchmark()
 
             for key, value in vars(perf).items():
                 stats.save_model_eval_stat(
@@ -435,7 +450,9 @@ def explore_invocation(
         invocation_info.status_message = f"Build Error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(runtime_info["build_required"], build_state, stats)
+        set_status_on_exception(
+            runtime_info["build_required"], build_state, stats, benchmark_logfile_path
+        )
 
         _store_traceback(invocation_info)
 
@@ -455,7 +472,9 @@ def explore_invocation(
         # illegal. In that case we want to halt execution so that users can
         # fix their arguments.
 
-        set_status_on_exception(runtime_info["build_required"], build_state, stats)
+        set_status_on_exception(
+            runtime_info["build_required"], build_state, stats, benchmark_logfile_path
+        )
 
         raise e
 
@@ -463,7 +482,9 @@ def explore_invocation(
         invocation_info.status_message = f"Error: {e}."
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(runtime_info["build_required"], build_state, stats)
+        set_status_on_exception(
+            runtime_info["build_required"], build_state, stats, benchmark_logfile_path
+        )
 
         _store_traceback(invocation_info)
 
@@ -473,7 +494,9 @@ def explore_invocation(
         invocation_info.status_message = f"Unknown turnkey error: {e}"
         invocation_info.status_message_color = printing.Colors.WARNING
 
-        set_status_on_exception(runtime_info["build_required"], build_state, stats)
+        set_status_on_exception(
+            runtime_info["build_required"], build_state, stats, benchmark_logfile_path
+        )
 
         _store_traceback(invocation_info)
 
