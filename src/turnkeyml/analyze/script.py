@@ -373,7 +373,7 @@ def explore_invocation(
 
     build_state = None
     perf = None
-    benchmark_logfile_path = None
+    benchmark_logfile_path = ""
     try:
         # Run the build tool (if needed by the runtime)
         if runtime_info["build_required"]:

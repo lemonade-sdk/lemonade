@@ -147,12 +147,6 @@ minimal_tokenizer = """
   }
 }"""
 
-# Create a test directory
-cache_dir, corpus_dir = common.create_test_dir("analysis", test_scripts_dot_py)
-
-with open(os.path.join(corpus_dir, "tokenizer.json"), "w", encoding="utf") as f:
-    f.write(minimal_tokenizer)
-
 
 def cache_is_lean(cache_dir, build_name):
     files = list(glob.glob(f"{cache_dir}/{build_name}/**/*", recursive=True))
@@ -408,4 +402,10 @@ class Testing(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Create a test directory
+    cache_dir, corpus_dir = common.create_test_dir("analysis", test_scripts_dot_py)
+
+    with open(os.path.join(corpus_dir, "tokenizer.json"), "w", encoding="utf") as f:
+        f.write(minimal_tokenizer)
+
     unittest.main()

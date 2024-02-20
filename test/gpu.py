@@ -11,56 +11,6 @@ from turnkeyml.cli.cli import main as turnkeycli
 import turnkeyml.common.filesystem as filesystem
 from cli import assert_success_of_builds, flatten
 
-test_scripts_dot_py = {
-    "linear.py": """# labels: name::linear author::turnkey license::mit test_group::a
-import torch
-
-torch.manual_seed(0)
-
-
-class LinearTestModel(torch.nn.Module):
-    def __init__(self, input_features, output_features):
-        super(LinearTestModel, self).__init__()
-        self.fc = torch.nn.Linear(input_features, output_features)
-
-    def forward(self, x):
-        output = self.fc(x)
-        return output
-
-
-input_features = 10
-output_features = 10
-
-# Model and input configurations
-model = LinearTestModel(input_features, output_features)
-inputs = {"x": torch.rand(input_features)}
-
-output = model(**inputs)
-
-"""
-}
-
-
-# Create a test directory and make it the CWD
-test_dir = os.path.join(os.path.dirname(__file__), "generated", "gpu_test_dir")
-cache_dir = os.path.join(os.path.dirname(__file__), "generated", "cache-dir")
-if os.path.isdir(test_dir):
-    shutil.rmtree(test_dir)
-if os.path.isdir(cache_dir):
-    shutil.rmtree(cache_dir)
-os.makedirs(test_dir)
-os.chdir(test_dir)
-
-corpus_dir = os.path.join(os.getcwd(), "test_corpus")
-extras_dir = os.path.join(corpus_dir, "extras")
-os.makedirs(extras_dir, exist_ok=True)
-
-for key, value in test_scripts_dot_py.items():
-    model_path = os.path.join(corpus_dir, key)
-
-    with open(model_path, "w", encoding="utf") as f:
-        f.write(value)
-
 
 class Testing(unittest.TestCase):
     def setUp(self) -> None:
@@ -89,4 +39,53 @@ class Testing(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    test_scripts_dot_py = {
+        "linear.py": """# labels: name::linear author::turnkey license::mit test_group::a
+import torch
+
+torch.manual_seed(0)
+
+
+class LinearTestModel(torch.nn.Module):
+    def __init__(self, input_features, output_features):
+        super(LinearTestModel, self).__init__()
+        self.fc = torch.nn.Linear(input_features, output_features)
+
+    def forward(self, x):
+        output = self.fc(x)
+        return output
+
+
+input_features = 10
+output_features = 10
+
+# Model and input configurations
+model = LinearTestModel(input_features, output_features)
+inputs = {"x": torch.rand(input_features)}
+
+output = model(**inputs)
+
+    """
+    }
+
+    # Create a test directory and make it the CWD
+    test_dir = os.path.join(os.path.dirname(__file__), "generated", "gpu_test_dir")
+    cache_dir = os.path.join(os.path.dirname(__file__), "generated", "cache-dir")
+    if os.path.isdir(test_dir):
+        shutil.rmtree(test_dir)
+    if os.path.isdir(cache_dir):
+        shutil.rmtree(cache_dir)
+    os.makedirs(test_dir)
+    os.chdir(test_dir)
+
+    corpus_dir = os.path.join(os.getcwd(), "test_corpus")
+    extras_dir = os.path.join(corpus_dir, "extras")
+    os.makedirs(extras_dir, exist_ok=True)
+
+    for key, value in test_scripts_dot_py.items():
+        model_path = os.path.join(corpus_dir, key)
+
+        with open(model_path, "w", encoding="utf") as f:
+            f.write(value)
+
     unittest.main()

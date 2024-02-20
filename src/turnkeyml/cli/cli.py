@@ -13,6 +13,7 @@ from turnkeyml.version import __version__ as turnkey_version
 from turnkeyml.run.devices import SUPPORTED_DEVICES, SUPPORTED_RUNTIMES
 from turnkeyml.build.sequences import SUPPORTED_SEQUENCES
 from turnkeyml.cli.spawn import DEFAULT_TIMEOUT_SECONDS
+from turnkeyml.run.benchmark_build import benchmark_cache_cli
 from turnkeyml.analyze.status import Verbosity
 
 
@@ -463,6 +464,93 @@ def main():
         help="Print the location of the default build cache directory",
     )
     cache_location_parser.set_defaults(func=filesystem.print_cache_dir)
+
+    #######################################
+    # Parser for the "cache benchmark" command
+    #######################################
+
+    cache_benchmark_parser = cache_subparsers.add_parser(
+        "benchmark",
+        help="Benchmark one or more builds in a build cache",
+    )
+    cache_benchmark_parser.set_defaults(func=benchmark_cache_cli)
+
+    cache_benchmark_parser.add_argument(
+        "-d",
+        "--cache-dir",
+        dest="cache_dir",
+        help="Search path for builds " f"(defaults to {filesystem.DEFAULT_CACHE_DIR})",
+        required=False,
+        default=filesystem.DEFAULT_CACHE_DIR,
+    )
+
+    cache_benchmark_group = cache_benchmark_parser.add_mutually_exclusive_group(
+        required=True
+    )
+
+    cache_benchmark_group.add_argument(
+        "build_names",
+        nargs="?",
+        help="Name of the specific build(s) to be benchmarked, within the cache directory",
+    )
+
+    cache_benchmark_group.add_argument(
+        "--all",
+        dest="benchmark_all",
+        help="Benchmark all builds in the cache directory",
+        action="store_true",
+    )
+
+    skip_policy_default = "attempted"
+    cache_benchmark_parser.add_argument(
+        "--skip",
+        choices=[skip_policy_default, "failed", "successful", "none"],
+        dest="skip_policy",
+        help=f"Sets the policy for skipping benchmark attempts (defaults to {skip_policy_default})."
+        "`attempted` means to skip any previously-attempted benchmark, "
+        "whether it succeeded or failed."
+        "`failed` skips benchmarks that have already failed once."
+        "`successful` skips benchmarks that have already succeeded."
+        "`none` will attempt all benchmarks, regardless of whether they were previously attempted.",
+        required=False,
+        default=skip_policy_default,
+    )
+
+    cache_benchmark_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Benchmark timeout, in seconds, after which each benchmark will be canceled "
+        "(default: no timeout).",
+    )
+
+    cache_benchmark_parser.add_argument(
+        "--runtime",
+        choices=SUPPORTED_RUNTIMES.keys(),
+        dest="runtime",
+        help="Software runtime that will be used to collect the benchmark. "
+        "Must be compatible with the device chosen for the build. "
+        "If this argument is not set, the default runtime of the selected device will be used.",
+        required=False,
+        default=None,
+    )
+
+    cache_benchmark_parser.add_argument(
+        "--iterations",
+        dest="iterations",
+        type=int,
+        default=100,
+        help="Number of execution iterations of the model to capture\
+              the benchmarking performance (e.g., mean latency)",
+    )
+
+    cache_benchmark_parser.add_argument(
+        "--rt-args",
+        dest="rt_args",
+        type=str,
+        nargs="*",
+        help="Optional arguments provided to the runtime being used",
+    )
 
     #######################################
     # Subparser for the "models" command

@@ -29,82 +29,6 @@ import turnkeyml.cli.spawn as spawn
 from turnkeyml.cli.parser_helpers import decode_args, encode_args
 from helpers import common
 
-# Create a cache directory a directory with test models
-cache_dir, corpus_dir = common.create_test_dir("cli")
-
-extras_dot_py = {
-    "compiled.py": """
-# labels: name::linear author::selftest test_group::selftest task::test
-import torch
-
-torch.manual_seed(0)
-
-
-class LinearTestModel(torch.nn.Module):
-    def __init__(self, input_features, output_features):
-        super(LinearTestModel, self).__init__()
-        self.fc = torch.nn.Linear(input_features, output_features)
-
-    def forward(self, x):
-        output = self.fc(x)
-        return output
-
-
-input_features = 10
-output_features = 10
-
-# Compiled model
-model = LinearTestModel(input_features, output_features)
-model = torch.compile(model)
-inputs = {"x": torch.rand(input_features)}
-model(**inputs)
-
-# Non-compiled model
-model2 = LinearTestModel(input_features * 2, output_features)
-inputs2 = {"x": torch.rand(input_features * 2)}
-model2(**inputs2)
-""",
-    "selected_models.txt": f"""
-{os.path.join(corpus_dir,"linear.py")}
-{os.path.join(corpus_dir,"linear2.py")}
-""",
-    "timeout.py": """# labels: name::timeout author::turnkey license::mit test_group::a task::test
-import torch
-
-torch.manual_seed(0)
-
-
-class LinearTestModel(torch.nn.Module):
-    def __init__(self, input_features, output_features):
-        super(LinearTestModel, self).__init__()
-        self.fc = torch.nn.Linear(input_features, output_features)
-
-    def forward(self, x):
-        output = self.fc(x)
-        return output
-
-
-input_features = 500000
-output_features = 1000
-
-# Model and input configurations
-model = LinearTestModel(input_features, output_features)
-inputs = {"x": torch.rand(input_features)}
-
-output = model(**inputs)
-
-""",
-}
-
-extras_dir = os.path.join(corpus_dir, "extras")
-os.makedirs(extras_dir, exist_ok=True)
-
-for key, value in extras_dot_py.items():
-    file_path = os.path.join(extras_dir, key)
-
-    with open(file_path, "w", encoding="utf") as f:
-        f.write(value)
-
 
 def bash(cmd: str) -> List[str]:
     """
@@ -934,7 +858,7 @@ class Testing(unittest.TestCase):
 
         test_scripts = common.test_scripts_dot_py.keys()
 
-        # Build the test corpus so we have builds to report
+        # Benchmark the test corpus so we have builds to report
         testargs = [
             "turnkey",
             "benchmark",
@@ -1015,22 +939,134 @@ class Testing(unittest.TestCase):
                 "stage_duration:export_pytorch",
                 "stage_duration:optimize_onnx",
                 "stage_status:export_pytorch",
-                "stage_status:optimize_onnx"
+                "stage_status:optimize_onnx",
             ],
         )
         for result in result_dict.values():
             # All of the models should have exported to ONNX and optimized the ONNX model
-            for stage in ["export_pytorch","optimize_onnx"]:
+            for stage in ["export_pytorch", "optimize_onnx"]:
                 assert stage in result["selected_sequence_of_stages"]
                 duration = result[f"stage_duration:{stage}"]
                 status = result[f"stage_status:{stage}"]
-                assert status == "successful", f"Unexpected status {status} for stage '{stage}'"
+                assert (
+                    status == "successful"
+                ), f"Unexpected status {status} for stage '{stage}'"
                 try:
-                    assert float(duration) > 0, f"Stage {stage} has invalid duration '{duration}'"
+                    assert (
+                        float(duration) > 0
+                    ), f"Stage {stage} has invalid duration '{duration}'"
                 except ValueError:
                     # Catch the case where the value is not numeric
                     assert False, f"Stage {stage} has invalid duration {duration}"
 
+    def test_027_cli_cache_benchmark(self):
+
+        test_scripts = common.test_scripts_dot_py.keys()
+
+        # Build the test corpus so we have builds to benchmark
+        testargs = [
+            "turnkey",
+            "benchmark",
+            bash(f"{corpus_dir}/*.py"),
+            "--cache-dir",
+            cache_dir,
+            "--build-only",
+        ]
+        with patch.object(sys, "argv", flatten(testargs)):
+            turnkeycli()
+
+        # Benchmark the cache directory
+        testargs = [
+            "turnkey",
+            "cache",
+            "benchmark",
+            "--all",
+            "--cache-dir",
+            cache_dir,
+        ]
+        with patch.object(sys, "argv", flatten(testargs)):
+            turnkeycli()
+
+        # Make sure the benchmarks happened
+        assert_success_of_builds(test_scripts, cache_dir, check_perf=True)
+
 
 if __name__ == "__main__":
+    # Create a cache directory a directory with test models
+    cache_dir, corpus_dir = common.create_test_dir("cli")
+
+    extras_dot_py = {
+        "compiled.py": """
+# labels: name::linear author::selftest test_group::selftest task::test
+import torch
+
+torch.manual_seed(0)
+
+
+class LinearTestModel(torch.nn.Module):
+    def __init__(self, input_features, output_features):
+        super(LinearTestModel, self).__init__()
+        self.fc = torch.nn.Linear(input_features, output_features)
+
+    def forward(self, x):
+        output = self.fc(x)
+        return output
+
+
+input_features = 10
+output_features = 10
+
+# Compiled model
+model = LinearTestModel(input_features, output_features)
+model = torch.compile(model)
+inputs = {"x": torch.rand(input_features)}
+model(**inputs)
+
+# Non-compiled model
+model2 = LinearTestModel(input_features * 2, output_features)
+inputs2 = {"x": torch.rand(input_features * 2)}
+model2(**inputs2)
+    """,
+        "selected_models.txt": f"""
+    {os.path.join(corpus_dir,"linear.py")}
+    {os.path.join(corpus_dir,"linear2.py")}
+    """,
+        "timeout.py": """
+# labels: name::timeout author::turnkey license::mit test_group::a task::test
+import torch
+
+torch.manual_seed(0)
+
+
+class LinearTestModel(torch.nn.Module):
+    def __init__(self, input_features, output_features):
+        super(LinearTestModel, self).__init__()
+        self.fc = torch.nn.Linear(input_features, output_features)
+
+    def forward(self, x):
+        output = self.fc(x)
+        return output
+
+
+input_features = 500000
+output_features = 1000
+
+# Model and input configurations
+model = LinearTestModel(input_features, output_features)
+inputs = {"x": torch.rand(input_features)}
+
+output = model(**inputs)
+
+    """,
+    }
+
+    extras_dir = os.path.join(corpus_dir, "extras")
+    os.makedirs(extras_dir, exist_ok=True)
+
+    for key, value in extras_dot_py.items():
+        file_path = os.path.join(extras_dir, key)
+
+        with open(file_path, "w", encoding="utf") as f:
+            f.write(value)
+
     unittest.main()

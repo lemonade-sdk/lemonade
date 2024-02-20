@@ -11,9 +11,6 @@ import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.build as build
 from helpers import common
 
-# Create a cache directory a directory with test models
-cache_dir, corpus_dir = common.create_test_dir("plugins")
-
 
 class Testing(unittest.TestCase):
     def setUp(self) -> None:
@@ -52,4 +49,7 @@ class Testing(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Create a cache directory a directory with test models
+    cache_dir, corpus_dir = common.create_test_dir("plugins")
+
     unittest.main()
