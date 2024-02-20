@@ -55,12 +55,6 @@ If you want to benchmark an entire corpus of models, but you don't want to call 
 For example, the command:
 
 ```
-turnkey scripts/hello_world.py scripts/two_models.py scripts/max_depth.py
-```
-
-or the command
-
-```
 turnkey scripts/*.py
 ```
 
@@ -73,42 +67,92 @@ Models discovered during profiling:
 hello_world.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
-                Class:          SmallModel (<class 'hello_world.SmallModel'>)
-                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/hello_world.py, line 29
-                Parameters:     55 (<0.1 MB)
-                Hash:           479b1332
-                Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
-                                Mean Latency:   0.000   milliseconds (ms)
-                                Throughput:     657792.2        inferences per second (IPS)
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/hello_world.py, line 30
+                Parameters:     60 (240.0 B)
+                Input Shape:    'x': (11,)
+                Hash:           24adc42f
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.011   milliseconds (ms)
+                                Throughput:     93383.9 inferences per second (IPS)
 
-two_models.py:
-        another_pytorch_model (executed 1x)
-                Model Type:     Pytorch (torch.nn.Module)
-                Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 40
-                Parameters:     510 (<0.1 MB)
-                Hash:           215ca1e3
-                Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
-                                Mean Latency:   0.000   milliseconds (ms)
-                                Throughput:     509528.6        inferences per second (IPS)
 
 max_depth.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
-                Class:          TwoLayerModel (<class 'max_depth.TwoLayerModel'>)
-                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/max_depth.py, line 41
-                Parameters:     85 (<0.1 MB)
-                Hash:           80b93950
-                Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
-                                Mean Latency:   0.000   milliseconds (ms)
-                                Throughput:     693955.3        inferences per second (IPS)
+                Class:          TwoLayerModel (<class '__main__.TwoLayerModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/max_depth.py, line 42
+                Parameters:     85 (340.0 B)
+                Input Shape:    'x': (10,)
+                Hash:           7ebbe8c4
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.012   milliseconds (ms)
+                                Throughput:     84665.5 inferences per second (IPS)
 
-pytorch_outputs: tensor([-0.1675,  0.1548, -0.1627,  0.0067,  0.3353], grad_fn=<AddBackward0>)
+
+multiple_invocations.py:
+        pytorch_model
+                Model Type:     Pytorch (torch.nn.Module)
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/multiple_invocations.py, line 41
+                Parameters:     65 (260.0 B)
+
+                With input shape 1 (executed 2x)
+                Input Shape:    'x': (1, 12)
+                Hash:           ef80819e
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.011   milliseconds (ms)
+                                Throughput:     88407.7 inferences per second (IPS)
+
+
+
+                With input shape 2 (executed 1x)
+                Input Shape:    'x': (2, 12)
+                Hash:           d5267eaf
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.011   milliseconds (ms)
+                                Throughput:     94677.1 inferences per second (IPS)
+
+
+two_models.py:
+        pytorch_model (executed 1x)
+                Model Type:     Pytorch (torch.nn.Module)
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/two_models.py, line 33
+                Parameters:     55 (220.0 B)
+                Input Shape:    'x': (10,)
+                Hash:           f93db89f
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.010   milliseconds (ms)
+                                Throughput:     99969.0 inferences per second (IPS)
+
+
+        another_pytorch_model (executed 1x)
+                Model Type:     Pytorch (torch.nn.Module)
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/two_models.py, line 41
+                Parameters:     510 (1.99 KB)
+                Input Shape:    'x': (50,)
+                Hash:           c69b7dea
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.011   milliseconds (ms)
+                                Throughput:     92059.3 inferences per second (IPS)
+
+
+pytorch_outputs: tensor([ 0.3628,  0.0489,  0.2952,  0.0022, -0.0161], grad_fn=<ViewBackward0>)
+more_pytorch_outputs: tensor([-0.1198, -0.5344, -0.1920, -0.1565,  0.2279,  0.6915,  0.8540, -0.2481,
+         0.0616, -0.4501], grad_fn=<ViewBackward0>)
 
 Woohoo! The 'benchmark' command is complete.
 ```
 
-You can see that `hello_world.py`, `two_models.py`, and `max_depth.py` are all evaluated.
+You can see that `hello_world.py`, `two_models.py`, `max_depth.py`, and `multiple_invocations.py` are all evaluated.
 
 Alternatively, you can also use `.txt` inputs to list the models you want to benchmark. Text input files may contain regular expressions and may even point to other text files.
 To achieve the same result as above, you may simply call `turnkey selected_models.py`, where `selected_models.txt` is:
@@ -117,6 +161,7 @@ To achieve the same result as above, you may simply call `turnkey selected_model
 hello_world.py
 two_models.py
 max_depth.py
+multiple_invocations.py
 ```
 
 > See the [Benchmark Multiple Scripts documentation](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#benchmark-multiple-scripts) for more details.
@@ -192,7 +237,7 @@ You can leverage the model hashes feature of `turnkey` to filter which models ar
 If you wanted to only build and benchmark `another_pytorch_model`, you could use this command, which filters `two_models.py` with the hash `215ca1e3`:
 
 ```
-turnkey benchmark scripts/two_models.py::215ca1e3
+turnkey benchmark scripts/two_models.py::c69b7dea
 ```
 
 That would produce a result like:
@@ -203,24 +248,29 @@ Models discovered during profiling:
 two_models.py:
         pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
-                Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 32
-                Parameters:     55 (<0.1 MB)
-                Hash:           479b1332
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/two_models.py, line 33
+                Parameters:     55 (220.0 B)
+                Input Shape:    'x': (10,)
+                Hash:           f93db89f
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
 
         another_pytorch_model (executed 1x)
                 Model Type:     Pytorch (torch.nn.Module)
-                Class:          SmallModel (<class 'two_models.SmallModel'>)
-                Location:       /home/jfowers/turnkeyml/examples/cli/scripts/two_models.py, line 40
-                Parameters:     510 (<0.1 MB)
-                Hash:           215ca1e3
-                Status:         Model successfully benchmarked on Intel(R) Xeon(R) CPU @ 2.20GHz
-                                Mean Latency:   0.000   milliseconds (ms)
-                                Throughput:     499272.2        inferences per second (IPS)
+                Class:          SmallModel (<class '__main__.SmallModel'>)
+                Location:       /home/jefowers/turnkeyml/examples/cli/scripts/two_models.py, line 41
+                Parameters:     510 (1.99 KB)
+                Input Shape:    'x': (50,)
+                Hash:           c69b7dea
+                Build dir:       /home/jefowers/.cache/turnkey/two_models_turnkey_c69b7dea
+                Status:         Successfully benchmarked on AMD Ryzen 7 PRO 7840U w/ Radeon 780M Graphics (ort v1.15.1) 
+                                Mean Latency:   0.012   milliseconds (ms)
+                                Throughput:     85741.4 inferences per second (IPS)
 
-pytorch_outputs: tensor([ 0.3628,  0.0489,  0.2952,  0.0021, -0.0161], grad_fn=<AddBackward0>)
+
+pytorch_outputs: tensor([ 0.3628,  0.0489,  0.2952,  0.0022, -0.0161], grad_fn=<ViewBackward0>)
 more_pytorch_outputs: tensor([-0.1198, -0.5344, -0.1920, -0.1565,  0.2279,  0.6915,  0.8540, -0.2481,
-         0.0616, -0.4501], grad_fn=<AddBackward0>)
+         0.0616, -0.4501], grad_fn=<ViewBackward0>)
 
 Woohoo! The 'benchmark' command is complete.
 ```

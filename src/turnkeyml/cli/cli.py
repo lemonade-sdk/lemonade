@@ -13,6 +13,7 @@ from turnkeyml.version import __version__ as turnkey_version
 from turnkeyml.run.devices import SUPPORTED_DEVICES, SUPPORTED_RUNTIMES
 from turnkeyml.build.sequences import SUPPORTED_SEQUENCES
 from turnkeyml.cli.spawn import DEFAULT_TIMEOUT_SECONDS
+from turnkeyml.analyze.status import Verbosity
 
 
 class MyParser(argparse.ArgumentParser):
@@ -282,6 +283,19 @@ def main():
         help="Build timeout, in seconds, after which a build will be canceled "
         f"(default={DEFAULT_TIMEOUT_SECONDS}). Only "
         "applies when --process-isolation or --use-slurm is also used.",
+    )
+
+    default_verbosity = Verbosity.AUTO.value
+    all_toolflows_group.add_argument(
+        "--verbosity",
+        choices=[field.value for field in Verbosity],
+        default=default_verbosity,
+        help="Verbosity of the status updates printed to the command line "
+        f"(default={default_verbosity}). '{Verbosity.DYNAMIC.value}': "
+        "take over the terminal, updating "
+        " it with a summary of all turnkey information. "
+        f"'{Verbosity.STATIC.value}': print each evaluation as it takes place and "
+        "never clear the terminal.",
     )
 
     #######################################

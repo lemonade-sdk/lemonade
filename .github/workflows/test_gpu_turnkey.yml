@@ -33,7 +33,7 @@ jobs:
     if: ${{ needs.start_vm.result == 'success' }}
     runs-on: self-hosted
     env:
-      TURNKEY_DEBUG: True
+      TURNKEY_VERBOSITY: static
       TURNKEY_TRACEBACK: True
     strategy:
       matrix:

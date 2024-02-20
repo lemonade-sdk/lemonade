@@ -13,6 +13,7 @@ import torch
 
 torch.manual_seed(1)
 
+
 # Define model class
 class SmallModel(torch.nn.Module):
     def __init__(self, input_features, output_size):
@@ -32,7 +33,7 @@ class SmallModel(torch.nn.Module):
 
 
 # Instantiate model and generate inputs
-input_features = 11
+input_features = 12
 output_size = 5
 pytorch_model = SmallModel(input_features, output_size)
 

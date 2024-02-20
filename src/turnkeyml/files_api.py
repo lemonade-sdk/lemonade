@@ -20,9 +20,64 @@ from turnkeyml.analyze.script import (
     explore_invocation,
     get_model_hash,
 )
-from turnkeyml.analyze.util import ModelInfo, UniqueInvocationInfo
+from turnkeyml.analyze.status import ModelInfo, UniqueInvocationInfo, Verbosity
 import turnkeyml.common.build as build
 import turnkeyml.build.onnx_helpers as onnx_helpers
+
+# The licensing for tqdm is confusing. Pending a legal scan,
+# the following code provides tqdm to users who have installed
+# it already, while being transparent to users who do not
+# have tqdm installed.
+try:
+    from tqdm import tqdm
+except ImportError:
+
+    def tqdm(iterable, **kwargs):  # pylint: disable=unused-argument
+        return iterable
+
+
+def _select_verbosity(
+    verbosity: str, input_files_expanded: List[str], process_isolation: bool
+) -> Tuple[Verbosity, bool]:
+    """
+    Choose verbosity based on the following policies:
+        1. The explicit verbosity argument takes priority over AUTO and the env var
+        2. The env var takes priority over AUTO
+        3. Use STATIC when there are many inputs, or in process isolation mode,
+            and use DYNAMIC otherwise
+
+    Returns the selected verbosity.
+    """
+
+    verbosity_choices = {
+        field.value: field for field in Verbosity if field != Verbosity.AUTO
+    }
+    verbosity_env_var = os.environ.get("TURNKEY_VERBOSITY")
+
+    if verbosity != Verbosity.AUTO.value:
+        # Specific verbosity argument takes priority over env var
+        verbosity_selected = verbosity_choices[verbosity]
+    elif verbosity_env_var in verbosity_choices.keys():
+        # Env var takes priority over AUTO
+        verbosity_selected = verbosity_choices[verbosity_env_var]
+    else:
+        # Verbosity.AUTO and no env var
+        if len(input_files_expanded) > 4 or process_isolation:
+            # Automatically select STATIC if:
+            # - There are many evaluations (>4), since DYNAMIC mode works
+            #       best when all results fit on one screen
+            # - Process isolation mode is active, since DYNAMIC mode is
+            #       incompatible with process isolation
+            verbosity_selected = Verbosity.STATIC
+        else:
+            verbosity_selected = Verbosity.DYNAMIC
+
+    # Use a progress bar in STATIC mode if there is more than 1 input
+    use_progress_bar = (
+        verbosity_selected == Verbosity.STATIC and len(input_files_expanded) > 1
+    )
+
+    return verbosity_selected, use_progress_bar
 
 
 def decode_input_arg(input: str) -> Tuple[str, List[str], str]:
@@ -110,7 +165,9 @@ def benchmark_files(
     timeout: Optional[int] = None,
     sequence: Union[str, stage.Sequence] = None,
     rt_args: Optional[Dict] = None,
+    verbosity: str = Verbosity.STATIC.value,
 ):
+
     # Capture the function arguments so that we can forward them
     # to downstream APIs
     benchmarking_args = copy.deepcopy(locals())
@@ -229,6 +286,11 @@ def benchmark_files(
     # Use this data structure to keep a running index of all models
     models_found: Dict[str, ModelInfo] = {}
 
+    verbosity_policy, use_progress_bar = _select_verbosity(
+        verbosity, input_files_expanded, process_isolation
+    )
+    benchmarking_args["verbosity"] = verbosity_policy
+
     # Fork the args for analysis since they have differences from the spawn args:
     # build_only and analyze_only are encoded into actions
     analysis_args = copy.deepcopy(benchmarking_args)
@@ -237,7 +299,7 @@ def benchmark_files(
     analysis_args["actions"] = actions
     analysis_args.pop("timeout")
 
-    for file_path_encoded in input_files_expanded:
+    for file_path_encoded in tqdm(input_files_expanded, disable=not use_progress_bar):
         # Check runtime requirements if needed. All benchmarking will be halted
         # if requirements are not met. This happens regardless of whether
         # process-isolation is used or not.
@@ -319,6 +381,11 @@ def benchmark_files(
                 #       in the event of any errors
                 #  - Most other values can be left as default
                 invocation_info = UniqueInvocationInfo(
+                    name=onnx_name,
+                    script_name=onnx_name,
+                    file=file_path_absolute,
+                    build_model=not build_only,
+                    model_type=build.ModelType.ONNX_FILE,
                     executed=1,
                     input_shapes=input_shapes,
                     hash=onnx_hash,

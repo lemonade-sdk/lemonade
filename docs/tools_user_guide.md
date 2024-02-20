@@ -489,6 +489,24 @@ None of the built-in runtimes support such arguments, however plugin contributor
 Also available as API arguments:
 - `benchmark_files(rt_args=Dict)` (default None)
 
+### Verbosity
+
+The following verbosity settings for `turnkey` tool are:
+
+- `auto` verbosity: select one of the following, according to the policies below.
+- `dynamic` verbosity: take over the terminal, clearing its contents, and displaying a clean status update summarizing the results for each script and model evaluated.
+- `static` verbosity: print each piece of evaluation information as it becomes available. Never clear the terminal. Useful for scripted environments and mass-evaluation of many files.
+
+In `auto` mode, verbosity is automatically determined based on the following policies:
+- with 4 or fewer input files: `dynamic`
+- with more than 4 input files, and/or when process isolation is enabled: `static`
+
+The defaults can be overridden with the `--verbosity` option. Usage:
+- `turnkey benchmark INPUT_FILES --verbosity VERBOSITY`
+
+Also available as an API argument:
+- `benchmark_files(verbosity=...)` (default `"static"`)
+
 ## Cache Commands
 
 The `cache` commands help you manage the `turnkey cache` and get information about the builds and benchmarks within it.
@@ -595,14 +613,16 @@ For example:
 export TURNKEY_TRACEBACK=False
 ```
 
-### Preserve Terminal Outputs
+### Change Status Verbosity
 
-By default, `turnkey` and `benchmark_files()` will erase the contents of the terminal in order to present a clean status update for each script and model evaluated. 
-
-However, you may want to see everything that is being printed to the terminal. You can accomplish this by setting the `TURNKEY_DEBUG` environment variable to `True`. For example:
+By default, `turnkey` will automatically apply a verbosity policy.  You may override these default values by setting the `TURNKEY_VERBOSITY` environment variable. For example:
 
 ```
-export TURNKEY_DEBUG=True
+# Use the "static" verbosity mode
+export TURNKEY_VERBOSITY=static
+
+# Use the "dynamic" verbosity mode
+export TURNKEY_VERBOSITY=dynamic
 ```
 
 ### Set the ONNX Opset

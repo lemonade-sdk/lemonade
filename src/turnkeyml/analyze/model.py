@@ -1,13 +1,9 @@
-import sys
-from dataclasses import dataclass
-from typing import Callable, List, Union, Dict, Optional
-import dataclasses
+from typing import Union, Dict
 import numpy as np
 import torch
 import onnx
 from turnkeyml.common import printing
 import turnkeyml.common.build as build
-from turnkeyml.common.performance import MeasuredPerformance
 import turnkeyml.common.filesystem as fs
 
 
@@ -15,52 +11,6 @@ class AnalysisException(Exception):
     """
     Indicates a failure during analysis
     """
-
-
-@dataclass
-class UniqueInvocationInfo:
-    """
-    Refers to unique static model invocations
-    (i.e. models executed with unique input shapes)
-    """
-
-    hash: Union[str, None] = None
-    parent_hash: Union[str, None] = None
-    performance: MeasuredPerformance = None
-    traceback: List[str] = None
-    inputs: Union[dict, None] = None
-    input_shapes: Union[dict, None] = None
-    executed: int = 0
-    exec_time: float = 0.0
-    status_message: str = ""
-    is_target: bool = False
-    status_message_color: printing.Colors = printing.Colors.ENDC
-    traceback_message_color: printing.Colors = printing.Colors.FAIL
-    stats_keys: Optional[List[str]] = None
-    stats: fs.Stats = None
-
-
-@dataclass
-class ModelInfo:
-    model: torch.nn.Module
-    name: str
-    script_name: str
-    file: str = ""
-    line: int = 0
-    params: int = 0
-    depth: int = 0
-    hash: Union[str, None] = None
-    parent_hash: Union[str, None] = None
-    old_forward: Union[Callable, None] = None
-    unique_invocations: Union[Dict[str, UniqueInvocationInfo], None] = (
-        dataclasses.field(default_factory=dict)
-    )
-    last_unique_invocation_executed: Union[str, None] = None
-    build_model: bool = False
-    model_type: build.ModelType = build.ModelType.PYTORCH
-
-    def __post_init__(self):
-        self.params = count_parameters(self.model, self.model_type)
 
 
 def count_parameters(model: torch.nn.Module, model_type: build.ModelType) -> int:
@@ -355,16 +305,6 @@ def onnx_input_dimensions(onnx_model) -> Dict:
         shape = str(input.type.tensor_type.shape.dim)
         input_shape[input.name] = [int(s) for s in shape.split() if s.isdigit()]
     return input_shape
-
-
-def stop_logger_forward() -> None:
-    """
-    Stop forwarding stdout and stderr to file
-    """
-    if hasattr(sys.stdout, "terminal"):
-        sys.stdout = sys.stdout.terminal
-    if hasattr(sys.stderr, "terminal_err"):
-        sys.stderr = sys.stderr.terminal_err
 
 
 def analyze_onnx(build_name: str, cache_dir: str, stats: fs.Stats):
