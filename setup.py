@@ -37,7 +37,6 @@ setup(
         "xgboost==1.6.1",
         "lightgbm==3.3.5",
         "onnxruntime >=1.10.1, <1.16.0",
-        "paramiko==2.11.0",
         "torch>=1.12.1",
         "protobuf>=3.17.3,<3.21",
         "pyyaml>=5.4",
