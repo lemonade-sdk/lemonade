@@ -800,14 +800,21 @@ def explore_frame(
                 and invocation_info.is_target
                 and (model_info.build_model)
             ):
+                # Disable all modifications while we evalute the model
+                # This is needed in case a tool called during evaluation wants to
+                # trace the model. There are some scenarios (e.g., ipex.quantization.prepare),
+                # that raise an exception when they encounter forward_spy()
+                local_var.forward = old_forward
+
                 explore_invocation(
                     model_inputs=[args, kwargs],
                     model_info=model_info,
                     invocation_info=invocation_info,
                     tracer_args=tracer_args,
                 )
-                # Ensure that explore_invocation() doesn't interfere with our execution count
-                model_info.executed = 1
+
+                # Re-enable modifications
+                local_var.forward = forward_spy
 
             build_name = fs.get_build_name(
                 tracer_args.script_name,

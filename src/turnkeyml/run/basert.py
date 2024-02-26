@@ -87,6 +87,8 @@ class BaseRT(ABC):
                 f"supports runtimes: {runtimes_supported}"
             )
 
+        os.makedirs(self.local_output_dir, exist_ok=True)
+
         self._setup()
 
     def posix_path_format(self, path) -> str:
@@ -140,7 +142,6 @@ class BaseRT(ABC):
         files_to_transfer: absolute paths to files
         """
 
-        os.makedirs(self.local_output_dir, exist_ok=True)
         for file in files_to_transfer:
             shutil.copy(
                 file, os.path.join(self.local_output_dir, os.path.basename(file))
