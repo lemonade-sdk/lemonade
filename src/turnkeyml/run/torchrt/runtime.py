@@ -99,9 +99,9 @@ class TorchRT(BaseRT):
                 f"Only Pytorch models are valid when runtime is {self.runtime}"
             )
 
-        # Compile the
+        # Compile the model
         start_time = time.perf_counter()
-        with build.Logger("Preparing torch model", self.logfile_path):
+        with build.Logger("Preparing torch model", self.compile_logfile_path):
             self._compile()
         end_time = time.perf_counter()
         total_time = end_time - start_time
@@ -166,22 +166,25 @@ class TorchRT(BaseRT):
         of TorchRT.
         """
 
-        # Cache warmup for 1 minute or 10 iterations, whichever
-        # comes first
-        self._run_model(iterations=10, time_limit=60)
+        with build.Logger("Benchmarking torch model", self.logfile_path):
+            # Cache warmup for 1 minute or 10 iterations, whichever
+            # comes first
+            self._run_model(iterations=10, time_limit=60)
 
-        # Run the benchmark for the specified amount of iterations,
-        # or 2 minutes, whichever comes first
-        per_iteration_latency = self._run_model(
-            iterations=self.iterations, time_limit=120
-        )
+            # Run the benchmark for the specified amount of iterations,
+            # or 2 minutes, whichever comes first
+            per_iteration_latency = self._run_model(
+                iterations=self.iterations, time_limit=120
+            )
 
-        # Record the number of iterations actually used for the benchmark,
-        # which will be less than the `iterations` argument if the time
-        # limit was reached
-        self.stats.save_model_eval_stat(fs.Keys.ITERATIONS, len(per_iteration_latency))
+            # Record the number of iterations actually used for the benchmark,
+            # which will be less than the `iterations` argument if the time
+            # limit was reached
+            self.stats.save_model_eval_stat(
+                fs.Keys.ITERATIONS, len(per_iteration_latency)
+            )
 
-        return self._calculate_performance(per_iteration_latency)
+            return self._calculate_performance(per_iteration_latency)
 
     def benchmark(self) -> MeasuredPerformance:
         """
