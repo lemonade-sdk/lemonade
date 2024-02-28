@@ -236,8 +236,13 @@ class UniqueInvocationInfo(BasicInfo):
             if self.stats_keys is not None:
                 for key in self.stats_keys:
                     nice_key = _pretty_print_key(key)
-                    value = self.stats.evaluation_stats[key]
-                    printing.logn(f"{self.indent}\t\t\t{nice_key}:\t{value}")
+                    try:
+                        value = self.stats.evaluation_stats[key]
+                        printing.logn(f"{self.indent}\t\t\t{nice_key}:\t{value}")
+                    except KeyError:
+                        # Ignore any keys that are missing because that means the
+                        # evaluation did not produce them
+                        pass
             print()
         else:
             if self.is_target and self.build_model:
