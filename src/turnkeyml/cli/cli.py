@@ -519,9 +519,9 @@ def main():
     cache_benchmark_parser.add_argument(
         "--timeout",
         type=int,
-        default=None,
+        default=1800,
         help="Benchmark timeout, in seconds, after which each benchmark will be canceled "
-        "(default: no timeout).",
+        "(default: 30min).",
     )
 
     cache_benchmark_parser.add_argument(
