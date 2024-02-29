@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 import multiprocessing
 import traceback
 import turnkeyml.common.build as build
@@ -173,7 +173,7 @@ def benchmark_cache_cli(args):
 
     benchmark_cache(
         cache_dir=args.cache_dir,
-        build_names=args.build_names,
+        build_name=args.build_name,
         benchmark_all=args.benchmark_all,
         skip_policy=args.skip_policy,
         runtime=args.runtime,
@@ -185,7 +185,7 @@ def benchmark_cache_cli(args):
 
 def benchmark_cache(
     cache_dir: str,
-    build_names: List[str],
+    build_name: str,
     benchmark_all: bool,
     skip_policy: str,
     runtime: str,
@@ -211,7 +211,7 @@ def benchmark_cache(
     if benchmark_all:
         builds = fs.get_available_builds(cache_dir)
     else:
-        builds = build_names
+        builds = [build_name]
 
     # Keep track of whether this is the first build we are benchmarking
     first = True

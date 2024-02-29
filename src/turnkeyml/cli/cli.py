@@ -489,9 +489,9 @@ def main():
     )
 
     cache_benchmark_group.add_argument(
-        "build_names",
+        "build_name",
         nargs="?",
-        help="Name of the specific build(s) to be benchmarked, within the cache directory",
+        help="Name of the specific build to be benchmarked, within the cache directory",
     )
 
     cache_benchmark_group.add_argument(
