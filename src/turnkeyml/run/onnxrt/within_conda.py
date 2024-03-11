@@ -22,6 +22,15 @@ def run_ort_profile(
     input_feed = dummy_inputs(sess_input)
     output_name = onnx_session.get_outputs()[0].name
 
+    # Warm the CPU cache by executing a small number of inferences
+    # Stop after 100 iterations or 15s warming up
+    warmup_max_duration = 15
+    warmup_start_time = time.time()
+    for _ in range(100):
+        onnx_session.run([output_name], input_feed)
+        if time.time() - warmup_start_time > warmup_max_duration:
+            break
+
     for _ in range(iterations):
         start = time.perf_counter()
         onnx_session.run([output_name], input_feed)
