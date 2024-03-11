@@ -203,9 +203,18 @@ def get_shapes_and_dtypes(inputs: dict):
             (list, tuple),
         ):
             for v, i in zip(value, range(len(value))):
-                subkey = f"{key}[{i}]"
-                shapes[subkey] = np.array(v).shape
-                dtypes[subkey] = np.array(v).dtype.name
+                if isinstance(v, (list, tuple)):
+                    # Handle nested lists/tuples, for example past_key_values
+                    # in an LLM that has KV-caching enabled
+                    for v2, i2 in zip(v, range(len(v))):
+                        subsubkey = f"{key}[{i}][{i2}]"
+                        shapes[subsubkey] = np.array(v2).shape
+                        dtypes[subsubkey] = np.array(v2).dtype.name
+                else:
+                    # Handle single list/tuple
+                    subkey = f"{key}[{i}]"
+                    shapes[subkey] = np.array(v).shape
+                    dtypes[subkey] = np.array(v).dtype.name
         elif torch.is_tensor(value):
             shapes[key] = np.array(value.detach()).shape
             dtypes[key] = np.array(value.detach()).dtype.name

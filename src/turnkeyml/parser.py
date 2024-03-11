@@ -69,6 +69,13 @@ def parse(valid_args: List[str]) -> List[Union[int, float]]:
         "in_channels": Arg("in_channels", default=1433, type=int),
         # Pretrained indicates whether pretrained weights should be used on the model
         "pretrained": Arg("pretrained", default=False, type=bool, action="store_true"),
+        # Path on the filesystem to a copy of the model
+        # Useful when models have special licensing terms and we can't directly
+        # provide access
+        "model_path": Arg("model_path", default=None, type=str),
+        # True: use an LLM's KV-cache (ie, token phase). False: disable the
+        # KV-cache (ie, prefill phase).
+        "kvcache": Arg("kvcache", default=False, type=bool, action="store_true"),
     }
 
     # Create parser that accepts only the args received as part of valid_args
