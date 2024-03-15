@@ -57,7 +57,7 @@ class ExampleRT(BaseRT):
         return MeasuredPerformance(
             mean_latency=self.mean_latency,
             throughput=self.throughput,
-            device=self.device_name,
+            device=self.device_name(),
             device_type=self.device_type,
             runtime=self.runtime,
             runtime_version=self.runtime_version,
@@ -82,6 +82,6 @@ class ExampleRT(BaseRT):
                 "Queried throughput before self.benchmark() was called"
             )
 
-    @property
-    def device_name(self) -> str:
+    @staticmethod
+    def device_name() -> str:
         return "the x86 cpu of your dreams"

@@ -5,7 +5,11 @@ from turnkeyml.run.basert import BaseRT
 import turnkeyml.common.exceptions as exp
 from turnkeyml.run.onnxrt.execute import ORT_VERSION
 from turnkeyml.common.filesystem import Stats
-from turnkeyml.run.onnxrt.execute import create_conda_env, execute_benchmark
+from turnkeyml.run.onnxrt.execute import (
+    create_conda_env,
+    execute_benchmark,
+    get_cpu_specs,
+)
 import turnkeyml.run.plugin_helpers as plugin_helpers
 
 
@@ -95,6 +99,6 @@ class OnnxRT(BaseRT):
     def throughput(self):
         return float(self._get_stat("Throughput"))
 
-    @property
-    def device_name(self):
-        return self._get_stat("CPU Name")
+    @staticmethod
+    def device_name() -> str:
+        return get_cpu_specs()["CPU Name"]

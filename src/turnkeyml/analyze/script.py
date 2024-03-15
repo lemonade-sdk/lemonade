@@ -371,6 +371,11 @@ def explore_invocation(
             fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.NOT_STARTED.value
         )
 
+        # Save the device name that will be used for the benchmark
+        stats.save_model_eval_stat(
+            fs.Keys.DEVICE, runtime_info["RuntimeClass"].device_name()
+        )
+
     build_state = None
     perf = None
     benchmark_logfile_path = ""
@@ -667,7 +672,7 @@ def explore_frame(
 
             # Starting in version 2.2.0, torch dynamo added wrappers to callbacks
             # while tracing frames, which conflicts with TurnkeML's analysis. Here,
-            # we supress errors caused by those callback wrappers and only raise an
+            # we suppress errors caused by those callback wrappers and only raise an
             # error if the compiled model actually tries to execute within TurnkeyML.
             td = torch._dynamo  # pylint: disable=protected-access
             td.config.suppress_errors = True
@@ -800,7 +805,7 @@ def explore_frame(
                 and invocation_info.is_target
                 and (model_info.build_model)
             ):
-                # Disable all modifications while we evalute the model
+                # Disable all modifications while we evaluate the model
                 # This is needed in case a tool called during evaluation wants to
                 # trace the model. There are some scenarios (e.g., ipex.quantization.prepare),
                 # that raise an exception when they encounter forward_spy()

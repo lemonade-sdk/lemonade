@@ -28,7 +28,7 @@ class CombinedExampleRT(BaseRT):
         inputs=None,
         delay_before_benchmarking: str = "0",
     ):
-        # Custom runtime args always arive as strings, so we need to convert them
+        # Custom runtime args always arrive as strings, so we need to convert them
         # to the appropriate data type here
         self.delay_before_benchmarking = int(delay_before_benchmarking)
 
@@ -86,7 +86,7 @@ class CombinedExampleRT(BaseRT):
         return MeasuredPerformance(
             mean_latency=self.mean_latency,
             throughput=self.throughput,
-            device=self.device_name,
+            device=self.device_name(),
             device_type=self.device_type,
             runtime=self.runtime,
             runtime_version=self.runtime_version,
@@ -111,9 +111,6 @@ class CombinedExampleRT(BaseRT):
                 "Queried throughput before self.benchmark() was called"
             )
 
-    @property
-    def device_name(self) -> str:
-        return (
-            f"Device Family {self.device_type.family}, Device Part {self.device_type.part}, "
-            f"Device Configuration {self.device_type.config}"
-        )
+    @staticmethod
+    def device_name() -> str:
+        return "Example Device"

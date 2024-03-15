@@ -332,8 +332,10 @@ class Keys:
     PERFORMANCE = "performance"
     # Runtime used for the benchmark
     RUNTIME = "runtime"
-    # Device used for the benchmark
+    # Type of device used for the benchmark (e.g., "x86")
     DEVICE_TYPE = "device_type"
+    # Specific device used for the benchmark
+    DEVICE = "device"
     # Name of the model
     MODEL_NAME = "model_name"
     # References the per-evaluation stats section

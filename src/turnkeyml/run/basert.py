@@ -228,7 +228,7 @@ class BaseRT(ABC):
         return MeasuredPerformance(
             mean_latency=self.mean_latency,
             throughput=self.throughput,
-            device=self.device_name,
+            device=self.device_name(),
             device_type=self.device_type,
             runtime=self.runtime,
             runtime_version=self.runtime_version,
@@ -260,9 +260,9 @@ class BaseRT(ABC):
         Returns the throughput, in IPS, for the benchmarking run.
         """
 
-    @property
+    @staticmethod
     @abstractmethod
-    def device_name(self) -> str:
+    def device_name() -> str:
         """
         Returns the full device name for the device used in benchmarking.
         For example, a benchmark on a `x86` device might have a device name like

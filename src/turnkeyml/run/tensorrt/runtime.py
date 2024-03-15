@@ -59,18 +59,24 @@ class TensorRT(BaseRT):
             requires_docker=True,
         )
 
+        self.device_name = self._dynamic_device_name
+
     def _setup(self) -> None:
         # Check if at least one NVIDIA GPU is available locally
-        result = subprocess.run(
-            ["nvidia-smi"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            encoding="utf-8",
-            check=False,
-        )
+        msg = "No NVIDIA GPUs available on the local machine"
+        try:
+            result = subprocess.run(
+                ["nvidia-smi"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+                check=False,
+            )
 
-        if "NVIDIA" not in result.stdout or result.returncode == 1:
-            msg = "No NVIDIA GPUs available on the local machine"
+            if "NVIDIA" not in result.stdout or result.returncode == 1:
+
+                raise exp.BenchmarkException(msg)
+        except FileNotFoundError:
             raise exp.BenchmarkException(msg)
 
     def _execute(
@@ -143,6 +149,14 @@ class TensorRT(BaseRT):
     def throughput(self):
         return float(self._get_stat("Throughput").split(" ")[0])
 
-    @property
-    def device_name(self):
+    def _dynamic_device_name(self):
+        # Return the specific Nvidia GPU, which is only known
+        # after we invoke the TensorRT docker
         return self._get_stat("Selected Device")
+
+    @staticmethod
+    def device_name():
+        # Return a generic response, since we haven't invoked
+        # the docker yet. At instantiation time, this method
+        # is replaced by the dynamic version.
+        return "Nvidia GPU"
