@@ -117,7 +117,7 @@ def validate_cached_model(
         msg = (
             f"Your build {state.config.build_name} was previously built against "
             f"turnkey version {state.turnkey_version}, "
-            f"however you are now using onxxflow version {turnkey_version}. The previous build is "
+            f"however you are now using turnkey version {turnkey_version}. The previous build is "
             f"incompatible with this version of turnkey, as indicated by the {out_of_date} "
             "version number changing. See **docs/versioning.md** for details."
         )
