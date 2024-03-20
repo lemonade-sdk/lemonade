@@ -13,6 +13,7 @@ from time import monotonic
 import getpass
 from typing import List, Optional, Dict, Union
 from enum import Enum
+import psutil
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.printing as printing
 import turnkeyml.common.build as build
@@ -22,7 +23,7 @@ from turnkeyml.analyze.status import Verbosity
 
 class WatchdogTimer(Thread):
     """
-    Run *callback* in *timeout* seconds unless the timer is restarted.
+    Kill process in *timeout* seconds unless the timer is restarted.
 
     This is needed because Popen natively supports streaming output to the terminal,
     checking that output, and timeouts--but not all 3 at the same time.
@@ -31,11 +32,10 @@ class WatchdogTimer(Thread):
     to stream and check output.
     """
 
-    def __init__(self, timeout, callback, *args, timer=monotonic, **kwargs):
+    def __init__(self, timeout, pid, timer=monotonic, **kwargs):
         super().__init__(**kwargs)
         self.timeout = timeout
-        self.callback = callback
-        self.args = args
+        self.pid = pid
         self.timer = timer
         self.cancelled = Event()
         self.blocked = Lock()
@@ -50,13 +50,19 @@ class WatchdogTimer(Thread):
             with self.blocked:
                 if self.deadline <= self.timer() and not self.cancelled.is_set():
                     self.timeout_reached = True
-                    return self.callback(*self.args)
+                    return self.kill_process_tree()
 
     def restart(self):
         self.deadline = self.timer() + self.timeout
 
     def cancel(self):
         self.cancelled.set()
+
+    def kill_process_tree(self):
+        parent = psutil.Process(self.pid)
+        for child in parent.children(recursive=True):
+            child.kill()
+        parent.kill()
 
 
 def parse_evaluation_id(line: str, current_value: str) -> Optional[str]:
@@ -284,7 +290,7 @@ def run_turnkey(
                 # Create our own watchdog timer in a thread
                 # This is needed because the `for line in p.stdout` is a blocking
                 # call that is incompatible with Popen's native timeout features
-                watchdog = WatchdogTimer(timeout, callback=p.kill, daemon=True)
+                watchdog = WatchdogTimer(timeout, p.pid)
                 watchdog.start()
 
                 # Print the subprocess's output to the command line as it comes in,

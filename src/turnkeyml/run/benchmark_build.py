@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 import multiprocessing
 import traceback
+import psutil
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs
@@ -275,7 +276,10 @@ def benchmark_cache(
         if p.is_alive():
             # Handle the timeout, which is needed if the process is still alive after
             # waiting `timeout` seconds
-            p.terminate()
+            parent = psutil.Process(p.pid)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
             stats.save_model_eval_stat(
                 fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.TIMEOUT.value
             )
