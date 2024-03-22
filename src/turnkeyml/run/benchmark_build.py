@@ -22,6 +22,12 @@ except ImportError:
         return iterable
 
 
+class SkippedBenchmark(Exception):
+    """
+    Indicates that a benchmark was skipped
+    """
+
+
 class Process(multiprocessing.Process):
     """
     Standardized way to make it possible to catch exceptions from a
@@ -81,7 +87,7 @@ def benchmark_build(
     state = build.load_state(cache_dir, build_name)
 
     if state.build_status != build.FunctionStatus.SUCCESSFUL:
-        raise exp.BenchmarkException(
+        raise SkippedBenchmark(
             "Only successful builds can be benchmarked with this "
             f"function, however selected build at {build_name} "
             f"has state: {state.build_status}"
@@ -99,7 +105,7 @@ def benchmark_build(
     except KeyError as e:
         # User should never get this far without hitting an actionable error message,
         # but let's raise an exception just in case.
-        raise exp.BenchmarkException(
+        raise SkippedBenchmark(
             f"Selected runtime is not supported: {selected_runtime}"
         ) from e
 
@@ -295,9 +301,15 @@ def benchmark_cache(
             # is not able to conduct any more benchmarking. In this case the program
             # should exit and the user should follow the suggestion in the exception
             # message (e.g., restart their computer).
-            stats.save_model_eval_stat(
-                fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.ERROR.value
-            )
+
+            if isinstance(p.exception[0], SkippedBenchmark):
+                stats.save_model_eval_stat(
+                    fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.NOT_STARTED.value
+                )
+            else:
+                stats.save_model_eval_stat(
+                    fs.Keys.BENCHMARK_STATUS, build.FunctionStatus.ERROR.value
+                )
 
             if isinstance(p.exception[0], exp.HardwareError):
                 stats.save_model_eval_stat(fs.Keys.ERROR_LOG, p.exception[1])
