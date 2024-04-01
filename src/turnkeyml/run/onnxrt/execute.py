@@ -9,9 +9,11 @@ import subprocess
 import json
 from statistics import mean
 import platform
+import onnxruntime
 import turnkeyml.run.plugin_helpers as plugin_helpers
 
-ORT_VERSION = "1.15.1"
+# Use the same ORT version of the base environment in the new conda env
+ORT_VERSION = onnxruntime.__version__
 
 BATCHSIZE = 1
 
