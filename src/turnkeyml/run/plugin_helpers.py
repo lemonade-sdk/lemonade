@@ -110,15 +110,19 @@ def logged_subprocess(
             cwd=cwd,
         )
     except Exception as e:  # pylint: disable=broad-except
-        log_stdout = e.stdout.decode("utf-8")  # pylint: disable=no-member
-        log_stderr = e.stderr.decode("utf-8")  # pylint: disable=no-member
+        log_stdout = e.stdout.decode(  # pylint: disable=no-member
+            "utf-8", errors="replace"
+        )
+        log_stderr = e.stderr.decode(  # pylint: disable=no-member
+            "utf-8", errors="replace"
+        )
         raise CondaError(
             f"Exception {e} encountered, \n\nstdout was: "
             f"\n{log_stdout}\n\n and stderr was: \n{log_stderr}"
         )
     else:
-        log_stdout = proc.stdout.decode("utf-8")
-        log_stderr = proc.stderr.decode("utf-8")
+        log_stdout = proc.stdout.decode("utf-8", errors="replace")
+        log_stderr = proc.stderr.decode("utf-8", errors="replace")
     finally:
         if log_to_std_streams:
             # Print log to stdout
