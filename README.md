@@ -5,6 +5,7 @@
 [![OS - Windows | Linux](https://img.shields.io/badge/OS-windows%20%7C%20linux-blue)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 [![Made with Python](https://img.shields.io/badge/Python-3.8,3.10-blue?logo=python&logoColor=white)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 
+> **Notice**: Going forward, the ONNX TurnkeyML project will be more focused on compiling PyTorch and ONNX models for inference deployment, and less focused on features that are outside of that scope. You can read about the changes that are coming in the [TurnkeyML 2024 Refresh Milestone](https://github.com/onnx/turnkeyml/milestone/3). Please comment on those Issues if you have any comments or concerns.
 
 We are on a mission to understand and use as many models as possible while leveraging the right toolchain and AI hardware for the job in every scenario. 
 

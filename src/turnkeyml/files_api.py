@@ -275,6 +275,13 @@ def benchmark_files(
             Action.BENCHMARK,
         ]
 
+    if Action.BENCHMARK in actions:
+        printing.log_warning(
+            "The benchmarking functionality of ONNX TurnkeyML has been "
+            "deprecated. See https://github.com/onnx/turnkeyml/milestone/3 "
+            "for details."
+        )
+
     if use_slurm:
         jobs = spawn.slurm_jobs_in_queue()
         if len(jobs) > 0:
