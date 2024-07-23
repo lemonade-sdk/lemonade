@@ -10,7 +10,7 @@ This project is tested using `ubuntu-latest` and `windows-latest`. `ubuntu-lates
 
 ### Step 1: Miniconda environment setup
 
-We hughly recommend the use of [miniconda](https://docs.conda.io/en/latest/miniconda.html) environments when:
+We highly recommend the use of [miniconda](https://docs.conda.io/en/latest/miniconda.html) environments when:
 
 If you are installing TurnkeyML on **Linux**, simply run the command below:
 ```
@@ -49,10 +49,10 @@ If you are planning to use the `turnkey` tools with the TurnkeyML models or Slur
 
 The TurnkeyML models are located at `install_path/models`, which we refer to as `models/` in most of the guides.
 
-> _Note_: The `turnkey models location` command and `turnkey.common.filesystem.MODELS_DIR` are useful ways to locate the `models` directory. If you perform PyPI installation, we recommend that you take an additional step like this:
+> _Note_: The `turnkey models-location` command and `turnkey.common.filesystem.MODELS_DIR` are useful ways to locate the `models` directory. If you perform PyPI installation, we recommend that you take an additional step like this:
 
 ```
-(tkml) jfowers:~$ turnkey models location
+(tkml) jfowers:~$ turnkey models-location
 
 Info: The TurnkeyML models directory is: ~/turnkeyml/models
 (tkml) jfowers:~$ export models=~/turnkeyml/models
@@ -104,5 +104,5 @@ export SLURM_ML_CACHE=<PATH_TO_A_SHARED_FOLDER>
 Go to the `models/` folder and build multiple models simultaneously using Slurm.
 
 ```
-turnkey selftest/*.py --use-slurm --build-only --cache-dir PATH_TO_A_CACHE_DIR
+turnkey -i selftest/*.py --cache-dir PATH_TO_A_CACHE_DIR discover export-pytorch --use-slurm
 ```

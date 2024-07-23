@@ -2,7 +2,7 @@ import os
 import shutil
 import glob
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import importlib.util
 import yaml
 import turnkeyml.common.printing as printing
@@ -92,8 +92,15 @@ def get_all(path, exclude_path=False, file_type="state.yaml", recursive=True):
 
 
 def clean_file_name(script_path: str) -> str:
-    # Trim the ".py" / ".onnx"
-    return pathlib.Path(script_path).stem
+    """
+    Trim the ".py" / ".onnx" if present.
+
+    If its a state.yaml file, trim the "state.yaml"
+    """
+    if script_path.endswith("_state.yaml"):
+        return pathlib.Path(script_path).stem.replace("_state", "")
+    else:
+        return pathlib.Path(script_path).stem
 
 
 class CacheError(exp.Error):
@@ -110,7 +117,7 @@ def _load_yaml(file) -> Dict:
         return {}
 
 
-def _save_yaml(dict: Dict, file):
+def save_yaml(dict: Dict, file):
     with open(file, "w", encoding="utf8") as outfile:
         yaml.dump(dict, outfile)
 
@@ -206,6 +213,28 @@ def get_available_scripts(search_dir: str):
     return scripts
 
 
+def decode_input_arg(input: str) -> Tuple[str, List[str], str]:
+    # Parse the targets out of the file name
+    # Targets use the format:
+    #   file_path.ext::target0,target1,...,targetN
+    decoded_input = input.split("::")
+    file_path = os.path.abspath(decoded_input[0])
+
+    if len(decoded_input) == 2:
+        targets = decoded_input[1].split(",")
+        encoded_input = file_path + "::" + decoded_input[1]
+    elif len(decoded_input) == 1:
+        targets = []
+        encoded_input = file_path
+    else:
+        raise ValueError(
+            "Each file input to turnkey should have either 0 or 1 '::' in it."
+            f"However, {file_path} was received."
+        )
+
+    return file_path, targets, encoded_input
+
+
 def get_available_builds(cache_dir):
     """
     Get all of the build directories within the build cache
@@ -223,52 +252,6 @@ def get_available_builds(cache_dir):
     builds.sort()
 
     return builds
-
-
-def print_available_builds(args):
-    printing.log_info(f"Builds available in cache {args.cache_dir}:")
-    builds = get_available_builds(args.cache_dir)
-    printing.list_table(builds, num_cols=1)
-    print()
-
-
-def delete_builds(args):
-    check_cache_dir(args.cache_dir)
-
-    if args.delete_all:
-        builds = get_available_builds(args.cache_dir)
-    else:
-        builds = [args.build_name]
-
-    for build in builds:
-        build_path = os.path.join(args.cache_dir, build)
-        if is_build_dir(args.cache_dir, build):
-            rmdir(build_path)
-            printing.log_info(f"Deleted build: {build}")
-        else:
-            raise CacheError(
-                f"No build found with name: {build}. "
-                "Try running `turnkey cache list` to see the builds in your build cache."
-            )
-
-
-def clean_builds(args):
-    check_cache_dir(args.cache_dir)
-
-    if args.clean_all:
-        builds = get_available_builds(args.cache_dir)
-    else:
-        builds = [args.build_name]
-
-    for build in builds:
-        if is_build_dir(args.cache_dir, build):
-            clean_output_dir(args.cache_dir, build)
-            printing.log_info(f"Removed the build artifacts from: {build}")
-        else:
-            raise CacheError(
-                f"No build found with name: {build}. "
-                "Try running `turnkey cache list` to see the builds in your build cache."
-            )
 
 
 def clean_build_name(build_name: str) -> str:
@@ -323,8 +306,8 @@ class Keys:
     ONNX_MODEL_INFO = "onnx_model_information"
     # ONNX model input tensor dimensions
     ONNX_INPUT_DIMENSIONS = "onnx_input_dimensions"
-    # List of all build stages in the Sequence
-    SELECTED_SEQUENCE_OF_STAGES = "selected_sequence_of_stages"
+    # List of all build tools in the Sequence
+    SELECTED_SEQUENCE_OF_TOOLS = "selected_sequence_of_tools"
     # Location of the most up-to-date ONNX file for this build. If the
     # build completed successfully, this is the final ONNX file.
     ONNX_FILE = "onnx_file"
@@ -338,8 +321,6 @@ class Keys:
     DEVICE = "device"
     # Name of the model
     MODEL_NAME = "model_name"
-    # References the per-evaluation stats section
-    EVALUATIONS = "evaluations"
     # Catch-all for storing a file's labels
     LABELS = "labels"
     # Author of the model
@@ -356,25 +337,40 @@ class Keys:
     MODEL_SCRIPT = "builtin_model_script"
     # Indicates status of the most recent build tool run: FunctionStatus
     BUILD_STATUS = "build_status"
-    # Indicates status of the most recent benchmark tool run: FunctionStatus
-    BENCHMARK_STATUS = "benchmark_status"
     # Indicates the match between the TorchScript IR graph and
     # the exported onnx model (verified with torch.onnx.verification)
     TORCH_ONNX_EXPORT_VALIDITY = "torch_export_validity"
-    # Prefix for reporting the execution duration of a stage
-    # In the report this will look like stage_duration:STAGE_NAME
-    STAGE_DURATION = "stage_duration"
-    # Prefix for reporting the execution status of a stage
-    # In the report this will look like stage_status:STAGE_NAME
-    STAGE_STATUS = "stage_status"
-    # Parent key that holds all of the arguments to turnkey's
-    # evaluate_file() API
-    EVALUATION_ARGS = "turnkey_args"
+    # Prefix for reporting the execution duration of a tool
+    # In the report this will look like tool_duration:TOOL_NAME
+    TOOL_DURATION = "tool_duration"
+    # Prefix for reporting the execution status of a tool
+    # In the report this will look like tool_status:TOOL_NAME
+    TOOL_STATUS = "tool_status"
     # Records the date and time of the evaluation after analysis but before
     # build and benchmark
     TIMESTAMP = "timestamp"
-    # Records the logfile of any failed stage/benchmark
+    # Records the logfile of any failed tool/benchmark
     ERROR_LOG = "error_log"
+    # Name of the build in the cache
+    BUILD_NAME = "build_name"
+    # Sequence of tools used for this build, along with their args
+    SEQUENCE_INFO = "sequence_info"
+    # Version of TurnkeyML used for the build
+    TURNKEY_VERSION = "turnkey_version"
+    # Unique ID for this build
+    UID = "uid"
+    # Unique hash for this model
+    MODEL_HASH = "model_hash"
+    # Input shapes expected by the model
+    EXPECTED_INPUT_SHAPES = "expected_input_shapes"
+    # Input data types expected by the model
+    EXPECTED_INPUT_DTYPES = "expected_input_dtypes"
+    # Whether or not inputs must be downcasted during inference
+    DOWNCAST_APPLIED = "downcast_applied"
+    # Directory where the turnkey build cache is stored
+    CACHE_DIR = "cache_dir"
+    # Example inputs to the model
+    INPUTS = "inputs"
 
 
 def _clean_logfile(logfile_lines: List[str]) -> List[str]:
@@ -393,14 +389,13 @@ def stats_file(cache_dir: str, build_name: str):
 
 
 class Stats:
-    def __init__(self, cache_dir: str, build_name: str, evaluation_id: str = None):
+    def __init__(self, cache_dir: str, build_name: str):
         self.file = stats_file(cache_dir, build_name)
-        self.evaluation_id = evaluation_id
 
         os.makedirs(os.path.dirname(self.file), exist_ok=True)
         if not os.path.exists(self.file):
-            initial = {Keys.EVALUATIONS: {}}
-            _save_yaml(initial, self.file)
+            # Start an empty stats file
+            save_yaml({}, self.file)
 
     @property
     def stats(self):
@@ -423,7 +418,7 @@ class Stats:
 
             self._set_key(dict[keys[0]], keys[1:], value)
 
-    def save_model_stat(self, key: str, value):
+    def save_stat(self, key: str, value):
         """
         Save statistics to an yaml file in the build directory
         """
@@ -432,29 +427,20 @@ class Stats:
 
         self._set_key(stats_dict, [key], value)
 
-        _save_yaml(stats_dict, self.file)
+        save_yaml(stats_dict, self.file)
 
-    def save_model_eval_stat(self, key: str, value):
+    def save_sub_stat(self, parent_key: str, key: str, value):
         stats_dict = self.stats
 
-        self._set_key(stats_dict, [Keys.EVALUATIONS, self.evaluation_id, key], value)
+        self._set_key(stats_dict, [parent_key, key], value)
 
-        _save_yaml(stats_dict, self.file)
-
-    def save_model_eval_sub_stat(self, parent_key: str, key: str, value):
-        stats_dict = self.stats
-
-        self._set_key(
-            stats_dict, [Keys.EVALUATIONS, self.evaluation_id, parent_key, key], value
-        )
-
-        _save_yaml(stats_dict, self.file)
-
-    @property
-    def evaluation_stats(self):
-        return self.stats[Keys.EVALUATIONS][self.evaluation_id]
+        save_yaml(stats_dict, self.file)
 
     def save_eval_error_log(self, logfile_path):
+        if logfile_path is None:
+            # Avoid an error in the situation where we crashed before
+            # initializing the tool (in which case it has no logfile path yet)
+            return
         if os.path.exists(logfile_path):
             with open(logfile_path, "r", encoding="utf-8") as f:
                 full_log = f.readlines()
@@ -480,18 +466,7 @@ class Stats:
                 else:
                     stats_log = _clean_logfile(full_log)
 
-                self.save_model_eval_stat(Keys.ERROR_LOG, stats_log)
-
-
-def print_cache_dir(_=None):
-    printing.log_info(f"The default cache directory is: {DEFAULT_CACHE_DIR}")
-
-
-def print_models_dir(args=None):
-    if args.verbose:
-        printing.log_info(f"The models directory is: {MODELS_DIR}")
-    else:
-        print(MODELS_DIR)
+                self.save_stat(Keys.ERROR_LOG, stats_log)
 
 
 def expand_inputs(input_paths: List[str]) -> List[str]:
@@ -511,6 +486,16 @@ def expand_inputs(input_paths: List[str]) -> List[str]:
     return input_paths_expanded
 
 
+def read_labels(file_path: str) -> Dict[str, str]:
+    # Load labels data from python scripts
+    # This is not compatible with ONNX files, so we return
+    # and empty dictionary in that case
+    if file_path.endswith(".py"):
+        return labels.load_from_file(file_path)
+    else:
+        return {}
+
+
 def rebase_cache_dir(input_path: str, build_name: str, new_cache_dir: str):
     """
     Rebase a turnkey build path onto a new turnkey cache directory.
@@ -528,3 +513,10 @@ def rebase_cache_dir(input_path: str, build_name: str, new_cache_dir: str):
 
     relative_input_path = input_path.split(build_name, 1)[1][1:]
     return os.path.join(new_cache_dir, build_name, relative_input_path)
+
+
+def check_extension(choices, file_name, error_func):
+    _, extension = os.path.splitext(file_name.split("::")[0])
+    if extension[1:].lower() not in choices:
+        error_func(f"input_files must end with {choices} (got '{file_name}')\n")
+    return file_name

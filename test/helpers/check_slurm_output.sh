@@ -1,6 +1,6 @@
 # Checks whether a slurm output contains any errors
 SLURM_OUTPUT="$1"
-if ! grep -q "Model successfully built!" $SLURM_OUTPUT
+if ! grep -q "Successful build!" $SLURM_OUTPUT
 then
     cat $SLURM_OUTPUT
     echo "Model has not been successfully built"

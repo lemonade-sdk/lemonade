@@ -1,5 +1,5 @@
 # labels: name::ecaresnet101d_pruned author::timm task::computer_vision
-# Skip reason: Fails during the analysis stage of turnkey
+# Skip reason: Fails during the use of the Discover Tool in turnkey
 import torch
 import timm
 from turnkeyml.parser import parse

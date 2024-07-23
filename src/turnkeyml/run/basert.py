@@ -10,7 +10,8 @@ import numpy as np
 from turnkeyml.common.performance import MeasuredPerformance, Device
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp
-from turnkeyml.common.filesystem import Stats, rebase_cache_dir
+import turnkeyml.common.filesystem as fs
+from turnkeyml.state import load_state
 
 
 def _check_docker_install():
@@ -41,7 +42,7 @@ class BaseRT(ABC):
         self,
         cache_dir: str,
         build_name: str,
-        stats: Stats,
+        stats: fs.Stats,
         device_type: Union[str, Device],
         runtime: str,
         runtimes_supported: List[str],
@@ -177,12 +178,21 @@ class BaseRT(ABC):
             os.remove(self.local_outputs_file)
 
         # Transfer input artifacts
-        state = build.load_state(self.cache_dir, self.build_name)
+        state = load_state(self.cache_dir, self.build_name)
+
+        # Make sure state.results is an ONNX file
+        if not (isinstance(state.results, str) and state.results.endswith(".onnx")):
+            raise exp.ToolError(
+                "This benchmarking runtime requires the preceeding "
+                "tools to produce an ONNX file, however they did not. "
+                "Please either select different tools, or select a different "
+                "benchmarking runtime that does not require an ONNX result."
+            )
 
         # Just in case the model file was generated on a different machine:
         # strip the state's cache dir, then prepend the current cache dir
-        model_file = rebase_cache_dir(
-            state.results[0], state.config.build_name, self.cache_dir
+        model_file = fs.rebase_cache_dir(
+            state.results, state.build_name, self.cache_dir
         )
 
         if not os.path.exists(model_file):

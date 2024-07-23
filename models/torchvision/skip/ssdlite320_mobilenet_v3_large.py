@@ -1,5 +1,5 @@
 # labels: test_group::turnkey name::ssdlite320_mobilenet_v3_large author::torchvision task::Computer_Vision license::bsd-3-clause
-# Skip reason: Fails during the analysis stage of turnkey
+# Skip reason: Fails during the use of the Discover Tool in turnkey
 """
 https://pytorch.org/vision/stable/models/ssdlite.html
 """

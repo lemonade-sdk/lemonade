@@ -4,8 +4,6 @@ Tests focused on the analysis capabilities of turnkey CLI
 
 import os
 import unittest
-from pathlib import Path
-import shutil
 import glob
 import subprocess
 import numpy as np
@@ -13,13 +11,11 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 import io
 import sys
-import platform
 from turnkeyml.cli.cli import main as turnkeycli
-import turnkeyml.common.labels as labels
 from turnkeyml.parser import parse
 import turnkeyml.common.filesystem as filesystem
-from helpers import common
-from turnkeyml.analyze.status import Verbosity
+import turnkeyml.common.test_helpers as common
+import turnkeyml.common.exceptions as exp
 
 try:
     # pylint: disable=unused-import
@@ -110,7 +106,6 @@ print(parsed_args)
     "two_executions.py": """
 import torch
 import timm
-from turnkeyml.parser import parse
 
 # Creating model and set it to evaluation mode
 model = timm.create_model("mobilenetv2_035", pretrained=False)
@@ -165,12 +160,20 @@ def run_cli(args):
 
 def run_analysis(args):
     output = run_cli(args)
+    print(output)
 
     # Process outputs
-    output = output[output.rfind("Models discovered") :]
+    output = output[output.rfind("Discovering PyTorch models") :]
     models_executed = output.count("(executed")
-    models_built = output.count("Model successfully built!")
+    models_built = output.count("Exporting PyTorch to ONNX")
     return models_executed, 0, models_built
+
+
+def check_discover_log(build_name: str, expected_content: str):
+    log_path = os.path.join(cache_dir, build_name, "log_discover.txt")
+    with open(log_path, "r", encoding="utf-8") as log_file:
+        log_content = log_file.read()
+        assert expected_content in log_content, log_content
 
 
 class Testing(unittest.TestCase):
@@ -182,10 +185,11 @@ class Testing(unittest.TestCase):
         pytorch_output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py"),
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "--cache-dir",
+                cache_dir,
+                "discover",
             ]
         )
         assert np.array_equal(pytorch_output, (1, 0, 0))
@@ -194,12 +198,13 @@ class Testing(unittest.TestCase):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py"),
+                "--cache-dir",
+                cache_dir,
+                "discover",
                 "--max-depth",
                 "1",
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
             ]
         )
         assert np.array_equal(output, (2, 0, 0))
@@ -208,14 +213,14 @@ class Testing(unittest.TestCase):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py::76af2f62"),
-                "--max-depth",
-                "1",
-                "--build-only",
                 "--cache-dir",
                 cache_dir,
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "discover",
+                "--max-depth",
+                "1",
+                "export-pytorch",
             ]
         )
         assert np.array_equal(output, (2, 0, 1))
@@ -225,15 +230,15 @@ class Testing(unittest.TestCase):
         run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, f"linear_pytorch.py::{model_hash}"),
-                "--max-depth",
-                "1",
                 "--cache-dir",
                 cache_dir,
                 "--lean-cache",
-                "--build-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "discover",
+                "--max-depth",
+                "1",
+                "export-pytorch",
             ]
         )
         build_name = f"linear_pytorch_{model_hash}"
@@ -243,88 +248,89 @@ class Testing(unittest.TestCase):
         assert cache_is_lean(cache_dir, build_name) and labels_found != {}, labels_found
 
     def test_06_generic_args(self):
-        output = run_cli(
+        test_arg = "test_arg"
+        run_cli(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py"),
+                "--cache-dir",
+                cache_dir,
+                "discover",
                 "--max-depth",
                 "1",
                 "--script-args",
-                "--my-arg test_arg",
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                f"--my-arg {test_arg}",
             ]
         )
-        assert "Received arg test_arg" in output
+        check_discover_log("linear_pytorch", f"Received arg {test_arg}")
 
-    # TODO: Investigate why this test is only failing on Windows
-    @unittest.skipIf(
-        platform.system() == "Windows",
-        "Potential turnkeyml windows bug"
-        "The ouputs do match, but fails due to misinterpretation",
-    )
     def test_07_valid_turnkey_args(self):
         height, width, num_channels = parse(["height", "width", "num_channels"])
         cmd = [
             "turnkey",
+            "-i",
             os.path.join(corpus_dir, "turnkey_parser.py"),
+            "--cache-dir",
+            cache_dir,
+            "discover",
             "--script-args",
             f"--num_channels {num_channels+1}",
-            "--verbosity",
-            Verbosity.DYNAMIC.value,
         ]
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, _ = process.communicate()
-        output = stdout.decode("utf-8")
+        subprocess.run(cmd)
         expected_output = str([height, width, num_channels + 1])
-        assert expected_output in output, f"Got {output} but expected {expected_output}"
+        check_discover_log("turnkey_parser", expected_output)
 
     def test_08_invalid_turnkey_args(self):
         cmd = [
             "turnkey",
+            "-i",
             os.path.join(corpus_dir, "turnkey_parser.py"),
+            "--cache-dir",
+            cache_dir,
+            "discover",
             "--script-args",
             "--invalid_arg 123",
-            "--verbosity",
-            Verbosity.DYNAMIC.value,
         ]
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        _, stderr = process.communicate()
-        assert "error: unrecognized argument" in stderr.decode("utf-8")
+
+        subprocess.run(cmd)
+        check_discover_log("turnkey_parser", "error: unrecognized argument")
 
     def test_09_pipeline(self):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "pipeline.py"),
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "--cache-dir",
+                cache_dir,
+                "discover",
             ]
         )
         assert np.array_equal(output, (1, 0, 0))
 
     def test_10_activation(self):
-        output = run_analysis(
-            [
-                "turnkey",
-                os.path.join(corpus_dir, "activation.py"),
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
-            ]
-        )
-        assert np.array_equal(output, (0, 0, 0))
+        with self.assertRaises(exp.ToolError):
+            run_analysis(
+                [
+                    "turnkey",
+                    "-i",
+                    os.path.join(corpus_dir, "activation.py"),
+                    "--cache-dir",
+                    cache_dir,
+                    "discover",
+                ]
+            )
 
     def test_11_analyze_only(self):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py"),
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "--cache-dir",
+                cache_dir,
+                "discover",
             ]
         )
         assert np.array_equal(output, (1, 0, 0))
@@ -333,14 +339,14 @@ class Testing(unittest.TestCase):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "linear_pytorch.py::76af2f62"),
-                "--build-only",
-                "--max-depth",
-                "1",
                 "--cache-dir",
                 cache_dir,
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "discover",
+                "--max-depth",
+                "1",
+                "export-pytorch",
             ]
         )
         assert np.array_equal(output, (2, 0, 1))
@@ -350,25 +356,26 @@ class Testing(unittest.TestCase):
         run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, f"linear_pytorch.py::{model_hash}"),
-                "--max-depth",
-                "1",
                 "--cache-dir",
                 cache_dir,
-                "--build-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "discover",
+                "--max-depth",
+                "1",
+                "export-pytorch",
             ]
         )
         build_name = f"linear_pytorch_{model_hash}"
 
         cmd = [
             "turnkey",
-            "cache",
-            "clean",
-            build_name,
             "--cache-dir",
             cache_dir,
+            "cache",
+            "--clean",
+            "--build-names",
+            build_name,
         ]
         subprocess.run(cmd, check=True)
 
@@ -378,10 +385,11 @@ class Testing(unittest.TestCase):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "two_executions.py"),
-                "--analyze-only",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
+                "--cache-dir",
+                cache_dir,
+                "discover",
             ]
         )
         assert np.array_equal(output, (2, 0, 0))
@@ -390,12 +398,13 @@ class Testing(unittest.TestCase):
         output = run_analysis(
             [
                 "turnkey",
+                "-i",
                 os.path.join(corpus_dir, "two_executions.py"),
-                "--analyze-only",
+                "--cache-dir",
+                cache_dir,
+                "discover",
                 "--max-depth",
                 "1",
-                "--verbosity",
-                Verbosity.DYNAMIC.value,
             ]
         )
         assert np.array_equal(output, (6, 0, 0))

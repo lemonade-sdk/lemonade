@@ -6,7 +6,7 @@ another_pytorch_model (also of class SmallModel).
 
 To try it, run:
 
-turnkey two_models.py
+turnkey -i two_models.py discover
 
 You should see date printed to the screen for both pytorch_model and
 another_pytorch_model.
@@ -15,6 +15,7 @@ another_pytorch_model.
 import torch
 
 torch.manual_seed(0)
+
 
 # Define model class
 class SmallModel(torch.nn.Module):

@@ -1,5 +1,5 @@
 # labels: test_group::turnkey name::efficientnet_b5 author::torch_hub task::Computer_Vision license::bsd-3-clause
-# Skip reason: Fails during the analysis stage of turnkey
+# Skip reason: Fails during the use of the Discover Tool in turnkey
 from turnkeyml.parser import parse
 import torch
 from torchvision.models import EfficientNet_B5_Weights

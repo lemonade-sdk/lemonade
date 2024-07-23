@@ -1,28 +1,15 @@
 import time
 import os
-import copy
 import glob
-import pathlib
-from typing import Tuple, List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union
+import git
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exceptions
-import turnkeyml.build.stage as stage
+from turnkeyml.sequence import Sequence
 import turnkeyml.cli.spawn as spawn
-import turnkeyml.common.filesystem as filesystem
+import turnkeyml.common.filesystem as fs
 import turnkeyml.common.labels as labels_library
-import turnkeyml.run.devices as devices
-from turnkeyml.common.performance import Device
-from turnkeyml.run.devices import SUPPORTED_RUNTIMES
-from turnkeyml.analyze.script import (
-    evaluate_script,
-    TracerArgs,
-    Action,
-    explore_invocation,
-    get_model_hash,
-)
-from turnkeyml.analyze.status import ModelInfo, UniqueInvocationInfo, Verbosity
-import turnkeyml.common.build as build
-import turnkeyml.build.onnx_helpers as onnx_helpers
+from turnkeyml.state import State
 
 # The licensing for tqdm is confusing. Pending a legal scan,
 # the following code provides tqdm to users who have installed
@@ -34,93 +21,6 @@ except ImportError:
 
     def tqdm(iterable, **kwargs):  # pylint: disable=unused-argument
         return iterable
-
-
-def _select_verbosity(
-    verbosity: str, input_files_expanded: List[str], process_isolation: bool
-) -> Tuple[Verbosity, bool]:
-    """
-    Choose verbosity based on the following policies:
-        1. The explicit verbosity argument takes priority over AUTO and the env var
-        2. The env var takes priority over AUTO
-        3. Use STATIC when there are many inputs, or in process isolation mode,
-            and use DYNAMIC otherwise
-
-    Returns the selected verbosity.
-    """
-
-    verbosity_choices = {
-        field.value: field for field in Verbosity if field != Verbosity.AUTO
-    }
-    verbosity_env_var = os.environ.get("TURNKEY_VERBOSITY")
-
-    if verbosity != Verbosity.AUTO.value:
-        # Specific verbosity argument takes priority over env var
-        verbosity_selected = verbosity_choices[verbosity]
-    elif verbosity_env_var in verbosity_choices.keys():
-        # Env var takes priority over AUTO
-        verbosity_selected = verbosity_choices[verbosity_env_var]
-    else:
-        # Verbosity.AUTO and no env var
-        if len(input_files_expanded) > 4 or process_isolation:
-            # Automatically select STATIC if:
-            # - There are many evaluations (>4), since DYNAMIC mode works
-            #       best when all results fit on one screen
-            # - Process isolation mode is active, since DYNAMIC mode is
-            #       incompatible with process isolation
-            verbosity_selected = Verbosity.STATIC
-        else:
-            verbosity_selected = Verbosity.DYNAMIC
-
-    # Use a progress bar in STATIC mode if there is more than 1 input
-    use_progress_bar = (
-        verbosity_selected == Verbosity.STATIC and len(input_files_expanded) > 1
-    )
-
-    return verbosity_selected, use_progress_bar
-
-
-def decode_input_arg(input: str) -> Tuple[str, List[str], str]:
-    # Parse the targets out of the file name
-    # Targets use the format:
-    #   file_path.ext::target0,target1,...,targetN
-    decoded_input = input.split("::")
-    file_path = os.path.abspath(decoded_input[0])
-
-    if len(decoded_input) == 2:
-        targets = decoded_input[1].split(",")
-        encoded_input = file_path + "::" + decoded_input[1]
-    elif len(decoded_input) == 1:
-        targets = []
-        encoded_input = file_path
-    else:
-        raise ValueError(
-            "Each file input to turnkey should have either 0 or 1 '::' in it."
-            f"However, {file_path} was received."
-        )
-
-    return file_path, targets, encoded_input
-
-
-def check_sequence_type(
-    sequence: Union[str, stage.Sequence],
-    use_slurm: bool,
-    process_isolation: bool,
-):
-    """
-    Check to make sure the user's sequence argument is valid.
-    use_slurm or process_isolation: only work with names of installed sequences
-    otherwise: sequence instances and sequence names are allowed
-    """
-
-    if sequence is not None:
-        if use_slurm or process_isolation:
-            # The spawned process will need to load a sequence file
-            if not isinstance(sequence, str):
-                raise ValueError(
-                    "The 'sequence' arg must be a str (name of an installed sequence) "
-                    "when use_slurm=True or process_isolation=True."
-                )
 
 
 def unpack_txt_inputs(input_files: List[str]) -> List[str]:
@@ -145,38 +45,41 @@ def unpack_txt_inputs(input_files: List[str]) -> List[str]:
     return processed_files + [f for f in input_files if not f.endswith(".txt")]
 
 
-# pylint: disable=unused-argument
-def benchmark_files(
+def evaluate_files(
     input_files: List[str],
+    sequence: Union[Dict, Sequence] = None,
+    cache_dir: str = fs.DEFAULT_CACHE_DIR,
+    lean_cache: bool = False,
+    labels: List[str] = None,
     use_slurm: bool = False,
     process_isolation: bool = False,
-    lean_cache: bool = False,
-    cache_dir: str = filesystem.DEFAULT_CACHE_DIR,
-    labels: List[str] = None,
-    rebuild: Optional[str] = None,
-    device: str = "x86",
-    runtime: str = None,
-    iterations: int = 100,
-    analyze_only: bool = False,
-    build_only: bool = False,
-    script_args: Optional[str] = None,
-    max_depth: int = 0,
-    onnx_opset: Optional[int] = None,
     timeout: Optional[int] = None,
-    sequence: Union[str, stage.Sequence] = None,
-    rt_args: Optional[Dict] = None,
-    verbosity: str = Verbosity.STATIC.value,
 ):
+    """
+    Iterate over a list of input files, evaluating each one with the provided sequence.
 
-    # Capture the function arguments so that we can forward them
-    # to downstream APIs
-    benchmarking_args = copy.deepcopy(locals())
-    regular_files = []
+    Args:
+        input_files: each file in this list will be passed into the first tool in
+            the provided build sequence.
+        sequence: the build tools and their arguments used to act on the inputs.
+        cache_dir: Directory to use as the cache for this build. Output files
+            from this build will be stored at cache_dir/build_name/
+        lean_cache: delete build artifacts from the cache after the build has completed.
+        lables: if provided, only input files that are marked with these labels will be
+            passed into the sequence; the other input files will be skipped.
+        use_slurm: evaluate each input file as its own slurm job (requires slurm to be)
+            set up in advance on your system.
+        process_isolation: evaluate each input file in a subprocess. If one subprocess
+            fails, this function will move on to the next input file.
+        timeout: in slurm or process isolation modes, the evaluation of each input file
+            will be canceled if it exceeds this timeout value (in seconds).
+    """
 
     # Replace .txt files with the models listed inside them
     input_files = unpack_txt_inputs(input_files)
 
     # Iterate through each string in the input_files list
+    regular_files = []
     for input_string in input_files:
         if not any(char in input_string for char in "*?[]"):
             regular_files.append(input_string)
@@ -204,40 +107,15 @@ def benchmark_files(
     else:
         timeout_to_use = spawn.DEFAULT_TIMEOUT_SECONDS
 
-    benchmarking_args["timeout"] = timeout_to_use
-
     # Convert regular expressions in input files argument
     # into full file paths (e.g., [*.py] -> [a.py, b.py] )
-    input_files_expanded = filesystem.expand_inputs(input_files)
-
-    # Do not forward arguments to downstream APIs
-    # that will be decoded in this function body
-    benchmarking_args.pop("input_files")
-    benchmarking_args.pop("labels")
-    benchmarking_args.pop("use_slurm")
-    benchmarking_args.pop("process_isolation")
+    input_files_expanded = fs.expand_inputs(input_files)
 
     # Make sure the cache directory exists
-    filesystem.make_cache_dir(cache_dir)
-
-    check_sequence_type(sequence, use_slurm, process_isolation)
-
-    if device is None:
-        device = "x86"
-
-    # Replace the runtime with a default value, if needed
-    selected_runtime = devices.apply_default_runtime(device, runtime)
-    benchmarking_args["runtime"] = selected_runtime
-
-    # Get the default part and config by providing the Device class with
-    # the supported devices by the runtime
-    runtime_supported_devices = SUPPORTED_RUNTIMES[selected_runtime][
-        "supported_devices"
-    ]
-    benchmarking_args["device"] = str(Device(device, runtime_supported_devices))
+    fs.make_cache_dir(cache_dir)
 
     # Force the user to specify a legal cache dir in NFS if they are using slurm
-    if cache_dir == filesystem.DEFAULT_CACHE_DIR and use_slurm:
+    if cache_dir == fs.DEFAULT_CACHE_DIR and use_slurm:
         printing.log_warning(
             "Using the default cache directory when using Slurm will cause your cached "
             "files to only be available at the Slurm node. If this is not the behavior "
@@ -247,40 +125,20 @@ def benchmark_files(
 
     # Get list containing only file names
     clean_file_names = [
-        decode_input_arg(file_name)[0] for file_name in input_files_expanded
+        fs.decode_input_arg(file_name)[0] for file_name in input_files_expanded
     ]
 
     # Validate that the files have supported file extensions
     # Note: We are not checking for .txt files here as those were previously handled
     for file_name in clean_file_names:
-        if not file_name.endswith(".py") and not file_name.endswith(".onnx"):
+        if (
+            not file_name.endswith(".py")
+            and not file_name.endswith(".onnx")
+            and not file_name.endswith("state.yaml")
+        ):
             raise exceptions.ArgError(
                 f"File extension must be .py, .onnx, or .txt (got {file_name})"
             )
-
-    # Decode turnkey args into TracerArgs flags
-    if analyze_only:
-        actions = [
-            Action.ANALYZE,
-        ]
-    elif build_only:
-        actions = [
-            Action.ANALYZE,
-            Action.BUILD,
-        ]
-    else:
-        actions = [
-            Action.ANALYZE,
-            Action.BUILD,
-            Action.BENCHMARK,
-        ]
-
-    if Action.BENCHMARK in actions:
-        printing.log_warning(
-            "The benchmarking functionality of ONNX TurnkeyML has been "
-            "deprecated. See https://github.com/onnx/turnkeyml/milestone/3 "
-            "for details."
-        )
 
     if use_slurm:
         jobs = spawn.slurm_jobs_in_queue()
@@ -290,137 +148,97 @@ def benchmark_files(
                 "Suggest quitting turnkey, running 'scancel -u $USER' and trying again."
             )
 
-    # Use this data structure to keep a running index of all models
-    models_found: Dict[str, ModelInfo] = {}
-
-    verbosity_policy, use_progress_bar = _select_verbosity(
-        verbosity, input_files_expanded, process_isolation
-    )
-    benchmarking_args["verbosity"] = verbosity_policy
-
-    # Fork the args for analysis since they have differences from the spawn args:
-    # build_only and analyze_only are encoded into actions
-    analysis_args = copy.deepcopy(benchmarking_args)
-    analysis_args.pop("build_only")
-    analysis_args.pop("analyze_only")
-    analysis_args["actions"] = actions
-    analysis_args.pop("timeout")
+    use_progress_bar = len(input_files_expanded) > 1
 
     for file_path_encoded in tqdm(input_files_expanded, disable=not use_progress_bar):
-        # Check runtime requirements if needed. All benchmarking will be halted
-        # if requirements are not met. This happens regardless of whether
-        # process-isolation is used or not.
-        runtime_info = SUPPORTED_RUNTIMES[selected_runtime]
-        if "requirement_check" in runtime_info and Action.BENCHMARK in actions:
-            runtime_info["requirement_check"]()
 
         printing.log_info(f"Running turnkey on {file_path_encoded}")
 
-        file_path_absolute, targets, encoded_input = decode_input_arg(file_path_encoded)
+        file_path_absolute, targets, encoded_input = fs.decode_input_arg(
+            file_path_encoded
+        )
+
+        file_labels = fs.read_labels(file_path_absolute)
+
+        build_name = fs.get_build_name(
+            fs.clean_file_name(file_path_absolute),
+            file_labels,
+            targets[0] if len(targets) > 0 else None,
+        )
 
         # Skip a file if the required_labels are not a subset of the script_labels.
         if labels:
-            # Labels argument is not supported for ONNX files
-            if file_path_absolute.endswith(".onnx"):
+            # Labels argument is not supported for ONNX files or cached builds
+            if file_path_absolute.endswith(".onnx") or file_path_absolute.endswith(
+                ".yaml"
+            ):
                 raise ValueError(
                     "The labels argument is not supported for .onnx files, got",
                     file_path_absolute,
                 )
             required_labels = labels_library.to_dict(labels)
-            script_labels = labels_library.load_from_file(encoded_input)
-            if not labels_library.is_subset(required_labels, script_labels):
+            if not labels_library.is_subset(required_labels, file_labels):
                 continue
 
         if use_slurm or process_isolation:
-            # Decode args into spawn.Target
-            if use_slurm and process_isolation:
-                raise ValueError(
-                    "use_slurm and process_isolation are mutually exclusive, but both are True"
-                )
-            elif use_slurm:
-                process_type = spawn.Target.SLURM
-            elif process_isolation:
-                process_type = spawn.Target.LOCAL_PROCESS
-            else:
-                raise ValueError(
-                    "This code path requires use_slurm or use_process to be True, "
-                    "but both are False"
-                )
-
             spawn.run_turnkey(
-                op="benchmark",
-                target=process_type,
+                build_name=build_name,
+                sequence=sequence,
                 file_name=encoded_input,
-                **benchmarking_args,
+                use_slurm=use_slurm,
+                process_isolation=process_isolation,
+                timeout=timeout_to_use,
+                lean_cache=lean_cache,
+                cache_dir=cache_dir,
             )
 
         else:
-            # Instantiate an object that holds all of the arguments
-            # for analysis, build, and benchmarking
-            tracer_args = TracerArgs(
-                models_found=models_found,
-                targets=targets,
-                input=file_path_absolute,
-                **analysis_args,
+            # Forward the selected input to the first tool in the sequence
+            first_tool_args = next(iter(sequence.tools.values()))
+            first_tool_args.append("--input")
+            first_tool_args.append(file_path_encoded)
+
+            # Collection of statistics that the sequence instance should save
+            # to the stats file
+            stats_to_save = {}
+
+            # Save lables info
+            if fs.Keys.AUTHOR in file_labels:
+                stats_to_save[fs.Keys.AUTHOR] = file_labels[fs.Keys.AUTHOR][0]
+            if fs.Keys.TASK in file_labels:
+                stats_to_save[fs.Keys.TASK] = file_labels[fs.Keys.TASK][0]
+
+            # Save all of the lables in one place
+            stats_to_save[fs.Keys.LABELS] = file_labels
+
+            # If the input script is a built-in TurnkeyML model, make a note of
+            # which one
+            if os.path.abspath(fs.MODELS_DIR) in os.path.abspath(file_path_absolute):
+                try:
+                    # If this turnkey installation is in a git repo, use the
+                    # specific git hash
+                    git_repo = git.Repo(search_parent_directories=True)
+                    git_hash = git_repo.head.object.hexsha
+                except git.exc.InvalidGitRepositoryError:
+                    # If we aren't in a git repo (e.g., PyPI package), point the user back to main
+                    git_hash = "main"
+
+                relative_path = file_path_absolute.replace(
+                    fs.MODELS_DIR,
+                    f"https://github.com/onnx/turnkeyml/tree/{git_hash}/models",
+                ).replace("\\", "/")
+                stats_to_save[fs.Keys.MODEL_SCRIPT] = relative_path
+
+            state = State(
+                cache_dir=cache_dir,
+                build_name=build_name,
+                sequence_info=sequence.info,
             )
-
-            if file_path_absolute.endswith(".py"):
-                # Run analysis, build, and benchmarking on every model
-                # in the python script
-                models_found = evaluate_script(tracer_args)
-            elif file_path_absolute.endswith(".onnx"):
-                # Skip analysis and go straight to dealing with the model
-                # We need to manufacture ModelInfo and UniqueInvocatioInfo instances to do this,
-                # since we didn't get them from analysis.
-
-                # Gather information about the ONNX model
-                onnx_name = pathlib.Path(file_path_absolute).stem
-                onnx_hash = get_model_hash(
-                    file_path_absolute, build.ModelType.ONNX_FILE
-                )
-                onnx_inputs = onnx_helpers.dummy_inputs(file_path_absolute)
-                input_shapes = {key: value.shape for key, value in onnx_inputs.items()}
-
-                # Create the UniqueInvocationInfo
-                #  - execute=1 is required or else the ONNX model will be
-                #       skipped in later stages of evaluation
-                #  - is_target=True is required or else traceback wont be printed for
-                #       in the event of any errors
-                #  - Most other values can be left as default
-                invocation_info = UniqueInvocationInfo(
-                    name=onnx_name,
-                    script_name=onnx_name,
-                    file=file_path_absolute,
-                    build_model=not build_only,
-                    model_type=build.ModelType.ONNX_FILE,
-                    executed=1,
-                    input_shapes=input_shapes,
-                    hash=onnx_hash,
-                    is_target=True,
-                )
-
-                # Create the ModelInfo
-                model_info = ModelInfo(
-                    model=file_path_absolute,
-                    name=onnx_name,
-                    script_name=onnx_name,
-                    file=file_path_absolute,
-                    build_model=not build_only,
-                    model_type=build.ModelType.ONNX_FILE,
-                    unique_invocations={onnx_hash: invocation_info},
-                    hash=onnx_hash,
-                )
-
-                # Begin evaluating the ONNX model
-                tracer_args.script_name = onnx_name
-                tracer_args.models_found[tracer_args.script_name] = model_info
-                explore_invocation(
-                    model_inputs=onnx_inputs,
-                    model_info=model_info,
-                    invocation_info=invocation_info,
-                    tracer_args=tracer_args,
-                )
-                models_found = tracer_args.models_found
+            sequence.launch(
+                state,
+                lean_cache=lean_cache,
+                stats_to_save=stats_to_save,
+            )
 
     # Wait until all the Slurm jobs are done
     if use_slurm:
@@ -430,5 +248,3 @@ def benchmark_files(
                 f"jobs left in queue: {spawn.slurm_jobs_in_queue()}"
             )
             time.sleep(5)
-
-    printing.log_success("The 'benchmark' command is complete.")

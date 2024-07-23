@@ -5,9 +5,9 @@ name: Lint and Test TurnkeyML
 
 on:
   push:
-    branches: ["main", "canary"]
+    branches: ["main", "canary", "refresh"]
   pull_request:
-    branches: ["main", "canary"]
+    branches: ["main", "canary", "refresh"]
 
 permissions:
   contents: read
@@ -15,7 +15,6 @@ permissions:
 jobs:
   build-turnkey:
     env:
-      TURNKEY_VERBOSITY: static
       TURNKEY_TRACEBACK: True
     strategy:
       matrix:
@@ -25,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Set up Miniconda with 64-bit Python
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: "latest"
           activate-environment: tkml
@@ -43,7 +42,7 @@ jobs:
         shell: bash -el {0}
         run: |
           pylint src/turnkeyml --rcfile .pylintrc
-          pylint examples --rcfile .pylintrc --ignore-paths examples/build_api --disable E0401,E0611
+          pylint examples --rcfile .pylintrc --disable E0401,E0611
       - name: Test with unittest
         shell: bash -el {0}
         run: |
@@ -53,17 +52,17 @@ jobs:
           # turnkey examples
           # Note: we clear the default cache location prior to each example run
           rm -rf ~/.cache/turnkey
-          python examples/files_api/onnx_opset.py --onnx-opset 15
+          python examples/api/onnx_opset.py --onnx-opset 15
           rm -rf ~/.cache/turnkey
-          turnkey examples/cli/scripts/hello_world.py
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey examples/cli/scripts/multiple_invocations.py
+          turnkey -i examples/cli/scripts/multiple_invocations.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey examples/cli/scripts/max_depth.py --max-depth 1
+          turnkey -i examples/cli/scripts/max_depth.py discover --max-depth 1 export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey examples/cli/scripts/two_models.py
+          turnkey -i examples/cli/scripts/two_models.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey examples/cli/onnx/hello_world.onnx
+          turnkey -i examples/cli/onnx/hello_world.onnx load-onnx benchmark
 
           # E2E tests
           cd test/
@@ -74,19 +73,20 @@ jobs:
         run: |
           rm -rf ~/.cache/turnkey
           pip install -e examples/cli/plugins/example_rt
-          turnkey examples/cli/scripts/hello_world.py --runtime example-rt
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch benchmark --runtime example-rt
 
           rm -rf ~/.cache/turnkey
-          pip install -e examples/cli/plugins/example_seq
-          turnkey examples/cli/scripts/hello_world.py --sequence example-seq
+          pip install -e examples/cli/plugins/example_tool
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch example-plugin-tool benchmark
 
           rm -rf ~/.cache/turnkey
           pip install -e examples/cli/plugins/example_combined
-          turnkey examples/cli/scripts/hello_world.py --runtime example-combined-rt --rt-args delay_before_benchmarking::5
-          turnkey examples/cli/scripts/hello_world.py --device example_family::part1::config2
-          turnkey examples/cli/scripts/hello_world.py --device example_family::part1::config1
-          turnkey examples/cli/scripts/hello_world.py --device example_family::part1
-          turnkey examples/cli/scripts/hello_world.py --device example_family
+
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch combined-example-tool benchmark --runtime example-combined-rt --rt-args delay_before_benchmarking::5
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch combined-example-tool benchmark --device example_family::part1::config2 
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch combined-example-tool benchmark --device example_family::part1::config1 
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch combined-example-tool benchmark --device example_family::part1 
+          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch combined-example-tool benchmark --device example_family 
 
           # E2E tests
           cd test
@@ -114,7 +114,7 @@ jobs:
 
           # Run tests on Slurm
           export TURNKEY_SLURM_USE_DEFAULT_MEMORY="True"
-          turnkey benchmark models/selftest/linear.py --build-only --use-slurm --cache-dir local_cache
+          turnkey -i models/selftest/linear.py --use-slurm --cache-dir local_cache discover export-pytorch
           bash test/helpers/check_slurm_output.sh slurm-2.out
 
       # Below tests are commented out as the GitHub runner runs out of space installing the requirements

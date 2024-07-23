@@ -97,7 +97,7 @@ class TensorRT(BaseRT):
 
         # Add the GPU driver version to the stats file before execution
         gpu_driver_version = _get_nvidia_driver_version()
-        self.stats.save_model_eval_stat("gpu_driver_version", gpu_driver_version)
+        self.stats.save_stat("gpu_driver_version", gpu_driver_version)
         power_thread.start()
 
         run(

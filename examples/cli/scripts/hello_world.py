@@ -3,15 +3,16 @@
 Hello, world! This is the most basic turnkey cli example.
 To try it out, run the following command:
 
-turnkey hello_world.py
+turnkey -i hello_world.py discover export-pytorch
 
-You should see the analysis phase pick up the SmallModel instance
-and then benchmark it.
+You should see the discover tool pick up the SmallModel instance
+and then export it to an ONNX file.
 """
 
 import torch
 
 torch.manual_seed(1)
+
 
 # Define model class
 class SmallModel(torch.nn.Module):

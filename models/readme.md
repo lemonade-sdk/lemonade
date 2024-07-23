@@ -35,7 +35,7 @@ The corpora are:
 
 Before running the benchmark we suggest you:
 1. Install the `turnkey` package by following the [install instructions](https://github.com/onnx/turnkeyml/tree/main/docs/install.md).
-1. Go through the [`turnkey` CLI tutorials](https://github.com/onnx/turnkeyml/tree/main/examples/cli/readme.md).
+1. Go through some [`turnkey` CLI examples](https://github.com/onnx/turnkeyml/tree/main/examples/cli/readme.md).
 1. Familiarize yourself with the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey_user_guide.md) documentation.
 
 You must also run the following command to install all of the models' dependencies into your Python environment.
@@ -48,37 +48,33 @@ Once you have fulfilled the prerequisites, you can evaluate one model from the b
 
 ```
 cd REPO_ROOT/models # REPO_ROOT is where you cloned turnkeyml
-turnkey selftest/linear.py
+turnkey -i selftest/linear.py discover
 ```
 
 You can also run all models in one shot with:
 ```
 cd REPO_ROOT/models # REPO_ROOT is where you cloned turnkeyml
-turnkey */*.py
+turnkey -i */*.py discover
 ```
 
-_Note_: Benchmarking the entire corpora of models might take a very long time.
+_Note_: Evaluating the entire corpora of models might take a very long time.
 
-You can aggregate all of the benchmarking results from your `turnkey cache` into a CSV file with:
+You can aggregate all of the results from your turnkey cache into a CSV file with the `turnkey report` tool.
 
-```
-turnkey report
-```
-
-If you want to only report on a subset of models, we recommend saving the benchmarking results into a specific cache directory:
+If you want to only report on a subset of models, we recommend saving the results into a specific cache directory:
 
 ```
 # Save benchmark results into a specific cache directory
-turnkey models/selftest/*.py -d selftest_results
+turnkey -i models/selftest/*.py -d selftest_results discover
 
 # Report the results from the `selftest_results` cache
-turnkey report -d selftest_results
+turnkey report --input-caches selftest_results
 ```
 
 If you have multiple cache directories, you may also aggregate all information into a single report:
 
 ```
-turnkey report -d x86_results_cache_dir nvidia_results_cache_dir
+turnkey report --input-caches timm_results_cache_dir transformers_results_cache_dir
 ```
 
 ## Model Template
@@ -88,8 +84,7 @@ Each model follows a template to keep things consistent. This template is meant 
 ### Input Scripts
 
 Each model in the is hosted in a Python script (.py file). This script must meet the following requirements:
-1. Instantiate at least one model and invoke it against some inputs. The size and shape of the inputs will be used for benchmarking.
-  - _Note_: `turnkey` supports multiple models per script, and will benchmark all models within the script.
+1. Instantiate at least one model and invoke it against some inputs. The size and shape of the inputs will be detected during discovery.
 1. Provide a docstring that provides information about where the model was sourced from.
 
 Each script can optionally include a set of [labels](#labels) and [parameters](#parameters). See [Example Script](#example-script) for an example of a well-formed script that instantiates one model.
@@ -100,7 +95,7 @@ _Note_: All of the scripts in `models/` are also functional on their own, withou
 python models/transformers_pytorch/bert.py
 ```
 
-this will run the PyTorch version of the Huggingface `transformers` BERT model on your local CPU device.
+this will run the PyTorch version of the Huggingface `transformers` BERT model in PyTorch on your CPU.
 
 ### Labels
 
@@ -127,13 +122,13 @@ from turnkeyml.parser import parse
 parse(["batch_size", "max_seq_length"])
 ```
 
-You can pass parameters into a benchmarking run with the `--script-args` argument to `turnkey`. For example, the command:
+You can pass parameters into a script with the `--script-args` argument to `turnkey`. For example, the command:
 
 ```
-turnkey models/transformers_pytorch/bert.py --script-args="--batch_size 8 --max_seq_length 128"
+turnkey -i models/transformers_pytorch/bert.py discover --script-args="--batch_size 8 --max_seq_length 128"
 ```
 
-would set `batch_size=8` and `max_seq_length=128` for that benchmarking run.
+would set `batch_size=8` and `max_seq_length=128` for that `turnkey` run.
 
 You can also use these arguments outside of `turnkey`, for example the command:
 
@@ -141,7 +136,7 @@ You can also use these arguments outside of `turnkey`, for example the command:
 python models/transformers_pytorch/bert.py --batch_size 8
 ```
 
-would simply run BERT with a batch size of 8 in PyTorch.
+would simply run BERT with a batch size of 8 in PyTorch on your CPU.
 
 
 The standardized set of arguments is:

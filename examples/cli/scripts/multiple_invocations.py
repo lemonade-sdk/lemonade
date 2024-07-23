@@ -1,13 +1,13 @@
 # labels: name::multiple_invocations
 """
 This example demonstrates what happens when your script contains
-a model that is invoked multiple times with different input shapes
+a model that is invoked multiple times with different input shapes.
 
 To try it, run:
 
-turnkey multiple_invocations.py
+turnkey -i multiple_invocations.py discover
 
-You should see the two unique invocations being identified.
+You should see the two unique invocations being discovered.
 """
 import torch
 

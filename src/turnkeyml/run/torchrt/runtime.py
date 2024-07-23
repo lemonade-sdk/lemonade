@@ -9,7 +9,6 @@ import numpy as np
 from turnkeyml.run.basert import BaseRT
 from turnkeyml.common.performance import MeasuredPerformance
 from turnkeyml.run.onnxrt.execute import get_cpu_specs
-import turnkeyml.build.ignition as ignition
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs
@@ -93,8 +92,7 @@ class TorchRT(BaseRT):
         """
 
         # Ensure we have the correct model type
-        model_type = ignition.identify_model_type(self.model)
-        if model_type != build.ModelType.PYTORCH:
+        if not isinstance(self.model, (torch.nn.Module, torch.jit.ScriptModule)):
             raise exp.IntakeError(
                 f"Only Pytorch models are valid when runtime is {self.runtime}"
             )
@@ -106,7 +104,7 @@ class TorchRT(BaseRT):
         end_time = time.perf_counter()
         total_time = end_time - start_time
 
-        self.stats.save_model_eval_stat("torch_compilation_seconds", total_time)
+        self.stats.save_stat("torch_compilation_seconds", total_time)
 
     def _calculate_performance(
         self, per_iteration_latency: List[float]
@@ -180,9 +178,7 @@ class TorchRT(BaseRT):
             # Record the number of iterations actually used for the benchmark,
             # which will be less than the `iterations` argument if the time
             # limit was reached
-            self.stats.save_model_eval_stat(
-                fs.Keys.ITERATIONS, len(per_iteration_latency)
-            )
+            self.stats.save_stat(fs.Keys.ITERATIONS, len(per_iteration_latency))
 
             return self._calculate_performance(per_iteration_latency)
 

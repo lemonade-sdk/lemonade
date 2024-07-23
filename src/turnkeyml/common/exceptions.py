@@ -32,14 +32,14 @@ class ArgError(Error):
     """
 
 
-class StageError(Exception):
+class ToolError(Exception):
     """
     Let the user know that something went wrong while
-    firing off a Stage.
+    running a tool.
 
     Note: not overloading __init__() so that the
     attempt to print to stdout isn't captured into
-    the Stage's log file.
+    the Tool's log file.
     """
 
 

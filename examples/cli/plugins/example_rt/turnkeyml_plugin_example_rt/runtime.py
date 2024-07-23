@@ -51,8 +51,8 @@ class ExampleRT(BaseRT):
 
         # Assign values to the stats that will be printed
         # out by the CLI when status is reported
-        self.stats.save_model_eval_stat("magic_perf_points", 42)
-        self.stats.save_model_eval_stat("super_runtime_points", 100)
+        self.stats.save_stat("magic_perf_points", 42)
+        self.stats.save_stat("super_runtime_points", 100)
 
         return MeasuredPerformance(
             mean_latency=self.mean_latency,

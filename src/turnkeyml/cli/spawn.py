@@ -12,13 +12,12 @@ from threading import Event, Lock, Thread
 from time import monotonic
 import getpass
 from typing import List, Optional, Dict, Union
-from enum import Enum
 import psutil
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.printing as printing
 import turnkeyml.common.build as build
 from turnkeyml.cli.parser_helpers import encode_args
-from turnkeyml.analyze.status import Verbosity
+from turnkeyml.sequence import Sequence
 
 
 class WatchdogTimer(Thread):
@@ -122,11 +121,6 @@ else:
     DEFAULT_TIMEOUT_SECONDS = 3600
 
 
-class Target(Enum):
-    SLURM = "slurm"
-    LOCAL_PROCESS = "local_process"
-
-
 def slurm_jobs_in_queue(job_name=None) -> List[str]:
     """Return the set of slurm jobs that are currently pending/running"""
     user = getpass.getuser()
@@ -171,10 +165,6 @@ def value_arg(key: str, value: Union[str, int]):
         return ""
 
 
-def verbosity_arg(key: str, value: Verbosity):
-    return f'{key}="{value.value}"'
-
-
 def bool_arg(key: str, value: bool):
     if value:
         return f"{key}"
@@ -189,16 +179,26 @@ def dict_arg(key: str, value: Dict):
         return ""
 
 
+def sequence_arg(value: Sequence) -> Dict[str, Dict[str, str]]:
+    result = ""
+    for tool, args in value.info.items():
+        result = result + f"{tool} {' '.join(args)}"
+
+    return result
+
+
 def run_turnkey(
-    op: str,
+    build_name: str,
+    sequence: Sequence,
     file_name: str,
-    target: Target,
+    process_isolation: bool,
+    use_slurm: bool,
     cache_dir: str,
+    lean_cache: bool,
     timeout: Optional[int] = DEFAULT_TIMEOUT_SECONDS,
     working_dir: str = os.getcwd(),
     ml_cache_dir: Optional[str] = os.environ.get("SLURM_ML_CACHE"),
     max_jobs: int = 50,
-    **kwargs,
 ):
     """
     Run turnkey on a single input file in a separate process (e.g., Slurm, subprocess).
@@ -208,27 +208,33 @@ def run_turnkey(
       The key must be the snake_case version of the CLI argument (e.g, build_only for --build-only)
     """
 
+    if use_slurm and process_isolation:
+        raise ValueError(
+            "use_slurm and process_isolation are mutually exclusive, but both are True"
+        )
+
     type_to_formatter = {
         str: value_arg,
         int: value_arg,
         bool: bool_arg,
         list: list_arg,
         dict: dict_arg,
-        Verbosity: verbosity_arg,
     }
 
-    invocation_args = f"{op} {file_name}"
+    invocation_args = f"-i {file_name}"
 
     # Add cache_dir to kwargs so that it gets processed
     # with the other arguments
-    kwargs["cache_dir"] = cache_dir
+    kwargs = {"cache_dir": cache_dir, "lean_cache": lean_cache}
 
     for key, value in kwargs.items():
         if value is not None:
             arg_str = type_to_formatter[type(value)](arg_format(key), value)
             invocation_args = invocation_args + " " + arg_str
 
-    if target == Target.SLURM:
+    invocation_args = invocation_args + " " + sequence_arg(sequence)
+
+    if use_slurm:
         # Change args into the format expected by Slurm
         slurm_args = " ".join(shlex.split(invocation_args))
 
@@ -270,7 +276,7 @@ def run_turnkey(
 
         print(f"Submitting job {job_name} to Slurm")
         subprocess.check_call(slurm_command)
-    elif target == Target.LOCAL_PROCESS:
+    else:  # process isolation
         command = "turnkey " + invocation_args
         printing.log_info(f"Starting process with command: {command}")
 
@@ -326,74 +332,44 @@ def run_turnkey(
                 f"turnkey will move on to the next input.\n\n{e}"
             )
 
-            # If an evaluation failed, it will be the last build mentioned in the
-            # subprocess's stdout. We look for the last instance because sometimes
-            # a single input file will contain multiple models, and therefore multiple
-            # builds.
-            # NOTE: the turnkey status outputs use the term "build" to refer to both
-            # builds and benchmarks, we collectively we refer to as evaluations here
-            build_name = None
-            evaluation_id = None
-            for line in process_output:
-                evaluation_id = parse_evaluation_id(line, evaluation_id)
-                build_name = parse_build_name(line, build_name)
+            # Perform fault handling
+            printing.log_info(
+                f"Detected failed build {build_name}. "
+                "The parent process will attempt to clean up."
+            )
 
-            # Perform fault handling if we found a failed evaluation
-            if build_name:
-                printing.log_info(
-                    f"Detected failed build {build_name}. "
-                    "The parent process will attempt to clean up."
-                )
+            # Cleaning the cache is the last step in evaluation
+            # If a "lean cache" evaluation was killed, it is safe to assume we still
+            # need to clean the cache
+            # It is also harmless to run clean_output_dir() again even if the subprocess
+            # did have a chance to run it before the subprocess was killed
+            if "--lean-cache" in command:
+                printing.log_info("Removing build artifacts...")
+                filesystem.clean_output_dir(cache_dir, build_name)
 
-                # Cleaning the cache is the last step in evaluation
-                # If a "lean cache" evaluation was killed, it is safe to assume we still
-                # need to clean the cache
-                # It is also harmless to run clean_output_dir() again even if the subprocess
-                # did have a chance to run it before the subprocess was killed
-                if "--lean-cache" in command:
-                    printing.log_info("Removing build artifacts...")
-                    filesystem.clean_output_dir(cache_dir, build_name)
+            # Perform fault handling within the stats file if it exists
+            if os.path.isfile(filesystem.stats_file(cache_dir, build_name)):
+                try:
+                    # Amend the stats with a specific function status if possible
+                    if isinstance(e, subprocess.TimeoutExpired):
+                        evaluation_status = build.FunctionStatus.TIMEOUT
+                    else:
+                        evaluation_status = build.FunctionStatus.KILLED
 
-                # Perform fault handling within the stats file if there is a stats
-                # file and we know the evaluation ID of the failed evaluation
-                if (
-                    os.path.isfile(filesystem.stats_file(cache_dir, build_name))
-                    and evaluation_id
-                ):
-                    try:
-                        # Amend the stats with a specific function status if possible
-                        if isinstance(e, subprocess.TimeoutExpired):
-                            evaluation_status = build.FunctionStatus.TIMEOUT
-                        else:
-                            evaluation_status = build.FunctionStatus.KILLED
+                    stats = filesystem.Stats(
+                        cache_dir,
+                        build_name,
+                    )
 
-                        stats = filesystem.Stats(
-                            cache_dir,
-                            build_name,
-                            evaluation_id,
-                        )
+                    for key in stats.stats.keys():
+                        if stats.stats[key] == build.FunctionStatus.INCOMPLETE:
+                            stats.save_stat(key, evaluation_status)
 
-                        for key in stats.evaluation_stats.keys():
-                            if (
-                                stats.evaluation_stats[key]
-                                == build.FunctionStatus.INCOMPLETE.value
-                            ):
-                                stats.save_model_eval_stat(key, evaluation_status.value)
+                    # Save the exception into the error log stat
+                    stats.save_stat(filesystem.Keys.ERROR_LOG, str(e))
 
-                        # Save the exception into the error log stat
-                        stats.save_model_eval_stat(filesystem.Keys.ERROR_LOG, str(e))
-
-                    except Exception as stats_exception:  # pylint: disable=broad-except
-                        printing.log_info(
-                            "Stats file found, but unable to perform cleanup due to "
-                            f"exception: {stats_exception}"
-                        )
-
-            else:
-                printing.log_info(
-                    "Turnkey subprocess was killed before any "
-                    "build or benchmark could start."
-                )
-
-    else:
-        raise ValueError(f"Unsupported value for target: {target}.")
+                except Exception as stats_exception:  # pylint: disable=broad-except
+                    printing.log_info(
+                        "Stats file found, but unable to perform cleanup due to "
+                        f"exception: {stats_exception}"
+                    )

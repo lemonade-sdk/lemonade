@@ -9,7 +9,7 @@ import sys
 from turnkeyml.cli.cli import main as turnkeycli
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.build as build
-from helpers import common
+import turnkeyml.common.test_helpers as common
 
 
 class Testing(unittest.TestCase):
@@ -25,27 +25,31 @@ class Testing(unittest.TestCase):
         test_script = "linear.py"
         testargs = [
             "turnkey",
-            "benchmark",
+            "-i",
             os.path.join(corpus_dir, test_script),
-            "--device",
-            "example_family",
-            "--build-only",
             "--cache-dir",
             cache_dir,
+            "discover",
+            "export-pytorch",
+            "optimize-ort",
+            "benchmark",
+            "--device",
+            "example_family",
         ]
         with patch.object(sys, "argv", testargs):
             turnkeycli()
 
-        _, build_state = common.get_stats_and_state(test_script, cache_dir)
+        build_stats, build_state = common.get_stats_and_state(test_script, cache_dir)
 
         # Check if build was successful
         assert build_state.build_status == build.FunctionStatus.SUCCESSFUL
 
         # Check if default part and config were assigned
         expected_device = "example_family::part1::config1"
+        actual_device = build_stats["device_type"]
         assert (
-            build_state.config.device == expected_device
-        ), f"Got {build_state.config.device}, expected {expected_device}"
+            actual_device == expected_device
+        ), f"Got {actual_device}, expected {expected_device}"
 
 
 if __name__ == "__main__":

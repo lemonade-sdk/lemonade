@@ -1,5 +1,5 @@
 # labels: test_group::turnkey name::keypointrcnn_resnet50_fpn author::torchvision task::Computer_Vision license::bsd-3-clause
-# Skip reason: Fails during the analysis stage of turnkey
+# Skip reason: Fails during the use of the Discover Tool in turnkey
 """
 https://pytorch.org/vision/stable/models/keypoint_rcnn.html
 """

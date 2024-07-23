@@ -1,24 +1,17 @@
 import os
 import logging
 import sys
-import pathlib
-import copy
 import traceback
 import platform
 import subprocess
-import enum
-from typing import Optional, Any, List, Dict, Union, Type
-import dataclasses
+from typing import Dict, Union
 import hashlib
 import pkg_resources
 import psutil
 import yaml
 import torch
 import numpy as np
-import sklearn.base
 import turnkeyml.common.exceptions as exp
-import turnkeyml.common.tf_helpers as tf_helpers
-from turnkeyml.version import __version__ as turnkey_version
 
 
 UnionValidModelInstanceTypes = Union[
@@ -26,8 +19,6 @@ UnionValidModelInstanceTypes = Union[
     str,
     torch.nn.Module,
     torch.jit.ScriptModule,
-    "tf.keras.Model",
-    sklearn.base.BaseEstimator,
 ]
 
 if os.environ.get("TURNKEY_ONNX_OPSET"):
@@ -41,20 +32,7 @@ DEFAULT_REBUILD_POLICY = "if_needed"
 REBUILD_OPTIONS = ["if_needed", "always", "never"]
 
 
-class ModelType(enum.Enum):
-    PYTORCH = "pytorch"
-    PYTORCH_COMPILED = "pytorch_compiled"
-    KERAS = "keras"
-    ONNX_FILE = "onnx_file"
-    HUMMINGBIRD = "hummingbird"
-    UNKNOWN = "unknown"
-
-
-# Indicates that the build should take take any specific device into account
-DEFAULT_DEVICE = "default"
-
-
-def load_yaml(file_path):
+def load_yaml(file_path) -> Dict:
     with open(file_path, "r", encoding="utf8") as stream:
         try:
             return yaml.load(stream, Loader=yaml.FullLoader)
@@ -76,24 +54,29 @@ def state_file(cache_dir, build_name):
     return path
 
 
-def hash_model(model, model_type: ModelType, hash_params: bool = True):
+def hash_model(model, hash_params: bool = True):
     # If the model is a path to a file, hash the file
-    if model_type == ModelType.ONNX_FILE:
-        # TODO: Implement a way of hashing the models but not the parameters
-        # of ONNX inputs.
-        if not hash_params:
-            msg = "hash_params must be True for model_type ONNX_FILE"
-            raise ValueError(msg)
-        if os.path.isfile(model):
+    if isinstance(model, str):
+        if model.endswith(".onnx"):
+            # TODO: Implement a way of hashing the models but not the parameters
+            # of ONNX inputs.
+            if not hash_params:
+                msg = "hash_params must be True for ONNX files"
+                raise ValueError(msg)
+            if os.path.isfile(model):
+                with open(model, "rb") as f:
+                    file_content = f.read()
+                return hashlib.sha256(file_content).hexdigest()
+            else:
+                raise ValueError(
+                    "hash_model received str model that doesn't correspond to a file"
+                )
+        else:
             with open(model, "rb") as f:
                 file_content = f.read()
             return hashlib.sha256(file_content).hexdigest()
-        else:
-            raise ValueError(
-                "hash_model received str model that doesn't correspond to a file"
-            )
 
-    elif model_type in [ModelType.PYTORCH, ModelType.PYTORCH_COMPILED]:
+    if isinstance(model, (torch.nn.Module, torch.jit.ScriptModule)):
         # Convert model parameters and topology to string
         hashable_params = {}
         for name, param in model.named_parameters():
@@ -106,54 +89,30 @@ def hash_model(model, model_type: ModelType, hash_params: bool = True):
         # Return hash of topology and parameters
         return hashlib.sha256(hashable_model).hexdigest()
 
-    elif model_type == ModelType.KERAS:
-        # Convert model parameters and topology to string
-        summary_list = []  # type: List[str]
-
-        # pylint: disable=unnecessary-lambda
-        model.summary(print_fn=lambda x: summary_list.append(x))
-
-        summary_str = " ".join(summary_list)
-        hashable_params = {}
-        for layer in model.layers:
-            hashable_params[layer.name] = layer.weights
-        if hash_params:
-            hashable_model = (summary_str + str(hashable_params)).encode()
-        else:
-            hashable_model = summary_str.encode()
-
-        # Return hash of topology and parameters
-        return hashlib.sha256(hashable_model).hexdigest()
-
-    elif model_type == ModelType.HUMMINGBIRD:
-        import pickle
-
-        return hashlib.sha256(pickle.dumps(model)).hexdigest()
-
     else:
         msg = f"""
-        model_type "{model_type}" unsupported by this hash_model function
+        model type "{type(model)}" unsupported by this hash_model function
         """
         raise ValueError(msg)
 
 
-class FunctionStatus(enum.Enum):
+class FunctionStatus:
     """
-    Status values that are assigned to stages, builds, benchmarks, and other
+    Status values that are assigned to tools, builds, benchmarks, and other
     functionality to help the user understand whether that function completed
     successfully or not.
     """
 
-    # SUCCESSFUL means the stage/build/benchmark completed successfully.
+    # SUCCESSFUL means the tool/build/benchmark completed successfully.
     SUCCESSFUL = "successful"
 
-    # ERROR means the stage/build/benchmark failed and threw some error that
+    # ERROR means the tool/build/benchmark failed and threw some error that
     # was caught by turnkey. You should proceed by looking at the build
     # logs to see what happened.
 
     ERROR = "error"
 
-    # TIMEOUT means the stage/build/benchmark failed because it exceeded the timeout
+    # TIMEOUT means the tool/build/benchmark failed because it exceeded the timeout
     # set for the turnkey command.
     TIMEOUT = "timeout"
 
@@ -163,21 +122,21 @@ class FunctionStatus(enum.Enum):
     # why it is being killed (e.g., watch the RAM utilization to diagnose an OOM).
     KILLED = "killed"
 
-    # The NOT_STARTED status is applied to all stages/builds/benchmarks at startup.
-    # It will be replaced by one of the other status values if the stage/build/benchmark
+    # The NOT_STARTED status is applied to all tools/builds/benchmarks at startup.
+    # It will be replaced by one of the other status values if the tool/build/benchmark
     # has a chance to start running.
-    # A value of NOT_STARTED in the report CSV indicates that the stage/build/benchmark
+    # A value of NOT_STARTED in the report CSV indicates that the tool/build/benchmark
     # never had a chance to start because turnkey exited before that functionality had
     # a chance to start running.
     NOT_STARTED = "not_started"
 
-    # INCOMPLETE indicates that a stage/build/benchmark started running and did not complete.
-    # Each stage, build, and benchmark are marked as INCOMPLETE when they start running.
-    # If you open the turnkey_stats.yaml file while the stage/build/benchmark
-    # is still running, the status will show as INCOMPLETE. If the stage/build/benchmark
+    # INCOMPLETE indicates that a tool/build/benchmark started running and did not complete.
+    # Each tool, build, and benchmark are marked as INCOMPLETE when they start running.
+    # If you open the turnkey_stats.yaml file while the tool/build/benchmark
+    # is still running, the status will show as INCOMPLETE. If the tool/build/benchmark
     # is killed without the chance to do any stats cleanup, the status will continue to
     # show as INCOMPLETE in turnkey_stats.yaml.
-    # When the report CSV is created, any instance of an INCOMPLETE stage/build/benchmark
+    # When the report CSV is created, any instance of an INCOMPLETE tool/build/benchmark
     # status will be replaced by KILLED.
     INCOMPLETE = "incomplete"
 
@@ -218,9 +177,6 @@ def get_shapes_and_dtypes(inputs: dict):
         elif torch.is_tensor(value):
             shapes[key] = np.array(value.detach()).shape
             dtypes[key] = np.array(value.detach()).dtype.name
-        elif tf_helpers.is_keras_tensor(value):
-            shapes[key] = np.array(value).shape
-            dtypes[key] = np.array(value).dtype.name
         elif isinstance(value, np.ndarray):
             shapes[key] = value.shape
             dtypes[key] = value.dtype.name
@@ -236,185 +192,6 @@ def get_shapes_and_dtypes(inputs: dict):
             )
 
     return shapes, dtypes
-
-
-@dataclasses.dataclass(frozen=True)
-class Config:
-    """
-    User-provided build configuration. Instances of Config should not be modified
-    once they have been instantiated (frozen=True enforces this).
-
-    Note: modifying this struct can create a breaking change that
-    requires users to rebuild their models. Increment the minor
-    version number of the turnkey package if you do make a build-
-    breaking change.
-    """
-
-    build_name: str
-    auto_name: bool
-    sequence: List[str]
-    onnx_opset: int
-    device: Optional[str]
-
-
-@dataclasses.dataclass
-class State:
-    # User-provided args that influence the generated model
-    config: Config
-
-    # User-provided args that do not influence the generated model
-    monitor: bool = False
-    rebuild: str = ""
-    cache_dir: str = ""
-    evaluation_id: str = ""
-
-    # User-provided args that will not be saved as part of state.yaml
-    model: UnionValidModelInstanceTypes = None
-    inputs: Optional[Dict[str, Any]] = None
-
-    # Member variable that helps the code know if State has called
-    # __post_init__ yet
-    save_when_setting_attribute: bool = False
-
-    # All of the following are critical aspects of the build,
-    # including properties of the tool and choices made
-    # while building the model, which determine the outcome of the build.
-    # NOTE: adding or changing a member name in this struct can create
-    # a breaking change that requires users to rebuild their models.
-    # Increment the minor version number of the turnkey package if you
-    # do make a build-breaking change.
-
-    turnkey_version: str = turnkey_version
-    model_type: ModelType = ModelType.UNKNOWN
-    uid: Optional[int] = None
-    model_hash: Optional[int] = None
-    build_status: FunctionStatus = FunctionStatus.NOT_STARTED
-    expected_input_shapes: Optional[Dict[str, list]] = None
-    expected_input_dtypes: Optional[Dict[str, list]] = None
-    expected_output_names: Optional[List] = None
-
-    # Whether or not inputs must be downcasted during inference
-    downcast_applied: bool = False
-
-    # The results of the most recent stage that was executed
-    current_build_stage: str = None
-    intermediate_results: Any = None
-
-    # Results of a successful build
-    results: Any = None
-
-    def __post_init__(self):
-        if self.uid is None:
-            self.uid = unique_id()
-        if self.inputs is not None:
-            (
-                self.expected_input_shapes,
-                self.expected_input_dtypes,
-            ) = get_shapes_and_dtypes(self.inputs)
-        if self.model is not None and self.model_type != ModelType.UNKNOWN:
-            self.model_hash = hash_model(self.model, self.model_type)
-
-        self.save_when_setting_attribute = True
-
-    def __setattr__(self, name, val):
-        super().__setattr__(name, val)
-
-        # Always automatically save the state.yaml whenever State is modified
-        # But don't bother saving until after __post_init__ is done (indicated
-        # by the save_when_setting_attribute flag)
-        # Note: This only works when elements of the state are set directly.
-        if self.save_when_setting_attribute and name != "save_when_setting_attribute":
-            self.save()
-
-    @property
-    def original_inputs_file(self):
-        return os.path.join(
-            output_dir(self.cache_dir, self.config.build_name), "inputs.npy"
-        )
-
-    def prepare_file_system(self):
-        # Create output folder if it doesn't exist
-        os.makedirs(output_dir(self.cache_dir, self.config.build_name), exist_ok=True)
-
-    def prepare_state_dict(self) -> Dict:
-        state_dict = {
-            key: value
-            for key, value in vars(self).items()
-            if not key == "inputs"
-            and not key == "model"
-            and not key == "save_when_setting_attribute"
-        }
-
-        # Special case for saving objects
-        state_dict["config"] = copy.deepcopy(vars(self.config))
-
-        state_dict["model_type"] = self.model_type.value
-        state_dict["build_status"] = self.build_status.value
-
-        return state_dict
-
-    def save_yaml(self, state_dict: Dict):
-        with open(
-            state_file(self.cache_dir, self.config.build_name), "w", encoding="utf8"
-        ) as outfile:
-            yaml.dump(state_dict, outfile)
-
-    def save(self):
-        self.prepare_file_system()
-
-        state_dict = self.prepare_state_dict()
-
-        self.save_yaml(state_dict)
-
-
-def load_state(
-    cache_dir=None,
-    build_name=None,
-    state_path=None,
-    state_type: Type = State,
-) -> State:
-    if state_path is not None:
-        file_path = state_path
-    elif build_name is not None and cache_dir is not None:
-        file_path = state_file(cache_dir, build_name)
-    else:
-        raise ValueError(
-            "This function requires either build_name and cache_dir to be set, "
-            "or state_path to be set, not both or neither"
-        )
-
-    state_dict = load_yaml(file_path)
-
-    # Get the type of Config and Info in case they have been overloaded
-    field_types = {field.name: field.type for field in dataclasses.fields(state_type)}
-    config_type = field_types["config"]
-
-    try:
-        # Special case for loading enums
-        state_dict["model_type"] = ModelType(state_dict["model_type"])
-        state_dict["build_status"] = FunctionStatus(state_dict["build_status"])
-        state_dict["config"] = config_type(**state_dict["config"])
-
-        state = state_type(**state_dict)
-
-    except (KeyError, TypeError) as e:
-        if state_path is not None:
-            path_suggestion = pathlib.Path(state_path).parent
-        else:
-            path_suggestion = output_dir(cache_dir, build_name)
-        msg = f"""
-        The cached build of this model was built with an
-        incompatible older version of the tool.
-
-        Suggested solution: delete the build with
-        rm -rf {path_suggestion}
-
-        The underlying code raised this exception:
-        {e}
-        """
-        raise exp.StateError(msg)
-
-    return state
 
 
 class Logger:
