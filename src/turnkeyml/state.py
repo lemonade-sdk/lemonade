@@ -59,20 +59,10 @@ class State:
     def __init__(
         self,
         cache_dir: str,
-        monitor: Optional[bool] = None,
         build_name: Optional[str] = None,
         sequence_info: Dict[str, Dict] = None,
         **kwargs,
     ):
-
-        # Allow monitor to be globally disabled by an environment variable
-        if monitor is None:
-            if os.environ.get("TURNKEY_BUILD_MONITOR") == "False":
-                monitor_setting = False
-            else:
-                monitor_setting = True
-        else:
-            monitor_setting = monitor
 
         # The default model name is the name of the python file that calls build_model()
         if build_name is None:
@@ -82,7 +72,6 @@ class State:
         parsed_cache_dir = os.path.expanduser(cache_dir)
 
         # Save settings as State members
-        self.monitor = monitor_setting
         self.cache_dir = parsed_cache_dir
         self.build_name = build_name
         self.sequence_info = sequence_info

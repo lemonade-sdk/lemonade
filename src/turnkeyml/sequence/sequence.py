@@ -83,16 +83,26 @@ class Sequence:
         self,
         state: State,
         lean_cache: bool = False,
+        monitor: Optional[bool] = None,
         stats_to_save: Optional[Dict] = None,
     ) -> State:
         """
         Executes the sequence of tools.
         """
 
+        # Allow monitor to be globally disabled by an environment variable
+        if monitor is None:
+            if os.environ.get("TURNKEY_BUILD_MONITOR") == "False":
+                monitor_setting = False
+            else:
+                monitor_setting = True
+        else:
+            monitor_setting = monitor
+
         # Create a build directory in the cache
         fs.make_build_dir(state.cache_dir, state.build_name)
 
-        self.show_monitor(state, state.monitor)
+        self.show_monitor(state, monitor_setting)
 
         if state.build_status == build.FunctionStatus.SUCCESSFUL:
             msg = """
@@ -156,7 +166,7 @@ class Sequence:
                 state.current_build_tool = tool.unique_name
 
                 # Run the tool
-                state = tool.parse_and_run(state, argv)
+                state = tool.parse_and_run(state, argv, monitor_setting)
 
                 # Save the state so that it can be assessed for a cache hit
                 state.save()

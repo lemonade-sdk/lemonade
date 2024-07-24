@@ -212,16 +212,20 @@ class Tool(abc.ABC):
 
         return parsed_args
 
-    def parse_and_run(self, state: State, args, known_only=True) -> Dict:
+    def parse_and_run(
+        self, state: State, args, monitor: bool = False, known_only=True
+    ) -> Dict:
         """
         Helper function to parse CLI arguments into the args expected
         by run(), and then forward them into the run() method.
         """
 
         parsed_args = self.parse(state, args, known_only)
-        return self.run_helper(state, **parsed_args.__dict__)
+        return self.run_helper(state, monitor, **parsed_args.__dict__)
 
-    def run_helper(self, state: State, **kwargs) -> Tuple[State, int]:
+    def run_helper(
+        self, state: State, monitor: bool = False, **kwargs
+    ) -> Tuple[State, int]:
         """
         Wraps the developer-defined .run() method with helper functionality.
         Specifically:
@@ -241,7 +245,7 @@ class Tool(abc.ABC):
             f"log_{self.unique_name}.txt",
         )
 
-        if state.monitor:
+        if monitor:
             self.progress = Process(target=_spinner, args=[self.monitor_message])
             self.progress.start()
 
@@ -253,13 +257,13 @@ class Tool(abc.ABC):
         except Exception:  # pylint: disable=broad-except
             self.status_line(
                 successful=False,
-                verbosity=state.monitor,
+                verbosity=monitor,
             )
             state.build_status = build.FunctionStatus.ERROR
             raise
 
         else:
-            self.status_line(successful=True, verbosity=state.monitor)
+            self.status_line(successful=True, verbosity=monitor)
 
             # Tools should not set build.FunctionStatus.SUCCESSFUL for the whole build,
             # as that is reserved for Sequence.launch()
@@ -273,7 +277,7 @@ class Tool(abc.ABC):
                 )
 
         finally:
-            if state.monitor:
+            if monitor:
                 self.progress.terminate()
 
         return state
