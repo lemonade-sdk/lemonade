@@ -3,6 +3,7 @@ Tests focused on the command-level functionality of turnkey CLI
 """
 
 import os
+import shutil
 import glob
 import csv
 from typing import List, Tuple, Any, Union, Optional
@@ -124,6 +125,7 @@ input_tensor = torch.rand(10)
 class Testing(unittest.TestCase):
     def setUp(self) -> None:
         fs.rmdir(cache_dir)
+        fs.rmdir(new_cache_dir)
 
         return super().setUp()
 
@@ -1132,10 +1134,52 @@ class Testing(unittest.TestCase):
 
         assert_success_of_builds([test_script], cache_dir)
 
+    def test_030_cli_cache_move(self):
+
+        test_script = list(common.test_scripts_dot_py.keys())[0]
+
+        # Build a model into the default cache location
+        testargs = [
+            "turnkey",
+            "-i",
+            os.path.join(corpus_dir, test_script),
+            "--cache-dir",
+            cache_dir,
+            "discover",
+            "export-pytorch",
+        ]
+        with patch.object(sys, "argv", flatten(testargs)):
+            turnkeycli()
+
+        # Move the cache to a new location
+        shutil.move(cache_dir, new_cache_dir)
+
+        # Get the build state file in its new location
+        selected_build = fs.get_available_builds(new_cache_dir)[-1]
+        state_file_path = os.path.join(
+            new_cache_dir, selected_build, f"{selected_build}_state.yaml"
+        )
+
+        # Benchmark the cached build in its new location
+        testargs = [
+            "turnkey",
+            "-i",
+            state_file_path,
+            "load-build",
+            "benchmark",
+        ]
+        with patch.object(sys, "argv", flatten(testargs)):
+            turnkeycli()
+
+        # Make sure the benchmark happened
+        test_script = selected_build + ".py"
+        assert_success_of_builds([test_script], new_cache_dir, check_perf=True)
+
 
 if __name__ == "__main__":
     # Create a cache directory a directory with test models
     cache_dir, corpus_dir = common.create_test_dir("cli")
+    new_cache_dir = f"{cache_dir}2"
 
     extras_dot_py = {
         "compiled.py": """

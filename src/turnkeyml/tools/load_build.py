@@ -91,6 +91,16 @@ class LoadBuild(FirstTool):
         printing.log_info(f"Attempting to load: {input}")
         state = load_state(state_path=input)
 
+        # Point the state.cache_dir and state.results at the current location of the state.yaml file
+        # This is important because state.yaml may have moved, and by default all paths in
+        # state.yaml will be the original location, not any new location
+        state.cache_dir = str(source_cache_dir)
+        state.results = fs.rebase_cache_dir(
+            input_path=state.results,
+            build_name=source_build_dir_name,
+            new_cache_dir=source_cache_dir,
+        )
+
         # Record the sequence used for the loaded build so that we examine it later
         prior_selected_sequence = list(state.sequence_info.keys())
 
