@@ -188,7 +188,7 @@ Management tool choices:
     # Trick argparse into thinking tools was not a positional argument
     # this helps to avoid an error where an incorrect arg/value pair
     # can be misinterpreted as the tools positional argument
-    tools_action.option_strings = "--tools"
+    tools_action.option_strings = ["--tools"]
 
     # Do one pass of parsing to figure out if -h was used
     global_args = vars(parser.parse_args(tools_invoked["globals"]))
