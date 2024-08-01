@@ -31,7 +31,9 @@ setup(
     ],
     install_requires=[
         "invoke>=2.0.0",
-        "onnx>=1.11.0",
+        # 1.16.2 causes a crash:
+        #   ImportError: DLL load failed while importing onnx_cpp2py_export
+        "onnx>=1.11.0,<1.16.2",
         "onnxmltools==1.10.0",
         "onnxruntime >=1.10.1",
         "torch>=1.12.1",
@@ -45,9 +47,6 @@ setup(
         "pandas>=1.5.3",
         "fasteners",
         "GitPython>=3.1.40",
-        # Necessary until upstream packages account for the breaking
-        # change to numpy
-        "numpy<2.0.0",
         "psutil",
     ],
     classifiers=[],
