@@ -6,7 +6,7 @@ from turnkeyml.tools import FirstTool
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.build as build
 import turnkeyml.common.filesystem as fs
-from turnkeyml.common.status import ModelInfo, UniqueInvocationInfo
+import turnkeyml.common.status as status
 from turnkeyml.state import State, load_state
 import turnkeyml.common.printing as printing
 from turnkeyml.version import __version__ as turnkey_version
@@ -186,24 +186,6 @@ class LoadBuild(FirstTool):
 
         # Create a UniqueInvocationInfo and ModelInfo so that we can display status
         # at the end of the sequence
-        state.invocation_info = UniqueInvocationInfo(
-            name=input,
-            script_name=fs.clean_file_name(input),
-            hash=0,
-            is_target=True,
-            extension="_state.yaml",
-            executed=1,
-        )
-        state.models_found = {
-            "state_file": ModelInfo(
-                model=input,
-                name=input,
-                script_name=input,
-                file=input,
-                unique_invocations={0: state.invocation_info},
-                hash=0,
-            )
-        }
-        state.invocation_info.params = state.models_found["state_file"].params
+        status.add_to_state(state=state, name=input, model=input)
 
         return state

@@ -161,6 +161,7 @@ class Tool(abc.ABC):
     def __init__(
         self,
         monitor_message,
+        enable_logger=True,
     ):
         _name_is_file_safe(self.__class__.unique_name)
 
@@ -169,6 +170,9 @@ class Tool(abc.ABC):
         self.monitor_message = monitor_message
         self.progress = None
         self.logfile_path = None
+        # Tools can disable build.Logger, which captures all stdout and stderr from
+        # the Tool, by setting enable_logger=False
+        self.enable_logger = enable_logger
         # Tools can provide a list of keys that can be found in
         # evaluation stats. Those key:value pairs will be presented
         # in the status at the end of the build.
@@ -251,7 +255,11 @@ class Tool(abc.ABC):
 
         try:
             # Execute the build tool
-            with build.Logger(self.monitor_message, self.logfile_path):
+
+            if self.enable_logger:
+                with build.Logger(self.monitor_message, self.logfile_path):
+                    state = self.run(state, **kwargs)
+            else:
                 state = self.run(state, **kwargs)
 
         except Exception:  # pylint: disable=broad-except

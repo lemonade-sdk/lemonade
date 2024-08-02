@@ -2,7 +2,7 @@ import argparse
 import sys
 import os
 from difflib import get_close_matches
-from typing import List
+from typing import List, Dict, Tuple, Any
 import turnkeyml.common.filesystem as fs
 from turnkeyml.sequence import Sequence
 from turnkeyml.tools import Tool, FirstTool, NiceHelpFormatter
@@ -63,25 +63,23 @@ def _check_extension(
     return file_name
 
 
-def main():
+def parse_tools(
+    parser: argparse.ArgumentParser, supported_tools: List[Tool]
+) -> Tuple[Dict[str, Any], Dict[Tool, List[str]], List[str]]:
+    """
+    Add the help for parsing tools and their args to an ArgumentParser.
 
-    tool_parsers = {tool.unique_name: tool.parser() for tool in SUPPORTED_TOOLS}
-    tool_classes = {tool.unique_name: tool for tool in SUPPORTED_TOOLS}
+    Then, perform the task of parsing a full turnkey CLI command including
+    teasing apart the global arguments and separate tool invocations.
+    """
 
-    # Define the argument parser
-    parser = CustomArgumentParser(
-        description="This utility runs tools in a sequence. "
-        "To use it, provide a list of tools and "
-        "their arguments. See "
-        "https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md "
-        "to learn the exact syntax.\n\nExample: turnkey -i my_model.py discover export-pytorch",
-        formatter_class=NiceHelpFormatter,
-    )
+    tool_parsers = {tool.unique_name: tool.parser() for tool in supported_tools}
+    tool_classes = {tool.unique_name: tool for tool in supported_tools}
 
     # Sort tools into categories and format for the help menu
-    first_tool_choices = _tool_list_help(SUPPORTED_TOOLS, FirstTool)
-    eval_tool_choices = _tool_list_help(SUPPORTED_TOOLS, Tool, exclude=FirstTool)
-    mgmt_tool_choices = _tool_list_help(SUPPORTED_TOOLS, ManagementTool)
+    first_tool_choices = _tool_list_help(supported_tools, FirstTool)
+    eval_tool_choices = _tool_list_help(supported_tools, Tool, exclude=FirstTool)
+    mgmt_tool_choices = _tool_list_help(supported_tools, ManagementTool)
 
     tools_action = parser.add_argument(
         "tools",
@@ -99,67 +97,6 @@ Tools that go into a sequence:
 Management tool choices:
 {mgmt_tool_choices}""",
         choices=tool_parsers.keys(),
-    )
-
-    parser.add_argument(
-        "-i",
-        "--input-files",
-        nargs="+",
-        help="One or more inputs that will be evaluated by the tool sequence "
-        "(e.g., script (.py), ONNX (.onnx), turnkey build state (state.yaml), "
-        "input list (.txt) files)",
-        type=lambda file: _check_extension(
-            ("py", "onnx", "txt", "yaml"), file, parser.error, tool_classes
-        ),
-    )
-
-    parser.add_argument(
-        "-d",
-        "--cache-dir",
-        help="Build cache directory where results will "
-        f"be stored (defaults to {fs.DEFAULT_CACHE_DIR})",
-        required=False,
-        default=fs.DEFAULT_CACHE_DIR,
-    )
-
-    parser.add_argument(
-        "--lean-cache",
-        dest="lean_cache",
-        help="Delete all build artifacts (e.g., .onnx files) when the command completes",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--labels",
-        dest="labels",
-        help="Filter the --input-files to only include files that have the provided labels",
-        nargs="*",
-        default=[],
-    )
-
-    slurm_or_processes_group = parser.add_mutually_exclusive_group()
-
-    slurm_or_processes_group.add_argument(
-        "--use-slurm",
-        dest="use_slurm",
-        help="Execute on Slurm instead of using local compute resources",
-        action="store_true",
-    )
-
-    slurm_or_processes_group.add_argument(
-        "--process-isolation",
-        dest="process_isolation",
-        help="Isolate evaluating each input into a separate process",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=None,
-        help="Build timeout, in seconds, after which a build will be canceled "
-        f"(default={DEFAULT_TIMEOUT_SECONDS}). Only "
-        "applies when --process-isolation or --use-slurm is also used.",
     )
 
     # run as if "-h" was passed if no parameters are passed
@@ -229,9 +166,91 @@ Management tool choices:
 
     # Convert tool names into Tool instances
     tool_instances = {tool_classes[cmd](): argv for cmd, argv in tools_invoked.items()}
+    evaluation_tools = [tool_classes[cmd] for cmd in evaluation_tools]
+
+    return global_args, tool_instances, evaluation_tools
+
+
+def main():
+
+    # Define the argument parser
+    parser = CustomArgumentParser(
+        description="This utility runs tools in a sequence. "
+        "To use it, provide a list of tools and "
+        "their arguments. See "
+        "https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md "
+        "to learn the exact syntax.\n\nExample: turnkey -i my_model.py discover export-pytorch",
+        formatter_class=NiceHelpFormatter,
+    )
+
+    parser.add_argument(
+        "-i",
+        "--input-files",
+        nargs="+",
+        help="One or more inputs that will be evaluated by the tool sequence "
+        "(e.g., script (.py), ONNX (.onnx), turnkey build state (state.yaml), "
+        "input list (.txt) files)",
+        type=lambda file: _check_extension(
+            ("py", "onnx", "txt", "yaml"),
+            file,
+            parser.error,
+            {tool.unique_name: tool for tool in SUPPORTED_TOOLS},
+        ),
+    )
+
+    parser.add_argument(
+        "-d",
+        "--cache-dir",
+        help="Build cache directory where results will "
+        f"be stored (defaults to {fs.DEFAULT_CACHE_DIR})",
+        required=False,
+        default=fs.DEFAULT_CACHE_DIR,
+    )
+
+    parser.add_argument(
+        "--lean-cache",
+        dest="lean_cache",
+        help="Delete all build artifacts (e.g., .onnx files) when the command completes",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--labels",
+        dest="labels",
+        help="Filter the --input-files to only include files that have the provided labels",
+        nargs="*",
+        default=[],
+    )
+
+    slurm_or_processes_group = parser.add_mutually_exclusive_group()
+
+    slurm_or_processes_group.add_argument(
+        "--use-slurm",
+        dest="use_slurm",
+        help="Execute on Slurm instead of using local compute resources",
+        action="store_true",
+    )
+
+    slurm_or_processes_group.add_argument(
+        "--process-isolation",
+        dest="process_isolation",
+        help="Isolate evaluating each input into a separate process",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Build timeout, in seconds, after which a build will be canceled "
+        f"(default={DEFAULT_TIMEOUT_SECONDS}). Only "
+        "applies when --process-isolation or --use-slurm is also used.",
+    )
+
+    global_args, tool_instances, evaluation_tools = parse_tools(parser, SUPPORTED_TOOLS)
 
     if len(evaluation_tools) > 0:
-        if not issubclass(tool_classes[evaluation_tools[0]], FirstTool):
+        if not issubclass(evaluation_tools[0], FirstTool):
             parser.error(
                 "The first tool in the sequence needs to be one "
                 "of the 'tools that can start a sequence.' Use "

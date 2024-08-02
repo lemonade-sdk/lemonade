@@ -13,7 +13,7 @@ import turnkeyml.common.build as build
 import turnkeyml.common.tensor_helpers as tensor_helpers
 import turnkeyml.common.onnx_helpers as onnx_helpers
 import turnkeyml.common.filesystem as fs
-from turnkeyml.common.status import ModelInfo, UniqueInvocationInfo
+import turnkeyml.common.status as status
 from turnkeyml.state import State
 
 
@@ -154,27 +154,13 @@ class LoadOnnx(FirstTool):
 
         # Create a UniqueInvocationInfo and ModelInfo so that we can display status
         # at the end of the sequence
-        state.invocation_info = UniqueInvocationInfo(
+        status.add_to_state(
+            state=state,
             name=onnx_file,
-            script_name=fs.clean_file_name(onnx_file),
-            file=onnx_file,
-            input_shapes={key: value.shape for key, value in state.inputs.items()},
-            hash=state.model_hash,
-            is_target=True,
+            model=onnx_file,
             extension=".onnx",
-            executed=1,
+            input_shapes={key: value.shape for key, value in state.inputs.items()},
         )
-        state.models_found = {
-            "onnx_file": ModelInfo(
-                model=onnx_file,
-                name=onnx_file,
-                script_name=onnx_file,
-                file=onnx_file,
-                unique_invocations={state.model_hash: state.invocation_info},
-                hash=state.model_hash,
-            )
-        }
-        state.invocation_info.params = state.models_found["onnx_file"].params
 
         return state
 

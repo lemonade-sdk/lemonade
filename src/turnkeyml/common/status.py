@@ -5,6 +5,7 @@ import dataclasses
 from typing import Callable, List, Union, Dict, Optional
 import torch
 from turnkeyml.common import printing
+from turnkeyml.state import State
 import turnkeyml.common.build as build
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.analyze_model as analyze_model
@@ -362,3 +363,45 @@ def stop_logger_forward() -> None:
         sys.stdout = sys.stdout.terminal
     if hasattr(sys.stderr, "terminal_err"):
         sys.stderr = sys.stderr.terminal_err
+
+
+def add_to_state(
+    state: State,
+    name: str,
+    model: Union[str, torch.nn.Module],
+    extension: str = "",
+    input_shapes: Optional[Dict] = None,
+):
+    if vars(state).get("model_hash"):
+        model_hash = state.model_hash
+    else:
+        model_hash = 0
+
+    if os.path.exists(name):
+        file_name = fs.clean_file_name(name)
+        file = name
+    else:
+        file_name = name
+        file = ""
+
+    state.invocation_info = UniqueInvocationInfo(
+        name=input,
+        script_name=file_name,
+        file=file,
+        input_shapes=input_shapes,
+        hash=model_hash,
+        is_target=True,
+        extension=extension,
+        executed=1,
+    )
+    state.models_found = {
+        "the_model": ModelInfo(
+            model=model,
+            name=input,
+            script_name=input,
+            file=input,
+            unique_invocations={model_hash: state.invocation_info},
+            hash=model_hash,
+        )
+    }
+    state.invocation_info.params = state.models_found["the_model"].params
