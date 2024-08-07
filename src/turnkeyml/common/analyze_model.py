@@ -27,11 +27,8 @@ def count_parameters(model: torch.nn.Module) -> int:
                 if tensor.name not in onnx_model.graph.input
             )
         )
-    elif isinstance(model, str) and model.endswith(".yaml"):
+    else:
         return None
-
-    # Raise exception if an unsupported model type is provided
-    raise AnalysisException(f"model type {type(model)} is not supported")
 
 
 def get_onnx_ops_list(onnx_model) -> Dict:
