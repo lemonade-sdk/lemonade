@@ -50,9 +50,11 @@ jobs:
           python test/unit.py
 
           # turnkey examples
-          # Note: we clear the default cache location prior to each example run
+          # Note: we clear the default cache location prior to each block of example runs
           rm -rf ~/.cache/turnkey
           python examples/api/onnx_opset.py --onnx-opset 15
+          python examples/api/loading_a_build.py
+
           rm -rf ~/.cache/turnkey
           turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey

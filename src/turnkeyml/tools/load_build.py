@@ -102,7 +102,12 @@ class LoadBuild(FirstTool):
         )
 
         # Record the sequence used for the loaded build so that we examine it later
-        prior_selected_sequence = list(state.sequence_info.keys())
+        # However, API users wont have populated this, so skip it if sequence_info
+        # isn't populated
+        if state.sequence_info is not None:
+            prior_selected_sequence = list(state.sequence_info.keys())
+        else:
+            prior_selected_sequence = None
 
         # Raise an exception if there is a version mismatch between the installed
         # version of turnkey and the version of turnkey used to create the loaded
@@ -128,16 +133,22 @@ class LoadBuild(FirstTool):
         # Append the sequence of this build to the sequence of the loaded build.
         # so that the stats file reflects the complete set of Tools that have been
         # attempted on this build
-        stats = fs.Stats(state.cache_dir, state.build_name)
-        combined_selected_sequence = copy.deepcopy(prior_selected_sequence)
-        for new_tool, new_tool_args in new_sequence_info.items():
-            combined_selected_sequence.append(new_tool)
-            state.sequence_info[new_tool] = new_tool_args
-        stats.save_stat(fs.Keys.SELECTED_SEQUENCE_OF_TOOLS, combined_selected_sequence)
+        if prior_selected_sequence is not None:
+            stats = fs.Stats(state.cache_dir, state.build_name)
+            combined_selected_sequence = copy.deepcopy(prior_selected_sequence)
+            for new_tool, new_tool_args in new_sequence_info.items():
+                combined_selected_sequence.append(new_tool)
+                state.sequence_info[new_tool] = new_tool_args
+            stats.save_stat(
+                fs.Keys.SELECTED_SEQUENCE_OF_TOOLS, combined_selected_sequence
+            )
 
         # Apply the skip policy by raising a SkipBuild exception
         # if the pre-existing build status doesn't meet certain criteria
-        if self.__class__.unique_name not in prior_selected_sequence:
+        if (
+            prior_selected_sequence is None
+            or self.__class__.unique_name not in prior_selected_sequence
+        ):
             if state.build_status != build.FunctionStatus.SUCCESSFUL:
                 if skip_policy == "attempted" or skip_policy == "failed":
                     raise exp.SkipBuild(
