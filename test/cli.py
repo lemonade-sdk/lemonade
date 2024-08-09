@@ -662,6 +662,8 @@ class Testing(unittest.TestCase):
                 "--process-isolation",
                 "discover",
                 "export-pytorch",
+                "--opset",
+                "17",
                 "optimize-ort",
                 "benchmark",
             ]

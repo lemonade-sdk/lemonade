@@ -182,7 +182,7 @@ def dict_arg(key: str, value: Dict):
 def sequence_arg(value: Sequence) -> Dict[str, Dict[str, str]]:
     result = ""
     for tool, args in value.info.items():
-        result = result + f"{tool} {' '.join(args)}"
+        result = result + f"{tool} {' '.join(args)} "
 
     return result
 
