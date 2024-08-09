@@ -100,9 +100,12 @@ output = model(**inputs)
 }
 
 
-def create_test_dir(key: str, test_scripts: Dict = None):
+def create_test_dir(
+    key: str,
+    test_scripts: Dict = None,
+    base_dir: str = os.path.dirname(os.path.abspath(__file__)),
+):
     # Define paths to be used
-    base_dir = os.path.dirname(os.path.abspath(__file__))
     cache_dir = os.path.join(base_dir, "generated", f"{key}_cache_dir")
     corpus_dir = os.path.join(base_dir, "generated", "test_corpus")
 
