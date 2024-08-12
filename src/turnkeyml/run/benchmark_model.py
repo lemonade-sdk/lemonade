@@ -10,7 +10,7 @@ from turnkeyml.run.devices import (
     apply_default_runtime,
 )
 import turnkeyml.cli.parser_helpers as parser_helpers
-from turnkeyml.common.performance import Device, parse_device
+from turnkeyml.run.performance import Device, parse_device
 
 default_iterations = 100
 benchmark_default_device = "x86"

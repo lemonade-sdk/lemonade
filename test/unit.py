@@ -6,8 +6,8 @@ import unittest
 import os
 import sys
 import turnkeyml.common.filesystem as filesystem
-import turnkeyml.common.performance as performance
 import turnkeyml.common.build as build
+import turnkeyml.run.performance as performance
 import turnkeyml.run.plugin_helpers as plugin_helpers
 
 

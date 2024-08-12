@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from turnkeyml.run.basert import BaseRT
-from turnkeyml.common.performance import MeasuredPerformance
+from turnkeyml.run.performance import MeasuredPerformance
 import turnkeyml.common.exceptions as exp
 from turnkeyml.common.filesystem import Stats
 

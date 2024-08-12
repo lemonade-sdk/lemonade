@@ -2,7 +2,6 @@ import turnkeyml.tools.export as export
 import turnkeyml.tools.onnx as onnx_tools
 import turnkeyml.common.plugins as plugins
 import turnkeyml.tools.management_tools as mgmt
-from turnkeyml.run.benchmark_model import Benchmark
 from turnkeyml.tools.discovery import Discover
 import turnkeyml.tools.report as report
 from turnkeyml.tools.load_build import LoadBuild
@@ -16,7 +15,6 @@ SUPPORTED_TOOLS = [
     mgmt.Cache,
     mgmt.ModelsLocation,
     report.Report,
-    Benchmark,
     Discover,
     export.ExportPytorchModel,
     onnx_tools.OptimizeOnnxModel,
@@ -40,3 +38,11 @@ for module in discovered_plugins.values():
                 )
 
             SUPPORTED_TOOLS.append(tool_class)
+
+# Give a "benchmark" tool installed by a plugin priority over
+# a "benchmark" tool built into turnkeyml
+tool_names = [tool.unique_name for tool in SUPPORTED_TOOLS]
+if "benchmark" not in tool_names:
+    from turnkeyml.run.benchmark_model import Benchmark
+
+    SUPPORTED_TOOLS.append(Benchmark)

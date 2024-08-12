@@ -7,7 +7,7 @@ from packaging import version
 import torch
 import numpy as np
 from turnkeyml.run.basert import BaseRT
-from turnkeyml.common.performance import MeasuredPerformance
+from turnkeyml.run.performance import MeasuredPerformance
 from turnkeyml.run.onnxrt.execute import get_cpu_specs
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp

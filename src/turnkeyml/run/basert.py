@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List, Union
 from abc import ABC, abstractmethod
 import torch
 import numpy as np
-from turnkeyml.common.performance import MeasuredPerformance, Device
+from turnkeyml.run.performance import MeasuredPerformance, Device
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs

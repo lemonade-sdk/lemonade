@@ -8,7 +8,7 @@ from turnkeyml.state import load_state
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs
 from turnkeyml.run.onnxrt.within_conda import dummy_inputs
-from turnkeyml.common.performance import MeasuredPerformance
+from turnkeyml.run.performance import MeasuredPerformance
 
 
 combined_rt_name = "example-combined-rt"
