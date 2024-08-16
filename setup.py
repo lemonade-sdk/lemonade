@@ -8,7 +8,7 @@ setup(
     version=version,
     description="TurnkeyML Tools and Models",
     author="Jeremy Fowers, Daniel Holanda, Ramakrishnan Sivakumar, Victoria Godsoe",
-    author_email="jeremy.fowers@amd.com, daniel.holandanoronha@amd.com, krishna.sivakumar@amd.com, victoria.godsoe@amd.com",
+    author_email="turnkeyml@amd.com",
     package_dir={"": "src", "turnkeyml_models": "models"},
     packages=[
         "turnkeyml",
