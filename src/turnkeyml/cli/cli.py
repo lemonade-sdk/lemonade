@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Any
 import turnkeyml.common.filesystem as fs
 from turnkeyml.sequence import Sequence
 from turnkeyml.tools import Tool, FirstTool, NiceHelpFormatter
-from turnkeyml.sequence.tool_plugins import SUPPORTED_TOOLS
+from turnkeyml.sequence.tool_plugins import get_supported_tools
 from turnkeyml.cli.spawn import DEFAULT_TIMEOUT_SECONDS
 from turnkeyml.files_api import evaluate_files
 import turnkeyml.common.printing as printing
@@ -173,6 +173,8 @@ Management tool choices:
 
 def main():
 
+    supported_tools = get_supported_tools()
+
     # Define the argument parser
     parser = CustomArgumentParser(
         description="This utility runs tools in a sequence. "
@@ -194,7 +196,7 @@ def main():
             ("py", "onnx", "txt", "yaml"),
             file,
             parser.error,
-            {tool.unique_name: tool for tool in SUPPORTED_TOOLS},
+            {tool.unique_name: tool for tool in supported_tools},
         ),
     )
 
@@ -247,7 +249,7 @@ def main():
         "applies when --process-isolation or --use-slurm is also used.",
     )
 
-    global_args, tool_instances, evaluation_tools = parse_tools(parser, SUPPORTED_TOOLS)
+    global_args, tool_instances, evaluation_tools = parse_tools(parser, supported_tools)
 
     if len(evaluation_tools) > 0:
         if not issubclass(evaluation_tools[0], FirstTool):
