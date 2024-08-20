@@ -37,7 +37,6 @@ setup(
         "onnxmltools==1.10.0",
         "onnxruntime >=1.10.1",
         "torch>=1.12.1",
-        "protobuf>=3.17.3,<3.21",
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
