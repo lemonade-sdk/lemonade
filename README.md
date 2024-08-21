@@ -4,8 +4,6 @@
 [![OS - Windows | Linux](https://img.shields.io/badge/OS-windows%20%7C%20linux-blue)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 [![Made with Python](https://img.shields.io/badge/Python-3.8,3.10-blue?logo=python&logoColor=white)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 
-> **Notice**: TurnkeyML has just gone through a major refresh of its interfaces and source code.
-
 We are on a mission to make it easy to use the most important tools in the ONNX ecosystem. TurnkeyML accomplishes this by providing a no-code CLI, `turnkey`, as well as a low-code API, that provide seamless integration of these tools.
 
 ## Getting Started
