@@ -117,6 +117,9 @@ class Sequence:
         # restore them later
         saved_stats = copy.deepcopy(fs.Stats(state.cache_dir, state.build_name).stats)
 
+        # Save build name to stats so it shows up on reports
+        state.save_stat(fs.Keys.BUILD_NAME, state.build_name)
+
         # Indicate that the build is running. If the build fails for any reason,
         # we will try to catch the exception and note it in the stats.
         # If a concluded build still has a status of "running", this means
