@@ -42,12 +42,4 @@ def get_supported_tools():
 
                 supported_tools.append(tool_class)
 
-    # Give a "benchmark" tool installed by a plugin priority over
-    # a "benchmark" tool built into turnkeyml
-    tool_names = [tool.unique_name for tool in supported_tools]
-    if "benchmark" not in tool_names:
-        from turnkeyml.run.benchmark_model import Benchmark
-
-        supported_tools.append(Benchmark)
-
     return supported_tools

@@ -1,16 +1,18 @@
 import platform
 import os
 import numpy as np
-from turnkeyml.run.basert import BaseRT
+
 import turnkeyml.common.exceptions as exp
-from turnkeyml.run.onnxrt.execute import ORT_VERSION
 from turnkeyml.common.filesystem import Stats
-from turnkeyml.run.onnxrt.execute import (
+
+from turnkeyml_plugin_devices.common.run.basert import BaseRT
+from turnkeyml_plugin_devices.onnxrt.execute import ORT_VERSION
+from turnkeyml_plugin_devices.onnxrt.execute import (
     create_conda_env,
     execute_benchmark,
     get_cpu_specs,
 )
-import turnkeyml.run.plugin_helpers as plugin_helpers
+import turnkeyml_plugin_devices.common.run.plugin_helpers as plugin_helpers
 
 
 class OnnxRT(BaseRT):

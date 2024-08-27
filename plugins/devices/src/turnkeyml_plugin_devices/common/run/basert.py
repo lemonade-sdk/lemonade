@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List, Union
 from abc import ABC, abstractmethod
 import torch
 import numpy as np
-from turnkeyml.run.performance import MeasuredPerformance, Device
+from turnkeyml_plugin_devices.common.run.performance import MeasuredPerformance, Device
 import turnkeyml.common.build as build
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs
@@ -87,7 +87,7 @@ class BaseRT(ABC):
         # Validate runtime is supported
         if runtime not in runtimes_supported:
             raise ValueError(
-                f"'runtime' argument {runtime} passed to TensorRT, which only "
+                f"'runtime' argument {runtime} passed to runtime, which only "
                 f"supports runtimes: {runtimes_supported}"
             )
 

@@ -4,13 +4,12 @@ import turnkeyml.common.exceptions as exp
 import turnkeyml.common.filesystem as fs
 from turnkeyml.tools import Tool
 from turnkeyml.state import State
-from turnkeyml.run.devices import (
-    SUPPORTED_RUNTIMES,
-    SUPPORTED_DEVICES,
+import turnkeyml.cli.parser_helpers as parser_helpers
+from turnkeyml_plugin_devices.common.run.devices import (
+    runtime_plugins,
     apply_default_runtime,
 )
-import turnkeyml.cli.parser_helpers as parser_helpers
-from turnkeyml.run.performance import Device, parse_device
+from turnkeyml_plugin_devices.common.run.performance import Device, parse_device
 
 default_iterations = 100
 benchmark_default_device = "x86"
@@ -35,6 +34,8 @@ class Benchmark(Tool):
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
+        supported_devices, supported_runtimes, _ = runtime_plugins()
+
         parser = __class__.helpful_parser(
             short_description="Benchmark a model",
             add_help=add_help,
@@ -42,7 +43,7 @@ class Benchmark(Tool):
 
         parser.add_argument(
             "--device",
-            choices=SUPPORTED_DEVICES,
+            choices=supported_devices,
             dest="device",
             help="Type of hardware device to be used for the benchmark "
             f'(defaults to "{benchmark_default_device}")',
@@ -51,7 +52,7 @@ class Benchmark(Tool):
 
         parser.add_argument(
             "--runtime",
-            choices=SUPPORTED_RUNTIMES.keys(),
+            choices=supported_runtimes.keys(),
             dest="runtime",
             help="Software runtime that will be used to collect the benchmark. "
             "Must be compatible with the selected device. "
@@ -101,11 +102,13 @@ class Benchmark(Tool):
         rt_args: Optional[str] = None,
     ):
 
+        _, supported_runtimes, _ = runtime_plugins()
+
         selected_runtime = apply_default_runtime(device, runtime)
 
         # Get the default part and config by providing the Device class with
         # the supported devices by the runtime
-        runtime_supported_devices = SUPPORTED_RUNTIMES[selected_runtime][
+        runtime_supported_devices = supported_runtimes[selected_runtime][
             "supported_devices"
         ]
         specific_device = str(Device(device, runtime_supported_devices))
@@ -116,7 +119,7 @@ class Benchmark(Tool):
             rt_args_to_use = rt_args
 
         try:
-            runtime_info = SUPPORTED_RUNTIMES[selected_runtime]
+            runtime_info = supported_runtimes[selected_runtime]
         except KeyError as e:
             # User should never get this far without hitting an actionable error message,
             # but let's raise an exception just in case.

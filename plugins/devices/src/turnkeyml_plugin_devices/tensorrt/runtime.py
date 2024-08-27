@@ -3,11 +3,13 @@ import os
 import threading
 import json
 import numpy as np
-from turnkeyml.run.tensorrt.execute import TRT_VERSION
-from turnkeyml.run.basert import BaseRT
+
 import turnkeyml.common.exceptions as exp
 from turnkeyml.common.filesystem import Stats
-from turnkeyml.run.tensorrt.execute import (
+
+from turnkeyml_plugin_devices.tensorrt.execute import TRT_VERSION
+from turnkeyml_plugin_devices.common.run.basert import BaseRT
+from turnkeyml_plugin_devices.tensorrt.execute import (
     measure_power,
     run,
     average_power_and_utilization,
