@@ -3,25 +3,25 @@
 
 name: Lint and Test Devices Plugin
 
-# on:
-#   push:
-#     branches: ["main"]
-#     paths:
-#     - plugins/devices/src/turnkeyml_plugin_devices/common/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/onnxrt/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/torchrt/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/tensorrt/**
-#     - plugins/devices/setup.py
-#     - .github/workflows/test_devices_plugin.yml
-#   pull_request:
-#     branches: ["main"]
-#     paths:
-#     - plugins/devices/src/turnkeyml_plugin_devices/common/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/onnxrt/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/torchrt/**
-#     - plugins/devices/src/turnkeyml_plugin_devices/tensorrt/**
-#     - plugins/devices/setup.py
-#     - .github/workflows/test_devices_plugin.yml
+on:
+  push:
+    branches: ["main"]
+    paths:
+    - plugins/devices/src/turnkeyml_plugin_devices/common/**
+    - plugins/devices/src/turnkeyml_plugin_devices/onnxrt/**
+    - plugins/devices/src/turnkeyml_plugin_devices/torchrt/**
+    - plugins/devices/src/turnkeyml_plugin_devices/tensorrt/**
+    - plugins/devices/setup.py
+    - .github/workflows/test_devices_plugin.yml
+  pull_request:
+    branches: ["main"]
+    paths:
+    - plugins/devices/src/turnkeyml_plugin_devices/common/**
+    - plugins/devices/src/turnkeyml_plugin_devices/onnxrt/**
+    - plugins/devices/src/turnkeyml_plugin_devices/torchrt/**
+    - plugins/devices/src/turnkeyml_plugin_devices/tensorrt/**
+    - plugins/devices/setup.py
+    - .github/workflows/test_devices_plugin.yml
 
 permissions:
   contents: read
@@ -55,7 +55,7 @@ jobs:
       - name: Lint with PyLint
         shell: bash -el {0}
         run: |
-          pylint plugins/devices/src --rcfile .pylintrc --disable E0401,E0203
+          pylint plugins/devices/src --rcfile .pylintrc --disable E0401,E0203,C0411
       - name: Test with unittest
         shell: bash -el {0}
         run: |

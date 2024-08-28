@@ -86,17 +86,22 @@ def write_env_version(plugin_name: str, env_path: str):
     shutil.copy(version_path(plugin_name), get_env_version_path(env_path))
 
 
+def get_directory_size(directory):
+    total_size = 0
+    for dirpath, _, filenames in os.walk(directory):
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename)
+            total_size += os.path.getsize(filepath)
+    return total_size
+
+
 def lfs_pull(plugin_name: str):
     dependencies_dir = get_deps_dir(plugin_name)
 
     # For developers in editable mode, fetch the deps folder from git lfs
     # NOTE: for non-editable-mode (ie, `pip install` with the `-e`):
     #   `git lfs pull -I PLUGIN_PATH` needs to be manually called prior to `pip install`
-    deps_size_bytes = sum(
-        os.path.getsize(os.path.join(dependencies_dir, f))
-        for f in os.listdir(dependencies_dir)
-        if os.path.isfile(os.path.join(dependencies_dir, f))
-    )
+    deps_size_bytes = get_directory_size(dependencies_dir)
 
     # LFS files have not been pulled if the deps folder is under 100KB
     # because the folder will only have LFS pointers in it, which are about 100B each
@@ -114,7 +119,13 @@ def lfs_pull(plugin_name: str):
     # like site-packages then this will be skipped
     with open(os.devnull, "w", encoding="utf-8") as d:
         is_git_repo = not bool(
-            subprocess.call("git rev-parse", shell=True, stdout=d, stderr=d)
+            subprocess.call(
+                "git rev-parse",
+                shell=True,
+                stdout=d,
+                stderr=d,
+                cwd=os.path.abspath(os.path.dirname(__file__)),
+            )
         )
 
     if is_git_repo and deps_size_bytes < deps_folder_too_small_size_bytes:
@@ -135,14 +146,10 @@ def lfs_pull(plugin_name: str):
 
     # If the deps size didn't change after the pull, that means the pull
     # silently failed. Raise a helpful exception.
-    deps_size_bytes_post_pull = sum(
-        os.path.getsize(os.path.join(dependencies_dir, f))
-        for f in os.listdir(dependencies_dir)
-        if os.path.isfile(os.path.join(dependencies_dir, f))
-    )
+    deps_size_bytes_post_pull = get_directory_size(dependencies_dir)
     if deps_size_bytes_post_pull < deps_folder_too_small_size_bytes:
         raise exp.EnvError(
-            "The vitisep dependencies have not been pulled from LFS "
+            "The plugin dependencies have not been pulled from LFS "
             "If you are building from source you can try running this command: "
             f"`{lfs_command}`"
         )
