@@ -102,9 +102,9 @@ You can also try Phi-3-Mini-128k-Instruct with the following commands:
 
 > Note: no other models or devices are officially supported by `lemonade` on OGA at this time. Contributions appreciated!
 
-## Install Ryzen AI NPU
+## Install RyzenAI NPU
 
-To run your LLMs on Ryzen AI NPU, first install and set up the `ryzenai-transformers` conda environment (see instructions [here](https://github.com/amd/RyzenAI-SW/tree/main/example/transformers)). Then, install `lemonade` into `ryzenai-transformers`. The `ryzenai-npu-load` Tool will become available in that environment.
+To run your LLMs on RyzenAI NPU, first install and set up the `ryzenai-transformers` conda environment (see instructions [here](https://github.com/amd/RyzenAI-SW/blob/main/example/transformers/models/llm/docs/README.md)). Then, install `lemonade` into `ryzenai-transformers`. The `ryzenai-npu-load` Tool will become available in that environment.
 
 You can try it out with: `lemonade -i meta-llama/Llama-2-7b-chat-hf ryzenai-npu-load --device DEVICE llm-prompt -p "Hello, my thoughts are"`
 
