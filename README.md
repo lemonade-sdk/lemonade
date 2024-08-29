@@ -6,7 +6,11 @@
 
 We are on a mission to make it easy to use the most important tools in the ONNX ecosystem. TurnkeyML accomplishes this by providing a no-code CLI, `turnkey`, as well as a low-code API, that provide seamless integration of these tools.
 
+We also provide [`turnkey-llm`](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/llm), which has LLM-specific tools for prompting, accuracy measurement, and serving on a variety of runtimes (Huggingface, onnxruntime-genai) and hardware (CPU, GPU, and NPU).
+
 ## Getting Started
+
+### Quick Start
 
 The easiest way to get started is:
 1. `pip install turnkeyml`
@@ -20,6 +24,10 @@ encoded_input = tokenizer(text, return_tensors='pt')
 output = model(**encoded_input)
 ```
 3. `turnkey -i bert.py discover export-pytorch`: make a BERT ONNX file from this `bert.py` example.
+
+### LLMs
+
+For LLM setup instructions, see [`turnkey-llm`](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/llm).
 
 ## Demo
 

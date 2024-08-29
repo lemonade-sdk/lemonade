@@ -24,15 +24,20 @@ jobs:
         run: >-
           python -m pip install build --user
       - name: Build a binary wheel and a source tarball
-        run: >-
+        run: |
           python -m build --sdist --wheel --outdir dist/ .
+          version=$(python setup.py --version)
+          echo "VERSION=$version" >> $GITHUB_ENV
       - name: Test wheel
         shell: bash -el {0}
         run: |
           python -m pip install --upgrade pip
-          pip install dist/*.whl
+          pip install "dist/turnkeyml-${{ env.VERSION }}-py3-none-any.whl"
           models=$(turnkey models-location --quiet)
           turnkey -i $models/selftest/linear.py discover export-pytorch
+          # Test LLMs as well
+          pip install "dist/turnkeyml-${{ env.VERSION }}-py3-none-any.whl[llm]"
+          lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "Hello, my thoughts are"
       - name: Publish distribution package to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
         uses: pypa/gh-action-pypi-publish@release/v1

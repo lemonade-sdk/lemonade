@@ -1,0 +1,46 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Lint and Test Lemonade
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  make-lemonade:
+    env:
+        LEMONADE_CI_MODE: "True"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Miniconda with 64-bit Python
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          miniconda-version: "latest"
+          activate-environment: lemon
+          python-version: "3.10"
+      - name: Install dependencies
+        shell: bash -el {0}
+        run: |
+          python -m pip install --upgrade pip
+          conda install pylint
+          python -m pip check
+          pip install -e .[llm]
+      - name: Lint with PyLint
+        shell: bash -el {0}
+        run: |
+          pylint src/turnkeyml/llm --rcfile .pylintrc --disable E0401
+      - name: Run lemonade tests
+        shell: bash -el {0}
+        run: |
+          lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
+
+          python test/llm_api.py
+          
+
