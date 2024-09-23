@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+import shutil
 import traceback
 import platform
 import subprocess
@@ -277,45 +278,27 @@ def get_system_info():
     except Exception as e:  # pylint: disable=broad-except
         info_dict["Error OS Version"] = str(e)
 
+    def get_wmic_info(command):
+        try:
+            output = subprocess.check_output(command, shell=True).decode()
+            return output.split("\n")[1].strip()
+        except Exception as e: # pylint: disable=broad-except
+            return str(e)
+
     if os_type == "Windows":
-        # Get Processor Information
-        try:
-            proc_info = (
-                subprocess.check_output("wmic cpu get name", shell=True)
-                .decode()
-                .split("\n")[1]
-                .strip()
-            )
-            info_dict["Processor"] = proc_info
-        except Exception as e:  # pylint: disable=broad-except
-            info_dict["Error Processor"] = str(e)
-
-        # Get OEM System Information
-        try:
-            oem_info = (
-                subprocess.check_output("wmic computersystem get model", shell=True)
-                .decode()
-                .split("\n")[1]
-                .strip()
-            )
-            info_dict["OEM System"] = oem_info
-        except Exception as e:  # pylint: disable=broad-except
-            info_dict["Error OEM System"] = str(e)
-
-        # Get Physical Memory in GB
-        try:
-            mem_info_bytes = (
-                subprocess.check_output(
-                    "wmic computersystem get TotalPhysicalMemory", shell=True
-                )
-                .decode()
-                .split("\n")[1]
-                .strip()
-            )
-            mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
-            info_dict["Physical Memory"] = f"{mem_info_gb} GB"
-        except Exception as e:  # pylint: disable=broad-except
-            info_dict["Error Physical Memory"] = str(e)
+        if shutil.which("wmic") is not None:
+            info_dict["Processor"] = get_wmic_info("wmic cpu get name")
+            info_dict["OEM System"] = get_wmic_info("wmic computersystem get model")
+            mem_info_bytes = get_wmic_info("wmic computersystem get TotalPhysicalMemory")
+            try:
+                mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
+                info_dict["Physical Memory"] = f"{mem_info_gb} GB"
+            except ValueError:
+                info_dict["Physical Memory"] = mem_info_bytes
+        else:
+            info_dict["Processor"] = "Install WMIC to get system info"
+            info_dict["OEM System"] = "Install WMIC to get system info"
+            info_dict["Physical Memory"] = "Install WMIC to get system info"
 
     elif os_type == "Linux":
         # WSL has to be handled differently compared to native Linux
