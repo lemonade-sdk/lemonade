@@ -5,6 +5,7 @@
 import argparse
 import os
 import time
+import json
 from queue import Queue
 import onnxruntime_genai as og
 from turnkeyml.state import State
@@ -70,6 +71,14 @@ class OrtGenaiModel(ModelAdapter):
         super().__init__()
         self.model = og.Model(input_folder)
         self.type = "ort-genai"
+        self.config = self.load_config(input_folder)
+
+    def load_config(self, input_folder):
+        config_path = os.path.join(input_folder, 'genai_config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return None
 
     def generate(
         self,
@@ -90,14 +99,34 @@ class OrtGenaiModel(ModelAdapter):
         max_length = len(input_ids) + max_new_tokens
 
         params.input_ids = input_ids
-        params.set_search_options(
-            do_sample=do_sample,
-            top_k=top_k,
-            top_p=top_p,
-            temperature=temperature,
-            max_length=max_length,
-            min_length=max_length,
-        )
+        if self.config and 'search' in self.config:
+            search_config = self.config['search']
+            params.set_search_options(
+                do_sample=search_config.get('do_sample', do_sample),
+                top_k=search_config.get('top_k', top_k),
+                top_p=search_config.get('top_p', top_p),
+                temperature=search_config.get('temperature', temperature),
+                max_length=max_length,
+                min_length=0,
+                early_stopping=search_config.get('early_stopping', False),
+                length_penalty=search_config.get('length_penalty', 1.0),
+                num_beams=search_config.get('num_beams', 1),
+                num_return_sequences=search_config.get('num_return_sequences', 1),
+                repetition_penalty=search_config.get('repetition_penalty', 1.0),
+                past_present_share_buffer=search_config.get('past_present_share_buffer', True),
+                # Not currently supported by OGA
+                # diversity_penalty=search_config.get('diversity_penalty', 0.0),
+                # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),
+            )
+        else:
+            params.set_search_options(
+                do_sample=do_sample,
+                top_k=top_k,
+                top_p=top_p,
+                temperature=temperature,
+                max_length=max_length,
+                min_length=max_length,
+            )
         params.try_graph_capture_with_max_batch_size(1)
 
         generator = og.Generator(self.model, params)
@@ -190,7 +219,7 @@ class OgaLoad(FirstTool):
         parser.add_argument(
             "-d",
             "--device",
-            choices=["igpu", "npu"],
+            choices=["igpu", "npu", "cpu"],
             default="igpu",
             help="Which device to load the model on to (default: igpu)",
         )
@@ -235,6 +264,15 @@ class OgaLoad(FirstTool):
                     llama_2: "llama2-7b-int4",
                     llama_3: "llama3-8b-int4",
                     qwen_1dot5: "qwen1.5-7b-int4",
+                }
+            },
+            "cpu": {
+                "int4": {
+                    phi_3_mini_4k: os.path.join(
+                        "phi-3-mini-4k-instruct",
+                        "cpu_and_mobile",
+                        "cpu-int4-rtn-block-32-acc-level-4",
+                    ),
                 }
             },
         }

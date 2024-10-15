@@ -99,8 +99,13 @@ You can also try Phi-3-Mini-128k-Instruct with the following commands:
 
 `lemonade -i microsoft/Phi-3-mini-128k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
 
+You can also try out the CPU with:
 
-> Note: no other models or devices are officially supported by `lemonade` on OGA at this time. Contributions appreciated!
+`huggingface-cli download microsoft/Phi-3-mini-4k-instruct-onnx --include cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/* --local-dir REPO_ROOT/src/turnkeyml/llm/tools/ort_genai/models/phi-3-mini-128k-instruct`
+
+`lemonade -i microsoft/Phi-3-mini-128k-instruct oga-load --device cpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
+
+> Note: no other models or devices are officially supported by `lemonade` on OGA at this time. Contributions appreciated! It only takes a few minutes to add a new model, we just need to add a path to the downloaded model folder to the supported models dictionary in [oga.py](https://github.com/onnx/turnkeyml/blob/v4.0.2/src/turnkeyml/llm/tools/ort_genai/oga.py).
 
 ## Install RyzenAI NPU
 
