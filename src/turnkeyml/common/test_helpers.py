@@ -143,13 +143,14 @@ model2(**inputs2)
         "timeout.py": """
 # labels: name::timeout author::turnkey license::mit test_group::a task::test
 import torch
-
+import time
 torch.manual_seed(0)
 
 
 class LinearTestModel(torch.nn.Module):
     def __init__(self, input_features, output_features):
         super(LinearTestModel, self).__init__()
+        time.sleep(20)
         self.fc = torch.nn.Linear(input_features, output_features)
 
     def forward(self, x):
@@ -157,8 +158,8 @@ class LinearTestModel(torch.nn.Module):
         return output
 
 
-input_features = 500000
-output_features = 1000
+input_features = 50
+output_features = 10
 
 # Model and input configurations
 model = LinearTestModel(input_features, output_features)

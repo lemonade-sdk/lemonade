@@ -33,7 +33,7 @@ setup(
     ],
     python_requires=">=3.8, <3.12",
     install_requires=[
-        "turnkeyml==4.0.0",
+        "turnkeyml>=4.0.0",
         "importlib_metadata",
         "onnx_tool",
         "numpy<2",
@@ -41,10 +41,7 @@ setup(
         "timm==0.9.10",
     ],
     include_package_data=True,
-    package_data={
-        "turnkeyml_plugin_devices": [
-        ]
-    },
+    package_data={"turnkeyml_plugin_devices": []},
     extras_require={
         "onnxrt": [],
         "torchrt": [],

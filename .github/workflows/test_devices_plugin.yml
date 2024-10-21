@@ -50,6 +50,7 @@ jobs:
           conda install pylint
           pip install pytest
           pip install -e plugins/devices
+          pip install -e . # Required to test current tkml package instead of pypi version
           pip install transformers timm
           python -m pip check
       - name: Lint with PyLint

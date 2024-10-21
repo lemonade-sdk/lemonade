@@ -35,9 +35,9 @@ jobs:
           python -m pip install --upgrade pip
           conda install pylint=3.2.7
           pip install pytest
-          pip install -e .
           pip install -e plugins/devices
           pip install transformers timm
+          pip install -e . # Required to test current tkml package instead of pypi version
           python -m pip check
       - name: Lint with PyLint
         shell: bash -el {0}

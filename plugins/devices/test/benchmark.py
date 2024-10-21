@@ -287,12 +287,8 @@ class Testing(unittest.TestCase):
         """
         Make sure that the --timeout option and its associated reporting features work.
 
-        timeout.py is designed to take a long time to export, which gives us the
+        timeout.py is designed to take 20s to discover, which gives us the
         opportunity to kill it with a timeout.
-
-        NOTE: this test can become flakey if:
-         - exporting timeout.py takes less time than the timeout
-         - the timeout kills the process before it has a chance to create a stats.yaml file
         """
 
         testargs = [
