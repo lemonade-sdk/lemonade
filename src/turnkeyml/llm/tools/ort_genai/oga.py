@@ -6,7 +6,9 @@ import argparse
 import os
 import time
 import json
+from fnmatch import fnmatch
 from queue import Queue
+from huggingface_hub import snapshot_download, login
 import onnxruntime_genai as og
 from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
@@ -17,7 +19,6 @@ from turnkeyml.llm.tools.adapter import (
     PassthroughTokenizerResult,
 )
 from turnkeyml.llm.cache import Keys
-
 
 class OrtGenaiTokenizer(TokenizerAdapter):
     def __init__(self, model: og.Model):
@@ -74,9 +75,9 @@ class OrtGenaiModel(ModelAdapter):
         self.config = self.load_config(input_folder)
 
     def load_config(self, input_folder):
-        config_path = os.path.join(input_folder, 'genai_config.json')
+        config_path = os.path.join(input_folder, "genai_config.json")
         if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return None
 
@@ -99,21 +100,23 @@ class OrtGenaiModel(ModelAdapter):
         max_length = len(input_ids) + max_new_tokens
 
         params.input_ids = input_ids
-        if self.config and 'search' in self.config:
-            search_config = self.config['search']
+        if self.config and "search" in self.config:
+            search_config = self.config["search"]
             params.set_search_options(
-                do_sample=search_config.get('do_sample', do_sample),
-                top_k=search_config.get('top_k', top_k),
-                top_p=search_config.get('top_p', top_p),
-                temperature=search_config.get('temperature', temperature),
+                do_sample=search_config.get("do_sample", do_sample),
+                top_k=search_config.get("top_k", top_k),
+                top_p=search_config.get("top_p", top_p),
+                temperature=search_config.get("temperature", temperature),
                 max_length=max_length,
                 min_length=0,
-                early_stopping=search_config.get('early_stopping', False),
-                length_penalty=search_config.get('length_penalty', 1.0),
-                num_beams=search_config.get('num_beams', 1),
-                num_return_sequences=search_config.get('num_return_sequences', 1),
-                repetition_penalty=search_config.get('repetition_penalty', 1.0),
-                past_present_share_buffer=search_config.get('past_present_share_buffer', True),
+                early_stopping=search_config.get("early_stopping", False),
+                length_penalty=search_config.get("length_penalty", 1.0),
+                num_beams=search_config.get("num_beams", 1),
+                num_return_sequences=search_config.get("num_return_sequences", 1),
+                repetition_penalty=search_config.get("repetition_penalty", 1.0),
+                past_present_share_buffer=search_config.get(
+                    "past_present_share_buffer", True
+                ),
                 # Not currently supported by OGA
                 # diversity_penalty=search_config.get('diversity_penalty', 0.0),
                 # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),
@@ -192,6 +195,7 @@ class OgaLoad(FirstTool):
         llama_2 = "meta-llama/Llama-2-7b-chat-hf"
         phi_3_mini_4k = "microsoft/Phi-3-mini-4k-instruct"
         phi_3_mini_128k = "microsoft/Phi-3-mini-128k-instruct"
+        And models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
 
     Output:
         state.model: handle to a Huggingface-style LLM loaded on DirectML device
@@ -244,7 +248,7 @@ class OgaLoad(FirstTool):
         checkpoint = input
 
         # Map of models[device][dtype][checkpoint] to the name of the model folder on disk
-        supported_models = {
+        local_supported_models = {
             "igpu": {
                 "int4": {
                     phi_3_mini_128k: os.path.join(
@@ -261,6 +265,7 @@ class OgaLoad(FirstTool):
             },
             "npu": {
                 "int4": {
+                    # Legacy RyzenAI 1.2 models for NPU
                     llama_2: "llama2-7b-int4",
                     llama_3: "llama3-8b-int4",
                     qwen_1dot5: "qwen1.5-7b-int4",
@@ -277,28 +282,60 @@ class OgaLoad(FirstTool):
             },
         }
 
+        hf_supported_models = {"npu": {"int4": "amd/**-onnx-ryzen-strix"}}
+
+        supported_locally = True
         try:
-            dir_name = supported_models[device][dtype][checkpoint]
+            dir_name = local_supported_models[device][dtype][checkpoint]
         except KeyError as e:
-            raise ValueError(
-                "The device;dtype;checkpoint combination is not supported: "
-                f"{device};{dtype};{checkpoint}. The supported combinations "
-                f"are: {supported_models}"
-            ) from e
+            supported_locally = False
+            hf_supported = (
+                device in hf_supported_models
+                and dtype in hf_supported_models[device]
+                and fnmatch(checkpoint, hf_supported_models[device][dtype])
+            )
+            if not hf_supported:
+                raise ValueError(
+                    "The device;dtype;checkpoint combination is not supported: "
+                    f"{device};{dtype};{checkpoint}. The supported combinations "
+                    f"are: {local_supported_models} for local models and {hf_supported_models}"
+                    " for models on Hugging Face."
+                ) from e
 
-        model_dir = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            "models",
-            dir_name,
-        )
+        # Create models dir if it doesn't exist
+        models_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
+        if not os.path.exists(models_dir):
+            os.makedirs(models_dir)
 
-        # The NPU requires the CWD to be in the model folder
+        # If the model is supported though Hugging Face, download it
+        if not supported_locally:
+            hf_model_name = checkpoint.split("amd/")[1]
+            dir_name = "_".join(hf_model_name.split("-")[:6]).lower()
+            api_key = os.getenv("HF_TOKEN")
+            login(api_key)
+            snapshot_download(
+                repo_id=checkpoint,
+                local_dir=os.path.join(models_dir, dir_name),
+                ignore_patterns=["*.md", "*.txt"],
+            )
+
         current_cwd = os.getcwd()
         if device == "npu":
-            os.chdir(model_dir)
-            # Required environment variable for NPU
-            os.environ["DOD_ROOT"] = ".\\bins"
+            # Change to the models directory
+            os.chdir(models_dir)
 
+            # Common environment variables for all NPU models
+            os.environ["DD_ROOT"] = ".\\bins"
+            os.environ["DEVICE"] = "stx"
+            os.environ["XLNX_ENABLE_CACHE"] = "0"
+
+            # Phi models require USE_AIE_RoPE=0
+            if "phi-" in checkpoint.lower():
+                os.environ["USE_AIE_RoPE"] = "0"
+            else:
+                os.environ["USE_AIE_RoPE"] = "1"
+
+        model_dir = os.path.join(models_dir, dir_name)
         state.model = OrtGenaiModel(model_dir)
         state.tokenizer = OrtGenaiTokenizer(state.model.model)
         state.dtype = dtype

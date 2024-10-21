@@ -90,7 +90,7 @@ def from_pretrained(
 
         return state.model, state.tokenizer
 
-    if recipe == "hf-dgpu":
+    elif recipe == "hf-dgpu":
         # Huggingface Transformers recipe for discrete GPU (Nvidia, Instinct, Radeon)
 
         import torch
