@@ -43,7 +43,7 @@ def create_conda_env(conda_env_name: str):
                 "create",
                 "--name",
                 conda_env_name,
-                "python=3.8",
+                "python=3.10",
                 "-y",
             ]
         )
