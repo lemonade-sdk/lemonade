@@ -12,6 +12,8 @@ from turnkeyml.llm.tools.huggingface_load import (
     AdaptHuggingface,
 )
 
+from turnkeyml.llm.tools.llamacpp import LoadLlamaCpp
+
 import turnkeyml.llm.cache as cache
 from turnkeyml.llm.tools.mmlu import AccuracyMMLU
 from turnkeyml.llm.tools.perplexity import AccuracyPerplexity
@@ -23,6 +25,7 @@ def main():
     # List the available tools
     tools = [
         HuggingfaceLoad,
+        LoadLlamaCpp,
         AccuracyMMLU,
         AccuracyPerplexity,
         LLMPrompt,

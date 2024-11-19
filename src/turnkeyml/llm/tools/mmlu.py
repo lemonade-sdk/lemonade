@@ -3,6 +3,7 @@ import os
 import tarfile
 from pathlib import Path
 from typing import List, Optional
+import subprocess
 import tqdm
 import numpy as np
 import pandas as pd
@@ -43,6 +44,12 @@ class AccuracyMMLU(Tool):
             help="Number of training examples to use. Default set to 5 for `5 Shot`",
         )
         parser.add_argument(
+            "--max-evals",
+            type=int,
+            default=None,
+            help="Maximum evaluations to run per test",
+        )
+        parser.add_argument(
             "--data-dir",
             type=str,
             required=False,
@@ -62,6 +69,7 @@ class AccuracyMMLU(Tool):
         self,
         state: State,
         ntrain: int = 5,
+        max_evals: int = None,
         data_dir: Optional[str] = None,
         tests: List[str] = None,
     ) -> State:
@@ -106,7 +114,7 @@ class AccuracyMMLU(Tool):
             )
 
             detailed_results, acc = _eval_model(
-                ntrain, subject, model, tokenizer, dev_df, test_df
+                ntrain, max_evals, subject, model, tokenizer, dev_df, test_df
             )
             subject_results_df = pd.DataFrame(detailed_results)
             subject_csv_path = os.path.join(
@@ -118,11 +126,15 @@ class AccuracyMMLU(Tool):
             correct_answers_count = sum(
                 result["Correct"] for result in detailed_results
             )
+
             summary_data.append(
                 {
                     "Subject": subject,
                     "Accuracy": acc,
                     "Total Questions": len(test_df),
+                    "Evaluated Questions": (max_evals
+                                            if max_evals is not None and max_evals < len(test_df)
+                                            else len(test_df)),
                     "Correct Answers": correct_answers_count,
                 }
             )
@@ -197,6 +209,10 @@ def _generate_response(tokenizer, model, input_ids):
     try:
         response = model.generate(input_ids, max_new_tokens=1)
         return tokenizer.decode(response[0], skip_special_tokens=True).strip()
+    except subprocess.CalledProcessError as e:
+        printing.log_warning(
+            f"Subprocess failed with command: {e} and error message: {e.stderr}"
+        )
     except Exception as e:  # pylint: disable=broad-except
         printing.log_warning(f"Error during model generation: {e}")
     return ""  # Return an empty string on failure
@@ -238,7 +254,7 @@ def download_and_extract_dataset(data_cache_dir: str, dataset_url: str):
     return os.path.join(data_cache_dir, "data")
 
 
-def _eval_model(ntrain, subject, model, tokenizer, dev_df, test_df):
+def _eval_model(ntrain, max_evals, subject, model, tokenizer, dev_df, test_df):
     """Evaluates the model on the test data for a given subject."""
     detailed_results = []
 
@@ -265,6 +281,8 @@ def _eval_model(ntrain, subject, model, tokenizer, dev_df, test_df):
                 "Correct": pred_label == label,
             }
         )
+        if (max_evals is not None and i >= max_evals -1):
+            break
 
     acc = np.mean([res["Correct"] for res in detailed_results])
     return detailed_results, acc
