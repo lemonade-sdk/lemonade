@@ -32,6 +32,11 @@ jobs:
           conda install pylint
           python -m pip check
           pip install -e .[llm]
+      - name: Lint with Black
+        uses: psf/black@stable
+        with:
+          options: "--check --verbose"
+          src: "./src"
       - name: Lint with PyLint
         shell: bash -el {0}
         run: |

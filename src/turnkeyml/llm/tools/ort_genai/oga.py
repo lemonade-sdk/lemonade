@@ -20,6 +20,7 @@ from turnkeyml.llm.tools.adapter import (
 )
 from turnkeyml.llm.cache import Keys
 
+
 class OrtGenaiTokenizer(TokenizerAdapter):
     def __init__(self, model: og.Model):
         # Initialize the tokenizer and produce the initial tokens.
@@ -91,6 +92,7 @@ class OrtGenaiModel(ModelAdapter):
         temperature=0.7,
         streamer: OrtGenaiStreamer = None,
         pad_token_id=None,
+        stopping_criteria=None,
     ):
         params = og.GeneratorParams(self.model)
 
@@ -164,7 +166,10 @@ class OrtGenaiModel(ModelAdapter):
             return [generator.get_sequence(0)]
         else:
             tokenizer_stream = streamer.tokenizer.tokenizer.create_stream()
-            while not generator.is_done():
+
+            stop_early = False
+
+            while not generator.is_done() and not stop_early:
                 generator.compute_logits()
                 generator.generate_next_token()
 
@@ -172,6 +177,10 @@ class OrtGenaiModel(ModelAdapter):
                 new_text = tokenizer_stream.decode(new_token)
 
                 streamer.add_text(new_text)
+
+                if stopping_criteria is not None:
+                    if stopping_criteria[0].stop_event.is_set():
+                        stop_early = True
 
             streamer.add_text("</s>")
             streamer.done()

@@ -54,10 +54,6 @@ def main():
     except ModuleNotFoundError:
         pass
 
-
-
-
-
     # Define the argument parser
     parser = cli.CustomArgumentParser(
         description="Turnkey analysis and benchmarking of GenAI models. "

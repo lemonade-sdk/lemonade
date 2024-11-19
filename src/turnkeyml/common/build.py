@@ -282,14 +282,16 @@ def get_system_info():
         try:
             output = subprocess.check_output(command, shell=True).decode()
             return output.split("\n")[1].strip()
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             return str(e)
 
     if os_type == "Windows":
         if shutil.which("wmic") is not None:
             info_dict["Processor"] = get_wmic_info("wmic cpu get name")
             info_dict["OEM System"] = get_wmic_info("wmic computersystem get model")
-            mem_info_bytes = get_wmic_info("wmic computersystem get TotalPhysicalMemory")
+            mem_info_bytes = get_wmic_info(
+                "wmic computersystem get TotalPhysicalMemory"
+            )
             try:
                 mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
                 info_dict["Physical Memory"] = f"{mem_info_gb} GB"

@@ -132,9 +132,11 @@ class AccuracyMMLU(Tool):
                     "Subject": subject,
                     "Accuracy": acc,
                     "Total Questions": len(test_df),
-                    "Evaluated Questions": (max_evals
-                                            if max_evals is not None and max_evals < len(test_df)
-                                            else len(test_df)),
+                    "Evaluated Questions": (
+                        max_evals
+                        if max_evals is not None and max_evals < len(test_df)
+                        else len(test_df)
+                    ),
                     "Correct Answers": correct_answers_count,
                 }
             )
@@ -281,7 +283,7 @@ def _eval_model(ntrain, max_evals, subject, model, tokenizer, dev_df, test_df):
                 "Correct": pred_label == label,
             }
         )
-        if (max_evals is not None and i >= max_evals -1):
+        if max_evals is not None and i >= max_evals - 1:
             break
 
     acc = np.mean([res["Correct"] for res in detailed_results])

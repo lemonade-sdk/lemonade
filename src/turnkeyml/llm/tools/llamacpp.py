@@ -13,6 +13,7 @@ from .adapter import PassthroughTokenizer, ModelAdapter
 def llamacpp_dir(state: State):
     return os.path.join(build.output_dir(state.cache_dir, state.build_name), "llamacpp")
 
+
 class LlamaCppAdapter(ModelAdapter):
     unique_name = "llama-cpp-adapter"
 
@@ -45,7 +46,7 @@ class LlamaCppAdapter(ModelAdapter):
             "threads": self.threads,
             "model": self.model,
             "prompt": input_ids,
-            "temp": self.temp
+            "temp": self.temp,
         }
 
         for flag, value in optional_params.items():
@@ -61,11 +62,12 @@ class LlamaCppAdapter(ModelAdapter):
             universal_newlines=True,
         )
 
-        raw_output, raw_err= process.communicate()
+        raw_output, raw_err = process.communicate()
 
         if process.returncode != 0:
             raise subprocess.CalledProcessError(
-                process.returncode, process.args, raw_output, raw_err)
+                process.returncode, process.args, raw_output, raw_err
+            )
 
         prompt_found = False
         output_text = ""
@@ -81,6 +83,7 @@ class LlamaCppAdapter(ModelAdapter):
             raise Exception("Prompt not found in result, this is a bug in lemonade.")
 
         return [output_text]
+
 
 class LoadLlamaCpp(FirstTool):
     unique_name = "load-llama-cpp"
@@ -156,7 +159,7 @@ class LoadLlamaCpp(FirstTool):
         if executable is None:
             raise Exception(f"{self.__class__.unique_name} requires an executable")
 
-        if (input is not None and input != ""):
+        if input is not None and input != "":
             model_binary = input
 
         # Save execution parameters
@@ -171,7 +174,7 @@ class LoadLlamaCpp(FirstTool):
             )
 
         state.model = LlamaCppAdapter(
-            executable = executable,
+            executable=executable,
             model=model_binary,
             tool_dir=llamacpp_dir(state),
             context_size=context_size,

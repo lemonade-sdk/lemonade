@@ -201,8 +201,15 @@ class HuggingfaceAdapter(ModelAdapter):
         self.dtype = dtype
         self.device = device
 
-    def generate(self, input_ids, max_new_tokens=512, repetition_penalty=1.2,
-                    do_sample=True, temperature=0.1, **kwargs):
+    def generate(
+        self,
+        input_ids,
+        max_new_tokens=512,
+        repetition_penalty=1.2,
+        do_sample=True,
+        temperature=0.1,
+        **kwargs,
+    ):
         amp_enabled = (
             True
             if (self.dtype == torch.float16 or self.dtype == torch.bfloat16)
@@ -221,7 +228,7 @@ class HuggingfaceAdapter(ModelAdapter):
                 repetition_penalty=repetition_penalty,
                 do_sample=do_sample,
                 temperature=temperature,
-                **kwargs
+                **kwargs,
             )
 
 
