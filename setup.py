@@ -31,12 +31,10 @@ setup(
     ],
     install_requires=[
         "invoke>=2.0.0",
-        # 1.16.2 causes a crash:
-        #   ImportError: DLL load failed while importing onnx_cpp2py_export
-        "onnx>=1.11.0,<1.16.2",
+        "onnx>=1.11.0",
         "onnxmltools==1.10.0",
         "onnxruntime >=1.10.1;platform_system=='Linux'",
-        "onnxruntime-directml==1.19.0;platform_system=='Windows'",
+        "onnxruntime-directml>=1.19.0;platform_system=='Windows'",
         "torch>=1.12.1",
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
@@ -62,7 +60,6 @@ setup(
             "uvicorn[standard]",
         ],
         "llm-oga-dml": [
-            # "onnxruntime-directml==1.19.0",
             "onnxruntime-genai-directml==0.4.0",
             "tqdm",
             "torch>=2.0.0",
