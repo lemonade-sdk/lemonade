@@ -14,6 +14,7 @@ The guidelines document is organized as the following sections:
 - [Pull Requests](#pull-requests)
 - [Testing](#testing)
 - [Versioning](#versioning)
+- [PyPI Release Process](#pypi-release-process)
 - [Public APIs](#public-apis)
 
 
@@ -127,6 +128,24 @@ We don't have any fancy testing framework set up yet. If you want to run tests l
 ## Versioning
 
 We use semantic versioning, as described in [versioning.md](https://github.com/onnx/turnkeyml/blob/main/docs/versioning.md).
+
+## PyPI Release Process
+
+TurnkeyML is provided as a package on PyPI, the Python Package Index, as [turnkeyml](https://pypi.org/project/turnkeyml/). The release process for pushing an updated package to PyPI is mostly automated, however (by design), there are a few manual steps.
+1. Make sure the version number in [version.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/version.py) has a higher value than the current [PyPI package](https://pypi.org/project/turnkeyml/).
+    - Note: if you don't take care of this, PyPI will reject the updated package and you will need to start over from Step 1 of this guide.
+    - If you are unsure what to set the version number to, consult [versioning.md](https://github.com/onnx/turnkeyml/blob/main/docs/versioning.md).
+1. Make sure all of the changes you want to release have been merged to `main`.
+1. Go to the [TurnkeyML GitHub front page](https://github.com/onnx/turnkeyml) and click "Releases" in the side bar.
+1. At the top of the page, click "Draft a new release".
+1. Click "Choose a tag" (near the top of the page) and write `v` (lowercase), followed by the contents of the string in [version.py](https://github.com/onnx/turnkeyml/blob/main/src/turnkeyml/version.py).
+  - For example, if `version.py` contains `__version__ = "4.0.5"`, the string is `4.0.5` and you should write `v4.0.5` into the text box.
+1. Click the "+Create new tag:... on publish" button that appears under the next box.
+1. Click "Generate release notes" (near the top of the page). Modify as necessary. Make sure to give credit where credit is due!
+1. Click "Publish release" (green button near the bottom of the page). This will start the release automations, in the form of a [Publish Distributions to PyPI Action](https://github.com/onnx/turnkeyml/actions/workflows/publish-to-test-pypi.yml).
+  - Note: if you forgot the "v" in the "Choose a tag" step, this Action will not run.
+1. Wait for the Action launched by the prior step to complete. Go to [the turnkeyml PyPI page](https://pypi.org/project/turnkeyml/) and spam refresh. You should see the version number update.
+  - Note: `pip install turnkeyml` may not find the new update for a few more minutes.
 
 ## Public APIs
 
