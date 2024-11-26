@@ -8,7 +8,7 @@ This flow has been verified with a generic Llama.cpp model.
 
 These instructions are only for linux or Windows with wsl. It may be necessary to be running WSL in an Administrator command prompt.
 
-These instructions also assume that TurnkeyML's llm extensions have been installed (for example with "pip install -e .[llm]")
+These instructions also assumes that lemonade has been installed.
 
 
 ### Set up Environment (Assumes TurnkeyML is already installed)

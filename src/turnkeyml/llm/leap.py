@@ -117,6 +117,7 @@ def from_pretrained(
 
         state = oga.OgaLoad().run(
             state,
+            input=checkpoint,
             device="igpu",
             dtype="int4",
         )

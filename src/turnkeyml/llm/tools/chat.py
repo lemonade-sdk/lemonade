@@ -22,6 +22,8 @@ DEFAULT_GENERATE_PARAMS = {
 
 DEFAULT_SERVER_PORT = 8000
 
+END_OF_STREAM = "</s>"
+
 
 class LLMPrompt(Tool):
     """
@@ -338,6 +340,7 @@ class Serve(Tool):
                 thread.start()
 
                 # Generate the response using streaming
+                new_text = ""
                 for new_text in streamer:
 
                     # Capture performance stats about this token
@@ -364,6 +367,9 @@ class Serve(Tool):
                     if self.stop_event.is_set():
                         print("Stopping generation early.")
                         break
+
+                if new_text != END_OF_STREAM:
+                    await websocket.send_text(END_OF_STREAM)
 
                 self.tokens_per_second = 1 / statistics.mean(self.decode_token_times)
                 print("\n")

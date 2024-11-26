@@ -36,8 +36,10 @@ jobs:
           conda install pylint=3.2.7
           pip install pytest
           pip install -e plugins/devices
-          pip install transformers timm
           pip install -e . # Required to test current tkml package instead of pypi version
+          # tokenizers 0.20.4 seems to have an install bug, which we must avoid by limiting
+          # the transformers version
+          pip install "transformers<4.46.3" "tokenizers<0.20.4" timm
           python -m pip check
       - name: Lint with PyLint
         shell: bash -el {0}

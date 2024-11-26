@@ -62,8 +62,8 @@ setup(
         "llm-oga-dml": [
             "onnxruntime-genai-directml==0.4.0",
             "tqdm",
-            "torch>=2.0.0",
-            "transformers",
+            "torch>=2.0.0,<2.4",
+            "transformers<4.45.0",
             "accelerate",
             "py-cpuinfo",
             "sentencepiece",

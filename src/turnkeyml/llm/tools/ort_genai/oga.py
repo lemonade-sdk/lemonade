@@ -1,6 +1,12 @@
 # onnxruntime_genai is not lint-friendly yet and PyLint can't
 # find any of the class methods
 # pylint: disable=no-member
+#
+# Model builder constraints:
+#   11/10/24 Need transformers <4.45.0 OR onnxruntime-genai 0.5.0 (which must be built from source)
+#   (transformers v4.45 changes the format of the tokenizer.json file which will be supported in
+#   onnxruntime-genai 0.5)
+#
 
 import argparse
 import os
@@ -8,17 +14,28 @@ import time
 import json
 from fnmatch import fnmatch
 from queue import Queue
-from huggingface_hub import snapshot_download, login
+from huggingface_hub import snapshot_download
 import onnxruntime_genai as og
+import onnxruntime_genai.models.builder as model_builder
 from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
 import turnkeyml.common.status as status
+import turnkeyml.common.printing as printing
 from turnkeyml.llm.tools.adapter import (
     ModelAdapter,
     TokenizerAdapter,
     PassthroughTokenizerResult,
 )
 from turnkeyml.llm.cache import Keys
+
+# ONNX Runtime GenAI models will be cached in this subfolder of the lemonade cache folder
+oga_models_path = "oga_models"
+
+# ONNX Runtime GenAI model builder tool uses this subfolder of the lemonade cache as its cache
+oga_model_builder_cache_path = "model_builder"
+
+# Mapping from processor to executiion provider, used in pathnames and by model_builder
+execution_providers = {"cpu": "cpu", "npu": "npu", "igpu": "dml"}
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
@@ -182,34 +199,33 @@ class OrtGenaiModel(ModelAdapter):
                     if stopping_criteria[0].stop_event.is_set():
                         stop_early = True
 
-            streamer.add_text("</s>")
             streamer.done()
-
-
-# Short names for checkpoints
-# So that we don't violate pylint line lengths :)
-llama_3 = "meta-llama/Meta-Llama-3-8B"
-llama_2 = "meta-llama/Llama-2-7b-chat-hf"
-phi_3_mini_4k = "microsoft/Phi-3-mini-4k-instruct"
-phi_3_mini_128k = "microsoft/Phi-3-mini-128k-instruct"
-qwen_1dot5 = "Qwen/Qwen1.5-7B"
 
 
 class OgaLoad(FirstTool):
     """
-    Tool that loads an LLM in OnnxRuntime-GenAI for use with DirectML.
+    Tool that loads an LLM in OnnxRuntime-GenAI for use with CPU or DirectML execution providers.
 
-    Input: path to a checkpoint. Supported choices:
-        llama_3 = "meta-llama/Meta-Llama-3-8B"
-        llama_2 = "meta-llama/Llama-2-7b-chat-hf"
-        phi_3_mini_4k = "microsoft/Phi-3-mini-4k-instruct"
-        phi_3_mini_128k = "microsoft/Phi-3-mini-128k-instruct"
-        And models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
+    Input: path to a checkpoint.
+        Supported choices for cpu and igpu from HF model repository:
+            LLM models on Huggingface supported by model_builder.  See documentation
+            (https://github.com/aigdat/genai/blob/main/docs/ort_genai_igpu.md) for supported models.
+        Supported choices for npu from HF model repository:
+            Models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
+        Local models for cpu, igpu, or npu:
+            The specified checkpoint is converted to a local path, via mapping to lower case
+            and replacing '/' with '_'.  If this model already exists in the 'models' folderr
+            of the lemonade cache and if it has a subfolder <device>-<dtype>, then this model
+            will be used.  If the --force flag is used and the model is built with model_builder,
+            then it will be rebuilt.
+
+
 
     Output:
         state.model: handle to a Huggingface-style LLM loaded on DirectML device
         state.tokenizer = Huggingface-style LLM tokenizer instance
         state.dtype = data type of the model on DirectML device
+        state.checkpoint = name of the checkpoint used to load state.model
 
     Note: This tool expects the onnxruntime-genai-directml library to be pre-installed.
             If that library is not installed, this tool will not load.
@@ -220,7 +236,7 @@ class OgaLoad(FirstTool):
     def __init__(self):
         super().__init__(monitor_message="Loading OnnxRuntime-GenAI model")
 
-        self.status_stats = [Keys.DTYPE, Keys.DEVICE]
+        self.status_stats = [Keys.DTYPE, Keys.DEVICE, Keys.OGA_MODELS_SUBFOLDER]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -239,9 +255,39 @@ class OgaLoad(FirstTool):
 
         parser.add_argument(
             "--dtype",
-            choices=["int4"],
+            choices=["int4", "fp16", "fp32"],
             required=True,
             help="Data type to load the model in",
+        )
+
+        parser.add_argument(
+            "--int4-block-size",
+            default=None,
+            help="Specify the block_size for int4 quantization.",
+            choices=[16, 32, 64, 128, 256],
+            type=int,
+        )
+
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Forces downloading of Hugging-Face model again (if changed).  Additionally for"
+            " cpu and igpu devices only, forces model_builder to run again on the HF model"
+            " (changed or not).",
+        )
+
+        parser.add_argument(
+            "--download",
+            action="store_true",
+            help="Download the model if needed, but don't load it",
+        )
+
+        parser.add_argument(
+            "--subfolder",
+            default=None,
+            help="Subfolder where model is located <LEMONADE CACHE>/oga_models/<MODELNAME>"
+            "/<SUBFOLDER>, default is <EP for device>-<dtype>.  The EPs are: "
+            f'{", ".join([value + " for " + key for key, value in execution_providers.items()])}.',
         )
 
         return parser
@@ -249,115 +295,159 @@ class OgaLoad(FirstTool):
     def run(
         self,
         state: State,
-        input: str = phi_3_mini_128k,
+        input: str,
         device: str = "igpu",
         dtype: str = "int4",
+        int4_block_size: int = None,
+        force: bool = False,
+        download: bool = False,
+        subfolder: str = None,
     ) -> State:
 
         checkpoint = input
+        state.checkpoint = checkpoint
 
-        # Map of models[device][dtype][checkpoint] to the name of the model folder on disk
-        local_supported_models = {
-            "igpu": {
-                "int4": {
-                    phi_3_mini_128k: os.path.join(
-                        "phi-3-mini-128k-instruct",
-                        "directml",
-                        "directml-int4-awq-block-128",
-                    ),
-                    phi_3_mini_4k: os.path.join(
-                        "phi-3-mini-4k-instruct",
-                        "directml",
-                        "directml-int4-awq-block-128",
-                    ),
-                },
-            },
-            "npu": {
-                "int4": {
-                    # Legacy RyzenAI 1.2 models for NPU
-                    llama_2: "llama2-7b-int4",
-                    llama_3: "llama3-8b-int4",
-                    qwen_1dot5: "qwen1.5-7b-int4",
-                }
-            },
-            "cpu": {
-                "int4": {
-                    phi_3_mini_4k: os.path.join(
-                        "phi-3-mini-4k-instruct",
-                        "cpu_and_mobile",
-                        "cpu-int4-rtn-block-32-acc-level-4",
-                    ),
-                }
-            },
+        # See whether the device;dtype;checkpoint combination is supported for download from HF
+        hf_supported_models = {
+            "cpu": {"int4": "*/*", "fp32": "*/*"},
+            "igpu": {"int4": "*/*", "fp16": "*/*"},
+            "npu": {"int4": "amd/**-onnx-ryzen-strix"},
         }
+        hf_supported = (
+            device in hf_supported_models
+            and dtype in hf_supported_models[device]
+            and fnmatch(checkpoint, hf_supported_models[device][dtype])
+        )
 
-        hf_supported_models = {"npu": {"int4": "amd/**-onnx-ryzen-strix"}}
-
-        supported_locally = True
-        try:
-            dir_name = local_supported_models[device][dtype][checkpoint]
-        except KeyError as e:
-            supported_locally = False
-            hf_supported = (
-                device in hf_supported_models
-                and dtype in hf_supported_models[device]
-                and fnmatch(checkpoint, hf_supported_models[device][dtype])
+        # Check to see if the model already exists locally
+        if subfolder is None:
+            subfolder = f"{execution_providers[device]}-{dtype}"
+            subfolder += (
+                f"-block-{int4_block_size}"
+                if dtype == "int4" and int4_block_size is not None
+                else ""
             )
+        oga_models_subfolder = os.path.join(
+            checkpoint.replace("/", "_").lower(), subfolder
+        )
+        full_model_path = os.path.join(
+            state.cache_dir, oga_models_path, oga_models_subfolder
+        )
+        model_exists_locally = os.path.isdir(full_model_path) and os.listdir(
+            full_model_path
+        )
+
+        # Check if model needs to be downloaded and/or built or rebuilt
+        if not model_exists_locally or force:
+
             if not hf_supported:
+                # Download/build can't be done
                 raise ValueError(
-                    "The device;dtype;checkpoint combination is not supported: "
-                    f"{device};{dtype};{checkpoint}. The supported combinations "
-                    f"are: {local_supported_models} for local models and {hf_supported_models}"
-                    " for models on Hugging Face."
-                ) from e
+                    "The (device, dtype, checkpoint) combination is not supported: "
+                    f"({device}, {dtype}, {checkpoint}). The supported combinations "
+                    f"for Hugging Face models are "
+                    + ", ".join(
+                        [
+                            f"({dev}, {dt}, {hf_supported_models[dev][dt]})"
+                            for dev in hf_supported_models.keys()
+                            for dt in hf_supported_models[dev]
+                        ]
+                    )
+                    + "."
+                )
 
-        # Create models dir if it doesn't exist
-        models_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
-        if not os.path.exists(models_dir):
-            os.makedirs(models_dir)
+            # Download the model from HF
+            if device == "npu":
 
-        # If the model is supported though Hugging Face, download it
-        if not supported_locally:
-            hf_model_name = checkpoint.split("amd/")[1]
-            dir_name = "_".join(hf_model_name.split("-")[:6]).lower()
-            api_key = os.getenv("HF_TOKEN")
-            login(api_key)
-            snapshot_download(
-                repo_id=checkpoint,
-                local_dir=os.path.join(models_dir, dir_name),
-                ignore_patterns=["*.md", "*.txt"],
-            )
+                # NPU models on HF are ready to go and HF does its own caching
+                full_model_path = snapshot_download(
+                    repo_id=checkpoint,
+                    ignore_patterns=["*.md", "*.txt"],
+                )
+                oga_models_subfolder = None
 
-        current_cwd = os.getcwd()
-        if device == "npu":
-            # Change to the models directory
-            os.chdir(models_dir)
-
-            # Common environment variables for all NPU models
-            os.environ["DD_ROOT"] = ".\\bins"
-            os.environ["DEVICE"] = "stx"
-            os.environ["XLNX_ENABLE_CACHE"] = "0"
-
-            # Phi models require USE_AIE_RoPE=0
-            if "phi-" in checkpoint.lower():
-                os.environ["USE_AIE_RoPE"] = "0"
             else:
-                os.environ["USE_AIE_RoPE"] = "1"
+                # device is 'cpu' or 'igpu'
 
-        model_dir = os.path.join(models_dir, dir_name)
-        state.model = OrtGenaiModel(model_dir)
-        state.tokenizer = OrtGenaiTokenizer(state.model.model)
-        state.dtype = dtype
+                # Use model_builder to download model and convert to ONNX
+                printing.log_info(f"Building {checkpoint} for {device} using {dtype}")
+                extra_options = {}
+                if int4_block_size is not None:
+                    extra_options["int4-block-size"] = int4_block_size
+                try:
+                    model_builder.create_model(
+                        checkpoint,  # model_name
+                        "",  # input_path
+                        full_model_path,  # output_path
+                        dtype,  # precision
+                        execution_providers[device],  # execution_provider
+                        os.path.join(
+                            state.cache_dir, oga_model_builder_cache_path
+                        ),  # cache_dir
+                        **extra_options,
+                    )
+                except NotImplementedError as e:
+                    # Model architecture is not supported by model builder
+                    raise NotImplementedError("[Model builder] " + str(e)) from e
+                except OSError as e:
+                    # Model is not found either locally nor in HF repository
+                    raise ValueError("[Model builder] " + str(e)) from e
 
-        state.save_stat(Keys.CHECKPOINT, checkpoint)
-        state.save_stat(Keys.DTYPE, dtype)
-        state.save_stat(Keys.DEVICE, device)
+        if not download:
+            # The download only flag is not set, so load model
+            if device == "npu":
+                if "AMD_OGA" not in os.environ:
+                    raise RuntimeError(
+                        "Please set environment variable AMD_OGA to the path of the amd_oga files"
+                    )
 
-        # Create a UniqueInvocationInfo and ModelInfo so that we can display status
-        # at the end of the sequence
-        status.add_to_state(state=state, name=input, model=input)
+                # Check AMD_OGA points to oga library files
+                oga_path = os.environ["AMD_OGA"]
+                if not os.path.exists(
+                    os.path.join(oga_path, "libs", "onnxruntime.dll")
+                ):
+                    raise RuntimeError(
+                        f"Cannot find libs/onnxruntime.dll in AMD_OGA folder: {oga_path}"
+                    )
 
-        # Put the CWD back to its original value
-        os.chdir(current_cwd)
+                # Save current directory and PATH
+                saved_cwd = os.getcwd()
+                saved_path = os.environ["PATH"]
+
+                # Change to the AMD_OGA distribution directory
+                os.chdir(oga_path)
+                os.environ["PATH"] += os.pathsep + os.path.join(
+                    os.environ["AMD_OGA"], "libs"
+                )
+
+                # Common environment variables for all NPU models
+                os.environ["DD_ROOT"] = ".\\bins"
+                os.environ["DEVICE"] = "stx"
+                os.environ["XLNX_ENABLE_CACHE"] = "0"
+
+                # Phi models require USE_AIE_RoPE=0
+                if "phi-" in checkpoint.lower():
+                    os.environ["USE_AIE_RoPE"] = "0"
+                else:
+                    os.environ["USE_AIE_RoPE"] = "1"
+
+            state.model = OrtGenaiModel(full_model_path)
+            state.tokenizer = OrtGenaiTokenizer(state.model.model)
+            state.dtype = dtype
+
+            state.save_stat(Keys.CHECKPOINT, checkpoint)
+            state.save_stat(Keys.DTYPE, dtype)
+            state.save_stat(Keys.DEVICE, device)
+            if oga_models_subfolder is not None:
+                state.save_stat(Keys.OGA_MODELS_SUBFOLDER, oga_models_subfolder)
+
+            # Create a UniqueInvocationInfo and ModelInfo so that we can display status
+            # at the end of the sequence
+            status.add_to_state(state=state, name=input, model=input)
+
+            if device == "npu":
+                # Restore cwd and PATH
+                os.chdir(saved_cwd)
+                os.environ["PATH"] = saved_path
 
         return state

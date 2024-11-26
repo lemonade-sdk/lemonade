@@ -1,0 +1,164 @@
+name: "Test Lemonade Server"
+description: Launch Lemonade Server and test the endpoints
+inputs:
+  conda_env:
+    required: true
+  load_command:
+    required: true
+  amd_oga:
+    required: false
+    default: ""
+    description: "Location of the OGA for RyzenAI NPU install directory on disk"
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure the Lemonade serer works properly
+      shell: PowerShell
+      run: |
+        $Env:AMD_OGA = "${{ inputs.amd_oga }}"
+        
+        $outputFile = "output.log"
+        $errorFile = "error.log"
+        $serverProcess = Start-Process -FilePath "conda" -ArgumentList "run ${{ inputs.conda_env }} lemonade -d .\ci-cache ${{ inputs.load_command }} serve --max-new-tokens 10" -RedirectStandardOutput $outputFile -RedirectStandardError $errorFile -PassThru -NoNewWindow
+
+        Write-Host "Wait for 30 seconds to let the server come up"
+        Start-Sleep -Seconds 30
+        
+        Write-Host "Check if server process successfully launched"
+        $serverRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+        if (-not $serverRunning) {
+          Write-Host "Error: Server process isn't running, even though we just tried to start it!"
+          Write-Host "Standard Output:"
+          Get-Content $outputFile
+
+          Write-Host "Standard Error:"
+          Get-Content $errorFile
+          exit 1
+        } else {
+          Write-Host "Server process is alive."
+        }
+
+        Write-Host "Wait for the server port to come up"
+        while ($true) {
+          
+          $llmPortCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000
+          if (-not $llmPortCheck.TcpTestSucceeded) {
+            Write-Host "LLM server is not yet running on port 8000!"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+          } else {
+            Write-Host "LLM server is running on port 8000."
+            break
+          }
+
+          Start-Sleep -Seconds 30
+        }
+
+        Write-Host "Checking the /health endpoint"
+        $response = Invoke-WebRequest -Uri http://127.0.0.1:8000/health -UseBasicParsing
+
+        if ($response.StatusCode -eq 200) {
+            Write-Output "Good: /health status code is 200"
+        } else {
+            Write-Output "Error: /health status code is not 200"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+        }
+
+        $jsonContent = $response.Content | ConvertFrom-Json
+        if ($jsonContent) {
+            Write-Output "Good: /health JSON content is not empty: $jsonContent"
+        } else {
+            Write-Output "Error: /health JSON content is empty"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+        }
+
+        Write-Host "Checking the /ws (streaming generation) endpoint"
+
+        # Define the WebSocket URI
+        $uri = [System.Uri]::new("ws://127.0.0.1:8000/ws")
+
+        # Create a new ClientWebSocket instance
+        $webSocket = [System.Net.WebSockets.ClientWebSocket]::new()
+
+        # Connect to the WebSocket server
+        $webSocket.ConnectAsync($uri, [System.Threading.CancellationToken]::None).Wait()
+
+        # Define the message to send
+        $message = "Hello, WebSocket!"
+        $buffer = [System.Text.Encoding]::UTF8.GetBytes($message)
+        $segment = [System.ArraySegment[byte]]::new($buffer)
+
+        # Send the message
+        $webSocket.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None).Wait()
+
+        # Buffer to store the response
+        $responseBuffer = New-Object byte[] 1024
+        $responseSegment = [System.ArraySegment[byte]]::new($responseBuffer)
+
+        # Variable to store the complete response
+        $response = ""
+
+        # Receive the streaming response
+        do {
+            $result = $webSocket.ReceiveAsync($responseSegment, [System.Threading.CancellationToken]::None).Result
+            $response += [System.Text.Encoding]::UTF8.GetString($responseBuffer, 0, $result.Count)
+        } while ($response -notlike "*</s>*")
+
+        # Close the WebSocket connection
+        $webSocket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, "Closing", [System.Threading.CancellationToken]::None).Wait()
+
+        # Check if the response is not empty
+        if ($response -and $response -notlike "</s>") {
+            Write-Output "Response is not empty: $response"
+        } else {
+            Write-Output "Response is empty or only contains the end marker: $response"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+        }
+
+        Write-Host "Checking the /stats endpoint"
+        $response = Invoke-WebRequest -Uri http://127.0.0.1:8000/stats  -UseBasicParsing
+        if ($response.StatusCode -eq 200) {
+            Write-Output "Good: /stats status code is 200"
+        } else {
+            Write-Output "Error: /stats status code is not 200"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+        }
+
+        $jsonContent = $response.Content | ConvertFrom-Json
+        if ($jsonContent) {
+            Write-Output "Good: /stats JSON content is not empty: $jsonContent"
+        } else {
+            Write-Output "Error: /stats JSON content is empty"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+        }
+
+        Write-Host "Close the server process"
+        Stop-Process -Id $serverProcess.Id

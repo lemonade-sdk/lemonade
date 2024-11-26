@@ -16,7 +16,10 @@ jobs:
   make-lemonade:
     env:
         LEMONADE_CI_MODE: "True"
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - name: Set up Miniconda with 64-bit Python
@@ -25,6 +28,7 @@ jobs:
           miniconda-version: "latest"
           activate-environment: lemon
           python-version: "3.10"
+          run-post: "false"
       - name: Install dependencies
         shell: bash -el {0}
         run: |
@@ -41,11 +45,17 @@ jobs:
         shell: bash -el {0}
         run: |
           pylint src/turnkeyml/llm --rcfile .pylintrc --disable E0401
+      - name: Test HF+CPU server
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        uses: ./.github/actions/server-testing
+        with:
+          conda_env: -n lemon
+          load_command: -i facebook/opt-125m huggingface-load
       - name: Run lemonade tests
         shell: bash -el {0}
         run: |
           lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
-
           python test/llm_api.py
           
 

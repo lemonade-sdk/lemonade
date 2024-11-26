@@ -30,3 +30,4 @@ class Keys:
     PROMPT_TOKENS = "prompt_tokens"
     CACHE_DIR = "cache_dir"
     DEVICE = "device"
+    OGA_MODELS_SUBFOLDER = "oga_models_subfolder"

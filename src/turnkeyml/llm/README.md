@@ -5,6 +5,8 @@ Contents:
 
 1. [Getting Started](#getting-started)
 1. [Install Specialized Tools](#install-specialized-tools)
+    - [OnnxRuntime GenAI](#install-onnxruntime-genai)
+    - [RyzenAI NPU for PyTorch](#install-ryzenai-npu-for-pytorch)
 1. [Code Organization](#code-organization)
 1. [Contributing](#contributing)
 
@@ -85,29 +87,21 @@ Lemonade supports specialized tools that each require their own setup steps. **N
 
 ## Install OnnxRuntime-GenAI
 
-To install support for [onnxruntime-genai](https://github.com/microsoft/onnxruntime-genai) (e.g., the `oga-load` Tool), use `pip install -e .[llm-oga-dml]` instead of the default installation command.
+To install support for [onnxruntime-genai](https://github.com/microsoft/onnxruntime-genai), use `pip install -e .[llm-oga-dml]` instead of the default installation command.
 
-Next, you need to get an OGA model. Per the OGA instructions, we suggest Phi-3-Mini. Use the following command to download it from Hugging Face, and make sure to set your `--local-dir` to the `REPO_ROOT/src/turnkeyml/llm/ort_genai/models` directory.
+You can then load supported OGA models on to CPU or iGPU with the `oga-load` tool, for example:
 
-`huggingface-cli download microsoft/Phi-3-mini-4k-instruct-onnx --include directml/directml-int4-awq-block-128* --local-dir REPO_ROOT/src/turnkeyml/llm/tools/ort_genai/models/phi-3-mini-4k-instruct`
+`lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
 
-You can try it out with: `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
+You can also launch a server process with:
 
-You can also try Phi-3-Mini-128k-Instruct with the following commands:
+`lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 serve`
 
-`huggingface-cli download microsoft/Phi-3-mini-128k-instruct-onnx --include directml/directml-int4-awq-block-128* --local-dir REPO_ROOT/src/turnkeyml/llm/tools/ort_genai/models/phi-3-mini-128k-instruct`
+You can learn more about the CPU and iGPU support in our [OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_igpu.md).
 
-`lemonade -i microsoft/Phi-3-mini-128k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
+> Note: early access to AMD's RyzenAI NPU is also available. See the [RyzenAI NPU OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_npu.md) for more information.
 
-You can also try out the CPU with:
-
-`huggingface-cli download microsoft/Phi-3-mini-4k-instruct-onnx --include cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4/* --local-dir REPO_ROOT/src/turnkeyml/llm/tools/ort_genai/models/phi-3-mini-128k-instruct`
-
-`lemonade -i microsoft/Phi-3-mini-128k-instruct oga-load --device cpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
-
-> Note: no other models or devices are officially supported by `lemonade` on OGA at this time. Contributions appreciated! It only takes a few minutes to add a new model, we just need to add a path to the downloaded model folder to the supported models dictionary in [oga.py](https://github.com/onnx/turnkeyml/blob/v4.0.2/src/turnkeyml/llm/tools/ort_genai/oga.py).
-
-## Install RyzenAI NPU
+## Install RyzenAI NPU for PyTorch
 
 To run your LLMs on RyzenAI NPU, first install and set up the `ryzenai-transformers` conda environment (see instructions [here](https://github.com/amd/RyzenAI-SW/blob/main/example/transformers/models/llm/docs/README.md)). Then, install `lemonade` into `ryzenai-transformers`. The `ryzenai-npu-load` Tool will become available in that environment.
 
