@@ -12,6 +12,9 @@ from turnkeyml.llm.tools.huggingface_load import (
     AdaptHuggingface,
 )
 
+from turnkeyml.llm.tools.huggingface_bench import HuggingfaceBench
+from turnkeyml.llm.tools.ort_genai.oga_bench import OgaBench
+
 from turnkeyml.llm.tools.llamacpp import LoadLlamaCpp
 
 import turnkeyml.llm.cache as cache
@@ -31,6 +34,8 @@ def main():
         LLMPrompt,
         AdaptHuggingface,
         Serve,
+        HuggingfaceBench,
+        OgaBench,
         # Inherited from TurnkeyML
         Report,
         Cache,

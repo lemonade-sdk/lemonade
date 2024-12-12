@@ -3,12 +3,21 @@ description: Launch Lemonade Server and test the endpoints
 inputs:
   conda_env:
     required: true
+    description: "Location of the lemonade Conda environment on disk"
   load_command:
     required: true
+    description: "The backend-specific portion of the lemonade command used to load the model, e.g., `-i CHECKPOINT load-tool --load-tool-args`"
+  hf_home:
+    required: false
+    description: "Location of the Huggingface Cache on disk"
+    default: "~/.cache/huggingface/hub"
   amd_oga:
     required: false
     default: ""
     description: "Location of the OGA for RyzenAI NPU install directory on disk"
+  hf_token:
+    required: false
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -16,6 +25,8 @@ runs:
       shell: PowerShell
       run: |
         $Env:AMD_OGA = "${{ inputs.amd_oga }}"
+        $Env:HF_HOME = "${{ inputs.hf_home }}"
+        $Env:HF_TOKEN = "${{ inputs.hf_token }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
         
         $outputFile = "output.log"
         $errorFile = "error.log"

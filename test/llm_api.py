@@ -6,8 +6,10 @@ from turnkeyml.state import State
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.test_helpers as common
 from turnkeyml.llm.tools.huggingface_load import HuggingfaceLoad
+from turnkeyml.llm.tools.huggingface_bench import HuggingfaceBench
 from turnkeyml.llm.tools.mmlu import AccuracyMMLU
 from turnkeyml.llm.tools.chat import LLMPrompt
+from turnkeyml.llm.cache import Keys
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
 
@@ -62,7 +64,21 @@ class Testing(unittest.TestCase):
         stats = fs.Stats(state.cache_dir, state.build_name).stats
         assert stats[f"mmlu_{subject[0]}_accuracy"] > 0
 
-    
+    def test_001_huggingface_bench(self):
+        # Benchmark OPT
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test",
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = HuggingfaceBench().run(state, iterations=20)
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        assert stats[Keys.MEAN_TOKENS_PER_SECOND] > 0
 
 
 if __name__ == "__main__":

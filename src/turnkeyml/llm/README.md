@@ -54,6 +54,16 @@ That command will run just the management test from MMLU on your LLM and save th
 
 You can run the full suite of MMLU subjects by omitting the `--test` argument. You can learn more about this with `lemonade accuracy-mmlu -h.
 
+## Benchmarking
+
+To measure the time-to-first-token and tokens/second of an LLM, try this:
+
+`lemonade -i facebook/opt-125m huggingface-load huggingface-bench`
+
+That command will run a few warmup iterations, then a few generation iterations where performance data is collected.
+
+The prompt size, number of output tokens, and number iterations are all parameters. Learn more by running `lemonade huggingface-bench -h`.
+
 ## Serving
 
 You can launch a WebSocket server for your LLM with:
@@ -94,6 +104,10 @@ You can then load supported OGA models on to CPU or iGPU with the `oga-load` too
 `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"`
 
 You can also launch a server process with:
+
+The `oga-bench` tool is available to capture tokens/second and time-to-first-token metrics: `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 oga-bench`. Learn more with `lemonade oga-bench -h`.
+
+You can also try Phi-3-Mini-128k-Instruct with the following commands:
 
 `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 serve`
 
