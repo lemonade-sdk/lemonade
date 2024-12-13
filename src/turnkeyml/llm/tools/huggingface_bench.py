@@ -110,7 +110,10 @@ class HuggingfaceBench(Tool):
     def __init__(self):
         super().__init__(monitor_message="Benchmarking Huggingface LLM")
 
-        self.status_stats = [Keys.SECONDS_TO_FIRST_TOKEN, Keys.MEAN_TOKENS_PER_SECOND]
+        self.status_stats = [
+            Keys.SECONDS_TO_FIRST_TOKEN,
+            Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
+        ]
 
     @staticmethod
     def parser(parser: argparse.ArgumentParser = None, add_help: bool = True):
@@ -283,11 +286,13 @@ class HuggingfaceBench(Tool):
             [token_len for _, token_len in decode_per_iteration_result]
         )
         # Subtract 1 so that we don't count the prefill token
-        mean_tokens_per_second = (mean_token_len - 1) / mean_decode_latency
+        token_generation_tokens_per_second = (mean_token_len - 1) / mean_decode_latency
 
         # Save performance data to stats
         state.save_stat(Keys.SECONDS_TO_FIRST_TOKEN, mean_time_to_first_token)
-        state.save_stat(Keys.MEAN_TOKENS_PER_SECOND, mean_tokens_per_second)
+        state.save_stat(
+            Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, token_generation_tokens_per_second
+        )
         state.save_stat(Keys.PROMPT_TOKENS, input_ids.shape[1])
 
         return state

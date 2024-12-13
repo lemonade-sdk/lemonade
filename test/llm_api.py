@@ -78,7 +78,7 @@ class Testing(unittest.TestCase):
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
 
-        assert stats[Keys.MEAN_TOKENS_PER_SECOND] > 0
+        assert stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND] > 0
 
 
 if __name__ == "__main__":
