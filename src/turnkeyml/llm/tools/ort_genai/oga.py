@@ -35,7 +35,7 @@ oga_models_path = "oga_models"
 oga_model_builder_cache_path = "model_builder"
 
 # Mapping from processor to executiion provider, used in pathnames and by model_builder
-execution_providers = {"cpu": "cpu", "npu": "npu", "igpu": "dml"}
+execution_providers = {"cpu": "cpu", "npu": "npu", "igpu": "dml", "cuda": "cuda"}
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
@@ -248,7 +248,7 @@ class OgaLoad(FirstTool):
         parser.add_argument(
             "-d",
             "--device",
-            choices=["igpu", "npu", "cpu"],
+            choices=["igpu", "npu", "cpu", "cuda"],
             default="igpu",
             help="Which device to load the model on to (default: igpu)",
         )
@@ -312,6 +312,7 @@ class OgaLoad(FirstTool):
             "cpu": {"int4": "*/*", "fp32": "*/*"},
             "igpu": {"int4": "*/*", "fp16": "*/*"},
             "npu": {"int4": "amd/**-onnx-ryzen-strix"},
+            "cuda": {"int4": "*/*", "fp16": "*/*"},
         }
         hf_supported = (
             device in hf_supported_models
