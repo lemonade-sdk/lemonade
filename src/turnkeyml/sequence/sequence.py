@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.build as build
+from turnkeyml.common.system_info import get_system_info_dict
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.status as status
 from turnkeyml.tools.tool import Tool
@@ -133,7 +134,7 @@ class Sequence:
         )
 
         # Save the system information used for this build
-        system_info = build.get_system_info()
+        system_info = get_system_info_dict()
         state.save_stat(
             fs.Keys.SYSTEM_INFO,
             system_info,

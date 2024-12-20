@@ -17,6 +17,7 @@ def get_supported_tools():
         mgmt.Version,
         mgmt.Cache,
         mgmt.ModelsLocation,
+        mgmt.SystemInfo,
         report.Report,
         Discover,
         export.ExportPytorchModel,

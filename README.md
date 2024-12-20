@@ -104,6 +104,13 @@ All build results, such as `.onnx` files, are collected into a cache directory, 
 
 `turnkey` collects statistics about each model and build into the corresponding build directory in the cache. Use `turnkey report -h` to see how those statistics can be exported into a CSV file.
 
+### System Information
+
+System information for the current `turnkey` installation is collected and viewed with the `system-info` management tool:
+
+```
+> turnkey system-info
+```
 
 ## Extensibility
 

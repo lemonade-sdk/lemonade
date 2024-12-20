@@ -3,7 +3,7 @@ from turnkeyml.tools import FirstTool, NiceHelpFormatter
 import turnkeyml.common.filesystem as fs
 import turnkeyml.cli.cli as cli
 from turnkeyml.sequence import Sequence
-from turnkeyml.tools.management_tools import Cache, Version
+from turnkeyml.tools.management_tools import Cache, Version, SystemInfo
 from turnkeyml.tools.report import Report
 from turnkeyml.state import State
 
@@ -40,6 +40,7 @@ def main():
         Report,
         Cache,
         Version,
+        SystemInfo,
     ]
 
     # Import onnxruntime-genai recipes

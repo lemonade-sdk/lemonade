@@ -7,6 +7,7 @@ import turnkeyml.common.exceptions as exp
 import turnkeyml.common.printing as printing
 from turnkeyml.tools.tool import ToolParser
 from turnkeyml.version import __version__ as turnkey_version
+from turnkeyml.common.system_info import get_system_info_dict
 
 
 class ManagementTool(abc.ABC):
@@ -265,3 +266,37 @@ class ModelsLocation(ManagementTool):
             print(fs.MODELS_DIR)
         else:
             printing.log_info(f"The models directory is: {fs.MODELS_DIR}")
+
+
+class SystemInfo(ManagementTool):
+    """
+    Prints system information for the turnkeyml installation.
+    """
+
+    unique_name = "system-info"
+
+    @staticmethod
+    def parser(add_help: bool = True) -> argparse.ArgumentParser:
+        parser = __class__.helpful_parser(
+            short_description="Print system information",
+            add_help=add_help,
+        )
+
+        return parser
+
+    @staticmethod
+    def pretty_print(my_dict: dict, level=0):
+        for k, v in my_dict.items():
+            if isinstance(v, dict):
+                print("    " * level + f"{k}:")
+                SystemInfo.pretty_print(v, level + 1)
+            elif isinstance(v, list):
+                print("    " * level + f"{k}:")
+                for item in v:
+                    print("    " * (level + 1) + f"{item}")
+            else:
+                print("    " * level + f"{k}: {v}")
+
+    def run(self, _):
+        system_info_dict = get_system_info_dict()
+        self.pretty_print(system_info_dict)

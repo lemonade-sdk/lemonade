@@ -1,19 +1,14 @@
 import os
 import logging
 import sys
-import shutil
 import traceback
-import platform
-import subprocess
 from typing import Dict, Union
 import hashlib
-import pkg_resources
 import psutil
 import yaml
 import torch
 import numpy as np
 import turnkeyml.common.exceptions as exp
-
 
 UnionValidModelInstanceTypes = Union[
     None,
@@ -197,7 +192,7 @@ def get_shapes_and_dtypes(inputs: dict):
 
 class Logger:
     """
-    Redirects stdout to to file (and console if needed)
+    Redirects stdout to file (and console if needed)
     """
 
     def __init__(
@@ -266,118 +261,3 @@ class Logger:
     def flush(self):
         # needed for python 3 compatibility.
         pass
-
-
-def get_system_info():
-    os_type = platform.system()
-    info_dict = {}
-
-    # Get OS Version
-    try:
-        info_dict["OS Version"] = platform.platform()
-    except Exception as e:  # pylint: disable=broad-except
-        info_dict["Error OS Version"] = str(e)
-
-    def get_wmic_info(command):
-        try:
-            output = subprocess.check_output(command, shell=True).decode()
-            return output.split("\n")[1].strip()
-        except Exception as e:  # pylint: disable=broad-except
-            return str(e)
-
-    if os_type == "Windows":
-        if shutil.which("wmic") is not None:
-            info_dict["Processor"] = get_wmic_info("wmic cpu get name")
-            info_dict["OEM System"] = get_wmic_info("wmic computersystem get model")
-            mem_info_bytes = get_wmic_info(
-                "wmic computersystem get TotalPhysicalMemory"
-            )
-            try:
-                mem_info_gb = round(int(mem_info_bytes) / (1024**3), 2)
-                info_dict["Physical Memory"] = f"{mem_info_gb} GB"
-            except ValueError:
-                info_dict["Physical Memory"] = mem_info_bytes
-        else:
-            info_dict["Processor"] = "Install WMIC to get system info"
-            info_dict["OEM System"] = "Install WMIC to get system info"
-            info_dict["Physical Memory"] = "Install WMIC to get system info"
-
-    elif os_type == "Linux":
-        # WSL has to be handled differently compared to native Linux
-        if "microsoft" in str(platform.release()):
-            try:
-                oem_info = (
-                    subprocess.check_output(
-                        'powershell.exe -Command "wmic computersystem get model"',
-                        shell=True,
-                    )
-                    .decode()
-                    .strip()
-                )
-                oem_info = (
-                    oem_info.replace("\r", "")
-                    .replace("\n", "")
-                    .split("Model")[-1]
-                    .strip()
-                )
-                info_dict["OEM System"] = oem_info
-            except Exception as e:  # pylint: disable=broad-except
-                info_dict["Error OEM System (WSL)"] = str(e)
-
-        else:
-            # Get OEM System Information
-            try:
-                oem_info = (
-                    subprocess.check_output(
-                        "sudo -n dmidecode -s system-product-name",
-                        shell=True,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    .decode()
-                    .strip()
-                    .replace("\n", " ")
-                )
-                info_dict["OEM System"] = oem_info
-            except subprocess.CalledProcessError:
-                # This catches the case where sudo requires a password
-                info_dict["OEM System"] = "Unable to get oem info - password required"
-            except Exception as e:  # pylint: disable=broad-except
-                info_dict["Error OEM System"] = str(e)
-
-        # Get CPU Information
-        try:
-            cpu_info = subprocess.check_output("lscpu", shell=True).decode()
-            for line in cpu_info.split("\n"):
-                if "Model name:" in line:
-                    info_dict["Processor"] = line.split(":")[1].strip()
-                    break
-        except Exception as e:  # pylint: disable=broad-except
-            info_dict["Error Processor"] = str(e)
-
-        # Get Memory Information
-        try:
-            mem_info = (
-                subprocess.check_output("free -m", shell=True)
-                .decode()
-                .split("\n")[1]
-                .split()[1]
-            )
-            mem_info_gb = round(int(mem_info) / 1024, 2)
-            info_dict["Memory Info"] = f"{mem_info_gb} GB"
-        except Exception as e:  # pylint: disable=broad-except
-            info_dict["Error Memory Info"] = str(e)
-
-    else:
-        info_dict["Error"] = "Unsupported OS"
-
-    # Get Python Packages
-    try:
-        installed_packages = pkg_resources.working_set
-        info_dict["Python Packages"] = [
-            f"{i.key}=={i.version}"
-            for i in installed_packages  # pylint: disable=not-an-iterable
-        ]
-    except Exception as e:  # pylint: disable=broad-except
-        info_dict["Error Python Packages"] = str(e)
-
-    return info_dict
