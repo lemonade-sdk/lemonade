@@ -15,6 +15,10 @@ inputs:
     required: false
     default: ""
     description: "Location of the OGA for RyzenAI NPU install directory on disk"
+  amd_oga_hybrid:
+    required: false
+    default: ""
+    description: "Location of the OGA for RyzenAI Hybrid install directory on disk"
   hf_token:
     required: false
     default: ""

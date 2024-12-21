@@ -1,6 +1,6 @@
 # OnnxRuntime GenAI (OGA) for iGPU and CPU
 
-onnxruntime-genai (aka OGA) is a new framework created by Microsoft for running ONNX LLMs: https://github.com/microsoft/onnxruntime-genai/tree/main?tab=readme-ov-file
+[onnxruntime-genai (aka OGA)](https://github.com/microsoft/onnxruntime-genai/tree/main?tab=readme-ov-file) is a new framework created by Microsoft for running ONNX LLMs
 
 ## Installation
 

@@ -12,6 +12,7 @@ import argparse
 import os
 import time
 import json
+import shutil
 from fnmatch import fnmatch
 from queue import Queue
 from huggingface_hub import snapshot_download
@@ -35,7 +36,13 @@ oga_models_path = "oga_models"
 oga_model_builder_cache_path = "model_builder"
 
 # Mapping from processor to executiion provider, used in pathnames and by model_builder
-execution_providers = {"cpu": "cpu", "npu": "npu", "igpu": "dml", "cuda": "cuda"}
+execution_providers = {
+    "cpu": "cpu",
+    "npu": "npu",
+    "igpu": "dml",
+    "hybrid": "hybrid",
+    "cuda": "cuda",
+}
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
@@ -248,7 +255,7 @@ class OgaLoad(FirstTool):
         parser.add_argument(
             "-d",
             "--device",
-            choices=["igpu", "npu", "cpu", "cuda"],
+            choices=["igpu", "npu", "cpu", "hybrid", "cuda"],
             default="igpu",
             help="Which device to load the model on to (default: igpu)",
         )
@@ -312,8 +319,10 @@ class OgaLoad(FirstTool):
             "cpu": {"int4": "*/*", "fp32": "*/*"},
             "igpu": {"int4": "*/*", "fp16": "*/*"},
             "npu": {"int4": "amd/**-onnx-ryzen-strix"},
+            "hybrid": {"int4": "amd/**-hybrid"},
             "cuda": {"int4": "*/*", "fp16": "*/*"},
         }
+
         hf_supported = (
             device in hf_supported_models
             and dtype in hf_supported_models[device]
@@ -358,7 +367,7 @@ class OgaLoad(FirstTool):
                 )
 
             # Download the model from HF
-            if device == "npu":
+            if device == "npu" or device == "hybrid":
 
                 # NPU models on HF are ready to go and HF does its own caching
                 full_model_path = snapshot_download(
@@ -367,6 +376,67 @@ class OgaLoad(FirstTool):
                 )
                 oga_models_subfolder = None
 
+                if device == "hybrid":
+                    # Locate the directory containing hybrid-llm-artifacts_1.3.0 in the system PATH
+                    hybrid_artifacts_path = None
+                    hybrid_artifacts_path = os.environ.get("AMD_OGA_HYBRID")
+
+                    if hybrid_artifacts_path is None:
+                        raise RuntimeError(
+                            "Could not find hybrid-llm-artifacts_1.3.0 in system PATH. "
+                            "Please ensure it is added to your PATH environment variable."
+                        )
+
+                    if hybrid_artifacts_path:
+                        # Construct the path to onnx_custom_ops.dll
+                        custom_ops_path = os.path.join(
+                            hybrid_artifacts_path,
+                            "hybrid-llm-artifacts",
+                            "onnx_utils",
+                            "bin",
+                            "onnx_custom_ops.dll",
+                        )
+
+                        config_path = os.path.join(full_model_path, "genai_config.json")
+
+                        # Check if the config file exists
+                        if os.path.exists(config_path):
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                config = json.load(f)
+
+                            # Modify the custom_ops_library under decoder -> session_options
+                            if (
+                                "model" in config
+                                and "decoder" in config["model"]
+                                and "session_options" in config["model"]["decoder"]
+                            ):
+                                config["model"]["decoder"]["session_options"][
+                                    "custom_ops_library"
+                                ] = custom_ops_path
+
+                            # Write the changes back to the file
+                            with open(config_path, "w", encoding="utf-8") as f:
+                                json.dump(config, f, indent=4)
+
+                        # Copy DirectML.dll from lib to bin folder
+                        src_dll = os.path.join(
+                            hybrid_artifacts_path,
+                            "hybrid-llm-artifacts",
+                            "onnxruntime_genai",
+                            "lib",
+                            "DirectML.dll",
+                        )
+                        dst_dll = os.path.join(
+                            hybrid_artifacts_path,
+                            "hybrid-llm-artifacts",
+                            "onnx_utils",
+                            "bin",
+                            "DirectML.dll",
+                        )
+
+                        # Create destination directory if it doesn't exist
+                        os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
+                        shutil.copy2(src_dll, dst_dll)
             else:
                 # device is 'cpu' or 'igpu'
 

@@ -100,6 +100,12 @@ setup(
             "fastapi",
             "uvicorn[standard]",
         ],
+	"llm-oga-hybrid": [
+            "transformers",
+            "torch",
+            "onnx==1.16.1",
+            "numpy==1.26.4",
+        ],
     },
     classifiers=[],
     entry_points={
