@@ -100,11 +100,14 @@ setup(
             "fastapi",
             "uvicorn[standard]",
         ],
-	"llm-oga-hybrid": [
+        "llm-oga-hybrid": [
             "transformers",
             "torch",
             "onnx==1.16.1",
             "numpy==1.26.4",
+            "datasets",
+            "fastapi",
+            "uvicorn[standard]",
         ],
     },
     classifiers=[],
