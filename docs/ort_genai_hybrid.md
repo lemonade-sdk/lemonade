@@ -10,7 +10,7 @@
 
 ### Requirements
  - [NPU Drivers (version .237)](https://ryzenai.docs.amd.com/en/latest/inst.html#install-npu-drivers)
- - [Hybrid LLM artifacts package](https://github.com/aigdat/ryzenai-sw-ea/blob/main/ryzen_ai_13_ga/hybrid-llm-artifacts_1.3.0.zip)
+ - [Hybrid LLM artifacts package](https://account.amd.com/en/member/ryzenai-sw-ea.html#tabs-a5e122f973-item-4757898120-tab)
 
 ### Installation
 
