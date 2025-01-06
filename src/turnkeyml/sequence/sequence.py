@@ -4,6 +4,7 @@ import os
 import copy
 from datetime import datetime
 from typing import List, Dict, Optional
+import pytz
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exp
 import turnkeyml.common.build as build
@@ -128,9 +129,10 @@ class Sequence:
         state.save_stat(fs.Keys.BUILD_STATUS, build.FunctionStatus.INCOMPLETE)
 
         # Save a timestamp so that we know the order of builds within a cache
+        pacific_tz = pytz.timezone("America/Los_Angeles")
         state.save_stat(
             fs.Keys.TIMESTAMP,
-            datetime.now(),
+            datetime.now(pacific_tz),
         )
 
         # Save the system information used for this build
