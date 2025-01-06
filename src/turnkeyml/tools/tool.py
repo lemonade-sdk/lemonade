@@ -6,7 +6,7 @@ import argparse
 import textwrap as _textwrap
 import re
 from typing import Tuple, Dict
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 import psutil
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exp
@@ -15,13 +15,25 @@ import turnkeyml.common.filesystem as fs
 from turnkeyml.state import State
 
 
-def _spinner(message):
+def _spinner(message, q: Queue):
+    """
+    Displays a moving "..." indicator so that the user knows that the
+    Tool is still working. Tools can optionally use a multiprocessing
+    Queue to display the percent progress of the Tool.
+    """
+    percent_complete = None
+
     try:
         parent_process = psutil.Process(pid=os.getppid())
         while parent_process.status() == psutil.STATUS_RUNNING:
             for cursor in ["   ", ".  ", ".. ", "..."]:
                 time.sleep(0.5)
-                status = f"      {message}{cursor}\r"
+                if not q.empty():
+                    percent_complete = q.get()
+                if percent_complete is not None:
+                    status = f"      {message} ({percent_complete:.1f}%){cursor}\r"
+                else:
+                    status = f"      {message}{cursor}\r"
                 sys.stdout.write(status)
                 sys.stdout.flush()
     except psutil.NoSuchProcess:
@@ -146,17 +158,22 @@ class Tool(abc.ABC):
                 success_tick = "+"
                 fail_tick = "x"
 
+            if self.percent_progress is None:
+                progress_indicator = ""
+            else:
+                progress_indicator = f" ({self.percent_progress:.1f}%)"
+
             if successful is None:
                 # Initialize the message
                 printing.logn(f"      {self.monitor_message}   ")
             elif successful:
                 # Print success message
                 printing.log(f"    {success_tick} ", c=printing.Colors.OKGREEN)
-                printing.logn(self.monitor_message + "   ")
+                printing.logn(self.monitor_message + progress_indicator + "   ")
             else:
                 # successful == False, print failure message
                 printing.log(f"    {fail_tick} ", c=printing.Colors.FAIL)
-                printing.logn(self.monitor_message + "   ")
+                printing.logn(self.monitor_message + progress_indicator + "   ")
 
     def __init__(
         self,
@@ -169,6 +186,8 @@ class Tool(abc.ABC):
         self.duration_key = f"{fs.Keys.TOOL_DURATION}:{self.__class__.unique_name}"
         self.monitor_message = monitor_message
         self.progress = None
+        self.progress_queue = None
+        self.percent_progress = None
         self.logfile_path = None
         # Tools can disable build.Logger, which captures all stdout and stderr from
         # the Tool, by setting enable_logger=False
@@ -191,6 +210,18 @@ class Tool(abc.ABC):
         Static method that returns an ArgumentParser that defines the command
         line interface for this Tool.
         """
+
+    def set_percent_progress(self, percent_progress: float):
+        """
+        Update the progress monitor with a percent progress to let the user
+        know how much progress the Tool has made.
+        """
+
+        if not isinstance(percent_progress, float):
+            raise ValueError(f"Input argument must be a float, got {percent_progress}")
+
+        self.progress_queue.put(percent_progress)
+        self.percent_progress = percent_progress
 
     # pylint: disable=unused-argument
     def parse(self, state: State, args, known_only=True) -> argparse.Namespace:
@@ -250,7 +281,10 @@ class Tool(abc.ABC):
         )
 
         if monitor:
-            self.progress = Process(target=_spinner, args=[self.monitor_message])
+            self.progress_queue = Queue()
+            self.progress = Process(
+                target=_spinner, args=(self.monitor_message, self.progress_queue)
+            )
             self.progress.start()
 
         try:
