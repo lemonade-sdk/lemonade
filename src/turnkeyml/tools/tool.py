@@ -220,7 +220,8 @@ class Tool(abc.ABC):
         if not isinstance(percent_progress, float):
             raise ValueError(f"Input argument must be a float, got {percent_progress}")
 
-        self.progress_queue.put(percent_progress)
+        if self.progress_queue:
+            self.progress_queue.put(percent_progress)
         self.percent_progress = percent_progress
 
     # pylint: disable=unused-argument
