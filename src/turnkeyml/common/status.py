@@ -106,8 +106,13 @@ class UniqueInvocationInfo(BasicInfo):
         if print_file_name:
             print(f"{self.script_name}{self.extension}:")
 
-        # Print invocation about the model (only applies to scripts, not ONNX files)
-        if not (self.extension == ".onnx" or self.extension == "_state.yaml"):
+        # Print invocation about the model (only applies to scripts, not ONNX files or
+        # LLMs, which have no extension)
+        if not (
+            self.extension == ".onnx"
+            or self.extension == "_state.yaml"
+            or self.extension == ""
+        ):
             if self.depth == 0 and multiple_unique_invocations:
                 if not model_visited:
                     printing.logn(f"{self.indent}{self.name}")
@@ -203,6 +208,12 @@ class UniqueInvocationInfo(BasicInfo):
         )
         if self.is_target:
 
+            # Get the maximum key length to figure out the number
+            # of tabs needed to align the values
+            max_key_len = 0
+            for key in self.stats_keys:
+                max_key_len = max(len(_pretty_print_key(key)), max_key_len)
+
             for key in self.stats_keys:
                 nice_key = _pretty_print_key(key)
                 try:
@@ -215,7 +226,17 @@ class UniqueInvocationInfo(BasicInfo):
                     units_key = key + "_units"
                     units = stats.stats.get(units_key)
                     units = units if units is not None else ""
-                    printing.logn(f"{self.indent}\t\t\t{nice_key}:\t{value} {units}")
+                    if self.extension == "":
+                        value_tabs = " " * (
+                            (max_key_len - len(_pretty_print_key(key))) + 1
+                        )
+                        printing.logn(
+                            f"{self.indent}\t{nice_key}:{value_tabs}{value} {units}"
+                        )
+                    else:
+                        printing.logn(
+                            f"{self.indent}\t\t\t{nice_key}:\t{value} {units}"
+                        )
                 except KeyError:
                     # Ignore any keys that are missing because that means the
                     # evaluation did not produce them
@@ -251,7 +272,7 @@ class UniqueInvocationInfo(BasicInfo):
         Print information about a given model or submodel.
         """
 
-        if self.extension == ".onnx":
+        if self.extension == ".onnx" or self.extension == "":
             self.indent = "\t" * (2 * self.depth)
         else:
             self.indent = "\t" * (2 * self.depth + 1)
