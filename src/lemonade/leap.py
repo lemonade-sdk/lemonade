@@ -3,8 +3,8 @@
 from typing import Tuple, Dict
 from turnkeyml.state import State
 import turnkeyml.common.printing as printing
-import turnkeyml.llm.cache as cache
-from turnkeyml.llm.tools.adapter import ModelAdapter, TokenizerAdapter
+import lemonade.cache as cache
+from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 
 
 class NotSupported(Exception):
@@ -78,7 +78,7 @@ def from_pretrained(
         # Huggingface supports all checkpoints, so there is nothing to check for
 
         import torch
-        from turnkeyml.llm.tools.huggingface_load import HuggingfaceLoad
+        from lemonade.tools.huggingface_load import HuggingfaceLoad
 
         state = _make_state(recipe, checkpoint)
 
@@ -94,7 +94,7 @@ def from_pretrained(
         # Huggingface Transformers recipe for discrete GPU (Nvidia, Instinct, Radeon)
 
         import torch
-        from turnkeyml.llm.tools.huggingface_load import HuggingfaceLoad
+        from lemonade.tools.huggingface_load import HuggingfaceLoad
 
         state = _make_state(recipe, checkpoint)
 
@@ -111,7 +111,7 @@ def from_pretrained(
         return state.model, tokenizer
 
     elif recipe == "oga-dml-igpu":
-        import turnkeyml.llm.tools.ort_genai.oga as oga
+        import lemonade.tools.ort_genai.oga as oga
 
         state = _make_state(recipe, checkpoint)
 
@@ -134,7 +134,7 @@ def from_pretrained(
         ):
             _raise_not_supported(recipe, checkpoint)
 
-        import turnkeyml.llm.tools.ryzenai_npu.ryzenai_npu as ryzenai_npu
+        import lemonade.tools.ryzenai_npu.ryzenai_npu as ryzenai_npu
 
         state = _make_state(recipe, checkpoint)
 

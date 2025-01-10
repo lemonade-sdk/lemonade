@@ -11,7 +11,7 @@ from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteri
 import uvicorn
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
-from turnkeyml.llm.tools.adapter import ModelAdapter, TokenizerAdapter
+from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 
 DEFAULT_GENERATE_PARAMS = {
     "do_sample": True,
@@ -301,7 +301,7 @@ class Serve(Tool):
                 # Set up the generation parameters
                 if isinstance(model, ModelAdapter) and model.type == "ort-genai":
                     # Onnxruntime-genai models
-                    import turnkeyml.llm.tools.ort_genai.oga as oga
+                    import lemonade.tools.ort_genai.oga as oga
 
                     streamer = oga.OrtGenaiStreamer(tokenizer)
 

@@ -8,8 +8,8 @@ import torch
 import tqdm
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
-from turnkeyml.llm.cache import Keys
-import turnkeyml.llm.tools.ort_genai.oga_bench as general
+from lemonade.cache import Keys
+import lemonade.tools.ort_genai.oga_bench as general
 
 
 def benchmark_huggingface_llm(
@@ -84,6 +84,9 @@ def benchmark_huggingface_llm(
                 # Only count an iteration it produced enough tokens
                 if token_len >= target_output_tokens:
                     per_iteration_result.append((latency, token_len))
+
+        if not per_iteration_result:
+            raise general.not_enough_tokens(target_output_tokens)
 
     return per_iteration_result
 

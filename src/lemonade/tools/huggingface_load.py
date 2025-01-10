@@ -6,8 +6,8 @@ import torch
 from turnkeyml.state import State
 import turnkeyml.common.status as status
 from turnkeyml.tools import Tool, FirstTool
-from turnkeyml.llm.tools.adapter import ModelAdapter
-from turnkeyml.llm.cache import Keys
+from lemonade.tools.adapter import ModelAdapter
+from lemonade.cache import Keys
 
 # Command line interfaces for tools will use string inputs for data
 # types, however the internal tool logic will need to know the actual

@@ -22,12 +22,12 @@ from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
 import turnkeyml.common.status as status
 import turnkeyml.common.printing as printing
-from turnkeyml.llm.tools.adapter import (
+from lemonade.tools.adapter import (
     ModelAdapter,
     TokenizerAdapter,
     PassthroughTokenizerResult,
 )
-from turnkeyml.llm.cache import Keys
+from lemonade.cache import Keys
 
 # ONNX Runtime GenAI models will be cached in this subfolder of the lemonade cache folder
 oga_models_path = "oga_models"
@@ -216,7 +216,7 @@ class OgaLoad(FirstTool):
     Input: path to a checkpoint.
         Supported choices for cpu and igpu from HF model repository:
             LLM models on Huggingface supported by model_builder.  See documentation
-            (https://github.com/aigdat/genai/blob/main/docs/ort_genai_igpu.md) for supported models.
+            (https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_igpu.md) for supported models.
         Supported choices for npu from HF model repository:
             Models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
         Local models for cpu, igpu, or npu:

@@ -4,14 +4,37 @@ import statistics
 import tqdm
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
-from turnkeyml.llm.cache import Keys
-from turnkeyml.llm.tools.adapter import ModelAdapter, TokenizerAdapter
+from lemonade.cache import Keys
+from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 
 default_iterations = 10
 default_warmup_runs = 5
 default_prompt = "Hello, I am conscious and"
 default_beams = 1
 default_output_tokens = 5
+
+
+def not_enough_tokens(output_tokens: int):
+    """
+    Raise an exception that explains why a benchmark did not produce any results
+    """
+
+    raise ValueError(
+        "Your model was benchmarked, however none of the benchmarking "
+        "iterations produced the requested amount of output tokens "
+        f"(currently {output_tokens}), so "
+        "the results have been discarded. You have the following options "
+        "to solve this: \n"
+        "1. Use the -p option to change the prompt to something that will "
+        "produce more output tokens. For example, 'The extremely long "
+        "story of my life, told in excruciating details is:' "
+        "is an example of a prompt that will result in a lot of output. \n"
+        "2. Set a lower value for --output-tokens to make it more likely "
+        "that the model will produce enough. \n"
+        "3. Set more verbose hyperparameters. \n"
+        "4. Run more benchmarking iterations, to improve the chance of "
+        "getting at least one with enough output tokens. \n"
+    )
 
 
 class OgaBench(Tool):
@@ -143,6 +166,9 @@ class OgaBench(Tool):
             if token_len >= output_tokens:
                 per_iteration_time_to_first_token.append(model.time_to_first_token)
                 per_iteration_tokens_per_second.append(model.tokens_per_second)
+
+        if not per_iteration_time_to_first_token or not per_iteration_tokens_per_second:
+            raise not_enough_tokens(output_tokens)
 
         mean_time_to_first_token = statistics.mean(per_iteration_time_to_first_token)
         prefill_tokens_per_second = input_ids_len / mean_time_to_first_token

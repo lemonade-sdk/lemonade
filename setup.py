@@ -3,11 +3,11 @@ from setuptools import setup
 with open("src/turnkeyml/version.py", encoding="utf-8") as fp:
     version = fp.read().split('"')[1]
 
+
 setup(
     name="turnkeyml",
     version=version,
     description="TurnkeyML Tools and Models",
-    author="Jeremy Fowers, Daniel Holanda, Ramakrishnan Sivakumar, Victoria Godsoe",
     author_email="turnkeyml@amd.com",
     package_dir={"": "src", "turnkeyml_models": "models"},
     packages=[
@@ -17,10 +17,10 @@ setup(
         "turnkeyml.sequence",
         "turnkeyml.cli",
         "turnkeyml.common",
-        "turnkeyml.llm",
-        "turnkeyml.llm.tools",
-        "turnkeyml.llm.tools.ort_genai",
-        "turnkeyml.llm.tools.ryzenai_npu",
+        "lemonade",
+        "lemonade.tools",
+        "lemonade.tools.ort_genai",
+        "lemonade.tools.ryzenai_npu",
         "turnkeyml_models",
         "turnkeyml_models.graph_convolutions",
         "turnkeyml_models.selftest",
@@ -46,6 +46,7 @@ setup(
         "psutil",
         "wmi",
         "pytz",
+        "tqdm",
         # Conditional dependencies for ONNXRuntime backends
         "onnxruntime >=1.10.1;platform_system=='Linux' and extra != 'llm-oga-cuda'",
         "onnxruntime-directml >=1.19.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",
@@ -53,70 +54,53 @@ setup(
     ],
     extras_require={
         "llm": [
-            "tqdm",
             "torch>=2.0.0",
             "transformers",
             "accelerate",
             "py-cpuinfo",
             "sentencepiece",
             "datasets",
+            # Install human-eval from a forked repo with Windows support until the
+            # PR (https://github.com/openai/human-eval/pull/53) is merged
+            "human-eval @ git+https://github.com/ramkrishna2910/human-eval.git",
             "fastapi",
             "uvicorn[standard]",
         ],
-        "llm-oga-dml": [
+        "llm-oga-igpu": [
             "onnxruntime-genai-directml==0.4.0",
-            "tqdm",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
-            "accelerate",
-            "py-cpuinfo",
-            "sentencepiece",
-            "datasets",
-            "fastapi",
-            "uvicorn[standard]",
+            "turnkeyml[llm]",
         ],
         "llm-oga-cuda": [
             "onnxruntime-genai-cuda==0.4.0",
-            "tqdm",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
-            "accelerate",
-            "py-cpuinfo",
-            "sentencepiece",
-            "datasets",
-            "fastapi",
-            "uvicorn[standard]",
+            "turnkeyml[llm]",
         ],
         "llm-oga-npu": [
-            "transformers",
-            "torch",
             "onnx==1.16.0",
             "onnxruntime==1.18.0",
             "numpy==1.26.4",
-            "tqdm",
-            "accelerate",
-            "py-cpuinfo",
-            "sentencepiece",
-            "datasets",
-            "fastapi",
-            "uvicorn[standard]",
+            "turnkeyml[llm]",
         ],
         "llm-oga-hybrid": [
-            "transformers",
-            "torch",
             "onnx==1.16.1",
             "numpy==1.26.4",
-            "datasets",
-            "fastapi",
-            "uvicorn[standard]",
+            "turnkeyml[llm]",
+        ],
+        "cuda": [
+            "torch @ https://download.pytorch.org/whl/cu118/torch-2.3.1%2Bcu118-cp310-cp310-win_amd64.whl",
+            "torchvision @ https://download.pytorch.org/whl/cu118/torchvision-0.18.1%2Bcu118-cp310-cp310-win_amd64.whl",
+            "torchaudio @ https://download.pytorch.org/whl/cu118/torchaudio-2.3.1%2Bcu118-cp310-cp310-win_amd64.whl",
         ],
     },
     classifiers=[],
     entry_points={
         "console_scripts": [
             "turnkey=turnkeyml:turnkeycli",
-            "turnkey-llm=turnkeyml.llm:lemonadecli",
-            "lemonade=turnkeyml.llm:lemonadecli",
+            "turnkey-llm=lemonade:lemonadecli",
+            "lemonade=lemonade:lemonadecli",
         ]
     },
     python_requires=">=3.8, <3.12",

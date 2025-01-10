@@ -12,8 +12,8 @@ from ryzenai_llm_quantizer import QuantConfig, RyzenAILLMQuantizer
 from modeling_phi3 import Phi3ForCausalLM
 from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
-from turnkeyml.llm.tools.adapter import ModelAdapter
-from turnkeyml.llm.cache import Keys
+from lemonade.tools.adapter import ModelAdapter
+from lemonade.cache import Keys
 
 npu_root_dir = os.path.dirname(__file__)
 quantized_models_path = os.path.join(npu_root_dir, "quantized_models")

@@ -5,11 +5,12 @@ import urllib3
 from turnkeyml.state import State
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.test_helpers as common
-from turnkeyml.llm.tools.huggingface_load import HuggingfaceLoad
-from turnkeyml.llm.tools.huggingface_bench import HuggingfaceBench
-from turnkeyml.llm.tools.mmlu import AccuracyMMLU
-from turnkeyml.llm.tools.chat import LLMPrompt
-from turnkeyml.llm.cache import Keys
+from lemonade.tools.huggingface_load import HuggingfaceLoad
+from lemonade.tools.huggingface_bench import HuggingfaceBench
+from lemonade.tools.mmlu import AccuracyMMLU
+from lemonade.tools.humaneval import AccuracyHumaneval
+from lemonade.tools.chat import LLMPrompt
+from lemonade.cache import Keys
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
 
@@ -63,6 +64,31 @@ class Testing(unittest.TestCase):
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
         assert stats[f"mmlu_{subject[0]}_accuracy"] > 0
+
+    def test_003_accuracy_humaneval(self):
+        """Test HumanEval benchmarking with known model"""
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test",
+        )
+
+        # Enable code evaluation for HumanEval
+        os.environ["HF_ALLOW_CODE_EVAL"] = "1"
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = AccuracyHumaneval().run(
+            state,
+            first_n_samples=1,  # Test only one problem for speed
+            k_samples=1,        # Single attempt per problem
+            timeout=30.0
+        )
+
+        # Verify results
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+        assert "humaneval_pass@1" in stats, "HumanEval pass@1 metric not found"
+        assert isinstance(stats["humaneval_pass@1"], (int, float)), "HumanEval pass@1 metric should be numeric"
 
     def test_001_huggingface_bench(self):
         # Benchmark OPT

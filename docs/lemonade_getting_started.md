@@ -79,8 +79,8 @@ Note that the `llm-prompt`, `accuracy-mmlu`, and `serve` tools can all be used w
 Lemonade is also available via API. Here's a quick example of how to benchmark an LLM:
 
 ```python
-import turnkeyml.llm.tools.torch_llm as tl
-import turnkeyml.llm.tools.chat as cl
+import lemonade.tools.torch_llm as tl
+import lemonade.tools.chat as cl
 from turnkeyml.state import State
 
 state = State(cache_dir="cache", build_name="test")

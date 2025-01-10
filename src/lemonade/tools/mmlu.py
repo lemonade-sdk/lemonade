@@ -18,6 +18,16 @@ choices = ["A", "B", "C", "D"]
 dataset_url = "https://people.eecs.berkeley.edu/~hendrycks/data.tar"
 
 
+def min_handle_none(*args: int):
+    """
+    Returns the minimum of the arguments. If one of the arguments is none,
+    it doesn't count towards the min.
+    """
+
+    filter_out_none = (value for value in args if value is not None)
+    return min(filter_out_none)
+
+
 class AccuracyMMLU(Tool):
     """
     See docs/mmlu_accuracy.md for more details
@@ -95,14 +105,34 @@ class AccuracyMMLU(Tool):
         if tests is not None:
             unsupported_tests = set(tests) - set(tests_to_run)
             if unsupported_tests:
-                printing.log_warning(
-                    "Warning: Unsupported tests specified and will be ignored:"
-                    + f"{', '.join(unsupported_tests)}"
+                raise ValueError(
+                    f"Invalid test names provided: {', '.join(unsupported_tests)}. "
+                    f"Valid tests are: {', '.join(tests_to_run)}"
                 )
             tests_to_run = [test for test in tests if test in tests_to_run]
 
         tokenizer = state.tokenizer
         model = state.model
+
+        # Update Tool progress monitor
+        self.set_percent_progress(0.0)
+        number_of_questions = float(
+            sum(
+                [
+                    min_handle_none(
+                        len(
+                            _safe_read_csv(
+                                os.path.join(dataset_dir, "test", f"{subject}_test.csv")
+                            )
+                        ),
+                        max_evals,
+                    )
+                    for subject in tests_to_run
+                ]
+            )
+        )
+
+        questions_completed = 0
 
         summary_data = []
         for subject in tqdm.tqdm(tests_to_run):
@@ -113,9 +143,40 @@ class AccuracyMMLU(Tool):
                 os.path.join(dataset_dir, "test", f"{subject}_test.csv")
             )
 
-            detailed_results, acc = _eval_model(
-                ntrain, max_evals, subject, model, tokenizer, dev_df, test_df
-            )
+            # Evaluate the model on the test data for a given subject
+            detailed_results = []
+
+            for i in range(min_handle_none(test_df.shape[0], max_evals)):
+                prompt = _gen_prompt(dev_df, subject, ntrain) + _format_example(
+                    test_df, i, include_answer=False
+                )
+                input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+
+                response_text = _generate_response(tokenizer, model, input_ids)
+                try:
+                    pred_label = response_text[-1].upper()
+                # Handle models generating empty outputs
+                except IndexError:
+                    pred_label = "-"
+
+                label = test_df.iloc[i, -1].strip().upper()
+                detailed_results.append(
+                    {
+                        "Question": test_df.iloc[i, 0],
+                        "Prompt": prompt,
+                        "Correct Answer": label,
+                        "Generated Answer": pred_label,
+                        "Correct": pred_label == label,
+                    }
+                )
+
+                # Update progress monitor
+                questions_completed = questions_completed + 1
+                percent_completed = questions_completed / number_of_questions * 100
+                self.set_percent_progress(percent_completed)
+
+            acc = np.mean([res["Correct"] for res in detailed_results])
+
             subject_results_df = pd.DataFrame(detailed_results)
             subject_csv_path = os.path.join(
                 model_results_dir, f"{subject}_detailed_results.csv"
@@ -254,37 +315,3 @@ def download_and_extract_dataset(data_cache_dir: str, dataset_url: str):
 
     # MMLU data is stored in data.tar/data
     return os.path.join(data_cache_dir, "data")
-
-
-def _eval_model(ntrain, max_evals, subject, model, tokenizer, dev_df, test_df):
-    """Evaluates the model on the test data for a given subject."""
-    detailed_results = []
-
-    for i in range(test_df.shape[0]):
-        prompt = _gen_prompt(dev_df, subject, ntrain) + _format_example(
-            test_df, i, include_answer=False
-        )
-        input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-
-        response_text = _generate_response(tokenizer, model, input_ids)
-        try:
-            pred_label = response_text[-1].upper()
-        # Handle models generating empty outputs
-        except IndexError:
-            pred_label = "-"
-
-        label = test_df.iloc[i, -1].strip().upper()
-        detailed_results.append(
-            {
-                "Question": test_df.iloc[i, 0],
-                "Prompt": prompt,
-                "Correct Answer": label,
-                "Generated Answer": pred_label,
-                "Correct": pred_label == label,
-            }
-        )
-        if max_evals is not None and i >= max_evals - 1:
-            break
-
-    acc = np.mean([res["Correct"] for res in detailed_results])
-    return detailed_results, acc
