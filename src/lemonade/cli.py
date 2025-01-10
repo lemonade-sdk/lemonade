@@ -14,7 +14,7 @@ from lemonade.tools.huggingface_load import (
 
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.ort_genai.oga_bench import OgaBench
-
+from lemonade.tools.llamacpp_bench import LlamaCppBench
 from lemonade.tools.llamacpp import LoadLlamaCpp
 
 import lemonade.cache as cache
@@ -30,6 +30,7 @@ def main():
     tools = [
         HuggingfaceLoad,
         LoadLlamaCpp,
+        LlamaCppBench,
         AccuracyMMLU,
         AccuracyHumaneval,
         AccuracyPerplexity,

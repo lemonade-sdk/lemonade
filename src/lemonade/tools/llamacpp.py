@@ -1,77 +1,121 @@
 import argparse
 import os
-import subprocess
 from typing import Optional
-
+import subprocess
 from turnkeyml.state import State
+import turnkeyml.common.status as status
 from turnkeyml.tools import FirstTool
-
-import turnkeyml.common.build as build
-from .adapter import PassthroughTokenizer, ModelAdapter
-
-
-def llamacpp_dir(state: State):
-    return os.path.join(build.output_dir(state.cache_dir, state.build_name), "llamacpp")
+from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
+from lemonade.cache import Keys
 
 
 class LlamaCppAdapter(ModelAdapter):
-    unique_name = "llama-cpp-adapter"
-
-    def __init__(self, executable, model, tool_dir, context_size, threads, temp):
+    def __init__(self, model, output_tokens, context_size, threads, executable):
         super().__init__()
 
-        self.executable = executable
-        self.model = model
-        self.tool_dir = tool_dir
+        self.model = os.path.normpath(model)
+        self.output_tokens = output_tokens
         self.context_size = context_size
         self.threads = threads
-        self.temp = temp
+        self.executable = os.path.normpath(executable)
 
-    def generate(self, input_ids: str, max_new_tokens: Optional[int] = None):
+    def generate(
+        self,
+        input_ids: str,
+        max_new_tokens: Optional[int] = None,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
+        top_k: int = 40,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
         """
         Pass a text prompt into the llamacpp inference CLI.
 
         The input_ids arg here should receive the original text that
         would normally be encoded by a tokenizer.
+
+        Args:
+            input_ids: The input text prompt
+            max_new_tokens: Maximum number of tokens to generate
+            temperature: Temperature for sampling (0.0 = greedy)
+            top_p: Top-p sampling threshold
+            top_k: Top-k sampling threshold
+            **kwargs: Additional arguments (ignored)
+
+        Returns:
+            List containing a single string with the generated text
         """
+
+        prompt = input_ids
+        n_predict = max_new_tokens if max_new_tokens is not None else self.output_tokens
 
         cmd = [
             self.executable,
+            "-m",
+            self.model,
+            "--ctx-size",
+            str(self.context_size),
+            "-n",
+            str(n_predict),
+            "-t",
+            str(self.threads),
+            "-p",
+            prompt,
+            "--temp",
+            str(temperature),
+            "--top-p",
+            str(top_p),
+            "--top-k",
+            str(top_k),
             "-e",
         ]
 
-        optional_params = {
-            "ctx-size": self.context_size,
-            "n-predict": max_new_tokens,
-            "threads": self.threads,
-            "model": self.model,
-            "prompt": input_ids,
-            "temp": self.temp,
-        }
-
-        for flag, value in optional_params.items():
-            if value is not None:
-                cmd.append(f"--{flag} {value}")
-
         cmd = [str(m) for m in cmd]
 
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
-
-        raw_output, raw_err = process.communicate()
-
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode, process.args, raw_output, raw_err
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                encoding="utf-8",
+                errors="replace",
             )
 
+            raw_output, stderr = process.communicate()
+            if process.returncode != 0:
+                error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
+                error_msg += f"Command: {' '.join(cmd)}\n"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{raw_output}"
+                raise Exception(error_msg)
+
+            if raw_output is None:
+                raise Exception("No output received from llama.cpp process")
+
+            # Parse timing information
+            for line in raw_output.splitlines():
+                if "llama_perf_context_print:        eval time =" in line:
+                    parts = line.split("(")[1].strip()
+                    parts = parts.split(",")
+                    ms_per_token = float(parts[0].split("ms per token")[0].strip())
+                    self.tokens_per_second = (
+                        1000 / ms_per_token if ms_per_token > 0 else 0
+                    )
+                if "llama_perf_context_print: prompt eval time =" in line:
+                    parts = line.split("=")[1].split("/")[0]
+                    time_to_first_token_ms = float(parts.split("ms")[0].strip())
+                    self.time_to_first_token = time_to_first_token_ms / 1000
+
+        except Exception as e:
+            error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
+            error_msg += f"Command: {' '.join(cmd)}"
+            raise Exception(error_msg)
+
+        # Find where the prompt ends and the generated text begins
         prompt_found = False
         output_text = ""
-        prompt_first_line = input_ids.split("\n")[0]
+        prompt_first_line = prompt.split("\n")[0]
         for line in raw_output.splitlines():
             if prompt_first_line in line:
                 prompt_found = True
@@ -82,6 +126,7 @@ class LlamaCppAdapter(ModelAdapter):
         if not prompt_found:
             raise Exception("Prompt not found in result, this is a bug in lemonade.")
 
+        # Return list containing the generated text
         return [output_text]
 
 
@@ -102,7 +147,7 @@ class LoadLlamaCpp(FirstTool):
             "--executable",
             required=True,
             type=str,
-            help="Executable name",
+            help="Path to the llama.cpp executable (e.g., llama-cli or llama-cli.exe)",
         )
 
         default_threads = 1
@@ -123,17 +168,20 @@ class LoadLlamaCpp(FirstTool):
             help=f"Context size of the prompt (default: {context_size})",
         )
 
+        output_tokens = 512
         parser.add_argument(
-            "--model-binary",
+            "--output-tokens",
             required=False,
-            help="Path to a .gguf model to use with benchmarking.",
+            type=int,
+            default=output_tokens,
+            help=f"Maximum number of output tokens the LLM should make (default: {output_tokens})",
         )
 
         parser.add_argument(
-            "--temp",
-            type=float,
-            required=False,
-            help="Temperature",
+            "--model-binary",
+            required=True,
+            type=str,
+            help="Path to a .gguf model file",
         )
 
         return parser
@@ -141,32 +189,33 @@ class LoadLlamaCpp(FirstTool):
     def run(
         self,
         state: State,
-        input: str = None,
-        context_size: int = None,
-        threads: int = None,
+        input: str = "",
+        context_size: int = 512,
+        threads: int = 1,
+        output_tokens: int = 512,
+        model_binary: Optional[str] = None,
         executable: str = None,
-        model_binary: str = None,
-        temp: float = None,
     ) -> State:
         """
-        Create a tokenizer instance and model instance in `state` that support:
-
-        input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-        response = model.generate(input_ids, max_new_tokens=1)
-        response_text = tokenizer.decode(response[0], skip_special_tokens=True).strip()
+        Load a llama.cpp model
         """
 
         if executable is None:
-            raise Exception(f"{self.__class__.unique_name} requires an executable")
+            raise Exception(f"{self.__class__.unique_name} requires an executable path")
 
-        if input is not None and input != "":
+        # Convert paths to platform-specific format
+        executable = os.path.normpath(executable)
+
+        if model_binary:
+            model_to_use = os.path.normpath(model_binary)
+        else:
             model_binary = input
+            model_to_use = os.path.normpath(model_binary) if model_binary else None
 
-        # Save execution parameters
-        state.save_stat("context_size", context_size)
-        state.save_stat("threads", threads)
+            if not model_binary:
+                model_to_use = state.get(Keys.MODEL)
 
-        if model_binary is None:
+        if model_to_use is None:
             raise Exception(
                 f"{self.__class__.unique_name} requires the preceding tool to pass a "
                 "Llamacpp model, "
@@ -174,13 +223,16 @@ class LoadLlamaCpp(FirstTool):
             )
 
         state.model = LlamaCppAdapter(
-            executable=executable,
-            model=model_binary,
-            tool_dir=llamacpp_dir(state),
+            model=model_to_use,
+            output_tokens=output_tokens,
             context_size=context_size,
             threads=threads,
-            temp=temp,
+            executable=executable,
         )
         state.tokenizer = PassthroughTokenizer()
+
+        # Save stats about the model
+        state.save_stat(Keys.CHECKPOINT, model_to_use)
+        status.add_to_state(state=state, name=input, model=model_to_use)
 
         return state
