@@ -125,7 +125,6 @@ class OrtGenaiModel(ModelAdapter):
 
         max_length = len(input_ids) + max_new_tokens
 
-        params.input_ids = input_ids
         if self.config and "search" in self.config:
             search_config = self.config["search"]
             params.set_search_options(
@@ -159,10 +158,10 @@ class OrtGenaiModel(ModelAdapter):
         params.try_graph_capture_with_max_batch_size(1)
 
         generator = og.Generator(self.model, params)
+        generator.append_tokens(input_ids)
 
         if streamer is None:
             prompt_start_time = time.perf_counter()
-            generator.compute_logits()
             generator.generate_next_token()
             prompt_end_time = time.perf_counter()
 
@@ -173,7 +172,6 @@ class OrtGenaiModel(ModelAdapter):
                 token_gen_times = []
                 while not generator.is_done():
                     token_gen_start_time = time.perf_counter()
-                    generator.compute_logits()
                     generator.generate_next_token()
                     token_gen_end_time = time.perf_counter()
 
@@ -194,7 +192,6 @@ class OrtGenaiModel(ModelAdapter):
             stop_early = False
 
             while not generator.is_done() and not stop_early:
-                generator.compute_logits()
                 generator.generate_next_token()
 
                 new_token = generator.get_next_tokens()[0]
@@ -254,6 +251,13 @@ class OgaLoad(FirstTool):
         )
 
         parser.add_argument(
+            "-ip",
+            "--input_path",
+            default="",
+            help="the local huggingface model in your disk",
+        )
+
+        parser.add_argument(
             "-d",
             "--device",
             choices=["igpu", "npu", "cpu", "hybrid", "cuda"],
@@ -304,6 +308,7 @@ class OgaLoad(FirstTool):
         self,
         state: State,
         input: str,
+        input_path: str = "",
         device: str = "igpu",
         dtype: str = "int4",
         int4_block_size: int = None,
@@ -449,7 +454,7 @@ class OgaLoad(FirstTool):
                 try:
                     model_builder.create_model(
                         checkpoint,  # model_name
-                        "",  # input_path
+                        input_path,  # input_path
                         full_model_path,  # output_path
                         dtype,  # precision
                         execution_providers[device],  # execution_provider
