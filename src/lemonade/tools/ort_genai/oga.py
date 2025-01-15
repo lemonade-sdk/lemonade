@@ -216,7 +216,8 @@ class OgaLoad(FirstTool):
     Input: path to a checkpoint.
         Supported choices for cpu and igpu from HF model repository:
             LLM models on Huggingface supported by model_builder.  See documentation
-            (https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_igpu.md) for supported models.
+            (https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_igpu.md) for supported
+            models.
         Supported choices for npu from HF model repository:
             Models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
         Local models for cpu, igpu, or npu:

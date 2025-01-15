@@ -26,6 +26,7 @@ class LlamaCppAdapter(ModelAdapter):
         temperature: float = 0.8,
         top_p: float = 0.95,
         top_k: int = 40,
+        return_raw: bool = False,
         **kwargs,  # pylint: disable=unused-argument
     ):
         """
@@ -40,10 +41,12 @@ class LlamaCppAdapter(ModelAdapter):
             temperature: Temperature for sampling (0.0 = greedy)
             top_p: Top-p sampling threshold
             top_k: Top-k sampling threshold
+            return_raw: If True, returns the complete raw output including timing info
             **kwargs: Additional arguments (ignored)
 
         Returns:
-            List containing a single string with the generated text
+            List containing a single string with the generated text, or raw output if
+            return_raw=True
         """
 
         prompt = input_ids
@@ -68,6 +71,7 @@ class LlamaCppAdapter(ModelAdapter):
             "--top-k",
             str(top_k),
             "-e",
+            "-no-cnv",
         ]
 
         cmd = [str(m) for m in cmd]
@@ -82,7 +86,7 @@ class LlamaCppAdapter(ModelAdapter):
                 errors="replace",
             )
 
-            raw_output, stderr = process.communicate()
+            raw_output, stderr = process.communicate(timeout=600)
             if process.returncode != 0:
                 error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
                 error_msg += f"Command: {' '.join(cmd)}\n"
@@ -107,27 +111,35 @@ class LlamaCppAdapter(ModelAdapter):
                     time_to_first_token_ms = float(parts.split("ms")[0].strip())
                     self.time_to_first_token = time_to_first_token_ms / 1000
 
+            if return_raw:
+                return [raw_output, stderr]
+
+            # Find where the prompt ends and the generated text begins
+            prompt_found = False
+            output_text = ""
+            prompt_first_line = prompt.split("\n")[0]
+            for line in raw_output.splitlines():
+                if prompt_first_line in line:
+                    prompt_found = True
+                if prompt_found:
+                    line = line.replace("</s> [end of text]", "")
+                    output_text = output_text + line
+
+            if not prompt_found:
+                raise Exception(
+                    f"Could not find prompt '{prompt_first_line}' in llama.cpp output. "
+                    "This usually means the model failed to process the prompt correctly.\n"
+                    f"Raw output:\n{raw_output}\n"
+                    f"Stderr:\n{stderr}"
+                )
+
+            # Return list containing the generated text
+            return [output_text]
+
         except Exception as e:
             error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
-
-        # Find where the prompt ends and the generated text begins
-        prompt_found = False
-        output_text = ""
-        prompt_first_line = prompt.split("\n")[0]
-        for line in raw_output.splitlines():
-            if prompt_first_line in line:
-                prompt_found = True
-            if prompt_found:
-                line = line.replace("</s> [end of text]", "")
-                output_text = output_text + line
-
-        if not prompt_found:
-            raise Exception("Prompt not found in result, this is a bug in lemonade.")
-
-        # Return list containing the generated text
-        return [output_text]
 
 
 class LoadLlamaCpp(FirstTool):

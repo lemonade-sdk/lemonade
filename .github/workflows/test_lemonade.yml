@@ -44,7 +44,7 @@ jobs:
       - name: Lint with PyLint
         shell: bash -el {0}
         run: |
-          pylint src/turnkeyml/llm --rcfile .pylintrc --disable E0401
+          pylint src/lemonade --rcfile .pylintrc --disable E0401
       - name: Test HF+CPU server
         if: runner.os == 'Windows'
         timeout-minutes: 10

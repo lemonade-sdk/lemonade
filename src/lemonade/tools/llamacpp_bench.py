@@ -1,6 +1,5 @@
 import argparse
 import os
-import subprocess
 import statistics
 import tqdm
 from turnkeyml.state import State
@@ -137,90 +136,50 @@ class LlamaCppBench(Tool):
         for iteration in tqdm.tqdm(
             range(iterations), desc="iterations", disable=iterations < 2
         ):
-            cmd = [
-                state.model.executable,
-                "-m",
-                state.model.model,
-                "--ctx-size",
-                str(context_size),
-                "-n",
-                str(output_tokens),
-                "-t",
-                str(state.model.threads),
-                "-p",
-                prompt,
-                "-e",
-            ]
-
-            cmd = [str(m) for m in cmd]
-
             try:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    universal_newlines=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                # Use the adapter's generate method which already has the timeout and error handling
+                raw_output, stderr = state.model.generate(prompt, return_raw=True)
 
-                raw_output, stderr = process.communicate()
-                if process.returncode != 0:
+                # Parse the timing information from the output
+                ms_per_token = None
+                time_to_first_token_ms = None
+
+                # Look for timing in both stdout and stderr
+                for output in [raw_output, stderr]:
+                    for line in output.splitlines():
+                        if "llama_perf_context_print:        eval time =" in line:
+                            parts = line.split("(")[1].strip()
+                            parts = parts.split(",")
+                            ms_per_token = float(
+                                parts[0].split("ms per token")[0].strip()
+                            )
+                        if "llama_perf_context_print: prompt eval time =" in line:
+                            parts = line.split("=")[1].split("/")[0]
+                            time_to_first_token_ms = float(parts.split("ms")[0].strip())
+
+                if ms_per_token is None or time_to_first_token_ms is None:
                     error_msg = (
-                        f"llama.cpp failed with return code {process.returncode}.\n"
+                        "Could not find timing information in llama.cpp output.\n"
                     )
-                    error_msg += f"Command: {' '.join(cmd)}\n"
-                    error_msg += f"Error output:\n{stderr}\n"
-                    error_msg += f"Standard output:\n{raw_output}"
+                    error_msg += "Raw output:\n" + raw_output + "\n"
+                    error_msg += "Stderr:\n" + stderr
                     raise Exception(error_msg)
 
-                if raw_output is None:
-                    raise Exception("No output received from llama.cpp process")
+                # When output_tokens is set to 1 for accuracy tests, ms_per_token tends to 0
+                # and causes a divide-by-zero error. Set tokens_per_second to 0 in such cases
+                # as performance data for generating a few tokens is not relevant.
+                tokens_per_second = 0
+                if output_tokens > 5 and ms_per_token > 0:
+                    tokens_per_second = 1000 / ms_per_token
+                time_to_first_token = time_to_first_token_ms / 1000
+
+                if iteration > warmup_iterations - 1:
+                    iteration_tokens_per_second.append(tokens_per_second)
+                    iteration_time_to_first_token.append(time_to_first_token)
 
             except Exception as e:
-                error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
-                error_msg += f"Command: {' '.join(cmd)}"
+                error_msg = f"Failed to run benchmark: {str(e)}"
                 raise Exception(error_msg)
-
-            ms_per_token = None
-            time_to_first_token_ms = None
-            for line in raw_output.splitlines():
-                if "llama_perf_context_print:        eval time =" in line:
-                    parts = line.split("(")[1].strip()
-                    parts = parts.split(",")
-                    ms_per_token = float(parts[0].split("ms per token")[0].strip())
-                if "llama_perf_context_print: prompt eval time =" in line:
-                    parts = line.split("=")[1].split("/")[0]
-                    time_to_first_token_ms = float(parts.split("ms")[0].strip())
-
-            if ms_per_token is None or time_to_first_token_ms is None:
-                # Look in stderr as well since some versions of llama.cpp output timing there
-                for line in stderr.splitlines():
-                    if "llama_perf_context_print:        eval time =" in line:
-                        parts = line.split("(")[1].strip()
-                        parts = parts.split(",")
-                        ms_per_token = float(parts[0].split("ms per token")[0].strip())
-                    if "llama_perf_context_print: prompt eval time =" in line:
-                        parts = line.split("=")[1].split("/")[0]
-                        time_to_first_token_ms = float(parts.split("ms")[0].strip())
-
-            if ms_per_token is None or time_to_first_token_ms is None:
-                error_msg = "Could not find timing information in llama.cpp output.\n"
-                error_msg += "Raw output:\n" + raw_output + "\n"
-                error_msg += "Error output:\n" + stderr
-                raise Exception(error_msg)
-
-            # When output_tokens is set to 1 for accuracy tests, ms_per_token tends to 0
-            # and causes a divide-by-zero error. Set tokens_per_second to 0 in such cases
-            # as performance data for generating a few tokens is not relevant.
-            tokens_per_second = 0
-            if output_tokens > 5 and ms_per_token > 0:
-                tokens_per_second = 1000 / ms_per_token
-            time_to_first_token = time_to_first_token_ms / 1000
-
-            if iteration > warmup_iterations - 1:
-                iteration_tokens_per_second.append(tokens_per_second)
-                iteration_time_to_first_token.append(time_to_first_token)
 
         token_generation_tokens_per_second = statistics.mean(
             iteration_tokens_per_second

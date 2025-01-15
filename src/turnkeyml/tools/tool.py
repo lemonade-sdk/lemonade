@@ -22,12 +22,17 @@ def _spinner(message, q: Queue):
     Queue to display the percent progress of the Tool.
     """
     percent_complete = None
+    # Get sleep time from environment variable, default to 0.5s if not set
+    try:
+        sleep_time = float(os.getenv("TURNKEY_BUILD_MONITOR_FREQUENCY", "0.5"))
+    except ValueError:
+        sleep_time = 0.5
 
     try:
         parent_process = psutil.Process(pid=os.getppid())
         while parent_process.status() == psutil.STATUS_RUNNING:
             for cursor in ["   ", ".  ", ".. ", "..."]:
-                time.sleep(0.5)
+                time.sleep(sleep_time)
                 if not q.empty():
                     percent_complete = q.get()
                 if percent_complete is not None:

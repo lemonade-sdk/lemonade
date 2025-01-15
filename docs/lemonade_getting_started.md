@@ -1,6 +1,6 @@
-# Turnkey-LLM
+# Lemonade
 
-Welcome to the project page for `turnkey-llm` (aka, "lemonade" the turnkey LLM Aide)!
+Welcome to the project page for `lemonade` the Turnkey LLM Aide!
 Contents:
 
 1. [Getting Started](#getting-started)
@@ -12,7 +12,7 @@ Contents:
 
 # Getting Started
 
-`turnkey-llm` introduces a brand new set of LLM-focused tools. 
+`lemonade` introduces a brand new set of LLM-focused tools. 
 
 ## Install
 
@@ -20,8 +20,8 @@ Contents:
 1. `cd turnkeyml` (where `turnkeyml` is the repo root of your TurnkeyML clone)
     - Note: be sure to run these installation instructions from the repo root.
 1. Create and activate a conda environment:
-    1. `conda create -n tk-llm python=3.10`
-    1. `conda activate tk-llm`
+    1. `conda create -n lemon python=3.10`
+    1. `conda activate lemon`
 1. Install lemonade: `pip install -e .[llm]`
     - or `pip install -e .[llm-oga-dml]` if you want to use `onnxruntime-genai` (see [OGA](#install-onnxruntime-genai))
 1. `lemonade -h` to explore the LLM tools
@@ -137,6 +137,6 @@ The best way to contribute is to add new tools to cover more devices and usage s
 
 To add a new tool:
 
-1. (Optional) Create a new `.py` file under `src/turnkeyml/llm/tools` (or use an existing file if your tool fits into a pre-existing family of tools).
+1. (Optional) Create a new `.py` file under `src/lemonade/tools` (or use an existing file if your tool fits into a pre-existing family of tools).
 1. Define a new class that inherits the `Tool` class from `TurnkeyML`.
-1. Register the class by adding it to the list of `tools` near the top of `src/turnkeyml/llm/cli.py`.
+1. Register the class by adding it to the list of `tools` near the top of `src/lemonade/cli.py`.

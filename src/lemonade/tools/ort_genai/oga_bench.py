@@ -1,6 +1,7 @@
 import argparse
 import os
 import statistics
+from statistics import StatisticsError
 import tqdm
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
@@ -55,8 +56,10 @@ class OgaBench(Tool):
 
         self.status_stats = [
             Keys.SECONDS_TO_FIRST_TOKEN,
+            Keys.STD_DEV_SECONDS_TO_FIRST_TOKEN,
             Keys.PREFILL_TOKENS_PER_SECOND,
             Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
+            Keys.STD_DEV_TOKENS_PER_SECOND,
             Keys.PROMPT_TOKENS,
         ]
 
@@ -175,11 +178,32 @@ class OgaBench(Tool):
         token_generation_tokens_per_second = statistics.mean(
             per_iteration_tokens_per_second
         )
+        try:
+            std_dev_time_to_first_token = statistics.stdev(
+                per_iteration_time_to_first_token
+            )
+        except StatisticsError:
+            # Less than 2 measurements
+            std_dev_time_to_first_token = None
+        try:
+            std_dev_token_generation_tokens_per_second = statistics.stdev(
+                per_iteration_tokens_per_second
+            )
+        except StatisticsError:
+            # Less than 2 measurements
+            std_dev_token_generation_tokens_per_second = None
 
         state.save_stat(Keys.SECONDS_TO_FIRST_TOKEN, mean_time_to_first_token)
         state.save_stat(Keys.PREFILL_TOKENS_PER_SECOND, prefill_tokens_per_second)
         state.save_stat(
             Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, token_generation_tokens_per_second
+        )
+        state.save_stat(
+            Keys.STD_DEV_SECONDS_TO_FIRST_TOKEN, std_dev_time_to_first_token
+        )
+        state.save_stat(
+            Keys.STD_DEV_TOKENS_PER_SECOND,
+            std_dev_token_generation_tokens_per_second,
         )
         state.save_stat(Keys.PROMPT_TOKENS, input_ids_len)
 

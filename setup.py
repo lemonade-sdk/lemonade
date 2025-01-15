@@ -62,7 +62,7 @@ setup(
             "datasets",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
-            "human-eval @ git+https://github.com/ramkrishna2910/human-eval.git",
+            "human-eval-windows==1.0.4",
             "fastapi",
             "uvicorn[standard]",
         ],

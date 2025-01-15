@@ -246,3 +246,15 @@ For example:
 ```
 export TURNKEY_BUILD_MONITOR="False"
 ```
+
+### Adjust Build Monitor Update Frequency
+
+The build status monitor updates its display periodically to show progress. By default, it updates every 0.5 seconds, but you can adjust the update frequency by setting the `TURNKEY_BUILD_MONITOR_FREQUENCY` environment variable to the desired number of seconds between updates.
+
+For example:
+
+```
+export TURNKEY_BUILD_MONITOR_FREQUENCY="10.0"
+```
+
+This can be useful in long runs where frequent terminal updates might cause excessive terminal output.

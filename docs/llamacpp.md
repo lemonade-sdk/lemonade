@@ -124,3 +124,4 @@ The integration provides:
 - Proper error handling with detailed messages
 - Performance metrics collection
 - Configurable generation parameters (temperature, top_p, top_k)
+- 10-minute timeout for model generation to prevent indefinite hangs

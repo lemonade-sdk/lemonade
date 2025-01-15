@@ -101,7 +101,7 @@ def main():
             parser.error(
                 "The first tool in the sequence needs to be one "
                 "of the 'tools that can start a sequence.' Use "
-                "`turnkey-llm -h` to see that list of tools."
+                "`lemonade -h` to see that list of tools."
             )
         # Run the evaluation tools as a build
         sequence = Sequence(tools=tool_instances)
