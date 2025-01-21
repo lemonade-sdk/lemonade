@@ -12,6 +12,7 @@ import uvicorn
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
+from lemonade.cache import Keys
 
 DEFAULT_GENERATE_PARAMS = {
     "do_sample": True,
@@ -23,6 +24,10 @@ DEFAULT_GENERATE_PARAMS = {
 DEFAULT_SERVER_PORT = 8000
 
 END_OF_STREAM = "</s>"
+
+
+def sanitize_string(input_string):
+    return input_string.encode("utf-8", "ignore").decode("utf-8")
 
 
 class LLMPrompt(Tool):
@@ -43,7 +48,12 @@ class LLMPrompt(Tool):
     def __init__(self):
         super().__init__(monitor_message="Prompting LLM")
 
-        self.status_stats = ["response"]
+        self.status_stats = [
+            Keys.PROMPT_TOKENS,
+            Keys.PROMPT,
+            Keys.RESPONSE_TOKENS,
+            Keys.RESPONSE,
+        ]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -75,13 +85,31 @@ class LLMPrompt(Tool):
         tokenizer: TokenizerAdapter = state.tokenizer
 
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+        if isinstance(input_ids, list):
+            # OGA models return a list of tokens
+            len_tokens_in = len(input_ids)
+        else:
+            # HF models return a 2-D tensor
+            len_tokens_in = input_ids.shape[1]
+
         response = model.generate(
             input_ids, max_new_tokens=max_new_tokens, **DEFAULT_GENERATE_PARAMS
         )
-        response_text = tokenizer.decode(response[0], skip_special_tokens=True).strip()
+        len_tokens_out = len(response[0]) - len_tokens_in
+        input_ids = input_ids if isinstance(input_ids, list) else input_ids[0]
+        i = 0
+        while i < len_tokens_in and input_ids[i] == response[0][i]:
+            i += 1
+        response_text = tokenizer.decode(
+            response[0][i:], skip_special_tokens=True
+        ).strip()
 
         state.response = response_text
-        state.save_stat("response", response_text)
+
+        state.save_stat(Keys.PROMPT_TOKENS, len_tokens_in)
+        state.save_stat(Keys.PROMPT, prompt)
+        state.save_stat(Keys.RESPONSE_TOKENS, len_tokens_out)
+        state.save_stat(Keys.RESPONSE, sanitize_string(response_text))
 
         return state
 

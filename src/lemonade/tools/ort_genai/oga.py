@@ -15,6 +15,7 @@ import json
 import shutil
 from fnmatch import fnmatch
 from queue import Queue
+from packaging.version import Version
 from huggingface_hub import snapshot_download
 import onnxruntime_genai as og
 import onnxruntime_genai.models.builder as model_builder
@@ -120,10 +121,21 @@ class OrtGenaiModel(ModelAdapter):
     ):
         params = og.GeneratorParams(self.model)
 
+        # There is a breaking API change in OGA 0.6.0
+        # Determine whether we should use the old or new APIs
+        # This also supports 0.6.0.dev0, which evaluates to less than 0.6.0 in Version
+        use_oga_post_6_api = (
+            Version(og.__version__) >= Version("0.6.0") or "0.6.0" in og.__version__
+        )
+        use_oga_pre_6_api = not use_oga_post_6_api
+
         if pad_token_id:
             params.pad_token_id = pad_token_id
 
         max_length = len(input_ids) + max_new_tokens
+
+        if use_oga_pre_6_api:
+            params.input_ids = input_ids
 
         if self.config and "search" in self.config:
             search_config = self.config["search"]
@@ -158,10 +170,13 @@ class OrtGenaiModel(ModelAdapter):
         params.try_graph_capture_with_max_batch_size(1)
 
         generator = og.Generator(self.model, params)
-        generator.append_tokens(input_ids)
+        if use_oga_post_6_api:
+            generator.append_tokens(input_ids)
 
         if streamer is None:
             prompt_start_time = time.perf_counter()
+            if use_oga_pre_6_api:
+                generator.compute_logits()
             generator.generate_next_token()
             prompt_end_time = time.perf_counter()
 
@@ -172,6 +187,8 @@ class OrtGenaiModel(ModelAdapter):
                 token_gen_times = []
                 while not generator.is_done():
                     token_gen_start_time = time.perf_counter()
+                    if use_oga_pre_6_api:
+                        generator.compute_logits()
                     generator.generate_next_token()
                     token_gen_end_time = time.perf_counter()
 
@@ -192,6 +209,8 @@ class OrtGenaiModel(ModelAdapter):
             stop_early = False
 
             while not generator.is_done() and not stop_early:
+                if use_oga_pre_6_api:
+                    generator.compute_logits()
                 generator.generate_next_token()
 
                 new_token = generator.get_next_tokens()[0]
