@@ -41,8 +41,8 @@ The easiest way to learn more about `turnkey` is to explore the help menu with `
 We also provide the following resources:
 
 - [Installation guide](https://github.com/onnx/turnkeyml/blob/main/docs/install.md): how to install from source, set up Slurm, etc.
-- [User guide](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md): explains the concepts of `turnkey's`, including the syntax for making your own tool sequence.
-- [Examples](https://github.com/onnx/turnkeyml/tree/main/examples/cli): PyTorch scripts and ONNX files that can be used to try out `turnkey` concepts.
+- [User guide](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md): explains the concepts of `turnkey's`, including the syntax for making your own tool sequence.
+- [Examples](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli): PyTorch scripts and ONNX files that can be used to try out `turnkey` concepts.
 - [Code organization guide](https://github.com/onnx/turnkeyml/blob/main/docs/code.md): learn how this repository is structured.
 - [Models](https://github.com/onnx/turnkeyml/blob/main/models/readme.md): PyTorch model scripts that work with `turnkey`.
 
@@ -101,4 +101,4 @@ The build tool has built-in support for a variety of interoperable `Tools`. If y
 > turnkey -i my_model.py discover export-pytorch my-custom-tool --my-args
 ```
 
-All of the built-in `Tools` are implemented against the plugin API. Check out the [example plugins](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins) and the [plugin API guide](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin) to learn more about creating an installable plugin.
+All of the built-in `Tools` are implemented against the plugin API. Check out the [example plugins](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli/plugins) and the [plugin API guide](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin) to learn more about creating an installable plugin.

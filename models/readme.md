@@ -1,6 +1,6 @@
 # TurnkeyML Models
 
-This directory contains the TurnkeyML models, which is a large collection of models that can be evaluated using the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md).
+This directory contains the TurnkeyML models, which is a large collection of models that can be evaluated using the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md).
 
 ## Table of Contents
 
@@ -35,8 +35,8 @@ The corpora are:
 
 Before running the benchmark we suggest you:
 1. Install the `turnkey` package by following the [install instructions](https://github.com/onnx/turnkeyml/tree/main/docs/install.md).
-1. Go through some [`turnkey` CLI examples](https://github.com/onnx/turnkeyml/tree/main/examples/cli/readme.md).
-1. Familiarize yourself with the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey_user_guide.md) documentation.
+1. Go through some [`turnkey` CLI examples](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli/readme.md).
+1. Familiarize yourself with the [`turnkey` CLI tool](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md) documentation.
 
 You must also run the following command to install all of the models' dependencies into your Python environment.
 

@@ -39,7 +39,11 @@ class HuggingfaceTokenizerAdapter(TokenizerAdapter):
         self.device = device
 
     def __call__(self, prompt, **kwargs):
-        return self.tokenizer(prompt, **kwargs).to(self.device)
+        tokens = self.tokenizer(prompt, **kwargs)
+        if self.device:
+            return tokens.to(self.device)
+        else:
+            return tokens
 
     def decode(self, response, **kwargs):
         return self.tokenizer.decode(response, **kwargs)

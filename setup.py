@@ -28,6 +28,7 @@ setup(
         "turnkeyml_models.torch_hub",
         "turnkeyml_models.torchvision",
         "turnkeyml_models.transformers",
+        "lemonade_install",
     ],
     install_requires=[
         "invoke>=2.0.0",
@@ -47,6 +48,7 @@ setup(
         "wmi",
         "pytz",
         "tqdm",
+        "matplotlib",
         # Conditional dependencies for ONNXRuntime backends
         "onnxruntime >=1.10.1;platform_system=='Linux' and extra != 'llm-oga-cuda'",
         "onnxruntime-directml >=1.19.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",
@@ -102,6 +104,7 @@ setup(
             "turnkey=turnkeyml:turnkeycli",
             "turnkey-llm=lemonade:lemonadecli",
             "lemonade=lemonade:lemonadecli",
+            "lemonade-install=lemonade_install:installcli",
         ]
     },
     python_requires=">=3.8, <3.12",

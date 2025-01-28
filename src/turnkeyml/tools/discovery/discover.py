@@ -33,7 +33,7 @@ class Discover(FirstTool):
             e.g., model(**inputs)
 
     You can learn more about how discovery and its arguments work at
-    https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md
+    https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/tools_user_guide.md
     """
 
     unique_name = "discover"

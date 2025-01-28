@@ -26,7 +26,7 @@ class AccuracyHumaneval(Tool):
     - pass@10: Percentage of problems solved within 10 generation attempts
     - pass@100: Percentage of problems solved within 100 generation attempts
 
-    See docs/humaneval_accuracy.md for more details
+    See docs/lemonade/humaneval_accuracy.md for more details
     """
 
     unique_name = "accuracy-humaneval"

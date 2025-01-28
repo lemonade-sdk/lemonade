@@ -64,6 +64,16 @@ That command will run a few warmup iterations, then a few generation iterations 
 
 The prompt size, number of output tokens, and number iterations are all parameters. Learn more by running `lemonade huggingface-bench -h`.
 
+## Memory Usage
+
+The peak memory used by the lemonade build is captured in the build output.  To capture more granular
+memory usage information, use the `--memory` flag.  For example:
+
+`lemonade -i facebook/opt-125m --memory huggingface-load huggingface-bench`
+
+In this case a `memory_usage.png` file will be generated and stored in the build folder.  This file
+contains a figure plotting the memory usage over the build time.  Learn more by running `lemonade -h`.
+
 ## Serving
 
 You can launch a WebSocket server for your LLM with:
@@ -111,9 +121,9 @@ You can also try Phi-3-Mini-128k-Instruct with the following commands:
 
 `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 serve`
 
-You can learn more about the CPU and iGPU support in our [OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_igpu.md).
+You can learn more about the CPU and iGPU support in our [OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md).
 
-> Note: early access to AMD's RyzenAI NPU is also available. See the [RyzenAI NPU OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/ort_genai_npu.md) for more information.
+> Note: early access to AMD's RyzenAI NPU is also available. See the [RyzenAI NPU OGA documentation](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_npu.md) for more information.
 
 ## Install RyzenAI NPU for PyTorch
 
@@ -131,7 +141,7 @@ If you decide to contribute, please:
 
 - do so via a pull request.
 - write your code in keeping with the same style as the rest of this repo's code.
-- add a test under `test/llm_api.py` that provides coverage of your new feature.
+- add a test under `test/lemonade/llm_api.py` that provides coverage of your new feature.
 
 The best way to contribute is to add new tools to cover more devices and usage scenarios.
 

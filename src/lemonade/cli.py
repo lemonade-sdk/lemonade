@@ -94,6 +94,19 @@ def main():
         action="store_true",
     )
 
+    parser.add_argument(
+        "-m",
+        "--memory",
+        nargs="?",
+        metavar="TRACK_INTERVAL",
+        type=float,
+        default=None,
+        const=0.25,
+        help="Track physical memory usage during the build and generate a plot when the "
+        "command completes. Optionally, specify the tracking interval (sec), "
+        "defaults to 0.25 sec.",
+    )
+
     global_args, tool_instances, evaluation_tools = cli.parse_tools(parser, tools)
 
     if len(evaluation_tools) > 0:
@@ -119,6 +132,7 @@ def main():
         sequence.launch(
             state,
             lean_cache=global_args["lean_cache"],
+            track_memory_interval=global_args["memory"],
         )
     else:
         # Run the management tools

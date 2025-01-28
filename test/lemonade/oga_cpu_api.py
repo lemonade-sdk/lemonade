@@ -18,17 +18,6 @@ dtype = "int4"
 force = False
 prompt = "Alice and Bob"
 
-try:
-    url = "https://people.eecs.berkeley.edu/~hendrycks/data.tar"
-    resp = urllib3.request("GET", url, preload_content=False)
-    if 200 <= resp.status < 400:
-        eecs_berkeley_edu_cannot_be_reached = False
-    else:
-        eecs_berkeley_edu_cannot_be_reached = True
-    resp.release_conn()
-except urllib3.exceptions.HTTPError:
-    eecs_berkeley_edu_cannot_be_reached = True
-
 
 class Testing(unittest.TestCase):
 
@@ -45,12 +34,8 @@ class Testing(unittest.TestCase):
         )
         state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=5)
 
-        assert len(state.response) > len(prompt), state.response
+        assert len(state.response) > 0, state.response
 
-    @unittest.skipIf(
-        eecs_berkeley_edu_cannot_be_reached,
-        "eecs.berkeley.edu cannot be reached for dataset download",
-    )
     def test_002_accuracy_mmlu(self):
         # Test MMLU benchmarking with known model
         subject = ["management"]
@@ -97,4 +82,17 @@ if __name__ == "__main__":
     cache_dir, _ = common.create_test_dir(
         "lemonade_oga_cpu_api", base_dir=os.path.abspath(".")
     )
+
+    # Get MMLU data
+    try:
+        url = "https://people.eecs.berkeley.edu/~hendrycks/data.tar"
+        resp = urllib3.request("GET", url, preload_content=False)
+        if 200 <= resp.status < 400:
+            eecs_berkeley_edu_cannot_be_reached = False
+        else:
+            eecs_berkeley_edu_cannot_be_reached = True
+        resp.release_conn()
+    except urllib3.exceptions.HTTPError:
+        eecs_berkeley_edu_cannot_be_reached = True
+
     unittest.main()

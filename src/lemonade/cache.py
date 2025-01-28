@@ -32,6 +32,8 @@ class Keys:
     PROMPT_TOKENS = "prompt_tokens"
     RESPONSE = "response"
     RESPONSE_TOKENS = "response_tokens"
+    RESPONSE_LENGTHS_HISTOGRAM = "response_lengths_histogram"
     CACHE_DIR = "cache_dir"
     DEVICE = "device"
     OGA_MODELS_SUBFOLDER = "oga_models_subfolder"
+    MEMORY_USAGE_PLOT = "memory_usage_plot"

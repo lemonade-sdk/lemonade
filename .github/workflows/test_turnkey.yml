@@ -8,6 +8,11 @@ on:
     branches: ["main", "canary", "refresh"]
   pull_request:
     branches: ["main", "canary", "refresh"]
+    paths:
+    - src/turnkeyml/**
+    - test/turnkey/**
+    - examples/turnkey/**
+    - .github/workflows/test_turnkey.yml
 
 permissions:
   contents: read
@@ -50,68 +55,32 @@ jobs:
         shell: bash -el {0}
         run: |
           # Unit tests
-          python test/unit.py
+          python test/turnkey/unit.py
 
           # turnkey examples
           # Note: we clear the default cache location prior to each block of example runs
           rm -rf ~/.cache/turnkey
-          python examples/api/onnx_opset.py --onnx-opset 15
-          python examples/api/loading_a_build.py
+          python examples/turnkey/api/onnx_opset.py --onnx-opset 15
+          python examples/turnkey/api/loading_a_build.py
 
           rm -rf ~/.cache/turnkey
-          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch benchmark
+          turnkey -i examples/turnkey/cli/scripts/hello_world.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey -i examples/cli/scripts/multiple_invocations.py discover export-pytorch benchmark
+          turnkey -i examples/turnkey/cli/scripts/multiple_invocations.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey -i examples/cli/scripts/max_depth.py discover --max-depth 1 export-pytorch benchmark
+          turnkey -i examples/turnkey/cli/scripts/max_depth.py discover --max-depth 1 export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey -i examples/cli/scripts/two_models.py discover export-pytorch benchmark
+          turnkey -i examples/turnkey/cli/scripts/two_models.py discover export-pytorch benchmark
           rm -rf ~/.cache/turnkey
-          turnkey -i examples/cli/onnx/hello_world.onnx load-onnx benchmark
+          turnkey -i examples/turnkey/cli/onnx/hello_world.onnx load-onnx benchmark
 
           # E2E tests
-          cd test/
+          cd test/turnkey
           python cli.py
           python analysis.py
       - name: Test example plugins
         shell: bash -el {0}
         run: |
           rm -rf ~/.cache/turnkey
-          pip install -e examples/cli/plugins/example_tool
-          turnkey -i examples/cli/scripts/hello_world.py discover export-pytorch example-plugin-tool benchmark
-      # - name: Install and Start Slurm
-      #   if: runner.os != 'Windows'
-      #   shell: bash -el {0}
-      #   run: |
-      #     sudo apt update -y
-      #     sudo apt install slurm-wlm -y
-      #     cp test/helpers/slurm.conf test/helpers/slurm_modified.conf
-      #     sed -i "s/YOUR_HOSTNAME_HERE/$HOSTNAME/" test/helpers/slurm_modified.conf
-      #     sudo mv test/helpers/slurm_modified.conf /etc/slurm/slurm.conf
-      #     sudo service slurmd start
-      #     sudo service slurmctld start
-      #     sudo service munge start
-      # - name: Test turnkey on Slurm
-      #   if: runner.os != 'Windows'
-      #   shell: bash -el {0}
-      #   run: |
-      #     # Create conda environment for Slurm using srun (sbatch + wait)
-      #     export SKIP_REQUIREMENTS_INSTALL="True"
-      #     export TORCH_CPU="True"
-      #     srun src/turnkeyml/cli/setup_venv.sh
-
-      #     # Run tests on Slurm
-      #     export TURNKEY_SLURM_USE_DEFAULT_MEMORY="True"
-      #     turnkey -i models/selftest/linear.py --use-slurm --cache-dir local_cache discover export-pytorch
-      #     bash test/helpers/check_slurm_output.sh slurm-2.out
-
-      # Below tests are commented out as the GitHub runner runs out of space installing the requirements
-      # - name: Check installation of requirements.txt and their compatibility with turnkey
-      #   shell: bash -el {0}
-      #   run: |
-      #     conda create --name test-requirements python=3.8
-      #     conda activate test-requirements
-      #     pip install -r models/requirements.txt
-      #     python -m pip check
-      #     python -c "import torch_geometric"
-      #     conda deactivate
+          pip install -e examples/turnkey/cli/plugins/example_tool
+          turnkey -i examples/turnkey/cli/scripts/hello_world.py discover export-pytorch example-plugin-tool benchmark

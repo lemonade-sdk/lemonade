@@ -137,7 +137,7 @@ To add a runtime to this plugin:
         - Each supported part within a device family must be defined as a dictionary.
         - Each supported configuration within a device model must be defined as a list.
         - Example: `"supported_devices": {"family1":{"part1":["config1","config2"]}}`.
-        - See [example_combined](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_combined) for a plugin implementation example that leverages this feature.
+        - See [example_combined](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli/plugins/example_combined) for a plugin implementation example that leverages this feature.
       - Note: If a device is already supported by the tools, this simply adds support for another runtime to that device. If the device is _not_  already supported by the tools, this also adds support for that device and it will start to appear as an option for the `turnkey --device  <device_name>` argument.
     - `"build_required": Bool`: indicates whether the `build_model()` API should be called on the `model` and `inputs`.
     - `"docker_required": Bool`: indicates whether benchmarking is implemented through a docker container.
@@ -190,7 +190,7 @@ implements = {
 
 ### Runtime Class
 
-A runtime class inherits the abstract base class [`BaseRT`](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/run/basert.py) and implements a one or more [runtimes](#runtime) to provide benchmarking support for one or more [devices](https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md#devices). 
+A runtime class inherits the abstract base class [`BaseRT`](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/run/basert.py) and implements a one or more [runtimes](#runtime) to provide benchmarking support for one or more [devices](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md#devices). 
 
 `BaseRT` has 4 methods that plugin developers must overload: 
 - `_setup()`: any code that should be called prior to benchmarking as a one-time setup. Called automatically at the end of  `BaseRT.__init__()`.

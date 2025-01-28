@@ -88,7 +88,7 @@ We require the following naming scheme:
 
 ### Example
 
-See the [example_tool](https://github.com/onnx/turnkeyml/tree/main/examples/cli/plugins/example_tool) plugin for an example.
+See the [example_tool](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli/plugins/example_tool) plugin for an example.
 
 The `__init__.py` file with its `implements` dictionary looks like:
 

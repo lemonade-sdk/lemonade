@@ -5,9 +5,9 @@
 The TurnkeyML source code has a few major top-level directories:
 - `docs`: documentation for the entire project.
 - `examples`: example scripts for use with the TurnkeyML tools.
-  - `examples/cli`: tutorial series starting in `examples/cli/readme.md` to help learn the `turnkey` CLI.
-    - `examples/cli/scripts`: example scripts that can be fed as input into the `turnkey` CLI. These scripts each have a docstring that recommends one or more `turnkey` CLI commands to try out.
-  - `examples/api`: examples scripts that invoke `Tools` via APIs.
+  - `examples/turnkey/cli`: tutorial series starting in `examples/turnkey/cli/readme.md` to help learn the `turnkey` CLI.
+    - `examples/turnkey/cli/scripts`: example scripts that can be fed as input into the `turnkey` CLI. These scripts each have a docstring that recommends one or more `turnkey` CLI commands to try out.
+  - `examples/turnkey/api`: examples scripts that invoke `Tools` via APIs.
 - `models`: the corpora of models that makes up the TurnkeyML models (see [the models readme](https://github.com/onnx/turnkeyml/blob/main/models/readme.md)).
   - Each subdirectory under `models` represents a corpus of models pulled from somewhere on the internet. For example, `models/torch_hub` is a corpus of models from [Torch Hub](https://github.com/pytorch/hub).
 - `src/turnkeyml`: source code for the TurnkeyML package.
@@ -20,8 +20,8 @@ The TurnkeyML source code has a few major top-level directories:
   - `src/turnkeyml/state.py`: implements the `State` class.
   - `src/turnkeyml/files_api.py`: implements the `evaluate_files()` API, which is the top-level API called by the CLI.
 - `test`: tests for the TurnkeyML tools.
-  - `test/analysis.py`: tests focusing on the `discover` `Tool`.
-  - `test/cli.py`: tests focusing on top-level CLI features.
+  - `test/turnkey/analysis.py`: tests focusing on the `discover` `Tool`.
+  - `test/turnkey/cli.py`: tests focusing on top-level CLI features.
 
 ## Tool Classes
 

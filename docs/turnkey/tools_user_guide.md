@@ -108,7 +108,7 @@ Name of one or more script (.py), ONNX (.onnx), or cached build (_state.yaml) fi
 Examples: 
 - `turnkey -i models/selftest/linear.py` 
 - `turnkey -i models/selftest/linear.py models/selftest/twolayer.py` 
-- `turnkey -i examples/cli/onnx/sample.onnx` 
+- `turnkey -i examples/turnkey/cli/onnx/sample.onnx` 
 
 You may also use [Bash regular expressions](https://tldp.org/LDP/Bash-Beginners-Guide/html/sect_04_01.html) to locate the files you want to benchmark.
 

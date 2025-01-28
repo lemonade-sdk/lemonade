@@ -3,7 +3,7 @@
 You can try out `turnkey` with an ONNX file input like so:
 
 ```bash
-cd turnkeyml/examples/cli/onnx
+cd turnkeyml/examples/turnkey/cli/onnx
 turnkey -i hello_world.onnx load-onnx convert-fp16`
 ```
 

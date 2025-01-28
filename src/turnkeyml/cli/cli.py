@@ -180,7 +180,7 @@ def main():
         description="This utility runs tools in a sequence. "
         "To use it, provide a list of tools and "
         "their arguments. See "
-        "https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md "
+        "https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md "
         "to learn the exact syntax.\n\nExample: turnkey -i my_model.py discover export-pytorch",
         formatter_class=NiceHelpFormatter,
     )

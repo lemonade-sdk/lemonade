@@ -1,8 +1,12 @@
 import os
+import platform
+import shutil
 import sys
 import math
 import dataclasses
 from typing import Callable, List, Union, Dict, Optional
+import textwrap
+import psutil
 import torch
 from turnkeyml.common import printing
 from turnkeyml.state import State
@@ -189,6 +193,13 @@ class UniqueInvocationInfo(BasicInfo):
 
         self.skip.build_dir = True
 
+    def _print_peak_memory(self):
+        if platform.system() == "Windows":
+            print(
+                f"{self.indent}\tPeak memory:\t"
+                f"{psutil.Process().memory_info().peak_wset / 1024**3:,.3f} GB"
+            )
+
     def _print_status(self, cache_dir: str, build_name: str):
         stats = fs.Stats(cache_dir, build_name)
         if self.skip.previous_status_message:
@@ -214,6 +225,9 @@ class UniqueInvocationInfo(BasicInfo):
             for key in self.stats_keys:
                 max_key_len = max(len(_pretty_print_key(key)), max_key_len)
 
+            screen_width = shutil.get_terminal_size().columns
+            wrap_screen_width = screen_width - 2
+
             for key in self.stats_keys:
                 nice_key = _pretty_print_key(key)
                 try:
@@ -230,9 +244,43 @@ class UniqueInvocationInfo(BasicInfo):
                         value_tabs = " " * (
                             (max_key_len - len(_pretty_print_key(key))) + 1
                         )
-                        printing.logn(
-                            f"{self.indent}\t{nice_key}:{value_tabs}{value} {units}"
+                        hanging_indent = (
+                            len(self.indent) + 8 + len(nice_key) + 1 + len(value_tabs)
                         )
+                        hanging_indent_str = " " * hanging_indent
+                        if (
+                            isinstance(value, list)
+                            and len(value) > 0
+                            and all(isinstance(item, str) for item in value)
+                        ):
+                            # Value is a list of strings, so output each one starting
+                            # on its own line
+                            printing.logn(f"{self.indent}\t{nice_key}:{value_tabs}[")
+                            for line_counter, text in enumerate(value):
+                                lines = textwrap.wrap(
+                                    "'" + text + "'",
+                                    width=wrap_screen_width,
+                                    initial_indent=hanging_indent_str,
+                                    subsequent_indent=hanging_indent_str,
+                                )
+                                if line_counter + 1 < len(value):
+                                    # Not the last text item in the list, so add a comma
+                                    lines[-1] = lines[-1] + ","
+                                for line in lines:
+                                    printing.logn(line)
+                            printing.logn(f"{' ' * hanging_indent}] {units}")
+                        else:
+                            # Wrap value as needed
+                            status_str = (
+                                f"{self.indent}\t{nice_key}:{value_tabs}{value} {units}"
+                            )
+                            lines = textwrap.wrap(
+                                status_str,
+                                width=wrap_screen_width,
+                                subsequent_indent=hanging_indent_str,
+                            )
+                            for line in lines:
+                                printing.logn(line)
                     else:
                         printing.logn(
                             f"{self.indent}\t\t\t{nice_key}:\t{value} {units}"
@@ -297,6 +345,7 @@ class UniqueInvocationInfo(BasicInfo):
         )
         self._print_input_shape()
         self._print_build_dir(cache_dir=cache_dir, build_name=build_name)
+        self._print_peak_memory()
         self._print_status(cache_dir=cache_dir, build_name=build_name)
 
         print()

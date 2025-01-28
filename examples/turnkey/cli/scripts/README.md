@@ -3,7 +3,7 @@
 You can try out `turnkey` with PyTorch models, via the `discover` tool, like so:
 
 ```bash
-cd turnkeyml/examples/cli/scripts
+cd turnkeyml/examples/turnkey/cli/scripts
 turnkey -i hello_world.py discover export-pytorch
 ```
 This will discover the model within `hello_world.py` and export it to ONNX.

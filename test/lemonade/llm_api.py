@@ -1,6 +1,7 @@
 import unittest
 import shutil
 import os
+import sys
 import urllib3
 import platform
 import zipfile
@@ -20,44 +21,26 @@ from lemonade.cache import Keys
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
 
-# Get cache directory from environment or create a new one
-cache_dir = os.getenv('LEMONADE_CACHE_DIR')
-if not cache_dir:
-    cache_dir, _ = common.create_test_dir("lemonade_api")
-    os.environ['LEMONADE_CACHE_DIR'] = cache_dir
-
-logger.info(f"Using cache directory: {cache_dir}")
-
-try:
-    url = "https://people.eecs.berkeley.edu/~hendrycks/data.tar"
-    resp = urllib3.request("GET", url, preload_content=False)
-    if 200 <= resp.status < 400:
-        eecs_berkeley_edu_cannot_be_reached = False
-    else:
-        eecs_berkeley_edu_cannot_be_reached = True
-    resp.release_conn()
-except urllib3.exceptions.HTTPError:
-    eecs_berkeley_edu_cannot_be_reached = True
-
 
 def download_llamacpp_binary():
     """Download the appropriate llama.cpp binary for the current platform"""
     logger.info("Starting llama.cpp binary download...")
-    
+
     # Get latest release info
     releases_url = "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
     try:
         response = requests.get(releases_url)
         response.raise_for_status()
         latest_release = response.json()
-        logger.info(f"Found latest release: {latest_release.get('tag_name', 'unknown')}")
+        logger.info(
+            f"Found latest release: {latest_release.get('tag_name', 'unknown')}"
+        )
     except Exception as e:
         logger.error(f"Failed to fetch latest release info: {str(e)}")
         raise
@@ -66,7 +49,7 @@ def download_llamacpp_binary():
     system = platform.system().lower()
     machine = platform.machine().lower()
     logger.info(f"Detected platform: {system} {machine}")
-    
+
     if system == "windows":
         # Windows uses AVX2 by default
         asset_pattern = "win-avx2-x64"
@@ -79,13 +62,14 @@ def download_llamacpp_binary():
 
     # Find matching asset
     matching_assets = [
-        asset for asset in latest_release["assets"] 
+        asset
+        for asset in latest_release["assets"]
         if (
-            asset["name"].lower().startswith("llama-") and 
-            asset_pattern in asset["name"].lower()
+            asset["name"].lower().startswith("llama-")
+            and asset_pattern in asset["name"].lower()
         )
     ]
-    
+
     if not matching_assets:
         error_msg = (
             f"No matching binary found for {system} {machine}. "
@@ -93,21 +77,21 @@ def download_llamacpp_binary():
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)
-    
+
     asset = matching_assets[0]
     logger.info(f"Found matching asset: {asset['name']}")
-    
+
     # Create binaries directory
     binary_dir = os.path.join(cache_dir, "llama_cpp_binary")
     os.makedirs(binary_dir, exist_ok=True)
     logger.info(f"Created binary directory: {binary_dir}")
-    
+
     # Download and extract
     zip_path = os.path.join(binary_dir, asset["name"])
     try:
         response = requests.get(asset["browser_download_url"])
         response.raise_for_status()
-        
+
         with open(zip_path, "wb") as f:
             f.write(response.content)
         logger.info(f"Downloaded binary to: {zip_path}")
@@ -118,7 +102,7 @@ def download_llamacpp_binary():
     except Exception as e:
         logger.error(f"Failed to download or extract binary: {str(e)}")
         raise
-    
+
     # Find the executable
     if system == "windows":
         executable = os.path.join(binary_dir, "llama-cli.exe")
@@ -126,7 +110,7 @@ def download_llamacpp_binary():
         executable = os.path.join(binary_dir, "llama-cli")
         # Make executable on Linux
         os.chmod(executable, 0o755)
-    
+
     if not os.path.exists(executable):
         error_msg = (
             f"Expected executable not found at {executable} after extraction. "
@@ -134,7 +118,7 @@ def download_llamacpp_binary():
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)
-    
+
     logger.info(f"Successfully prepared executable at: {executable}")
     return executable
 
@@ -150,17 +134,19 @@ class TestLlamaCpp(unittest.TestCase):
             error_msg = f"Failed to download llama.cpp binary: {str(e)}"
             logger.error(error_msg)
             raise unittest.SkipTest(error_msg)
-        
+
         # Use a small GGUF model for testing
         cls.model_name = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
         cls.model_file = "qwen2.5-0.5b-instruct-fp16.gguf"
         logger.info(f"Using test model: {cls.model_name}/{cls.model_file}")
-        
+
         # Download the model file
         try:
-            model_url = f"https://huggingface.co/{cls.model_name}/resolve/main/{cls.model_file}"
+            model_url = (
+                f"https://huggingface.co/{cls.model_name}/resolve/main/{cls.model_file}"
+            )
             cls.model_path = os.path.join(cache_dir, cls.model_file)
-            
+
             if not os.path.exists(cls.model_path):
                 logger.info(f"Downloading model from: {model_url}")
                 response = requests.get(model_url)
@@ -188,44 +174,40 @@ class TestLlamaCpp(unittest.TestCase):
             executable=self.executable,
             model_binary=self.model_path,
             context_size=512,
-            threads=1
+            threads=1,
         )
-        
+
         self.assertIsNotNone(state.model)
 
     def test_002_generate_text(self):
         """Test text generation with llama.cpp"""
         state = LoadLlamaCpp().run(
-            self.state,
-            executable=self.executable,
-            model_binary=self.model_path
+            self.state, executable=self.executable, model_binary=self.model_path
         )
-        
+
         prompt = "What is the capital of France?"
         state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=20)
-        
+
         self.assertIsNotNone(state.response)
-        self.assertGreater(len(state.response), len(prompt))
+        self.assertGreater(len(state.response), 0, state.response)
 
     def test_003_benchmark(self):
         """Test benchmarking with llama.cpp"""
         state = LoadLlamaCpp().run(
-            self.state,
-            executable=self.executable,
-            model_binary=self.model_path
+            self.state, executable=self.executable, model_binary=self.model_path
         )
-        
+
         # Use longer output tokens to ensure we get valid performance metrics
         state = LlamaCppBench().run(
             state,
             iterations=2,
             warmup_iterations=1,
             output_tokens=128,
-            prompt="Hello, I am a test prompt that is long enough to get meaningful metrics."
+            prompt="Hello, I am a test prompt that is long enough to get meaningful metrics.",
         )
-        
+
         stats = fs.Stats(state.cache_dir, state.build_name).stats
-        
+
         # Check if we got valid metrics
         self.assertIn(Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, stats)
         self.assertIn(Keys.SECONDS_TO_FIRST_TOKEN, stats)
@@ -251,9 +233,9 @@ class Testing(unittest.TestCase):
         state = HuggingfaceLoad().run(state, input=checkpoint)
         state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=15)
 
-        assert len(state.response) > len(prompt), state.response
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+        assert len(stats["response"]) > 0, stats["response"]
 
-    @unittest.skipIf(eecs_berkeley_edu_cannot_be_reached, "eecs.berkeley.edu cannot be reached for dataset download")
     def test_002_accuracy_mmlu(self):
         # Test MMLU benchmarking with known model
         checkpoint = "facebook/opt-125m"
@@ -286,16 +268,18 @@ class Testing(unittest.TestCase):
         state = AccuracyHumaneval().run(
             state,
             first_n_samples=1,  # Test only one problem for speed
-            k_samples=1,        # Single attempt per problem
-            timeout=30.0
+            k_samples=1,  # Single attempt per problem
+            timeout=30.0,
         )
 
         # Verify results
         stats = fs.Stats(state.cache_dir, state.build_name).stats
         assert "humaneval_pass@1" in stats, "HumanEval pass@1 metric not found"
-        assert isinstance(stats["humaneval_pass@1"], (int, float)), "HumanEval pass@1 metric should be numeric"
+        assert isinstance(
+            stats["humaneval_pass@1"], (int, float)
+        ), "HumanEval pass@1 metric should be numeric"
 
-    def test_001_huggingface_bench(self):
+    def test_004_huggingface_bench(self):
         # Benchmark OPT
         checkpoint = "facebook/opt-125m"
 
@@ -311,15 +295,99 @@ class Testing(unittest.TestCase):
 
         assert stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND] > 0
 
+    def test_005_prompt_from_file(self):
+        """
+        Test the LLM Prompt tool capability to load prompt from a file
+        """
+
+        checkpoint = "facebook/opt-125m"
+        prompt_str = "Who is Humpty Dumpty?"
+
+        prompt_path = os.path.join(corpus_dir, "prompt.txt")
+        with open(prompt_path, "w", encoding="utf-8") as f:
+            f.write(prompt_str)
+
+        llm_prompt_args = ["-p", prompt_path, "--max-new-tokens", "15"]
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test",
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        llm_prompt_kwargs = LLMPrompt().parse(state, llm_prompt_args).__dict__
+        state = LLMPrompt().run(state, **llm_prompt_kwargs)
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        assert len(stats["response"]) > 0, stats["response"]
+        assert stats["prompt"] == prompt_str, f"{stats['prompt']} {prompt_str}"
+
+    def test_006_multiple_prompt_responses(self):
+        """
+        Test the LLM Prompt tool capability to run multiple inferences on the same prompt
+        """
+
+        checkpoint = "facebook/opt-125m"
+        prompt_str = "Who is Humpty Dumpty?"
+        n_trials = 2
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test",
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = LLMPrompt().run(
+            state, prompt=prompt_str, max_new_tokens=15, n_trials=n_trials
+        )
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        # Check that two responses were generated
+        assert (
+            isinstance(stats["response"], list) and len(stats["response"]) == n_trials
+        ), stats["response"]
+        assert (
+            isinstance(stats["response_tokens"], list)
+            and len(stats["response_tokens"]) == n_trials
+        ), stats["response_tokens"]
+        # Check that histogram figure was generated
+        assert os.path.exists(
+            os.path.join(state.cache_dir, state.build_name, "response_lengths.png")
+        )
+
 
 if __name__ == "__main__":
-    cache_dir, _ = common.create_test_dir("lemonade_api")
-    
+    # Get cache directory from environment or create a new one
+    cache_dir = os.getenv("LEMONADE_CACHE_DIR")
+    if not cache_dir:
+        cache_dir, corpus_dir = common.create_test_dir("lemonade_api")
+        os.environ["LEMONADE_CACHE_DIR"] = cache_dir
+
+    logger.info(f"Using cache directory: {cache_dir}")
+
+    # Download mmlu
+    try:
+        url = "https://people.eecs.berkeley.edu/~hendrycks/data.tar"
+        resp = urllib3.request("GET", url, preload_content=False)
+        if 200 <= resp.status < 400:
+            eecs_berkeley_edu_cannot_be_reached = False
+        else:
+            eecs_berkeley_edu_cannot_be_reached = True
+        resp.release_conn()
+    except urllib3.exceptions.HTTPError:
+        eecs_berkeley_edu_cannot_be_reached = True
+
     # Create test suite with all test classes
     suite = unittest.TestSuite()
     suite.addTests(unittest.TestLoader().loadTestsFromTestCase(Testing))
     suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLlamaCpp))
-    
+
     # Run the test suite
     runner = unittest.TextTestRunner()
-    runner.run(suite)
+    result = runner.run(suite)
+
+    # Set exit code based on test results
+    if not result.wasSuccessful():
+        sys.exit(1)

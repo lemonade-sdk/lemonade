@@ -33,12 +33,12 @@ def _spinner(message, q: Queue):
         while parent_process.status() == psutil.STATUS_RUNNING:
             for cursor in ["   ", ".  ", ".. ", "..."]:
                 time.sleep(sleep_time)
-                if not q.empty():
+                while not q.empty():
                     percent_complete = q.get()
                 if percent_complete is not None:
                     status = f"      {message} ({percent_complete:.1f}%){cursor}\r"
                 else:
-                    status = f"      {message}{cursor}\r"
+                    status = f"      {message}{cursor}         \r"
                 sys.stdout.write(status)
                 sys.stdout.flush()
     except psutil.NoSuchProcess:
@@ -139,7 +139,7 @@ class Tool(abc.ABC):
             "part of a sequence of Tools, for example: `turnkey -i INPUTS tool-one "
             "tool-two tool-three`. Tools communicate data to each other via State. "
             "You can learn more at "
-            "https://github.com/onnx/turnkeyml/blob/main/docs/tools_user_guide.md"
+            "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/tools_user_guide.md"
         )
 
         return ToolParser(
@@ -174,11 +174,15 @@ class Tool(abc.ABC):
             elif successful:
                 # Print success message
                 printing.log(f"    {success_tick} ", c=printing.Colors.OKGREEN)
-                printing.logn(self.monitor_message + progress_indicator + "   ")
+                printing.logn(
+                    self.monitor_message + progress_indicator + "            "
+                )
             else:
                 # successful == False, print failure message
                 printing.log(f"    {fail_tick} ", c=printing.Colors.FAIL)
-                printing.logn(self.monitor_message + progress_indicator + "   ")
+                printing.logn(
+                    self.monitor_message + progress_indicator + "            "
+                )
 
     def __init__(
         self,
@@ -189,6 +193,7 @@ class Tool(abc.ABC):
 
         self.status_key = f"{fs.Keys.TOOL_STATUS}:{self.__class__.unique_name}"
         self.duration_key = f"{fs.Keys.TOOL_DURATION}:{self.__class__.unique_name}"
+        self.memory_key = f"{fs.Keys.TOOL_MEMORY}:{self.__class__.unique_name}"
         self.monitor_message = monitor_message
         self.progress = None
         self.progress_queue = None
@@ -222,8 +227,10 @@ class Tool(abc.ABC):
         know how much progress the Tool has made.
         """
 
-        if not isinstance(percent_progress, float):
-            raise ValueError(f"Input argument must be a float, got {percent_progress}")
+        if percent_progress is not None and not isinstance(percent_progress, float):
+            raise ValueError(
+                f"Input argument must be a float or None, got {percent_progress}"
+            )
 
         if self.progress_queue:
             self.progress_queue.put(percent_progress)
@@ -254,7 +261,11 @@ class Tool(abc.ABC):
         return parsed_args
 
     def parse_and_run(
-        self, state: State, args, monitor: bool = False, known_only=True
+        self,
+        state: State,
+        args,
+        monitor: bool = False,
+        known_only=True,
     ) -> Dict:
         """
         Helper function to parse CLI arguments into the args expected

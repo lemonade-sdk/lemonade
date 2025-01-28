@@ -190,7 +190,7 @@ def clean_output_dir(cache_dir: str, build_name: str) -> None:
         raise CacheError(f"No build found at {output_dir}")
 
     # Remove files that do not have an allowed extension
-    allowed_extensions = (".txt", ".out", ".yaml", ".json")
+    allowed_extensions = (".txt", ".out", ".yaml", ".json", ".png")
     all_paths = glob.glob(f"{output_dir}/**/*", recursive=True)
     for path in all_paths:
         if os.path.isfile(path) and not path.endswith(allowed_extensions):
@@ -343,6 +343,9 @@ class Keys:
     # Prefix for reporting the execution duration of a tool
     # In the report this will look like tool_duration:TOOL_NAME
     TOOL_DURATION = "tool_duration"
+    # Prefix for reporting the peak working memory in the build through this tool
+    # In the report this will look like tool_memory:TOOL_NAME
+    TOOL_MEMORY = "tool_memory"
     # Prefix for reporting the execution status of a tool
     # In the report this will look like tool_status:TOOL_NAME
     TOOL_STATUS = "tool_status"
@@ -371,6 +374,8 @@ class Keys:
     CACHE_DIR = "cache_dir"
     # Example inputs to the model
     INPUTS = "inputs"
+    # Path to the file containing the memory usage plot
+    MEMORY_USAGE_PLOT = "memory_usage_plot"
 
 
 def _clean_logfile(logfile_lines: List[str]) -> List[str]:

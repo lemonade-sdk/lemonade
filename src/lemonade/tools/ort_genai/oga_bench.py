@@ -161,7 +161,11 @@ class OgaBench(Tool):
             model.generate(input_ids, max_new_tokens=output_tokens)
 
         for _ in tqdm.tqdm(range(iterations), desc="iterations"):
-            outputs = model.generate(input_ids, max_new_tokens=output_tokens)
+            outputs = model.generate(
+                input_ids,
+                max_new_tokens=output_tokens,
+                min_new_tokens=output_tokens,
+            )
 
             token_len = len(outputs[0]) - input_ids_len
 

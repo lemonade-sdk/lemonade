@@ -10,7 +10,7 @@ hf-dgpu.
 
 from lemonade import leap
 
-model, tokenizer = leap.from_pretrained("facebook/opt-125m", recipe="hf-cpu")
+model, tokenizer = leap.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="hf-cpu")
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 response = model.generate(input_ids, max_new_tokens=30)

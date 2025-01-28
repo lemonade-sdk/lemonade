@@ -45,6 +45,7 @@ jobs:
         shell: bash -el {0}
         run: |
           pylint src/lemonade --rcfile .pylintrc --disable E0401
+          pylint examples --rcfile .pylintrc --disable E0401,E0611 --jobs=1
       - name: Test HF+CPU server
         if: runner.os == 'Windows'
         timeout-minutes: 10
@@ -55,7 +56,14 @@ jobs:
       - name: Run lemonade tests
         shell: bash -el {0}
         run: |
-          lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
-          python test/llm_api.py
+          # Test CLI
+          lemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
           
+          # Test low-level APIs
+          python test/lemonade/llm_api.py
+          
+
+          # Test high-level LEAP APIs
+          python examples/lemonade/leap_basic.py
+          python examples/lemonade/leap_streaming.py
 

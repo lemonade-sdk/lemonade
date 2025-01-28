@@ -55,6 +55,13 @@ jobs:
         env:
           HF_TOKEN: "${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
         run: |
+          # Test CLI
           lemonade -i TinyPixel/small-llama2 oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
-          python test/oga_cpu_api.py
+
+          # Test low-level APIs
+          python test/lemonade/oga_cpu_api.py
+
+          # Test high-level LEAP APIs
+          python examples/lemonade/leap_oga_cpu.py
+          python examples/lemonade/leap_oga_cpu_streaming.py
 

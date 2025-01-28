@@ -13,7 +13,6 @@ import turnkeyml.common.build as build
 class AccuracyPerplexity(Tool):
     """
     Measure perplexity of an LLM using the wikitext dataset.
-    Refer to docs/perplexity.md for more details.
 
     Required input state:
         - state.model: instance that provides a __call__() method that returns
@@ -22,7 +21,7 @@ class AccuracyPerplexity(Tool):
 
     Output state produced: None
 
-    See docs/perplexity.md for more details.
+    See docs/lemonade/perplexity.md for more details.
     """
 
     unique_name = "accuracy-perplexity"
