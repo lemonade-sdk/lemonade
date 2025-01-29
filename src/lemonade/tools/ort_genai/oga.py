@@ -29,7 +29,10 @@ from lemonade.tools.adapter import (
     PassthroughTokenizerResult,
 )
 from lemonade.cache import Keys
-from lemonade_install.install import DEFAULT_AMD_OGA_NPU_DIR, DEFAULT_AMD_OGA_HYBRID_DIR
+from lemonade_install.install import (
+    DEFAULT_AMD_OGA_NPU_DIR,
+    DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR,
+)
 
 
 # ONNX Runtime GenAI models will be cached in this subfolder of the lemonade cache folder
@@ -407,9 +410,9 @@ class OgaLoad(FirstTool):
 
                 if device == "hybrid":
                     # Locate the directory containing hybrid-llm-artifacts_1.3.0
-                    if os.path.exists(DEFAULT_AMD_OGA_HYBRID_DIR):
-                        hybrid_artifacts_path = os.path.join(
-                            DEFAULT_AMD_OGA_HYBRID_DIR, "hybrid-llm-artifacts_1.3.0"
+                    if os.path.exists(DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR):
+                        hybrid_artifacts_path = (
+                            DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR
                         )
                     else:
                         if "AMD_OGA_HYBRID" not in os.environ:

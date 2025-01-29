@@ -9,6 +9,7 @@ import argparse
 import os
 import subprocess
 import sys
+import shutil
 from typing import Optional
 import zipfile
 import requests
@@ -21,6 +22,10 @@ DEFAULT_AMD_OGA_NPU_DIR = os.path.join(
 )
 DEFAULT_AMD_OGA_HYBRID_DIR = os.path.join(
     lemonade_install_dir, "install", "ryzen_ai", "hybrid"
+)
+DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR = os.path.join(
+    DEFAULT_AMD_OGA_HYBRID_DIR,
+    "hybrid-llm-artifacts_1.3.0_lounge",
 )
 
 
@@ -60,6 +65,13 @@ def download_lfs_file(token, file, output_filename):
 
     if not os.path.isfile(output_filename):
         raise ValueError(f"Error: {output_filename} does not exist.")
+
+
+def download_file(url, output_filename):
+    response = requests.get(url)
+
+    with open(output_filename, "wb") as file:
+        file.write(response.content)
 
 
 def unzip_file(zip_path, extract_to):
@@ -116,25 +128,47 @@ class Install:
     ):
 
         if ryzenai is not None:
+            if ryzenai == "npu":
+                file = "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip"
+                install_dir = DEFAULT_AMD_OGA_NPU_DIR
+                wheels_full_path = os.path.join(install_dir, "amd_oga/wheels")
+                license = "https://account.amd.com/content/dam/account/en/licenses/download/amd-end-user-license-agreement.pdf"
+                license_tag = "Beta "
+            elif ryzenai == "hybrid":
+                file = "https://www.xilinx.com/bin/public/openDownload?filename=hybrid-llm-artifacts_1.3.0_012725.zip"
+                install_dir = DEFAULT_AMD_OGA_HYBRID_DIR
+                wheels_full_path = os.path.join(
+                    DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR,
+                    "hybrid-llm-artifacts",
+                    "onnxruntime_genai",
+                    "wheel",
+                )
+                license = r"https://www.xilinx.com/bin/public/openDownload?filename=AMD%20End%20User%20License%20Agreement.pdf"
+                license_tag = ""
+            else:
+                raise ValueError(
+                    f"Value passed to ryzenai argument is not supported: {ryzenai}"
+                )
+
             if yes:
                 print(
-                    "\nYou have accepted the AMD Beta Software End User License Agreement for "
+                    f"\nYou have accepted the AMD {license_tag}Software End User License Agreement for "
                     f"Ryzen AI {ryzenai} by providing the `--yes` option. "
                     "The license file is available for your review at "
                     # pylint: disable=line-too-long
-                    "https://github.com/aigdat/ryzenai-sw-ea/blob/main/ryzen_ai_13_ga/llm-eula-beta-software.pdf\n"
+                    f"{license}\n"
                 )
             else:
                 print(
-                    "\nYou must accept the AMD Beta Software End User License Agreement in "
+                    f"\nYou must accept the AMD {license_tag}Software End User License Agreement in "
                     "order to install this software. To continue, type the word yes "
                     "to assert that you agree and are authorized to agree "
                     "on behalf of your organization, to the terms and "
-                    "conditions, in the Beta Software End User License Agreement, "
+                    f"conditions, in the {license_tag}Software End User License Agreement, "
                     "which terms and conditions may be reviewed, downloaded and "
                     "printed from this link: "
                     # pylint: disable=line-too-long
-                    "https://github.com/aigdat/ryzenai-sw-ea/blob/main/ryzen_ai_13_ga/llm-eula-beta-software.pdf\n"
+                    f"{license}\n"
                 )
 
                 response = input("Would you like to accept the license (yes/No)? ")
@@ -145,22 +179,6 @@ class Install:
                         "Exiting because the license was not accepted."
                     )
 
-            if ryzenai == "npu":
-                file = "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip"
-                install_dir = DEFAULT_AMD_OGA_NPU_DIR
-                wheels_full_path = os.path.join(install_dir, "amd_oga/wheels")
-            elif ryzenai == "hybrid":
-                file = "ryzen_ai_13_ga/hybrid-llm-artifacts_1.3.0.zip"
-                install_dir = DEFAULT_AMD_OGA_HYBRID_DIR
-                wheels_full_path = os.path.join(
-                    install_dir,
-                    "hybrid-llm-artifacts_1.3.0/hybrid-llm-artifacts/onnxruntime_genai/wheel",
-                )
-            else:
-                raise ValueError(
-                    f"Value passed to ryzenai argument is not supported: {ryzenai}"
-                )
-
             archive_file_name = f"oga_{ryzenai}.zip"
             archive_file_path = os.path.join(install_dir, archive_file_name)
 
@@ -170,9 +188,16 @@ class Install:
                 token_to_use = os.environ.get("OGA_TOKEN")
 
             # Retrieve the installation artifacts
-            os.makedirs(install_dir, exist_ok=True)
-            print(f"\nDownloading {file} from GitHub LFS to {install_dir}\n")
-            download_lfs_file(token_to_use, file, archive_file_path)
+            if os.path.exists(install_dir):
+                # Remove any artifacts from a previous installation attempt
+                shutil.rmtree(install_dir)
+            os.makedirs(install_dir)
+            if ryzenai == "npu":
+                print(f"\nDownloading {file} from GitHub LFS to {install_dir}\n")
+                download_lfs_file(token_to_use, file, archive_file_path)
+            elif ryzenai == "hybrid":
+                print(f"\nDownloading {file}\n")
+                download_file(file, archive_file_path)
 
             # Unzip the file
             print(f"\nUnzipping archive {archive_file_path}\n")
