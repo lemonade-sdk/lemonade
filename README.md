@@ -7,7 +7,7 @@
 
 We are on a mission to make it easy to use the most important tools in the ONNX ecosystem. TurnkeyML accomplishes this by providing no-code CLIs and low-code APIs for both general ONNX workflows with `turnkey` as well as LLMs with `lemonade`.
 
-|                     [**Lemonade**](https://github.com/onnx/turnkeyml/tree/main/src/turnkeyml/llm)                    	|                            [**Turnkey**](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)                                	|
+|                     [**Lemonade**](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md)                    	|                            [**Turnkey**](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)                                	|
 |:----------------------------------------------:	|:-----------------------------------------------------------------:	|
 | Serve and benchmark LLMs on CPU, GPU, and NPU. <br/>	[Click here to get started with `lemonade`.](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md) | Export and optimize ONNX models for CNNs and Transformers. <br/>	[Click here to get started with `turnkey`.](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)	|
 | <img src="https://github.com/onnx/turnkeyml/blob/main/img/llm_demo.png?raw=true"/> | <img src="https://github.com/onnx/turnkeyml/blob/main/img/classic_demo.png?raw=true"/> |
