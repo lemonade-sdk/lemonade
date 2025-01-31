@@ -22,6 +22,7 @@ from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.perplexity import AccuracyPerplexity
 from lemonade.tools.chat import LLMPrompt, Serve
+from lemonade.tools.serve import ServerPreview
 
 
 def main():
@@ -44,6 +45,7 @@ def main():
         Cache,
         Version,
         SystemInfo,
+        ServerPreview,
     ]
 
     # Import onnxruntime-genai recipes
