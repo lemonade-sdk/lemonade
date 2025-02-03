@@ -23,7 +23,7 @@ Contents:
     1. `conda create -n lemon python=3.10`
     1. `conda activate lemon`
 1. Install lemonade: `pip install -e .[llm]`
-    - or `pip install -e .[llm-oga-dml]` if you want to use `onnxruntime-genai` (see [OGA](#install-onnxruntime-genai))
+    - or `pip install -e .[llm-oga-igpu]` if you want to use `onnxruntime-genai` (see [OGA](#install-onnxruntime-genai))
 1. `lemonade -h` to explore the LLM tools
 
 ## Syntax
@@ -107,7 +107,7 @@ Lemonade supports specialized tools that each require their own setup steps. **N
 
 ## Install OnnxRuntime-GenAI
 
-To install support for [onnxruntime-genai](https://github.com/microsoft/onnxruntime-genai), use `pip install -e .[llm-oga-dml]` instead of the default installation command.
+To install support for [onnxruntime-genai](https://github.com/microsoft/onnxruntime-genai), use `pip install -e .[llm-oga-igpu]` instead of the default installation command.
 
 You can then load supported OGA models on to CPU or iGPU with the `oga-load` tool, for example:
 
