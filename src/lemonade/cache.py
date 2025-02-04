@@ -1,11 +1,12 @@
 import os
+from datetime import datetime, timezone
 
 # Allow an environment variable to override the default
 # location for the build cache
 if os.environ.get("LEMONADE_CACHE_DIR"):
     DEFAULT_CACHE_DIR = os.path.expanduser(os.environ.get("LEMONADE_CACHE_DIR"))
 else:
-    DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/lemonade")
+    DEFAULT_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "lemonade")
 
 
 def checkpoint_to_model_name(checkpoint_name: str) -> str:
@@ -14,6 +15,29 @@ def checkpoint_to_model_name(checkpoint_name: str) -> str:
     """
 
     return checkpoint_name.split("/")[1]
+
+
+def build_name(input_name):
+    """
+    Name the lemonade build by concatenating these two factors:
+        1. Sanitize the input name (typically a model checkpoint name) by
+            replacing any `/` characters with `_`.
+        2. Timestamp in the format:
+                <month>m_<day>d_<year>y_<hour>h_<minute>m_<second>s
+            This timestamp ensures that builds in the same cache will not
+            collide in the same build directory.
+    """
+
+    # Sanitize the input name
+    input_name_sanitized = input_name.replace("/", "_")
+
+    # Get the current time in GMT
+    current_time = datetime.now(timezone.utc)
+
+    # Format the timestamp string
+    timestamp = current_time.strftime("%Yy_%mm_%dd_%Hh_%Mm_%Ss")
+
+    return f"{input_name_sanitized}_{timestamp}"
 
 
 class Keys:
@@ -37,3 +61,4 @@ class Keys:
     DEVICE = "device"
     OGA_MODELS_SUBFOLDER = "oga_models_subfolder"
     MEMORY_USAGE_PLOT = "memory_usage_plot"
+    MAX_MEMORY_USED_GB = "max_memory_used_GB"

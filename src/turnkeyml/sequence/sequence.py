@@ -1,15 +1,11 @@
-import queue
 import sys
 import time
 import os
-from multiprocessing import Process, Queue
 import platform
 import copy
 from datetime import datetime
 from typing import List, Dict, Optional
-import yaml
 import pytz
-import matplotlib.pyplot as plt
 import psutil
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exp
@@ -32,95 +28,6 @@ def _rewind_stdout(lines: int = 1):
     rewind_multiple_lines = rewind_stdout_one_line * lines
     print(rewind_multiple_lines, end="")
     sys.stdout.flush()
-
-
-def _get_time_mem_list(process):
-    """Returns a list containing current time and current process memory usage"""
-    return [time.time(), process.memory_info().rss]
-
-
-def _memory_tracker(input_queue: Queue, yaml_path, track_memory_interval, track_names):
-    """
-    Tracks memory usage during build and saves to yaml file
-    """
-    memory_tracks = []
-    current_track = []
-    track_counter = 0
-
-    try:
-        parent_process = psutil.Process(pid=os.getppid())
-        while (
-            track_counter < len(track_names)
-            and parent_process.status() == psutil.STATUS_RUNNING
-        ):
-
-            time.sleep(track_memory_interval)
-
-            # Read any messages from the parent process
-            while track_counter < len(track_names) and not input_queue.empty():
-                try:
-                    message = input_queue.get(timeout=0.001)
-                    if message is None:
-                        # Current track is complete
-                        memory_tracks.append(
-                            [track_names[track_counter], current_track]
-                        )
-                        current_track = []
-                        track_counter += 1
-                    else:
-                        # Message is the output of _get_time_mem_list, so add to current track
-                        current_track.append(message)
-                except queue.Empty:
-                    # input_queue.empty had not been updated
-                    pass
-
-            # Save current time and memory usage
-            current_track.append(_get_time_mem_list(parent_process))
-
-        # Save the collected memory tracks
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.dump(memory_tracks, f)
-
-    except psutil.NoSuchProcess:
-        # If the parent process stopped existing, we can
-        # safely assume that tracking is no longer needed
-        # NOTE: this only seems to be needed on Windows
-        pass
-
-
-def _plot_memory_usage(state: State, memory_tracks):
-
-    # Find final time in the startup track (before first tool) to subtract from all other times
-    _, track = memory_tracks[0]
-    t0 = track[-1][0]
-
-    # last_t and last_y are used to draw a line between the last point of the prior
-    # track and the first point of the current track
-    last_t = None
-    last_y = None
-
-    plt.figure()
-    for k, v in memory_tracks[1:]:
-        t = [x[0] - t0 for x in v]
-        y = [float(x[1]) / 1024**3 for x in v]
-        # draw new memory usage track
-        if last_t is not None:
-            plt.plot([last_t] + t, [last_y] + y, label=k, marker=".")
-        else:
-            plt.plot(t, y, label=k, marker=".")
-        last_t = t[-1]
-        last_y = y[-1]
-    plt.xlabel("Time (sec)")
-    plt.ylabel("GB")
-    plt.title(f"Physical Memory Usage\n{state.build_name}")
-    plt.legend()
-    plt.grid()
-    figure_path = os.path.join(
-        build.output_dir(state.cache_dir, state.build_name), "memory_usage.png"
-    )
-    plt.savefig(figure_path)
-    printing.log_info(f"Saved plot of memory usage to {figure_path}")
-    state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, figure_path)
 
 
 class Sequence:
@@ -216,26 +123,8 @@ class Sequence:
 
         # Start tracking memory usage
         if track_memory_interval is not None:
-            # Create queue for passing messages to the tracker
-            memory_tracker_queue = Queue()
-            # The yaml file where the memory usage data will be saved
-            yaml_path = os.path.join(
-                build.output_dir(state.cache_dir, state.build_name), "memory_usage.yaml"
-            )
-            # The names of each memory track segment
-            track_names = ["start-up"] + [tool.unique_name for tool in self.tools]
-            # Create process to continuously update queue
-            memory_tracker_process = Process(
-                target=_memory_tracker,
-                args=(
-                    memory_tracker_queue,
-                    yaml_path,
-                    track_memory_interval,
-                    track_names,
-                ),
-            )
-            memory_tracker_process.start()
-            memory_tracker_queue.put(_get_time_mem_list(self.process))
+            build_dir = build.output_dir(state.cache_dir, state.build_name)
+            state.memory_tracker.start(os.getpid(), build_dir, track_memory_interval)
 
         # Create a build directory in the cache
         fs.make_build_dir(state.cache_dir, state.build_name)
@@ -295,7 +184,7 @@ class Sequence:
             for stat_key, stat_value in stats_to_save.items():
                 state.save_stat(stat_key, stat_value)
 
-        # Save initial memory and create dict for tracking memory usage
+        # Save initial memory as a build statistic
         state.save_stat(f"{fs.Keys.TOOL_MEMORY}:__init__", self._get_mem_usage_str())
 
         # Run the build
@@ -304,9 +193,8 @@ class Sequence:
 
             start_time = time.time()
 
-            # Insert None into memory tracker queue before new tool starts
-            if track_memory_interval is not None:
-                memory_tracker_queue.put(None)
+            # Insert tool name into memory tracker queue before new tool starts
+            state.memory_tracker.set_label(tool.unique_name)
 
             try:
 
@@ -387,13 +275,12 @@ class Sequence:
 
                 # Store current memory and peak working memory
                 state.save_stat(tool.memory_key, self._get_mem_usage_str())
-                if track_memory_interval is not None:
-                    # sample each tool at least once
-                    memory_tracker_queue.put(_get_time_mem_list(self.process))
 
-        # Send final None to memory_tracker so that is stops ands saves data to file
-        if track_memory_interval is not None:
-            memory_tracker_queue.put(None)
+                # sample each tool at least once
+                state.memory_tracker.sample()
+
+        # Stop tracking memory
+        state.memory_tracker.stop()
 
         if not saved_exception:
             state.build_status = build.FunctionStatus.SUCCESSFUL
@@ -404,14 +291,13 @@ class Sequence:
                 )
                 state.invocation_info.status_message_color = printing.Colors.OKGREEN
 
-        if track_memory_interval is not None:
-            # Wait for memory tracker to finish writing yaml data file
-            while memory_tracker_process.is_alive():
-                memory_tracker_process.join(timeout=1.0)
-            if os.path.exists(yaml_path):
-                with open(yaml_path, "r", encoding="utf-8") as f:
-                    memory_tracks = yaml.safe_load(f)
-                _plot_memory_usage(state, memory_tracks)
+        plot_path = state.memory_tracker.create_plot(state.build_name)
+        if plot_path is not None:
+            printing.log_info(f"Saved plot of memory usage to {plot_path}")
+            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, plot_path)
+        else:
+            printing.log_info("Error in memory usage tracking, no plot generated")
+            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, "NONE")
 
         if vars(state).get("models_found") and vars(state).get("invocation_info"):
 

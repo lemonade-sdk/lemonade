@@ -42,14 +42,6 @@ jobs:
         shell: bash -el {0}
         run: |
           pylint src/lemonade --rcfile .pylintrc --disable E0401
-      - name: Test OGA+CPU server
-        if: runner.os == 'Windows'
-        timeout-minutes: 10
-        uses: ./.github/actions/server-testing
-        with:
-          conda_env: -n lemon
-          load_command: -i TinyPixel/small-llama2 oga-load --device cpu --dtype int4
-          hf_token: "${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
       - name: Run lemonade tests
         shell: bash -el {0}
         env:
@@ -64,4 +56,12 @@ jobs:
           # Test high-level LEAP APIs
           python examples/lemonade/leap_oga_cpu.py
           python examples/lemonade/leap_oga_cpu_streaming.py
+      - name: Test OGA+CPU server
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        uses: ./.github/actions/server-testing
+        with:
+          conda_env: -n lemon
+          load_command: -i TinyPixel/small-llama2 oga-load --device cpu --dtype int4
+          hf_token: "${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
 

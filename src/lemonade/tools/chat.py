@@ -25,6 +25,8 @@ DEFAULT_GENERATE_PARAMS = {
 }
 
 DEFAULT_SERVER_PORT = 8000
+DEFAULT_MAX_NEW_TOKENS = 512
+DEFAULT_N_TRIALS = 1
 
 END_OF_STREAM = "</s>"
 
@@ -95,17 +97,19 @@ class LLMPrompt(Tool):
         parser.add_argument(
             "--max-new-tokens",
             "-m",
-            default=512,
+            default=DEFAULT_MAX_NEW_TOKENS,
             type=int,
-            help="Maximum number of new tokens in the response",
+            help=f"Maximum number of new tokens in the response "
+            f"(default is {DEFAULT_MAX_NEW_TOKENS})",
         )
 
         parser.add_argument(
             "--n-trials",
             "-n",
-            default=1,
+            default=DEFAULT_N_TRIALS,
             type=positive_int,
-            help="Number of responses the LLM will generate for the prompt (useful for testing)",
+            help=f"Number of responses the LLM will generate for the prompt "
+            f"(useful for testing, default is {DEFAULT_N_TRIALS})",
         )
 
         return parser
@@ -126,17 +130,14 @@ class LLMPrompt(Tool):
             # No change to the prompt
             pass
 
-        if parsed_args.n_trials < 1:
-            raise ValueError("N_TRIALS should be a positive number")
-
         return parsed_args
 
     def run(
         self,
         state: State,
         prompt: str = "Hello",
-        max_new_tokens: int = 512,
-        n_trials: int = 1,
+        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        n_trials: int = DEFAULT_N_TRIALS,
     ) -> State:
 
         model: ModelAdapter = state.model

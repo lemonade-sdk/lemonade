@@ -49,6 +49,7 @@ setup(
         "pytz",
         "tqdm",
         "matplotlib",
+        "tabulate",
         # Conditional dependencies for ONNXRuntime backends
         "onnxruntime >=1.10.1;platform_system=='Linux' and extra != 'llm-oga-cuda'",
         "onnxruntime-directml >=1.19.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",

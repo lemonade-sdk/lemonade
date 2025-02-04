@@ -10,6 +10,7 @@ import logging
 from turnkeyml.state import State
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.test_helpers as common
+import turnkeyml.common.build as build
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -354,7 +355,10 @@ class Testing(unittest.TestCase):
         ), stats["response_tokens"]
         # Check that histogram figure was generated
         assert os.path.exists(
-            os.path.join(state.cache_dir, state.build_name, "response_lengths.png")
+            os.path.join(
+                build.output_dir(state.cache_dir, state.build_name),
+                "response_lengths.png",
+            )
         )
 
 

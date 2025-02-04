@@ -5,6 +5,7 @@ import urllib3
 from turnkeyml.state import State
 import turnkeyml.common.test_helpers as common
 import turnkeyml.common.filesystem as fs
+from turnkeyml.common.build import builds_dir
 from lemonade.tools.ort_genai.oga import OgaLoad
 from lemonade.tools.chat import LLMPrompt
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -22,7 +23,7 @@ prompt = "Alice and Bob"
 class Testing(unittest.TestCase):
 
     def setUp(self) -> None:
-        shutil.rmtree(cache_dir, ignore_errors=True)
+        shutil.rmtree(builds_dir(cache_dir), ignore_errors=True)
 
     def test_001_ogaload(self):
         # Test the OgaLoad and LLMPrompt tools on an NPU model

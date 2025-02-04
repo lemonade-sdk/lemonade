@@ -791,7 +791,8 @@ class Testing(unittest.TestCase):
         # Get the build state file in its new location
         selected_build = fs.get_available_builds(new_cache_dir)[-1]
         state_file_path = os.path.join(
-            new_cache_dir, selected_build, f"{selected_build}_state.yaml"
+            build.output_dir(new_cache_dir, selected_build),
+            f"{selected_build}_state.yaml",
         )
 
         # Build the cached build in its new location

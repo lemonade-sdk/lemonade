@@ -1,6 +1,5 @@
 import argparse
 import abc
-import os
 from typing import List
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.exceptions as exp
@@ -8,6 +7,7 @@ import turnkeyml.common.printing as printing
 from turnkeyml.tools.tool import ToolParser
 from turnkeyml.version import __version__ as turnkey_version
 from turnkeyml.common.system_info import get_system_info_dict
+from turnkeyml.common.build import output_dir
 
 
 class ManagementTool(abc.ABC):
@@ -208,7 +208,7 @@ class Cache(ManagementTool):
             printing.log_warning("No builds found.")
 
         for build in builds:
-            build_path = os.path.join(cache_dir, build)
+            build_path = output_dir(cache_dir, build_name=build)
             if fs.is_build_dir(cache_dir, build):
                 # Run actions on the build
                 # These actions are intended to be mutually exclusive, so we

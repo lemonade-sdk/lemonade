@@ -183,7 +183,7 @@ def clean_output_dir(cache_dir: str, build_name: str) -> None:
     """
     Delete all elements of the output directory that are not human readable
     """
-    output_dir = os.path.join(cache_dir, build_name)
+    output_dir = build.output_dir(cache_dir, build_name)
     if os.path.isdir(output_dir) and is_build_dir(cache_dir, build_name):
         output_dir = os.path.expanduser(output_dir)
     else:
@@ -244,10 +244,10 @@ def get_available_builds(cache_dir):
     check_cache_dir(cache_dir)
 
     builds = [
-        pathlib.PurePath(build).name
-        for build in os.listdir(os.path.abspath(cache_dir))
-        if os.path.isdir(os.path.join(cache_dir, build))
-        and is_build_dir(cache_dir, build)
+        pathlib.PurePath(build_name).name
+        for build_name in os.listdir(os.path.abspath(build.builds_dir(cache_dir)))
+        if os.path.isdir(build.output_dir(cache_dir, build_name))
+        and is_build_dir(cache_dir, build_name)
     ]
     builds.sort()
 
@@ -517,7 +517,9 @@ def rebase_cache_dir(input_path: str, build_name: str, new_cache_dir: str):
     """
 
     relative_input_path = input_path.split(build_name, 1)[1][1:]
-    return os.path.join(new_cache_dir, build_name, relative_input_path)
+    return os.path.join(
+        build.output_dir(new_cache_dir, build_name), relative_input_path
+    )
 
 
 def check_extension(choices, file_name, error_func):

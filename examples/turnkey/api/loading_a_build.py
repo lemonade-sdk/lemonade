@@ -11,6 +11,7 @@ import numpy as np
 import onnxruntime as ort
 from turnkeyml.common.filesystem import get_available_builds, DEFAULT_CACHE_DIR
 from turnkeyml.state import State
+from turnkeyml.common.build import output_dir
 from turnkeyml.tools.load_build import LoadBuild
 from turnkeyml.tools.onnx import ConvertOnnxToFp16
 
@@ -21,8 +22,7 @@ def main():
 
     # We use the _state.yaml file in the build directory when loading a build
     prior_state_file = os.path.join(
-        DEFAULT_CACHE_DIR,
-        prerequisite_build,
+        output_dir(DEFAULT_CACHE_DIR, prerequisite_build),
         f"{prerequisite_build}_state.yaml",
     )
 

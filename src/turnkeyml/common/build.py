@@ -39,8 +39,22 @@ def load_yaml(file_path) -> Dict:
             )
 
 
+def builds_dir(cache_dir):
+    """
+    Each build stores stats, logs, and other files in a build directory.
+    All build directories are located at:
+        <cache_dir>/builds
+    """
+    return os.path.join(cache_dir, "builds")
+
+
 def output_dir(cache_dir, build_name):
-    path = os.path.join(cache_dir, build_name)
+    """
+    Each build stores stats, logs, and other files in an output directory at:
+    All build directories are located at:
+        <builds_dir>/<build_name>
+    """
+    path = os.path.join(builds_dir(cache_dir), build_name)
     return path
 
 

@@ -16,7 +16,7 @@ import shutil
 from fnmatch import fnmatch
 from queue import Queue
 from packaging.version import Version
-from huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download, list_repo_files
 import onnxruntime_genai as og
 import onnxruntime_genai.models.builder as model_builder
 from turnkeyml.state import State
@@ -245,7 +245,7 @@ class OgaLoad(FirstTool):
             Models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
         Local models for cpu, igpu, or npu:
             The specified checkpoint is converted to a local path, via mapping to lower case
-            and replacing '/' with '_'.  If this model already exists in the 'models' folderr
+            and replacing '/' with '_'.  If this model already exists in the 'models' folder
             of the lemonade cache and if it has a subfolder <device>-<dtype>, then this model
             will be used.  If the --force flag is used and the model is built with model_builder,
             then it will be rebuilt.
@@ -398,8 +398,16 @@ class OgaLoad(FirstTool):
                     + "."
                 )
 
+            # Check whether the model is a safetensors checkpoint or a pre-exported
+            # ONNX model
+            # Note: This approach only supports ONNX models where the ONNX files are in the
+            #   Huggingface repo root. This does not support the case where the ONNX files
+            #   are in a nested directory within the repo.
+            model_files = list_repo_files(repo_id=checkpoint)
+            onnx_model = any([filename.endswith(".onnx") for filename in model_files])
+
             # Download the model from HF
-            if device == "npu" or device == "hybrid":
+            if onnx_model:
 
                 # NPU models on HF are ready to go and HF does its own caching
                 full_model_path = snapshot_download(
@@ -474,7 +482,7 @@ class OgaLoad(FirstTool):
                         os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
                         shutil.copy2(src_dll, dst_dll)
             else:
-                # device is 'cpu' or 'igpu'
+                # checkpoint is safetensors, so we need to run it through model_builder
 
                 # Use model_builder to download model and convert to ONNX
                 printing.log_info(f"Building {checkpoint} for {device} using {dtype}")

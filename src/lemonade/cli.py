@@ -128,7 +128,7 @@ def main():
 
         state = State(
             cache_dir=os.path.abspath(global_args["cache_dir"]),
-            build_name=global_args["input"].replace("/", "_"),
+            build_name=cache.build_name(global_args["input"]),
             sequence_info=sequence.info,
         )
         sequence.launch(

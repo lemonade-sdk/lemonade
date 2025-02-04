@@ -16,6 +16,7 @@ from turnkeyml.parser import parse
 import turnkeyml.common.filesystem as filesystem
 import turnkeyml.common.test_helpers as common
 import turnkeyml.common.exceptions as exp
+from turnkeyml.common.build import output_dir
 
 try:
     # pylint: disable=unused-import
@@ -144,7 +145,7 @@ minimal_tokenizer = """
 
 
 def cache_is_lean(cache_dir, build_name):
-    files = list(glob.glob(f"{cache_dir}/{build_name}/**/*", recursive=True))
+    files = list(glob.glob(f"{cache_dir}/builds/{build_name}/**/*", recursive=True))
     is_lean = len([x for x in files if ".onnx" in x]) == 0
     metadata_found = len([x for x in files if ".txt" in x]) > 0
     return is_lean and metadata_found
@@ -170,7 +171,7 @@ def run_analysis(args):
 
 
 def check_discover_log(build_name: str, expected_content: str):
-    log_path = os.path.join(cache_dir, build_name, "log_discover.txt")
+    log_path = os.path.join(output_dir(cache_dir, build_name), "log_discover.txt")
     with open(log_path, "r", encoding="utf-8") as log_file:
         log_content = log_file.read()
         assert expected_content in log_content, log_content

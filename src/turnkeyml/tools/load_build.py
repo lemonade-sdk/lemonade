@@ -74,7 +74,7 @@ class LoadBuild(FirstTool):
         # Extract the cache directory, build directory, and build name from the input
         source_build_dir = pathlib.Path(input).parent
         source_build_dir_name = source_build_dir.name
-        source_cache_dir = source_build_dir.parent
+        source_cache_dir = source_build_dir.parent.parent
 
         # Make sure that the target yaml file is actually the state of a turnkey build
         if not fs.is_build_dir(source_cache_dir, source_build_dir_name):

@@ -497,7 +497,7 @@ class Testing(unittest.TestCase):
             "--cache-dir",
             cache_dir,
             "-i",
-            os.path.join(cache_dir, "*", "*_state.yaml"),
+            os.path.join(cache_dir, "builds", "*", "*_state.yaml"),
             "load-build",
             "benchmark",
         ]

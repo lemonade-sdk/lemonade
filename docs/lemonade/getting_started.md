@@ -52,7 +52,7 @@ To measure the accuracy of an LLM using MMLU, try this:
 
 That command will run just the management test from MMLU on your LLM and save the score to the lemonade cache at `~/.cache/lemonade`.
 
-You can run the full suite of MMLU subjects by omitting the `--test` argument. You can learn more about this with `lemonade accuracy-mmlu -h.
+You can run the full suite of MMLU subjects by omitting the `--test` argument. You can learn more about this with `lemonade accuracy-mmlu -h`.
 
 ## Benchmarking
 
