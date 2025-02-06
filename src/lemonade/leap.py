@@ -42,7 +42,9 @@ def from_pretrained(
     Recipe choices:
         - hf-cpu: Huggingface Transformers implementation for CPU with max-perf settings
         - hf-dgpu: Huggingface Transformers implementation on dGPU (via device="cuda")
-        - oga-dml: DirectML implementation for iGPU based on onnxruntime-genai
+        - oga-cpu: CPU implementation based on onnxruntime-genai
+        - oga-dml: DirectML implementation for iGPU based on onnxruntime-genai-directml
+        - oga-hybird: AMD Ryzen AI Hybrid implementation based on onnxruntime-genai
 
     Returns:
         - model: LLM instance with a generate() method that invokes the recipe
@@ -89,7 +91,7 @@ def from_pretrained(
 
         # Make sure the user chose a supported runtime, e.g., oga-cpu
         user_backend = recipe.split("oga-")[1]
-        supported_backends = ["cpu", "igpu", "npu", "hybrid", "cuda"]
+        supported_backends = ["cpu", "igpu", "npu", "hybrid"]
         supported_recipes = [f"oga-{backend}" for backend in supported_backends]
         if recipe not in supported_recipes:
             raise NotSupported(
@@ -97,13 +99,20 @@ def from_pretrained(
                 f"The supported OGA recipes are: {supported_recipes}"
             )
 
+        backend_to_dtype = {
+            "cpu": "fp32",
+            "igpu": "fp16",
+            "hybrid": "int4",
+            "npu": "int4",
+        }
+
         state = _make_state(recipe, checkpoint)
 
         state = oga.OgaLoad().run(
             state,
             input=checkpoint,
             device=user_backend,
-            dtype="int4",
+            dtype=backend_to_dtype[user_backend],
         )
 
         return state.model, state.tokenizer
