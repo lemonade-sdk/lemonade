@@ -10,10 +10,10 @@ import os
 import subprocess
 import sys
 import shutil
+from pathlib import Path
 from typing import Optional
 import zipfile
 import requests
-from pathlib import Path
 
 
 lemonade_install_dir = Path(__file__).parent.parent.parent
@@ -26,6 +26,10 @@ DEFAULT_AMD_OGA_HYBRID_DIR = os.path.join(
 DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR = os.path.join(
     DEFAULT_AMD_OGA_HYBRID_DIR,
     "hybrid-llm-artifacts_1.3.0_lounge",
+)
+DEFAULT_QUARK_VERSION = "quark-0.6.0"
+DEFAULT_QUARK_DIR = os.path.join(
+    lemonade_install_dir, "install", "quark", DEFAULT_QUARK_VERSION
 )
 
 
@@ -67,17 +71,90 @@ def download_lfs_file(token, file, output_filename):
         raise ValueError(f"Error: {output_filename} does not exist.")
 
 
-def download_file(url, output_filename):
-    response = requests.get(url)
+def download_file(url: str, output_filename: str, description: str = None):
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to fetch the content from GitHub API. \
+                Status code: {response.status_code}, Response: {response.json()}"
+            )
 
-    with open(output_filename, "wb") as file:
-        file.write(response.content)
+        with open(output_filename, "wb") as file:
+            file.write(response.content)
+
+        if not os.path.isfile(output_filename):
+            raise Exception(f"\nError: Failed to write to {output_filename}")
+
+    except Exception as e:
+        raise Exception(f"\nError downloading {description or 'file'}: {str(e)}")
 
 
 def unzip_file(zip_path, extract_to):
     """Unzips the specified zip file to the given directory."""
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(extract_to)
+
+
+def download_and_extract_package(
+    url: str,
+    version: str,
+    install_dir: str,
+    package_name: str,
+) -> str:
+    """
+    Downloads, Extracts and Renames the folder
+
+    Args:
+        url: Download URL for the package
+        version: Version string
+        install_dir: Directory to install to
+        package_name: Name of the package
+
+    Returns:
+        str: Path where package was extracted (renamed to package-version)
+    """
+    zip_filename = f"{package_name}-{version}.zip"
+    zip_path = os.path.join(install_dir, zip_filename)
+    target_folder = os.path.join(install_dir, f"{package_name}-{version}")
+
+    print(f"\nDownloading {package_name} from {url}")
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(zip_path, "wb") as f:
+            f.write(response.content)
+    else:
+        raise Exception(
+            f"Failed to download {package_name}. Status code: {response.status_code}"
+        )
+
+    print("\n[INFO]: Extracting zip file ...")
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        zip_ref.extractall(install_dir)
+    print("\n[INFO]: Extraction completed.")
+
+    os.remove(zip_path)
+
+    extracted_folder = None
+    for folder in os.listdir(install_dir):
+        folder_path = os.path.join(install_dir, folder)
+        if os.path.isdir(folder_path) and folder.startswith(f"{package_name}-"):
+            extracted_folder = folder_path
+            break
+
+    if extracted_folder is None:
+        raise ValueError(
+            f"Error: Extracted folder for {package_name} version {version} not found."
+        )
+
+    # Rename extracted folder to package-version
+    if extracted_folder != target_folder:
+        if os.path.exists(target_folder):
+            shutil.rmtree(target_folder)  # Remove if already exists
+        os.rename(extracted_folder, target_folder)
+        print(f"\n[INFO]: Renamed folder to {target_folder}")
+
+    return target_folder
 
 
 class LicenseRejected(Exception):
@@ -118,15 +195,25 @@ class Install:
             "variable (e.g., Ryzen AI uses environment variable OGA_TOKEN).",
         )
 
+        parser.add_argument(
+            "--quark",
+            help="Install Quark Quantization tool for LLMs",
+            choices=["0.6.0"],
+        )
+
         return parser
 
     def run(
         self,
         ryzenai: Optional[str] = None,
+        quark: Optional[str] = None,
         yes: bool = False,
         token: Optional[str] = None,
     ):
-
+        if ryzenai is None and quark is None:
+            raise ValueError(
+                "You must select something to install, for example `--ryzenai` and/or `--quark`"
+            )
         if ryzenai is not None:
             if ryzenai == "npu":
                 file = "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip"
@@ -220,10 +307,32 @@ class Install:
             # Delete the zip file
             print(f"\nCleaning up, removing {archive_file_path}\n")
             os.remove(archive_file_path)
-        else:
-            raise ValueError(
-                "You must select something to install, for example `--ryzenai`"
+
+        if quark is not None:
+            quark_install_dir = os.path.join(lemonade_install_dir, "install", "quark")
+            os.makedirs(quark_install_dir, exist_ok=True)
+
+            # Install Quark utilities
+            quark_url = f"https://www.xilinx.com/bin/public/openDownload?filename=quark-{quark}.zip"
+            quark_path = download_and_extract_package(
+                url=quark_url,
+                version=quark,
+                install_dir=quark_install_dir,
+                package_name="quark",
             )
+            # Install Quark wheel
+            wheel_url = f"https://www.xilinx.com/bin/public/openDownload?filename=quark-{quark}-py3-none-any.whl"
+            wheel_path = os.path.join(
+                quark_install_dir, f"quark-{quark}-py3-none-any.whl"
+            )
+            print(f"\nInstalling Quark wheel from {wheel_url}")
+            download_file(wheel_url, wheel_path, "wheel file")
+
+            install_cmd = f"{sys.executable} -m pip install --no-deps {wheel_path}"
+            subprocess.run(install_cmd, check=True, shell=True)
+            os.remove(wheel_path)
+
+            print(f"\nQuark installed successfully at: {quark_path}")
 
 
 def main():

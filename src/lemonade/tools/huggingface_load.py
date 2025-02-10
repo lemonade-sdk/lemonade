@@ -55,6 +55,9 @@ class HuggingfaceTokenizerAdapter(TokenizerAdapter):
     def eos_token_id(self):
         return self.tokenizer.eos_token_id
 
+    def save_pretrained(self, model_dir, **kwargs):
+        return self.tokenizer.save_pretrained(model_dir, **kwargs)
+
 
 class HuggingfaceLoad(FirstTool):
     """

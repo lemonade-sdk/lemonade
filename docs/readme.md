@@ -10,10 +10,7 @@ The `docs/lemonade` directory has documentation for the LLM-focused `lemonade` t
   - [Perplexity](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/perplexity.md): details of the Perplexity test for LLMs.
 - Tool-specific setup guides:
     - [llama.cpp](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/llamacpp.md)
-    - OnnxRuntime GenaI:
-        - [iGPU/NPU hybrid](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_hybrid.md)
-        - [iGPU](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md)
-        - [NPU](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_npu.md)
+    - [OnnxRuntime GenaI iGPU and CPU](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md)
 
 ## CNNs and Transformers: `turnkey` tooling
 

@@ -23,6 +23,8 @@ from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.perplexity import AccuracyPerplexity
 from lemonade.tools.chat import LLMPrompt, Serve
 from lemonade.tools.serve import ServerPreview
+from lemonade.tools.quark.quark_load import QuarkLoad
+from lemonade.tools.quark.quark_quantize import QuarkQuantize
 
 
 def main():
@@ -40,6 +42,8 @@ def main():
         Serve,
         HuggingfaceBench,
         OgaBench,
+        QuarkQuantize,
+        QuarkLoad,
         # Inherited from TurnkeyML
         Report,
         Cache,
@@ -54,14 +58,6 @@ def main():
 
         tools = tools + [OgaLoad]
 
-    except ModuleNotFoundError:
-        pass
-
-    # Import RyzenAI NPU modules only if RyzenAI NPU is installed
-    try:
-        from lemonade.tools.ryzenai_npu.ryzenai_npu import RyzenAINPULoad
-
-        tools = tools + [RyzenAINPULoad]
     except ModuleNotFoundError:
         pass
 
