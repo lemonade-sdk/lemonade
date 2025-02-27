@@ -7,6 +7,7 @@ import turnkeyml.common.status as status
 from turnkeyml.tools import FirstTool
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.cache import Keys
+from lemonade.tools.huggingface_load import get_base_model
 
 
 class LlamaCppAdapter(ModelAdapter):
@@ -146,7 +147,7 @@ class LoadLlamaCpp(FirstTool):
     unique_name = "load-llama-cpp"
 
     def __init__(self):
-        super().__init__(monitor_message="Running llama.cpp model")
+        super().__init__(monitor_message="Loading llama.cpp model")
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -245,6 +246,12 @@ class LoadLlamaCpp(FirstTool):
 
         # Save stats about the model
         state.save_stat(Keys.CHECKPOINT, model_to_use)
+
+        # Get base model information if this is a converted HF model
+        base_model = get_base_model(input)
+        if base_model is not None:
+            state.save_stat("base_model", base_model)
+
         status.add_to_state(state=state, name=input, model=model_to_use)
 
         return state

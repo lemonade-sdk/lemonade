@@ -3,6 +3,7 @@ from typing import Dict, Optional
 import json
 import transformers
 import torch
+from huggingface_hub import model_info
 from turnkeyml.state import State
 import turnkeyml.common.status as status
 from turnkeyml.tools import Tool, FirstTool
@@ -57,6 +58,30 @@ class HuggingfaceTokenizerAdapter(TokenizerAdapter):
 
     def save_pretrained(self, model_dir, **kwargs):
         return self.tokenizer.save_pretrained(model_dir, **kwargs)
+
+
+def get_base_model(checkpoint: str) -> Optional[str]:
+    """
+    Get the base model information for a given checkpoint from the Hugging Face Hub.
+
+    Args:
+        checkpoint: The model checkpoint to query
+
+    Returns:
+        The base model name if found, or None if not found or error occurs
+    """
+    try:
+        info = model_info(checkpoint)
+        if info.cardData and "base_model" in info.cardData:
+            if info.cardData["base_model"] is not None:
+                # This is a derived model
+                return info.cardData["base_model"]
+            else:
+                # This is itself a base model
+                return checkpoint
+    except Exception:  # pylint: disable=broad-except
+        pass
+    return None
 
 
 class HuggingfaceLoad(FirstTool):
@@ -203,6 +228,11 @@ class HuggingfaceLoad(FirstTool):
         state.save_stat(Keys.CHECKPOINT, checkpoint)
         state.save_stat(Keys.DTYPE, str(dtype).split(".")[1])
         state.save_stat(Keys.DEVICE, device)
+
+        # Get base model information
+        base_model = get_base_model(checkpoint)
+        if base_model is not None:
+            state.save_stat("base_model", base_model)
 
         # Create a UniqueInvocationInfo and ModelInfo so that we can display status
         # at the end of the sequence

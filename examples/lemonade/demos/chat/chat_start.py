@@ -3,14 +3,14 @@ from threading import Thread, Event
 from queue import Queue
 from time import sleep
 from transformers import StoppingCriteriaList
-from lemonade.tools.chat import StopOnEvent
+from lemonade.tools.serve import StopOnEvent
 
 
 class TextStreamer:
     """
     Imitates a queue for streaming text from one thread to another.
 
-    Not needed once we integrate with LEAP.
+    Not needed once we integrate with the lemonade API.
     """
 
     def __init__(self):
@@ -40,7 +40,7 @@ def generate_placeholder(
     """
     Imitates an LLM's generate function by streaming text to a queue.
 
-    Not needed once we integrate with LEAP.
+    Not needed once we integrate with the lemonade API.
     """
 
     # pylint: disable=line-too-long

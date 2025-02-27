@@ -69,6 +69,7 @@ setup(
             "human-eval-windows==1.0.4",
             "fastapi",
             "uvicorn[standard]",
+            "openai",
         ],
         "llm-oga-cpu": [
             "onnxruntime-genai>=0.5.2",
@@ -77,13 +78,13 @@ setup(
             "turnkeyml[llm]",
         ],
         "llm-oga-igpu": [
-            "onnxruntime-genai-directml==0.4.0",
+            "onnxruntime-genai-directml>=0.4.0",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "turnkeyml[llm]",
         ],
         "llm-oga-cuda": [
-            "onnxruntime-genai-cuda==0.4.0",
+            "onnxruntime-genai-cuda>=0.4.0",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "turnkeyml[llm]",

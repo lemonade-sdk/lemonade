@@ -1,19 +1,11 @@
-# Lemonade
+# Lemonade SDK
 
-Welcome to the project page for `lemonade` the Turnkey LLM Aide!
+The `lemonade` SDK provides everything needed to get up and running quickly with LLMs on OnnxRuntime GenAI (OGA). 
 
-1. [Install](#install)
-1. [CLI Commands](#cli-commands)
-    - [Syntax](#syntax)
-    - [Chatting](#chatting)
-    - [Accuracy](#accuracy)
-    - [Benchmarking](#benchmarking)
-    - [Memory Usage](#memory-usage)
-    - [Serving](#serving)
-1. [API Overview](#api)
-1. [Code Organization](#code-organization)
-1. [Contributing](#contributing)
-
+- [Quick installation from PyPI](#install). 
+- [CLI with tools for prompting, benchmarking, and accuracy tests](#cli-commands).
+- [REST API with OpenAI compatibility](#serving).
+- [Python API based on `from_pretrained()` for easy integration with Python apps](#api).  
 
 # Install
 
@@ -85,9 +77,9 @@ Can be read like this:
 The `lemonade -h` command will show you which options and Tools are available, and `lemonade TOOL -h` will tell you more about that specific Tool.
 
 
-## Chatting
+## Prompting
 
-To chat with your LLM try:
+To prompt your LLM try:
 
 OGA iGPU:
 ```bash
@@ -163,33 +155,27 @@ contains a figure plotting the memory usage over the build time.  Learn more by 
 
 ## Serving
 
-You can launch a WebSocket server for your LLM with:
+You can launch an OpenAI-compatible server with:
 
-OGA iGPU:
 ```bash
-    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 serve
+    lemonade serve
 ```
 
-Hugging Face:
-```bash
-    lemonade -i facebook/opt-125m huggingface-load serve
-```
-
-Once the server has launched, you can connect to it from your own application, or interact directly by following the on-screen instructions to open a basic web app.
+Visit the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the endpoints provided.
 
 # API
 
 Lemonade is also available via API. 
 
-## LEAP APIs
+## High-Level APIs
 
-The lemonade enablement platform (LEAP) API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid). This makes it easy to integrate lemonade LLMs into Python applications.
+The high-level lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate lemonade LLMs into Python applications.
 
 OGA iGPU:
 ```python
-from lemonade import leap
+from lemonade.api import from_pretrained
 
-model, tokenizer = leap.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-igpu")
+model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-igpu")
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 response = model.generate(input_ids, max_new_tokens=30)
@@ -197,7 +183,7 @@ response = model.generate(input_ids, max_new_tokens=30)
 print(tokenizer.decode(response[0]))
 ```
 
-You can learn more about the LEAP APIs [here](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade).
+You can learn more about the high-level APIs [here](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade).
 
 ## Low-Level API
 
@@ -207,13 +193,13 @@ Here's a quick example of how to prompt a Hugging Face LLM using the low-level A
 
 ```python
 import lemonade.tools.torch_llm as tl
-import lemonade.tools.chat as cl
+import lemonade.tools.prompt as pt
 from turnkeyml.state import State
 
 state = State(cache_dir="cache", build_name="test")
 
 state = tl.HuggingfaceLoad().run(state, input="facebook/opt-125m")
-state = cl.Prompt().run(state, prompt="hi", max_new_tokens=15)
+state = pt.Prompt().run(state, prompt="hi", max_new_tokens=15)
 
 print("Response:", state.response)
 ```

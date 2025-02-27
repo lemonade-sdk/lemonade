@@ -376,6 +376,8 @@ class Keys:
     INPUTS = "inputs"
     # Path to the file containing the memory usage plot
     MEMORY_USAGE_PLOT = "memory_usage_plot"
+    # Average of all tested MMLU subject scores
+    AVERAGE_MMLU_ACCURACY = "average_mmlu_accuracy"
 
 
 def _clean_logfile(logfile_lines: List[str]) -> List[str]:

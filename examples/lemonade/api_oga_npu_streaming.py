@@ -1,7 +1,7 @@
 """
-This example demonstrates how to use the LEAP API to load a model for
-inference on CPU via OnnxRuntime-GenAI using the oga-cpu recipe, and then
-use a thread to generate a streaming the response to a prompt.
+This example demonstrates how to use the lemonade API to load a model for
+inference on Ryzen AI NPU via OnnxRuntime-GenAI using the oga-npu recipe,
+and then use a thread to generate a streaming the response to a prompt.
 
 Note: this approach only works with recipes that support lemonade's OrtGenaiStreamer,
 i.e., OGA-based recipes such as oga-cpu, oga-igpu, oga-npu, and oga-hybrid.
@@ -12,10 +12,13 @@ https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md#ins
 """
 
 from threading import Thread
-from lemonade import leap
+from lemonade.api import from_pretrained
 from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
 
-model, tokenizer = leap.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-cpu")
+model, tokenizer = from_pretrained(
+    "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+    recipe="oga-npu",
+)
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 

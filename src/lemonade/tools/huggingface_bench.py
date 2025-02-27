@@ -1,15 +1,16 @@
 import argparse
-import os
 from typing import List, Tuple
 import time
 import statistics
+from statistics import StatisticsError
 from contextlib import nullcontext
 import torch
 import tqdm
 from turnkeyml.state import State
-from turnkeyml.tools import Tool
 from lemonade.cache import Keys
-import lemonade.tools.ort_genai.oga_bench as general
+from lemonade.tools.bench import Bench
+
+default_beams = 1
 
 
 def benchmark_huggingface_llm(
@@ -21,6 +22,7 @@ def benchmark_huggingface_llm(
     target_output_tokens: int,
     iterations: int,
     warmup_iterations: int,
+    report_progress_fn,
 ) -> List[Tuple[float, int]]:
 
     # Inform the user whether the current execution is to measure
@@ -44,7 +46,7 @@ def benchmark_huggingface_llm(
 
         with torch.no_grad(), torch.inference_mode():
             # Don't capture time for warmup
-            for _ in tqdm.tqdm(range(warmup_iterations), desc=f"{mode} warmup"):
+            for count in tqdm.tqdm(range(warmup_iterations), desc=f"{mode} warmup"):
                 model.generate(
                     input_ids,
                     num_beams=num_beams,
@@ -53,8 +55,9 @@ def benchmark_huggingface_llm(
                     early_stopping=early_stopping,
                     pad_token_id=tokenizer.eos_token_id,
                 )
+                report_progress_fn((count + 1) / (warmup_iterations + iterations))
 
-            for _ in tqdm.tqdm(range(iterations), desc=f"{mode} iterations"):
+            for count in tqdm.tqdm(range(iterations), desc=f"{mode} iterations"):
                 # CUDA synchronization is required prior to GPU benchmarking
                 # This has no negative effect on CPU-only benchmarks, and is more robust than
                 # checking `model.device == "cuda"` since it applies to multi-GPU environments
@@ -81,17 +84,21 @@ def benchmark_huggingface_llm(
 
                 token_len = outputs.shape[1] - input_ids.shape[1]
 
-                # Only count an iteration it produced enough tokens
+                # Only count an iteration if it produced enough tokens
                 if token_len >= target_output_tokens:
                     per_iteration_result.append((latency, token_len))
 
+                report_progress_fn(
+                    (warmup_iterations + count + 1) / (warmup_iterations + iterations)
+                )
+
         if not per_iteration_result:
-            raise general.not_enough_tokens(target_output_tokens)
+            raise Bench.not_enough_tokens(target_output_tokens)
 
     return per_iteration_result
 
 
-class HuggingfaceBench(Tool):
+class HuggingfaceBench(Bench):
     """
     Benchmarks the performance of the generate() method of an LLM loaded from
     Huggingface Transformers (or any object that supports a
@@ -110,119 +117,56 @@ class HuggingfaceBench(Tool):
 
     unique_name = "huggingface-bench"
 
-    def __init__(self):
-        super().__init__(monitor_message="Benchmarking Huggingface LLM")
-
-        self.status_stats = [
-            Keys.SECONDS_TO_FIRST_TOKEN,
-            Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
-        ]
-
     @staticmethod
     def parser(parser: argparse.ArgumentParser = None, add_help: bool = True):
-        # allow inherited classes to initialize and pass in a parser, add parameters to it if so
+        # Allow inherited classes to initialize and pass in a parser, add parameters to it if so
         if parser is None:
             parser = __class__.helpful_parser(
-                short_description="Benchmark a Huggingface-like LLM", add_help=add_help
+                short_description="Benchmark a torch.nn.Module LLM",
+                add_help=add_help,
             )
 
-        parser.add_argument(
-            "--iterations",
-            "-i",
-            required=False,
-            type=int,
-            default=general.default_iterations,
-            help="Number of benchmarking iterations to run (default: "
-            f"{general.default_iterations})",
-        )
-
-        parser.add_argument(
-            "--warmup-iterations",
-            "-w",
-            required=False,
-            type=int,
-            default=general.default_warmup_runs,
-            help="Number of benchmarking iterations to use for cache warmup "
-            "(the results of these iterations "
-            f"are not included in the results; default: {general.default_warmup_runs})",
-        )
-
-        parser.add_argument(
-            "--prompt",
-            "-p",
-            required=False,
-            default=general.default_prompt,
-            help="Input prompt to the LLM. Three formats are supported. "
-            f"1) integer (default: {general.default_prompt}): "
-            "use a synthetic prompt with the specified length. "
-            "2) str: use a user-provided prompt string "
-            "3) path/to/prompt.txt: load the prompt from a text file.",
-        )
+        parser = Bench.parser(parser)
 
         parser.add_argument(
             "--num-beams",
             required=False,
             type=int,
-            default=general.default_beams,
-            help=f"Number of beams for the LLM to use (default: {general.default_beams})",
-        )
-
-        parser.add_argument(
-            "--output-tokens",
-            required=False,
-            type=int,
-            default=general.default_output_tokens,
-            help="Number of new tokens the LLM should make (default: "
-            f"{general.default_output_tokens})",
+            default=default_beams,
+            help=f"Number of beams for the LLM to use (default: {default_beams})",
         )
 
         return parser
 
-    def parse(self, state: State, args, known_only=True) -> argparse.Namespace:
+    def get_prompt_str(self, state, token_length):
         """
-        Helper function to parse CLI arguments into the args expected
-        by run()
+        Returns a string with the prescribed token length.
         """
+        model = state.model
+        tokenizer = state.tokenizer
+        test_prompt = "word " * (token_length - 2)
+        input_ids = (
+            tokenizer(test_prompt, return_tensors="pt")
+            .to(device=model.device)
+            .input_ids
+        )
+        test_token_length = input_ids.shape[1]
+        delta = test_token_length - token_length
+        if delta == 0:
+            return test_prompt
+        return "word " * max(token_length - 2 - delta, 0)
 
-        parsed_args = super().parse(state, args, known_only)
-
-        # Decode prompt arg into a string prompt
-        if parsed_args.prompt.isdigit():
-            # Generate a prompt with the requested length
-            length = int(parsed_args.prompt)
-            parsed_args.prompt = "word " * (length - 2)
-
-        elif os.path.exists(parsed_args.prompt):
-            with open(parsed_args.prompt, "r", encoding="utf-8") as f:
-                parsed_args.prompt = f.read()
-
-        else:
-            # No change to the prompt
-            pass
-
-        return parsed_args
-
-    def run(
+    def run_prompt(
         self,
         state: State,
-        prompt: str = general.default_prompt,
-        iterations: int = general.default_iterations,
-        warmup_iterations: int = general.default_warmup_runs,
-        num_beams: int = general.default_beams,
-        output_tokens: int = general.default_output_tokens,
+        report_progress_fn,
+        prompt: str,
+        iterations: int,
+        warmup_iterations: int,
+        output_tokens: int,
+        num_beams: int = default_beams,
     ) -> State:
         """
-        Args:
-            - prompt: input prompt used as a starting point for LLM text generation
-            - iterations: number of benchmarking samples to take; results are
-                reported as the median and mean of the samples.
-            - warmup_iterations: subset of the iterations to treat as warmup,
-                and not included in the results.
-            - num_beams: number of beams to use in the LLM beam search. If the LLM
-                instance has hardcoded its number of beams already, this value
-                must match the hardcoded value.
-            - output_tokens: Number of new tokens LLM to create.
-
         We don't have access to the internal timings of generate(), so time to first
         token (TTFT, aka prefill latency) and token/s are calculated using the following formulae:
             prefill_latency = latency of generate(output_tokens=1)
@@ -230,27 +174,36 @@ class HuggingfaceBench(Tool):
             tokens_per_second = (new_tokens - 1) / (execution_latency - prefill_latency)
         """
 
-        if vars(state).get(Keys.MODEL) is None:
-            raise ValueError(
-                f"{self.__class__.__name__} requires that a model be passed from another tool"
-            )
+        if self.first_run_prompt:
+            if vars(state).get(Keys.MODEL) is None:
+                raise ValueError(
+                    f"{self.__class__.__name__} requires that a model be passed from another tool"
+                )
+            if (
+                vars(state).get("num_beams")
+                and vars(state).get("num_beams") != num_beams
+            ):
+                raise ValueError(
+                    f"Number of beams was set to {vars(state).get('num_beams')} "
+                    f"in a previous tool, but it is set to {num_beams} in "
+                    "this tool. The values must be the same."
+                )
 
-        if vars(state).get("num_beams") and vars(state).get("num_beams") != num_beams:
-            raise ValueError(
-                f"Number of beams was set to {vars(state).get('num_beams')} "
-                f"in a previous tool, but it is set to {num_beams} in "
-                "this tool. The values must be the same."
-            )
+            # Save benchmarking parameters
+            state.save_stat("num_beams", num_beams)
 
         model = state.model
         tokenizer = state.tokenizer
         dtype = state.dtype
 
-        # Generate the input_ids outside of the benchmarking function to make sure
+        # Generate the input_ids outside the benchmarking function to make sure
         # the same input_ids are used everywhere
         input_ids = (
             tokenizer(prompt, return_tensors="pt").to(device=model.device).input_ids
         )
+        self.input_ids_len_list.append(input_ids.shape[1])
+
+        prefill_report_progress_fn = lambda x: report_progress_fn(0.5 * x)
 
         # Benchmark prefill time (time to first token)
         prefill_per_iteration_result = benchmark_huggingface_llm(
@@ -262,12 +215,26 @@ class HuggingfaceBench(Tool):
             target_output_tokens=1,
             iterations=iterations,
             warmup_iterations=warmup_iterations,
+            report_progress_fn=prefill_report_progress_fn,
         )
 
         time_to_first_token_per_iteration = [
             latency for latency, _ in prefill_per_iteration_result
         ]
         mean_time_to_first_token = statistics.mean(time_to_first_token_per_iteration)
+        self.mean_time_to_first_token_list.append(mean_time_to_first_token)
+        self.prefill_tokens_per_second_list.append(
+            input_ids.shape[1] / mean_time_to_first_token
+        )
+        try:
+            self.std_dev_time_to_first_token_list.append(
+                statistics.stdev(time_to_first_token_per_iteration)
+            )
+        except StatisticsError:
+            # Less than 2 measurements
+            self.std_dev_time_to_first_token_list.append(None)
+
+        decode_report_progress_fn = lambda x: report_progress_fn(0.5 + 0.5 * x)
 
         # Benchmark generation of all tokens
         decode_per_iteration_result = benchmark_huggingface_llm(
@@ -279,23 +246,19 @@ class HuggingfaceBench(Tool):
             target_output_tokens=output_tokens,
             iterations=iterations,
             warmup_iterations=warmup_iterations,
+            report_progress_fn=decode_report_progress_fn,
         )
 
-        mean_execution_latency = statistics.mean(
-            [latency for latency, _ in decode_per_iteration_result]
-        )
+        execution_latency_per_iteration = [
+            latency for latency, _ in decode_per_iteration_result
+        ]
+        token_len_per_iteration = [
+            token_len for _, token_len in decode_per_iteration_result
+        ]
+        mean_execution_latency = statistics.mean(execution_latency_per_iteration)
         mean_decode_latency = mean_execution_latency - mean_time_to_first_token
-        mean_token_len = statistics.mean(
-            [token_len for _, token_len in decode_per_iteration_result]
-        )
+        mean_token_len = statistics.mean(token_len_per_iteration)
         # Subtract 1 so that we don't count the prefill token
-        token_generation_tokens_per_second = (mean_token_len - 1) / mean_decode_latency
-
-        # Save performance data to stats
-        state.save_stat(Keys.SECONDS_TO_FIRST_TOKEN, mean_time_to_first_token)
-        state.save_stat(
-            Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, token_generation_tokens_per_second
+        self.token_generation_tokens_per_second_list.append(
+            (mean_token_len - 1) / mean_decode_latency
         )
-        state.save_stat(Keys.PROMPT_TOKENS, input_ids.shape[1])
-
-        return state

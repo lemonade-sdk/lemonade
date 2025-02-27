@@ -1,9 +1,9 @@
 import sys
 from threading import Thread, Event
 from transformers import StoppingCriteriaList
-from lemonade import leap
+from lemonade.api import from_pretrained
 from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
-from lemonade.tools.chat import StopOnEvent
+from lemonade.tools.serve import StopOnEvent
 
 employee_handbook = """
 1. You will work very hard every day.\n
@@ -28,7 +28,7 @@ Don't make up information that isn't in the handbook already.
 def main():
 
     # Load LLaMA-3.2 1B model on Ryzen AI Hybrid
-    model, tokenizer = leap.from_pretrained(
+    model, tokenizer = from_pretrained(
         "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
         recipe="oga-hybrid",
     )

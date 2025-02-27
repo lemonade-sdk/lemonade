@@ -12,6 +12,7 @@ from turnkeyml.state import State
 from turnkeyml.tools import Tool
 import turnkeyml.common.printing as printing
 import turnkeyml.common.build as build
+import turnkeyml.common.filesystem as fs
 
 # Constants
 choices = ["A", "B", "C", "D"]
@@ -212,10 +213,9 @@ class AccuracyMMLU(Tool):
 
         # Calculate average of mmlu accuracy and display in the CLI
         acc_avg = np.mean([accuracy_data["Accuracy"] for accuracy_data in summary_data])
-        avg_stat_name = "avg_accuracy"
-        state.save_stat(avg_stat_name, float(acc_avg) * 100)
-        state.save_stat("accuracy_units", "%")
-        self.status_stats.append(avg_stat_name)
+        state.save_stat(fs.Keys.AVERAGE_MMLU_ACCURACY, float(acc_avg) * 100)
+        state.save_stat(f"{fs.Keys.AVERAGE_MMLU_ACCURACY}_units", "%")
+        self.status_stats.append(fs.Keys.AVERAGE_MMLU_ACCURACY)
 
         # Save accuracy results to CSV file
         summary_df = pd.DataFrame(summary_data)

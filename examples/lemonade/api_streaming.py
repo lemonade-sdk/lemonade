@@ -1,5 +1,5 @@
 """
-This example demonstrates how to use the LEAP API to load a model for
+This example demonstrates how to use the lemonade API to load a model for
 inference on CPU using the hf-cpu recipe, and then use a thread to
 generate a streaming the response to a prompt.
 
@@ -9,9 +9,9 @@ i.e., huggingface-based recipes such as hf-cpu and hf-dgpu.
 
 from threading import Thread
 from transformers import TextIteratorStreamer
-from lemonade import leap
+from lemonade.api import from_pretrained
 
-model, tokenizer = leap.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="hf-cpu")
+model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="hf-cpu")
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 

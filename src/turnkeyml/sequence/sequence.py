@@ -295,7 +295,7 @@ class Sequence:
         if plot_path is not None:
             printing.log_info(f"Saved plot of memory usage to {plot_path}")
             state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, plot_path)
-        else:
+        elif track_memory_interval is not None:
             printing.log_info("Error in memory usage tracking, no plot generated")
             state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, "NONE")
 

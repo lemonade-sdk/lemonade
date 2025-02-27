@@ -23,6 +23,7 @@ from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
 import turnkeyml.common.status as status
 import turnkeyml.common.printing as printing
+from lemonade.tools.huggingface_load import get_base_model
 from lemonade.tools.adapter import (
     ModelAdapter,
     TokenizerAdapter,
@@ -557,6 +558,11 @@ class OgaLoad(FirstTool):
             state.save_stat(Keys.DEVICE, device)
             if oga_models_subfolder is not None:
                 state.save_stat(Keys.OGA_MODELS_SUBFOLDER, oga_models_subfolder)
+
+            # Get base model information
+            base_model = get_base_model(checkpoint)
+            if base_model is not None:
+                state.save_stat("base_model", base_model)
 
             # Create a UniqueInvocationInfo and ModelInfo so that we can display status
             # at the end of the sequence

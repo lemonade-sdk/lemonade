@@ -5,22 +5,37 @@ import time
 from threading import Thread, Event
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import torch  # pylint: disable=unused-import
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from openai.types.model import Model
+
 from turnkeyml.state import State
 from turnkeyml.tools.management_tools import ManagementTool
 from lemonade.tools.adapter import ModelAdapter
-from lemonade.tools.chat import DEFAULT_GENERATE_PARAMS
+from lemonade.tools.prompt import DEFAULT_GENERATE_PARAMS
 from lemonade.tools.huggingface_load import HuggingfaceLoad
+from lemonade.cache import DEFAULT_CACHE_DIR
 
 
 # Custom huggingface-style stopping criteria to allow
 # us to halt streaming in-progress generations
 class StopOnEvent(StoppingCriteria):
+    """
+    Custom stopping criteria that halts text generation when a specified event is set.
+
+    This allows for external control of generation, such as stopping a generation
+    before it reaches the maximum token limit.
+    """
+
     def __init__(self, stop_event: Event):
         super().__init__()
         self.stop_event = stop_event
@@ -29,43 +44,57 @@ class StopOnEvent(StoppingCriteria):
         return self.stop_event.is_set()
 
 
-class CompletionsServerConfig(BaseModel):
-    cache_dir: str
+class LoadConfig(BaseModel):
+    """
+    Configuration for loading a language model.
+
+    Specifies the model checkpoint, cache directory, generation parameters,
+    and hardware configuration for model loading.
+    """
+
     checkpoint: str
+    cache_dir: str = DEFAULT_CACHE_DIR
     max_new_tokens: int = 500
-    device: str = "hybrid"
-    dtype: str = "int4"
+    device: str = "cpu"
 
 
 class CompletionRequest(BaseModel):
+    """
+    Request model for text completion API endpoint.
+
+    Contains the input text to be completed and a model identifier.
+    """
+
     text: str
-    model: str = None
+    model: str
 
 
-END_OF_STREAM = "</s>"
+class ChatCompletionRequest(BaseModel):
+    """
+    Request model for chat completion API endpoint.
+
+    Contains a list of chat messages, a model identifier,
+    and a streaming flag to control response delivery.
+    """
+
+    messages: list[dict]
+    model: str
+    stream: bool = False
 
 
-class ServerPreview(ManagementTool):
+class Server(ManagementTool):
     """
     Open a web server that apps can use to communicate with the LLM.
 
-    There are two ways to perform generations with the server:
-    - Send an http request to "http://localhost:8000/generate" and
-        receive back a response with the complete prompt.
-    - Open a WebSocket with "ws://localhost:8000" and receive a
-        streaming response to the prompt.
-
-    The server also exposes these helpful endpoints:
+    The server exposes these endpoints:
     - /api/v0/load: load a model checkpoint
     - /api/v0/unload: unload a model checkpoint
     - /api/v0/health: check whether a model is loaded and ready to serve.
     - /api/v0/stats: performance statistics for the generation.
     - /api/v0/halt: stop an in-progress generation from make more tokens.
-    - /api/v0/completions: stream completion responses using HTTP chunked transfer encoding.
-
-    The WebSocket functionality is demonstrated by the webpage served at
-    http://localhost:8000, which you can visit with a web browser after
-    opening the server.
+    - /api/v0/completions: completion responses using HTTP chunked transfer encoding.
+    - /api/v0/chat/completions: chat completion responses using HTTP chunked transfer encoding.
+    - /api/v0/models: list all available models.
 
     Optional inputs:
     - --cache-dir: directory to store model artifacts (default: ~/.cache/lemonade)
@@ -74,7 +103,7 @@ class ServerPreview(ManagementTool):
     - --port: port number to run the server on (default: 8000)
     """
 
-    unique_name = "server-preview"
+    unique_name = "serve"
 
     def __init__(self):
         super().__init__()
@@ -82,14 +111,26 @@ class ServerPreview(ManagementTool):
         # Initialize FastAPI app
         self.app = FastAPI()
 
-        # Set up routes
+        # Add CORS middleware
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # Allows all origins
+            allow_credentials=True,
+            allow_methods=["*"],  # Allows all methods
+            allow_headers=["*"],  # Allows all headers
+        )
+
+        # Set up custom routes
         self.app.post("/api/v0/load")(self.load_llm)
         self.app.post("/api/v0/unload")(self.unload_llm)
         self.app.get("/api/v0/health")(self.health)
         self.app.get("/api/v0/halt")(self.halt_generation)
         self.app.get("/api/v0/stats")(self.send_stats)
         self.app.post("/api/v0/completions")(self.completions)
-        self.app.get("/")(self.get)
+
+        # Set up OpenAI-compatible routes
+        self.app.post("/api/v0/chat/completions")(self.chat_completions)
+        self.app.get("/api/v0/models")(self.models)
 
         # Performance stats that are set during /ws and can be
         # fetched in /stats
@@ -104,115 +145,52 @@ class ServerPreview(ManagementTool):
 
         # Helpers
         self.llm_loaded = False
+        self.tokenizer = None
 
         # Placeholders for state and configs
         self.state = None
         self.max_new_tokens = None
 
-        self.html = """
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <title>Chat</title>
-            </head>
-            <body>
-                <h1>Lemonade Chat</h1>
-                <form action="" onsubmit="sendMessage(event)">
-                    <input type="text" id="messageText" autocomplete="off"/>
-                    <button type="submit">Send</button>
-                </form>
-                <button onclick="showStats()">Show Stats</button>
-                <button onclick="halt()">Halt</button>
-                <button onclick="health()">Health</button>
-                <div id="chatContainer"></div>
-                <p id="statsMessage"></p>
-                <script>
-                    const chatContainer = document.getElementById('chatContainer');
-                    const statsMessageContainer = document.getElementById('statsMessage');
-
-                    async function sendMessage(event) {
-                        event.preventDefault();
-                        var input = document.getElementById("messageText");
-                        const message = input.value;
-                        input.value = '';
-                        
-                        // Add message
-                        const messageDiv = document.createElement('div');
-                        messageDiv.textContent = message;
-                        chatContainer.appendChild(messageDiv);
-
-                        // Create response container
-                        const responseDiv = document.createElement('div');
-                        chatContainer.appendChild(responseDiv);
-                        
-                        try {
-                            const response = await fetch('/api/v0/completions', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({ text: message })
-                            });
-
-                            const reader = response.body.getReader();
-                            const decoder = new TextDecoder();
-                            
-                            while (true) {
-                                const {value, done} = await reader.read();
-                                if (done) break;
-                                
-                                const text = decoder.decode(value);
-                                responseDiv.textContent += text;
-                                // Scroll to bottom as new content arrives
-                                window.scrollTo(0, document.body.scrollHeight);
-                            }
-                        } catch (error) {
-                            console.error('Error:', error);
-                            responseDiv.textContent += '\\nError: ' + error.message;
-                        }
-                    }
-
-                    function showStats() {
-                        fetch('/api/v0/stats')
-                        .then(response => response.json())
-                        .then(data => {
-                            statsMessageContainer.textContent = JSON.stringify(data);
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                        });
-                    }
-
-                    function halt() {
-                        fetch('/api/v0/halt')
-                        .then(response => response.json())
-                        .then(data => {
-                            statsMessageContainer.textContent = JSON.stringify(data);
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                        });
-                    }
-
-                    function health() {
-                        fetch('/api/v0/health')
-                        .then(response => response.json())
-                        .then(data => {
-                            statsMessageContainer.textContent = JSON.stringify(data);
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                        });
-                    }
-                </script>
-            </body>
-        </html>
-        """
+        # Curated list of "Instruct" and "Chat" models.
+        self.builtin_models = {
+            "Qwen2.5-0.5B-Instruct-CPU": {
+                "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
+                "device": "cpu",
+            },
+            "Llama-3.2-1B-Instruct-Hybrid": {
+                "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Llama-3.2-3B-Instruct-Hybrid": {
+                "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Phi-3.5-Mini-Instruct-Hybrid": {
+                "checkpoint": "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Phi-3-Mini-Instruct-Hybrid": {
+                "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Llama-2-7B-Chat-Hybrid": {
+                "checkpoint": "amd/Llama-2-7b-chat-hf-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Qwen-1.5-7B-Chat-Hybrid": {
+                "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Mistral-7B-Instruct-Hybrid": {
+                "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+        }
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Industry Standard Model Server (Preview)",
+            short_description="Industry Standard Model Server",
             add_help=add_help,
         )
 
@@ -248,7 +226,7 @@ class ServerPreview(ManagementTool):
     ):
         # Only load the model when starting the server if checkpoint was provided
         if checkpoint:
-            config = CompletionsServerConfig(
+            config = LoadConfig(
                 cache_dir=cache_dir,
                 checkpoint=checkpoint,
                 max_new_tokens=max_new_tokens,
@@ -257,9 +235,6 @@ class ServerPreview(ManagementTool):
 
         uvicorn.run(self.app, host="localhost", port=port)
 
-    async def get(self):
-        return HTMLResponse(self.html)
-
     async def completions(self, completion_request: CompletionRequest):
         """
         Stream completion responses using HTTP chunked transfer encoding.
@@ -267,9 +242,7 @@ class ServerPreview(ManagementTool):
 
         if completion_request.model:
             # Call load_llm with the model name
-            await self.load_llm(
-                CompletionsServerConfig(checkpoint=completion_request.model)
-            )
+            await self.load_llm(LoadConfig(checkpoint=completion_request.model))
 
         async def generate():
             async for token in self._generate_tokens(completion_request.text):
@@ -280,13 +253,124 @@ class ServerPreview(ManagementTool):
             media_type="text/plain",
         )
 
+    async def chat_completions(self, chat_completion_request: ChatCompletionRequest):
+        """
+        Stream chat completion responses using HTTP chunked transfer encoding.
+        """
+
+        # Get model config
+        if chat_completion_request.model in self.builtin_models:
+            model_config = self.builtin_models[chat_completion_request.model]
+            lc = LoadConfig(**model_config)
+        else:
+            # If the model is not built-in, we assume it corresponds to a checkpoint
+            lc = LoadConfig(checkpoint=chat_completion_request.model)
+
+        if lc.checkpoint != self.llm_loaded:
+            # Unload the current model if needed
+            if self.llm_loaded:
+                await self.unload_llm()
+
+            # Load the new model
+            await self.load_llm(lc)
+
+        # Convert chat messages to text using the model's chat template
+        if hasattr(self.tokenizer, "apply_chat_template"):
+            # Use the model's built-in chat template if available
+            messages_dict = [
+                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+                for msg in chat_completion_request.messages
+            ]
+            text = self.tokenizer.apply_chat_template(
+                messages_dict, tokenize=False, add_generation_prompt=True
+            )
+        else:
+            # Fallback to a standardized template if the model doesn't provide one
+            formatted_messages = []
+            for msg in chat_completion_request.messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                role_marker = "<|assistant|>" if role == "assistant" else "<|user|>"
+                formatted_messages.append(f"{role_marker}\n{content} <|end|>")
+            text = "\n".join(formatted_messages) + "\n<|assistant|>"
+
+        if chat_completion_request.stream:
+
+            # Stream the response
+            async def generate():
+                async for token in self._generate_tokens(text):
+                    # Create a ChatCompletionChunk
+                    chunk = ChatCompletionChunk.model_construct(
+                        id="0",
+                        object="chat.completion.chunk",
+                        created=int(time.time()),
+                        model=self.llm_loaded,
+                        choices=[
+                            Choice.model_construct(
+                                index=0,
+                                delta=ChoiceDelta(
+                                    content=token,
+                                    function_call=None,
+                                    role="assistant",
+                                    tool_calls=None,
+                                    refusal=None,
+                                ),
+                                finish_reason=None,
+                                logprobs=None,
+                            )
+                        ],
+                    )
+
+                    # Format as SSE
+                    yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
+
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        # If streaming is not requested, collect all generated tokens into a single response
+        else:
+            full_response = ""
+            async for token in self._generate_tokens(text):
+                full_response += token
+
+            ccm = ChatCompletionMessage(
+                content=full_response,
+                role="assistant",
+                refusal=None,
+                audio=None,
+                function_call=None,
+                tool_calls=None,
+            )
+
+            choice = Choice(
+                finish_reason="stop",
+                index=0,
+                message=ccm,
+                logprobs=None,
+            )
+
+            return ChatCompletion(
+                id="0",
+                choices=[choice],
+                model=self.llm_loaded,
+                object="chat.completion",
+                created=int(time.time()),
+            )
+
     async def _generate_tokens(self, message: str):
         """
         Core streaming completion logic, separated from response handling.
         Returns an async generator that yields tokens.
         """
-        if self.state is None:
-            raise Exception("Model not loaded")
 
         model = self.state.model  # pylint: disable=no-member
         tokenizer = self.state.tokenizer  # pylint: disable=no-member
@@ -316,6 +400,7 @@ class ServerPreview(ManagementTool):
             "input_ids": input_ids,
             "streamer": streamer,
             "max_new_tokens": self.max_new_tokens,
+            "min_new_tokens": 1,
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
             **DEFAULT_GENERATE_PARAMS,
@@ -335,8 +420,9 @@ class ServerPreview(ManagementTool):
             # Generate the response using streaming
             new_text = ""
             for new_text in streamer:
-                # Add a small delay between tokens to make the streaming more visible
-                await asyncio.sleep(0.00001)
+                # Yield control back to the event loop
+                # This gives the FastAPI server a chance to send the chunks to the client
+                await asyncio.sleep(0)
 
                 # Capture performance stats about this token
                 self.output_tokens = self.output_tokens + 1
@@ -351,6 +437,10 @@ class ServerPreview(ManagementTool):
                     )
                 next_token_start_time = time.perf_counter()
 
+                # Remove the EOS token from the response if needed
+                if hasattr(self.tokenizer, "eos_token"):
+                    new_text = new_text.replace(self.tokenizer.eos_token, "")
+
                 yield new_text
 
                 # Allow the user to finish the response early
@@ -358,11 +448,8 @@ class ServerPreview(ManagementTool):
                     print("Stopping generation early.")
                     break
 
-            if new_text != END_OF_STREAM:
-                yield END_OF_STREAM
-
             self.tokens_per_second = 1 / statistics.mean(self.decode_token_times)
-            print("\n")
+
         finally:
             thread.join()
 
@@ -405,9 +492,9 @@ class ServerPreview(ManagementTool):
             ),
         }
 
-    async def load_llm(self, config: CompletionsServerConfig):
+    async def load_llm(self, config: LoadConfig):
         self.max_new_tokens = config.max_new_tokens
-        self.llm_loaded = True
+        print("Loading llm:", config.checkpoint)
         try:
             state = State(
                 cache_dir=config.cache_dir,
@@ -420,9 +507,7 @@ class ServerPreview(ManagementTool):
                     state,
                     input=config.checkpoint,
                     device=config.device,
-                    dtype=(
-                        torch.bfloat16 if config.dtype == "bfloat16" else torch.float32
-                    ),
+                    dtype=torch.bfloat16,
                 )
             else:
                 from lemonade.tools.ort_genai.oga import OgaLoad
@@ -432,12 +517,12 @@ class ServerPreview(ManagementTool):
                     state,
                     input=config.checkpoint,
                     device=config.device,
-                    dtype=config.dtype,
+                    dtype="int4",
                     force=True,
                 )
-
             self.max_new_tokens = config.max_new_tokens
-            self.llm_loaded = True
+            self.llm_loaded = config.checkpoint
+            self.tokenizer = self.state.tokenizer.tokenizer  # pylint: disable=no-member
 
             return {
                 "status": "success",
@@ -461,3 +546,19 @@ class ServerPreview(ManagementTool):
                 "status": "error",
                 "message": f"Failed to unload model: {str(e)}",
             }
+
+    async def models(self):
+        """
+        Return a list of available models in OpenAI-compatible format.
+        """
+        models_list = []
+        for model in self.builtin_models:
+            m = Model(
+                id=model,
+                owned_by="lemonade",
+                object="model",
+                created=int(time.time()),
+            )
+            models_list.append(m)
+
+        return {"object": "list", "data": models_list}

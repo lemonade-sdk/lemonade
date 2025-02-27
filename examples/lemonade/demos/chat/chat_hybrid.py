@@ -1,14 +1,14 @@
 import sys
 from threading import Thread, Event
 from transformers import StoppingCriteriaList
-from lemonade.tools.chat import StopOnEvent
-from lemonade import leap
+from lemonade.tools.serve import StopOnEvent
+from lemonade.api import from_pretrained
 from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
 
 
 def main():
 
-    model, tokenizer = leap.from_pretrained(
+    model, tokenizer = from_pretrained(
         "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
         recipe="oga-hybrid",
     )

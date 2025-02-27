@@ -1,35 +1,157 @@
-# Lemonade Server Spec (Preview)
+# Lemonade Server Spec
 
-> This is a preview release. The API specification is subject to change.
+The `lemonade` SDK provides a standards-compliant server process that provides a REST API to enable communication with other applications. Right now, the [key endpoints of the OpenAI API](#openai-compatible-endpoints) are available. Our plan is to add more OpenAI endpoints, as well as Ollama-compatible endpoints, in the near future.
 
-This spec was inspired by the [LM Studio REST API](https://lmstudio.ai/docs/api-reference/rest-api), [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), and [OpenAI API](https://platform.openai.com/docs/api-reference/introduction).
+We are also actively investigating and developing [additional endpoints](#additional-endpoints) that will improve the experience of local applications.
 
-This spec focuses on enabling client applications by extending existing cloud-focused APIs (e.g., OpenAI) to also include the ability to load and unload models before completion requests are made. These extensions allow for a greater degree of UI/UX responsiveness in native applications by allowing applications to:
+## Endpoints Overview
+
+### OpenAI-Compatible Endpoints
+- POST `/api/v0/chat/completions` - Chat Completions (messages -> completion)
+- GET `/api/v0/models` - List available models
+
+### Additional Endpoints
+
+> 🚧 These additional endpoints are a preview that is under active development. The API specification is subject to change.
+
+These additional endpoints were inspired by the [LM Studio REST API](https://lmstudio.ai/docs/api-reference/rest-api), [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), and [OpenAI API](https://platform.openai.com/docs/api-reference/introduction).
+
+They focus on enabling client applications by extending existing cloud-focused APIs (e.g., OpenAI) to also include the ability to load and unload models before completion requests are made. These extensions allow for a greater degree of UI/UX responsiveness in native applications by allowing applications to:
 - Pre-load models at UI-loading-time, as opposed to completion-request time.
 - Load models from the local system that were downloaded by other applications (i.e., a common system-wide models cache). 
 - Unload models to save memory space.
 
-## API Endpoints
-
+The additional endpoints under development are:
 - POST `/api/v0/completions` - Text Completions (prompt -> completion)
 - POST `/api/v0/load` - Load a model
 - POST `/api/v0/unload` - Unload a model
 - POST `/api/v0/params` - Set generation parameters
 - GET `/api/v0/health` - Check server health
 - GET `/api/v0/stats` - Performance statistics from the last request
-- GET `/api/v0/models` - List available models
 
 > 🚧 We are in the process of developing this interface. Let us know what's important to you on Github or by email (turnkeyml at amd dot com).
 
-## Start the REST API server
+## Start the REST API Server
 
-First, install lemonade with your desired backend (e.g., `pip install lemonade[llm-oga-cpu]`). Then, run the following command to start the server:
+> **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
+
+First, install lemonade with your desired backend (e.g., `pip install lemonade[llm]`). Then, run the following command to start the server:
 
 ```bash
-lemonade server-preview
+lemonade serve
 ```
 
-## Endpoints
+## OpenAI-Compatible Endpoints
+
+
+### `POST /api/v0/chat/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
+
+Chat Completions API. You provide a list of messages and receive a streamed completion. This API will also load the model if it is not already loaded.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `messages` | Yes | Array of messages in the conversation. Each message should have a `role` ("user" or "assistant") and `content` (the message text). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+
+
+### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v0/chat/completions ^
+  -H "Content-Type: application/json" ^
+  -d "{ 
+        \"model\": \"Llama-3.2-1B-Instruct-Hybrid\", 
+        \"messages\": [ 
+          {\"role\": \"user\", \"content\": \"What is the population of Paris?\"} 
+        ], 
+        \"stream\": true 
+      }"
+
+```
+*Hint: To try, "Paste as One Line" in Windows `cmd`.*
+
+### Response format
+
+For non-streaming responses:
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": <UNIX_TIMESTAMP>,
+  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "Paris has a population of approximately 2.2 million people in the city proper."
+    },
+    "logprobs": {
+      "tokens": ["Paris", " has", " a", " population", ...],
+      "token_logprobs": [-0.12, -0.05, -0.02, -0.15, ...]
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+For streaming responses, the API returns a stream of server-sent events:
+```json
+{
+  "id": "0",
+  "object": "chat.completion.chunk",
+  "created": <UNIX_TIMESTAMP>,
+  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "choices": [{
+    "index": 0,
+    "delta": {
+      "role": "assistant",
+      "content": "Paris"
+    }
+  }]
+}
+```
+
+### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Returns a list of key models available on the server in an OpenAI-compatible format. This list is curated based on what works best for Ryzen AI Hybrid. Additional models can be loaded via the `/api/v0/load` endpoint by specifying the Hugging Face checkpoint.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:8000/api/v0/models
+```
+
+### Response format
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "<CHECKPOINT>",
+      "object": "model",
+      "created": <UNIX_TIMESTAMP>,
+      "owned_by": "<OWNER>"
+    },
+    {
+      "id": "<ANOTHER_CHECKPOINT>",
+      "object": "model",
+      "created": <UNIX_TIMESTAMP>,
+      "owned_by": "<OWNER>"
+    }
+  ]
+}
+```
+
+## Additional Endpoints
 
 ### `POST /api/v0/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
 
@@ -40,19 +162,19 @@ Text Completions API. You provide a prompt and receive a streamed completion. Th
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `prompt` | Yes | The prompt to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | No | The model to use for the completion. If not specified, the server will use the default loaded model.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |   
+| `model` | Yes | The model to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |   
 | All other params of `/api/v0/load`  | No | Detailed loading options as defined in the `/api/v0/load` endpoint. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
 | All other params of `/api/v0/params` | No | Detailed generation options as defined in the `/api/v0/params` endpoint. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
 
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "<HUGGINGFACE_CHECKPOINT>",
-    "prompt": "the meaning of life is",
-  }'
+curl -X POST http://localhost:8000/api/v0/completions ^
+  -H "Content-Type: application/json" ^
+  -d "{
+    \"model\": \"<CHECKPOINT>\",
+    \"prompt\": \"the meaning of life is\"
+  }"
 ```
 
 ### Response format
@@ -73,16 +195,15 @@ Explicitly load a model. This is useful to ensure that the model is loaded befor
 |-----------|----------|-------------|
 | `model` | Yes | HuggingFace checkpoint to load. |
 | `device` | No | Device to load the model on. Defaults to `hybrid`. |
-| `dtype` | No | Data type to load the model on. Defaults to `int4`. |
 | `cache_dir` | No | Parent directory where models are stored. Defaults to `~/.cache/lemonade`. |
 
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/load \
+curl http://localhost:8000/api/v0/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "<HUGGINGFACE_CHECKPOINT>",
+    "model": "<CHECKPOINT>",
     "cache_dir": "/Users/your_username/models"
   }'
 ```
@@ -109,7 +230,7 @@ This endpoint does not take any parameters.
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/unload
+curl http://localhost:8000/api/v0/unload
 ```
 
 ### Response format
@@ -139,7 +260,7 @@ Set the generation parameters for text completion. These parameters will persist
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/params \
+curl http://localhost:8000/api/v0/params \
   -H "Content-Type: application/json" \
   -d '{
     "temperature": 0.8,
@@ -177,7 +298,7 @@ This endpoint does not take any parameters.
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/health
+curl http://localhost:8000/api/v0/health
 ```
 
 ### Response format
@@ -185,7 +306,7 @@ curl http://localhost:1234/api/v0/health
 ```json
 {
   "status": "ok",
-  "model_loaded": "<HUGGINGFACE_CHECKPOINT>"
+  "model_loaded": "<CHECKPOINT>"
 }
 ```
 ### `GET /api/v0/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -199,7 +320,7 @@ This endpoint does not take any parameters.
 ### Example request
 
 ```bash
-curl http://localhost:1234/api/v0/stats
+curl http://localhost:8000/api/v0/stats
 ```
 
 ### Response format
@@ -211,44 +332,5 @@ curl http://localhost:1234/api/v0/stats
   "input_tokens": 128,
   "output_tokens": 5,
   "decode_token_times": [0.01, 0.02, 0.03, 0.04, 0.05]
-}
-```
-
-### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-in_development-yellow)</sub>
-
-List all available models.
-
-### Parameters
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `cache_dir` | No | Parent directory where models are stored. Defaults to `~/.cache/lemonade`. |
-
-### Example request
-
-```bash
-curl http://localhost:1234/api/v0/models \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cache_dir": "/Users/your_username/models"
-  }'
-```
-
-### Response format
-
-```json
-{
-  "data": [
-    {
-      "checkpoint": "<HUGGINGFACE_CHECKPOINT>",
-      "device": "cpu",
-      "dtype": "bfloat16",
-    },
-    {
-      "checkpoint": "<ANOTHER_HUGGINGFACE_CHECKPOINT>",
-      "device": "cpu",
-      "dtype": "bfloat16",
-    }
-  ]
 }
 ```

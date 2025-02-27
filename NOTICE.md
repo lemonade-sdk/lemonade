@@ -2,6 +2,8 @@ PORTIONS LICENSED AS FOLLOWS
 
 \>  TurnkeyML used code from the [MLAgility](https://github.com/groq/mlagility) and [GroqFlow](https://github.com/groq/groqflow) projects as a starting point. Much of that code was refactored, improved, or replaced by the time TurnkeyML was published. 
 
+\> TurnkeyML uses the [Microsoft lemon emoji](https://github.com/microsoft/fluentui-emoji) as an icon for the lemoande tool.
+
 >The MIT License
 >
 >Copyright 2023 Groq Inc.

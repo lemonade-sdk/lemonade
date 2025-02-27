@@ -21,10 +21,10 @@ import lemonade.cache as cache
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.perplexity import AccuracyPerplexity
-from lemonade.tools.chat import LLMPrompt, Serve
-from lemonade.tools.serve import ServerPreview
+from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.quark.quark_load import QuarkLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
+from lemonade.tools.serve import Server
 
 
 def main():
@@ -39,7 +39,6 @@ def main():
         AccuracyPerplexity,
         LLMPrompt,
         AdaptHuggingface,
-        Serve,
         HuggingfaceBench,
         OgaBench,
         QuarkQuantize,
@@ -49,7 +48,7 @@ def main():
         Cache,
         Version,
         SystemInfo,
-        ServerPreview,
+        Server,
     ]
 
     # Import onnxruntime-genai recipes

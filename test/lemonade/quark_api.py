@@ -3,7 +3,7 @@ import shutil
 import os
 from turnkeyml.state import State
 import turnkeyml.common.test_helpers as common
-from lemonade.tools.chat import LLMPrompt
+from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.quark.quark_load import QuarkLoad
@@ -36,13 +36,13 @@ class Testing(unittest.TestCase):
             "quant_algo": "awq",
             "quant_scheme": "w_uint4_per_group_asym",
             "device": "cpu",
-            "skip_quantization": True
+            "skip_quantization": True,
         }
         # Combine specific quant args with defaults
         quantize_args = {**self.default_args, **quantize_args}
         state = QuarkQuantize().run(state, **quantize_args)
         state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=10)
-        
+
         assert len(state.response) > 0, state.response
 
 

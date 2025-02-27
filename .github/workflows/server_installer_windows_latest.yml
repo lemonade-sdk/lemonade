@@ -1,0 +1,170 @@
+name: Server Installer Windows-Latest Build and Test
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - v*
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  make-server-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NSIS
+        shell: PowerShell
+        run: |
+          # Download NSIS installer
+          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe" -OutFile "nsis.exe"
+          
+          # Install NSIS
+          Start-Process nsis.exe -ArgumentList '/S' -Wait
+
+      - name: Verify NSIS installation
+        shell: PowerShell
+        run: |
+          # Check if NSIS is installed
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /VERSION
+
+      - name: Build the Lemonade Server installer
+        shell: PowerShell
+        run: |
+          cd installer
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' 'Installer.nsi'
+
+          if (Test-Path "Lemonade_Server_Installer.exe") {
+            Write-Host "Lemonade_Server_Installer.exe has been created successfully."
+          } else {
+            Write-Host "Lemonade_Server_Installer.exe was not found."
+            exit 1
+          }
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LemonadeServerInstaller
+          path: |
+            installer\Lemonade_Server_Installer.exe
+
+      - name: Attempt to install Lemonade Server using installer
+        shell: cmd
+        run: |          
+          cd installer
+          Lemonade_Server_Installer.exe /S
+
+      - name: Ensure the Lemonade serer works properly
+        shell: pwsh
+        run: |
+          Write-Host "Use a function to determine the underlying command from the lemonade server shortcut"
+          function Get-ShortcutTarget {
+              param (
+                  [string]$shortcutPath
+              )
+              $shell = New-Object -ComObject WScript.Shell
+              $shortcut = $shell.CreateShortcut($shortcutPath)
+              $targetPath = $shortcut.TargetPath
+              $arguments = $shortcut.Arguments
+              return "$targetPath $arguments"
+          }
+
+          Write-Host "ls of install directory to make sure the server is there"
+          ls "$HOME\AppData\Local\lemonade_server"
+
+          $shortcutPath = "$HOME\AppData\Local\lemonade_server\lemonade-server.lnk"
+          $fullCommand = Get-ShortcutTarget -shortcutPath $shortcutPath
+
+          Write-Host "Server shortcut full command: $fullCommand"
+
+          $quotedCommand = "`"$fullCommand`""
+          
+          $outputFile = "output.log"
+          $errorFile = "error.log"
+          $serverProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/C $quotedCommand" -RedirectStandardOutput $outputFile -RedirectStandardError $errorFile -PassThru -NoNewWindow
+
+          Write-Host "Wait for 30 seconds to let the server come up"
+          Start-Sleep -Seconds 30
+          
+          Write-Host "Check if server process successfully launched"
+          $serverRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+          if (-not $serverRunning) {
+            Write-Host "Error: Server process isn't running, even though we just tried to start it!"
+            Write-Host "Standard Output:"
+            Get-Content $outputFile
+
+            Write-Host "Standard Error:"
+            Get-Content $errorFile
+            exit 1
+          } else {
+            Write-Host "Server process is alive."
+          }
+
+          Write-Host "Wait for the server port to come up"
+          while ($true) {
+            
+            $llmPortCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000
+            if (-not $llmPortCheck.TcpTestSucceeded) {
+              Write-Host "LLM server is not yet running on port 8000!"
+              Write-Host "Standard Output:"
+              Get-Content $outputFile
+
+              Write-Host "Standard Error:"
+              Get-Content $errorFile
+            } else {
+              Write-Host "LLM server is running on port 8000."
+              break
+            }
+
+            Start-Sleep -Seconds 30
+          }
+
+          Write-Host "Checking the /health endpoint"
+          $response = Invoke-WebRequest -Uri http://localhost:8000/api/v0/health -UseBasicParsing
+
+          if ($response.StatusCode -eq 200) {
+              Write-Output "Good: /health status code is 200"
+          } else {
+              Write-Output "Error: /health status code is not 200"
+              Write-Host "Standard Output:"
+              Get-Content $outputFile
+
+              Write-Host "Standard Error:"
+              Get-Content $errorFile
+              exit 1
+          }
+
+          $jsonContent = $response.Content | ConvertFrom-Json
+          if ($jsonContent) {
+              Write-Output "Good: /health JSON content is not empty: $jsonContent"
+          } else {
+              Write-Output "Error: /health JSON content is empty"
+              Write-Host "Standard Output:"
+              Get-Content $outputFile
+
+              Write-Host "Standard Error:"
+              Get-Content $errorFile
+              exit 1
+          }
+
+          Write-Host "Close the server process"
+
+          function Kill-Tree {
+              Param([int]$ppid)
+              Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $ppid } | ForEach-Object { Kill-Tree $_.ProcessId }
+              Stop-Process -Id $ppid
+          }
+          Kill-Tree $serverProcess.Id
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: installer/Lemonade_Server_Installer.exe
+
+          
+
+

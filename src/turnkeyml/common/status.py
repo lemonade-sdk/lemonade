@@ -22,6 +22,11 @@ def _pretty_print_key(key: str) -> str:
     return result
 
 
+class PrettyFloat(float):
+    def __repr__(self):
+        return f"{self:0.3f}"
+
+
 def parameters_to_size(parameters: int, byte_per_parameter: int = 4) -> str:
     size_bytes = parameters * byte_per_parameter
     if size_bytes == 0:
@@ -233,7 +238,11 @@ class UniqueInvocationInfo(BasicInfo):
                 try:
                     value = stats.stats[key]
                     if isinstance(value, float):
-                        value = "{0:.3f}".format(value)
+                        value = PrettyFloat(value)
+                    elif isinstance(value, list):
+                        value = [
+                            PrettyFloat(v) if isinstance(v, float) else v for v in value
+                        ]
                     # Tools may provide a unit of measurement for their status
                     # stats, whose key name should follow the format
                     # "STATUS_STATS_KEY_units"

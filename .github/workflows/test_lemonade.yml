@@ -46,13 +46,6 @@ jobs:
         run: |
           pylint src/lemonade --rcfile .pylintrc --disable E0401
           pylint examples --rcfile .pylintrc --disable E0401,E0611 --jobs=1
-      - name: Test HF+CPU server
-        if: runner.os == 'Windows'
-        timeout-minutes: 10
-        uses: ./.github/actions/server-testing
-        with:
-          conda_env: -n lemon
-          load_command: -i facebook/opt-125m huggingface-load
       - name: Run lemonade tests
         shell: bash -el {0}
         run: |
@@ -63,7 +56,11 @@ jobs:
           python test/lemonade/llm_api.py
           
 
-          # Test high-level LEAP APIs
-          python examples/lemonade/leap_basic.py
-          python examples/lemonade/leap_streaming.py
+          # Test high-level APIs
+          python examples/lemonade/api_basic.py
+          python examples/lemonade/api_streaming.py
+
+          # Test server
+          python test/lemonade/server.py
+
 

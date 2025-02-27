@@ -15,7 +15,7 @@ from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
-from lemonade.tools.chat import LLMPrompt
+from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.llamacpp import LoadLlamaCpp
 from lemonade.tools.llamacpp_bench import LlamaCppBench
 from lemonade.cache import Keys
@@ -204,12 +204,13 @@ class TestLlamaCpp(unittest.TestCase):
             iterations=2,
             warmup_iterations=1,
             output_tokens=128,
-            prompt="Hello, I am a test prompt that is long enough to get meaningful metrics.",
+            prompts=[
+                "Hello, I am a test prompt that is long enough to get meaningful metrics."
+            ],
         )
 
-        stats = fs.Stats(state.cache_dir, state.build_name).stats
-
         # Check if we got valid metrics
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
         self.assertIn(Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, stats)
         self.assertIn(Keys.SECONDS_TO_FIRST_TOKEN, stats)
 
@@ -360,6 +361,24 @@ class Testing(unittest.TestCase):
                 "response_lengths.png",
             )
         )
+
+    def test_007_huggingface_multiple_bench(self):
+        # Benchmark OPT
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test",
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = HuggingfaceBench().run(
+            state, iterations=20, prompts=["word " * 30, "word " * 62]
+        )
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+        assert len(stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND]) == 2
+        assert all(x > 0 for x in stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND])
 
 
 if __name__ == "__main__":

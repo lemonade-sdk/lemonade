@@ -6,10 +6,12 @@ from turnkeyml.state import State
 import turnkeyml.common.test_helpers as common
 import turnkeyml.common.filesystem as fs
 from turnkeyml.common.build import builds_dir
+from lemonade.cache import Keys
 from lemonade.tools.ort_genai.oga import OgaLoad
-from lemonade.tools.chat import LLMPrompt
+from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
+from lemonade.tools.ort_genai.oga_bench import OgaBench
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
 
@@ -77,6 +79,20 @@ class Testing(unittest.TestCase):
         assert isinstance(
             stats["humaneval_pass@1"], (int, float)
         ), "HumanEval pass@1 metric should be numeric"
+
+    def test_004_oga_multiple_bench(self):
+        """Test OgaBench with multiple prompts"""
+
+        state = State(cache_dir=cache_dir, build_name="test")
+
+        state = OgaLoad().run(state, input=checkpoint, device=device, dtype=dtype)
+        state = OgaBench().run(
+            state, iterations=20, prompts=["word " * 30, "word " * 62]
+        )
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+        assert len(stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND]) == 2
+        assert all(x > 0 for x in stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND])
 
 
 if __name__ == "__main__":
