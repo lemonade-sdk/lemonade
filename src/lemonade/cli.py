@@ -43,12 +43,12 @@ def main():
         OgaBench,
         QuarkQuantize,
         QuarkLoad,
+        Server,
         # Inherited from TurnkeyML
         Report,
         Cache,
         Version,
         SystemInfo,
-        Server,
     ]
 
     # Import onnxruntime-genai recipes

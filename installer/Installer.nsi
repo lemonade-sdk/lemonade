@@ -84,7 +84,7 @@ SectionIn RO ; Read only, always installed
 
     # Pack turnkeyml repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.*
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* run_server.bat
 
     DetailPrint "- Packaged repo"
 
@@ -225,9 +225,10 @@ Section "Install Ryzen AI Hybrid Execution" HybridSec
   end:
 SectionEnd
 
-Section "-Add Desktop Shortcut" ShortcutSec
-  # Create a desktop shortcut that points to the newly created shortcut in $INSTDIR
-  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\lemonade-server.lnk"
+Section "-Add Desktop Shortcut" ShortcutSec  
+  ; Create a desktop shortcut that passes the conda environment name as a parameter
+  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\run_server.bat" "$LEMONADE_CONDA_ENV" "$INSTDIR\img\favicon.ico"
+
 SectionEnd
 
 Function RunServer

@@ -3,6 +3,7 @@ import asyncio
 import statistics
 import time
 from threading import Thread, Event
+import logging
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -12,6 +13,7 @@ import uvicorn
 import torch  # pylint: disable=unused-import
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 
+from openai.types.completion import Completion, CompletionChoice
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
@@ -24,6 +26,14 @@ from lemonade.tools.adapter import ModelAdapter
 from lemonade.tools.prompt import DEFAULT_GENERATE_PARAMS
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.cache import DEFAULT_CACHE_DIR
+
+
+# Set to a high number to allow for interesting experiences in real apps
+# Tests should use the max_new_tokens argument to set a lower value
+DEFAULT_MAX_NEW_TOKENS = 1500
+
+DEFAULT_PORT = 8000
+DEFAULT_LOG_LEVEL = "info"
 
 
 # Custom huggingface-style stopping criteria to allow
@@ -54,7 +64,7 @@ class LoadConfig(BaseModel):
 
     checkpoint: str
     cache_dir: str = DEFAULT_CACHE_DIR
-    max_new_tokens: int = 500
+    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
     device: str = "cpu"
 
 
@@ -62,11 +72,14 @@ class CompletionRequest(BaseModel):
     """
     Request model for text completion API endpoint.
 
-    Contains the input text to be completed and a model identifier.
+    Contains a prompt, a model identifier, and a streaming
+    flag to control response delivery.
     """
 
-    text: str
+    prompt: str
     model: str
+    stream: bool = False
+    stop: list[str] | str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -80,6 +93,7 @@ class ChatCompletionRequest(BaseModel):
     messages: list[dict]
     model: str
     stream: bool = False
+    stop: list[str] | str | None = None
 
 
 class Server(ManagementTool):
@@ -95,12 +109,6 @@ class Server(ManagementTool):
     - /api/v0/completions: completion responses using HTTP chunked transfer encoding.
     - /api/v0/chat/completions: chat completion responses using HTTP chunked transfer encoding.
     - /api/v0/models: list all available models.
-
-    Optional inputs:
-    - --cache-dir: directory to store model artifacts (default: ~/.cache/lemonade)
-    - --checkpoint: name of the checkpoint to load
-    - --max-new-tokens: number of new tokens the LLM should make (default: 500)
-    - --port: port number to run the server on (default: 8000)
     """
 
     unique_name = "serve"
@@ -130,6 +138,7 @@ class Server(ManagementTool):
 
         # Set up OpenAI-compatible routes
         self.app.post("/api/v0/chat/completions")(self.chat_completions)
+        self.app.post("/api/v0/completions")(self.completions)
         self.app.get("/api/v0/models")(self.models)
 
         # Performance stats that are set during /ws and can be
@@ -143,13 +152,16 @@ class Server(ManagementTool):
         # Flag that tells the LLM to stop generating text and end the response
         self.stop_event = Event()
 
-        # Helpers
-        self.llm_loaded = False
+        self.llm_loaded = None
         self.tokenizer = None
 
         # Placeholders for state and configs
         self.state = None
         self.max_new_tokens = None
+
+        # Initialize semaphore for tracking active generations
+        self.max_concurrent_generations = 1
+        self._generate_semaphore = asyncio.Semaphore(self.max_concurrent_generations)
 
         # Curated list of "Instruct" and "Chat" models.
         self.builtin_models = {
@@ -165,27 +177,18 @@ class Server(ManagementTool):
                 "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
             },
-            "Phi-3.5-Mini-Instruct-Hybrid": {
-                "checkpoint": "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
             "Phi-3-Mini-Instruct-Hybrid": {
                 "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
-            "Llama-2-7B-Chat-Hybrid": {
-                "checkpoint": "amd/Llama-2-7b-chat-hf-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
             },
             "Qwen-1.5-7B-Chat-Hybrid": {
                 "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
             },
-            "Mistral-7B-Instruct-Hybrid": {
-                "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
         }
+
+        # Add lock for load/unload operations
+        self._load_lock = asyncio.Lock()
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -204,15 +207,23 @@ class Server(ManagementTool):
             "--max-new-tokens",
             required=False,
             type=int,
-            default=300,
-            help="Number of new tokens the LLM should make (default: 300)",
+            default=DEFAULT_MAX_NEW_TOKENS,
+            help=f"Number of new tokens the LLM should make (default: {DEFAULT_MAX_NEW_TOKENS})",
         )
         parser.add_argument(
             "--port",
             required=False,
             type=int,
-            default=8000,
-            help="Port number to run the server on (default: 8000)",
+            default=DEFAULT_PORT,
+            help=f"Port number to run the server on (default: {DEFAULT_PORT})",
+        )
+        parser.add_argument(
+            "--log-level",
+            required=False,
+            type=str,
+            default=DEFAULT_LOG_LEVEL,
+            choices=["critical", "error", "warning", "info", "debug", "trace"],
+            help=f"Logging level (default: {DEFAULT_LOG_LEVEL})",
         )
 
         return parser
@@ -221,9 +232,27 @@ class Server(ManagementTool):
         self,
         cache_dir: str,
         checkpoint: str,
-        max_new_tokens: int = 500,
-        port: int = 8000,
+        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        port: int = DEFAULT_PORT,
+        log_level: str = DEFAULT_LOG_LEVEL,
     ):
+        # Configure logging to match uvicorn's format
+        logging_level = getattr(logging, log_level.upper())
+        logging.basicConfig(
+            level=logging_level,
+            format="%(levelprefix)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        # Add uvicorn's log formatter
+        logging.root.handlers[0].formatter = uvicorn.logging.DefaultFormatter(
+            fmt="%(levelprefix)s %(message)s",
+            use_colors=True,
+        )
+
+        # Ensure the log level is properly set
+        logging.getLogger().setLevel(logging_level)
+
         # Only load the model when starting the server if checkpoint was provided
         if checkpoint:
             config = LoadConfig(
@@ -233,7 +262,7 @@ class Server(ManagementTool):
             )
             asyncio.run(self.load_llm(config))
 
-        uvicorn.run(self.app, host="localhost", port=port)
+        uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
 
     async def completions(self, completion_request: CompletionRequest):
         """
@@ -241,17 +270,76 @@ class Server(ManagementTool):
         """
 
         if completion_request.model:
-            # Call load_llm with the model name
-            await self.load_llm(LoadConfig(checkpoint=completion_request.model))
 
-        async def generate():
-            async for token in self._generate_tokens(completion_request.text):
-                yield token.encode("utf-8")
+            # Get model config
+            if completion_request.model in self.builtin_models:
+                model_config = self.builtin_models[completion_request.model]
+                lc = LoadConfig(**model_config)
+            else:
+                # If the model is not built-in, we assume it corresponds to a checkpoint
+                lc = LoadConfig(checkpoint=completion_request.model)
 
-        return StreamingResponse(
-            generate(),
-            media_type="text/plain",
-        )
+        # Load the model if it's different from the currently loaded one
+        await self.load_llm(lc)
+
+        if completion_request.stream:
+            # Stream the response
+            async def generate():
+                async for token in self._generate_tokens(
+                    completion_request.prompt, completion_request.stop
+                ):
+                    choice = CompletionChoice(
+                        text=token,
+                        index=0,
+                        finish_reason="stop",
+                        logprobs=None,
+                    )
+
+                    completion = Completion(
+                        id="0",
+                        choices=[choice],
+                        model=self.llm_loaded,
+                        object="text_completion",
+                        created=int(time.time()),
+                    )
+
+                    # Format as SSE
+                    yield f"data: {completion.model_dump_json()}\n\n".encode("utf-8")
+
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        # If streaming is not requested, collect all generated tokens into a single response
+        else:
+            full_response = ""
+            async for token in self._generate_tokens(
+                completion_request.prompt, completion_request.stop
+            ):
+                full_response += token
+
+            choice = CompletionChoice(
+                text=full_response,
+                index=0,
+                finish_reason="stop",
+                logprobs=None,
+            )
+
+            return Completion(
+                id="0",
+                choices=[choice],
+                model=self.llm_loaded,
+                object="text_completion",
+                created=int(time.time()),
+            )
 
     async def chat_completions(self, chat_completion_request: ChatCompletionRequest):
         """
@@ -266,13 +354,8 @@ class Server(ManagementTool):
             # If the model is not built-in, we assume it corresponds to a checkpoint
             lc = LoadConfig(checkpoint=chat_completion_request.model)
 
-        if lc.checkpoint != self.llm_loaded:
-            # Unload the current model if needed
-            if self.llm_loaded:
-                await self.unload_llm()
-
-            # Load the new model
-            await self.load_llm(lc)
+        # Load the model if it's different from the currently loaded one
+        await self.load_llm(lc)
 
         # Convert chat messages to text using the model's chat template
         if hasattr(self.tokenizer, "apply_chat_template"):
@@ -298,7 +381,9 @@ class Server(ManagementTool):
 
             # Stream the response
             async def generate():
-                async for token in self._generate_tokens(text):
+                async for token in self._generate_tokens(
+                    text, chat_completion_request.stop
+                ):
                     # Create a ChatCompletionChunk
                     chunk = ChatCompletionChunk.model_construct(
                         id="0",
@@ -339,7 +424,9 @@ class Server(ManagementTool):
         # If streaming is not requested, collect all generated tokens into a single response
         else:
             full_response = ""
-            async for token in self._generate_tokens(text):
+            async for token in self._generate_tokens(
+                text, chat_completion_request.stop
+            ):
                 full_response += token
 
             ccm = ChatCompletionMessage(
@@ -366,12 +453,11 @@ class Server(ManagementTool):
                 created=int(time.time()),
             )
 
-    async def _generate_tokens(self, message: str):
+    async def _generate_tokens(self, message: str, stop: list[str] | str | None = None):
         """
         Core streaming completion logic, separated from response handling.
         Returns an async generator that yields tokens.
         """
-
         model = self.state.model  # pylint: disable=no-member
         tokenizer = self.state.tokenizer  # pylint: disable=no-member
 
@@ -379,6 +465,14 @@ class Server(ManagementTool):
         self.stop_event.clear()
 
         input_ids = tokenizer(message, return_tensors="pt").input_ids
+
+        # Process stop sequences
+        stop_sequences = []
+        if stop is not None:
+            if isinstance(stop, str):
+                stop_sequences = [stop]
+            else:
+                stop_sequences = stop[:4]  # Limit to 4 sequences as per spec
 
         # Set up the generation parameters
         if isinstance(model, ModelAdapter) and model.type == "ort-genai":
@@ -416,6 +510,14 @@ class Server(ManagementTool):
         thread = Thread(target=model.generate, kwargs=generation_kwargs)
         thread.start()
 
+        # Acquire the generation semaphore
+        await self._generate_semaphore.acquire()
+        active_generations = (
+            self.max_concurrent_generations
+            - self._generate_semaphore._value  # pylint: disable=protected-access
+        )
+        logging.debug(f"Active generations: {active_generations}")
+
         try:
             # Generate the response using streaming
             new_text = ""
@@ -441,17 +543,33 @@ class Server(ManagementTool):
                 if hasattr(self.tokenizer, "eos_token"):
                     new_text = new_text.replace(self.tokenizer.eos_token, "")
 
+                # Check for stop sequences
+                if stop_sequences:
+                    for stop_seq in stop_sequences:
+                        if stop_seq in new_text:
+                            # Make sure we yield the text up to before the stop sequence
+                            new_text = new_text[: new_text.find(stop_seq)]
+                            self.stop_event.set()
+
                 yield new_text
 
                 # Allow the user to finish the response early
                 if self.stop_event.is_set():
-                    print("Stopping generation early.")
+                    logging.info("Stopping generation early.")
                     break
 
             self.tokens_per_second = 1 / statistics.mean(self.decode_token_times)
 
         finally:
             thread.join()
+
+            # Release the semaphore when generation is complete (or if an error occurs)
+            self._generate_semaphore.release()
+            active_generations = (
+                self.max_concurrent_generations
+                - self._generate_semaphore._value  # pylint: disable=protected-access
+            )
+            logging.debug(f"Active generations: {active_generations}")
 
     async def send_stats(self):
         """
@@ -480,7 +598,6 @@ class Server(ManagementTool):
         """
         Report server health information to the client.
         """
-
         self.stop_event.set()
 
         return {
@@ -493,52 +610,84 @@ class Server(ManagementTool):
         }
 
     async def load_llm(self, config: LoadConfig):
-        self.max_new_tokens = config.max_new_tokens
-        print("Loading llm:", config.checkpoint)
         try:
-            state = State(
-                cache_dir=config.cache_dir,
-                build_name="main",
-            )
+            await self._load_lock.acquire()
 
-            if config.device == "cpu":
-                huggingface_loader = HuggingfaceLoad()
-                self.state = huggingface_loader.run(
-                    state,
-                    input=config.checkpoint,
-                    device=config.device,
-                    dtype=torch.bfloat16,
-                )
-            else:
-                from lemonade.tools.ort_genai.oga import OgaLoad
+            # Acquire all generate locks
+            for _ in range(self.max_concurrent_generations):
+                await self._generate_semaphore.acquire()
 
-                oga_loader = OgaLoad()
-                self.state = oga_loader.run(
-                    state,
-                    input=config.checkpoint,
-                    device=config.device,
-                    dtype="int4",
-                    force=True,
-                )
+            if config.checkpoint == self.llm_loaded:
+                return {
+                    "status": "success",
+                    "message": f"Model already loaded: {config.checkpoint}",
+                }
+
+            # Unload the current model if needed
+            if self.llm_loaded:
+                await self.unload_llm(require_lock=False)
+
             self.max_new_tokens = config.max_new_tokens
-            self.llm_loaded = config.checkpoint
-            self.tokenizer = self.state.tokenizer.tokenizer  # pylint: disable=no-member
+            logging.info(f"Loading llm: {config.checkpoint}")
+            try:
+                state = State(
+                    cache_dir=config.cache_dir,
+                    build_name="main",
+                )
 
-            return {
-                "status": "success",
-                "message": f"Loaded model: {config.checkpoint}",
-            }
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.llm_loaded = False
-            self.state = None
-            return {
-                "status": "error",
-                "message": f"Failed to load llm: {str(e)}",
-            }
+                if config.device == "cpu":
+                    huggingface_loader = HuggingfaceLoad()
+                    self.state = huggingface_loader.run(
+                        state,
+                        input=config.checkpoint,
+                        device=config.device,
+                        dtype=torch.bfloat16,
+                    )
+                else:
+                    from lemonade.tools.ort_genai.oga import OgaLoad
 
-    async def unload_llm(self):
+                    oga_loader = OgaLoad()
+                    self.state = oga_loader.run(
+                        state,
+                        input=config.checkpoint,
+                        device=config.device,
+                        dtype="int4",
+                        force=True,
+                    )
+                self.max_new_tokens = config.max_new_tokens
+                self.llm_loaded = config.checkpoint
+                self.tokenizer = (
+                    self.state.tokenizer.tokenizer  # pylint: disable=no-member
+                )
+
+                return {
+                    "status": "success",
+                    "message": f"Loaded model: {config.checkpoint}",
+                }
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                self.llm_loaded = None
+                self.state = None
+                return {
+                    "status": "error",
+                    "message": f"Failed to load llm: {str(e)}",
+                }
+        finally:
+            self._load_lock.release()
+
+            # Release all generate locks
+            for _ in range(self.max_concurrent_generations):
+                self._generate_semaphore.release()
+
+    async def unload_llm(self, require_lock: bool = True):
         try:
-            self.llm_loaded = False
+            if require_lock:
+                await self._load_lock.acquire()
+
+                # Acquire all generate locks
+                for _ in range(self.max_concurrent_generations):
+                    await self._generate_semaphore.acquire()
+
+            self.llm_loaded = None
             self.state = None
             return {"status": "success", "message": "Unloaded model"}
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -546,6 +695,13 @@ class Server(ManagementTool):
                 "status": "error",
                 "message": f"Failed to unload model: {str(e)}",
             }
+        finally:
+            if require_lock:
+                self._load_lock.release()
+
+                # Release all generate locks
+                for _ in range(self.max_concurrent_generations):
+                    self._generate_semaphore.release()
 
     async def models(self):
         """

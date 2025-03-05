@@ -18,7 +18,7 @@ To install `lemonade` from PyPI:
 1. Create and activate a [miniconda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe) environment.
     ```bash
     conda create -n lemon python=3.10
-    cond activate lemon
+    conda activate lemon
     ```
 
 3. Install lemonade for you backend of choice: 

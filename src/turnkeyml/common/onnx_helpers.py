@@ -39,7 +39,7 @@ def onnx_dir(state: State):
 
 
 def get_output_names(
-    onnx_model: Union[str, onnx.ModelProto]
+    onnx_model: Union[str, onnx.ModelProto],
 ):  # pylint: disable=no-member
     # Get output names of ONNX file/model
     if not isinstance(onnx_model, onnx.ModelProto):  # pylint: disable=no-member

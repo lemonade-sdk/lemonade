@@ -8,6 +8,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 
 ### OpenAI-Compatible Endpoints
 - POST `/api/v0/chat/completions` - Chat Completions (messages -> completion)
+- POST `/api/v0/completions` - Text Completions (prompt -> completion)
 - GET `/api/v0/models` - List available models
 
 ### Additional Endpoints
@@ -22,7 +23,6 @@ They focus on enabling client applications by extending existing cloud-focused A
 - Unload models to save memory space.
 
 The additional endpoints under development are:
-- POST `/api/v0/completions` - Text Completions (prompt -> completion)
 - POST `/api/v0/load` - Load a model
 - POST `/api/v0/unload` - Unload a model
 - POST `/api/v0/params` - Set generation parameters
@@ -46,19 +46,20 @@ lemonade serve
 
 ### `POST /api/v0/chat/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
 
-Chat Completions API. You provide a list of messages and receive a streamed completion. This API will also load the model if it is not already loaded.
+Chat Completions API. You provide a list of messages and receive a completion. This API will also load the model if it is not already loaded.
 
-### Parameters
+#### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `messages` | Yes | Array of messages in the conversation. Each message should have a `role` ("user" or "assistant") and `content` (the message text). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
 
 
-### Example request
+#### Example request
 
 ```bash
 curl -X POST http://localhost:8000/api/v0/chat/completions ^
@@ -68,13 +69,12 @@ curl -X POST http://localhost:8000/api/v0/chat/completions ^
         \"messages\": [ 
           {\"role\": \"user\", \"content\": \"What is the population of Paris?\"} 
         ], 
-        \"stream\": true 
+        \"stream\": false
       }"
-
 ```
 *Hint: To try, "Paste as One Line" in Windows `cmd`.*
 
-### Response format
+#### Response format
 
 For non-streaming responses:
 ```json
@@ -88,10 +88,6 @@ For non-streaming responses:
     "message": {
       "role": "assistant",
       "content": "Paris has a population of approximately 2.2 million people in the city proper."
-    },
-    "logprobs": {
-      "tokens": ["Paris", " has", " a", " population", ...],
-      "token_logprobs": [-0.12, -0.05, -0.02, -0.15, ...]
     },
     "finish_reason": "stop"
   }]
@@ -115,21 +111,66 @@ For streaming responses, the API returns a stream of server-sent events:
 }
 ```
 
+
+### `POST /api/v0/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
+
+Text Completions API. You provide a prompt and receive a completion. This API will also load the model if it is not already loaded.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `prompt` | Yes | The prompt to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:8000/api/v0/completions ^
+  -H "Content-Type: application/json" ^
+  -d "{ 
+        \"model\": \"Llama-3.2-1B-Instruct-Hybrid\", 
+        \"prompt\": \"What is the population of Paris?\", 
+        \"stream\": false
+      }"
+```
+
+#### Response format
+
+The following format is used for both streaming and non-streaming responses:
+```json
+{
+  "id": "0",
+  "object": "text_completion",
+  "created": <UNIX_TIMESTAMP>,
+  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "choices": [{
+    "index": 0,
+    "text": "Paris has a population of approximately 2.2 million people in the city proper.",
+    "finish_reason": "stop"
+  }],
+}
+```
+
 ### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Returns a list of key models available on the server in an OpenAI-compatible format. This list is curated based on what works best for Ryzen AI Hybrid. Additional models can be loaded via the `/api/v0/load` endpoint by specifying the Hugging Face checkpoint.
 
-### Parameters
+#### Parameters
 
 This endpoint does not take any parameters.
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/models
 ```
 
-### Response format
+#### Response format
 
 ```json
 {
@@ -153,43 +194,11 @@ curl http://localhost:8000/api/v0/models
 
 ## Additional Endpoints
 
-### `POST /api/v0/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
-
-Text Completions API. You provide a prompt and receive a streamed completion. This API will also load the model if it is not already loaded.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `prompt` | Yes | The prompt to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The model to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |   
-| All other params of `/api/v0/load`  | No | Detailed loading options as defined in the `/api/v0/load` endpoint. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
-| All other params of `/api/v0/params` | No | Detailed generation options as defined in the `/api/v0/params` endpoint. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
-
-### Example request
-
-```bash
-curl -X POST http://localhost:8000/api/v0/completions ^
-  -H "Content-Type: application/json" ^
-  -d "{
-    \"model\": \"<CHECKPOINT>\",
-    \"prompt\": \"the meaning of life is\"
-  }"
-```
-
-### Response format
-
-```json
-{
-  "text": " to find your purpose, and once you have",
-}
-```
-
 ### `GET /api/v0/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a model. This is useful to ensure that the model is loaded before you make a request.
 
-### Parameters
+#### Parameters
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -197,7 +206,7 @@ Explicitly load a model. This is useful to ensure that the model is loaded befor
 | `device` | No | Device to load the model on. Defaults to `hybrid`. |
 | `cache_dir` | No | Parent directory where models are stored. Defaults to `~/.cache/lemonade`. |
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/load \
@@ -208,7 +217,7 @@ curl http://localhost:8000/api/v0/load \
   }'
 ```
 
-### Response format
+#### Response format
 
 ```json
 {
@@ -223,17 +232,17 @@ In case of an error, the status will be `error` and the message will contain the
 
 Explicitly unload a model. This is useful to free up memory and disk space while still leaving the server runnning (which takes minimal resources but a few seconds to start).
 
-### Parameters
+#### Parameters
 
 This endpoint does not take any parameters.
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/unload
 ```
 
-### Response format
+#### Response format
 
 ```json
 {
@@ -246,7 +255,7 @@ In case of an error, the status will be `error` and the message will contain the
 ### `POST /api/v0/params` <sub>![Status](https://img.shields.io/badge/status-in_development-yellow)</sub>
 Set the generation parameters for text completion. These parameters will persist across requests until changed.
 
-### Parameters
+#### Parameters
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -257,7 +266,7 @@ Set the generation parameters for text completion. These parameters will persist
 | `max_length` | No | The maximum length of the generated text in tokens. Defaults to 2048. |
 | `do_sample` | No | Whether to use sampling (true) or greedy decoding (false). Defaults to true. |
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/params \
@@ -269,7 +278,7 @@ curl http://localhost:8000/api/v0/params \
   }'
 ```
 
-### Response format
+#### Response format
 
 ```json
 {
@@ -291,17 +300,17 @@ In case of an error, the status will be `error` and the message will contain the
 
 Check the health of the server. This endpoint will also return the currently loaded model.
 
-### Parameters
+#### Parameters
 
 This endpoint does not take any parameters.
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/health
 ```
 
-### Response format
+#### Response format
 
 ```json
 {
@@ -313,17 +322,17 @@ curl http://localhost:8000/api/v0/health
 
 Performance statistics from the last request.
 
-### Parameters
+#### Parameters
 
 This endpoint does not take any parameters.
 
-### Example request
+#### Example request
 
 ```bash
 curl http://localhost:8000/api/v0/stats
 ```
 
-### Response format
+#### Response format
 
 ```json
 {

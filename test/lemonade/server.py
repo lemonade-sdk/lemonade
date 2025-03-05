@@ -16,13 +16,16 @@ import asyncio
 import socket
 import time
 from threading import Thread
+import sys
+import io
+import httpx
 
 try:
     from openai import OpenAI, AsyncOpenAI
 except ImportError as e:
     raise ImportError("You must `pip install openai` to run this test", e)
 
-MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 PORT = 8000
 
 
@@ -67,7 +70,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Start the lemonade server
         lemonade_process = subprocess.Popen(
-            ["lemonade", "serve"],
+            ["lemonade", "serve", "--max-new-tokens", "50"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -108,6 +111,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         self.addCleanup(self.cleanup_lemonade, lemonade_process)
 
+        # Ensure stdout can handle Unicode
+        if sys.stdout.encoding != "utf-8":
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="replace"
+            )
+            sys.stderr = io.TextIOWrapper(
+                sys.stderr.buffer, encoding="utf-8", errors="replace"
+            )
+
     def cleanup_lemonade(self, server_subprocess: subprocess.Popen):
         """
         Kill the lemonade server and stop the model
@@ -124,6 +136,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         kill_process_on_port(PORT)
 
+    # Endpoint: /api/v0/chat/completions
     def test_001_test_chat_completion(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -138,6 +151,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         print(completion.choices[0].message.content)
         assert len(completion.choices[0].message.content) > 5
 
+    # Endpoint: /api/v0/chat/completions
     def test_002_test_chat_completion_streaming(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -160,6 +174,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
+    # Endpoint: /api/v0/chat/completions
     async def test_003_test_chat_completion_streaming_async(self):
         client = AsyncOpenAI(
             base_url=self.base_url,
@@ -183,6 +198,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
+    # Endpoint: /api/v0/models
     def test_004_test_models(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -198,6 +214,136 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         # Check that the list contains the models we expect
         assert any(model.id == "Llama-3.2-1B-Instruct-Hybrid" for model in l.data)
 
+    # Endpoint: /api/v0/completions
+    def test_005_test_completions(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        completion = client.completions.create(
+            model=MODEL,
+            prompt="Hello, how are you?",
+            stream=False,
+        )
+
+        print(completion.choices[0].text)
+        assert len(completion.choices[0].text) > 5
+
+    # Endpoint: /api/v0/completions
+    def test_006_test_completions_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.completions.create(
+            model=MODEL,
+            prompt="Hello, how are you?",
+            stream=True,
+        )
+
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].text is not None:
+                complete_response += chunk.choices[0].text
+                print(chunk.choices[0].text, end="")
+                chunk_count += 1
+
+        assert chunk_count > 5
+        assert len(complete_response) > 5
+
+    # Endpoint: /api/v0/completions
+    async def test_007_test_completions_streaming_async(self):
+        client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        complete_response = ""
+        stream = await client.completions.create(
+            model=MODEL,
+            prompt="Hello, how are you?",
+            stream=True,
+        )
+
+        chunk_count = 0
+        async for chunk in stream:
+            if chunk.choices[0].text is not None:
+                complete_response += chunk.choices[0].text
+                print(chunk.choices[0].text, end="")
+                chunk_count += 1
+
+        assert chunk_count > 5
+        assert len(complete_response) > 5
+
+    # Endpoint: /api/v0/completions with stop parameter
+    def test_008_test_completions_with_stop(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        completion = client.completions.create(
+            model=MODEL,
+            prompt="Just say 'I am Joe and I like apples'. Here we go: 'I am Joe and",
+            stop=["apples"],  # The model will stop generating when it reaches "apples"
+        )
+
+        print(completion.choices[0].text)
+        assert len(completion.choices[0].text) > 2
+        assert "apples" not in completion.choices[0].text
+
+    # Endpoint: /api/v0/chat/completions with stop parameter
+    def test_009_test_chat_completion_with_stop(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        messages = [
+            {"role": "system", "content": "Your name is Joe and you like apples."},
+            {"role": "user", "content": "What is your name and what do you like?"},
+        ]
+
+        completion = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            stop=["apples"],  # The model will stop generating when it reaches "apples"
+        )
+
+        print(completion.choices[0].message.content)
+        assert len(completion.choices[0].message.content) > 2
+        assert "apples" not in completion.choices[0].message.content
+
+    # Test simultaneous load requests
+    async def test_010_test_simultaneous_load_requests(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+            # Start two load requests simultaneously
+            load_tasks = [
+                client.post("/load", json={
+                    "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
+                    "max_new_tokens": 50
+                }),
+                client.post("/load", json={
+                    "checkpoint": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "max_new_tokens": 50
+                })
+            ]
+
+            # Execute both requests concurrently
+            responses = await asyncio.gather(*load_tasks)
+
+            # Verify both requests completed successfully
+            assert responses[0].status_code == 200
+            assert responses[1].status_code == 200
+
+            # Verify the final loaded model is the second one
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
+            health_data = health_response.json()
+            assert health_data["model_loaded"] == "Qwen/Qwen2.5-1.5B-Instruct"
 
 if __name__ == "__main__":
     unittest.main()
