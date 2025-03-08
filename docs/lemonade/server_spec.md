@@ -35,7 +35,13 @@ The additional endpoints under development are:
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
 
-First, install lemonade with your desired backend (e.g., `pip install lemonade[llm]`). Then, run the following command to start the server:
+### Windows Installer
+
+See the [Lemonade_Server_Installer.exe instructions](lemonade_server_exe.md) to get started. 
+
+### Python Environment
+
+If you have `lemonade` [installed in a Python environment](getting_started.md#from-pypi), simply activate it and run the following command to start the server:
 
 ```bash
 lemonade serve
@@ -124,6 +130,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `model` | Yes | The model to use for the completion.  | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `echo` | No | Echo back the prompt in addition to the completion. Available on non-streaming mode. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
 
 
@@ -343,3 +350,20 @@ curl http://localhost:8000/api/v0/stats
   "decode_token_times": [0.01, 0.02, 0.03, 0.04, 0.05]
 }
 ```
+
+# Debugging
+
+To help debug the Lemonade server, you can use the `--log-level` parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.
+
+```
+lemonade serve --log-level [level]
+```
+
+Where `[level]` can be one of:
+
+- **critical**: Only critical errors that prevent server operation.
+- **error**: Error conditions that might allow continued operation.
+- **warning**: Warning conditions that should be addressed.
+- **info**: (Default) General informational messages about server operation.
+- **debug**: Detailed diagnostic information for troubleshooting, including metrics such as input/output token counts, Time To First Token (TTFT), and Tokens Per Second (TPS).
+- **trace**: Very detailed tracing information, including everything from debug level plus all input prompts.

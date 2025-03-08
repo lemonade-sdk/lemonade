@@ -58,6 +58,10 @@ To install `lemonade` from source code:
 1. Follow the same instructions as in the [PyPI installation](#from-pypi), except replace the `turnkeyml` with a `.`.
     - For example: `pip install -e .[llm-oga-igpu]`
 
+## From Lemonade_Server_Installer.exe
+
+The `lemonade` server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade_Server_Installer.exe guide](lemonade_server_exe.md) for installation instructions and the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the functionality.
+
 # CLI Commands
 
 The `lemonade` CLI uses a unique command syntax that enables convenient interoperability between models, frameworks, devices, accuracy tests, and deployment options.  
@@ -134,6 +138,14 @@ Hugging Face:
 That command will run a few warmup iterations, then a few generation iterations where performance data is collected.
 
 The prompt size, number of output tokens, and number iterations are all parameters. Learn more by running `lemonade oga-bench -h` or `lemonade huggingface-bench -h`.
+
+## LLM Report
+
+To see a report that contains all the benchmarking results and all the accuracy results, use the `report` tool with the `--perf` flag:
+
+`lemonade report --perf`
+
+The results can be filtered by model name, device type and data type.  See how by running `lemonade report -h`.
 
 ## Memory Usage
 

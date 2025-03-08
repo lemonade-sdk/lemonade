@@ -5,13 +5,14 @@ import time
 from threading import Thread, Event
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import torch  # pylint: disable=unused-import
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
+from tabulate import tabulate
 
 from openai.types.completion import Completion, CompletionChoice
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
@@ -78,6 +79,7 @@ class CompletionRequest(BaseModel):
 
     prompt: str
     model: str
+    echo: bool = False
     stream: bool = False
     stop: list[str] | str | None = None
 
@@ -148,6 +150,9 @@ class Server(ManagementTool):
         self.input_tokens = None
         self.output_tokens = None
         self.decode_token_times = None
+
+        # Store debug logging state
+        self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
 
         # Flag that tells the LLM to stop generating text and end the response
         self.stop_event = Event()
@@ -236,6 +241,17 @@ class Server(ManagementTool):
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
     ):
+
+        # Define TRACE level
+        logging.TRACE = 9  # Lower than DEBUG which is 10
+        logging.addLevelName(logging.TRACE, "TRACE")
+
+        # Add a convenience function at the module level
+        def trace(message, *args, **kwargs):
+            logging.log(logging.TRACE, message, *args, **kwargs)
+
+        logging.trace = trace
+
         # Configure logging to match uvicorn's format
         logging_level = getattr(logging, log_level.upper())
         logging.basicConfig(
@@ -253,6 +269,9 @@ class Server(ManagementTool):
         # Ensure the log level is properly set
         logging.getLogger().setLevel(logging_level)
 
+        # Update debug logging state after setting log level
+        self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
+
         # Only load the model when starting the server if checkpoint was provided
         if checkpoint:
             config = LoadConfig(
@@ -264,11 +283,33 @@ class Server(ManagementTool):
 
         uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
 
+    async def _show_telemetry(self):
+        """
+        Show telemetry data in debug mode.
+        """
+        # Exit early if debug logging is disabled or no telemetry data is available
+        if not self.debug_logging_enabled or self.tokens_per_second is None:
+            return
+
+        # Prepare telemetry data (transposed format)
+        telemetry = [
+            ["Input tokens", self.input_tokens],
+            ["Output tokens", self.output_tokens],
+            ["TTFT (s)", f"{self.time_to_first_token:.2f}"],
+            ["TPS", f"{self.tokens_per_second:.2f}"],
+        ]
+
+        table = tabulate(
+            telemetry, headers=["Metric", "Value"], tablefmt="fancy_grid"
+        ).split("\n")
+
+        # Show telemetry in debug while complying with uvicorn's log indentation
+        logging.debug("\n          ".join(table))
+
     async def completions(self, completion_request: CompletionRequest):
         """
         Stream completion responses using HTTP chunked transfer encoding.
         """
-
         if completion_request.model:
 
             # Get model config
@@ -283,6 +324,12 @@ class Server(ManagementTool):
         await self.load_llm(lc)
 
         if completion_request.stream:
+
+            if completion_request.echo:
+                logging.warning(
+                    "`Echo` parameter is not supported for streaming completions"
+                )
+
             # Stream the response
             async def generate():
                 async for token in self._generate_tokens(
@@ -320,7 +367,7 @@ class Server(ManagementTool):
 
         # If streaming is not requested, collect all generated tokens into a single response
         else:
-            full_response = ""
+            full_response = completion_request.prompt if completion_request.echo else ""
             async for token in self._generate_tokens(
                 completion_request.prompt, completion_request.stop
             ):
@@ -488,6 +535,10 @@ class Server(ManagementTool):
             )
             self.input_tokens = len(input_ids[0])
 
+        # Log the input tokens early to avoid this not showing due to potential crashes
+        logging.debug(f"Input Tokens: {self.input_tokens}")
+        logging.trace(f"Input Message: {message}")
+
         stopping_criteria = StoppingCriteriaList([StopOnEvent(self.stop_event)])
 
         generation_kwargs = {
@@ -516,6 +567,7 @@ class Server(ManagementTool):
             self.max_concurrent_generations
             - self._generate_semaphore._value  # pylint: disable=protected-access
         )
+
         logging.debug(f"Active generations: {active_generations}")
 
         try:
@@ -570,6 +622,9 @@ class Server(ManagementTool):
                 - self._generate_semaphore._value  # pylint: disable=protected-access
             )
             logging.debug(f"Active generations: {active_generations}")
+
+            # Display telemetry if in debug mode
+            await self._show_telemetry()
 
     async def send_stats(self):
         """
@@ -664,13 +719,16 @@ class Server(ManagementTool):
                     "status": "success",
                     "message": f"Loaded model: {config.checkpoint}",
                 }
-            except Exception as e:  # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught
                 self.llm_loaded = None
                 self.state = None
-                return {
-                    "status": "error",
-                    "message": f"Failed to load llm: {str(e)}",
-                }
+                logging.exception(f"Tried to load LLM {config.checkpoint} and failed")
+
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"model {config.checkpoint} not found",
+                )
+
         finally:
             self._load_lock.release()
 

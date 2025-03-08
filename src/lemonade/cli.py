@@ -4,7 +4,6 @@ import turnkeyml.common.filesystem as fs
 import turnkeyml.cli.cli as cli
 from turnkeyml.sequence import Sequence
 from turnkeyml.tools.management_tools import Cache, Version, SystemInfo
-from turnkeyml.tools.report import Report
 from turnkeyml.state import State
 
 from lemonade.tools.huggingface_load import (
@@ -24,6 +23,7 @@ from lemonade.tools.perplexity import AccuracyPerplexity
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.quark.quark_load import QuarkLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
+from lemonade.tools.report.llm_report import LemonadeReport
 from lemonade.tools.serve import Server
 
 
@@ -43,9 +43,9 @@ def main():
         OgaBench,
         QuarkQuantize,
         QuarkLoad,
+        LemonadeReport,
         Server,
         # Inherited from TurnkeyML
-        Report,
         Cache,
         Version,
         SystemInfo,

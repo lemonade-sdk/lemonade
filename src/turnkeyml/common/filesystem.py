@@ -15,7 +15,7 @@ from turnkeyml.common import labels
 if os.environ.get("TURNKEY_CACHE_DIR"):
     DEFAULT_CACHE_DIR = os.path.expanduser(os.environ.get("TURNKEY_CACHE_DIR"))
 else:
-    DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/turnkey")
+    DEFAULT_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "turnkey")
 
 if " " in DEFAULT_CACHE_DIR:
     raise ValueError(

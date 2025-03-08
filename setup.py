@@ -21,6 +21,7 @@ setup(
         "lemonade.tools",
         "lemonade.tools.ort_genai",
         "lemonade.tools.quark",
+        "lemonade.tools.report",
         "turnkeyml_models",
         "turnkeyml_models.graph_convolutions",
         "turnkeyml_models.selftest",

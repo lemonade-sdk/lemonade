@@ -20,6 +20,17 @@ Var LEMONADE_CONDA_ENV
 Var HYBRID_SELECTED
 Var HYBRID_CLI_OPTION
 
+; Variables for CPU detection
+Var cpuName
+Var isCpuSupported
+Var ryzenAiPos
+Var seriesStartPos
+Var currentChar
+
+; Used for string manipulation
+!include "StrFunc.nsh"
+${StrLoc}
+
 ; Define a section for the installation
 Section "Install Main Components" SEC01
 SectionIn RO ; Read only, always installed
@@ -296,7 +307,7 @@ LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
 LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU."
-LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode, which uses both the NPU and iGPU for improved performance on Ryzen AI 300-series processors."
+LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode, which uses both the NPU and iGPU for improved performance. Only available on Ryzen AI 300-series processors."
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -317,6 +328,56 @@ Function .onInit
     StrCpy $InstDir "$LOCALAPPDATA\lemonade_server"
   ${EndIf}
 
+  ; Check CPU name to determine if Hybrid section should be enabled
+  DetailPrint "Checking CPU model..."
+  
+  ; Use registry query to get CPU name
+  nsExec::ExecToStack 'reg query "HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0" /v ProcessorNameString'
+  Pop $0 ; Return value
+  Pop $cpuName ; Output (CPU name)
+  DetailPrint "Detected CPU: $cpuName"
+  
+  ; Check if CPU name contains "Ryzen AI" and a 3-digit number starting with 3
+  StrCpy $isCpuSupported "false" ; Initialize CPU allowed flag to false
+  
+  ${StrLoc} $ryzenAiPos $cpuName "Ryzen AI" ">"
+  ${If} $ryzenAiPos != ""
+    ; Found "Ryzen AI", now look for 3xx series
+    ${StrLoc} $seriesStartPos $cpuName " 3" ">"
+    ${If} $seriesStartPos != ""
+      ; Check if the character after "3" is a digit (first digit of model number)
+      StrCpy $currentChar $cpuName 1 $seriesStartPos+2
+      ${If} $currentChar >= "0"
+        ${AndIf} $currentChar <= "9"
+        ; Check if the character after that is also a digit (second digit of model number)
+        StrCpy $currentChar $cpuName 1 $seriesStartPos+3
+        ${If} $currentChar >= "0"
+          ${AndIf} $currentChar <= "9"
+          ; Check if the character after the third digit is a space or end of string
+          StrCpy $currentChar $cpuName 1 $seriesStartPos+4
+          ${If} $currentChar == " "
+            ${OrIf} $currentChar == ""
+            ; Found a complete 3-digit number starting with 3
+            StrCpy $isCpuSupported "true"
+            DetailPrint "Detected Ryzen AI 3xx series processor"
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  
+  DetailPrint "CPU is compatible with Ryzen AI hybrid software: $isCpuSupported"
+  
+  ; Check if CPU is in the allowed models list
+  ${If} $isCpuSupported != "true"
+    ; Disable Hybrid section if CPU is not in allowed list
+    SectionGetFlags ${HybridSec} $0
+    IntOp $0 $0 & ${SECTION_OFF}    ; Turn off selection
+    IntOp $0 $0 | ${SF_RO}          ; Make it read-only (can't be selected)
+    SectionSetFlags ${HybridSec} $0
+    StrCpy $HYBRID_SELECTED "false"
+  ${EndIf}
+
   ; Disable hybrid mode by default in silent mode
   ; Use /Extras="hybrid" option to enable it
   ${If} ${Silent}
@@ -325,6 +386,10 @@ Function .onInit
     ${GetOptions} $CMDLINE "/Extras=" $HYBRID_CLI_OPTION
 
     ${IfNot} $HYBRID_CLI_OPTION == "hybrid"
+      SectionSetFlags ${HybridSec} 0
+      StrCpy $HYBRID_SELECTED "false"
+    ${ElseIf} $isCpuSupported != "true"
+      ; Don't allow hybrid mode if CPU is not in allowed list, even if specified in command line
       SectionSetFlags ${HybridSec} 0
       StrCpy $HYBRID_SELECTED "false"
     ${EndIf}

@@ -317,8 +317,28 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(completion.choices[0].message.content) > 2
         assert "apples" not in completion.choices[0].message.content
 
+    # Endpoint: /api/v0/completions with echo parameter
+    def test_010_test_completions_with_echo(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        prompt = "Hello, how are you?"
+        completion = client.completions.create(
+            model=MODEL,
+            prompt=prompt,
+            echo=True,
+        )
+
+        print(completion.choices[0].text)
+        # Check that the response contains the original prompt
+        assert completion.choices[0].text.startswith(prompt)
+        # Check that there's additional content beyond the prompt
+        assert len(completion.choices[0].text) > len(prompt)
+
     # Test simultaneous load requests
-    async def test_010_test_simultaneous_load_requests(self):
+    async def test_011_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
             # Start two load requests simultaneously
             load_tasks = [
