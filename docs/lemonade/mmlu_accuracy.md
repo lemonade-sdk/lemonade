@@ -39,62 +39,64 @@ The model is expected to generate an answer to the test question based on the co
 
 ## Detailed list of subjects/ categories tested
 
-| Test Subject                     | Category          |
-|----------------------------------|-------------------|
-| Abstract Algebra                 | Math              |
-| Anatomy                          | Health            |
-| Astronomy                        | Physics           |
-| Business Ethics                  | Business          |
-| Clinical Knowledge               | Health            |
-| College Biology                  | Biology           |
-| College Chemistry                | Chemistry         |
-| College Computer Science         | Computer Science  |
-| College Mathematics              | Math              |
-| College Medicine                 | Health            |
-| College Physics                  | Physics           |
-| Computer Security                | Computer Science  |
-| Conceptual Physics               | Physics           |
-| Econometrics                     | Economics         |
-| Electrical Engineering           | Engineering       |
-| Elementary Mathematics           | Math              |
-| Formal Logic                     | Philosophy        |
-| Global Facts                     | Other             |
-| High School Biology              | Biology           |
-| High School Chemistry            | Chemistry         |
-| High School Computer Science     | Computer Science  |
-| High School European History     | History           |
-| High School Geography            | Geography         |
-| High School Government and Politics | Politics        |
-| High School Macroeconomics       | Economics         |
-| High School Mathematics          | Math              |
-| High School Microeconomics       | Economics         |
-| High School Physics              | Physics           |
-| High School Psychology           | Psychology        |
-| High School Statistics           | Math              |
-| High School US History           | History           |
-| High School World History        | History           |
-| Human Aging                      | Health            |
-| Human Sexuality                  | Culture           |
-| International Law                | Law               |
-| Jurisprudence                    | Law               |
-| Logical Fallacies                | Philosophy        |
-| Machine Learning                 | Computer Science  |
-| Management                       | Business          |
-| Marketing                        | Business          |
-| Medical Genetics                 | Health            |
-| Miscellaneous                    | Other             |
-| Moral Disputes                   | Philosophy        |
-| Moral Scenarios                  | Philosophy        |
-| Nutrition                        | Health            |
-| Philosophy                       | Philosophy        |
-| Prehistory                       | History           |
-| Professional Accounting          | Other             |
-| Professional Law                 | Law               |
-| Professional Medicine            | Health            |
-| Professional Psychology          | Psychology        |
-| Public Relations                 | Politics          |
-| Security Studies                 | Politics          |
-| Sociology                        | Culture           |
-| US Foreign Policy                | Politics          |
-| Virology                         | Health            |
-| World Religions                  | Philosophy        |
+Use the syntax provided in the table to run that test subject with the `accuracy-mmlu` tool. For example, To run the "Abstract Algebra" subject, use `accuracy-mmlu --tests abstract_algebra`.
+
+| Test Subject                        | Category          | `--tests` syntax                             |
+|-------------------------------------|-------------------|-------------------------------------|
+| Abstract Algebra                    | Math              | abstract_algebra                    |
+| Anatomy                             | Health            | anatomy                             |
+| Astronomy                           | Physics           | astronomy                           |
+| Business Ethics                     | Business          | business_ethics                     |
+| Clinical Knowledge                  | Health            | clinical_knowledge                  |
+| College Biology                     | Biology           | college_biology                     |
+| College Chemistry                   | Chemistry         | college_chemistry                   |
+| College Computer Science            | Computer Science  | college_computer_science            |
+| College Mathematics                 | Math              | college_mathematics                 |
+| College Medicine                    | Health            | college_medicine                    |
+| College Physics                     | Physics           | college_physics                     |
+| Computer Security                   | Computer Science  | computer_security                   |
+| Conceptual Physics                  | Physics           | conceptual_physics                  |
+| Econometrics                        | Economics         | econometrics                        |
+| Electrical Engineering              | Engineering       | electrical_engineering              |
+| Elementary Mathematics              | Math              | elementary_mathematics              |
+| Formal Logic                        | Philosophy        | formal_logic                        |
+| Global Facts                        | Other             | global_facts                        |
+| High School Biology                 | Biology           | high_school_biology                 |
+| High School Chemistry               | Chemistry         | high_school_chemistry               |
+| High School Computer Science        | Computer Science  | high_school_computer_science        |
+| High School European History        | History           | high_school_european_history        |
+| High School Geography               | Geography         | high_school_geography               |
+| High School Government and Politics | Politics          | high_school_government_and_politics |
+| High School Macroeconomics          | Economics         | high_school_macroeconomics          |
+| High School Mathematics             | Math              | high_school_mathematics             |
+| High School Microeconomics          | Economics         | high_school_microeconomics          |
+| High School Physics                 | Physics           | high_school_physics                 |
+| High School Psychology              | Psychology        | high_school_psychology              |
+| High School Statistics              | Math              | high_school_statistics              |
+| High School US History              | History           | high_school_us_history              |
+| High School World History           | History           | high_school_world_history           |
+| Human Aging                         | Health            | human_aging                         |
+| Human Sexuality                     | Culture           | human_sexuality                     |
+| International Law                   | Law               | international_law                   |
+| Jurisprudence                       | Law               | jurisprudence                       |
+| Logical Fallacies                   | Philosophy        | logical_fallacies                   |
+| Machine Learning                    | Computer Science  | machine_learning                    |
+| Management                          | Business          | management                          |
+| Marketing                           | Business          | marketing                           |
+| Medical Genetics                    | Health            | medical_genetics                    |
+| Miscellaneous                       | Other             | miscellaneous                       |
+| Moral Disputes                      | Philosophy        | moral_disputes                      |
+| Moral Scenarios                     | Philosophy        | moral_scenarios                     |
+| Nutrition                           | Health            | nutrition                           |
+| Philosophy                          | Philosophy        | philosophy                          |
+| Prehistory                          | History           | prehistory                          |
+| Professional Accounting             | Other             | professional_accounting             |
+| Professional Law                    | Law               | professional_law                    |
+| Professional Medicine               | Health            | professional_medicine               |
+| Professional Psychology             | Psychology        | professional_psychology             |
+| Public Relations                    | Politics          | public_relations                    |
+| Security Studies                    | Politics          | security_studies                    |
+| Sociology                           | Culture           | sociology                           |
+| US Foreign Policy                   | Politics          | us_foreign_policy                   |
+| Virology                            | Health            | virology                            |
+| World Religions                     | Philosophy        | world_religions                     |
