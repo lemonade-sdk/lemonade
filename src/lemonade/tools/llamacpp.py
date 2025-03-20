@@ -152,7 +152,7 @@ class LoadLlamaCpp(FirstTool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Wrap Llamacpp models with an API",
+            short_description="Wrap llama.cpp models with an API",
             add_help=add_help,
         )
 

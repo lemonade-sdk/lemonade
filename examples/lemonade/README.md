@@ -1,6 +1,14 @@
 # Lemonade Examples
 
-This folder contains examples of how to use `lemonade` via the high-level APIs. These APIs make it easy to load a model, generate responses, and also show how to stream those responses.
+This folder contains examples of how to deploy `lemonade` into applications. 
+
+## Server Examples
+
+The `server/` folder contains examples of how to use Lemonade Server with existing applications that support server interfaces. Learn more in `server/README.md`. 
+
+## API Examples
+
+This folder has examples of using the Lemonade API to integrate LLMs into Python applications. These APIs make it easy to load a model, generate responses, and also show how to stream those responses.
 
 The `demos/` folder also contains some higher-level application demos of the APIs. Learn more in `demos/README.md`.
 

@@ -9,7 +9,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 ### OpenAI-Compatible Endpoints
 - POST `/api/v0/chat/completions` - Chat Completions (messages -> completion)
 - POST `/api/v0/completions` - Text Completions (prompt -> completion)
-- GET `/api/v0/models` - List available models
+- GET `/api/v0/models` - List models available locally
 
 ### Additional Endpoints
 
@@ -165,7 +165,7 @@ The following format is used for both streaming and non-streaming responses:
 
 ### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of key models available on the server in an OpenAI-compatible format. This list is curated based on what works best for Ryzen AI Hybrid. Additional models can be loaded via the `/api/v0/load` endpoint by specifying the Hugging Face checkpoint.
+Returns a list of key models available on the server in an OpenAI-compatible format. This list is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
 
 #### Parameters
 

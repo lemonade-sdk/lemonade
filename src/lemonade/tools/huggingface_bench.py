@@ -122,7 +122,7 @@ class HuggingfaceBench(Bench):
         # Allow inherited classes to initialize and pass in a parser, add parameters to it if so
         if parser is None:
             parser = __class__.helpful_parser(
-                short_description="Benchmark a torch.nn.Module LLM",
+                short_description="Benchmark a huggingface-style PyTorch LLM",
                 add_help=add_help,
             )
 

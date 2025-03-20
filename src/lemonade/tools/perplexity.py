@@ -12,7 +12,7 @@ import turnkeyml.common.build as build
 
 class AccuracyPerplexity(Tool):
     """
-    Measure perplexity of an LLM using the wikitext dataset.
+    Measure perplexity of an LLM using the Wikitext-2 dataset.
 
     Required input state:
         - state.model: instance that provides a __call__() method that returns
@@ -32,7 +32,7 @@ class AccuracyPerplexity(Tool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Measure Perplexity score using Wikitext-2 dataset",
+            short_description="Measure perplexity score",
             add_help=add_help,
         )
         return parser

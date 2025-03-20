@@ -152,9 +152,8 @@ TurnkeyML is provided as a package on PyPI, the Python Package Index, as [turnke
 The following public APIs are available for developers. The maintainers aspire to change these as infrequently as possible, and doing so will require an update to the package's major version number.
 
 - From the top-level `__init__.py`:
-    - `turnkeycli`: the `main()` function of the `turnkey` CLI
-    - `evaluate_files()`: the top-level API called by the CLI
     - `turnkeyml.version`: The package version number
+    - `State` class and `load_state`: structure that holds build state between Tools; function to load `State` from disk. 
 - From the `common.filesystem` module:
     - `get_available_builds()`: list the builds in a turnkey cache
     - `make_cache_dir()`: create a turnkey cache

@@ -4,8 +4,9 @@ import statistics
 import time
 from threading import Thread, Event
 import logging
+import traceback
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -24,10 +25,9 @@ from openai.types.model import Model
 from turnkeyml.state import State
 from turnkeyml.tools.management_tools import ManagementTool
 from lemonade.tools.adapter import ModelAdapter
-from lemonade.tools.prompt import DEFAULT_GENERATE_PARAMS
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.cache import DEFAULT_CACHE_DIR
-
+from lemonade_install.install import ModelManager
 
 # Set to a high number to allow for interesting experiences in real apps
 # Tests should use the max_new_tokens argument to set a lower value
@@ -35,6 +35,34 @@ DEFAULT_MAX_NEW_TOKENS = 1500
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
+
+LOCAL_MODELS = ModelManager().downloaded_models_enabled
+
+
+class GeneratorThread(Thread):
+    """
+    Thread class designed for use with streaming generation within
+    an LLM server. It needs access to the streamer in order to order
+    to help the completions APIs escape the "for text in streamer" loop.
+    It also provides exception handling that works nicely with HTTP
+    servers by providing the stack trace and making the exception
+    information available to the main thread.
+    """
+
+    def __init__(self, streamer, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exception = None
+        self.streamer = streamer
+
+    def run(self):
+        try:
+            if self._target:
+                self._target(*self._args, **self._kwargs)
+        except Exception as e:  # pylint: disable=broad-except
+            self.exception = e
+            logging.error(f"Exception raised in generate thread: {e}")
+            traceback.print_exc()
+            self.streamer.done()
 
 
 # Custom huggingface-style stopping criteria to allow
@@ -150,6 +178,7 @@ class Server(ManagementTool):
         self.input_tokens = None
         self.output_tokens = None
         self.decode_token_times = None
+        self.process_time = None
 
         # Store debug logging state
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
@@ -169,28 +198,7 @@ class Server(ManagementTool):
         self._generate_semaphore = asyncio.Semaphore(self.max_concurrent_generations)
 
         # Curated list of "Instruct" and "Chat" models.
-        self.builtin_models = {
-            "Qwen2.5-0.5B-Instruct-CPU": {
-                "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
-                "device": "cpu",
-            },
-            "Llama-3.2-1B-Instruct-Hybrid": {
-                "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
-            "Llama-3.2-3B-Instruct-Hybrid": {
-                "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
-            "Phi-3-Mini-Instruct-Hybrid": {
-                "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
-            "Qwen-1.5-7B-Chat-Hybrid": {
-                "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
-            },
-        }
+        self.local_models = LOCAL_MODELS
 
         # Add lock for load/unload operations
         self._load_lock = asyncio.Lock()
@@ -198,7 +206,7 @@ class Server(ManagementTool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Industry Standard Model Server",
+            short_description="Launch an industry-standard LLM server",
             add_help=add_help,
         )
 
@@ -272,6 +280,10 @@ class Server(ManagementTool):
         # Update debug logging state after setting log level
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
 
+        if self.debug_logging_enabled:
+            # Print the elapsed time for each request
+            self.setup_middleware_timer()
+
         # Only load the model when starting the server if checkpoint was provided
         if checkpoint:
             config = LoadConfig(
@@ -297,6 +309,7 @@ class Server(ManagementTool):
             ["Output tokens", self.output_tokens],
             ["TTFT (s)", f"{self.time_to_first_token:.2f}"],
             ["TPS", f"{self.tokens_per_second:.2f}"],
+            ["Total time (s)", f"{self.process_time:.2f}"],
         ]
 
         table = tabulate(
@@ -313,8 +326,8 @@ class Server(ManagementTool):
         if completion_request.model:
 
             # Get model config
-            if completion_request.model in self.builtin_models:
-                model_config = self.builtin_models[completion_request.model]
+            if completion_request.model in self.local_models:
+                model_config = self.local_models[completion_request.model]
                 lc = LoadConfig(**model_config)
             else:
                 # If the model is not built-in, we assume it corresponds to a checkpoint
@@ -394,8 +407,8 @@ class Server(ManagementTool):
         """
 
         # Get model config
-        if chat_completion_request.model in self.builtin_models:
-            model_config = self.builtin_models[chat_completion_request.model]
+        if chat_completion_request.model in self.local_models:
+            model_config = self.local_models[chat_completion_request.model]
             lc = LoadConfig(**model_config)
         else:
             # If the model is not built-in, we assume it corresponds to a checkpoint
@@ -548,7 +561,6 @@ class Server(ManagementTool):
             "min_new_tokens": 1,
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
-            **DEFAULT_GENERATE_PARAMS,
         }
 
         # Initialize performance variables
@@ -558,7 +570,9 @@ class Server(ManagementTool):
         self.output_tokens = 0
 
         # Begin generation
-        thread = Thread(target=model.generate, kwargs=generation_kwargs)
+        thread = GeneratorThread(
+            streamer, target=model.generate, kwargs=generation_kwargs
+        )
         thread.start()
 
         # Acquire the generation semaphore
@@ -621,7 +635,15 @@ class Server(ManagementTool):
                 self.max_concurrent_generations
                 - self._generate_semaphore._value  # pylint: disable=protected-access
             )
-            logging.debug(f"Active generations: {active_generations}")
+
+            # Check if an exception occurred in the generation thread
+            # If it did, raise it as an HTTPException so that the client
+            # knows they wont be getting a completion
+            if thread.exception:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Completion failure {thread.exception}",
+                )
 
             # Display telemetry if in debug mode
             await self._show_telemetry()
@@ -707,7 +729,7 @@ class Server(ManagementTool):
                         input=config.checkpoint,
                         device=config.device,
                         dtype="int4",
-                        force=True,
+                        force=False,
                     )
                 self.max_new_tokens = config.max_new_tokens
                 self.llm_loaded = config.checkpoint
@@ -766,7 +788,7 @@ class Server(ManagementTool):
         Return a list of available models in OpenAI-compatible format.
         """
         models_list = []
-        for model in self.builtin_models:
+        for model in self.local_models:
             m = Model(
                 id=model,
                 owned_by="lemonade",
@@ -776,3 +798,18 @@ class Server(ManagementTool):
             models_list.append(m)
 
         return {"object": "list", "data": models_list}
+
+    def setup_middleware_timer(self):
+        logging.info("Middleware set up")
+
+        @self.app.middleware("http")
+        async def save_process_time(request: Request, call_next):
+            """
+            Save the request processing time for any request, so that is can be
+            printed as telemetry.
+            """
+
+            start_time = time.perf_counter()
+            response = await call_next(request)
+            self.process_time = time.perf_counter() - start_time
+            return response

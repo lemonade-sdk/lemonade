@@ -7,7 +7,8 @@ on:
       - v*
       - RC*
   pull_request:
-    branches: ["main", "canary", "refresh"]
+    branches:
+      - '**'
 
 jobs:
   build-n-publish:

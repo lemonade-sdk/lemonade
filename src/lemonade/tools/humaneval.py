@@ -42,7 +42,7 @@ class AccuracyHumaneval(Tool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Run accuracy benchmark using HumanEval dataset",
+            short_description="Measure coding accuracy with HumanEval",
             add_help=add_help,
         )
         parser.add_argument(

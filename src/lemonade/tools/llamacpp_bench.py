@@ -24,7 +24,7 @@ class LlamaCppBench(Bench):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Benchmark a Llamacpp model",
+            short_description="Benchmark a llama.cpp model",
             add_help=add_help,
         )
 

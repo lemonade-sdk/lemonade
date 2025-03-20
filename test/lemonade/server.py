@@ -212,7 +212,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(l.data) > 0
 
         # Check that the list contains the models we expect
-        assert any(model.id == "Llama-3.2-1B-Instruct-Hybrid" for model in l.data)
+        assert any(model.id == "Qwen2.5-0.5B-Instruct-CPU" for model in l.data)
 
     # Endpoint: /api/v0/completions
     def test_005_test_completions(self):

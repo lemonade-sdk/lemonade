@@ -6,8 +6,8 @@ import torch
 from huggingface_hub import model_info
 from turnkeyml.state import State
 import turnkeyml.common.status as status
-from turnkeyml.tools import Tool, FirstTool
-from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
+from turnkeyml.tools import FirstTool
+from lemonade.tools.adapter import TokenizerAdapter
 from lemonade.cache import Keys
 
 # Command line interfaces for tools will use string inputs for data
@@ -110,7 +110,7 @@ class HuggingfaceLoad(FirstTool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Load an LLM as torch.nn.Module using huggingface from_pretrained()",
+            short_description="Load an LLM in PyTorch using huggingface transformers",
             add_help=add_help,
         )
 
@@ -237,80 +237,5 @@ class HuggingfaceLoad(FirstTool):
         # Create a UniqueInvocationInfo and ModelInfo so that we can display status
         # at the end of the sequence
         status.add_to_state(state=state, name=input, model=model)
-
-        return state
-
-
-class HuggingfaceAdapter(ModelAdapter):
-    """
-    Wrapper class for Huggingface LLMs that set generate() arguments to
-    make them more accurate and pleasant to chat with:
-
-        repetition_penalty: helps the LLM avoid repeating the same short
-            phrase in the response over and over.
-        temperature: helps the LLM stay focused on the prompt.
-        do_sample: apply the temperature.
-    """
-
-    def __init__(self, model, dtype=torch.float32, device="cpu"):
-        super().__init__()
-        self.model = model
-        self.dtype = dtype
-        self.device = device
-
-    def generate(
-        self,
-        input_ids,
-        max_new_tokens=512,
-        repetition_penalty=1.2,
-        do_sample=True,
-        temperature=0.1,
-        **kwargs,
-    ):
-        amp_enabled = (
-            True
-            if (self.dtype == torch.float16 or self.dtype == torch.bfloat16)
-            else False
-        )
-
-        # Move input_ids to the same device as the model
-        input_ids = input_ids.to(self.device)
-
-        with torch.no_grad(), torch.inference_mode(), torch.cpu.amp.autocast(
-            enabled=amp_enabled, dtype=self.dtype
-        ):
-            return self.model.generate(
-                input_ids=input_ids,
-                max_new_tokens=max_new_tokens,
-                repetition_penalty=repetition_penalty,
-                do_sample=do_sample,
-                temperature=temperature,
-                **kwargs,
-            )
-
-
-class AdaptHuggingface(Tool):
-    """
-    Apply specific settings to make Huggingface LLMs
-    more accurate and pleasant to chat with.
-    """
-
-    unique_name = "adapt-huggingface"
-
-    def __init__(self):
-        super().__init__(monitor_message="Adapting Huggingface LLM")
-
-    @staticmethod
-    def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        parser = __class__.helpful_parser(
-            short_description="Apply accuracy-boosting settings to huggingface LLMs",
-            add_help=add_help,
-        )
-
-        return parser
-
-    def run(self, state: State) -> State:
-
-        state.model = HuggingfaceAdapter(state.model, state.dtype, state.device)
 
         return state

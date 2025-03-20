@@ -6,7 +6,8 @@ on:
     tags:
       - v*
   pull_request:
-    branches: ["main"]
+    branches:
+      - '**'
   workflow_dispatch:
 
 jobs:

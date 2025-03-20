@@ -122,7 +122,7 @@ class Cache(ManagementTool):
         # passed directly to the `run()` method
 
         parser = __class__.helpful_parser(
-            short_description="Manage the turnkey build cache " f"",
+            short_description="Manage the build cache " f"",
             add_help=add_help,
         )
 

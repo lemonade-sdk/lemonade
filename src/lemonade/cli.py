@@ -1,14 +1,14 @@
 import os
+from turnkeyml import __version__ as version_number
 from turnkeyml.tools import FirstTool, NiceHelpFormatter
 import turnkeyml.common.filesystem as fs
-import turnkeyml.cli.cli as cli
+import turnkeyml.common.cli_helpers as cli
 from turnkeyml.sequence import Sequence
 from turnkeyml.tools.management_tools import Cache, Version, SystemInfo
 from turnkeyml.state import State
 
 from lemonade.tools.huggingface_load import (
     HuggingfaceLoad,
-    AdaptHuggingface,
 )
 
 from lemonade.tools.huggingface_bench import HuggingfaceBench
@@ -38,7 +38,6 @@ def main():
         AccuracyHumaneval,
         AccuracyPerplexity,
         LLMPrompt,
-        AdaptHuggingface,
         HuggingfaceBench,
         OgaBench,
         QuarkQuantize,
@@ -62,35 +61,30 @@ def main():
 
     # Define the argument parser
     parser = cli.CustomArgumentParser(
-        description="Turnkey analysis and benchmarking of GenAI models. "
-        "This utility is a toolchain. To use it, provide a list of tools and "
-        "their arguments.",
+        description=f"""Tools for evaluating and deploying LLMs (v{version_number}).
+
+Read this to learn the command syntax:
+https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md""",
         formatter_class=NiceHelpFormatter,
     )
 
     parser.add_argument(
         "-i",
         "--input",
-        help="The input that will be evaluated by the tool sequence "
-        "(e.g., huggingface checkpoints)",
+        help="The input that will be evaluated by the starting tool "
+        "(e.g., huggingface checkpoint)",
     )
 
     parser.add_argument(
         "-d",
         "--cache-dir",
-        help="Cache directory where the results of each tool will "
-        f"be stored (defaults to {cache.DEFAULT_CACHE_DIR})",
+        help="Cache directory where tool results are "
+        f"stored (default: {cache.DEFAULT_CACHE_DIR})",
         required=False,
         default=cache.DEFAULT_CACHE_DIR,
     )
 
-    parser.add_argument(
-        "--lean-cache",
-        dest="lean_cache",
-        help="Delete all build artifacts (e.g., .onnx files) when the command completes",
-        action="store_true",
-    )
-
+    memory_tracking_default_interval = 0.25
     parser.add_argument(
         "-m",
         "--memory",
@@ -98,13 +92,15 @@ def main():
         metavar="TRACK_INTERVAL",
         type=float,
         default=None,
-        const=0.25,
-        help="Track physical memory usage during the build and generate a plot when the "
-        "command completes. Optionally, specify the tracking interval (sec), "
-        "defaults to 0.25 sec.",
+        const=memory_tracking_default_interval,
+        help="Track memory usage and plot the results. "
+        "Optionally, set the tracking interval in seconds "
+        f"(default: {memory_tracking_default_interval})",
     )
 
-    global_args, tool_instances, evaluation_tools = cli.parse_tools(parser, tools)
+    global_args, tool_instances, evaluation_tools = cli.parse_tools(
+        parser, tools, cli_name="lemonade"
+    )
 
     if len(evaluation_tools) > 0:
         if not issubclass(evaluation_tools[0], FirstTool):
@@ -128,7 +124,6 @@ def main():
         )
         sequence.launch(
             state,
-            lean_cache=global_args["lean_cache"],
             track_memory_interval=global_args["memory"],
         )
     else:

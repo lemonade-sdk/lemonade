@@ -162,6 +162,10 @@ class OrtGenaiModel(ModelAdapter):
                 past_present_share_buffer=search_config.get(
                     "past_present_share_buffer", True
                 ),
+                # Make sure that results do not vary across laptops
+                # by default, random_seed=-1 causes different laptops to give
+                # different results
+                random_seed=1,
                 # Not currently supported by OGA
                 # diversity_penalty=search_config.get('diversity_penalty', 0.0),
                 # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),

@@ -43,8 +43,8 @@ class AccuracyMMLU(Tool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Run accuracy benchmark using Massive Multitask "
-            "Language Understanding (MMLU) test",
+            short_description="Measure accuracy with Massive Multitask "
+            "Language Understanding (MMLU)",
             add_help=add_help,
         )
 

@@ -105,7 +105,7 @@ setup(
     classifiers=[],
     entry_points={
         "console_scripts": [
-            "turnkey=turnkeyml:turnkeycli",
+            "turnkey=turnkeyml.cli.cli:main",
             "turnkey-llm=lemonade:lemonadecli",
             "lemonade=lemonade:lemonadecli",
             "lemonade-install=lemonade_install:installcli",

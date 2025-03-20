@@ -236,6 +236,54 @@ Section "Install Ryzen AI Hybrid Execution" HybridSec
   end:
 SectionEnd
 
+SubSection /e "Selected Models" ModelsSec
+  Section /o "Qwen2.5-0.5B-Instruct-CPU" Qwen05Sec
+    SectionIn 1
+    AddSize 999604  ;
+    StrCpy $9 "$9Qwen2.5-0.5B-Instruct-CPU "
+  SectionEnd
+
+  Section "Llama-3.2-1B-Instruct-Hybrid" Llama1BSec
+    SectionIn 1
+    AddSize 1884397  ;
+    StrCpy $9 "$9Llama-3.2-1B-Instruct-Hybrid "
+  SectionEnd
+
+  Section "Llama-3.2-3B-Instruct-Hybrid" Llama3BSec
+    SectionIn 1
+    AddSize 4268402  ;
+    StrCpy $9 "$9Llama-3.2-3B-Instruct-Hybrid "
+  SectionEnd
+
+  Section /o "Phi-3-Mini-Instruct-Hybrid" PhiSec
+    SectionIn 1
+    AddSize 4185551  ;
+    StrCpy $9 "$9Phi-3-Mini-Instruct-Hybrid "
+  SectionEnd
+
+  Section /o "Qwen-1.5-7B-Chat-Hybrid" Qwen7BSec
+    SectionIn 1
+    AddSize 8835894  ;
+    StrCpy $9 "$9Qwen-1.5-7B-Chat-Hybrid "
+  SectionEnd
+
+  Section "-Download Models" DownloadModels
+    ${If} ${Silent}
+        ${GetParameters} $CMDLINE
+        ${GetOptions} $CMDLINE "/Models=" $R0
+        ${If} $R0 != ""
+            nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models $R0'
+        ${Else}
+            ; Otherwise, only the default CPU model will be installed
+            nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models Qwen2.5-0.5B-Instruct-CPU'
+        ${EndIf}
+    ${Else}
+        nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models $9'
+    ${EndIf}
+  SectionEnd
+
+SubSectionEnd
+
 Section "-Add Desktop Shortcut" ShortcutSec  
   ; Create a desktop shortcut that passes the conda environment name as a parameter
   CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\run_server.bat" "$LEMONADE_CONDA_ENV" "$INSTDIR\img\favicon.ico"
@@ -259,12 +307,68 @@ FunctionEnd
 !define MUI_FINISHPAGE_RUN_TEXT "Run Lemonade Server"
 
 Function .onSelChange
+    ; Check hybrid selection status
     StrCpy $HYBRID_SELECTED "false"
     SectionGetFlags ${HybridSec} $0
     IntOp $0 $0 & ${SF_SELECTED}
-    StrCmp $0 ${SF_SELECTED} 0 +2
+    StrCmp $0 ${SF_SELECTED} 0 hybrid_disabled
     StrCpy $HYBRID_SELECTED "true"
-    ;MessageBox MB_OK "Component 2 is selected"
+    
+    ; If hybrid is enabled, check if at least one hybrid model is selected
+    SectionGetFlags ${Llama1BSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
+    SectionGetFlags ${Llama3BSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
+    SectionGetFlags ${PhiSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
+    SectionGetFlags ${Qwen7BSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
+    ; If no hybrid model is selected, select Llama-1B by default
+    SectionGetFlags ${Llama1BSec} $1
+    IntOp $1 $1 | ${SF_SELECTED}
+    SectionSetFlags ${Llama1BSec} $1
+    MessageBox MB_OK "At least one hybrid model must be selected when hybrid execution is enabled. Llama-3.2-1B-Instruct-Hybrid has been automatically selected."
+    Goto end
+    
+hybrid_disabled:
+    ; When hybrid is disabled, select Qwen2.5-0.5B-Instruct-CPU and disable all other hybrid model selections
+    SectionGetFlags ${Qwen05Sec} $1
+    IntOp $1 $1 | ${SF_SELECTED}
+    SectionSetFlags ${Qwen05Sec} $1
+
+    SectionGetFlags ${Llama1BSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${Llama1BSec} $1
+    
+    SectionGetFlags ${Llama3BSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${Llama3BSec} $1
+    
+    SectionGetFlags ${PhiSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${PhiSec} $1
+    
+    SectionGetFlags ${Qwen7BSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${Qwen7BSec} $1
+
+end:
 FunctionEnd
 
 Function SkipLicense
@@ -276,6 +380,7 @@ FunctionEnd
 
 ; MUI Settings
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_COMPONENTSPAGE_SMALLDESC
 !insertmacro MUI_PAGE_COMPONENTS
 
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipLicense
@@ -307,18 +412,33 @@ LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
 LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU."
-LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode, which uses both the NPU and iGPU for improved performance. Only available on Ryzen AI 300-series processors."
+LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode. Only available on Ryzen AI 300-series processors."
+LangString DESC_ModelsSec ${LANG_ENGLISH} "Select which models to install"
+LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Small CPU-only Qwen model"
+LangString DESC_Llama1BSec ${LANG_ENGLISH} "1B parameter Llama model with hybrid execution"
+LangString DESC_Llama3BSec ${LANG_ENGLISH} "3B parameter Llama model with hybrid execution"
+LangString DESC_PhiSec ${LANG_ENGLISH} "Phi-3 Mini model with hybrid execution"
+LangString DESC_Qwen7BSec ${LANG_ENGLISH} "7B parameter Qwen model with hybrid execution"
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC01} $(DESC_SEC01)
   !insertmacro MUI_DESCRIPTION_TEXT ${HybridSec} $(DESC_HybridSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${ModelsSec} $(DESC_ModelsSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${Qwen05Sec} $(DESC_Qwen05Sec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${Llama1BSec} $(DESC_Llama1BSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${Llama3BSec} $(DESC_Llama3BSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${PhiSec} $(DESC_PhiSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${Qwen7BSec} $(DESC_Qwen7BSec)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function .onInit
   StrCpy $LEMONADE_SERVER_STRING "Lemonade Server"
   StrCpy $LEMONADE_CONDA_ENV "lemon_env"
   StrCpy $HYBRID_SELECTED "true"
+  
+  ; Create a variable to store selected models
+  StrCpy $9 ""  ; $9 will hold our list of selected models
 
   ; Set the install directory, allowing /D override from CLI install
   ${If} $InstDir != ""

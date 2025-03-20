@@ -10,11 +10,12 @@ import os
 import subprocess
 import sys
 import shutil
+import pkg_resources
 from pathlib import Path
 from typing import Optional
 import zipfile
 import requests
-
+import huggingface_hub
 
 lemonade_install_dir = Path(__file__).parent.parent.parent
 DEFAULT_AMD_OGA_NPU_DIR = os.path.join(
@@ -31,6 +32,123 @@ DEFAULT_QUARK_VERSION = "quark-0.6.0"
 DEFAULT_QUARK_DIR = os.path.join(
     lemonade_install_dir, "install", "quark", DEFAULT_QUARK_VERSION
 )
+
+
+class ModelManager:
+
+    @property
+    def supported_cpu_models(self) -> dict:
+        """
+        Returns a dictionary of supported CPU models.
+        Note: Models must be downloaded before they are locally available.
+        """
+        return {
+            "Qwen2.5-0.5B-Instruct-CPU": {
+                "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
+                "device": "cpu",
+            }
+        }
+
+    @property
+    def supported_hybrid_models(self) -> dict:
+        """
+        Returns a dictionary of supported hybrid models.
+        Note: Models must be downloaded before they are locally available.
+        """
+        return {
+            "Llama-3.2-1B-Instruct-Hybrid": {
+                "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Llama-3.2-3B-Instruct-Hybrid": {
+                "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Phi-3-Mini-Instruct-Hybrid": {
+                "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+            "Qwen-1.5-7B-Chat-Hybrid": {
+                "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
+                "device": "hybrid",
+            },
+        }
+
+    @property
+    def supported_models(self) -> dict:
+        """
+        Returns a dictionary of all supported models across all supported backends.
+        """
+        return {**self.supported_cpu_models, **self.supported_hybrid_models}
+
+    @property
+    def downloaded_hf_checkpoints(self) -> list[str]:
+        """
+        Returns a list of Hugging Face checkpoints that have been downloaded.
+        """
+        downloaded_hf_checkpoints = []
+        try:
+            hf_cache_info = huggingface_hub.scan_cache_dir()
+            downloaded_hf_checkpoints = [entry.repo_id for entry in hf_cache_info.repos]
+        except huggingface_hub.CacheNotFound:
+            pass
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"Error scanning Hugging Face cache: {e}")
+        return downloaded_hf_checkpoints
+
+    @property
+    def downloaded_cpu_models(self) -> dict:
+        """
+        Returns a dictionary of locally available CPU models.
+        """
+        downloaded_cpu_models = {}
+        for model in self.supported_cpu_models:
+            if (
+                self.supported_cpu_models[model]["checkpoint"]
+                in self.downloaded_hf_checkpoints
+            ):
+                downloaded_cpu_models[model] = self.supported_cpu_models[model]
+        return downloaded_cpu_models
+
+    @property
+    def downloaded_hybrid_models(self) -> dict:
+        """
+        Returns a dictionary of locally available hybrid models.
+        """
+        downloaded_hybrid_models = {}
+        for model in self.supported_hybrid_models:
+            if (
+                self.supported_hybrid_models[model]["checkpoint"]
+                in self.downloaded_hf_checkpoints
+            ):
+                downloaded_hybrid_models[model] = self.supported_hybrid_models[model]
+        return downloaded_hybrid_models
+
+    @property
+    def downloaded_models_enabled(self) -> dict:
+        """
+        Returns a dictionary of locally available models that are enabled by the current installation.
+        """
+        downloaded_models_enabled = self.downloaded_cpu_models.copy()
+        if (
+            "onnxruntime-vitisai" in pkg_resources.working_set.by_key
+            and "onnxruntime-genai-directml" in pkg_resources.working_set.by_key
+        ):
+            downloaded_models_enabled.update(self.downloaded_hybrid_models)
+        return downloaded_models_enabled
+
+    def download_models(self, models: list[str]):
+        """
+        Downloads the specified models from Hugging Face.
+        """
+        for model in models:
+            if model not in self.supported_models:
+                raise ValueError(
+                    f"Model {model} is not supported. Please choose from the following: {list(self.supported_models.keys())}"
+                )
+            checkpoint = self.supported_models[model]["checkpoint"]
+            print(f"Downloading {model} ({checkpoint})")
+            huggingface_hub.snapshot_download(repo_id=checkpoint)
 
 
 def download_lfs_file(token, file, output_filename):
@@ -201,6 +319,14 @@ class Install:
             choices=["0.6.0"],
         )
 
+        parser.add_argument(
+            "--models",
+            help="One or more models to download",
+            type=str,
+            nargs="+",
+            choices=ModelManager().supported_models,
+        )
+
         return parser
 
     def run(
@@ -209,11 +335,18 @@ class Install:
         quark: Optional[str] = None,
         yes: bool = False,
         token: Optional[str] = None,
+        models: Optional[str] = None,
     ):
-        if ryzenai is None and quark is None:
+        if ryzenai is None and quark is None and models is None:
             raise ValueError(
-                "You must select something to install, for example `--ryzenai` and/or `--quark`"
+                "You must select something to install, for example `--ryzenai`, `--quark`, or `--models`"
             )
+
+        # Download models if needed
+        if models is not None:
+            model_manager = ModelManager()
+            model_manager.download_models(models)
+
         if ryzenai is not None:
             if ryzenai == "npu":
                 file = "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip"
