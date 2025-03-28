@@ -480,7 +480,14 @@ class LemonadePerfTable(Table):
             # SimpleStat("Timestamp", fs.Keys.TIMESTAMP, "s"),
             MultiStat(
                 "Model\n\nDevice\nData Type",
-                [Keys.CHECKPOINT, None, Keys.DEVICE, Keys.DTYPE],
+                [
+                    Keys.CHECKPOINT,
+                    None,
+                    Keys.DEVICE,
+                    Keys.DTYPE,
+                    None,
+                    Keys.LOCAL_MODEL_FOLDER,
+                ],
                 "s",
                 wrap=35,
             ),

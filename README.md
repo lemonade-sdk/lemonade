@@ -1,40 +1,47 @@
 # Welcome to ONNX TurnkeyML
 
-[![Turnkey tests](https://github.com/onnx/turnkeyml/actions/workflows/test_turnkey.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
 [![Lemonade tests](https://github.com/onnx/turnkeyml/actions/workflows/test_lemonade.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
+[![Turnkey tests](https://github.com/onnx/turnkeyml/actions/workflows/test_turnkey.yml/badge.svg)](https://github.com/onnx/turnkeyml/tree/main/test "Check out our tests")
 [![OS - Windows | Linux](https://img.shields.io/badge/OS-windows%20%7C%20linux-blue)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 [![Made with Python](https://img.shields.io/badge/Python-3.8,3.10-blue?logo=python&logoColor=white)](https://github.com/onnx/turnkeyml/blob/main/docs/install.md "Check out our instructions")
 
-We are on a mission to make it easy to use the most important tools in the ONNX ecosystem. TurnkeyML accomplishes this by providing no-code CLIs and low-code APIs for both general ONNX workflows with `turnkey` as well as LLMs with `lemonade`.
+We are on a mission to make it easy to use the most important tools in the ONNX ecosystem. TurnkeyML accomplishes this by providing a full SDK for LLMs with the Lemonade SDK, as well as a no-code CLIs for general ONNX workflows with `turnkey`.
 
-|                     [**Lemonade SDK**](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md)                    	|                            [**Turnkey**](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)                                	|
-|:----------------------------------------------:	|:-----------------------------------------------------------------:	|
-| Serve and benchmark LLMs on CPU, GPU, and NPU. <br/>	[Click here to get started with `lemonade`.](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md) | Export and optimize ONNX models for CNNs and Transformers. <br/>	[Click here to get started with `turnkey`.](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)	|
-| <img src="https://github.com/onnx/turnkeyml/blob/main/img/llm_demo.png?raw=true"/> | <img src="https://github.com/onnx/turnkeyml/blob/main/img/classic_demo.png?raw=true"/> |
+## 🍋 Lemonade SDK: Quickly serve, benchmark and deploy LLMs
 
+The [Lemonade SDK](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md) is designed to make it easy to serve, benchmark, and deploy large language models (LLMs) on a variety of hardware platforms, including CPU, GPU, and NPU. 
 
-## How It Works
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/83dd6563-f970-414c-bb8c-4f08a0bc4bfa" alt="Lemonade Demo" title="Lemonade in Action">
+</div>
 
-The `turnkey` (CNNs and transformers) and `lemonade` (LLMs) CLIs provide a set of `Tools` that users can invoke in a `Sequence`. The first `Tool` takes the input (`-i`), performs some action, and passes its state to the next `Tool` in the `Sequence`.
+The [Lemonade SDK](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md) is comprised of the following:
 
-You can read the `Sequence` out like a sentence. For example, the demo command above was:
+- 🌐 **Lemonade Server**: A server interface that uses the standard Open AI API, allowing applications to integrate with local LLMs.
+- 🐍 **Lemonade Python API**: Offers High-Level API for easy integration of Lemonade LLMs into Python applications and Low-Level API for custom experiments.
+- 🖥️ **Lemonade CLI**: The `lemonade` CLI lets you mix-and-match LLMs, frameworks (PyTorch, ONNX, GGUF), and measurement tools to run experiments. The available tools are:
+  - Prompting an LLM.
+  - Measuring the accuracy of an LLM using a variety of tests.
+  - Benchmarking an LLM to get the time-to-first-token and tokens per second.
+  - Profiling the memory usage of an LLM.
 
+### [Click here to get started with Lemonade.](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md)
+
+## 🔑 Turnkey: A Complementary Tool for ONNX Workflows
+
+While Lemonade focuses on LLMs, [Turnkey](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/README.md) is a no-code CLI designed for general ONNX workflows, such as exporting and optimizing CNNs and Transformers.
+
+To see the list of supported tools, using the following command:
+
+```bash
+turnkey -h
 ```
-> turnkey -i bert.py discover export-pytorch optimize-ort convert-fp16
-```
 
-Which you can read like:
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/a1461dc4-4dac-40ca-95da-9c62e47cec24" alt="Turnkey Demo" title="Turnkey CLI">
+</div>
 
-> Use `turnkey` on `bert.py` to `discover` the model, `export` the `pytorch` to ONNX, `optimize` the ONNX with `ort`, and `convert` the ONNX to `fp16`.
-
-You can configure each `Tool` by passing it arguments. For example, `export-pytorch --opset 18` would set the opset of the resulting ONNX model to 18.
-
-A full command with an argument looks like:
-
-```
-> turnkey -i bert.py discover export-pytorch --opset 18 optimize-ort convert-fp16
-```
-
+### [Click here to get started with `turnkey`.](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/README.md)
 
 ## Contributing
 

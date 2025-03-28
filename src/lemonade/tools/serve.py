@@ -178,7 +178,6 @@ class Server(ManagementTool):
         self.input_tokens = None
         self.output_tokens = None
         self.decode_token_times = None
-        self.process_time = None
 
         # Store debug logging state
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
@@ -309,7 +308,6 @@ class Server(ManagementTool):
             ["Output tokens", self.output_tokens],
             ["TTFT (s)", f"{self.time_to_first_token:.2f}"],
             ["TPS", f"{self.tokens_per_second:.2f}"],
-            ["Total time (s)", f"{self.process_time:.2f}"],
         ]
 
         table = tabulate(
@@ -336,6 +334,16 @@ class Server(ManagementTool):
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
+        # Check if the model supports reasoning
+        reasoning_first_token = self.local_models[completion_request.model]["reasoning"]
+
+        # If the model supports reasoning, we:
+        # 1. add a <think> tag to the model's context
+        # 2. ensure that the first token is a <think> token
+        text = completion_request.prompt
+        if reasoning_first_token:
+            text += "<think>"
+
         if completion_request.stream:
 
             if completion_request.echo:
@@ -345,11 +353,14 @@ class Server(ManagementTool):
 
             # Stream the response
             async def generate():
-                async for token in self._generate_tokens(
-                    completion_request.prompt, completion_request.stop
-                ):
+                # Declare it's the same variable from outside scope
+                # This is necessary because the variable is modified
+                # in the inner function
+                nonlocal reasoning_first_token
+
+                async for token in self._generate_tokens(text, completion_request.stop):
                     choice = CompletionChoice(
-                        text=token,
+                        text=("<think>" + token if reasoning_first_token else token),
                         index=0,
                         finish_reason="stop",
                         logprobs=None,
@@ -364,6 +375,7 @@ class Server(ManagementTool):
                     )
 
                     # Format as SSE
+                    reasoning_first_token = False
                     yield f"data: {completion.model_dump_json()}\n\n".encode("utf-8")
 
                 # Send the [DONE] marker
@@ -380,10 +392,8 @@ class Server(ManagementTool):
 
         # If streaming is not requested, collect all generated tokens into a single response
         else:
-            full_response = completion_request.prompt if completion_request.echo else ""
-            async for token in self._generate_tokens(
-                completion_request.prompt, completion_request.stop
-            ):
+            full_response = text if completion_request.echo else ""
+            async for token in self._generate_tokens(text, completion_request.stop):
                 full_response += token
 
             choice = CompletionChoice(
@@ -418,7 +428,7 @@ class Server(ManagementTool):
         await self.load_llm(lc)
 
         # Convert chat messages to text using the model's chat template
-        if hasattr(self.tokenizer, "apply_chat_template"):
+        if self.tokenizer.chat_template:
             # Use the model's built-in chat template if available
             messages_dict = [
                 {"role": msg.get("role", "user"), "content": msg.get("content", "")}
@@ -429,6 +439,7 @@ class Server(ManagementTool):
             )
         else:
             # Fallback to a standardized template if the model doesn't provide one
+            logging.warning("No chat template found. Using default template.")
             formatted_messages = []
             for msg in chat_completion_request.messages:
                 role = msg.get("role", "user")
@@ -437,13 +448,28 @@ class Server(ManagementTool):
                 formatted_messages.append(f"{role_marker}\n{content} <|end|>")
             text = "\n".join(formatted_messages) + "\n<|assistant|>"
 
+        # If the model supports reasoning, we:
+        # 1. add a <think> tag to the model's context
+        # 2. ensure that the first token is a <think> token
+        reasoning_first_token = self.local_models[chat_completion_request.model][
+            "reasoning"
+        ]
+        if reasoning_first_token:
+            text += "<think>"
+
         if chat_completion_request.stream:
 
             # Stream the response
             async def generate():
+                # Declare it's the same variable from outside scope
+                # This is necessary because the variable is modified
+                # in the inner function
+                nonlocal reasoning_first_token
+
                 async for token in self._generate_tokens(
                     text, chat_completion_request.stop
                 ):
+
                     # Create a ChatCompletionChunk
                     chunk = ChatCompletionChunk.model_construct(
                         id="0",
@@ -454,7 +480,11 @@ class Server(ManagementTool):
                             Choice.model_construct(
                                 index=0,
                                 delta=ChoiceDelta(
-                                    content=token,
+                                    content=(
+                                        "<think>" + token
+                                        if reasoning_first_token
+                                        else token
+                                    ),
                                     function_call=None,
                                     role="assistant",
                                     tool_calls=None,
@@ -467,6 +497,7 @@ class Server(ManagementTool):
                     )
 
                     # Format as SSE
+                    reasoning_first_token = False
                     yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
 
                 # Send the [DONE] marker
@@ -483,7 +514,7 @@ class Server(ManagementTool):
 
         # If streaming is not requested, collect all generated tokens into a single response
         else:
-            full_response = ""
+            full_response = "<think>" if reasoning_first_token else ""
             async for token in self._generate_tokens(
                 text, chat_completion_request.stop
             ):
@@ -733,9 +764,7 @@ class Server(ManagementTool):
                     )
                 self.max_new_tokens = config.max_new_tokens
                 self.llm_loaded = config.checkpoint
-                self.tokenizer = (
-                    self.state.tokenizer.tokenizer  # pylint: disable=no-member
-                )
+                self.tokenizer = self.state.tokenizer  # pylint: disable=no-member
 
                 return {
                     "status": "success",
@@ -803,13 +832,13 @@ class Server(ManagementTool):
         logging.info("Middleware set up")
 
         @self.app.middleware("http")
-        async def save_process_time(request: Request, call_next):
+        async def log_request_time(request: Request, call_next):
             """
-            Save the request processing time for any request, so that is can be
-            printed as telemetry.
+            Log the request processing time for any request
             """
 
             start_time = time.perf_counter()
             response = await call_next(request)
-            self.process_time = time.perf_counter() - start_time
+            request_time = time.perf_counter() - start_time
+            logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response

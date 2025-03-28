@@ -19,6 +19,7 @@ from packaging.version import Version
 from huggingface_hub import snapshot_download, list_repo_files
 import onnxruntime_genai as og
 import onnxruntime_genai.models.builder as model_builder
+from transformers import AutoTokenizer
 from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
 import turnkeyml.common.status as status
@@ -31,8 +32,8 @@ from lemonade.tools.adapter import (
 )
 from lemonade.cache import Keys
 from lemonade_install.install import (
-    DEFAULT_AMD_OGA_NPU_DIR,
-    DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR,
+    get_oga_npu_dir,
+    get_oga_hybrid_artifacts_parent_dir,
 )
 
 
@@ -42,7 +43,7 @@ oga_models_path = "oga_models"
 # ONNX Runtime GenAI model builder tool uses this subfolder of the lemonade cache as its cache
 oga_model_builder_cache_path = "model_builder"
 
-# Mapping from processor to executiion provider, used in pathnames and by model_builder
+# Mapping from processor to execution provider, used in pathnames and by model_builder
 execution_providers = {
     "cpu": "cpu",
     "npu": "npu",
@@ -53,9 +54,11 @@ execution_providers = {
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
-    def __init__(self, model: og.Model):
-        # Initialize the tokenizer and produce the initial tokens.
+    def __init__(self, model: og.Model, hf_tokenizer: AutoTokenizer):
+        super().__init__(hf_tokenizer)
+        # Initialize OGA tokenizer
         self.tokenizer = og.Tokenizer(model)
+
         # Placeholder value since some code will try to query it
         # If we actually need this to return a proper value, then
         # og.GeneratorParams.eos_token_id has it
@@ -63,12 +66,8 @@ class OrtGenaiTokenizer(TokenizerAdapter):
 
     def __call__(self, prompt: str, return_tensors="np"):
         tokens = self.tokenizer.encode(prompt)
-
         return PassthroughTokenizerResult(tokens)
 
-    # onnxruntime_genai's tokenizer doesn't support any arguments
-    # yet, so we just ignore skip_special_tokens and hope it
-    # doesn't have a major negative effect
     # pylint: disable=unused-argument
     def decode(self, response, skip_special_tokens=True) -> str:
         return self.tokenizer.decode(response)
@@ -182,11 +181,11 @@ class OrtGenaiModel(ModelAdapter):
         params.try_graph_capture_with_max_batch_size(1)
 
         generator = og.Generator(self.model, params)
-        if use_oga_post_6_api:
-            generator.append_tokens(input_ids)
 
         if streamer is None:
             prompt_start_time = time.perf_counter()
+            if use_oga_post_6_api:
+                generator.append_tokens(input_ids)
             if use_oga_pre_6_api:
                 generator.compute_logits()
             generator.generate_next_token()
@@ -216,6 +215,8 @@ class OrtGenaiModel(ModelAdapter):
 
             return [generator.get_sequence(0)]
         else:
+            if use_oga_post_6_api:
+                generator.append_tokens(input_ids)
             tokenizer_stream = streamer.tokenizer.tokenizer.create_stream()
 
             stop_early = False
@@ -272,7 +273,11 @@ class OgaLoad(FirstTool):
     def __init__(self):
         super().__init__(monitor_message="Loading OnnxRuntime-GenAI model")
 
-        self.status_stats = [Keys.DTYPE, Keys.DEVICE, Keys.OGA_MODELS_SUBFOLDER]
+        self.status_stats = [
+            Keys.DTYPE,
+            Keys.DEVICE,
+            Keys.LOCAL_MODEL_FOLDER,
+        ]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -320,7 +325,7 @@ class OgaLoad(FirstTool):
         )
 
         parser.add_argument(
-            "--download",
+            "--download-only",
             action="store_true",
             help="Download the model if needed, but don't load it",
         )
@@ -335,23 +340,15 @@ class OgaLoad(FirstTool):
 
         return parser
 
-    def run(
-        self,
-        state: State,
-        input: str,
-        input_path: str = "",
-        device: str = "igpu",
-        dtype: str = "int4",
-        int4_block_size: int = None,
-        force: bool = False,
-        download: bool = False,
-        subfolder: str = None,
-    ) -> State:
+    @staticmethod
+    def _validate_model_configuration(device, dtype, checkpoint):
+        """
+        Validate if the device, dtype, and checkpoint combination are consistent with
+        HuggingFace checkpoint naming conventions and specifically for AMD models for NPU
+        and hybrid flows.
 
-        checkpoint = input
-        state.checkpoint = checkpoint
-
-        # See whether the device;dtype;checkpoint combination is supported for download from HF
+        Returns True if device, dtype, and model are consistent.
+        """
         hf_supported_models = {
             "cpu": {"int4": "*/*", "fp32": "*/*"},
             "igpu": {"int4": "*/*", "fp16": "*/*"},
@@ -365,8 +362,30 @@ class OgaLoad(FirstTool):
             and dtype in hf_supported_models[device]
             and fnmatch(checkpoint, hf_supported_models[device][dtype])
         )
+        return hf_supported
 
-        # Check to see if the model already exists locally
+    @staticmethod
+    def _setup_model_paths(
+        state, checkpoint, device, dtype, subfolder, int4_block_size
+    ):
+        """
+        Determines and returns the following model path information for models produced by OGA
+        model builder:
+
+           full_model_path - Full path to where the OGA model files are stored.
+           oga_models_subfolder - The subfolder of the oga_models folder where the model files
+                are stored.  (<full_model_path> = <oga_models>/<oga_models_subfolder>)
+                This subfolder is usually
+                  <checkpoint_string>/<device>-<dtype>[-block-<int4_block_size]>
+                but the if the argument subfolder is not None it will override the latter part
+                of this path.
+           model_exists_locally - True if full_model_path is a folder that contains files
+
+        Note: Model files already in ONNX format on Hugging Face will be stored in the
+            Hugging Face cache, not this folder.  The <oga_models> folder contains model
+            files that have locally been quantized/converted to OGA format and any other
+            models that have been manually added by the user.
+        """
         if subfolder is None:
             subfolder = f"{execution_providers[device]}-{dtype}"
             subfolder += (
@@ -374,6 +393,7 @@ class OgaLoad(FirstTool):
                 if dtype == "int4" and int4_block_size is not None
                 else ""
             )
+
         oga_models_subfolder = os.path.join(
             checkpoint.replace("/", "_").lower(), subfolder
         )
@@ -384,197 +404,275 @@ class OgaLoad(FirstTool):
             full_model_path
         )
 
-        # Check if model needs to be downloaded and/or built or rebuilt
-        if not model_exists_locally or force:
+        return full_model_path, model_exists_locally
 
-            if not hf_supported:
-                # Download/build can't be done
-                raise ValueError(
-                    "The (device, dtype, checkpoint) combination is not supported: "
-                    f"({device}, {dtype}, {checkpoint}). The supported combinations "
-                    f"for Hugging Face models are "
-                    + ", ".join(
-                        [
-                            f"({dev}, {dt}, {hf_supported_models[dev][dt]})"
-                            for dev in hf_supported_models.keys()
-                            for dt in hf_supported_models[dev]
-                        ]
-                    )
-                    + "."
-                )
+    @staticmethod
+    def _download_onnx_model(checkpoint, device):
+        """
+        Downloads ONNX model from HuggingFace and does any additional setup required
+        for local inference.  The model files will be stored in the HuggingFace cache.
+        """
+        # Download the model from HF.  The returned path is in the HuggingFace cache.
+        full_model_path = snapshot_download(
+            repo_id=checkpoint,
+            ignore_patterns=["*.md", "*.txt"],
+        )
 
-            # Check whether the model is a safetensors checkpoint or a pre-exported
-            # ONNX model
-            # Note: This approach only supports ONNX models where the ONNX files are in the
-            #   Huggingface repo root. This does not support the case where the ONNX files
-            #   are in a nested directory within the repo.
-            model_files = list_repo_files(repo_id=checkpoint)
-            onnx_model = any([filename.endswith(".onnx") for filename in model_files])
-
-            # Download the model from HF
-            if onnx_model:
-
-                # NPU models on HF are ready to go and HF does its own caching
-                full_model_path = snapshot_download(
-                    repo_id=checkpoint,
-                    ignore_patterns=["*.md", "*.txt"],
-                )
-                oga_models_subfolder = None
-
-                if device == "hybrid":
-                    # Locate the directory containing hybrid-llm-artifacts_1.3.0
-                    if os.path.exists(DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR):
-                        hybrid_artifacts_path = (
-                            DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR
-                        )
-                    else:
-                        if "AMD_OGA_HYBRID" not in os.environ:
-                            raise RuntimeError(
-                                "Could not find hybrid-llm-artifacts_1.3.0 in system PATH. "
-                                "Please ensure it is added to your PATH environment variable."
-                            )
-
-                        hybrid_artifacts_path = os.environ.get("AMD_OGA_HYBRID")
-
-                    if hybrid_artifacts_path:
-                        # Construct the path to onnx_custom_ops.dll
-                        custom_ops_path = os.path.join(
-                            hybrid_artifacts_path,
-                            "hybrid-llm-artifacts",
-                            "onnx_utils",
-                            "bin",
-                            "onnx_custom_ops.dll",
-                        )
-
-                        config_path = os.path.join(full_model_path, "genai_config.json")
-
-                        # Check if the config file exists
-                        if os.path.exists(config_path):
-                            with open(config_path, "r", encoding="utf-8") as f:
-                                config = json.load(f)
-
-                            # Modify the custom_ops_library under decoder -> session_options
-                            if (
-                                "model" in config
-                                and "decoder" in config["model"]
-                                and "session_options" in config["model"]["decoder"]
-                            ):
-                                config["model"]["decoder"]["session_options"][
-                                    "custom_ops_library"
-                                ] = custom_ops_path
-
-                            # Write the changes back to the file
-                            with open(config_path, "w", encoding="utf-8") as f:
-                                json.dump(config, f, indent=4)
-
-                        # Copy DirectML.dll from lib to bin folder
-                        src_dll = os.path.join(
-                            hybrid_artifacts_path,
-                            "hybrid-llm-artifacts",
-                            "onnxruntime_genai",
-                            "lib",
-                            "DirectML.dll",
-                        )
-                        dst_dll = os.path.join(
-                            hybrid_artifacts_path,
-                            "hybrid-llm-artifacts",
-                            "onnx_utils",
-                            "bin",
-                            "DirectML.dll",
-                        )
-
-                        # Create destination directory if it doesn't exist
-                        os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
-                        shutil.copy2(src_dll, dst_dll)
+        if device == "hybrid":
+            # Locate the directory containing hybrid-llm-artifacts_<VERSION>
+            # and check that it exists.  If the user has manually installed
+            # the artifacts in a place that is different than where the lemonade-install script
+            # does, then the AMD_OGA_HYBRID environment variable must be used.
+            oga_hybrid_artifacts_parent_dir = get_oga_hybrid_artifacts_parent_dir()
+            if os.path.exists(oga_hybrid_artifacts_parent_dir):
+                hybrid_artifacts_path = oga_hybrid_artifacts_parent_dir
             else:
-                # checkpoint is safetensors, so we need to run it through model_builder
-
-                # Use model_builder to download model and convert to ONNX
-                printing.log_info(f"Building {checkpoint} for {device} using {dtype}")
-                extra_options = {}
-                if int4_block_size is not None:
-                    extra_options["int4-block-size"] = int4_block_size
-                try:
-                    model_builder.create_model(
-                        checkpoint,  # model_name
-                        input_path,  # input_path
-                        full_model_path,  # output_path
-                        dtype,  # precision
-                        execution_providers[device],  # execution_provider
-                        os.path.join(
-                            state.cache_dir, oga_model_builder_cache_path
-                        ),  # cache_dir
-                        **extra_options,
-                    )
-                except NotImplementedError as e:
-                    # Model architecture is not supported by model builder
-                    raise NotImplementedError("[Model builder] " + str(e)) from e
-                except OSError as e:
-                    # Model is not found either locally nor in HF repository
-                    raise ValueError("[Model builder] " + str(e)) from e
-
-        if not download:
-            # The download only flag is not set, so load model
-            if device == "npu":
-                if os.path.exists(DEFAULT_AMD_OGA_NPU_DIR):
-                    oga_path = os.path.join(DEFAULT_AMD_OGA_NPU_DIR, "amd_oga")
-                else:
-                    if "AMD_OGA" not in os.environ:
-                        raise RuntimeError(
-                            "Please set environment variable AMD_OGA "
-                            "to the path of the amd_oga files"
-                        )
-
-                    # Check AMD_OGA points to oga library files
-                    oga_path = os.environ["AMD_OGA"]
-                if not os.path.exists(
-                    os.path.join(oga_path, "libs", "onnxruntime.dll")
-                ):
+                if "AMD_OGA_HYBRID" not in os.environ:
                     raise RuntimeError(
-                        f"Cannot find libs/onnxruntime.dll in AMD_OGA folder: {oga_path}"
+                        "Could not find Ryzen AI hybrid LLM installation files.  "
+                        "Please use `lemonade-install` to add it or manually add it and set your"
+                        " AMD_OGA_HYBRID environment variable."
                     )
+                hybrid_artifacts_path = os.environ.get("AMD_OGA_HYBRID")
 
-                # Save current directory and PATH
-                saved_cwd = os.getcwd()
-                saved_path = os.environ["PATH"]
+            if hybrid_artifacts_path:
+                custom_ops_path = os.path.join(
+                    hybrid_artifacts_path,
+                    "hybrid-llm-artifacts",
+                    "onnx_utils",
+                    "bin",
+                    "onnx_custom_ops.dll",
+                )
 
-                # Change to the AMD_OGA distribution directory
-                os.chdir(oga_path)
-                os.environ["PATH"] += os.pathsep + os.path.join(oga_path, "libs")
+                config_path = os.path.join(full_model_path, "genai_config.json")
+                if os.path.exists(config_path):
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
 
-                # Common environment variables for all NPU models
-                os.environ["DD_ROOT"] = ".\\bins"
-                os.environ["DEVICE"] = "stx"
-                os.environ["XLNX_ENABLE_CACHE"] = "0"
+                    if (
+                        "model" in config
+                        and "decoder" in config["model"]
+                        and "session_options" in config["model"]["decoder"]
+                    ):
+                        config["model"]["decoder"]["session_options"][
+                            "custom_ops_library"
+                        ] = custom_ops_path
 
-                # Phi models require USE_AIE_RoPE=0
-                if "phi-" in checkpoint.lower():
-                    os.environ["USE_AIE_RoPE"] = "0"
-                else:
-                    os.environ["USE_AIE_RoPE"] = "1"
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        json.dump(config, f, indent=4)
 
-            state.model = OrtGenaiModel(full_model_path)
-            state.tokenizer = OrtGenaiTokenizer(state.model.model)
-            state.dtype = dtype
+                dst_dll = os.path.join(
+                    hybrid_artifacts_path,
+                    "hybrid-llm-artifacts",
+                    "onnx_utils",
+                    "bin",
+                    "DirectML.dll",
+                )
+                if not os.path.isfile(dst_dll):
+                    # Artifacts 1.3.0 has DirectML.dll in different subfolder, so copy it to the
+                    # correct place.  This should not be needed in later RAI release artifacts.
+                    src_dll = os.path.join(
+                        hybrid_artifacts_path,
+                        "hybrid-llm-artifacts",
+                        "onnxruntime_genai",
+                        "lib",
+                        "DirectML.dll",
+                    )
+                    os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
+                    shutil.copy2(src_dll, dst_dll)
 
+        return full_model_path
+
+    @staticmethod
+    def _download_and_build_safetensors_model(
+        checkpoint, device, dtype, full_model_path, int4_block_size, input_path, state
+    ):
+        """
+        Uses OGA model builder to quantize safetensors format model and convert to ONNX
+        format.  The model files are saved to the full_model_path folder.
+        """
+        printing.log_info(f"Building {checkpoint} for {device} using {dtype}")
+        extra_options = {}
+        if int4_block_size is not None:
+            extra_options["int4-block-size"] = int4_block_size
+        try:
+            model_builder.create_model(
+                checkpoint,
+                input_path,
+                full_model_path,
+                dtype,
+                execution_providers[device],
+                os.path.join(state.cache_dir, oga_model_builder_cache_path),
+                **extra_options,
+            )
+        except NotImplementedError as e:
+            raise NotImplementedError("[Model builder] " + str(e)) from e
+        except OSError as e:
+            raise ValueError("[Model builder] " + str(e)) from e
+
+        return full_model_path
+
+    @staticmethod
+    def _setup_npu_environment():
+        """
+        Sets up environment for NPU flow of ONNX model and returns saved state to be restored
+        later in cleanup.
+        """
+        oga_npu_dir = get_oga_npu_dir()
+        if os.path.exists(oga_npu_dir):
+            oga_path = os.path.join(oga_npu_dir, "amd_oga")
+        else:
+            if "AMD_OGA" not in os.environ:
+                raise RuntimeError(
+                    "Please set environment variable AMD_OGA "
+                    "to the path of the amd_oga files"
+                )
+            oga_path = os.environ["AMD_OGA"]
+
+        if not os.path.exists(os.path.join(oga_path, "libs", "onnxruntime.dll")):
+            raise RuntimeError(
+                f"Cannot find libs/onnxruntime.dll in AMD_OGA folder: {oga_path}"
+            )
+
+        # Save current state so they can be restored after inference.
+        saved_state = {"cwd": os.getcwd(), "path": os.environ["PATH"]}
+
+        # Setup NPU environment (cwd and path will be restored later)
+        os.chdir(oga_path)
+        os.environ["PATH"] += os.pathsep + os.path.join(oga_path, "libs")
+        os.environ["DD_ROOT"] = ".\\bins"
+        os.environ["DEVICE"] = "stx"
+        os.environ["XLNX_ENABLE_CACHE"] = "0"
+
+        return saved_state
+
+    @staticmethod
+    def _load_model_and_setup_state(state, full_model_path, checkpoint):
+        """
+        Loads the OGA model from local folder and then loads the tokenizer.
+        """
+        state.model = OrtGenaiModel(full_model_path)
+
+        hf_tokenizer = AutoTokenizer.from_pretrained(
+            full_model_path, local_files_only=True
+        )
+        state.tokenizer = OrtGenaiTokenizer(
+            state.model.model,
+            hf_tokenizer,
+        )
+
+        status.add_to_state(state=state, name=checkpoint, model=checkpoint)
+
+    @staticmethod
+    def _cleanup_environment(saved_state):
+        """
+        Restores environment to its original state after inference is complete.
+        """
+        if saved_state:
+            os.chdir(saved_state["cwd"])
+            os.environ["PATH"] = saved_state["path"]
+
+    def run(
+        self,
+        state: State,
+        input: str,
+        input_path: str = "",
+        device: str = "igpu",
+        dtype: str = "int4",
+        int4_block_size: int = None,
+        force: bool = False,
+        download_only: bool = False,
+        subfolder: str = None,
+    ) -> State:
+        state.device = device
+        state.dtype = dtype
+
+        # Log initial stats
+        state.save_stat(Keys.DTYPE, dtype)
+        state.save_stat(Keys.DEVICE, device)
+
+        # Check if input is a local folder
+        if os.path.isdir(input):
+            # input is a local folder
+            full_model_path = os.path.abspath(input)
+            checkpoint = "local_model"
+            state.checkpoint = checkpoint
             state.save_stat(Keys.CHECKPOINT, checkpoint)
-            state.save_stat(Keys.DTYPE, dtype)
-            state.save_stat(Keys.DEVICE, device)
-            if oga_models_subfolder is not None:
-                state.save_stat(Keys.OGA_MODELS_SUBFOLDER, oga_models_subfolder)
+            state.save_stat(Keys.LOCAL_MODEL_FOLDER, full_model_path)
+            # See if there is a file ending in ".onnx" in this folder
+            dir = os.listdir(input)
+            has_onnx_file = any([filename.endswith(".onnx") for filename in dir])
+            if not has_onnx_file:
+                raise ValueError(
+                    f"The folder {input} does not contain an ONNX model file."
+                )
+            if force:
+                raise ValueError(
+                    "Your input (-i, --input) points to a local folder, which is not "
+                    "compatible with the force argument."
+                )
+
+        else:
+            # input is a model checkpoint
+            checkpoint = input
+            state.checkpoint = checkpoint
+            state.save_stat(Keys.CHECKPOINT, checkpoint)
 
             # Get base model information
             base_model = get_base_model(checkpoint)
             if base_model is not None:
                 state.save_stat("base_model", base_model)
 
-            # Create a UniqueInvocationInfo and ModelInfo so that we can display status
-            # at the end of the sequence
-            status.add_to_state(state=state, name=input, model=input)
+            # Validate configuration
+            hf_supported = self._validate_model_configuration(device, dtype, checkpoint)
 
-            if device == "npu":
-                # Restore cwd and PATH
-                os.chdir(saved_cwd)
-                os.environ["PATH"] = saved_path
+            # Setup paths
+            full_model_path, model_exists_locally = self._setup_model_paths(
+                state, checkpoint, device, dtype, subfolder, int4_block_size
+            )
+
+            # Handle download/build if needed
+            if (not model_exists_locally) or force:
+                if not hf_supported:
+                    raise ValueError(
+                        "The (device, dtype, checkpoint) combination is not supported: "
+                        f"({device}, {dtype}, {checkpoint})"
+                    )
+
+                # Check if model is ONNX or safetensors
+                model_files = list_repo_files(repo_id=checkpoint)
+                is_onnx_model = any(
+                    [filename.endswith(".onnx") for filename in model_files]
+                )
+
+                if is_onnx_model:
+                    full_model_path = self._download_onnx_model(checkpoint, device)
+                else:
+                    self._download_and_build_safetensors_model(
+                        checkpoint,
+                        device,
+                        dtype,
+                        full_model_path,
+                        int4_block_size,
+                        input_path,
+                        state,
+                    )
+                    state.save_stat(Keys.LOCAL_MODEL_FOLDER, full_model_path)
+
+        # Load model if download-only argument is not set
+        if not download_only:
+
+            saved_env_state = None
+            try:
+                if device == "npu":
+                    saved_env_state = self._setup_npu_environment()
+                    # Set USE_AIE_RoPE based on model type
+                    os.environ["USE_AIE_RoPE"] = (
+                        "0" if "phi-" in checkpoint.lower() else "1"
+                    )
+
+                self._load_model_and_setup_state(state, full_model_path, checkpoint)
+            finally:
+                self._cleanup_environment(saved_env_state)
 
         return state

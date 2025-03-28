@@ -35,7 +35,7 @@ def make_example_inputs(state: State) -> Dict:
 
 class HuggingfaceTokenizerAdapter(TokenizerAdapter):
     def __init__(self, tokenizer: transformers.AutoTokenizer, device: str):
-        super().__init__()
+        super().__init__(tokenizer)
         self.tokenizer = tokenizer
         self.device = device
 

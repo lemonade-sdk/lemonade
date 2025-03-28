@@ -64,7 +64,7 @@ def main():
         description=f"""Tools for evaluating and deploying LLMs (v{version_number}).
 
 Read this to learn the command syntax:
-https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md""",
+https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md""",
         formatter_class=NiceHelpFormatter,
     )
 

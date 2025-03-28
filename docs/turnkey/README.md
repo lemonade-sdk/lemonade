@@ -7,6 +7,7 @@
 The easiest way to get started is:
 1. `pip install turnkeyml`
 2. Copy a PyTorch example of a model, like the one on this [Huggingface BERT model card](https://huggingface.co/google-bert/bert-base-uncased), into a file named `bert.py`.
+
 ```python
 from transformers import BertTokenizer, BertModel
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -15,7 +16,30 @@ text = "Replace me by any text you'd like."
 encoded_input = tokenizer(text, return_tensors='pt')
 output = model(**encoded_input)
 ```
+
 3. `turnkey -i bert.py discover export-pytorch`: make a BERT ONNX file from this `bert.py` example.
+
+### How Turnkey Works
+
+The `turnkey` (CNNs and transformers) and `lemonade` (LLMs) CLIs provide a set of `Tools` that users can invoke in a `Sequence`. The first `Tool` takes the input (`-i`), performs some action, and passes its state to the next `Tool` in the `Sequence`.
+
+You can read the `Sequence` out like a sentence. For example, the demo command above was:
+
+```bash
+turnkey -i bert.py discover export-pytorch optimize-ort convert-fp16
+```
+
+Which you can read like:
+
+> Use `turnkey` on `bert.py` to `discover` the model, `export` the `pytorch` to ONNX, `optimize` the ONNX with `ort`, and `convert` the ONNX to `fp16`.
+
+You can configure each `Tool` by passing it arguments. For example, `export-pytorch --opset 18` would set the opset of the resulting ONNX model to 18.
+
+A full command with an argument looks like:
+
+```bash
+turnkey -i bert.py discover export-pytorch --opset 18 optimize-ort convert-fp16
+```
 
 ## Demo
 
@@ -58,8 +82,8 @@ We provide several helpful tools to facilitate this kind of mass-evaluation.
 
 For example, to export ~1000 built-in models to ONNX:
 
-```
-> turnkey models/*/*.py discover export-pytorch
+```bash
+turnkey models/*/*.py discover export-pytorch
 ```
 
 ### Results Cache
@@ -74,8 +98,8 @@ All build results, such as `.onnx` files, are collected into a cache directory, 
 
 System information for the current `turnkey` installation is collected and viewed with the `system-info` management tool:
 
-```
-> turnkey system-info
+```bash
+turnkey system-info
 ```
 
 ## Extensibility
@@ -94,11 +118,11 @@ Evaluating a new model is as simple as taking a Python script that instantiates 
 
 ### Plugins
 
-The build tool has built-in support for a variety of interoperable `Tools`. If you need more, the TurnkeyML plugin API lets you add your own installable  tools with any functionality you like:
+The build tool has built-in support for a variety of interoperable `Tools`. If you need more, the TurnkeyML plugin API lets you add your own installable tools with any functionality you like:
 
-```
-> pip install -e my_custom_plugin
-> turnkey -i my_model.py discover export-pytorch my-custom-tool --my-args
+```bash
+pip install -e my_custom_plugin
+turnkey -i my_model.py discover export-pytorch my-custom-tool --my-args
 ```
 
 All of the built-in `Tools` are implemented against the plugin API. Check out the [example plugins](https://github.com/onnx/turnkeyml/tree/main/examples/turnkey/cli/plugins) and the [plugin API guide](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md#contributing-a-plugin) to learn more about creating an installable plugin.

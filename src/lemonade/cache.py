@@ -37,10 +37,16 @@ def build_name(input_name):
             replacing any `/` characters with `_`.
         2. Timestamp to ensure that builds in the same cache will not
             collide in the same build directory.
+
+        If the input_name is a local folder, then we don't know the
+        model checkpoint name, so we use "local_model"
     """
 
-    # Sanitize the input name
-    input_name_sanitized = input_name.replace("/", "_")
+    if os.path.isdir(input_name):
+        input_name_sanitized = "local_model"
+    else:
+        # Sanitize the input name
+        input_name_sanitized = input_name.replace("/", "_")
 
     # Get the formatted timestamp string
     timestamp = get_timestamp()
@@ -67,7 +73,7 @@ class Keys:
     RESPONSE_LENGTHS_HISTOGRAM = "response_lengths_histogram"
     CACHE_DIR = "cache_dir"
     DEVICE = "device"
-    OGA_MODELS_SUBFOLDER = "oga_models_subfolder"
+    LOCAL_MODEL_FOLDER = "local_model_folder"
     MEMORY_USAGE_PLOT = "memory_usage_plot"
     MAX_MEMORY_USED_GB = "max_memory_used_GB"
     MAX_MEMORY_USED_GBYTE = "max_memory_used_gbyte"

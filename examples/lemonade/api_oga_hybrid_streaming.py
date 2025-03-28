@@ -1,6 +1,6 @@
 """
 This example demonstrates how to use the lemonade API to load a model for
-inference on Ryzen AI hybrid mode (NPU and iGPU together) via OnnxRuntime-GenAI 
+inference on Ryzen AI hybrid mode (NPU and iGPU together) via OnnxRuntime-GenAI
 using the oga-cpu recipe, and then use a thread to generate a streaming the
 response to a prompt.
 
@@ -9,7 +9,7 @@ i.e., OGA-based recipes such as oga-cpu, oga-igpu, oga-npu, and oga-hybrid.
 
 Make sure you have set up your OGA device in your Python environment.
 See for details:
-https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md#install-onnxruntime-genai
+https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md#install
 """
 
 from threading import Thread

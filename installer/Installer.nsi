@@ -215,8 +215,8 @@ Section "Install Ryzen AI Hybrid Execution" HybridSec
   DetailPrint "- Ryzen AI Section     -"
   DetailPrint "------------------------"
 
-  ; Once we're done downloading and installing the archive the size comes out to about 1GB
-  AddSize 1048576
+  ; Once we're done downloading and installing the archive the size comes out to about 370MB
+  AddSize 388882
 
   nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --ryzenai hybrid -y'
 
@@ -265,6 +265,18 @@ SubSection /e "Selected Models" ModelsSec
     SectionIn 1
     AddSize 8835894  ;
     StrCpy $9 "$9Qwen-1.5-7B-Chat-Hybrid "
+  SectionEnd
+
+  Section /o "DeepSeek-R1-Distill-Llama-8B-Hybrid" DeepSeekLlama8BSec
+    SectionIn 1
+    AddSize 9084315  ;
+    StrCpy $9 "$9DeepSeek-R1-Distill-Llama-8B-Hybrid "
+  SectionEnd
+
+  Section /o "DeepSeek-R1-Distill-Qwen-7B-Hybrid" DeepSeekQwen7BSec
+    SectionIn 1
+    AddSize 9502412  ;
+    StrCpy $9 "$9DeepSeek-R1-Distill-Qwen-7B-Hybrid "
   SectionEnd
 
   Section "-Download Models" DownloadModels
@@ -339,6 +351,18 @@ Function .onSelChange
         Goto end
     ${EndIf}
     
+    SectionGetFlags ${DeepSeekLlama8BSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
+    SectionGetFlags ${DeepSeekQwen7BSec} $1
+    IntOp $1 $1 & ${SF_SELECTED}
+    ${If} $1 == ${SF_SELECTED}
+        Goto end
+    ${EndIf}
+    
     ; If no hybrid model is selected, select Llama-1B by default
     SectionGetFlags ${Llama1BSec} $1
     IntOp $1 $1 | ${SF_SELECTED}
@@ -367,6 +391,14 @@ hybrid_disabled:
     SectionGetFlags ${Qwen7BSec} $1
     IntOp $1 $1 & ${SECTION_OFF}
     SectionSetFlags ${Qwen7BSec} $1
+    
+    SectionGetFlags ${DeepSeekLlama8BSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${DeepSeekLlama8BSec} $1
+    
+    SectionGetFlags ${DeepSeekQwen7BSec} $1
+    IntOp $1 $1 & ${SECTION_OFF}
+    SectionSetFlags ${DeepSeekQwen7BSec} $1
 
 end:
 FunctionEnd
@@ -419,6 +451,8 @@ LangString DESC_Llama1BSec ${LANG_ENGLISH} "1B parameter Llama model with hybrid
 LangString DESC_Llama3BSec ${LANG_ENGLISH} "3B parameter Llama model with hybrid execution"
 LangString DESC_PhiSec ${LANG_ENGLISH} "Phi-3 Mini model with hybrid execution"
 LangString DESC_Qwen7BSec ${LANG_ENGLISH} "7B parameter Qwen model with hybrid execution"
+LangString DESC_DeepSeekLlama8BSec ${LANG_ENGLISH} "8B parameter DeepSeek Llama model with hybrid execution"
+LangString DESC_DeepSeekQwen7BSec ${LANG_ENGLISH} "7B parameter DeepSeek Qwen model with hybrid execution"
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -430,6 +464,8 @@ LangString DESC_Qwen7BSec ${LANG_ENGLISH} "7B parameter Qwen model with hybrid e
   !insertmacro MUI_DESCRIPTION_TEXT ${Llama3BSec} $(DESC_Llama3BSec)
   !insertmacro MUI_DESCRIPTION_TEXT ${PhiSec} $(DESC_PhiSec)
   !insertmacro MUI_DESCRIPTION_TEXT ${Qwen7BSec} $(DESC_Qwen7BSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${DeepSeekLlama8BSec} $(DESC_DeepSeekLlama8BSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${DeepSeekQwen7BSec} $(DESC_DeepSeekQwen7BSec)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function .onInit

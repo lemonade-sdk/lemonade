@@ -95,6 +95,8 @@ The available modes are the following:
 * `Llama-3.2-3B-Instruct-Hybrid`
 * `Phi-3-Mini-Instruct-Hybrid`
 * `Qwen-1.5-7B-Chat-Hybrid`
+* `DeepSeek-R1-Distill-Llama-8B-Hybrid`
+* `DeepSeek-R1-Distill-Qwen-7B-Hybrid`
 
 ### Command Line Invocation
 

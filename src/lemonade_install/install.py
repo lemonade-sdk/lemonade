@@ -13,9 +13,12 @@ import shutil
 import pkg_resources
 from pathlib import Path
 from typing import Optional
+import glob
 import zipfile
 import requests
 import huggingface_hub
+
+DEFAULT_RYZEN_AI_VERSION = "1.4.0"
 
 lemonade_install_dir = Path(__file__).parent.parent.parent
 DEFAULT_AMD_OGA_NPU_DIR = os.path.join(
@@ -24,14 +27,73 @@ DEFAULT_AMD_OGA_NPU_DIR = os.path.join(
 DEFAULT_AMD_OGA_HYBRID_DIR = os.path.join(
     lemonade_install_dir, "install", "ryzen_ai", "hybrid"
 )
-DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR = os.path.join(
-    DEFAULT_AMD_OGA_HYBRID_DIR,
-    "hybrid-llm-artifacts_1.3.0_lounge",
-)
 DEFAULT_QUARK_VERSION = "quark-0.6.0"
 DEFAULT_QUARK_DIR = os.path.join(
     lemonade_install_dir, "install", "quark", DEFAULT_QUARK_VERSION
 )
+
+npu_install_data = {
+    "1.3.0": {
+        "artifacts_zipfile": "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip",
+        "license_file": (
+            "https://account.amd.com/content/dam/account/en/licenses/download/"
+            "amd-end-user-license-agreement.pdf"
+        ),
+        "license_tag": "Beta ",
+    },
+    "1.4.0": {
+        "artifacts_zipfile": "ryzen_ai_14_4571/npu-llm-artifacts_1.4.0.zip",
+        "license_file": (
+            "https://account.amd.com/content/dam/account/en/licenses/download/"
+            "amd-end-user-license-agreement.pdf"
+        ),
+        "license_tag": "Beta ",
+    },
+}
+
+hybrid_install_data = {
+    "1.3.0": {
+        "artifacts_parents_dir": os.path.join(
+            DEFAULT_AMD_OGA_HYBRID_DIR, "hybrid-llm-artifacts_1.3.0_lounge"
+        ),
+        "artifacts_zipfile": (
+            "https://www.xilinx.com/bin/public/openDownload?"
+            "filename=hybrid-llm-artifacts_1.3.0_012725.zip"
+        ),
+        "license_file": (
+            "https://www.xilinx.com/bin/public/openDownload?"
+            "filename=AMD%20End%20User%20License%20Agreement.pdf"
+        ),
+        "license_tag": "",
+    },
+    "1.4.0": {
+        "artifacts_parents_dir": os.path.join(
+            DEFAULT_AMD_OGA_HYBRID_DIR, "hybrid-llm-artifacts_1.4.0"
+        ),
+        "artifacts_zipfile": (
+            "https://www.xilinx.com/bin/public/openDownload?"
+            "filename=hybrid-llm-artifacts_1.4.0_032825.zip"
+        ),
+        "license_file": (
+            "https://account.amd.com/content/dam/account/en/licenses/download/"
+            "amd-end-user-license-agreement.pdf"
+        ),
+        "license_tag": "",
+    },
+}
+
+
+def get_oga_npu_dir():
+    return DEFAULT_AMD_OGA_NPU_DIR
+
+
+def get_oga_hybrid_artifacts_parent_dir():
+    candidates = [f.path for f in os.scandir(DEFAULT_AMD_OGA_HYBRID_DIR) if f.is_dir()]
+    if not len(candidates) == 1:
+        raise Exception(
+            f"Expecting exactly one set of hybrid artifacts at {DEFAULT_AMD_OGA_HYBRID_DIR}"
+        )
+    return candidates[0]
 
 
 class ModelManager:
@@ -46,6 +108,7 @@ class ModelManager:
             "Qwen2.5-0.5B-Instruct-CPU": {
                 "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
                 "device": "cpu",
+                "reasoning": False,
             }
         }
 
@@ -59,18 +122,32 @@ class ModelManager:
             "Llama-3.2-1B-Instruct-Hybrid": {
                 "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
+                "reasoning": False,
             },
             "Llama-3.2-3B-Instruct-Hybrid": {
                 "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
+                "reasoning": False,
             },
             "Phi-3-Mini-Instruct-Hybrid": {
                 "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
+                "reasoning": False,
             },
             "Qwen-1.5-7B-Chat-Hybrid": {
                 "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
                 "device": "hybrid",
+                "reasoning": False,
+            },
+            "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
+                "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
+                "device": "hybrid",
+                "reasoning": True,
+            },
+            "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
+                "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
+                "device": "hybrid",
+                "reasoning": True,
             },
         }
 
@@ -294,8 +371,10 @@ class Install:
 
         parser.add_argument(
             "--ryzenai",
-            help="Install Ryzen AI software for LLMs. Requires an authentication token.",
-            choices=["npu", "hybrid", None],
+            help="Install Ryzen AI software for LLMs. Requires an authentication token. "
+            "The 'npu' and 'hybrid' choices install the default "
+            f"{DEFAULT_RYZEN_AI_VERSION} version.",
+            choices=["npu", "hybrid", "npu-1.3.0", "hybrid-1.3.0"],
         )
 
         parser.add_argument(
@@ -348,56 +427,76 @@ class Install:
             model_manager.download_models(models)
 
         if ryzenai is not None:
+            version = DEFAULT_RYZEN_AI_VERSION
+            if ryzenai == "npu-1.3.0":
+                ryzenai = "npu"
+                version = "1.3.0"
+            if ryzenai == "hybrid-1.3.0":
+                ryzenai = "hybrid"
+                version = "1.3.0"
             if ryzenai == "npu":
-                file = "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip"
+                # Check version is valid
+                if version not in npu_install_data:
+                    raise ValueError(
+                        "Invalid version for NPU.  Valid options are "
+                        f"{list(npu_install_data.keys())}."
+                    )
+                file = npu_install_data[version].get("artifacts_zipfile", None)
                 install_dir = DEFAULT_AMD_OGA_NPU_DIR
                 wheels_full_path = os.path.join(install_dir, "amd_oga/wheels")
-                license = "https://account.amd.com/content/dam/account/en/licenses/download/amd-end-user-license-agreement.pdf"
-                license_tag = "Beta "
+                license_file = npu_install_data[version].get("license_file", None)
+                license_tag = npu_install_data[version].get("license_tag", None)
             elif ryzenai == "hybrid":
-                file = "https://www.xilinx.com/bin/public/openDownload?filename=hybrid-llm-artifacts_1.3.0_012725.zip"
+                if version not in hybrid_install_data:
+                    raise ValueError(
+                        "Invalid version for Hybrid.  Valid options are "
+                        f"{hybrid_install_data.keys()}."
+                    )
+                file = hybrid_install_data[version].get("artifacts_zipfile", None)
                 install_dir = DEFAULT_AMD_OGA_HYBRID_DIR
                 wheels_full_path = os.path.join(
-                    DEFAULT_AMD_OGA_HYBRID_ARTIFACTS_PARENT_DIR,
+                    hybrid_install_data[version]["artifacts_parents_dir"],
                     "hybrid-llm-artifacts",
                     "onnxruntime_genai",
                     "wheel",
                 )
-                license = r"https://www.xilinx.com/bin/public/openDownload?filename=AMD%20End%20User%20License%20Agreement.pdf"
-                license_tag = ""
+                license_file = hybrid_install_data[version].get("license_file", None)
+                license_tag = hybrid_install_data[version].get("license_tag", None)
             else:
                 raise ValueError(
                     f"Value passed to ryzenai argument is not supported: {ryzenai}"
                 )
 
-            if yes:
-                print(
-                    f"\nYou have accepted the AMD {license_tag}Software End User License Agreement for "
-                    f"Ryzen AI {ryzenai} by providing the `--yes` option. "
-                    "The license file is available for your review at "
-                    # pylint: disable=line-too-long
-                    f"{license}\n"
-                )
-            else:
-                print(
-                    f"\nYou must accept the AMD {license_tag}Software End User License Agreement in "
-                    "order to install this software. To continue, type the word yes "
-                    "to assert that you agree and are authorized to agree "
-                    "on behalf of your organization, to the terms and "
-                    f"conditions, in the {license_tag}Software End User License Agreement, "
-                    "which terms and conditions may be reviewed, downloaded and "
-                    "printed from this link: "
-                    # pylint: disable=line-too-long
-                    f"{license}\n"
-                )
-
-                response = input("Would you like to accept the license (yes/No)? ")
-                if response.lower() == "yes" or response.lower() == "y":
-                    pass
-                else:
-                    raise LicenseRejected(
-                        "Exiting because the license was not accepted."
+            if license_file:
+                if yes:
+                    print(
+                        f"\nYou have accepted the AMD {license_tag}Software End User License "
+                        f"Agreement for Ryzen AI {ryzenai} by providing the `--yes` option. "
+                        "The license file is available for your review at "
+                        f"{license_file}\n"
                     )
+                else:
+                    print(
+                        f"\nYou must accept the AMD {license_tag}Software End User License "
+                        "Agreement in order to install this software. To continue, type the word "
+                        "yes to assert that you agree and are authorized to agree "
+                        "on behalf of your organization, to the terms and "
+                        f"conditions, in the {license_tag}Software End User License Agreement, "
+                        "which terms and conditions may be reviewed, downloaded and "
+                        "printed from this link: "
+                        f"{license_file}\n"
+                    )
+
+                    response = input("Would you like to accept the license (yes/No)? ")
+                    if response.lower() == "yes" or response.lower() == "y":
+                        pass
+                    else:
+                        raise LicenseRejected(
+                            "Exiting because the license was not accepted."
+                        )
+
+            print(f"Downloading {ryzenai} artifacts for Ryzen AI {version}.")
+            print("Wheels will be added to current activated environment.")
 
             archive_file_name = f"oga_{ryzenai}.zip"
             archive_file_path = os.path.join(install_dir, archive_file_name)
@@ -412,30 +511,48 @@ class Install:
                 # Remove any artifacts from a previous installation attempt
                 shutil.rmtree(install_dir)
             os.makedirs(install_dir)
-            if ryzenai == "npu":
-                print(f"\nDownloading {file} from GitHub LFS to {install_dir}\n")
-                download_lfs_file(token_to_use, file, archive_file_path)
-            elif ryzenai == "hybrid":
+            if any(proto in file for proto in ["https:", "http:"]):
                 print(f"\nDownloading {file}\n")
                 download_file(file, archive_file_path)
+            elif "file:" in file:
+                local_file = file.replace("file://", "C:/")
+                print(f"\nCopying {local_file}\n")
+                shutil.copy(local_file, archive_file_path)
+            else:
+                print(f"\nDownloading {file} from GitHub LFS to {install_dir}\n")
+                download_lfs_file(token_to_use, file, archive_file_path)
 
             # Unzip the file
             print(f"\nUnzipping archive {archive_file_path}\n")
             unzip_file(archive_file_path, install_dir)
 
+            # Write artifacts filename to text file
+            with open(
+                os.path.join(install_dir, f"{version}.txt"), "w", encoding="utf-8"
+            ) as f:
+                f.write(f"Installed artifacts: {file}")
+
             # Install all whl files in the specified wheels folder
             print(f"\nInstalling wheels from {wheels_full_path}\n")
-            for file in os.listdir(wheels_full_path):
-                if file.endswith(".whl"):
-                    install_cmd = f"{sys.executable} -m pip install {os.path.join(wheels_full_path, file)}"
-
-                    print(f"\nInstalling {file} with command {install_cmd}\n")
-
-                    subprocess.run(
-                        install_cmd,
-                        check=True,
-                        shell=True,
-                    )
+            if version == "1.3.0":
+                # Install one wheel file at a time (1.3.0 npu build only works this way)
+                for file in os.listdir(wheels_full_path):
+                    if file.endswith(".whl"):
+                        install_cmd = (
+                            f"{sys.executable} -m pip install "
+                            f"{os.path.join(wheels_full_path, file)}"
+                        )
+                        print(f"\nInstalling {file} with command {install_cmd}\n")
+                        subprocess.run(install_cmd, check=True, shell=True)
+            else:
+                # Install all the wheel files together, allowing pip to work out the dependencies
+                wheel_files = glob.glob(os.path.join(wheels_full_path, "*.whl"))
+                install_cmd = [sys.executable, "-m", "pip", "install"] + wheel_files
+                subprocess.run(
+                    install_cmd,
+                    check=True,
+                    shell=True,
+                )
 
             # Delete the zip file
             print(f"\nCleaning up, removing {archive_file_path}\n")
@@ -454,7 +571,10 @@ class Install:
                 package_name="quark",
             )
             # Install Quark wheel
-            wheel_url = f"https://www.xilinx.com/bin/public/openDownload?filename=quark-{quark}-py3-none-any.whl"
+            wheel_url = (
+                "https://www.xilinx.com/bin/public/openDownload?"
+                f"filename=quark-{quark}-py3-none-any.whl"
+            )
             wheel_path = os.path.join(
                 quark_install_dir, f"quark-{quark}-py3-none-any.whl"
             )

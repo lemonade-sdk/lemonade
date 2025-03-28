@@ -3,7 +3,7 @@
 ## LLMs: `lemonade` tooling
 
 The `docs/lemonade` directory has documentation for the LLM-focused `lemonade` tooling:
-- [Getting Started](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md): start here for LLMs.
+- [Getting Started](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md): start here for LLMs.
 - Accuracy tests (task performance):
   - [HumanEval](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/humaneval_accuracy.md): details of the HumanEval coding task test.
   - [MMLU](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/mmlu_accuracy.md): details of the MMLU general reasoning test.
@@ -16,7 +16,7 @@ The `docs/lemonade` directory has documentation for the LLM-focused `lemonade` t
 
 The `docs/turnkey` directory contains documentation for the CNN/Transformer-focused `turnkey` tooling:
 
-- [getting_started.md](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/getting_started.md)
+- [README.md](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/README.md)
 - [tools_user_guide.md](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/tools_user_guide.md): User guide for the tools: the `turnkey` CLI and the APIs.
 
 

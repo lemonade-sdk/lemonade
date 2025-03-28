@@ -36,6 +36,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip check
           pip install -e .[llm]
+          lemonade-install --model Qwen2.5-0.5B-Instruct-CPU
       - name: Run server tests
         shell: bash -el {0}
         run: |

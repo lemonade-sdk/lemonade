@@ -51,7 +51,49 @@ This will add a Continue tab to your VS Code Activity Bar.
 
 > Note: see the Continue [user guide](https://docs.continue.dev/) to learn about all of their features.
 
-To try out Continue:
-- Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or too.
-  - Example: "What's the fastest way to install lemonade in @getting_started.md?"
-- Open a file, select some code, and push Ctrl+I to start a chat about editing that code.
+Here are some examples for trying out Continue. These examples assume you have cloned this repo and allowed Continue to index it.
+
+### Chat with Files
+
+Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or too.
+  - "What's the fastest way to install Lemonade in `@getting_started.md?`"
+  - "According to `@README.md` what do I need to do to set up for `@api_oga_hybrid_streaming.py`?"
+
+### Editing Files
+
+Open a file, select some code, and push Ctrl+I to start a chat about editing that code.
+  1. Open `//examples//lemonade//api_basic.py`.
+  1. Select the `print(...` line at the bottom and press `ctrl+i`.
+  1. Write "Add a helpful comment" in the chat box and press enter.
+  1. Press "accept" if you would like to accept the change.
+
+### Making Files
+
+Start a new chat and prompt: 
+
+> write a script in the style of `@api_basic.py` that uses the microsoft/Phi-4-mini-instruct model on GPU
+
+Here's what we got:
+
+```python
+# Import necessary modules
+from lemonade.api import from_pretrained
+
+# Load the Phi-4-mini-instruct model with the hf-cpu recipe
+model, tokenizer = from_pretrained("microsoft/Phi-4-mini-instruct", recipe="hf-cpu")
+
+# Define your prompt
+prompt = "This is a sample prompt for the Phi-4-mini-instruct model"
+
+# Tokenize the prompt
+input_ids = tokenizer(prompt, return_tensors="pt")
+
+# Generate the response using the model
+response = model.generate(input_ids, max_new_tokens=100)  # Adjust the max_new_tokens as needed
+
+# Decode the generated response
+generated_text = tokenizer.decode(response[0])
+
+# Print the response
+print(generated_text)
+```

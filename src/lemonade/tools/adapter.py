@@ -1,4 +1,5 @@
 import abc
+from transformers import AutoTokenizer
 
 
 class ModelAdapter(abc.ABC):
@@ -30,6 +31,9 @@ class TokenizerAdapter(abc.ABC):
     Base class for adapting an LLM's tokenizer to work with lemonade's standard tools
     """
 
+    def __init__(self, tokenizer: AutoTokenizer = None):
+        self.auto_tokenizer = tokenizer
+
     @abc.abstractmethod
     def __call__(self, prompt: str):
         """
@@ -47,6 +51,20 @@ class TokenizerAdapter(abc.ABC):
 
         Returns: text response of the LLM
         """
+
+    def apply_chat_template(self, *args, **kwargs):
+        """
+        Convert messages into a single tokenizable string
+        """
+        return self.auto_tokenizer.apply_chat_template(*args, **kwargs)
+
+    @property
+    def chat_template(self):
+        return self.auto_tokenizer.chat_template
+
+    @property
+    def eos_token(self):
+        return self.auto_tokenizer.eos_token
 
 
 class PassthroughTokenizerResult:
