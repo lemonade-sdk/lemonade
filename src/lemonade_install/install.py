@@ -209,7 +209,7 @@ class ModelManager:
         downloaded_models_enabled = self.downloaded_cpu_models.copy()
         if (
             "onnxruntime-vitisai" in pkg_resources.working_set.by_key
-            and "onnxruntime-genai-directml" in pkg_resources.working_set.by_key
+            and "onnxruntime-genai-directml-ryzenai" in pkg_resources.working_set.by_key
         ):
             downloaded_models_enabled.update(self.downloaded_hybrid_models)
         return downloaded_models_enabled
