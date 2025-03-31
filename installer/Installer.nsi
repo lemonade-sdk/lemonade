@@ -95,7 +95,11 @@ SectionIn RO ; Read only, always installed
 
     # Pack turnkeyml repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* run_server.bat
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade_server.bat
+
+    # Create bin directory and move lemonade_server.bat there
+    CreateDirectory "$INSTDIR\bin"
+    Rename "$INSTDIR\lemonade_server.bat" "$INSTDIR\bin\lemonade_server.bat"
 
     DetailPrint "- Packaged repo"
 
@@ -196,7 +200,18 @@ SectionIn RO ; Read only, always installed
 
       DetailPrint "*** INSTALLATION COMPLETED ***"
       # Create a shortcut inside $INSTDIR
-      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$SYSDIR\cmd.exe" "/C conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade serve" "$INSTDIR\img\favicon.ico"
+      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+
+      ; Add bin folder to system PATH
+      DetailPrint "- Adding bin directory to system PATH..."
+      
+      ; Get the current PATH value from the registry
+      ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH"
+      
+      ; Add bin folder (containing 'lemonade-server') to path while avoiding duplicate entries
+      ExecWait 'setx PATH "$INSTDIR\bin;$0" -m'
+      
+      DetailPrint "- Successfully updated system PATH"
 
       Goto end
 
@@ -298,7 +313,7 @@ SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ; Create a desktop shortcut that passes the conda environment name as a parameter
-  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\run_server.bat" "$LEMONADE_CONDA_ENV" "$INSTDIR\img\favicon.ico"
+  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
 
 SectionEnd
 
@@ -551,5 +566,7 @@ Function .onInit
     ${EndIf}
   ${EndIf}
 
+  ; Call onSelChange to ensure initial model selection state is correct
+  Call .onSelChange
 
 FunctionEnd

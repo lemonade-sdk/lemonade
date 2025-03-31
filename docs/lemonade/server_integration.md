@@ -10,6 +10,27 @@ The first part of this guide contains instructions that are common for both inte
 
 ## General Instructions
 
+### Identifying Existing Installation
+
+To identify if Lemonade Server is installed on a system, you can use the `lemonade-server` CLI command, which is added to path when using our installer. This is a reliable method to: 
+- Verify if the server is installed.
+- Check which version is currently available is running the command below.
+
+```
+lemonade-server --version
+```
+
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
+
+### Checking Server Status
+
+To identify whether or not the server is running anywhere on the system you may use the `status` command of `lemonade-server`.
+
+```
+lemonade-server status
+```
+
+This command will return either `Server is not running` or `Server is running on port <PORT>`.
 
 ### Identifying Compatible Devices
 
@@ -54,8 +75,18 @@ Please note that the Server Installer is only available on Windows. Apps that in
 Some apps might prefer to be responsible for installing and managing Lemonade Server on behalf of the user. This part of the guide includes steps for installing and running Lemonade Server so that your users don't have to install Lemonade Server separately.
 
 Definitions:
-- "Silent installation" refers to an automatic command for installing Lemonade Server without running any GUI or prompting the user for any questions. It does assume that the end-user fully accepts the license terms, so be sure that your own application makes this clear to the user.
 - Command line usage allows the server process to be launched programmatically, so that your application can manage starting and stopping the server process on your user's behalf.
+- "Silent installation" refers to an automatic command for installing Lemonade Server without running any GUI or prompting the user for any questions. It does assume that the end-user fully accepts the license terms, so be sure that your own application makes this clear to the user.
+
+### Command Line Invocation
+
+This command line invocation starts the Lemonade Server process so that your application can connect to it via REST API endpoints. To start the server, simply run the command below.
+
+```bash
+lemonade-server serve
+```
+
+You can also run the server as a background process using a subprocess or any preferred method.
 
 ### Silent Installation
 
@@ -97,37 +128,3 @@ The available modes are the following:
 * `Qwen-1.5-7B-Chat-Hybrid`
 * `DeepSeek-R1-Distill-Llama-8B-Hybrid`
 * `DeepSeek-R1-Distill-Qwen-7B-Hybrid`
-
-### Command Line Invocation
-
-Command line invocation starts the Lemonade Server process so that your application can connect to it via REST API endpoints. 
-
-#### Foreground Process
-
-These steps will open the Lemonade Server in a terminal window that is visible to users. The user can exit the server by closing the window.
-
-In a `cmd.exe` terminal:
-
-```bash
-conda run --no-capture-output -p INSTALL_DIR\lemonade_server\lemon_env lemonade serve
-```
-
-Where `INSTALL_DIR` is the installation path of `lemonade_server`. 
-
-For example, if you used the default installation directory and your username is USERNAME: 
-
-```bash
-C:\Windows\System32\cmd.exe /C conda run --no-capture-output -p C:\Users\USERNAME\AppData\Local\lemonade_server\lemon_env lemonade serve
-```
-
-#### Background Process
-
-This command will open the Lemonade Server without opening a window. Your application needs to manage terminating the process and any child processes it creates.
-
-In a powershell terminal:
-
-```powershell
-$serverProcess = Start-Process -FilePath "C:\Windows\System32\cmd.exe" -ArgumentList "/C conda run --no-capture-output -p INSTALL_DIR\lemonade_server\lemon_env lemonade serve" -RedirectStandardOutput lemonade_out.txt -RedirectStandardError lemonade_err.txt -PassThru -NoNewWindow
-```
-
-Where `INSTALL_DIR` is the installation path of `lemonade_server`.

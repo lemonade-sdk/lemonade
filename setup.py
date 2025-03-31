@@ -9,7 +9,10 @@ setup(
     version=version,
     description="TurnkeyML Tools and Models",
     author_email="turnkeyml@amd.com",
-    package_dir={"": "src", "turnkeyml_models": "models"},
+    package_dir={
+        "": "src",
+        "turnkeyml_models": "models",
+    },
     packages=[
         "turnkeyml",
         "turnkeyml.tools",
@@ -30,6 +33,7 @@ setup(
         "turnkeyml_models.torchvision",
         "turnkeyml_models.transformers",
         "lemonade_install",
+        "lemonade_server",
     ],
     install_requires=[
         "invoke>=2.0.0",
@@ -109,6 +113,7 @@ setup(
             "turnkey-llm=lemonade:lemonadecli",
             "lemonade=lemonade:lemonadecli",
             "lemonade-install=lemonade_install:installcli",
+            "lemonade-server-dev=lemonade_server.cli:main",
         ]
     },
     python_requires=">=3.8, <3.12",

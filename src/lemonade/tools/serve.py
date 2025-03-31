@@ -242,8 +242,8 @@ class Server(ManagementTool):
 
     def run(
         self,
-        cache_dir: str,
-        checkpoint: str,
+        cache_dir: str = DEFAULT_CACHE_DIR,
+        checkpoint: str = None,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
