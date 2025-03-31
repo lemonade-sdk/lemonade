@@ -95,11 +95,11 @@ SectionIn RO ; Read only, always installed
 
     # Pack turnkeyml repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade_server.bat
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat
 
-    # Create bin directory and move lemonade_server.bat there
+    # Create bin directory and move lemonade-server.bat there
     CreateDirectory "$INSTDIR\bin"
-    Rename "$INSTDIR\lemonade_server.bat" "$INSTDIR\bin\lemonade_server.bat"
+    Rename "$INSTDIR\lemonade-server.bat" "$INSTDIR\bin\lemonade-server.bat"
 
     DetailPrint "- Packaged repo"
 
@@ -200,7 +200,7 @@ SectionIn RO ; Read only, always installed
 
       DetailPrint "*** INSTALLATION COMPLETED ***"
       # Create a shortcut inside $INSTDIR
-      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
 
       ; Add bin folder to system PATH
       DetailPrint "- Adding bin directory to system PATH..."
@@ -313,7 +313,7 @@ SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ; Create a desktop shortcut that passes the conda environment name as a parameter
-  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
 
 SectionEnd
 
