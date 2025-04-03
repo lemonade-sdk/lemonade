@@ -16,7 +16,6 @@ OutFile "Lemonade_Server_Installer.exe"
 Var LogHandle
 
 Var LEMONADE_SERVER_STRING
-Var LEMONADE_CONDA_ENV
 Var HYBRID_SELECTED
 Var HYBRID_CLI_OPTION
 
@@ -54,9 +53,6 @@ SectionIn RO ; Read only, always installed
 
   remove_dir:
     ; Try to remove directory and verify it was successful
-
-    ; Attempt conda remove of the env, to help speed things up
-    ExecWait 'conda env remove -yp "$INSTDIR\$LEMONADE_CONDA_ENV"'
     
     ; Delete all remaining files
     RMDir /r "$INSTDIR"
@@ -103,97 +99,34 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "- Packaged repo"
 
-    ; Check if conda is available
-    ExecWait 'where conda' $2
-    DetailPrint "- Checked if conda is available"
+    DetailPrint "Set up Python"
+    CreateDirectory "$INSTDIR\python"
+    ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip"'
+    ExecWait 'tar -xf "$INSTDIR\python\python.zip" -C "$INSTDIR\python"'
+    ExecWait 'curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py'
+    ExecWait '$INSTDIR\python\python.exe get-pip.py --no-warn-script-location'
+    
+    FileOpen $2 "$INSTDIR\python\python310._pth" a
+    FileSeek $2 0 END
+    FileWrite $2 "$\r$\nLib$\r$\n"
+    FileWrite $2 "$\r$\nLib\site-packages$\r$\n"
+    FileClose $2
 
-    ; If conda is not found, show a message
-    ; Otherwise, continue with the installation
-    StrCmp $2 "0" create_env conda_not_available
-
-    conda_not_available:
-      DetailPrint "- Conda not installed."
-      ${IfNot} ${Silent}
-        MessageBox MB_YESNO "Conda is not installed. Would you like to install Miniconda?" IDYES install_miniconda IDNO exit_installer
-      ${Else}
-        Goto install_miniconda
-      ${EndIf}
-
-    exit_installer:
-      DetailPrint "- Something went wrong. Exiting installer"
-      Quit
-
-    install_miniconda:
-      DetailPrint "-------------"
-      DetailPrint "- Miniconda -"
-      DetailPrint "-------------"
-      DetailPrint "- Downloading Miniconda installer..."
-      ExecWait 'curl -s -o "$TEMP\Miniconda3-latest-Windows-x86_64.exe" "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"'
-
-      ; Install Miniconda silently
-      ExecWait '"$TEMP\Miniconda3-latest-Windows-x86_64.exe" /InstallationType=JustMe /AddToPath=1 /RegisterPython=0 /S /D=$PROFILE\miniconda3' $2
-      ; Check if Miniconda installation was successful
-      ${If} $2 == 0
-        DetailPrint "- Miniconda installation successful"
-        ${IfNot} ${Silent}
-          MessageBox MB_OK "Miniconda has been successfully installed."
-        ${EndIf}
-
-        StrCpy $R1 "$PROFILE\miniconda3\Scripts\conda.exe"
-        Goto create_env
-
-      ${Else}
-        DetailPrint "- Miniconda installation failed"
-        ${IfNot} ${Silent}
-          MessageBox MB_OK "Error: Miniconda installation failed. Installation will be aborted."
-        ${EndIf}
-        Goto exit_installer
-      ${EndIf}
-
-    create_env:
-      DetailPrint "---------------------"
-      DetailPrint "- Conda Environment -"
-      DetailPrint "---------------------"
-
-      DetailPrint "- Initializing conda..."
-      ; Use the appropriate conda executable
-      ${If} $R1 == ""
-        StrCpy $R1 "conda"
-      ${EndIf}
-      ; Initialize conda (needed for systems where conda was previously installed but not initialized)
-      nsExec::ExecToStack '"$R1" init'
-
-      DetailPrint "- Creating a Python 3.10 environment named '$LEMONADE_CONDA_ENV' in the installation directory: $INSTDIR..."
-      ExecWait '"$R1" create -p "$INSTDIR\$LEMONADE_CONDA_ENV" python=3.10 -y' $R0
-
-      ; Check if the environment creation was successful (exit code should be 0)
-      StrCmp $R0 0 install_lemonade env_creation_failed
-
-    env_creation_failed:
-      DetailPrint "- ERROR: Environment creation failed"
-      ; Display an error message and exit
-      ${IfNot} ${Silent}
-        MessageBox MB_OK "ERROR: Failed to create the Python environment. Installation will be aborted."
-      ${EndIf}
-      Quit
-
-    install_lemonade:
-      DetailPrint "-------------------------"
-      DetailPrint "- Lemonade Installation -"
-      DetailPrint "-------------------------"
+    DetailPrint "-------------------------"
+    DetailPrint "- Lemonade Installation -"
+    DetailPrint "-------------------------"
 
 
-      DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
-      ${If} $HYBRID_SELECTED == "true"
-        nsExec::ExecToLog '"$INSTDIR\$LEMONADE_CONDA_ENV\python.exe" -m pip install -e "$INSTDIR"[llm-oga-hybrid] --no-warn-script-location'
-      ${Else}
-        nsExec::ExecToLog '"$INSTDIR\$LEMONADE_CONDA_ENV\python.exe" -m pip install -e "$INSTDIR"[llm] --no-warn-script-location'
-      ${EndIf}
-      Pop $R0  ; Return value
-      DetailPrint "- $LEMONADE_SERVER_STRING install return code: $R0"
+    DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
+    ${If} $HYBRID_SELECTED == "true"
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm-oga-hybrid] --no-warn-script-location' $8
+    ${Else}
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm] --no-warn-script-location' $8
+    ${EndIf}
+    DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 
-      ; Check if installation was successful (exit code should be 0)
-      StrCmp $R0 0 install_success install_failed
+    ; Check if installation was successful (exit code should be 0)
+    StrCmp $8 0 install_success install_failed
 
     install_success:
       DetailPrint "- $LEMONADE_SERVER_STRING installation successful"
@@ -233,7 +166,7 @@ Section "Install Ryzen AI Hybrid Execution" HybridSec
   ; Once we're done downloading and installing the archive the size comes out to about 370MB
   AddSize 388882
 
-  nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --ryzenai hybrid -y'
+  nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --ryzenai hybrid -y'
 
   Pop $R0  ; Return value
   DetailPrint "Hybrid execution mode install return code: $R0"
@@ -299,20 +232,19 @@ SubSection /e "Selected Models" ModelsSec
         ${GetParameters} $CMDLINE
         ${GetOptions} $CMDLINE "/Models=" $R0
         ${If} $R0 != ""
-            nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models $R0'
+            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models $R0'
         ${Else}
             ; Otherwise, only the default CPU model will be installed
-            nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models Qwen2.5-0.5B-Instruct-CPU'
+            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models Qwen2.5-0.5B-Instruct-CPU'
         ${EndIf}
     ${Else}
-        nsExec::ExecToLog 'conda run --no-capture-output -p $INSTDIR\$LEMONADE_CONDA_ENV lemonade-install --models $9'
+        nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models $9'
     ${EndIf}
   SectionEnd
 
 SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
-  ; Create a desktop shortcut that passes the conda environment name as a parameter
   CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
 
 SectionEnd
@@ -458,7 +390,7 @@ LangString MUI_TEXT_ABORT_SUBTITLE "${LANG_ENGLISH}" "Installation has been abor
 LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
 LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
-LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU."
+LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU (includes Python)."
 LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode. Only available on Ryzen AI 300-series processors."
 LangString DESC_ModelsSec ${LANG_ENGLISH} "Select which models to install"
 LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Small CPU-only Qwen model"
@@ -485,7 +417,6 @@ LangString DESC_DeepSeekQwen7BSec ${LANG_ENGLISH} "7B parameter DeepSeek Qwen mo
 
 Function .onInit
   StrCpy $LEMONADE_SERVER_STRING "Lemonade Server"
-  StrCpy $LEMONADE_CONDA_ENV "lemon_env"
   StrCpy $HYBRID_SELECTED "true"
   
   ; Create a variable to store selected models

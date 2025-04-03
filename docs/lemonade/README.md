@@ -83,12 +83,12 @@ To prompt your LLM, try one of the following:
 
 OGA iGPU:
 ```bash
-    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"
+    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
 ```
 
 Hugging Face:
 ```bash
-    lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "Hello, my thoughts are"
+    lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "Hello, my thoughts are" -t
 ```
 
 The LLM will run with your provided prompt, and the LLM's response to your prompt will be printed to the screen. You can replace the `"Hello, my thoughts are"` with any prompt you like.
@@ -96,6 +96,9 @@ The LLM will run with your provided prompt, and the LLM's response to your promp
 You can also replace the `facebook/opt-125m` with any Hugging Face checkpoint you like, including LLaMA-2, Phi-2, Qwen, Mamba, etc.
 
 You can also set the `--device` argument in `oga-load` and `huggingface-load` to load your LLM on a different device.
+
+The `-t` (or `--template`) flag instructs lemonade to insert the prompt string into the model's chat template.
+This typically results in the model returning a higher quality response.
 
 Run `lemonade huggingface-load -h` and `lemonade llm-prompt -h` to learn more about these tools.
 

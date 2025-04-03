@@ -331,6 +331,14 @@ class OgaLoad(FirstTool):
         )
 
         parser.add_argument(
+            "--trust-remote-code",
+            action="store_true",
+            help="Set this flag to use models whose code is on the Hugging Face hub rather "
+            "than natively in the OnnxRuntime Gen AI libraries.  Please review the model code "
+            "in advance as this is a security risk.",
+        )
+
+        parser.add_argument(
             "--subfolder",
             default=None,
             help="Subfolder where model is located <LEMONADE CACHE>/oga_models/<MODELNAME>"
@@ -547,15 +555,28 @@ class OgaLoad(FirstTool):
         return saved_state
 
     @staticmethod
-    def _load_model_and_setup_state(state, full_model_path, checkpoint):
+    def _load_model_and_setup_state(
+        state, full_model_path, checkpoint, trust_remote_code
+    ):
         """
         Loads the OGA model from local folder and then loads the tokenizer.
         """
         state.model = OrtGenaiModel(full_model_path)
 
-        hf_tokenizer = AutoTokenizer.from_pretrained(
-            full_model_path, local_files_only=True
-        )
+        try:
+            hf_tokenizer = AutoTokenizer.from_pretrained(
+                full_model_path,
+                local_files_only=True,
+                trust_remote_code=trust_remote_code,
+            )
+        except ValueError as e:
+            if "trust_remote_code" in str(e):
+                raise ValueError(
+                    "This model requires you to execute code from the repo.  Please review it "
+                    "and if you trust it, then use the `--trust-remote-code` flag with oga-load."
+                )
+            raise
+
         state.tokenizer = OrtGenaiTokenizer(
             state.model.model,
             hf_tokenizer,
@@ -582,6 +603,7 @@ class OgaLoad(FirstTool):
         int4_block_size: int = None,
         force: bool = False,
         download_only: bool = False,
+        trust_remote_code=False,
         subfolder: str = None,
     ) -> State:
         state.device = device
@@ -671,7 +693,9 @@ class OgaLoad(FirstTool):
                         "0" if "phi-" in checkpoint.lower() else "1"
                     )
 
-                self._load_model_and_setup_state(state, full_model_path, checkpoint)
+                self._load_model_and_setup_state(
+                    state, full_model_path, checkpoint, trust_remote_code
+                )
             finally:
                 self._cleanup_environment(saved_env_state)
 

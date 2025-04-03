@@ -31,21 +31,22 @@ This will add a Continue tab to your VS Code Activity Bar.
 > Note: The following instructions are based on instructions from Continue found [here](https://docs.continue.dev/customize/model-providers/openai#openai-compatible-servers--apis) 
 
 1. Open the Continue tab in your VS Code Activity Bar.
-1. Click the gear icon at the top to open Settings.
-1. Under "Configuration", click "Open Config File".
-1. Replace the "models" key in the `config.json` with the following and save:
+1. Click the chat box. Some buttons will appear at the bottom of the box, including `Select model`.
+1. Click `Select model`, then `+ Add Chat model` to open the new model dialog box.
+1. Click the `config file` link at the very bottom of the dialog to open `config.yaml`.
+1. Replace the "models" key in the `config.yaml` with the following and save:
 
-```json
-  "models": [
-    {
-      "title": "Lemonade", 
-      "provider": "openai",
-      "model": "Qwen-1.5-7B-Chat-Hybrid",
-      "apiKey": "-",
-      "apiBase": "http://localhost:8000/api/v0"
-    }
-  ],
+```yaml
+models:
+  - name: Lemonade
+    provider: openai
+    model: Qwen-1.5-7B-Chat-Hybrid 
+    apiBase: http://localhost:8000/api/v0
+    apiKey: none
 ```
+
+6. Close the dialog box.
+7. Click the chat box again. You should see `Lemonade` where you used to see `Select model`. Ready!
 
 ## Usage
 

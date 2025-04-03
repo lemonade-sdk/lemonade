@@ -18,7 +18,7 @@ def serve(args):
                 "Please stop the existing server before starting a new instance."
             ),
         )
-        return
+        sys.exit(1)
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")

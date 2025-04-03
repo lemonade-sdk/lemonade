@@ -107,7 +107,7 @@ class ModelManager:
         return {
             "Qwen2.5-0.5B-Instruct-CPU": {
                 "checkpoint": "Qwen/Qwen2.5-0.5B-Instruct",
-                "device": "cpu",
+                "recipe": "hf-cpu",
                 "reasoning": False,
             }
         }
@@ -121,33 +121,39 @@ class ModelManager:
         return {
             "Llama-3.2-1B-Instruct-Hybrid": {
                 "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": False,
+                "max_length": 3000,
             },
             "Llama-3.2-3B-Instruct-Hybrid": {
                 "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": False,
+                "max_length": 2000,
             },
             "Phi-3-Mini-Instruct-Hybrid": {
                 "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": False,
+                "max_length": 2000,
             },
             "Qwen-1.5-7B-Chat-Hybrid": {
                 "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": False,
+                "max_length": 3000,
             },
             "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
                 "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": True,
+                "max_length": 2000,
             },
             "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
                 "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
-                "device": "hybrid",
+                "recipe": "oga-hybrid",
                 "reasoning": True,
+                "max_length": 2000,
             },
         }
 

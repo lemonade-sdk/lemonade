@@ -68,6 +68,7 @@ class Keys:
     DTYPE = "dtype"
     PROMPT = "prompt"
     PROMPT_TOKENS = "prompt_tokens"
+    PROMPT_TEMPLATE = "prompt_template"
     RESPONSE = "response"
     RESPONSE_TOKENS = "response_tokens"
     RESPONSE_LENGTHS_HISTOGRAM = "response_lengths_histogram"

@@ -22,11 +22,8 @@ from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from openai.types.model import Model
 
-from turnkeyml.state import State
 from turnkeyml.tools.management_tools import ManagementTool
-from lemonade.tools.adapter import ModelAdapter
-from lemonade.tools.huggingface_load import HuggingfaceLoad
-from lemonade.cache import DEFAULT_CACHE_DIR
+import lemonade.api as lemonade_api
 from lemonade_install.install import ModelManager
 
 # Set to a high number to allow for interesting experiences in real apps
@@ -87,14 +84,16 @@ class LoadConfig(BaseModel):
     """
     Configuration for loading a language model.
 
-    Specifies the model checkpoint, cache directory, generation parameters,
-    and hardware configuration for model loading.
+    Specifies the model checkpoint, generation parameters,
+    and hardware/framework configuration (recipe) for model loading.
     """
 
     checkpoint: str
-    cache_dir: str = DEFAULT_CACHE_DIR
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
-    device: str = "cpu"
+    recipe: str = "hf-cpu"
+    # Indicates the maximum prompt length allowed for that specific
+    # checkpoint + recipe combination
+    max_length: int = None
 
 
 class CompletionRequest(BaseModel):
@@ -185,11 +184,11 @@ class Server(ManagementTool):
         # Flag that tells the LLM to stop generating text and end the response
         self.stop_event = Event()
 
-        self.llm_loaded = None
+        self.llm_loaded: LoadConfig = None
         self.tokenizer = None
 
-        # Placeholders for state and configs
-        self.state = None
+        # Placeholders for model and configs
+        self.model = None
         self.max_new_tokens = None
 
         # Initialize semaphore for tracking active generations
@@ -242,7 +241,9 @@ class Server(ManagementTool):
 
     def run(
         self,
-        cache_dir: str = DEFAULT_CACHE_DIR,
+        # ManagementTool has a required cache_dir arg, but
+        # we always use the default cache directory
+        _=None,
         checkpoint: str = None,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
         port: int = DEFAULT_PORT,
@@ -286,7 +287,6 @@ class Server(ManagementTool):
         # Only load the model when starting the server if checkpoint was provided
         if checkpoint:
             config = LoadConfig(
-                cache_dir=cache_dir,
                 checkpoint=checkpoint,
                 max_new_tokens=max_new_tokens,
             )
@@ -369,7 +369,7 @@ class Server(ManagementTool):
                     completion = Completion(
                         id="0",
                         choices=[choice],
-                        model=self.llm_loaded,
+                        model=self.llm_loaded.checkpoint,
                         object="text_completion",
                         created=int(time.time()),
                     )
@@ -406,7 +406,7 @@ class Server(ManagementTool):
             return Completion(
                 id="0",
                 choices=[choice],
-                model=self.llm_loaded,
+                model=self.llm_loaded.checkpoint,
                 object="text_completion",
                 created=int(time.time()),
             )
@@ -475,7 +475,7 @@ class Server(ManagementTool):
                         id="0",
                         object="chat.completion.chunk",
                         created=int(time.time()),
-                        model=self.llm_loaded,
+                        model=self.llm_loaded.checkpoint,
                         choices=[
                             Choice.model_construct(
                                 index=0,
@@ -539,7 +539,7 @@ class Server(ManagementTool):
             return ChatCompletion(
                 id="0",
                 choices=[choice],
-                model=self.llm_loaded,
+                model=self.llm_loaded.checkpoint,
                 object="chat.completion",
                 created=int(time.time()),
             )
@@ -549,8 +549,8 @@ class Server(ManagementTool):
         Core streaming completion logic, separated from response handling.
         Returns an async generator that yields tokens.
         """
-        model = self.state.model  # pylint: disable=no-member
-        tokenizer = self.state.tokenizer  # pylint: disable=no-member
+        model = self.model
+        tokenizer = self.tokenizer
 
         # Reset the early-exit flag before we start each generation
         self.stop_event.clear()
@@ -566,7 +566,7 @@ class Server(ManagementTool):
                 stop_sequences = stop[:4]  # Limit to 4 sequences as per spec
 
         # Set up the generation parameters
-        if isinstance(model, ModelAdapter) and model.type == "ort-genai":
+        if "oga-" in self.llm_loaded.recipe:
             from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
 
             streamer = OrtGenaiStreamer(tokenizer)
@@ -578,6 +578,16 @@ class Server(ManagementTool):
                 skip_prompt=True,
             )
             self.input_tokens = len(input_ids[0])
+
+        if (
+            self.llm_loaded.max_length
+            and self.input_tokens > self.llm_loaded.max_length
+        ):
+            # This is the exact same exception message raised by OGA when max_length is exceeded
+            raise RuntimeError(
+                f"prompt tokens ({self.input_tokens}) cannot be greater "
+                f"than model context_length ({self.llm_loaded.max_length})"
+            )
 
         # Log the input tokens early to avoid this not showing due to potential crashes
         logging.debug(f"Input Tokens: {self.input_tokens}")
@@ -710,11 +720,7 @@ class Server(ManagementTool):
 
         return {
             "status": "ok",
-            "model_loaded": (
-                self.state.checkpoint  # pylint: disable=no-member
-                if self.state
-                else None
-            ),
+            "model_loaded": (self.llm_loaded.checkpoint if self.llm_loaded else None),
         }
 
     async def load_llm(self, config: LoadConfig):
@@ -725,7 +731,7 @@ class Server(ManagementTool):
             for _ in range(self.max_concurrent_generations):
                 await self._generate_semaphore.acquire()
 
-            if config.checkpoint == self.llm_loaded:
+            if self.llm_loaded and config.checkpoint == self.llm_loaded.checkpoint:
                 return {
                     "status": "success",
                     "message": f"Model already loaded: {config.checkpoint}",
@@ -738,33 +744,12 @@ class Server(ManagementTool):
             self.max_new_tokens = config.max_new_tokens
             logging.info(f"Loading llm: {config.checkpoint}")
             try:
-                state = State(
-                    cache_dir=config.cache_dir,
-                    build_name="main",
+                self.model, self.tokenizer = lemonade_api.from_pretrained(
+                    checkpoint=config.checkpoint, recipe=config.recipe
                 )
 
-                if config.device == "cpu":
-                    huggingface_loader = HuggingfaceLoad()
-                    self.state = huggingface_loader.run(
-                        state,
-                        input=config.checkpoint,
-                        device=config.device,
-                        dtype=torch.bfloat16,
-                    )
-                else:
-                    from lemonade.tools.ort_genai.oga import OgaLoad
-
-                    oga_loader = OgaLoad()
-                    self.state = oga_loader.run(
-                        state,
-                        input=config.checkpoint,
-                        device=config.device,
-                        dtype="int4",
-                        force=False,
-                    )
                 self.max_new_tokens = config.max_new_tokens
-                self.llm_loaded = config.checkpoint
-                self.tokenizer = self.state.tokenizer  # pylint: disable=no-member
+                self.llm_loaded = config
 
                 return {
                     "status": "success",
@@ -772,7 +757,8 @@ class Server(ManagementTool):
                 }
             except Exception:  # pylint: disable=broad-exception-caught
                 self.llm_loaded = None
-                self.state = None
+                self.tokenizer = None
+                self.model = None
                 logging.exception(f"Tried to load LLM {config.checkpoint} and failed")
 
                 raise HTTPException(
@@ -797,7 +783,8 @@ class Server(ManagementTool):
                     await self._generate_semaphore.acquire()
 
             self.llm_loaded = None
-            self.state = None
+            self.tokenizer = None
+            self.model = None
             return {"status": "success", "message": "Unloaded model"}
         except Exception as e:  # pylint: disable=broad-exception-caught
             return {

@@ -1,6 +1,5 @@
 @echo off
 setlocal enabledelayedexpansion
-set CONDA_ENV=lemon_env
 
 REM --keep-alive is only used by the bash script to make sure that, if the server fails to open, we don't close the terminal right away.
 REM Check for --keep-alive argument and remove it from arguments passed to CLI
@@ -18,7 +17,7 @@ REM Change to parent directory where conda env and bin folders are located
 pushd "%~dp0.."
 
 REM Run the Python CLI script through conda, passing filtered arguments
-call conda run --no-capture-output -p "%CD%\%CONDA_ENV%" lemonade-server-dev !ARGS!
+call "%CD%\python\Scripts\lemonade-server-dev" !ARGS!
 popd
 
 REM Error handling: Show message and pause if --keep-alive was specified

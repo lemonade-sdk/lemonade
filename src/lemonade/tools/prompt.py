@@ -2,6 +2,7 @@ import argparse
 import os
 import matplotlib.pyplot as plt
 import turnkeyml.common.build as build
+import turnkeyml.common.printing as printing
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
@@ -60,6 +61,7 @@ class LLMPrompt(Tool):
         self.status_stats = [
             Keys.PROMPT_TOKENS,
             Keys.PROMPT,
+            Keys.PROMPT_TEMPLATE,
             Keys.RESPONSE_TOKENS,
             Keys.RESPONSE,
             Keys.RESPONSE_LENGTHS_HISTOGRAM,
@@ -75,10 +77,17 @@ class LLMPrompt(Tool):
         parser.add_argument(
             "--prompt",
             "-p",
-            help="Input prompt to the LLM. Two formats are supported. "
-            "1) str: use a user-provided prompt string "
+            help="Input prompt to the LLM. Two formats are supported: "
+            "1) str: use a user-provided prompt string, and "
             "2) path/to/prompt.txt: load the prompt from a .txt file.",
             required=True,
+        )
+
+        parser.add_argument(
+            "--template",
+            "-t",
+            action="store_true",
+            help="Insert the prompt into the model's chat template before processing.",
         )
 
         parser.add_argument(
@@ -113,9 +122,6 @@ class LLMPrompt(Tool):
         if parsed_args.prompt.endswith(".txt") and os.path.exists(parsed_args.prompt):
             with open(parsed_args.prompt, "r", encoding="utf-8") as f:
                 parsed_args.prompt = f.read()
-        else:
-            # No change to the prompt
-            pass
 
         return parsed_args
 
@@ -125,10 +131,27 @@ class LLMPrompt(Tool):
         prompt: str = "Hello",
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
         n_trials: int = DEFAULT_N_TRIALS,
+        template: bool = False,
     ) -> State:
 
         model: ModelAdapter = state.model
         tokenizer: TokenizerAdapter = state.tokenizer
+
+        # If template flag is set, then wrap prompt in template
+        if template:
+            # Embed prompt in model's chat template
+            if tokenizer.chat_template:
+                # Use the model's built-in chat template if available
+                messages_dict = [{"role": "user", "content": prompt}]
+                prompt = tokenizer.apply_chat_template(
+                    messages_dict, tokenize=False, add_generation_prompt=True
+                )
+                state.save_stat(Keys.PROMPT_TEMPLATE, "Model-specific")
+            else:
+                # Fallback to a standardized template
+                printing.log_info("No chat template found. Using default template.")
+                prompt = f"<|user|>\n{prompt} <|end|>\n<|assistant|>"
+                state.save_stat(Keys.PROMPT_TEMPLATE, "Default")
 
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
         if isinstance(input_ids, (list, str)):
