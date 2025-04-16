@@ -119,7 +119,7 @@ class UniqueInvocationInfo(BasicInfo):
         # LLMs, which have no extension)
         if not (
             self.extension == ".onnx"
-            or self.extension == "_state.yaml"
+            or self.extension == build.state_file_name
             or self.extension == ""
         ):
             if self.depth == 0 and multiple_unique_invocations:

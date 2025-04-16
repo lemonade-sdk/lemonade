@@ -4,7 +4,7 @@ import os
 import psutil
 
 
-def serve(args):
+def serve(port: int):
     """
     Execute the serve command
     """
@@ -22,10 +22,11 @@ def serve(args):
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.serve import Server
+    from lemonade.tools.serve import Server, DEFAULT_PORT
 
     server = Server()
-    server.run()
+    port = port if port is not None else DEFAULT_PORT
+    server.run(port=port)
 
 
 def version():
@@ -107,8 +108,11 @@ def main():
         title="Available Commands", dest="command", metavar=""
     )
 
-    # Serve commands
+    # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
+    serve_parser.add_argument("--port", type=int, help="Port number to serve on")
+
+    # Status command
     status_parser = subparsers.add_parser("status", help="Check if server is running")
 
     args = parser.parse_args()
@@ -116,7 +120,7 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
-        serve(args)
+        serve(args.port)
     elif args.command == "status":
         status()
     elif args.command == "help" or not args.command:

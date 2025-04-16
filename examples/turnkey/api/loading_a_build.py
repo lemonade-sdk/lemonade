@@ -6,12 +6,11 @@ As a prerequisite, first run the onnx_opset.py API example to make sure
 that you have a build ready for loading.
 """
 
-import os
 import numpy as np
 import onnxruntime as ort
 from turnkeyml.common.filesystem import get_available_builds, DEFAULT_CACHE_DIR
 from turnkeyml.state import State
-from turnkeyml.common.build import output_dir
+import turnkeyml.common.build as build
 from turnkeyml.tools.load_build import LoadBuild
 from turnkeyml.tools.onnx import ConvertOnnxToFp16
 
@@ -20,11 +19,8 @@ def main():
     # This is the build name specified in the previous example
     prerequisite_build = "onnx_opset_example"
 
-    # We use the _state.yaml file in the build directory when loading a build
-    prior_state_file = os.path.join(
-        output_dir(DEFAULT_CACHE_DIR, prerequisite_build),
-        f"{prerequisite_build}_state.yaml",
-    )
+    # We use the state.yaml file in the build directory when loading a build
+    prior_state_file = build.state_file(DEFAULT_CACHE_DIR, prerequisite_build)
 
     # Make sure the "onnx_opset_example" build from the last
     # example was actually created

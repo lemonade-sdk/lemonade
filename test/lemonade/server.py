@@ -26,7 +26,7 @@ except ImportError as e:
     raise ImportError("You must `pip install openai` to run this test", e)
 
 MODEL_NAME = "Qwen2.5-0.5B-Instruct-CPU"
-MODEL_CHECKPOINT = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
 
@@ -71,7 +71,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Start the lemonade server
         lemonade_process = subprocess.Popen(
-            ["lemonade", "serve", "--max-new-tokens", "50"],
+            ["lemonade", "serve"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -147,6 +147,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=self.messages,
+            max_completion_tokens=10,
         )
 
         print(completion.choices[0].message.content)
@@ -163,6 +164,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             messages=self.messages,
             stream=True,
+            max_tokens=80,
         )
         complete_response = ""
         chunk_count = 0
@@ -187,6 +189,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             messages=self.messages,
             stream=True,
+            max_completion_tokens=10,
         )
 
         chunk_count = 0
@@ -212,8 +215,13 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         # Check that the list is not empty
         assert len(l.data) > 0
 
-        # Check that the list contains the models we expect
-        assert any(model.id == MODEL_NAME for model in l.data)
+        # Check that the list contains a model with both the expected id, checkpoint, and recipe
+        assert any(
+            model.id == MODEL_NAME
+            and model.checkpoint == MODEL_CHECKPOINT
+            and model.recipe == "oga-cpu"
+            for model in l.data
+        )
 
     # Endpoint: /api/v0/completions
     def test_005_test_completions(self):
@@ -226,6 +234,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=False,
+            max_tokens=80,
         )
 
         print(completion.choices[0].text)
@@ -242,6 +251,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=True,
+            max_tokens=80,
         )
 
         complete_response = ""
@@ -267,6 +277,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=True,
+            max_tokens=80,
         )
 
         chunk_count = 0
@@ -290,6 +301,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Just say 'I am Joe and I like apples'. Here we go: 'I am Joe and",
             stop=["apples"],  # The model will stop generating when it reaches "apples"
+            max_tokens=80,
         )
 
         print(completion.choices[0].text)
@@ -312,6 +324,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             messages=messages,
             stop=["apples"],  # The model will stop generating when it reaches "apples"
+            max_completion_tokens=10,
         )
 
         print(completion.choices[0].message.content)
@@ -330,6 +343,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt=prompt,
             echo=True,
+            max_tokens=80,
         )
 
         print(completion.choices[0].text)
@@ -341,20 +355,23 @@ class Testing(unittest.IsolatedAsyncioTestCase):
     # Test simultaneous load requests
     async def test_011_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+            first_checkpoint = "Qwen/Qwen2.5-0.5B"
+            second_checkpoint = "Qwen/Qwen2.5-1.5B-Instruct"
+
             # Start two load requests simultaneously
             load_tasks = [
                 client.post(
                     "/load",
                     json={
-                        "checkpoint": MODEL_CHECKPOINT,
-                        "max_new_tokens": 50,
+                        "checkpoint": first_checkpoint,
+                        "recipe": "hf-cpu",
                     },
                 ),
                 client.post(
                     "/load",
                     json={
-                        "checkpoint": MODEL_CHECKPOINT,
-                        "max_new_tokens": 50,
+                        "checkpoint": second_checkpoint,
+                        "recipe": "hf-cpu",
                     },
                 ),
             ]
@@ -370,7 +387,56 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             health_response = await client.get("/health")
             assert health_response.status_code == 200
             health_data = health_response.json()
-            assert health_data["model_loaded"] == MODEL_CHECKPOINT
+            assert health_data["checkpoint_loaded"] == second_checkpoint
+
+    # Test load by model name
+    async def test_012_test_load_by_name(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+            load_response = await client.post("/load", json={"model_name": MODEL_NAME})
+
+            assert load_response.status_code == 200
+
+            # Verify the model loaded
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
+            health_data = health_response.json()
+            assert health_data["model_loaded"] == MODEL_NAME
+
+    # Test completion-by-checkpoint
+    async def test_013_test_load_checkpoint_completion(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+
+            load_response = await client.post(
+                "/load",
+                json={
+                    "checkpoint": "Qwen/Qwen2.5-0.5B",
+                    "recipe": "hf-cpu",
+                },
+            )
+
+            assert load_response.status_code == 200
+
+            # Verify the model loaded
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
+            health_data = health_response.json()
+            assert health_data["checkpoint_loaded"] == "Qwen/Qwen2.5-0.5B"
+
+            # Run a completions request, using the checkpoint as the 'model'
+            client = OpenAI(
+                base_url=self.base_url,
+                api_key="lemonade",  # required, but unused
+            )
+
+            completion = client.completions.create(
+                model="Qwen/Qwen2.5-0.5B",
+                prompt="Hello, how are you?",
+                stream=False,
+                max_tokens=80,
+            )
+
+            print(completion.choices[0].text)
+            assert len(completion.choices[0].text) > 5
 
 
 if __name__ == "__main__":

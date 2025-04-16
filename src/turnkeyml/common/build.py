@@ -27,6 +27,8 @@ MINIMUM_ONNX_OPSET = 11
 DEFAULT_REBUILD_POLICY = "if_needed"
 REBUILD_OPTIONS = ["if_needed", "always", "never"]
 
+state_file_name = "state.yaml"
+
 
 def load_yaml(file_path) -> Dict:
     with open(file_path, "r", encoding="utf8") as stream:
@@ -59,7 +61,6 @@ def output_dir(cache_dir, build_name):
 
 
 def state_file(cache_dir, build_name):
-    state_file_name = f"{build_name}_state.yaml"
     path = os.path.join(output_dir(cache_dir, build_name), state_file_name)
     return path
 

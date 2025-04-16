@@ -60,8 +60,9 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         ), f"{result.stdout} {result.stderr}"
 
         # Now, start the server
+        NON_DEFAULT_PORT = PORT + 1
         process = subprocess.Popen(
-            ["lemonade-server-dev", "serve"],
+            ["lemonade-server-dev", "serve", "--port", str(NON_DEFAULT_PORT)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -73,7 +74,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             if time.time() - start_time > 60:
                 raise TimeoutError("Server failed to start within 60 seconds")
             try:
-                conn = socket.create_connection(("localhost", PORT))
+                conn = socket.create_connection(("localhost", NON_DEFAULT_PORT))
                 conn.close()
                 break
             except socket.error:
@@ -89,8 +90,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             text=True,
         )
         assert (
-            result.stdout == f"Server is running on port {PORT}\n"
-        ), f"Expected stdout to end with '{PORT}', but got: '{result.stdout}' {result.stderr}"
+            result.stdout == f"Server is running on port {NON_DEFAULT_PORT}\n"
+        ), f"Expected stdout to end with '{NON_DEFAULT_PORT}', but got: '{result.stdout}' {result.stderr}"
 
         # Close the server
         process.terminate()

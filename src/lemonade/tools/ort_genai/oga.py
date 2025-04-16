@@ -13,10 +13,12 @@ import os
 import time
 import json
 import shutil
+import logging
 from fnmatch import fnmatch
 from queue import Queue
+import subprocess
 from packaging.version import Version
-from huggingface_hub import snapshot_download, list_repo_files
+from huggingface_hub import snapshot_download
 import onnxruntime_genai as og
 import onnxruntime_genai.models.builder as model_builder
 from transformers import AutoTokenizer
@@ -32,8 +34,9 @@ from lemonade.tools.adapter import (
 )
 from lemonade.cache import Keys
 from lemonade_install.install import (
+    get_ryzen_ai_version_info,
     get_oga_npu_dir,
-    get_oga_hybrid_artifacts_parent_dir,
+    get_oga_hybrid_dir,
 )
 
 
@@ -124,6 +127,7 @@ class OrtGenaiModel(ModelAdapter):
         streamer: OrtGenaiStreamer = None,
         pad_token_id=None,
         stopping_criteria=None,
+        max_length=None,
     ):
         params = og.GeneratorParams(self.model)
 
@@ -138,7 +142,16 @@ class OrtGenaiModel(ModelAdapter):
         if pad_token_id:
             params.pad_token_id = pad_token_id
 
-        max_length = len(input_ids) + max_new_tokens
+        # Handle max_length and max_new_tokens
+        if max_length and max_new_tokens:
+            logging.warning(
+                "Both max_length and max_new_tokens were provided. "
+                "max_length will take precedence. "
+                "When setting max_length, please explicitly set max_new_tokens to None."
+            )
+        max_length_to_use = (
+            max_length if max_length else len(input_ids) + max_new_tokens
+        )
         min_length = len(input_ids) + min_new_tokens
 
         if use_oga_pre_6_api:
@@ -151,7 +164,7 @@ class OrtGenaiModel(ModelAdapter):
                 top_k=search_config.get("top_k", top_k),
                 top_p=search_config.get("top_p", top_p),
                 temperature=search_config.get("temperature", temperature),
-                max_length=max_length,
+                max_length=max_length_to_use,
                 min_length=min_length,
                 early_stopping=search_config.get("early_stopping", False),
                 length_penalty=search_config.get("length_penalty", 1.0),
@@ -175,7 +188,7 @@ class OrtGenaiModel(ModelAdapter):
                 top_k=top_k,
                 top_p=top_p,
                 temperature=temperature,
-                max_length=max_length,
+                max_length=max_length_to_use,
                 min_length=min_length,
             )
         params.try_graph_capture_with_max_batch_size(1)
@@ -360,8 +373,8 @@ class OgaLoad(FirstTool):
         hf_supported_models = {
             "cpu": {"int4": "*/*", "fp32": "*/*"},
             "igpu": {"int4": "*/*", "fp16": "*/*"},
-            "npu": {"int4": "amd/**-onnx-ryzen-strix"},
-            "hybrid": {"int4": "amd/**-hybrid"},
+            "npu": {"int4": "*/*"},
+            "hybrid": {"int4": "*/*"},
             "cuda": {"int4": "*/*", "fp16": "*/*"},
         }
 
@@ -415,81 +428,74 @@ class OgaLoad(FirstTool):
         return full_model_path, model_exists_locally
 
     @staticmethod
-    def _download_onnx_model(checkpoint, device):
+    def _update_hybrid_custom_ops_library_path(full_model_path):
         """
-        Downloads ONNX model from HuggingFace and does any additional setup required
-        for local inference.  The model files will be stored in the HuggingFace cache.
+        Modifies the genai_config.json file in the hybrid model folder to set the custom_ops_library
+        path to the location of the onnx_custom_ops.dll in the current environment.
+        This is needed for hybrid inference.
         """
-        # Download the model from HF.  The returned path is in the HuggingFace cache.
-        full_model_path = snapshot_download(
-            repo_id=checkpoint,
-            ignore_patterns=["*.md", "*.txt"],
-        )
+        oga_path, version = get_oga_hybrid_dir()
 
-        if device == "hybrid":
-            # Locate the directory containing hybrid-llm-artifacts_<VERSION>
-            # and check that it exists.  If the user has manually installed
-            # the artifacts in a place that is different than where the lemonade-install script
-            # does, then the AMD_OGA_HYBRID environment variable must be used.
-            oga_hybrid_artifacts_parent_dir = get_oga_hybrid_artifacts_parent_dir()
-            if os.path.exists(oga_hybrid_artifacts_parent_dir):
-                hybrid_artifacts_path = oga_hybrid_artifacts_parent_dir
-            else:
-                if "AMD_OGA_HYBRID" not in os.environ:
-                    raise RuntimeError(
-                        "Could not find Ryzen AI hybrid LLM installation files.  "
-                        "Please use `lemonade-install` to add it or manually add it and set your"
-                        " AMD_OGA_HYBRID environment variable."
-                    )
-                hybrid_artifacts_path = os.environ.get("AMD_OGA_HYBRID")
+        if "1.3.0" in version:
+            custom_ops_path = os.path.join(
+                oga_path,
+                "onnx_utils",
+                "bin",
+                "onnx_custom_ops.dll",
+            )
+        else:
+            custom_ops_path = os.path.join(oga_path, "libs", "onnx_custom_ops.dll")
 
-            if hybrid_artifacts_path:
-                custom_ops_path = os.path.join(
-                    hybrid_artifacts_path,
-                    "hybrid-llm-artifacts",
-                    "onnx_utils",
-                    "bin",
-                    "onnx_custom_ops.dll",
-                )
+        # Insert the custom_ops_path into the model config file
+        config_path = os.path.join(full_model_path, "genai_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
 
-                config_path = os.path.join(full_model_path, "genai_config.json")
-                if os.path.exists(config_path):
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        config = json.load(f)
+            if (
+                "model" in config
+                and "decoder" in config["model"]
+                and "session_options" in config["model"]["decoder"]
+            ):
+                config["model"]["decoder"]["session_options"][
+                    "custom_ops_library"
+                ] = custom_ops_path
 
-                    if (
-                        "model" in config
-                        and "decoder" in config["model"]
-                        and "session_options" in config["model"]["decoder"]
-                    ):
-                        config["model"]["decoder"]["session_options"][
-                            "custom_ops_library"
-                        ] = custom_ops_path
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
 
-                    with open(config_path, "w", encoding="utf-8") as f:
-                        json.dump(config, f, indent=4)
+        else:
+            printing.log_info(
+                f"Model's `genai_config.json` not found in {full_model_path}"
+            )
 
-                dst_dll = os.path.join(
-                    hybrid_artifacts_path,
-                    "hybrid-llm-artifacts",
-                    "onnx_utils",
-                    "bin",
-                    "DirectML.dll",
-                )
-                if not os.path.isfile(dst_dll):
-                    # Artifacts 1.3.0 has DirectML.dll in different subfolder, so copy it to the
-                    # correct place.  This should not be needed in later RAI release artifacts.
-                    src_dll = os.path.join(
-                        hybrid_artifacts_path,
-                        "hybrid-llm-artifacts",
-                        "onnxruntime_genai",
-                        "lib",
-                        "DirectML.dll",
-                    )
-                    os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
-                    shutil.copy2(src_dll, dst_dll)
+    @staticmethod
+    def _is_preoptimized_model(input_model_path):
+        """
+        Checks if the 'custom_ops_library' field exists in the genai_config.json file
+        to determine if this is a pre-optimized model for hybrid as well
+        as NPU only.
 
-        return full_model_path
+        Args:
+            input_model_path (str): Path to the input model directory.
+
+        Returns:
+            bool: True if 'custom_ops_library' exists, False otherwise.
+        """
+        config_path = os.path.join(input_model_path, "genai_config.json")
+        if not os.path.exists(config_path):
+            printing.log_info(f"Model's `genai_config.json` not found in {config_path}")
+            return False
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        if (
+            "model" in config
+            and "decoder" in config["model"]
+            and "session_options" in config["model"]["decoder"]
+        ):
+            return "custom_ops_library" in config["model"]["decoder"]["session_options"]
+        return False
 
     @staticmethod
     def _download_and_build_safetensors_model(
@@ -526,20 +532,11 @@ class OgaLoad(FirstTool):
         Sets up environment for NPU flow of ONNX model and returns saved state to be restored
         later in cleanup.
         """
-        oga_npu_dir = get_oga_npu_dir()
-        if os.path.exists(oga_npu_dir):
-            oga_path = os.path.join(oga_npu_dir, "amd_oga")
-        else:
-            if "AMD_OGA" not in os.environ:
-                raise RuntimeError(
-                    "Please set environment variable AMD_OGA "
-                    "to the path of the amd_oga files"
-                )
-            oga_path = os.environ["AMD_OGA"]
+        oga_path, version = get_oga_npu_dir()
 
         if not os.path.exists(os.path.join(oga_path, "libs", "onnxruntime.dll")):
             raise RuntimeError(
-                f"Cannot find libs/onnxruntime.dll in AMD_OGA folder: {oga_path}"
+                f"Cannot find libs/onnxruntime.dll in lib folder: {oga_path}"
             )
 
         # Save current state so they can be restored after inference.
@@ -547,11 +544,45 @@ class OgaLoad(FirstTool):
 
         # Setup NPU environment (cwd and path will be restored later)
         os.chdir(oga_path)
-        os.environ["PATH"] += os.pathsep + os.path.join(oga_path, "libs")
-        os.environ["DD_ROOT"] = ".\\bins"
-        os.environ["DEVICE"] = "stx"
-        os.environ["XLNX_ENABLE_CACHE"] = "0"
+        os.environ["PATH"] = (
+            os.path.join(oga_path, "libs") + os.pathsep + os.environ["PATH"]
+        )
+        if "1.3.0" in version:
+            os.environ["DD_ROOT"] = ".\\bins"
+            os.environ["DEVICE"] = "stx"
+            os.environ["XLNX_ENABLE_CACHE"] = "0"
 
+        return saved_state
+
+    @staticmethod
+    def _setup_hybrid_environment():
+        """
+        Sets up the environment for the Hybrid flow and returns saved state to be restored later
+        in cleanup.
+        """
+        # Determine the Ryzen AI OGA version and hybrid artifacts path
+        oga_path, version = get_oga_hybrid_dir()
+
+        if "1.3.0" in version:
+            dst_dll = os.path.join(
+                oga_path,
+                "onnx_utils",
+                "bin",
+                "DirectML.dll",
+            )
+            if not os.path.isfile(dst_dll):
+                # Artifacts 1.3.0 has DirectML.dll in different subfolder, so copy it to the
+                # correct place.  This should not be needed in later RAI release artifacts.
+                src_dll = os.path.join(
+                    oga_path,
+                    "onnxruntime_genai",
+                    "lib",
+                    "DirectML.dll",
+                )
+                os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
+                shutil.copy2(src_dll, dst_dll)
+
+        saved_state = None
         return saved_state
 
     @staticmethod
@@ -593,6 +624,43 @@ class OgaLoad(FirstTool):
             os.chdir(saved_state["cwd"])
             os.environ["PATH"] = saved_state["path"]
 
+    def _generate_model_for_hybrid_or_npu(
+        self, output_model_path, device, input_model_path
+    ):
+        """
+        Uses a subprocess to run the 'model_generate' command for hybrid or npu devices.
+        """
+
+        # Determine the appropriate flag based on the device type
+        if device == "hybrid":
+            device_flag = "--hybrid"
+        elif device == "npu":
+            device_flag = "--npu"
+        else:
+            raise ValueError(f"Unsupported device type for model generation: {device}")
+
+        command = [
+            "model_generate",
+            device_flag,
+            output_model_path,  # Output model directory
+            input_model_path,  # Input model directory
+        ]
+
+        printing.log_info(f"Running command: {' '.join(command)}")
+        try:
+            with open(self.logfile_path, "w", encoding="utf-8") as log_file:
+                subprocess.run(
+                    command, check=True, text=True, stdout=log_file, stderr=log_file
+                )
+        except FileNotFoundError as e:
+            error_message = (
+                "The 'model_generate' package is missing from your system. "
+                "Ensure all required packages are installed. "
+                "To install it, run the following command:\n\n"
+                "    lemonade-install --ryzenai <target> --build-model\n"
+            )
+            raise RuntimeError(error_message) from e
+
     def run(
         self,
         state: State,
@@ -612,6 +680,9 @@ class OgaLoad(FirstTool):
         # Log initial stats
         state.save_stat(Keys.DTYPE, dtype)
         state.save_stat(Keys.DEVICE, device)
+        if device in ["hybrid", "npu"]:
+            ryzen_ai_version_info = get_ryzen_ai_version_info()
+            state.save_stat(Keys.RYZEN_AI_VERSION_INFO, ryzen_ai_version_info)
 
         # Check if input is a local folder
         if os.path.isdir(input):
@@ -660,25 +731,82 @@ class OgaLoad(FirstTool):
                         "The (device, dtype, checkpoint) combination is not supported: "
                         f"({device}, {dtype}, {checkpoint})"
                     )
-
-                # Check if model is ONNX or safetensors
-                model_files = list_repo_files(repo_id=checkpoint)
-                is_onnx_model = any(
-                    [filename.endswith(".onnx") for filename in model_files]
+                input_model_path = snapshot_download(
+                    repo_id=checkpoint,
+                    ignore_patterns=["*.md", "*.txt"],
                 )
-
-                if is_onnx_model:
-                    full_model_path = self._download_onnx_model(checkpoint, device)
-                else:
-                    self._download_and_build_safetensors_model(
-                        checkpoint,
-                        device,
-                        dtype,
-                        full_model_path,
-                        int4_block_size,
-                        input_path,
-                        state,
+                # Check if model is ONNX or safetensors
+                is_onnx_model = any(
+                    [
+                        filename.endswith(".onnx")
+                        for filename in os.listdir(input_model_path)
+                    ]
+                )
+                is_preoptimized_onnx = is_onnx_model and self._is_preoptimized_model(
+                    input_model_path
+                )
+                is_safetensors_model = any(
+                    [
+                        filename.endswith(".safetensors")
+                        for filename in os.listdir(input_model_path)
+                    ]
+                )
+                if not (is_onnx_model or is_safetensors_model):
+                    raise ValueError(
+                        f"The model {checkpoint} is not supported. "
+                        "It does not contain ONNX or safetensors files."
                     )
+                if device in ["npu", "hybrid"]:
+                    if is_onnx_model:
+                        if is_preoptimized_onnx:
+                            # Use HuggingFace cache path as it is
+                            full_model_path = input_model_path
+                        else:
+                            # If ONNX but not modified yet for Hybrid or NPU,
+                            # needs further optimization
+                            self._generate_model_for_hybrid_or_npu(
+                                full_model_path,
+                                device,
+                                input_model_path,
+                            )
+                    elif is_safetensors_model:
+                        config_path = os.path.join(input_model_path, "config.json")
+                        if os.path.exists(config_path):
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                config = json.load(f)
+                            if "quantization_config" in config:
+                                # If quantized, use subprocess to generate the model
+                                self._generate_model_for_hybrid_or_npu(
+                                    full_model_path, device, input_model_path
+                                )
+                            else:
+                                raise ValueError(
+                                    f"The safetensors model {checkpoint} is not quantized. "
+                                    "Only quantized safetensors models are supported"
+                                    " on npu or hybrid targets."
+                                )
+                        else:
+                            raise ValueError(
+                                f"config.json not found for safetensors model: {checkpoint}"
+                            )
+                    else:
+                        raise ValueError(
+                            f"Unsupported model type for checkpoint: {checkpoint}"
+                        )
+                else:
+                    if is_onnx_model:
+                        # Use HuggingFace cache path as it is
+                        full_model_path = input_model_path
+                    else:
+                        self._download_and_build_safetensors_model(
+                            checkpoint,
+                            device,
+                            dtype,
+                            full_model_path,
+                            int4_block_size,
+                            input_path,
+                            state,
+                        )
                     state.save_stat(Keys.LOCAL_MODEL_FOLDER, full_model_path)
 
         # Load model if download-only argument is not set
@@ -692,6 +820,9 @@ class OgaLoad(FirstTool):
                     os.environ["USE_AIE_RoPE"] = (
                         "0" if "phi-" in checkpoint.lower() else "1"
                     )
+                elif device == "hybrid":
+                    saved_env_state = self._setup_hybrid_environment()
+                    self._update_hybrid_custom_ops_library_path(full_model_path)
 
                 self._load_model_and_setup_state(
                     state, full_model_path, checkpoint, trust_remote_code

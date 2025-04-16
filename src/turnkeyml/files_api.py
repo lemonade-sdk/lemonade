@@ -3,6 +3,7 @@ import os
 import glob
 from typing import List, Dict, Optional, Union
 import git
+import turnkeyml.common.build as build
 import turnkeyml.common.printing as printing
 import turnkeyml.common.exceptions as exceptions
 from turnkeyml.sequence import Sequence
@@ -65,7 +66,7 @@ def evaluate_files(
         cache_dir: Directory to use as the cache for this build. Output files
             from this build will be stored at cache_dir/build_name/
         lean_cache: delete build artifacts from the cache after the build has completed.
-        lables: if provided, only input files that are marked with these labels will be
+        labels: if provided, only input files that are marked with these labels will be
             passed into the sequence; the other input files will be skipped.
         use_slurm: evaluate each input file as its own slurm job (requires slurm to be)
             set up in advance on your system.
@@ -134,7 +135,7 @@ def evaluate_files(
         if (
             not file_name.endswith(".py")
             and not file_name.endswith(".onnx")
-            and not file_name.endswith("state.yaml")
+            and not file_name.endswith(build.state_file_name)
         ):
             raise exceptions.ArgError(
                 f"File extension must be .py, .onnx, or .txt (got {file_name})"
@@ -202,13 +203,13 @@ def evaluate_files(
             # to the stats file
             stats_to_save = {}
 
-            # Save lables info
+            # Save labels info
             if fs.Keys.AUTHOR in file_labels:
                 stats_to_save[fs.Keys.AUTHOR] = file_labels[fs.Keys.AUTHOR][0]
             if fs.Keys.TASK in file_labels:
                 stats_to_save[fs.Keys.TASK] = file_labels[fs.Keys.TASK][0]
 
-            # Save all of the lables in one place
+            # Save all of the labels in one place
             stats_to_save[fs.Keys.LABELS] = file_labels
 
             # If the input script is a built-in TurnkeyML model, make a note of

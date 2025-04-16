@@ -532,7 +532,12 @@ class LemonadePerfTable(Table):
                 wrap=50,
             ),
             SimpleStat(
-                "Software Versions", SW_VERSIONS, "s", "left", omit_if_lean=True
+                "Software Versions",
+                SW_VERSIONS,
+                "s",
+                "left",
+                omit_if_lean=True,
+                wrap=45,
             ),
         ],
     }
@@ -541,6 +546,7 @@ class LemonadePerfTable(Table):
         Keys.CHECKPOINT,
         Keys.DEVICE,
         Keys.DTYPE,
+        Keys.RYZEN_AI_VERSION_INFO,
         fs.Keys.TIMESTAMP,
         fs.Keys.SYSTEM_INFO,
     ]
@@ -666,6 +672,12 @@ class LemonadePerfTable(Table):
             for pkg in data[fs.Keys.SYSTEM_INFO]["Python Packages"]
             if any(name in pkg for name in PYTHON_PACKAGES)
         ]
+        if isinstance(data[Keys.RYZEN_AI_VERSION_INFO], dict):
+            sw_versions += [
+                "Ryzen AI: " + value
+                for key, value in data[Keys.RYZEN_AI_VERSION_INFO].items()
+                if value is not None and "artifacts" in value
+            ]
         data[SW_VERSIONS] = sw_versions
 
         # Exclude Python Packages and Driver Versions from System Info

@@ -100,8 +100,8 @@ def from_pretrained(
             )
 
         backend_to_dtype = {
-            "cpu": "fp32",
-            "igpu": "fp16",
+            "cpu": "int4",
+            "igpu": "int4",
             "hybrid": "int4",
             "npu": "int4",
         }

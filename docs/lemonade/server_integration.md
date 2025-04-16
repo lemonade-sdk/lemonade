@@ -86,6 +86,12 @@ This command line invocation starts the Lemonade Server process so that your app
 lemonade-server serve
 ```
 
+By default, the server runs on port 8000. Optionally, you can specify a custom port using the --port argument:
+
+```bash
+lemonade-server --port 8123
+```
+
 You can also run the server as a background process using a subprocess or any preferred method.
 
 ### Silent Installation
@@ -128,3 +134,9 @@ The available modes are the following:
 * `Qwen-1.5-7B-Chat-Hybrid`
 * `DeepSeek-R1-Distill-Llama-8B-Hybrid`
 * `DeepSeek-R1-Distill-Qwen-7B-Hybrid`
+
+Finally, if you don't want to create a desktop shortcut during installation, use the `/NoDesktopShortcut` parameter:
+
+```bash
+Lemonade_Server_Installer.exe /S /NoDesktopShortcut
+```

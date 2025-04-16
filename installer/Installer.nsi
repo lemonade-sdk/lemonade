@@ -18,6 +18,7 @@ Var LogHandle
 Var LEMONADE_SERVER_STRING
 Var HYBRID_SELECTED
 Var HYBRID_CLI_OPTION
+Var NO_DESKTOP_SHORTCUT
 
 ; Variables for CPU detection
 Var cpuName
@@ -121,7 +122,7 @@ SectionIn RO ; Read only, always installed
     ${If} $HYBRID_SELECTED == "true"
       ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm-oga-hybrid] --no-warn-script-location' $8
     ${Else}
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm] --no-warn-script-location' $8
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm-oga-cpu] --no-warn-script-location' $8
     ${EndIf}
     DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 
@@ -142,7 +143,7 @@ SectionIn RO ; Read only, always installed
       ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH"
       
       ; Add bin folder (containing 'lemonade-server') to path while avoiding duplicate entries
-      ExecWait 'setx PATH "$INSTDIR\bin;$0" -m'
+      ExecWait 'setx PATH "$INSTDIR\bin;$0" /m'
       
       DetailPrint "- Successfully updated system PATH"
 
@@ -187,7 +188,7 @@ SectionEnd
 SubSection /e "Selected Models" ModelsSec
   Section /o "Qwen2.5-0.5B-Instruct-CPU" Qwen05Sec
     SectionIn 1
-    AddSize 999604  ;
+    AddSize 833871  ;
     StrCpy $9 "$9Qwen2.5-0.5B-Instruct-CPU "
   SectionEnd
 
@@ -245,8 +246,9 @@ SubSection /e "Selected Models" ModelsSec
 SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
-  CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
-
+  ${If} $NO_DESKTOP_SHORTCUT != "true"
+    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+  ${EndIf}
 SectionEnd
 
 Function RunServer
@@ -418,6 +420,7 @@ LangString DESC_DeepSeekQwen7BSec ${LANG_ENGLISH} "7B parameter DeepSeek Qwen mo
 Function .onInit
   StrCpy $LEMONADE_SERVER_STRING "Lemonade Server"
   StrCpy $HYBRID_SELECTED "true"
+  StrCpy $NO_DESKTOP_SHORTCUT "false"
   
   ; Create a variable to store selected models
   StrCpy $9 ""  ; $9 will hold our list of selected models
@@ -428,6 +431,13 @@ Function .onInit
   ${Else}
     ; Use the default
     StrCpy $InstDir "$LOCALAPPDATA\lemonade_server"
+  ${EndIf}
+
+  ; Check if NoDesktopShortcut parameter was used
+  ${GetParameters} $CMDLINE
+  ${GetOptions} $CMDLINE "/NoDesktopShortcut" $R0
+  ${If} $R0 != ""
+    StrCpy $NO_DESKTOP_SHORTCUT "true"
   ${EndIf}
 
   ; Check CPU name to determine if Hybrid section should be enabled

@@ -70,7 +70,7 @@ def rmdir(folder, excludes: Optional[List[str]] = None):
         return False
 
 
-def get_all(path, exclude_path=False, file_type="state.yaml", recursive=True):
+def get_all(path, exclude_path=False, file_type=build.state_file_name, recursive=True):
     if recursive:
         files = [
             os.path.join(dp, f)
@@ -95,10 +95,13 @@ def clean_file_name(script_path: str) -> str:
     """
     Trim the ".py" / ".onnx" if present.
 
-    If its a state.yaml file, trim the "state.yaml"
+    If its a state.yaml file, trim the "_state.yaml"
     """
-    if script_path.endswith("_state.yaml"):
-        return pathlib.Path(script_path).stem.replace("_state", "")
+
+    if script_path.endswith("_" + build.state_file_name):
+        return pathlib.Path(script_path).stem.replace(
+            "_" + os.path.splitext(build.state_file_name)[0], ""
+        )
     else:
         return pathlib.Path(script_path).stem
 

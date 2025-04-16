@@ -79,7 +79,6 @@ setup(
         "llm-oga-cpu": [
             "onnxruntime-genai==0.6.0",
             "torch>=2.0.0,<2.4",
-            "transformers<4.45.0",
             "turnkeyml[llm]",
         ],
         "llm-oga-igpu": [
@@ -98,12 +97,17 @@ setup(
             "onnx==1.16.0",
             "onnxruntime==1.18.0",
             "numpy==1.26.4",
+            "protobuf>=6.30.1",
             "turnkeyml[llm]",
         ],
         "llm-oga-hybrid": [
             "onnx==1.16.1",
             "numpy==1.26.4",
+            "protobuf>=6.30.1",
             "turnkeyml[llm]",
+        ],
+        "llm-oga-unified": [
+            "turnkeyml[llm-oga-hybrid]",
         ],
     },
     classifiers=[],

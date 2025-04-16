@@ -5,13 +5,13 @@ import time
 from threading import Thread, Event
 import logging
 import traceback
+from typing import Optional, Union
 
 from fastapi import FastAPI, HTTPException, status, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
-import torch  # pylint: disable=unused-import
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 from tabulate import tabulate
 
@@ -34,6 +34,16 @@ DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
 
 LOCAL_MODELS = ModelManager().downloaded_models_enabled
+
+
+class ServerModel(Model):
+    """
+    An extension of OpenAI's Model class that adds
+    checkpoint and recipe attributes.
+    """
+
+    checkpoint: str
+    recipe: str
 
 
 class GeneratorThread(Thread):
@@ -88,12 +98,15 @@ class LoadConfig(BaseModel):
     and hardware/framework configuration (recipe) for model loading.
     """
 
-    checkpoint: str
+    model_name: Optional[str] = None
+    checkpoint: Optional[str] = None
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
-    recipe: str = "hf-cpu"
+    recipe: Optional[str] = None
     # Indicates the maximum prompt length allowed for that specific
     # checkpoint + recipe combination
-    max_length: int = None
+    max_prompt_length: Optional[int] = None
+    # Indicates whether the model is a reasoning model, like DeepSeek
+    reasoning: Optional[bool] = False
 
 
 class CompletionRequest(BaseModel):
@@ -109,6 +122,8 @@ class CompletionRequest(BaseModel):
     echo: bool = False
     stream: bool = False
     stop: list[str] | str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -123,6 +138,9 @@ class ChatCompletionRequest(BaseModel):
     model: str
     stream: bool = False
     stop: list[str] | str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    max_completion_tokens: int | None = None
 
 
 class Server(ManagementTool):
@@ -170,6 +188,9 @@ class Server(ManagementTool):
         self.app.post("/api/v0/completions")(self.completions)
         self.app.get("/api/v0/models")(self.models)
 
+        # Set up instructions
+        self.app.get("/")(self.instructions)
+
         # Performance stats that are set during /ws and can be
         # fetched in /stats
         self.time_to_first_token = None
@@ -189,13 +210,13 @@ class Server(ManagementTool):
 
         # Placeholders for model and configs
         self.model = None
-        self.max_new_tokens = None
 
         # Initialize semaphore for tracking active generations
         self.max_concurrent_generations = 1
         self._generate_semaphore = asyncio.Semaphore(self.max_concurrent_generations)
 
-        # Curated list of "Instruct" and "Chat" models.
+        # Dictionary of installed LLM, by model name : information about those models
+        # Does not include non-installed models
         self.local_models = LOCAL_MODELS
 
         # Add lock for load/unload operations
@@ -208,19 +229,6 @@ class Server(ManagementTool):
             add_help=add_help,
         )
 
-        parser.add_argument(
-            "--checkpoint",
-            required=False,
-            type=str,
-            help="Name of the model checkpoint to load (optional)",
-        )
-        parser.add_argument(
-            "--max-new-tokens",
-            required=False,
-            type=int,
-            default=DEFAULT_MAX_NEW_TOKENS,
-            help=f"Number of new tokens the LLM should make (default: {DEFAULT_MAX_NEW_TOKENS})",
-        )
         parser.add_argument(
             "--port",
             required=False,
@@ -244,8 +252,6 @@ class Server(ManagementTool):
         # ManagementTool has a required cache_dir arg, but
         # we always use the default cache directory
         _=None,
-        checkpoint: str = None,
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
     ):
@@ -284,14 +290,6 @@ class Server(ManagementTool):
             # Print the elapsed time for each request
             self.setup_middleware_timer()
 
-        # Only load the model when starting the server if checkpoint was provided
-        if checkpoint:
-            config = LoadConfig(
-                checkpoint=checkpoint,
-                max_new_tokens=max_new_tokens,
-            )
-            asyncio.run(self.load_llm(config))
-
         uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
 
     async def _show_telemetry(self):
@@ -317,25 +315,68 @@ class Server(ManagementTool):
         # Show telemetry in debug while complying with uvicorn's log indentation
         logging.debug("\n          ".join(table))
 
+    def instructions(self):
+        """
+        Show instructions on how to use the server.
+        """
+        html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Lemonade Server</title>
+                <link rel="icon" href="data:,">
+            </head>
+            <body>
+                <h1>🍋 Welcome to Lemonade Server!</h1>
+                <p>
+                    A standards-compliant server that provides REST APIs for LLM communication.
+                    To get started, simply point your OpenAI-compatible application at the server's endpoint.
+                </p>
+                <div class="links">
+                    <h3>Documentation:</h3>
+                    <ul>
+                        <li><a href="https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server">Examples & Usage</a></li>
+                        <li><a href="https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_integration.md">Integration Guide</a></li>
+                        <li><a href="https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md">Server Specification</a></li>
+                    </ul>
+                </div>
+            </body>
+            </html>
+            """
+        return HTMLResponse(content=html_content, status_code=200)
+
+    def initialize_load_config(
+        self, request: Union[ChatCompletionRequest, CompletionRequest]
+    ) -> LoadConfig:
+        """
+        Turn the Request object into a partially-complete LoadConfig.
+
+        The load_llm() method is responsible for filling in the rest of
+        LoadConfig's parameters.
+        """
+
+        # Get model config
+        if "/" in request.model:
+            # We know the model is a Hugging Face checkpoint if it contains a /
+            lc = LoadConfig(checkpoint=request.model)
+        else:
+            # The model should be a reference to a built-in model
+            lc = LoadConfig(model_name=request.model)
+
+        return lc
+
     async def completions(self, completion_request: CompletionRequest):
         """
         Stream completion responses using HTTP chunked transfer encoding.
         """
-        if completion_request.model:
 
-            # Get model config
-            if completion_request.model in self.local_models:
-                model_config = self.local_models[completion_request.model]
-                lc = LoadConfig(**model_config)
-            else:
-                # If the model is not built-in, we assume it corresponds to a checkpoint
-                lc = LoadConfig(checkpoint=completion_request.model)
+        lc = self.initialize_load_config(completion_request)
 
         # Load the model if it's different from the currently loaded one
-        await self.load_llm(lc)
+        await self.load_llm(lc, internal_call=True)
 
         # Check if the model supports reasoning
-        reasoning_first_token = self.local_models[completion_request.model]["reasoning"]
+        reasoning_first_token = self.llm_loaded.reasoning
 
         # If the model supports reasoning, we:
         # 1. add a <think> tag to the model's context
@@ -343,6 +384,14 @@ class Server(ManagementTool):
         text = completion_request.prompt
         if reasoning_first_token:
             text += "<think>"
+
+        # Prepare generation arguments
+        generation_args = {
+            "message": text,
+            "stop": completion_request.stop,
+            "temperature": completion_request.temperature,
+            "max_tokens": completion_request.max_tokens,
+        }
 
         if completion_request.stream:
 
@@ -358,7 +407,7 @@ class Server(ManagementTool):
                 # in the inner function
                 nonlocal reasoning_first_token
 
-                async for token in self._generate_tokens(text, completion_request.stop):
+                async for token in self._generate_tokens(**generation_args):
                     choice = CompletionChoice(
                         text=("<think>" + token if reasoning_first_token else token),
                         index=0,
@@ -393,7 +442,7 @@ class Server(ManagementTool):
         # If streaming is not requested, collect all generated tokens into a single response
         else:
             full_response = text if completion_request.echo else ""
-            async for token in self._generate_tokens(text, completion_request.stop):
+            async for token in self._generate_tokens(**generation_args):
                 full_response += token
 
             choice = CompletionChoice(
@@ -416,16 +465,10 @@ class Server(ManagementTool):
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
 
-        # Get model config
-        if chat_completion_request.model in self.local_models:
-            model_config = self.local_models[chat_completion_request.model]
-            lc = LoadConfig(**model_config)
-        else:
-            # If the model is not built-in, we assume it corresponds to a checkpoint
-            lc = LoadConfig(checkpoint=chat_completion_request.model)
+        lc = self.initialize_load_config(chat_completion_request)
 
         # Load the model if it's different from the currently loaded one
-        await self.load_llm(lc)
+        await self.load_llm(lc, internal_call=True)
 
         # Convert chat messages to text using the model's chat template
         if self.tokenizer.chat_template:
@@ -451,11 +494,19 @@ class Server(ManagementTool):
         # If the model supports reasoning, we:
         # 1. add a <think> tag to the model's context
         # 2. ensure that the first token is a <think> token
-        reasoning_first_token = self.local_models[chat_completion_request.model][
-            "reasoning"
-        ]
+        reasoning_first_token = self.llm_loaded.reasoning
+
         if reasoning_first_token:
             text += "<think>"
+
+        # Prepare generation arguments
+        generation_args = {
+            "message": text,
+            "stop": chat_completion_request.stop,
+            "temperature": chat_completion_request.temperature,
+            "max_tokens": chat_completion_request.max_tokens,
+            "max_completion_tokens": chat_completion_request.max_completion_tokens,
+        }
 
         if chat_completion_request.stream:
 
@@ -466,9 +517,7 @@ class Server(ManagementTool):
                 # in the inner function
                 nonlocal reasoning_first_token
 
-                async for token in self._generate_tokens(
-                    text, chat_completion_request.stop
-                ):
+                async for token in self._generate_tokens(**generation_args):
 
                     # Create a ChatCompletionChunk
                     chunk = ChatCompletionChunk.model_construct(
@@ -515,9 +564,7 @@ class Server(ManagementTool):
         # If streaming is not requested, collect all generated tokens into a single response
         else:
             full_response = "<think>" if reasoning_first_token else ""
-            async for token in self._generate_tokens(
-                text, chat_completion_request.stop
-            ):
+            async for token in self._generate_tokens(**generation_args):
                 full_response += token
 
             ccm = ChatCompletionMessage(
@@ -544,7 +591,14 @@ class Server(ManagementTool):
                 created=int(time.time()),
             )
 
-    async def _generate_tokens(self, message: str, stop: list[str] | str | None = None):
+    async def _generate_tokens(
+        self,
+        message: str,
+        stop: list[str] | str | None = None,
+        max_tokens: int | None = None,
+        max_completion_tokens: int | None = None,
+        temperature: float | None = None,
+    ):
         """
         Core streaming completion logic, separated from response handling.
         Returns an async generator that yields tokens.
@@ -580,13 +634,12 @@ class Server(ManagementTool):
             self.input_tokens = len(input_ids[0])
 
         if (
-            self.llm_loaded.max_length
-            and self.input_tokens > self.llm_loaded.max_length
+            self.llm_loaded.max_prompt_length
+            and self.input_tokens > self.llm_loaded.max_prompt_length
         ):
-            # This is the exact same exception message raised by OGA when max_length is exceeded
             raise RuntimeError(
-                f"prompt tokens ({self.input_tokens}) cannot be greater "
-                f"than model context_length ({self.llm_loaded.max_length})"
+                f"Prompt tokens ({self.input_tokens}) cannot be greater "
+                f"than the model's max prompt length ({self.llm_loaded.max_prompt_length})"
             )
 
         # Log the input tokens early to avoid this not showing due to potential crashes
@@ -595,13 +648,26 @@ class Server(ManagementTool):
 
         stopping_criteria = StoppingCriteriaList([StopOnEvent(self.stop_event)])
 
+        if max_completion_tokens and max_tokens:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Both max_tokens and max_completion_tokens were provided. "
+                    "Please use only one of these parameters.",
+                ),
+            )
+        elif not max_completion_tokens and not max_tokens:
+            max_completion_tokens = DEFAULT_MAX_NEW_TOKENS
+
         generation_kwargs = {
             "input_ids": input_ids,
             "streamer": streamer,
-            "max_new_tokens": self.max_new_tokens,
+            "max_length": max_tokens,
+            "max_new_tokens": max_completion_tokens,
             "min_new_tokens": 1,
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
+            "temperature": temperature,
         }
 
         # Initialize performance variables
@@ -720,10 +786,77 @@ class Server(ManagementTool):
 
         return {
             "status": "ok",
-            "model_loaded": (self.llm_loaded.checkpoint if self.llm_loaded else None),
+            "checkpoint_loaded": (
+                self.llm_loaded.checkpoint if self.llm_loaded else None
+            ),
+            "model_loaded": (
+                self.llm_loaded.model_name
+                if (self.llm_loaded and self.llm_loaded.model_name)
+                else None
+            ),
         }
 
-    async def load_llm(self, config: LoadConfig):
+    def model_load_failure(self, model_reference: str, message: Optional[str] = None):
+        """
+        Clean up after a model load failure, then log it and raise
+        an HTTPException with details.
+        """
+        self.llm_loaded = None
+        self.tokenizer = None
+        self.model = None
+
+        default_message = f"model {model_reference} not found"
+        if message:
+            detail = message
+        else:
+            detail = default_message
+
+        logging.exception(f"Tried to load LLM {model_reference} and failed: {detail}")
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=detail,
+        )
+
+    def recipe_missing_error(self, model_reference: str):
+        self.model_load_failure(
+            model_reference,
+            message=(
+                f"Attempted to load model by checkpoint name {model_reference}, "
+                "however the required 'recipe' parameter was not provided"
+            ),
+        )
+
+    async def load_llm(self, config: LoadConfig, internal_call=False):
+        """
+        Load an LLM into system memory.
+            config: the information required to load the model
+            internal_call: indicates whether the call to this function came from
+                an endpoint (False) or a method of this class (True)
+
+        There are 3 ways this method can be called:
+          1. An external application asks to load a model by name, using the load endpoint
+              a. This only differs from #2 in that an external application may
+                  provide more parameters than in #2, so we need to validate
+                  that those parameters are ok.
+              b. Load the model
+
+          2. An external application asks to load a model by name,
+                  using the completions or chat_completions endpoints
+              a. Look up the name in the built-in model dictionary to create
+                  a fully-populated LoadConfig.
+              b. Load the model
+
+          3. An external application asks to load a model by checkpoint and recipe,
+                  using the load endpoint
+              a. Populate the checkpoint and recipe into a LoadConfig
+              b. Load the model
+
+          4. Completions or ChatCompletions asks to "load" a model by checkpoint
+              a. This is only available when #3 has already been executed
+              b. Verify that the checkpoint is already loaded,
+                  and raise an exception if it hasn't (don't load anything new)
+        """
         try:
             await self._load_lock.acquire()
 
@@ -731,40 +864,111 @@ class Server(ManagementTool):
             for _ in range(self.max_concurrent_generations):
                 await self._generate_semaphore.acquire()
 
-            if self.llm_loaded and config.checkpoint == self.llm_loaded.checkpoint:
+            # We will populate a LoadConfig that has all of the required fields
+            config_to_use: LoadConfig
+
+            #
+
+            # First, validate that the arguments are valid
+            if config.model_name:
+                # Refer to the model by name, since we know the name
+                model_reference = config.model_name
+
+                if config.checkpoint or config.recipe:
+                    # Option #1, verify that there are no parameter mismatches
+                    built_in_config = self.local_models[config.model_name]
+                    if config.checkpoint != built_in_config["checkpoint"]:
+                        self.model_load_failure(
+                            model_reference,
+                            message=(
+                                f"Load request for model_name={config.model_name} "
+                                "included a mismatched "
+                                f"checkpoint={config.checkpoint} parameter. Remove the checkpoint "
+                                f"parameter, or change it to {built_in_config['checkpoint']}."
+                            ),
+                        )
+                    if config.recipe != built_in_config["recipe"]:
+                        self.model_load_failure(
+                            model_reference,
+                            message=(
+                                f"Load request for model_name={config.model_name} "
+                                "included a mismatched "
+                                f"recipe={config.recipe} parameter. Remove the checkpoint "
+                                f"parameter, or change it to {built_in_config['recipe']}."
+                            ),
+                        )
+
+                    # Use the config as-is
+                    config_to_use = config
+                else:
+                    # Option #2, look up the config from the built-in models dictionary
+                    config_to_use = LoadConfig(**self.local_models[config.model_name])
+
+            elif config.checkpoint:
+                # Refer to the model by checkpoint
+                model_reference = config.checkpoint
+
+                if config.recipe and not internal_call:
+                    # Option 3, use the config as-is, but add a custom model name
+                    config_to_use = config
+                    config_to_use.model_name = "Custom"
+                elif internal_call:
+                    # Option 4, make sure the right checkpoint is loaded and then return
+                    if (
+                        self.llm_loaded
+                        and config.checkpoint == self.llm_loaded.checkpoint
+                    ):
+                        return {
+                            "status": "success",
+                            "message": f"Model already loaded: {model_reference}",
+                        }
+                    else:
+                        self.model_load_failure(
+                            model_reference,
+                            message=(
+                                "Attempted run completions by using model=<checkpoint name>, "
+                                "however, "
+                                "this feature only works if the model has already been loaded "
+                                "using the load endpoint."
+                            ),
+                        )
+                else:
+                    self.recipe_missing_error(model_reference)
+            else:
+                self.model_load_failure(
+                    None,
+                    message="Load requests must contain either a model_name or a "
+                    "checkpoint parameter",
+                )
+
+            # Caching mechanism: if the checkpoint is already loaded there is nothing else to do
+            if (
+                self.llm_loaded
+                and config_to_use.checkpoint == self.llm_loaded.checkpoint
+            ):
                 return {
                     "status": "success",
-                    "message": f"Model already loaded: {config.checkpoint}",
+                    "message": f"Model already loaded: {model_reference}",
                 }
 
             # Unload the current model if needed
             if self.llm_loaded:
                 await self.unload_llm(require_lock=False)
 
-            self.max_new_tokens = config.max_new_tokens
-            logging.info(f"Loading llm: {config.checkpoint}")
+            logging.info(f"Loading llm: {model_reference}")
             try:
                 self.model, self.tokenizer = lemonade_api.from_pretrained(
-                    checkpoint=config.checkpoint, recipe=config.recipe
+                    checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
                 )
 
-                self.max_new_tokens = config.max_new_tokens
-                self.llm_loaded = config
+                self.llm_loaded = config_to_use
 
                 return {
                     "status": "success",
-                    "message": f"Loaded model: {config.checkpoint}",
+                    "message": f"Loaded model: {model_reference}",
                 }
             except Exception:  # pylint: disable=broad-exception-caught
-                self.llm_loaded = None
-                self.tokenizer = None
-                self.model = None
-                logging.exception(f"Tried to load LLM {config.checkpoint} and failed")
-
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"model {config.checkpoint} not found",
-                )
+                self.model_load_failure(model_reference)
 
         finally:
             self._load_lock.release()
@@ -805,11 +1009,13 @@ class Server(ManagementTool):
         """
         models_list = []
         for model in self.local_models:
-            m = Model(
+            m = ServerModel(
                 id=model,
                 owned_by="lemonade",
                 object="model",
                 created=int(time.time()),
+                checkpoint=self.local_models[model]["checkpoint"],
+                recipe=self.local_models[model]["recipe"],
             )
             models_list.append(m)
 

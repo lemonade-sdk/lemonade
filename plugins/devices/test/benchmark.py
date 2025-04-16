@@ -471,9 +471,7 @@ class Testing(unittest.TestCase):
 
         # Benchmark the single model from cache directory
         selected_build = fs.get_available_builds(cache_dir)[-1]
-        state_file_path = os.path.join(
-            cache_dir, selected_build, f"{selected_build}_state.yaml"
-        )
+        state_file_path = build.state_file(cache_dir, selected_build)
 
         testargs = [
             "turnkey",
@@ -497,7 +495,9 @@ class Testing(unittest.TestCase):
             "--cache-dir",
             cache_dir,
             "-i",
-            os.path.join(cache_dir, "builds", "*", "*_state.yaml"),
+            # in prior revs, the state file was <BUILD_NAME>_<build.state_file_name>,
+            # and now it is just <build.state_file_name>.  Match both.
+            os.path.join(build.builds_dir(cache_dir), "*", "*" + build.state_file_name),
             "load-build",
             "benchmark",
         ]
@@ -529,9 +529,7 @@ class Testing(unittest.TestCase):
 
         # Get the build state file in its new location
         selected_build = fs.get_available_builds(new_cache_dir)[-1]
-        state_file_path = os.path.join(
-            new_cache_dir, selected_build, f"{selected_build}_state.yaml"
-        )
+        state_file_path = build.state_file(new_cache_dir, selected_build)
 
         # Benchmark the cached build in its new location
         testargs = [

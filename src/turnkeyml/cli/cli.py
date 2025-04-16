@@ -1,6 +1,7 @@
 import os
 from difflib import get_close_matches
 from typing import List
+import turnkeyml.common.build as build
 import turnkeyml.common.filesystem as fs
 from turnkeyml.sequence import Sequence
 from turnkeyml.tools import FirstTool, NiceHelpFormatter
@@ -56,7 +57,7 @@ def main():
         "--input-files",
         nargs="+",
         help="One or more inputs that will be evaluated by the tool sequence "
-        "(e.g., script (.py), ONNX (.onnx), turnkey build state (state.yaml), "
+        f"(e.g., script (.py), ONNX (.onnx), turnkey build state ({build.state_file_name}), "
         "input list (.txt) files)",
         type=lambda file: _check_extension(
             ("py", "onnx", "txt", "yaml"),

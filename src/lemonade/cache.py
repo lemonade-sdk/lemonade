@@ -78,3 +78,4 @@ class Keys:
     MEMORY_USAGE_PLOT = "memory_usage_plot"
     MAX_MEMORY_USED_GB = "max_memory_used_GB"
     MAX_MEMORY_USED_GBYTE = "max_memory_used_gbyte"
+    RYZEN_AI_VERSION_INFO = "ryzen_ai_version_info"

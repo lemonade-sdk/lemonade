@@ -34,7 +34,7 @@ class LoadBuild(FirstTool):
         from disk.
 
     Expected inputs:
-    - Input file is a *_state.yaml file in a turnkey cache build directory
+    - Input file is a state.yaml file in a turnkey cache build directory
 
     Outputs:
      - State has the contents of the state.yaml file of the target build.

@@ -63,7 +63,11 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+| `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. Mutually exclusive with `max_completion_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, excluding input tokens. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+> Note: The value for `model` is either a Lemonade Server model name, or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -153,7 +157,10 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `echo` | No | Echo back the prompt in addition to the completion. Available on non-streaming mode. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+| `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
+> Note: The value for `model` is either a Lemonade Server model name, or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -201,7 +208,9 @@ The following format is used for both streaming and non-streaming responses:
 
 ### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of key models available on the server in an OpenAI-compatible format. This list is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
+Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
+
+This list is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
 
 #### Parameters
 
@@ -220,17 +229,21 @@ curl http://localhost:8000/api/v0/models
   "object": "list",
   "data": [
     {
-      "id": "<CHECKPOINT>",
+      "id": "Qwen2.5-0.5B-Instruct-CPU",
+      "created": 1744173590,
       "object": "model",
-      "created": <UNIX_TIMESTAMP>,
-      "owned_by": "<OWNER>"
+      "owned_by": "lemonade",
+      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
+      "recipe": "oga-cpu"
     },
     {
-      "id": "<ANOTHER_CHECKPOINT>",
+      "id": "Llama-3.2-1B-Instruct-Hybrid",
+      "created": 1744173590,
       "object": "model",
-      "created": <UNIX_TIMESTAMP>,
-      "owned_by": "<OWNER>"
-    }
+      "owned_by": "lemonade",
+      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+      "recipe": "oga-hybrid"
+    },
   ]
 }
 ```
@@ -239,41 +252,79 @@ curl http://localhost:8000/api/v0/models
 
 ### `GET /api/v0/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Explicitly load a model. This is useful to ensure that the model is loaded before you make a request.
+Explicitly load a model into memory. This is useful to ensure that the model is loaded before you make a request.
 
 #### Parameters
 
+There are two distinct ways to load a model:
+ - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server
+ - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu")
+
+The parameters for these two ways of loading are mutually exclusive. We intend load-by-name to be used in the general case, since that references a curated set of models in a concise way. Load-by-checkpoint can be used in the event that a user/developer wants to try a model that isn't in the curated list.
+
+**Load by Lemonade Server Model Name (Recommended)**
+
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model` | Yes | HuggingFace checkpoint to load. |
-| `device` | No | Device to load the model on. Defaults to `hybrid`. |
-| `cache_dir` | No | Parent directory where models are stored. Defaults to `~/.cache/lemonade`. |
+| `model_name` | Yes | Lemonade Server model name to load. |
 
-#### Example request
+Example request:
 
 ```bash
 curl http://localhost:8000/api/v0/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "<CHECKPOINT>",
-    "cache_dir": "/Users/your_username/models"
+    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
   }'
 ```
 
-#### Response format
+Response format:
 
 ```json
 {
-  "status": "success",
-  "message": "Model loaded successfully"
+  "status":"success",
+  "message":"Loaded model: Qwen2.5-0.5B-Instruct-CPU"
 }
 ```
+
+In case of an error, the status will be `error` and the message will contain the error message.
+
+**Load by Hugging Face Checkpoint and Lemonade Recipe**
+
+> Note: load-by-checkpoint will download that checkpoint if it is not already available in your Hugging Face cache.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `checkpoint` | Yes | HuggingFace checkpoint to load. |
+| `recipe` | Yes | Lemonade API recipe to load the model on. |
+| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+
+Example request:
+
+```bash
+curl http://localhost:8000/api/v0/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
+    "recipe": "oga-cpu"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status":"success",
+  "message":"Loaded model: amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
+}
+```
+
 In case of an error, the status will be `error` and the message will contain the error message.
 
 
-### `POST /api/v0/unload` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+### `POST /api/v0/unload` <sub>![Status](https://img.shields.io/badge/status-partially_available-red)</sub>
 
-Explicitly unload a model. This is useful to free up memory and disk space while still leaving the server runnning (which takes minimal resources but a few seconds to start).
+Explicitly unload a model from memory. This is useful to free up memory while still leaving the server process running (which takes minimal resources but a few seconds to start).
 
 #### Parameters
 
@@ -358,7 +409,8 @@ curl http://localhost:8000/api/v0/health
 ```json
 {
   "status": "ok",
-  "model_loaded": "<CHECKPOINT>"
+  "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+  "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
 }
 ```
 ### `GET /api/v0/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
