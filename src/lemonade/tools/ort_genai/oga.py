@@ -149,9 +149,12 @@ class OrtGenaiModel(ModelAdapter):
                 "max_length will take precedence. "
                 "When setting max_length, please explicitly set max_new_tokens to None."
             )
-        max_length_to_use = (
-            max_length if max_length else len(input_ids) + max_new_tokens
-        )
+        max_length_to_use = None
+        if max_length:
+            max_length_to_use = max_length
+        elif max_new_tokens:
+            max_length_to_use = len(input_ids) + max_new_tokens
+
         min_length = len(input_ids) + min_new_tokens
 
         if use_oga_pre_6_api:
@@ -249,6 +252,198 @@ class OrtGenaiModel(ModelAdapter):
                         stop_early = True
 
             streamer.done()
+
+    def _model_call(self, input_ids):
+        """
+        Run the model on input_ids and get logits.
+
+        This method directly accesses model logits rather than using the full generate pipeline for
+        several important reasons:
+        1. Purpose: We need raw logits from a single forward pass, while generate() is optimized for
+           producing multiple tokens through iterative inference
+        2. Efficiency: Direct access is more efficient for logprob calculations with no
+           sampling overhead
+        3. Precision: Logprob calculations require exact control over input-to-output mapping
+        4. Consistency: Similar approach used in both HF and OGA implementations
+
+        Args:
+            input_ids: Input token IDs
+
+        Returns:
+            Logits for each token in the sequence
+        """
+        import torch
+
+        # Setup generator params
+        params = og.GeneratorParams(self.model)
+
+        # Configure for a simple forward pass
+        params.set_search_options(
+            do_sample=False,
+            temperature=0.0,
+            max_length=len(input_ids),
+        )
+
+        # Initialize generator
+        generator = og.Generator(self.model, params)
+
+        # Feed tokens to model based on API version
+        generator.append_tokens(input_ids)
+
+        # Extract logits - this returns a list of logits tensors
+        logits = generator.get_output("logits")
+
+        # Convert to torch tensor for easier processing
+        return torch.tensor(logits[0])
+
+    def _select_cont_toks(self, logits, context_len, continuation_tokens):
+        """
+        Select and process logits for continuation tokens.
+
+        Args:
+            logits: Full sequence logits
+            context_len: Length of context tokens
+            continuation_tokens: List or tensor of continuation token IDs
+
+        Returns:
+            Log probabilities for continuation tokens
+        """
+        import torch
+
+        # Extract relevant logits for continuation prediction (shift by one)
+        cont_logits = logits[
+            context_len - 1 : context_len - 1 + len(continuation_tokens)
+        ]
+
+        # Convert to torch tensors if needed
+        if not isinstance(continuation_tokens, torch.Tensor):
+            continuation_tokens = torch.tensor(continuation_tokens, dtype=torch.long)
+
+        # Apply log softmax to get log probabilities
+        log_probs = torch.log_softmax(cont_logits, dim=-1)
+
+        # Get log probs for the specific continuation tokens
+        token_log_probs = torch.gather(
+            log_probs, 1, continuation_tokens.unsqueeze(-1)
+        ).squeeze(-1)
+
+        return token_log_probs
+
+    def compute_logprobs(
+        self, text, tokenizer, prompt_length=None, logprobs=None, echo=False
+    ):
+        """
+        Compute log probabilities for all tokens in the given text.
+
+        Args:
+            text: The full text to analyze (e.g., prompt + completion)
+            prompt_length: Number of tokens in the prompt. If provided and echo=False,
+                only completion tokens after this position will be returned.
+            logprobs: If not None, return log probabilities. Value indicates how many top
+                alternatives to return. If True but not an integer, defaults to 5 alternatives.
+            echo: If True, include logprobs for prompt tokens. If False, only return logprobs
+                for completion tokens.
+
+        Returns:
+            - text_offset: Character offsets for each token in the text
+            - token_logprobs: Log probability for each token
+            - tokens: The actual tokens used
+            - top_logprobs: Top alternative log probabilities for each position
+        """
+        import torch
+
+        if tokenizer is None:
+            raise ValueError("Tokenizer is required for logprob calculation")
+
+        # Encode the full text
+        tokens = tokenizer(text).input_ids  # pylint: disable=E1102
+
+        # Track character offsets for each token
+        text_offset = []
+        start_idx = 0
+
+        token_strings = []
+        for token_id in tokens:
+            token_str = tokenizer.decode([token_id])
+            token_strings.append(token_str)
+
+            # Calculate character offsets for tokens - handles cases where tokens
+            # may not directly match in the original text due to encoding differences,
+            # special characters, or tokenization artifacts
+            try:
+                pos = text[start_idx:].find(token_str)
+                if pos != -1:
+                    text_offset.append(start_idx + pos)
+                    start_idx += pos + len(token_str)
+                else:
+                    text_offset.append(start_idx)
+            except (TypeError, ValueError, UnicodeError):
+                # Fallback to current position when matching fails due to encoding issues
+                text_offset.append(start_idx)
+
+        # Get logits from model
+        logits = self._model_call(tokens)
+
+        # Calculate log probabilities for each token
+        all_log_probs = torch.log_softmax(logits, dim=-1)
+
+        # The first token doesn't have a conditional probability
+        # For tokens after the first, get the predicted probability
+        token_log_probs = []
+        top_logprobs_list = []
+
+        # For each position, get the actual token probability and top alternatives
+        for i in range(len(tokens)):
+            # Get previous token position logits
+            if i > 0:  # First token has no preceding context
+                prev_logits = all_log_probs[i - 1]
+                curr_token_id = tokens[i]
+                # Get probability of the actual token that appeared
+                token_logprob = prev_logits[curr_token_id].item()
+                token_log_probs.append(token_logprob)
+
+                # Get top-k alternatives if requested
+                if logprobs is not None:
+                    num_alternatives = logprobs if isinstance(logprobs, int) else 5
+                    topk_values, topk_indices = torch.topk(
+                        prev_logits, min(num_alternatives, prev_logits.size(-1))
+                    )
+
+                    # Create dictionary of token: logprob
+                    position_logprobs = {}
+                    for val, idx in zip(topk_values.tolist(), topk_indices.tolist()):
+                        token_str = tokenizer.decode([idx])
+                        position_logprobs[token_str] = val
+
+                    top_logprobs_list.append(position_logprobs)
+            else:
+                # For the first token, we don't have a conditional probability
+                token_log_probs.append(None)
+                top_logprobs_list.append({})
+
+        # If we don't want to echo prompt tokens, filter them out
+        if not echo and prompt_length is not None:
+            # Ensure prompt_length is within bounds
+            prompt_length = min(prompt_length, len(tokens))
+
+            # Filter results to only include completion tokens
+            if prompt_length < len(tokens):
+                filtered_text_offset = text_offset[prompt_length:]
+                filtered_token_logprobs = token_log_probs[prompt_length:]
+                filtered_tokens = token_strings[prompt_length:]
+                filtered_top_logprobs = top_logprobs_list[prompt_length:]
+
+                return (
+                    filtered_text_offset,
+                    filtered_token_logprobs,
+                    filtered_tokens,
+                    filtered_top_logprobs,
+                )
+            else:
+                # No completion tokens
+                return [], [], [], []
+
+        return text_offset, token_log_probs, token_strings, top_logprobs_list
 
 
 class OgaLoad(FirstTool):

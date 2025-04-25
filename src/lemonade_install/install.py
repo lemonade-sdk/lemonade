@@ -197,49 +197,12 @@ class ModelManager:
         Returns a dictionary of supported models.
         Note: Models must be downloaded before they are locally available.
         """
-        models = {
-            "Qwen2.5-0.5B-Instruct-CPU": {
-                "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-                "recipe": "oga-cpu",
-                "reasoning": False,
-            },
-            "Llama-3.2-1B-Instruct-Hybrid": {
-                "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": False,
-                "max_prompt_length": 3000,
-            },
-            "Llama-3.2-3B-Instruct-Hybrid": {
-                "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": False,
-                "max_prompt_length": 2000,
-            },
-            "Phi-3-Mini-Instruct-Hybrid": {
-                "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": False,
-                "max_prompt_length": 2000,
-            },
-            "Qwen-1.5-7B-Chat-Hybrid": {
-                "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": False,
-                "max_prompt_length": 3000,
-            },
-            "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
-                "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": True,
-                "max_prompt_length": 2000,
-            },
-            "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
-                "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
-                "recipe": "oga-hybrid",
-                "reasoning": True,
-                "max_prompt_length": 2000,
-            },
-        }
+        # Load the models dictionary from the JSON file
+        server_models_file = os.path.join(
+            os.path.dirname(__file__), "server_models.json"
+        )
+        with open(server_models_file, "r", encoding="utf-8") as file:
+            models = json.load(file)
 
         # Add the model name as a key in each entry, to make it easier
         # to access later

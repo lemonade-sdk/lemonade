@@ -7,9 +7,7 @@ from turnkeyml.sequence import Sequence
 from turnkeyml.tools.management_tools import Cache, Version, SystemInfo
 from turnkeyml.state import State
 
-from lemonade.tools.huggingface_load import (
-    HuggingfaceLoad,
-)
+from lemonade.tools.huggingface_load import HuggingfaceLoad
 
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.ort_genai.oga_bench import OgaBench

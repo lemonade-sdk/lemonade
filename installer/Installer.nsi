@@ -34,9 +34,7 @@ ${StrLoc}
 ; Define a section for the installation
 Section "Install Main Components" SEC01
 SectionIn RO ; Read only, always installed
-  DetailPrint "------------------------"
-  DetailPrint "- Installation Section -"
-  DetailPrint "------------------------"
+  DetailPrint "Main Installation Section"
 
   ; Once we're done downloading and installing the pip packages the size comes out to about 2GB
   AddSize 2097152
@@ -160,9 +158,7 @@ SectionIn RO ; Read only, always installed
 SectionEnd
 
 Section "Install Ryzen AI Hybrid Execution" HybridSec
-  DetailPrint "------------------------"
-  DetailPrint "- Ryzen AI Section     -"
-  DetailPrint "------------------------"
+  DetailPrint "Ryzen AI Section"
 
   ; Once we're done downloading and installing the archive the size comes out to about 370MB
   AddSize 388882

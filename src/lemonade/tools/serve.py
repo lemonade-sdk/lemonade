@@ -20,6 +20,8 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from openai.types.completion_choice import Logprobs
+
 from openai.types.model import Model
 
 from turnkeyml.tools.management_tools import ManagementTool
@@ -121,6 +123,7 @@ class CompletionRequest(BaseModel):
     model: str
     echo: bool = False
     stream: bool = False
+    logprobs: int | None = False
     stop: list[str] | str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -137,6 +140,7 @@ class ChatCompletionRequest(BaseModel):
     messages: list[dict]
     model: str
     stream: bool = False
+    logprobs: int | None = False
     stop: list[str] | str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -390,11 +394,13 @@ class Server(ManagementTool):
             "message": text,
             "stop": completion_request.stop,
             "temperature": completion_request.temperature,
-            "max_tokens": completion_request.max_tokens,
+            "max_new_tokens": completion_request.max_tokens,
         }
 
         if completion_request.stream:
 
+            if completion_request.logprobs:
+                logging.warning("logprobs is not supported for streaming completion")
             if completion_request.echo:
                 logging.warning(
                     "`Echo` parameter is not supported for streaming completions"
@@ -445,11 +451,30 @@ class Server(ManagementTool):
             async for token in self._generate_tokens(**generation_args):
                 full_response += token
 
+            # If logprobs are requested, create a logprobs object
+            logprobs = None
+            if completion_request.logprobs:
+
+                # Compute the logprobs
+                text_offset, token_logprobs, tokens, top_logprobs = (
+                    self.model.compute_logprobs(
+                        text=full_response,
+                        tokenizer=self.tokenizer,
+                        logprobs=completion_request.logprobs,
+                    )
+                )
+                logprobs = Logprobs.model_construct(
+                    text_offset=text_offset,
+                    token_logprobs=token_logprobs,
+                    tokens=tokens,
+                    top_logprobs=top_logprobs,
+                )
+
             choice = CompletionChoice(
                 text=full_response,
                 index=0,
                 finish_reason="stop",
-                logprobs=None,
+                logprobs=logprobs,
             )
 
             return Completion(
@@ -499,13 +524,33 @@ class Server(ManagementTool):
         if reasoning_first_token:
             text += "<think>"
 
+        if chat_completion_request.logprobs:
+            logging.warning("logprobs is not supported on chat completion")
+
+        # Set the max_new_tokens parameter
+        if (
+            chat_completion_request.max_completion_tokens
+            and chat_completion_request.max_tokens
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Both max_tokens and max_completion_tokens were provided. "
+                    "Please use only one of these parameters.",
+                ),
+            )
+        max_new_tokens = (
+            chat_completion_request.max_completion_tokens
+            if chat_completion_request.max_completion_tokens
+            else chat_completion_request.max_tokens
+        )
+
         # Prepare generation arguments
         generation_args = {
             "message": text,
             "stop": chat_completion_request.stop,
             "temperature": chat_completion_request.temperature,
-            "max_tokens": chat_completion_request.max_tokens,
-            "max_completion_tokens": chat_completion_request.max_completion_tokens,
+            "max_new_tokens": max_new_tokens,
         }
 
         if chat_completion_request.stream:
@@ -595,8 +640,7 @@ class Server(ManagementTool):
         self,
         message: str,
         stop: list[str] | str | None = None,
-        max_tokens: int | None = None,
-        max_completion_tokens: int | None = None,
+        max_new_tokens: int | None = None,
         temperature: float | None = None,
     ):
         """
@@ -626,7 +670,6 @@ class Server(ManagementTool):
             streamer = OrtGenaiStreamer(tokenizer)
             self.input_tokens = len(input_ids)
         else:
-            # Huggingface-like models
             streamer = TextIteratorStreamer(
                 tokenizer,
                 skip_prompt=True,
@@ -648,22 +691,12 @@ class Server(ManagementTool):
 
         stopping_criteria = StoppingCriteriaList([StopOnEvent(self.stop_event)])
 
-        if max_completion_tokens and max_tokens:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Both max_tokens and max_completion_tokens were provided. "
-                    "Please use only one of these parameters.",
-                ),
-            )
-        elif not max_completion_tokens and not max_tokens:
-            max_completion_tokens = DEFAULT_MAX_NEW_TOKENS
-
         generation_kwargs = {
             "input_ids": input_ids,
             "streamer": streamer,
-            "max_length": max_tokens,
-            "max_new_tokens": max_completion_tokens,
+            "max_new_tokens": (
+                max_new_tokens if max_new_tokens else DEFAULT_MAX_NEW_TOKENS
+            ),
             "min_new_tokens": 1,
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
@@ -731,7 +764,10 @@ class Server(ManagementTool):
                     logging.info("Stopping generation early.")
                     break
 
-            self.tokens_per_second = 1 / statistics.mean(self.decode_token_times)
+            if len(self.decode_token_times) > 0:
+                self.tokens_per_second = 1 / statistics.mean(self.decode_token_times)
+            else:
+                self.tokens_per_second = 0
 
         finally:
             thread.join()
@@ -814,7 +850,7 @@ class Server(ManagementTool):
         logging.exception(f"Tried to load LLM {model_reference} and failed: {detail}")
 
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=detail,
         )
 
@@ -960,7 +996,6 @@ class Server(ManagementTool):
                 self.model, self.tokenizer = lemonade_api.from_pretrained(
                     checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
                 )
-
                 self.llm_loaded = config_to_use
 
                 return {

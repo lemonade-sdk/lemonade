@@ -2,11 +2,12 @@ import unittest
 import shutil
 import os
 import sys
-import urllib3
 import platform
 import zipfile
-import requests
 import logging
+import urllib3
+import requests
+import torch
 from turnkeyml.state import State
 import turnkeyml.common.filesystem as fs
 import turnkeyml.common.test_helpers as common
@@ -18,7 +19,8 @@ from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.llamacpp import LoadLlamaCpp
 from lemonade.tools.llamacpp_bench import LlamaCppBench
-from lemonade.cache import Keys
+from lemonade.cache import Keys, DEFAULT_CACHE_DIR
+from lemonade.api import from_pretrained
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +28,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ci_mode = os.getenv("LEMONADE_CI_MODE", False)
+# Use None as the default value for environment variables
+ci_mode = os.getenv("LEMONADE_CI_MODE", None)
+
+# Define cache_dir and corpus_dir at the module level
+cache_dir = None
+corpus_dir = None
 
 
 def download_llamacpp_binary():
@@ -381,14 +388,124 @@ class Testing(unittest.TestCase):
         assert all(x > 0 for x in stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND])
 
 
+class TestHfLogprobs(unittest.TestCase):
+    """Test the compute_logprobs functionality in Huggingface implementation"""
+
+    def setUp(self) -> None:
+        # Use a unique build name for each test to avoid conflicts
+        self.build_name = f"test_hf_logprobs"
+
+    def test_008_compute_logprobs_completion(self):
+        """Test compute_logprobs with a specific completion"""
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name=self.build_name,
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        # Ensure model has compute_logprobs method
+        self.assertTrue(
+            hasattr(state.model, "compute_logprobs"),
+            "Model should have compute_logprobs method",
+        )
+
+        # Test with a simple prompt
+        text = "The capital of France is Paris"
+
+        text_offset, token_logprobs, tokens, top_logprobs = (
+            state.model.compute_logprobs(
+                text=text, tokenizer=state.tokenizer, logprobs=5
+            )
+        )
+
+        # Verify we got valid outputs
+        self.assertIsNotNone(text_offset)
+        self.assertIsNotNone(token_logprobs)
+        self.assertIsNotNone(tokens)
+        self.assertIsNotNone(top_logprobs)
+
+        # Check the content of the output
+        self.assertEqual(len(tokens), len(token_logprobs))
+        self.assertEqual(len(tokens), len(text_offset))
+        self.assertEqual(len(tokens), len(top_logprobs))
+
+    def test_009_compute_logprobs_echo_parameter(self):
+        """Test compute_logprobs with echo parameter controlling prompt token inclusion"""
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name=self.build_name,
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        # Define test inputs
+        prefix = "This is a test prompt."
+        completion = "This is the completion."
+        full_text = prefix + " " + completion
+
+        # First encode the text to get token counts
+        tokens = state.tokenizer(prefix).input_ids
+        prompt_length = len(tokens)
+
+        # Test with echo=False using prompt_length
+        text_offset_no_echo, token_logprobs_no_echo, tokens_no_echo, _ = (
+            state.model.compute_logprobs(
+                text=full_text,
+                tokenizer=state.tokenizer,
+                prompt_length=prompt_length,
+                logprobs=5,
+                echo=False,
+            )
+        )
+
+        # Test with echo=True
+        text_offset_with_echo, token_logprobs_with_echo, tokens_with_echo, _ = (
+            state.model.compute_logprobs(
+                text=full_text,
+                tokenizer=state.tokenizer,
+                prompt_length=prompt_length,
+                logprobs=5,
+                echo=True,
+            )
+        )
+
+        # Verify that echo=False returns only completion tokens
+        self.assertEqual(len(tokens_no_echo) + prompt_length, len(tokens_with_echo))
+
+        # Verify echo=True includes all tokens
+        self.assertGreaterEqual(len(tokens_with_echo), prompt_length)
+
+        # Test edge case - no prompt tokens
+        zero_prompt_text = "Only completion tokens."
+        zero_offset, zero_logprobs, zero_tokens, _ = state.model.compute_logprobs(
+            text=zero_prompt_text,
+            tokenizer=state.tokenizer,
+            prompt_length=0,  # No prompt tokens
+            logprobs=5,
+            echo=False,
+        )
+
+        # All tokens should be included when prompt_length=0
+        all_tokens = state.model.tokenizer(zero_prompt_text).input_ids
+        self.assertEqual(len(zero_tokens), len(all_tokens))
+
+
 if __name__ == "__main__":
     # Get cache directory from environment or create a new one
     cache_dir = os.getenv("LEMONADE_CACHE_DIR")
     if not cache_dir:
+        # Create test directories
         cache_dir, corpus_dir = common.create_test_dir("lemonade_api")
         os.environ["LEMONADE_CACHE_DIR"] = cache_dir
+    else:
+        corpus_dir = os.path.join(os.path.dirname(cache_dir), "corpus")
+        os.makedirs(corpus_dir, exist_ok=True)
 
     logger.info(f"Using cache directory: {cache_dir}")
+    logger.info(f"Using corpus directory: {corpus_dir}")
 
     # Download mmlu
     try:
@@ -405,6 +522,7 @@ if __name__ == "__main__":
     # Create test suite with all test classes
     suite = unittest.TestSuite()
     suite.addTests(unittest.TestLoader().loadTestsFromTestCase(Testing))
+    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestHfLogprobs))
     suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLlamaCpp))
 
     # Run the test suite

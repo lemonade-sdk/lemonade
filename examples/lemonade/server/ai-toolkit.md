@@ -32,7 +32,10 @@ The AI Toolkit now supports "Bring Your Own Model" functionality, allowing you t
 1. Open the AI Toolkit tab in your VS Code Activity Bar.
 2. In the right corner of the "My Models" section, click the "+" button to "Add model for remote inference".
 3. Select "Add a custom model".
-4. When prompted to "Enter OpenAI chat completion endpoint URL" enter `http://localhost:8000/api/v0/chat/completions`
+4. When prompted to "Enter OpenAI chat completion endpoint URL" enter:
+    ```
+    http://localhost:8000/api/v0/chat/completions
+    ```
 5. When prompted to "Enter the exact model name as in the API" select a model (e.g., `Phi-3-Mini-Instruct-Hybrid`)
     - Note: You can get a list of all models available by running `curl http://localhost:8000/api/v0/models`
 6. Select the same name as the display model name.

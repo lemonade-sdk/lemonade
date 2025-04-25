@@ -164,7 +164,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             messages=self.messages,
             stream=True,
-            max_tokens=80,
+            max_tokens=10,
         )
         complete_response = ""
         chunk_count = 0
@@ -234,7 +234,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=False,
-            max_tokens=80,
+            max_tokens=10,
         )
 
         print(completion.choices[0].text)
@@ -251,7 +251,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=True,
-            max_tokens=80,
+            max_tokens=10,
         )
 
         complete_response = ""
@@ -277,7 +277,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Hello, how are you?",
             stream=True,
-            max_tokens=80,
+            max_tokens=10,
         )
 
         chunk_count = 0
@@ -301,7 +301,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt="Just say 'I am Joe and I like apples'. Here we go: 'I am Joe and",
             stop=["apples"],  # The model will stop generating when it reaches "apples"
-            max_tokens=80,
+            max_tokens=10,
         )
 
         print(completion.choices[0].text)
@@ -343,7 +343,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             model=MODEL_NAME,
             prompt=prompt,
             echo=True,
-            max_tokens=80,
+            max_tokens=10,
         )
 
         print(completion.choices[0].text)
@@ -432,7 +432,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
                 model="Qwen/Qwen2.5-0.5B",
                 prompt="Hello, how are you?",
                 stream=False,
-                max_tokens=80,
+                max_tokens=10,
             )
 
             print(completion.choices[0].text)

@@ -62,12 +62,12 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `model` | Yes | The model to use for the completion. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. Mutually exclusive with `max_completion_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, excluding input tokens. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a Lemonade Server model name, or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -143,7 +143,7 @@ For streaming responses, the API returns a stream of server-sent events (however
 ```
 
 
-### `POST /api/v0/completions` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
+### `POST /api/v0/completions` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Text Completions API. You provide a prompt and receive a completion. This API will also load the model if it is not already loaded.
 
@@ -156,11 +156,11 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `echo` | No | Echo back the prompt in addition to the completion. Available on non-streaming mode. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/WIP-yellow)</sub> |
+| `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. Only available when `stream=False`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a Lemonade Server model name, or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -210,7 +210,7 @@ The following format is used for both streaming and non-streaming responses:
 
 Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
 
-This list is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
+This [list](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
 
 #### Parameters
 
@@ -257,8 +257,8 @@ Explicitly load a model into memory. This is useful to ensure that the model is 
 #### Parameters
 
 There are two distinct ways to load a model:
- - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server
- - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu")
+ - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server. The names are documented [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
+ - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu"). For more information on Lemonade recipes, see the [Lemonade API ReadMe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md).
 
 The parameters for these two ways of loading are mutually exclusive. We intend load-by-name to be used in the general case, since that references a curated set of models in a concise way. Load-by-checkpoint can be used in the event that a user/developer wants to try a model that isn't in the curated list.
 
@@ -266,7 +266,7 @@ The parameters for these two ways of loading are mutually exclusive. We intend l
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | Lemonade Server model name to load. |
+| `model_name` | Yes | [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) to load. |
 
 Example request:
 

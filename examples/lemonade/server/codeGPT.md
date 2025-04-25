@@ -18,7 +18,7 @@ However, we do not recommend using this model for analyzing large codebases at o
 
 ### Install CodeGPT in VS Code
 
-> The following instructions are based off CodeGPT provided instructions found [here](https://docs.codegpt.co/docs/tutorial-basics/installation)
+> The following instructions are based off CodeGPT provided instructions found [here](https://docs.codegpt.co/docs/tutorial-basics/installation).
 
 1. Open the Extensions tab in VS Code Activity Bar.
 1. Search "CodeGPT: Chat & AI Agents" in the Extensions Marketplace search bar.
@@ -28,7 +28,7 @@ This will add a CodeGPT tab to your VS Code Activity Bar.
 
 ### Add Lemonade Server to CodeGPT
 
-> Note: The following instructions are based on instructions from CodeGPT found [here](https://docs.codegpt.co/docs/tutorial-ai-providers/custom) 
+> Note: The following instructions are based on instructions from CodeGPT found [here](https://docs.codegpt.co/docs/tutorial-ai-providers/custom).
 
 1. Open the CodeGPT tab in your VS Code Activity Bar.
 1. Sign Up or Sign into your account.
@@ -39,7 +39,11 @@ This will add a CodeGPT tab to your VS Code Activity Bar.
    1. Select Model: `Qwen-1.5-7B-Chat-Hybrid`
 1. Click "Change connection settings" and enter the following information:
    1. API Key: `-`
-   1. Custom Link: `http://localhost:8000/api/v0/api/v0`
+   1. Custom Link:
+
+   ```
+   http://localhost:8000/api/v0/api/v0
+   ```
 
 
 ## Usage

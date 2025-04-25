@@ -12,7 +12,7 @@ We are on a mission to make it easy to use the most important tools in the ONNX 
 The [Lemonade SDK](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md) is designed to make it easy to serve, benchmark, and deploy large language models (LLMs) on a variety of hardware platforms, including CPU, GPU, and NPU. 
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/83dd6563-f970-414c-bb8c-4f08a0bc4bfa" alt="Lemonade Demo" title="Lemonade in Action">
+  <img src="https://download.amd.com/images/lemonade_640x480_1.gif" alt="Lemonade Demo" title="Lemonade in Action">
 </div>
 
 The [Lemonade SDK](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md) is comprised of the following:
@@ -38,7 +38,7 @@ turnkey -h
 ```
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/a1461dc4-4dac-40ca-95da-9c62e47cec24" alt="Turnkey Demo" title="Turnkey CLI">
+  <img src="https://download.amd.com/images/tkml_640x480_1.gif" alt="Turnkey Demo" title="Turnkey CLI">
 </div>
 
 ### [Click here to get started with `turnkey`.](https://github.com/onnx/turnkeyml/blob/main/docs/turnkey/README.md)

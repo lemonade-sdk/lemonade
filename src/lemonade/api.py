@@ -43,7 +43,7 @@ def from_pretrained(
         - hf-cpu: Huggingface Transformers implementation for CPU with max-perf settings
         - hf-dgpu: Huggingface Transformers implementation on dGPU (via device="cuda")
         - oga-cpu: CPU implementation based on onnxruntime-genai
-        - oga-dml: DirectML implementation for iGPU based on onnxruntime-genai-directml
+        - oga-igpu: DirectML implementation for iGPU based on onnxruntime-genai-directml
         - oga-hybird: AMD Ryzen AI Hybrid implementation based on onnxruntime-genai
 
     Returns:

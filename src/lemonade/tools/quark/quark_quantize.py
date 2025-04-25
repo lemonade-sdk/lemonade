@@ -23,7 +23,7 @@ class QuarkQuantize(Tool):
     4. Optionally evaluates the model.
 
     Required Input State:
-        - state.model: Pretrained model instance to be quantized.
+        - state.model.model: Pretrained model instance to be quantized.
         - state.tokenizer: Tokenizer instance from Hugging Face.
     Output:
         - Modifies `state` with quantized and optionally exported model.
@@ -290,7 +290,7 @@ class QuarkQuantize(Tool):
 
             from llm_utils.model_preparation import get_model_type
 
-            model_type = get_model_type(state.model)
+            model_type = get_model_type(state.model.model)
 
             quant_algo = kwargs.get("quant_algo")
             kwargs["quant_algo_config_file_path"] = os.path.join(
@@ -319,7 +319,7 @@ class QuarkQuantize(Tool):
         - Optionally exporting, compiling, and evaluating the model.
         """
 
-        model = state.model
+        model = state.model.model
         tokenizer = state.tokenizer
 
         # Importing quark utils after adding to sys.path
@@ -430,6 +430,6 @@ class QuarkQuantize(Tool):
             printing.log_info("Saving model parameters ...")
             save_params(model, model_type=model_type, export_dir=kwargs.get("save_dir"))
 
-        state.model = model
+        state.model.model = model
         state.dtype = model.dtype
         printing.log_info("QuarkQuantize process completed.")

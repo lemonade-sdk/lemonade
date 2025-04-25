@@ -126,14 +126,7 @@ Only `Qwen2.5-0.5B-Instruct-CPU` is installed by default in silent mode. If you 
 Lemonade_Server_Installer.exe /S /Extras=hybrid /Models="Qwen2.5-0.5B-Instruct-CPU Llama-3.2-1B-Instruct-Hybrid"
 ```
 
-The available modes are the following:
-* `Qwen2.5-0.5B-Instruct-CPU`
-* `Llama-3.2-1B-Instruct-Hybrid`
-* `Llama-3.2-3B-Instruct-Hybrid`
-* `Phi-3-Mini-Instruct-Hybrid`
-* `Qwen-1.5-7B-Chat-Hybrid`
-* `DeepSeek-R1-Distill-Llama-8B-Hybrid`
-* `DeepSeek-R1-Distill-Qwen-7B-Hybrid`
+The available modes are documented [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
 
 Finally, if you don't want to create a desktop shortcut during installation, use the `/NoDesktopShortcut` parameter:
 

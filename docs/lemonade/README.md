@@ -6,14 +6,46 @@ Lemonade SDK is built on top of [OnnxRuntime GenAI (OGA)](https://github.com/mic
 
 The Lemonade SDK provides everything needed to get up and running quickly with LLMs on OGA:
 
-- [Quick installation from PyPI](#install). 
-- [CLI with tools for prompting, benchmarking, and accuracy tests](#cli-commands).
-- [REST API with OpenAI compatibility](#serving).
-- [Python API based on `from_pretrained()` for easy integration with Python apps](#api).  
+| **Feature**                              | **Description**                                                                                     |
+|------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| **🌐 Local LLM server with OpenAI API compatibility (Lemonade Server)** | Replace cloud-based LLMs with private and free LLMs that run locally on your own PC's NPU and GPU. |
+| **🖥️ CLI with tools for prompting, benchmarking, and accuracy tests**  | Enables convenient interoperability between models, frameworks, devices, accuracy tests, and deployment options. |
+| **🐍 Python API based on `from_pretrained()`**                          | Provides easy integration with Python applications for loading and using LLMs.                      |
 
-# Install
 
-You can quickly get started with Lemonade by installing the `turnkeyml` [PyPI package](#installing-from-pypi) with the appropriate extras for your backend, [install from source](#installing-from-source) by cloning and installing this repository, or [with GUI installation for Lemonade Server](#installing-from-lemonade_server_installerexe).
+## Table of Contents
+
+- [Installation](#installation)
+  - [Installing Lemonade Server via Executable](#installing-from-lemonade_server_installerexe)
+  - [Installing Lemonade SDK From PyPI](#installing-from-pypi)
+  - [Installing Lemonade SDK From Source](#installing-from-source)
+- [CLI Commands](#cli-commands)
+  - [Prompting](#prompting)
+  - [Accuracy](#accuracy)
+  - [Benchmarking](#benchmarking)
+  - [LLM Report](#llm-report)
+  - [Memory Usage](#memory-usage)
+  - [Serving](#serving)
+- [API](#api)
+  - [High-Level APIs](#high-level-apis)
+  - [Low-Level API](#low-level-api)
+- [Contributing](#contributing)
+
+
+# Installation
+
+There are 3 ways a user can install the Lemonade SDK:
+
+1. Use the [Lemonade Server Installer](#installing-from-lemonade_server_installerexe). This provides a no code way to run LLMs locally and integrate with OpenAI compatible applications.
+1. Use [PyPI installation](#installing-from-pypi) by installing the `turnkeyml` package with the appropriate extras for your backend. This will install the full set of Turnkey and Lemonade SDK tools, including Lemonade Server, API, and CLI commands.
+1. Use [source installation](#installing-from-source) if you plan to contribute or customize the Lemonade SDK.
+
+
+## Installing From Lemonade_Server_Installer.exe
+
+The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade_Server_Installer.exe guide](lemonade_server_exe.md) for installation instructions and the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the functionality.
+
+The Lemonade Server [examples folder](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server) has guides for how to use Lemonade Server with a collection of applications that we have tested.
 
 ## Installing From PyPI
 
@@ -54,13 +86,10 @@ To install the Lemonade SDK from PyPI:
 
 The Lemonade SDK can be installed from source code by cloning this repository and following the instructions [here](source_installation_inst.md).
 
-## Installing From Lemonade_Server_Installer.exe
-
-The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade_Server_Installer.exe guide](lemonade_server_exe.md) for installation instructions and the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the functionality.
 
 # CLI Commands
 
-The `lemonade` CLI uses a unique command syntax that enables convenient interoperability between models, frameworks, devices, accuracy tests, and deployment options.  
+The `lemonade` CLI uses a unique command syntax that enables convenient interoperability between models, frameworks, devices, accuracy tests, and deployment options.
 
 Each unit of functionality (e.g., loading a model, running a test, deploying a server, etc.) is called a `Tool`, and a single call to `lemonade` can invoke any number of `Tools`. Each `Tool` will perform its functionality, then pass its state to the next `Tool` in the command.
 
@@ -174,13 +203,15 @@ You can launch an OpenAI-compatible server with:
 
 Visit the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the endpoints provided as well as how to launch the server with more detailed informational messages enabled.
 
+See the Lemonade Server [examples folder](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server) to see a collection of applications that we have tested with Lemonade Server.
+
 # API
 
-Lemonade is also available via API. 
+Lemonade is also available via API.
 
 ## High-Level APIs
 
-The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications.
+The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications. For more information on recipes and compatibility, see the [Lemonade API ReadMe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md).
 
 OGA iGPU:
 ```python

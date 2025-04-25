@@ -76,7 +76,6 @@ enable =
   expression-not-assigned,
   confusing-with-statement,
   unnecessary-lambda,
-  assign-to-new-keyword,
   redeclared-assigned-name,
   pointless-statement,
   pointless-string-statement,
@@ -118,7 +117,6 @@ enable =
   invalid-length-returned,
   protected-access,
   attribute-defined-outside-init,
-  no-init,
   abstract-method,
   invalid-overridden-method,
   # arguments-differ,
@@ -160,9 +158,7 @@ enable =
   ### format
   # Line length, indentation, whitespace:
   bad-indentation,
-  mixed-indentation,
   unnecessary-semicolon,
-  bad-whitespace,
   missing-final-newline,
   line-too-long,
   mixed-line-endings,
@@ -182,7 +178,6 @@ enable =
   import-self,
   preferred-module,
   reimported,
-  relative-import,
   deprecated-module,
   wildcard-import,
   misplaced-future,
@@ -276,12 +271,6 @@ indent-string = '    '
 # Maximum number of characters on a single line.  pylint has to be looser since
 # black doesn't always obey its own limit.  See pyproject.toml.
 max-line-length = 100
-
-# List of optional constructs for which whitespace checking is disabled. `dict-
-# separator` is used to allow tabulation in dicts, etc.: {1  : 1,\n222: 2}.
-# `trailing-comma` allows a space between comma and closing bracket: (a, ).
-# `empty-line` allows space-only lines.
-no-space-check =
 
 # Allow the body of a class to be on the same line as the declaration if body
 # contains single statement.

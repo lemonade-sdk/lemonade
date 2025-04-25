@@ -12,6 +12,8 @@ The `docs/lemonade` directory has documentation for the LLM-focused `lemonade` t
     - [llama.cpp](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/llamacpp.md)
     - [OnnxRuntime GenaI iGPU and CPU](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md)
 
+For examples on using Lemonade, see [Lemonade Example Readme](https://github.com/onnx/turnkeyml/blob/main/examples/lemonade)
+
 ## CNNs and Transformers: `turnkey` tooling
 
 The `docs/turnkey` directory contains documentation for the CNN/Transformer-focused `turnkey` tooling:

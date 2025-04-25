@@ -17,6 +17,17 @@ The guidelines document is organized as the following sections:
 - [PyPI Release Process](#pypi-release-process)
 - [Public APIs](#public-apis)
 
+## 🍋 Contributing a Lemonade Server Demo
+
+Lemonade Server Demos aim to be reproducible in under 10 minutes, require no code changes to the app you're integrating, and use an app supporting the OpenAI API with a configurable base URL. 
+
+Please see [AI Toolkit ReadMe](https://github.com/onnx/turnkeyml/blob/main/examples/lemonade/server/ai-toolkit.md) for an example Markdown contribution.
+
+- To Submit your example, open a pull request in the TurnkeyML GitHub repo with the following:
+  - Add your .md file in the [Server Examples](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server) folder.
+  - Assign your PR to the maintainers
+
+We’re excited to see what you build! If you’re unsure about your idea or need help unblocking an integration, feel free to reach out via GitHub Issues or [email](mailto:turnkeyml@amd.com).
 
 ## Contributing a model
 
