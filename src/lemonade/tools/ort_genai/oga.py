@@ -26,7 +26,7 @@ from turnkeyml.state import State
 from turnkeyml.tools import FirstTool
 import turnkeyml.common.status as status
 import turnkeyml.common.printing as printing
-from lemonade.tools.huggingface_load import get_base_model
+from lemonade.tools.huggingface_load import get_base_model, is_offline
 from lemonade.tools.adapter import (
     ModelAdapter,
     TokenizerAdapter,
@@ -610,6 +610,7 @@ class OgaLoad(FirstTool):
                 else ""
             )
 
+        # First, check in the lemonade oga_models cache
         oga_models_subfolder = os.path.join(
             checkpoint.replace("/", "_").lower(), subfolder
         )
@@ -619,6 +620,32 @@ class OgaLoad(FirstTool):
         model_exists_locally = os.path.isdir(full_model_path) and os.listdir(
             full_model_path
         )
+
+        # If not found in lemonade cache, check in Hugging Face cache
+        if not model_exists_locally:
+            try:
+                snapshot_path = snapshot_download(
+                    repo_id=checkpoint,
+                    local_files_only=True,
+                )
+
+                # Check if the snapshot contains ONNX files
+                if os.path.isdir(snapshot_path) and os.listdir(snapshot_path):
+                    is_onnx_model = any(
+                        filename.endswith(".onnx")
+                        for filename in os.listdir(snapshot_path)
+                    )
+
+                    if is_onnx_model:
+                        # If the model is in HF cache and has ONNX files, use it
+                        full_model_path = snapshot_path
+                        model_exists_locally = True
+                        printing.log_info(
+                            f"Found ONNX model in Hugging Face cache: {full_model_path}"
+                        )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # Log any errors but continue with the original path
+                printing.log_info(f"Error checking Hugging Face cache: {e}")
 
         return full_model_path, model_exists_locally
 
@@ -786,13 +813,19 @@ class OgaLoad(FirstTool):
     ):
         """
         Loads the OGA model from local folder and then loads the tokenizer.
+        Will auto-detect if we're offline.
         """
         state.model = OrtGenaiModel(full_model_path)
+        # Auto-detect offline mode
+        offline = is_offline()
 
         try:
+            # Always try to use local files first
+            local_files_only = True
+
             hf_tokenizer = AutoTokenizer.from_pretrained(
                 full_model_path,
-                local_files_only=True,
+                local_files_only=local_files_only,
                 trust_remote_code=trust_remote_code,
             )
         except ValueError as e:
@@ -800,6 +833,12 @@ class OgaLoad(FirstTool):
                 raise ValueError(
                     "This model requires you to execute code from the repo.  Please review it "
                     "and if you trust it, then use the `--trust-remote-code` flag with oga-load."
+                )
+
+            if offline and "Can't load tokenizer for" in str(e):
+                raise ValueError(
+                    f"Cannot load tokenizer for {checkpoint} in offline mode. "
+                    f"The tokenizer files may not be available locally in {full_model_path}."
                 )
             raise
 
@@ -869,6 +908,13 @@ class OgaLoad(FirstTool):
         trust_remote_code=False,
         subfolder: str = None,
     ) -> State:
+        # Auto-detect offline status
+        offline = is_offline()
+        if offline:
+            printing.log_warning(
+                "Network connectivity to huggingface.co not detected. Running in offline mode."
+            )
+
         state.device = device
         state.dtype = dtype
 
@@ -907,20 +953,35 @@ class OgaLoad(FirstTool):
             state.save_stat(Keys.CHECKPOINT, checkpoint)
 
             # Get base model information
-            base_model = get_base_model(checkpoint)
-            if base_model is not None:
-                state.save_stat("base_model", base_model)
-
-            # Validate configuration
-            hf_supported = self._validate_model_configuration(device, dtype, checkpoint)
+            if not offline:
+                base_model = get_base_model(checkpoint)
+                if base_model is not None:
+                    state.save_stat("base_model", base_model)
 
             # Setup paths
             full_model_path, model_exists_locally = self._setup_model_paths(
                 state, checkpoint, device, dtype, subfolder, int4_block_size
             )
 
+            # If in offline mode, we can only use locally available models
+            if offline and not model_exists_locally:
+                raise ValueError(
+                    f"Model {checkpoint} is not available locally for {device} with {dtype}. "
+                    f"Cannot download in offline mode. Check {full_model_path}"
+                )
+
             # Handle download/build if needed
             if (not model_exists_locally) or force:
+                if offline:
+                    raise ValueError(
+                        f"Cannot download or build model {checkpoint} in offline mode"
+                    )
+
+                # Validate configuration
+                hf_supported = self._validate_model_configuration(
+                    device, dtype, checkpoint
+                )
+
                 if not hf_supported:
                     raise ValueError(
                         "The (device, dtype, checkpoint) combination is not supported: "
@@ -929,6 +990,7 @@ class OgaLoad(FirstTool):
                 input_model_path = snapshot_download(
                     repo_id=checkpoint,
                     ignore_patterns=["*.md", "*.txt"],
+                    local_files_only=offline,
                 )
                 # Check if model is ONNX or safetensors
                 is_onnx_model = any(

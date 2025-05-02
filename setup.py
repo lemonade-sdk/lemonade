@@ -127,6 +127,6 @@ setup(
     include_package_data=True,
     package_data={
         "turnkeyml_models": ["requirements.txt", "readme.md"],
-        "lemonade_install": ["server_models.json"],
+        "lemonade_server": ["server_models.json"],
     },
 )

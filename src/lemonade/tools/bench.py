@@ -26,17 +26,19 @@ class Bench(Tool, ABC):
         # The minimum set of statistics that a benchmark tool will produce
         # Inherited tools should append any additional statistics they generate to this list
         self.status_stats = [
-            Keys.PROMPT_TOKENS,
             Keys.SECONDS_TO_FIRST_TOKEN,
             Keys.STD_DEV_SECONDS_TO_FIRST_TOKEN,
-            Keys.PREFILL_TOKENS_PER_SECOND,
             Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
+            Keys.PREFILL_TOKENS_PER_SECOND,
+            Keys.PROMPT_TOKENS,
+            Keys.RESPONSE_TOKENS,
             Keys.MAX_MEMORY_USED_GBYTE,
         ]
 
         # Minimum per measurement statistics
         # Inherited tools should add additional lists for other per prompt statistics
         self.input_ids_len_list = []
+        self.tokens_out_len_list = []
         self.mean_time_to_first_token_list = []
         self.std_dev_time_to_first_token_list = []
         self.prefill_tokens_per_second_list = []
@@ -225,6 +227,9 @@ class Bench(Tool, ABC):
         # Save performance data to stats
         state.save_stat(
             Keys.PROMPT_TOKENS, self.get_item_or_list(self.input_ids_len_list)
+        )
+        state.save_stat(
+            Keys.RESPONSE_TOKENS, self.get_item_or_list(self.tokens_out_len_list)
         )
         state.save_stat(
             Keys.SECONDS_TO_FIRST_TOKEN,

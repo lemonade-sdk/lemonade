@@ -23,6 +23,7 @@ They focus on enabling client applications by extending existing cloud-focused A
 - Unload models to save memory space.
 
 The additional endpoints under development are:
+- POST `/api/v0/pull` - Install a model
 - POST `/api/v0/load` - Load a model
 - POST `/api/v0/unload` - Unload a model
 - POST `/api/v0/params` - Set generation parameters
@@ -250,9 +251,40 @@ curl http://localhost:8000/api/v0/models
 
 ## Additional Endpoints
 
+### `GET /api/v0/pull` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Install a model by downloading it and registering it with Lemonade Server.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) to load. |
+
+Example request:
+
+```bash
+curl http://localhost:8000/api/v0/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status":"success",
+  "message":"Installed model: Qwen2.5-0.5B-Instruct-CPU"
+}
+```
+
+In case of an error, the status will be `error` and the message will contain the error message.
+
 ### `GET /api/v0/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Explicitly load a model into memory. This is useful to ensure that the model is loaded before you make a request.
+Explicitly load a model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
 
 #### Parameters
 
@@ -320,7 +352,6 @@ Response format:
 ```
 
 In case of an error, the status will be `error` and the message will contain the error message.
-
 
 ### `POST /api/v0/unload` <sub>![Status](https://img.shields.io/badge/status-partially_available-red)</sub>
 

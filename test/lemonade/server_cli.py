@@ -47,7 +47,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             version_number
         ), f"Expected stdout to end with '{version_number}', but got: '{result.stdout}'"
 
-    def test_002_serve_and_status(self):
+    def test_002_serve_status_and_stop(self):
 
         # First, ensure we can correctly detect that the server is not running
         result = subprocess.run(
@@ -94,8 +94,20 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         ), f"Expected stdout to end with '{NON_DEFAULT_PORT}', but got: '{result.stdout}' {result.stderr}"
 
         # Close the server
-        process.terminate()
-        process.wait()
+        result = subprocess.run(
+            ["lemonade-server-dev", "stop"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout == "Lemonade Server stopped successfully.\n"
+
+        # Ensure the server is not running
+        result = subprocess.run(
+            ["lemonade-server-dev", "status"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout == "Server is not running\n"
 
 
 if __name__ == "__main__":

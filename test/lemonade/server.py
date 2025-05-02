@@ -1,8 +1,11 @@
 """
-Usage: python server.py
+Usage: python server.py [--offline]
 
 This will launch the lemonade server, query it in openai mode,
 and make sure that the response is valid.
+
+If --offline is provided, tests will run in offline mode to ensure
+the server works without network connectivity.
 
 If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions'` error:
     1. pip uninstall typing_extensions
@@ -19,15 +22,130 @@ from threading import Thread
 import sys
 import io
 import httpx
+import argparse
+import contextlib
+from unittest.mock import patch
+import urllib.request
+import os
 
 try:
     from openai import OpenAI, AsyncOpenAI
 except ImportError as e:
     raise ImportError("You must `pip install openai` to run this test", e)
 
+# Import huggingface_hub for patching in offline mode
+try:
+    from huggingface_hub import snapshot_download as original_snapshot_download
+except ImportError:
+    # If huggingface_hub is not installed, create a dummy function
+    def original_snapshot_download(*args, **kwargs):
+        raise ImportError("huggingface_hub is not installed")
+
+
 MODEL_NAME = "Qwen2.5-0.5B-Instruct-CPU"
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Test lemonade server")
+    parser.add_argument(
+        "--offline", action="store_true", help="Run tests in offline mode"
+    )
+    return parser.parse_args()
+
+
+@contextlib.contextmanager
+def simulate_offline_mode():
+    """
+    Context manager that simulates a fully offline environment except
+    for local connections needed for testing.
+
+    This patches multiple network-related functions to prevent any
+    external network access during tests.
+    """
+    original_create_connection = socket.create_connection
+
+    def mock_create_connection(address, *args, **kwargs):
+        host, port = address
+        # Allow connections to localhost for testing
+        if host == "localhost" or host == "127.0.0.1":
+            return original_create_connection(address, *args, **kwargs)
+        # Block all other connections
+        raise socket.error("Network access disabled for offline testing")
+
+    # Define a function that raises an error for non-local requests
+    def block_external_requests(original_func):
+        def wrapper(url, *args, **kwargs):
+            # Allow localhost requests
+            if url.startswith(
+                (
+                    "http://localhost",
+                    "https://localhost",
+                    "http://127.0.0.1",
+                    "https://127.0.0.1",
+                )
+            ):
+                return original_func(url, *args, **kwargs)
+            raise ConnectionError(f"Offline mode: network request blocked to {url}")
+
+        return wrapper
+
+    # Apply all necessary patches to simulate offline mode
+    with patch("socket.create_connection", side_effect=mock_create_connection):
+        with patch(
+            "huggingface_hub.snapshot_download",
+            side_effect=lambda *args, **kwargs: (
+                kwargs.get("local_files_only", False)
+                and original_snapshot_download(*args, **kwargs)
+                or (_ for _ in ()).throw(
+                    ValueError("Offline mode: network connection attempted")
+                )
+            ),
+        ):
+            # Also patch urllib and requests to block external requests
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=block_external_requests(urllib.request.urlopen),
+            ):
+                with patch(
+                    "http.client.HTTPConnection.connect",
+                    side_effect=lambda self, *args, **kwargs: (
+                        None
+                        if self.host in ("localhost", "127.0.0.1")
+                        else (_ for _ in ()).throw(
+                            ConnectionError("Offline mode: connection blocked")
+                        )
+                    ),
+                ):
+                    # Set environment variable to signal offline mode
+                    os.environ["LEMONADE_OFFLINE_TEST"] = "1"
+                    try:
+                        yield
+                    finally:
+                        # Clean up environment variable
+                        if "LEMONADE_OFFLINE_TEST" in os.environ:
+                            del os.environ["LEMONADE_OFFLINE_TEST"]
+
+
+def ensure_model_is_cached():
+    """
+    Make sure the test model is downloaded and cached locally before running in offline mode.
+    """
+    try:
+        # Call lemonade-server-dev pull to download the model
+        subprocess.run(
+            ["lemonade-server-dev", "pull", MODEL_NAME],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        print(f"Model {MODEL_NAME} successfully pulled and available in cache")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to download model: {e}")
+        return False
 
 
 def kill_process_on_port(port):
@@ -440,4 +558,27 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    args = parse_args()
+
+    if args.offline:
+        print("\n=== STARTING SERVER TESTS IN OFFLINE MODE ===")
+
+        if not ensure_model_is_cached():
+            print("ERROR: Unable to cache the model needed for offline testing")
+            sys.exit(1)
+
+        print("Model is cached. Running tests with network access disabled...")
+
+        # Create a new test suite
+        test_loader = unittest.TestLoader()
+        test_suite = test_loader.loadTestsFromTestCase(Testing)
+
+        # Run the tests in offline mode
+        with simulate_offline_mode():
+            result = unittest.TextTestRunner().run(test_suite)
+
+        # Set exit code based on test results
+        sys.exit(0 if result.wasSuccessful() else 1)
+    else:
+        print("\n=== STARTING SERVER TESTS IN NORMAL MODE ===")
+        unittest.main()

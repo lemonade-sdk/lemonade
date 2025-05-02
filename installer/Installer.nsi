@@ -229,13 +229,13 @@ SubSection /e "Selected Models" ModelsSec
         ${GetParameters} $CMDLINE
         ${GetOptions} $CMDLINE "/Models=" $R0
         ${If} $R0 != ""
-            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models $R0'
+            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull $R0'
         ${Else}
             ; Otherwise, only the default CPU model will be installed
-            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models Qwen2.5-0.5B-Instruct-CPU'
+            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
         ${EndIf}
     ${Else}
-        nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --models $9'
+        nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull $9'
     ${EndIf}
   SectionEnd
 

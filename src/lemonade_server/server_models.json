@@ -1,0 +1,130 @@
+{
+    "Qwen2.5-0.5B-Instruct-CPU": {
+        "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
+        "recipe": "oga-cpu",
+        "reasoning": false,
+        "suggested": true
+    },
+    "Llama-3.2-1B-Instruct-CPU": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
+        "recipe": "oga-cpu",
+        "reasoning": false,
+        "suggested": true
+    },
+    "Llama-3.2-3B-Instruct-CPU": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
+        "recipe": "oga-cpu",
+        "reasoning": false,
+        "suggested": true
+    },
+    "Phi-3-Mini-Instruct-CPU": {
+        "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
+        "recipe": "oga-cpu",
+        "reasoning": false,
+        "suggested": true
+    },
+    "Qwen-1.5-7B-Chat-CPU": {
+        "checkpoint": "amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu",
+        "recipe": "oga-cpu",
+        "reasoning": false,
+        "suggested": true
+    },
+    "DeepSeek-R1-Distill-Llama-8B-CPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
+        "recipe": "oga-cpu",
+        "reasoning": true,
+        "suggested": true
+    },
+    "DeepSeek-R1-Distill-Qwen-7B-CPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
+        "recipe": "oga-cpu",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Llama-3.2-1B-Instruct-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 3000,
+        "suggested": true
+    },
+    "Llama-3.2-3B-Instruct-Hybrid": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Phi-3-Mini-Instruct-Hybrid": {
+        "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Phi-3.5-Mini-Instruct-Hybrid": {
+        "checkpoint": "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "suggested": false
+    },
+    "Qwen-1.5-7B-Chat-Hybrid": {
+        "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 3000,
+        "suggested": true
+    },
+    "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": true,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "DeepSeek-R1-Distill-Qwen-7B-Hybrid": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": true,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Mistral-7B-v0.3-Instruct-Hybrid": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Llama-3.1-8B-Instruct-Hybrid": {
+        "checkpoint": "amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Llama-3.2-1B-Instruct-DirectML": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-dml-int4-awq-block-128-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
+    },
+    "Llama-3.2-3B-Instruct-DirectML": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-dml-int4-awq-block-128-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
+    },
+    "Phi-3.5-Mini-Instruct-DirectML": {
+        "checkpoint": "amd/phi3.5-mini-instruct-int4-awq-block-128-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
+    },
+    "Qwen-1.5-7B-Chat-DirectML": {
+        "checkpoint": "amd/Qwen1.5-7B-Chat-dml-int4-awq-block-128-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
+    }
+}

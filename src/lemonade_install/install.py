@@ -51,8 +51,6 @@ import subprocess
 import sys
 from typing import Optional
 import zipfile
-import huggingface_hub
-import pkg_resources
 import requests
 
 
@@ -187,96 +185,6 @@ def get_oga_hybrid_dir():
             "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
         )
     return hybrid_dir, version
-
-
-class ModelManager:
-
-    @property
-    def supported_models(self) -> dict:
-        """
-        Returns a dictionary of supported models.
-        Note: Models must be downloaded before they are locally available.
-        """
-        # Load the models dictionary from the JSON file
-        server_models_file = os.path.join(
-            os.path.dirname(__file__), "server_models.json"
-        )
-        with open(server_models_file, "r", encoding="utf-8") as file:
-            models = json.load(file)
-
-        # Add the model name as a key in each entry, to make it easier
-        # to access later
-
-        for key, value in models.items():
-            value["model_name"] = key
-
-        return models
-
-    @property
-    def downloaded_hf_checkpoints(self) -> list[str]:
-        """
-        Returns a list of Hugging Face checkpoints that have been downloaded.
-        """
-        downloaded_hf_checkpoints = []
-        try:
-            hf_cache_info = huggingface_hub.scan_cache_dir()
-            downloaded_hf_checkpoints = [entry.repo_id for entry in hf_cache_info.repos]
-        except huggingface_hub.CacheNotFound:
-            pass
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"Error scanning Hugging Face cache: {e}")
-        return downloaded_hf_checkpoints
-
-    @property
-    def downloaded_models(self) -> dict:
-        """
-        Returns a dictionary of locally available models.
-        """
-        downloaded_models = {}
-        for model in self.supported_models:
-            if (
-                self.supported_models[model]["checkpoint"]
-                in self.downloaded_hf_checkpoints
-            ):
-                downloaded_models[model] = self.supported_models[model]
-        return downloaded_models
-
-    @property
-    def downloaded_models_enabled(self) -> dict:
-        """
-        Returns a dictionary of locally available models that are enabled by
-        the current installation.
-        """
-        hybrid_installed = (
-            "onnxruntime-vitisai" in pkg_resources.working_set.by_key
-            and "onnxruntime-genai-directml-ryzenai" in pkg_resources.working_set.by_key
-        )
-
-        downloaded_models_enabled = {}
-        for model, value in self.downloaded_models.items():
-            if value["recipe"] == "oga-hybrid" and hybrid_installed:
-                downloaded_models_enabled[model] = value
-            else:
-                # All other models are CPU models right now
-                # This logic will get more sophisticated when we
-                # start to support more backends
-                downloaded_models_enabled[model] = value
-
-        return downloaded_models_enabled
-
-    def download_models(self, models: list[str]):
-        """
-        Downloads the specified models from Hugging Face.
-        """
-        for model in models:
-            if model not in self.supported_models:
-                raise ValueError(
-                    f"Model {model} is not supported. Please choose from the following: "
-                    f"{list(self.supported_models.keys())}"
-                )
-            checkpoint = self.supported_models[model]["checkpoint"]
-            print(f"Downloading {model} ({checkpoint})")
-            huggingface_hub.snapshot_download(repo_id=checkpoint)
 
 
 def download_lfs_file(token, file, output_filename):
@@ -464,14 +372,6 @@ class Install:
             choices=["0.6.0"],
         )
 
-        parser.add_argument(
-            "--models",
-            help="One or more models to download",
-            type=str,
-            nargs="+",
-            choices=ModelManager().supported_models,
-        )
-
         return parser
 
     @staticmethod
@@ -608,6 +508,7 @@ class Install:
         subprocess.run(install_cmd, check=True, shell=True)
 
         print(f"\nModel prep artifacts installed successfully from {model_prep_dir}.")
+        return file
 
     @staticmethod
     def _install_ryzenai_npu(ryzen_ai_folder, version, yes, token, skip_wheels=False):
@@ -694,6 +595,7 @@ class Install:
         # Install artifacts needed for npu, hybrid, or unified (both) inference
         npu_file = None
         hybrid_file = None
+        model_prep_file = None
         if ryzenai == "npu":
             npu_file = Install._install_ryzenai_npu(
                 ryzen_ai_folder, version, yes, token
@@ -725,9 +627,8 @@ class Install:
             "version": version,
             "hybrid_artifacts": hybrid_file,
             "npu_artifacts": npu_file,
+            "model_prep_artifacts": model_prep_file,
         }
-        if build_model:
-            version_info["model_prep_artifacts"] = model_prep_file
         version_info_path = os.path.join(ryzen_ai_folder, version_info_filename)
         try:
             with open(version_info_path, "w", encoding="utf-8") as file:
@@ -772,18 +673,12 @@ class Install:
         quark: Optional[str] = None,
         yes: bool = False,
         token: Optional[str] = None,
-        models: Optional[str] = None,
     ):
         if ryzenai is None and quark is None and models is None:
             raise ValueError(
                 "You must select something to install, "
                 "for example `--ryzenai`, `--quark`, or `--models`"
             )
-
-        # Download models if needed
-        if models is not None:
-            model_manager = ModelManager()
-            model_manager.download_models(models)
 
         if ryzenai is not None:
             self._install_ryzenai(ryzenai, build_model, yes, token)

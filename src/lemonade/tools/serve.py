@@ -26,7 +26,7 @@ from openai.types.model import Model
 
 from turnkeyml.tools.management_tools import ManagementTool
 import lemonade.api as lemonade_api
-from lemonade_install.install import ModelManager
+from lemonade_server.model_manager import ModelManager
 
 # Set to a high number to allow for interesting experiences in real apps
 # Tests should use the max_new_tokens argument to set a lower value
@@ -34,8 +34,6 @@ DEFAULT_MAX_NEW_TOKENS = 1500
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
-
-LOCAL_MODELS = ModelManager().downloaded_models_enabled
 
 
 class ServerModel(Model):
@@ -90,6 +88,14 @@ class StopOnEvent(StoppingCriteria):
 
     def __call__(self, input_ids, scores, **kwargs):
         return self.stop_event.is_set()
+
+
+class PullConfig(BaseModel):
+    """
+    Configurating for installing a supported LLM.
+    """
+
+    model_name: str
 
 
 class LoadConfig(BaseModel):
@@ -152,8 +158,9 @@ class Server(ManagementTool):
     Open a web server that apps can use to communicate with the LLM.
 
     The server exposes these endpoints:
-    - /api/v0/load: load a model checkpoint
-    - /api/v0/unload: unload a model checkpoint
+    - /api/v0/pull: install an LLM by its Lemonade Server Model Name.
+    - /api/v0/load: load a model checkpoint.
+    - /api/v0/unload: unload a model checkpoint.
     - /api/v0/health: check whether a model is loaded and ready to serve.
     - /api/v0/stats: performance statistics for the generation.
     - /api/v0/halt: stop an in-progress generation from make more tokens.
@@ -180,6 +187,7 @@ class Server(ManagementTool):
         )
 
         # Set up custom routes
+        self.app.post("/api/v0/pull")(self.pull)
         self.app.post("/api/v0/load")(self.load_llm)
         self.app.post("/api/v0/unload")(self.unload_llm)
         self.app.get("/api/v0/health")(self.health)
@@ -221,7 +229,7 @@ class Server(ManagementTool):
 
         # Dictionary of installed LLM, by model name : information about those models
         # Does not include non-installed models
-        self.local_models = LOCAL_MODELS
+        self.local_models = ModelManager().downloaded_models_enabled
 
         # Add lock for load/unload operations
         self._load_lock = asyncio.Lock()
@@ -863,6 +871,18 @@ class Server(ManagementTool):
             ),
         )
 
+    async def pull(self, config: PullConfig):
+        """
+        Install a supported LLM by its Lemonade Model Name.
+        """
+
+        # Install the model
+        ModelManager().download_models([config.model_name])
+
+        # Refresh the list of downloaded models, to ensure it
+        # includes the model we just installed
+        self.local_models = ModelManager().downloaded_models_enabled
+
     async def load_llm(self, config: LoadConfig, internal_call=False):
         """
         Load an LLM into system memory.
@@ -903,16 +923,17 @@ class Server(ManagementTool):
             # We will populate a LoadConfig that has all of the required fields
             config_to_use: LoadConfig
 
-            #
-
             # First, validate that the arguments are valid
             if config.model_name:
+                # Get the dictionary of supported model from disk
+                supported_models = ModelManager().supported_models
+
                 # Refer to the model by name, since we know the name
                 model_reference = config.model_name
 
                 if config.checkpoint or config.recipe:
                     # Option #1, verify that there are no parameter mismatches
-                    built_in_config = self.local_models[config.model_name]
+                    built_in_config = supported_models[config.model_name]
                     if config.checkpoint != built_in_config["checkpoint"]:
                         self.model_load_failure(
                             model_reference,
@@ -937,8 +958,8 @@ class Server(ManagementTool):
                     # Use the config as-is
                     config_to_use = config
                 else:
-                    # Option #2, look up the config from the built-in models dictionary
-                    config_to_use = LoadConfig(**self.local_models[config.model_name])
+                    # Option #2, look up the config from the supported models dictionary
+                    config_to_use = LoadConfig(**supported_models[config.model_name])
 
             elif config.checkpoint:
                 # Refer to the model by checkpoint
@@ -1011,6 +1032,11 @@ class Server(ManagementTool):
             # Release all generate locks
             for _ in range(self.max_concurrent_generations):
                 self._generate_semaphore.release()
+
+            # Refresh the list of downloaded models, to ensure it
+            # includes the model we just loaded
+            if config.model_name not in self.local_models:
+                self.local_models = ModelManager().downloaded_models_enabled
 
     async def unload_llm(self, require_lock: bool = True):
         try:

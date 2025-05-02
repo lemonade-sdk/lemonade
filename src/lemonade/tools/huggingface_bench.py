@@ -40,6 +40,7 @@ def benchmark_huggingface_llm(
     ):
 
         per_iteration_result = []
+        tokens_out_len_list = []
 
         # Early stopping is only a valid parameter with multiple beams
         early_stopping = num_beams > 1
@@ -47,7 +48,7 @@ def benchmark_huggingface_llm(
         with torch.no_grad(), torch.inference_mode():
             # Don't capture time for warmup
             for count in tqdm.tqdm(range(warmup_iterations), desc=f"{mode} warmup"):
-                model.generate(
+                outputs = model.generate(
                     input_ids,
                     num_beams=num_beams,
                     max_new_tokens=target_output_tokens,
@@ -55,6 +56,7 @@ def benchmark_huggingface_llm(
                     early_stopping=early_stopping,
                     pad_token_id=tokenizer.eos_token_id,
                 )
+                tokens_out_len_list.append(outputs.shape[1] - input_ids.shape[1])
                 report_progress_fn((count + 1) / (warmup_iterations + iterations))
 
             for count in tqdm.tqdm(range(iterations), desc=f"{mode} iterations"):
@@ -83,6 +85,7 @@ def benchmark_huggingface_llm(
                 latency = end_time - start_time
 
                 token_len = outputs.shape[1] - input_ids.shape[1]
+                tokens_out_len_list.append(token_len)
 
                 # Only count an iteration if it produced enough tokens
                 if token_len >= target_output_tokens:
@@ -95,7 +98,7 @@ def benchmark_huggingface_llm(
         if not per_iteration_result:
             raise Bench.not_enough_tokens(target_output_tokens)
 
-    return per_iteration_result
+    return per_iteration_result, tokens_out_len_list
 
 
 class HuggingfaceBench(Bench):
@@ -206,7 +209,7 @@ class HuggingfaceBench(Bench):
         prefill_report_progress_fn = lambda x: report_progress_fn(0.5 * x)
 
         # Benchmark prefill time (time to first token)
-        prefill_per_iteration_result = benchmark_huggingface_llm(
+        prefill_per_iteration_result, tokens_out_len_list = benchmark_huggingface_llm(
             model=model,
             tokenizer=tokenizer,
             input_ids=input_ids,
@@ -217,6 +220,7 @@ class HuggingfaceBench(Bench):
             warmup_iterations=warmup_iterations,
             report_progress_fn=prefill_report_progress_fn,
         )
+        self.tokens_out_len_list += tokens_out_len_list
 
         time_to_first_token_per_iteration = [
             latency for latency, _ in prefill_per_iteration_result
@@ -237,7 +241,7 @@ class HuggingfaceBench(Bench):
         decode_report_progress_fn = lambda x: report_progress_fn(0.5 + 0.5 * x)
 
         # Benchmark generation of all tokens
-        decode_per_iteration_result = benchmark_huggingface_llm(
+        decode_per_iteration_result, tokens_out_len_list = benchmark_huggingface_llm(
             model=model,
             tokenizer=tokenizer,
             input_ids=input_ids,
@@ -248,6 +252,7 @@ class HuggingfaceBench(Bench):
             warmup_iterations=warmup_iterations,
             report_progress_fn=decode_report_progress_fn,
         )
+        self.tokens_out_len_list += tokens_out_len_list
 
         execution_latency_per_iteration = [
             latency for latency, _ in decode_per_iteration_result

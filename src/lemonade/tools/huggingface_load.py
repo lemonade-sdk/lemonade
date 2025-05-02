@@ -1,11 +1,13 @@
 import argparse
 from typing import Dict, Optional
 import json
+import socket
 import transformers
 import torch
 from huggingface_hub import model_info
 from turnkeyml.state import State
 import turnkeyml.common.status as status
+import turnkeyml.common.printing as printing
 from turnkeyml.tools import FirstTool
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 from lemonade.cache import Keys
@@ -60,9 +62,25 @@ class HuggingfaceTokenizerAdapter(TokenizerAdapter):
         return self.tokenizer.save_pretrained(model_dir, **kwargs)
 
 
+def is_offline():
+    """
+    Check if the system is offline by attempting to connect to huggingface.co.
+
+    Returns:
+        bool: True if the system is offline (cannot connect to huggingface.co),
+              False otherwise.
+    """
+    try:
+        socket.gethostbyname("huggingface.co")
+        return False
+    except socket.gaierror:
+        return True
+
+
 def get_base_model(checkpoint: str) -> Optional[str]:
     """
     Get the base model information for a given checkpoint from the Hugging Face Hub.
+    Will auto-detect if we're offline and skip the network call in that case.
 
     Args:
         checkpoint: The model checkpoint to query
@@ -70,6 +88,10 @@ def get_base_model(checkpoint: str) -> Optional[str]:
     Returns:
         The base model name if found, or None if not found or error occurs
     """
+    # Skip network call in offline mode
+    if is_offline():
+        return None
+
     try:
         info = model_info(checkpoint)
         if info.cardData and "base_model" in info.cardData:
@@ -178,6 +200,12 @@ class HuggingfaceLoad(FirstTool):
         load_kwargs: Optional[Dict] = None,
         channels_last: bool = True,
     ) -> State:
+        # Auto-detect offline status
+        offline = is_offline()
+        if offline:
+            printing.log_warning(
+                "Network connectivity to huggingface.co not detected. Running in offline mode."
+            )
 
         checkpoint = input
 
@@ -186,15 +214,27 @@ class HuggingfaceLoad(FirstTool):
         else:
             load_kwargs_to_use = load_kwargs
 
+        # Add local_files_only to kwargs in offline mode
+        if offline:
+            load_kwargs_to_use["local_files_only"] = True
+
         if vars(state).get(Keys.MODEL):
             raise ValueError("HuggingfaceLoad must be the first tool in the sequence")
 
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            checkpoint,
-            torch_dtype=dtype,
-            low_cpu_mem_usage=True,
-            **load_kwargs_to_use,
-        )
+        try:
+            model = transformers.AutoModelForCausalLM.from_pretrained(
+                checkpoint,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                **load_kwargs_to_use,
+            )
+        except Exception as e:
+            if offline and "Can't load config for" in str(e):
+                raise ValueError(
+                    f"Cannot load model {checkpoint} in offline mode. "
+                    f"The model files may not be available locally. Original error: {str(e)}"
+                )
+            raise
 
         # Only call the model.to() method if an argument to this function
         # provides a reason to do so
@@ -209,16 +249,36 @@ class HuggingfaceLoad(FirstTool):
         model = model.eval()
 
         try:
+            tokenizer_kwargs = {
+                "use_fast": False,
+                "model_max_length": 4096,
+                "padding_side": "left",
+            }
+            if offline:
+                tokenizer_kwargs["local_files_only"] = True
+
             tokenizer = transformers.AutoTokenizer.from_pretrained(
-                checkpoint,
-                use_fast=False,
-                model_max_length=4096,
-                padding_side="left",
+                checkpoint, **tokenizer_kwargs
             )
-        except ValueError:
+        except ValueError as e:
             # Sometimes those specific tokenizer flags are not supported, in which
             # case we try to just load a simple tokenizer
-            tokenizer = transformers.AutoTokenizer.from_pretrained(checkpoint)
+            tokenizer_kwargs = {}
+            if offline:
+                tokenizer_kwargs["local_files_only"] = True
+
+            try:
+                tokenizer = transformers.AutoTokenizer.from_pretrained(
+                    checkpoint, **tokenizer_kwargs
+                )
+            except Exception as e:
+                if offline and "Can't load tokenizer for" in str(e):
+                    raise ValueError(
+                        f"Cannot load tokenizer for {checkpoint} in offline mode. "
+                        f"The tokenizer files may not be available locally. "
+                        f"Original error: {str(e)}"
+                    )
+                raise
 
         # Pass the model and inputs into state
         state.model = HuggingfaceAdapter(model, dtype, device, tokenizer)

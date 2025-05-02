@@ -70,6 +70,17 @@ https://github.com/onnx/turnkeyml/releases/download/v6.0.0/Lemonade_Server_Insta
 
 Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md#from-source-code).
 
+### Installing Additional Models
+
+Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:
+
+- Discovering which LLMs are available:
+  - [A human-readable list of supported models](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
+  - [A JSON file with the list of supported models](https://github.com/onnx/turnkeyml/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
+- Installing LLMs:
+  - [The `pull` endpoint in the server](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md#get-apiv0pull-).
+  - `lemonade-server pull MODEL` on the command line interface.
+
 ## Stand-Alone Server Integration
 
 Some apps might prefer to be responsible for installing and managing Lemonade Server on behalf of the user. This part of the guide includes steps for installing and running Lemonade Server so that your users don't have to install Lemonade Server separately.
@@ -93,6 +104,8 @@ lemonade-server --port 8123
 ```
 
 You can also run the server as a background process using a subprocess or any preferred method.
+
+To stop the server, you may use the `lemonade-server stop` command, or simply terminate the process you created by keeping track of its PID. Please do not run the `lemonade-server stop` command if your application has not started the server, as the server may be used by other applications.
 
 ### Silent Installation
 

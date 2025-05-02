@@ -37,7 +37,7 @@ The AI Toolkit now supports "Bring Your Own Model" functionality, allowing you t
     http://localhost:8000/api/v0/chat/completions
     ```
 5. When prompted to "Enter the exact model name as in the API" select a model (e.g., `Phi-3-Mini-Instruct-Hybrid`)
-    - Note: You can get a list of all models available by running `curl http://localhost:8000/api/v0/models`
+    - Note: You can get a list of all models available [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
 6. Select the same name as the display model name.
 7. Skip the HTTP authentication step by pressing "Enter".
 

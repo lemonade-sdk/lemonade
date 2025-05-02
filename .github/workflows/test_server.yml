@@ -36,10 +36,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip check
           pip install -e .[llm-oga-cpu]
-          lemonade-install --model Qwen2.5-0.5B-Instruct-CPU
-      - name: Run server tests
+          lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
+      - name: Run server tests (network online mode)
         shell: bash -el {0}
         run: |
           python test/lemonade/server.py
+      - name: Run server tests (offline mode)
+        shell: bash -el {0}
+        run: |
+          python test/lemonade/server.py --offline
 
 
