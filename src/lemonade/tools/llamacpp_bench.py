@@ -1,7 +1,6 @@
 import argparse
 import statistics
 from statistics import StatisticsError
-import tqdm
 from turnkeyml.state import State
 from lemonade.cache import Keys
 from lemonade.tools.llamacpp import LlamaCppAdapter
@@ -58,11 +57,7 @@ class LlamaCppBench(Bench):
         iteration_tokens_per_second = []
         iteration_time_to_first_token = []
 
-        for iteration in tqdm.tqdm(
-            range(iterations + warmup_iterations),
-            desc="iterations",
-            disable=iterations < 2,
-        ):
+        for iteration in range(iterations + warmup_iterations):
             try:
                 # Use the adapter's generate method which already has the timeout
                 # and error handling

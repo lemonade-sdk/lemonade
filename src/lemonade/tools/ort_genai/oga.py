@@ -37,6 +37,7 @@ from lemonade_install.install import (
     get_ryzen_ai_version_info,
     get_oga_npu_dir,
     get_oga_hybrid_dir,
+    SUPPORTED_RYZEN_AI_SERIES,
 )
 
 
@@ -109,10 +110,20 @@ class OrtGenaiModel(ModelAdapter):
         self.config = self.load_config(input_folder)
 
     def load_config(self, input_folder):
+        rai_config_path = os.path.join(input_folder, "rai_config.json")
+        if os.path.exists(rai_config_path):
+            with open(rai_config_path, "r", encoding="utf-8") as f:
+                max_prompt_length = json.load(f)["max_prompt_length"]["1.4.1"]
+        else:
+            max_prompt_length = None
+
         config_path = os.path.join(input_folder, "genai_config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                config_dict = json.load(f)
+                if max_prompt_length:
+                    config_dict["max_prompt_length"] = max_prompt_length
+                return config_dict
         return None
 
     def generate(
@@ -130,6 +141,14 @@ class OrtGenaiModel(ModelAdapter):
         max_length=None,
     ):
         params = og.GeneratorParams(self.model)
+
+        prompt_length = len(input_ids)
+        max_prompt_length = self.config.get("max_prompt_length")
+        if max_prompt_length and prompt_length > max_prompt_length:
+            raise ValueError(
+                f"This prompt (length {prompt_length}) exceeds the model's "
+                f"maximum allowed prompt length ({max_prompt_length})."
+            )
 
         # There is a breaking API change in OGA 0.6.0
         # Determine whether we should use the old or new APIs
@@ -153,9 +172,9 @@ class OrtGenaiModel(ModelAdapter):
         if max_length:
             max_length_to_use = max_length
         elif max_new_tokens:
-            max_length_to_use = len(input_ids) + max_new_tokens
+            max_length_to_use = prompt_length + max_new_tokens
 
-        min_length = len(input_ids) + min_new_tokens
+        min_length = prompt_length + min_new_tokens
 
         if use_oga_pre_6_api:
             params.input_ids = input_ids
@@ -559,12 +578,13 @@ class OgaLoad(FirstTool):
     @staticmethod
     def _validate_model_configuration(device, dtype, checkpoint):
         """
-        Validate if the device, dtype, and checkpoint combination are consistent with
+        Validate if the device, dtype, platform and checkpoint combination are consistent with
         HuggingFace checkpoint naming conventions and specifically for AMD models for NPU
         and hybrid flows.
 
         Returns True if device, dtype, and model are consistent.
         """
+
         hf_supported_models = {
             "cpu": {"int4": "*/*", "fp32": "*/*"},
             "igpu": {"int4": "*/*", "fp16": "*/*"},
@@ -815,7 +835,22 @@ class OgaLoad(FirstTool):
         Loads the OGA model from local folder and then loads the tokenizer.
         Will auto-detect if we're offline.
         """
-        state.model = OrtGenaiModel(full_model_path)
+        try:
+            state.model = OrtGenaiModel(full_model_path)
+        except Exception as e:
+            if "invalid unordered_map<K, T>" in str(e):
+                raise ValueError(
+                    "Error initializing model: Invalid configuration detected.\n"
+                    "Please check the following:\n"
+                    f"1. Please check your model's config file in {full_model_path} "
+                    "and ensure custom_ops_library points to the valid "
+                    "onnx_custom_ops.dll path.\n"
+                    "2. Make sure the NPU driver is loaded.\n"
+                    "3. Make sure hybrid has been installed on a Ryzen AI "
+                    f"{'or '.join(SUPPORTED_RYZEN_AI_SERIES)}-series processor."
+                ) from e
+            raise
+
         # Auto-detect offline mode
         offline = is_offline()
 

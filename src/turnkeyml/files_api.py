@@ -12,17 +12,6 @@ import turnkeyml.common.filesystem as fs
 import turnkeyml.common.labels as labels_library
 from turnkeyml.state import State
 
-# The licensing for tqdm is confusing. Pending a legal scan,
-# the following code provides tqdm to users who have installed
-# it already, while being transparent to users who do not
-# have tqdm installed.
-try:
-    from tqdm import tqdm
-except ImportError:
-
-    def tqdm(iterable, **kwargs):  # pylint: disable=unused-argument
-        return iterable
-
 
 def unpack_txt_inputs(input_files: List[str]) -> List[str]:
     """
@@ -149,9 +138,7 @@ def evaluate_files(
                 "Suggest quitting turnkey, running 'scancel -u $USER' and trying again."
             )
 
-    use_progress_bar = len(input_files_expanded) > 1
-
-    for file_path_encoded in tqdm(input_files_expanded, disable=not use_progress_bar):
+    for file_path_encoded in input_files_expanded:
 
         printing.log_info(f"Running turnkey on {file_path_encoded}")
 

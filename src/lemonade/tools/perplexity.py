@@ -3,7 +3,6 @@ import argparse
 import pandas as pd
 import torch
 from datasets import load_dataset
-from tqdm import tqdm
 from turnkeyml.state import State
 from turnkeyml.tools import Tool
 import turnkeyml.common.printing as printing
@@ -76,7 +75,7 @@ class AccuracyPerplexity(Tool):
             build.output_dir(state.cache_dir, state.build_name), "perplexity"
         )
 
-        for begin_location in tqdm(range(0, seq_len, stride)):
+        for begin_location in range(0, seq_len, stride):
             end_location = min(begin_location + max_length, seq_len)
             target_len = end_location - prev_end_location
             input_ids = encodings.input_ids[:, begin_location:end_location]

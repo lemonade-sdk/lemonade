@@ -3,7 +3,7 @@ from threading import Thread, Event
 from transformers import StoppingCriteriaList
 from lemonade.api import from_pretrained
 from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
-from lemonade.tools.serve import StopOnEvent
+from lemonade.tools.server.serve import StopOnEvent
 
 employee_handbook = """
 1. You will work very hard every day.\n

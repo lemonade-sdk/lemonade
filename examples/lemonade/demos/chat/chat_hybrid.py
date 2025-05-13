@@ -1,7 +1,7 @@
 import sys
 from threading import Thread, Event
 from transformers import StoppingCriteriaList
-from lemonade.tools.serve import StopOnEvent
+from lemonade.tools.server.serve import StopOnEvent
 from lemonade.api import from_pretrained
 from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
 

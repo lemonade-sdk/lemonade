@@ -26,6 +26,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Llama-3.2-1B-Instruct-Hybrid</summary>
 
+```bash
+    lemonade-server pull Llama-3.2-1B-Instruct-Hybrid
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid) |
@@ -36,6 +40,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>Llama-3.2-3B-Instruct-Hybrid</summary>
+
+```bash
+    lemonade-server pull Llama-3.2-3B-Instruct-Hybrid
+```
 
 | Key | Value |
 | --- | ----- |
@@ -48,6 +56,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Phi-3-Mini-Instruct-Hybrid</summary>
 
+```bash
+    lemonade-server pull Phi-3-Mini-Instruct-Hybrid
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid) |
@@ -58,6 +70,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>Qwen-1.5-7B-Chat-Hybrid</summary>
+
+```bash
+    lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
+```
 
 | Key | Value |
 | --- | ----- |
@@ -70,6 +86,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>DeepSeek-R1-Distill-Llama-8B-Hybrid</summary>
 
+```bash
+    lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid](https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid) |
@@ -80,6 +100,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>DeepSeek-R1-Distill-Qwen-7B-Hybrid</summary>
+
+```bash
+    lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
+```
 
 | Key | Value |
 | --- | ----- |
@@ -92,6 +116,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Mistral-7B-v0.3-Instruct-Hybrid</summary>
 
+```bash
+    lemonade-server pull Mistral-7B-v0.3-Instruct-Hybrid
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid) |
@@ -102,6 +130,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>Llama-3.1-8B-Instruct-Hybrid</summary>
+
+```bash
+    lemonade-server pull Llama-3.1-8B-Instruct-Hybrid
+```
 
 | Key | Value |
 | --- | ----- |
@@ -117,6 +149,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Qwen2.5-0.5B-Instruct-CPU</summary>
 
+```bash
+    lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx](https://huggingface.co/amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx) |
@@ -127,6 +163,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>Llama-3.2-1B-Instruct-CPU</summary>
+
+```bash
+    lemonade-server pull Llama-3.2-1B-Instruct-CPU
+```
 
 | Key | Value |
 | --- | ----- |
@@ -139,6 +179,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Llama-3.2-3B-Instruct-CPU</summary>
 
+```bash
+    lemonade-server pull Llama-3.2-3B-Instruct-CPU
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx](https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx) |
@@ -149,6 +193,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>Phi-3-Mini-Instruct-CPU</summary>
+
+```bash
+    lemonade-server pull Phi-3-Mini-Instruct-CPU
+```
 
 | Key | Value |
 | --- | ----- |
@@ -161,6 +209,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>Qwen-1.5-7B-Chat-CPU</summary>
 
+```bash
+    lemonade-server pull Qwen-1.5-7B-Chat-CPU
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu](https://huggingface.co/amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu) |
@@ -172,6 +224,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <details>
 <summary>DeepSeek-R1-Distill-Llama-8B-CPU</summary>
 
+```bash
+    lemonade-server pull DeepSeek-R1-Distill-Llama-8B-CPU
+```
+
 | Key | Value |
 | --- | ----- |
 | Checkpoint | [amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu](https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu) |
@@ -182,6 +238,10 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 
 <details>
 <summary>DeepSeek-R1-Distill-Qwen-7B-CPU</summary>
+
+```bash
+    lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-CPU
+```
 
 | Key | Value |
 | --- | ----- |

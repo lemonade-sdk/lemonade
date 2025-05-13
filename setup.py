@@ -25,6 +25,7 @@ setup(
         "lemonade.tools.ort_genai",
         "lemonade.tools.quark",
         "lemonade.tools.report",
+        "lemonade.tools.server",
         "turnkeyml_models",
         "turnkeyml_models.graph_convolutions",
         "turnkeyml_models.selftest",
@@ -37,7 +38,7 @@ setup(
     ],
     install_requires=[
         "invoke>=2.0.0",
-        "onnx>=1.11.0",
+        "onnx>=1.11.0,<1.18.0",
         "onnxmltools==1.10.0",
         "torch>=1.12.1",
         "pyyaml>=5.4",
@@ -49,17 +50,18 @@ setup(
         "pandas>=1.5.3",
         "fasteners",
         "GitPython>=3.1.40",
-        "psutil",
+        "psutil>=6.1.1",
         "wmi",
         "pytz",
-        "tqdm",
         "zstandard",
         "matplotlib",
         "tabulate",
+        # huggingface-hub==0.31.0 introduces a new transfer protocol that was causing us issues 
+        "huggingface-hub==0.30.2",
         # Conditional dependencies for ONNXRuntime backends
-        "onnxruntime >=1.10.1;platform_system=='Linux' and extra != 'llm-oga-cuda'",
-        "onnxruntime-directml >=1.19.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",
-        "onnxruntime-gpu >=1.19.1;extra == 'llm-oga-cuda'",
+        "onnxruntime >=1.10.1,<1.22.0;platform_system=='Linux' and extra != 'llm-oga-cuda'",
+        "onnxruntime-directml >=1.19.0,<1.22.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",
+        "onnxruntime-gpu >=1.19.1,<1.22.0;extra == 'llm-oga-cuda'",
     ],
     extras_require={
         "llm": [
@@ -74,7 +76,7 @@ setup(
             "human-eval-windows==1.0.4",
             "fastapi",
             "uvicorn[standard]",
-            "openai",
+            "openai>=1.66.0",
             "lm-eval[api]",
         ],
         "llm-oga-cpu": [

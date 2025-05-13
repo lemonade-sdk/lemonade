@@ -126,5 +126,17 @@
         "recipe": "oga-igpu",
         "reasoning": false,
         "suggested": false
+    },
+    "Mistral-7B-v0.1-Instruct-DirectML": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.1-awq-g128-int4-onnx-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
+    },
+    "Llama-3-8B-Instruct-DirectML": {
+        "checkpoint": "amd/llama3-8b-instruct-awq-g128-int4-onnx-directml",
+        "recipe": "oga-igpu",
+        "reasoning": false,
+        "suggested": false
     }
 }

@@ -556,6 +556,153 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             print(completion.choices[0].text)
             assert len(completion.choices[0].text) > 5
 
+    # Endpoint: /api/v0/responses
+    def test_014_test_responses(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        response = client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=False,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
+
+        print(response.output[0].content[0].text)
+        assert len(response.output[0].content[0].text) > 5
+
+    # Endpoint: /api/v0/responses
+    def test_015_test_responses_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=True,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
+        complete_response = ""
+        event_count = 0
+        last_event_type = ""
+        for event in stream:
+
+            # Check that the first event is a response.created event
+            if event_count == 0:
+                assert (
+                    event.type == "response.created"
+                ), f"Expected first event to be response.created, got {event.type}"
+
+            # Keep track of the streamed response
+            elif event.type == "response.output_text.delta":
+                complete_response += event.delta
+                print(event.delta, end="")
+
+            # Ensure the complete event matches the streamed response
+            elif event.type == "response.completed":
+                assert (
+                    event.response.output[0].content[0].text == complete_response
+                ), "Complete response does not match streamed response"
+
+            # Ensure all events we add in the future are also tested
+            else:
+                assert False, f"Untested event type: {event.type}"
+            event_count += 1
+            last_event_type = event.type
+
+        assert last_event_type == "response.completed"
+        assert len(complete_response) > 5
+
+    # Endpoint: /api/v0/responses
+    async def test_016_test_responses_streaming_async(self):
+        client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = await client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=True,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
+        complete_response = ""
+        event_count = 0
+        last_event_type = ""
+        async for event in stream:
+
+            # Check that the first event is a response.created event
+            if event_count == 0:
+                assert (
+                    event.type == "response.created"
+                ), f"Expected first event to be response.created, got {event.type}"
+
+            # Keep track of the streamed response
+            elif event.type == "response.output_text.delta":
+                complete_response += event.delta
+                print(event.delta, end="")
+
+            # Ensure the complete event matches the streamed response
+            elif event.type == "response.completed":
+                assert (
+                    event.response.output[0].content[0].text == complete_response
+                ), "Complete response does not match streamed response"
+
+            # Ensure all events we add in the future are also tested
+            else:
+                assert False, f"Untested event type: {event.type}"
+            event_count += 1
+            last_event_type = event.type
+
+        assert last_event_type == "response.completed"
+        assert len(complete_response) > 5
+
+    # Endpoint: /api/v0/chat/completions with tool calls
+    def test_017_test_chat_completion_with_tool_calls(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        # Sample tool schema based on https://github.com/githejie/mcp-server-calculator
+        sample_tool = {
+            "type": "function",
+            "function": {
+                "name": "calculator_calculate",
+                "parameters": {
+                    "properties": {
+                        "expression": {"title": "Expression", "type": "string"}
+                    },
+                    "required": ["expression"],
+                    "title": "calculateArguments",
+                    "type": "object",
+                },
+            },
+        }
+
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Run the calculator_calculate tool with expression set to 1+1",
+                }
+            ],
+            tools=[sample_tool],
+            max_completion_tokens=50,
+        )
+
+        tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
+        assert tool_calls is not None
+        assert len(tool_calls) == 1
+
 
 if __name__ == "__main__":
     args = parse_args()

@@ -30,7 +30,7 @@ def serve(port: int):
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.serve import Server, DEFAULT_PORT
+    from lemonade.tools.server.serve import Server, DEFAULT_PORT
 
     server = Server()
     port = port if port is not None else DEFAULT_PORT
@@ -107,7 +107,7 @@ def version():
     """
     from turnkeyml import __version__ as version_number
 
-    print(f"Lemonade Server version is {version_number}")
+    print(f"{version_number}")
 
 
 def status(verbose: bool = True) -> Tuple[bool, int]:

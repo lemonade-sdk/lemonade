@@ -37,6 +37,10 @@ jobs:
           python -m pip check
           pip install -e .[llm-oga-cpu]
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
+      - name: Run server tests (unit tests)
+        shell: bash -el {0}
+        run: |
+          python test/lemonade/server_unit.py
       - name: Run server tests (network online mode)
         shell: bash -el {0}
         run: |

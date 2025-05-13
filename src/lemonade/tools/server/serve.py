@@ -6,6 +6,8 @@ from threading import Thread, Event
 import logging
 import traceback
 from typing import Optional, Union
+import json
+from typing import List, Dict
 
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -17,16 +19,28 @@ from tabulate import tabulate
 
 from openai.types.completion import Completion, CompletionChoice
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
+from openai.types.chat import ChatCompletionMessage
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCall,
+    Function,
+)
 from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from openai.types.completion_choice import Logprobs
-
 from openai.types.model import Model
+from openai.types.responses import (
+    Response,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseCreatedEvent,
+    ResponseTextDeltaEvent,
+    ResponseCompletedEvent,
+)
 
 from turnkeyml.tools.management_tools import ManagementTool
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
+from lemonade.tools.server.tool_calls import extract_tool_calls
 
 # Set to a high number to allow for interesting experiences in real apps
 # Tests should use the max_new_tokens argument to set a lower value
@@ -72,8 +86,6 @@ class GeneratorThread(Thread):
             self.streamer.done()
 
 
-# Custom huggingface-style stopping criteria to allow
-# us to halt streaming in-progress generations
 class StopOnEvent(StoppingCriteria):
     """
     Custom stopping criteria that halts text generation when a specified event is set.
@@ -149,8 +161,21 @@ class ChatCompletionRequest(BaseModel):
     logprobs: int | None = False
     stop: list[str] | str | None = None
     temperature: float | None = None
+    tools: list[dict] | None = None
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
+
+
+class ResponsesRequest(BaseModel):
+    """
+    Request model for responses API endpoint.
+    """
+
+    input: list[dict] | str
+    model: str
+    max_output_tokens: int | None = None
+    temperature: float | None = None
+    stream: bool = False
 
 
 class Server(ManagementTool):
@@ -166,6 +191,7 @@ class Server(ManagementTool):
     - /api/v0/halt: stop an in-progress generation from make more tokens.
     - /api/v0/completions: completion responses using HTTP chunked transfer encoding.
     - /api/v0/chat/completions: chat completion responses using HTTP chunked transfer encoding.
+    - /api/v0/responses: responses API using HTTP chunked transfer encoding.
     - /api/v0/models: list all available models.
     """
 
@@ -194,6 +220,7 @@ class Server(ManagementTool):
         self.app.get("/api/v0/halt")(self.halt_generation)
         self.app.get("/api/v0/stats")(self.send_stats)
         self.app.post("/api/v0/completions")(self.completions)
+        self.app.post("/api/v0/responses")(self.responses)
 
         # Set up OpenAI-compatible routes
         self.app.post("/api/v0/chat/completions")(self.chat_completions)
@@ -498,31 +525,27 @@ class Server(ManagementTool):
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
 
+        if chat_completion_request.tools and chat_completion_request.stream:
+            logging.warning(
+                "tools are only supported on non-streaming chat completions"
+            )
+        if chat_completion_request.logprobs:
+            logging.warning("logprobs is not supported on chat completion")
+
         lc = self.initialize_load_config(chat_completion_request)
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc, internal_call=True)
 
         # Convert chat messages to text using the model's chat template
-        if self.tokenizer.chat_template:
-            # Use the model's built-in chat template if available
-            messages_dict = [
-                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
-                for msg in chat_completion_request.messages
-            ]
-            text = self.tokenizer.apply_chat_template(
-                messages_dict, tokenize=False, add_generation_prompt=True
-            )
-        else:
-            # Fallback to a standardized template if the model doesn't provide one
-            logging.warning("No chat template found. Using default template.")
-            formatted_messages = []
-            for msg in chat_completion_request.messages:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                role_marker = "<|assistant|>" if role == "assistant" else "<|user|>"
-                formatted_messages.append(f"{role_marker}\n{content} <|end|>")
-            text = "\n".join(formatted_messages) + "\n<|assistant|>"
+        text = self.apply_chat_template(
+            chat_completion_request.messages,
+            tools=(
+                chat_completion_request.tools
+                if not chat_completion_request.stream
+                else None
+            ),
+        )
 
         # If the model supports reasoning, we:
         # 1. add a <think> tag to the model's context
@@ -531,10 +554,6 @@ class Server(ManagementTool):
 
         if reasoning_first_token:
             text += "<think>"
-
-        if chat_completion_request.logprobs:
-            logging.warning("logprobs is not supported on chat completion")
-
         # Set the max_new_tokens parameter
         if (
             chat_completion_request.max_completion_tokens
@@ -620,13 +639,33 @@ class Server(ManagementTool):
             async for token in self._generate_tokens(**generation_args):
                 full_response += token
 
+            # Extract tool calls from the response
+            openai_tool_calls = None
+            if chat_completion_request.tools:
+                tool_calls, full_response = extract_tool_calls(
+                    full_response, self.tokenizer.auto_tokenizer.added_tokens_decoder
+                )
+                if tool_calls:
+                    openai_tool_calls = []
+                for tool_call in tool_calls:
+                    openai_tool_calls.append(
+                        ChatCompletionMessageToolCall(
+                            id="-",
+                            function=Function(
+                                arguments=json.dumps(tool_call["arguments"]),
+                                name=tool_call["name"],
+                            ),
+                            type="function",
+                        )
+                    )
+
             ccm = ChatCompletionMessage(
                 content=full_response,
                 role="assistant",
                 refusal=None,
                 audio=None,
                 function_call=None,
-                tool_calls=None,
+                tool_calls=openai_tool_calls,
             )
 
             choice = Choice(
@@ -642,6 +681,179 @@ class Server(ManagementTool):
                 model=self.llm_loaded.checkpoint,
                 object="chat.completion",
                 created=int(time.time()),
+            )
+
+    def apply_chat_template(
+        self, messages: list[dict], tools: list[dict] | None = None
+    ):
+        """
+        Apply the model's chat template to the messages.
+        """
+        if self.tokenizer.chat_template:
+
+            return self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                tools=tools,
+            )
+
+        # Fallback to a standardized template if the model doesn't provide one
+        logging.warning("No chat template found. Using default template.")
+        formatted_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            role_marker = "<|assistant|>" if role == "assistant" else "<|user|>"
+            formatted_messages.append(f"{role_marker}\n{content} <|end|>")
+        return "\n".join(formatted_messages) + "\n<|assistant|>"
+
+    async def responses(self, responses_request: ResponsesRequest):
+        """
+        Stream responses using HTTP chunked transfer encoding.
+        """
+
+        lc = self.initialize_load_config(responses_request)
+
+        # Load the model if it's different from the currently loaded one
+        await self.load_llm(lc, internal_call=True)
+
+        # Convert chat messages to text using the model's chat template
+        if isinstance(responses_request.input, str):
+            text = responses_request.input
+        else:
+            text = self.apply_chat_template(responses_request.input)
+
+        # If the model supports reasoning, we:
+        # 1. add a <think> tag to the model's context
+        # 2. ensure that the first token is a <think> token
+        reasoning_first_token = self.llm_loaded.reasoning
+
+        if reasoning_first_token:
+            text += "<think>"
+
+        # Prepare generation arguments
+        generation_args = {
+            "message": text,
+            "temperature": responses_request.temperature,
+            "max_new_tokens": responses_request.max_output_tokens,
+        }
+
+        if responses_request.stream:
+
+            # Stream the response
+            async def generate():
+                # Declare it's the same variable from outside scope
+                # This is necessary because the variable is modified
+                # in the inner function
+                nonlocal reasoning_first_token
+
+                # Send initial creation event
+                response = Response(
+                    id="0",
+                    model=self.llm_loaded.checkpoint,
+                    created_at=int(time.time()),
+                    object="response",
+                    output=[],
+                    parallel_tool_calls=True,
+                    tool_choice="auto",
+                    tools=[],
+                )
+                created_event = ResponseCreatedEvent(
+                    response=response,
+                    type="response.created",
+                )
+                yield f"data: {created_event.model_dump_json()}\n\n".encode("utf-8")
+
+                full_response = "<think>" if reasoning_first_token else ""
+
+                async for token in self._generate_tokens(**generation_args):
+
+                    # Create an event
+                    delta_event = ResponseTextDeltaEvent(
+                        content_index=0,
+                        delta=("<think>" + token if reasoning_first_token else token),
+                        item_id="0 ",
+                        output_index=0,
+                        type="response.output_text.delta",
+                    )
+                    full_response += token
+
+                    # Format as SSE
+                    reasoning_first_token = False
+                    yield f"data: {delta_event.model_dump_json()}\n\n".encode("utf-8")
+
+                # Send the completed event
+                response_output_message = ResponseOutputMessage(
+                    id="0",
+                    content=[
+                        ResponseOutputText(
+                            annotations=[],
+                            text=full_response,
+                            type="output_text",
+                        )
+                    ],
+                    role="assistant",
+                    status="completed",
+                    type="message",
+                )
+                response = Response(
+                    id="0",
+                    model=self.llm_loaded.checkpoint,
+                    created_at=int(time.time()),
+                    object="response",
+                    output=[response_output_message],
+                    parallel_tool_calls=True,
+                    tool_choice="auto",
+                    tools=[],
+                )
+                completed_event = ResponseCompletedEvent(
+                    response=response,
+                    type="response.completed",
+                )
+                yield f"data: {completed_event.model_dump_json()}\n\n".encode("utf-8")
+
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
+
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        # If streaming is not requested, collect all generated tokens into a single response
+        else:
+            full_response = "<think>" if reasoning_first_token else ""
+            async for token in self._generate_tokens(**generation_args):
+                full_response += token
+
+            # Send the completed event
+            response_output_message = ResponseOutputMessage(
+                id="0",
+                content=[
+                    ResponseOutputText(
+                        annotations=[],
+                        text=full_response,
+                        type="output_text",
+                    )
+                ],
+                role="assistant",
+                status="completed",
+                type="message",
+            )
+            return Response(
+                id="0",
+                model=self.llm_loaded.checkpoint,
+                created_at=int(time.time()),
+                object="response",
+                output=[response_output_message],
+                parallel_tool_calls=True,
+                tool_choice="auto",
+                tools=[],
             )
 
     async def _generate_tokens(
@@ -793,7 +1005,7 @@ class Server(ManagementTool):
             if thread.exception:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Completion failure {thread.exception}",
+                    detail=f"Completion failure: {thread.exception}",
                 )
 
             # Display telemetry if in debug mode
@@ -1088,11 +1300,31 @@ class Server(ManagementTool):
         @self.app.middleware("http")
         async def log_request_time(request: Request, call_next):
             """
-            Log the request processing time for any request
+            Log the request processing time for any request.
+            For streaming responses, wraps the body iterator to measure total time.
+            Only applies the wrapper in debug mode.
             """
-
             start_time = time.perf_counter()
             response = await call_next(request)
-            request_time = time.perf_counter() - start_time
-            logging.debug(f"Total request time: {request_time:.4f} seconds")
+
+            if (
+                self.debug_logging_enabled
+                and hasattr(response, "body_iterator")
+                and response.body_iterator is not None
+            ):
+                original_iterator = response.body_iterator
+
+                async def wrapped_iterator():
+                    async for chunk in original_iterator:
+                        yield chunk
+                    request_time = time.perf_counter() - start_time
+                    logging.debug(
+                        f"Total request time (streamed): {request_time:.4f} seconds"
+                    )
+
+                response.body_iterator = wrapped_iterator()
+            else:
+                request_time = time.perf_counter() - start_time
+                if self.debug_logging_enabled:
+                    logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response

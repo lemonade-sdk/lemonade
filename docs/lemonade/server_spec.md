@@ -9,6 +9,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 ### OpenAI-Compatible Endpoints
 - POST `/api/v0/chat/completions` - Chat Completions (messages -> completion)
 - POST `/api/v0/completions` - Text Completions (prompt -> completion)
+- POST `api/v0/responses` - Chat Completions (prompt|messages -> event)
 - GET `/api/v0/models` - List models available locally
 
 ### Additional Endpoints
@@ -65,6 +66,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `tools`       | No | A list of tools the model may call. Only available when `stream` is set to `False`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -206,6 +208,86 @@ The following format is used for both streaming and non-streaming responses:
   }],
 }
 ```
+
+
+
+### `POST /api/v0/responses` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
+
+Responses API. You provide an input and receive a response. This API will also load the model if it is not already loaded.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | A list of dictionaries or a string input for the model to respond to. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for the response. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `max_output_tokens` | No | The maximum number of output tokens to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+
+#### Streaming Events
+
+The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about. Our initial implementation only offers support to:
+- `response.created`
+- `response.output_text.delta`
+- `response.completed`
+
+For a full list of event types, see the [API reference for streaming](https://platform.openai.com/docs/api-reference/responses-streaming).
+
+#### Example request
+
+PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:8000/api/v0/responses" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+    "model": "Llama-3.2-1B-Instruct-Hybrid",
+    "input": "What is the population of Paris?",
+    "stream": false
+  }'
+```
+
+Bash:
+
+```bash
+curl -X POST http://localhost:8000/api/v0/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "input": "What is the population of Paris?",
+        "stream": false
+      }'
+```
+
+
+#### Response format
+
+For non-streaming responses:
+
+```json
+{
+  "id": "0",
+  "created_at": 1746225832.0,
+  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "object": "response",
+  "output": [{
+    "id": "0",
+    "content": [{
+      "annotations": [],
+      "text": "Paris has a population of approximately 2.2 million people in the city proper."
+    }]
+  }]
+}
+```
+
+For streaming responses, the API returns a series of events. Refer to [OpenAI streaming guide](https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses) for details.
+
+
+
 
 ### `GET /api/v0/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

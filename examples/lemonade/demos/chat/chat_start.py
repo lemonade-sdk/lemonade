@@ -3,7 +3,7 @@ from threading import Thread, Event
 from queue import Queue
 from time import sleep
 from transformers import StoppingCriteriaList
-from lemonade.tools.serve import StopOnEvent
+from lemonade.tools.server.serve import StopOnEvent
 
 
 class TextStreamer:

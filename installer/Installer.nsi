@@ -90,7 +90,7 @@ SectionIn RO ; Read only, always installed
 
     # Pack turnkeyml repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py
 
     # Create bin directory and move lemonade-server.bat there
     CreateDirectory "$INSTDIR\bin"
@@ -113,7 +113,7 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "-------------------------"
     DetailPrint "- Lemonade Installation -"
-    DetailPrint "-------------------------"
+    DetailPrint "-------------------------" 
 
 
     DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
@@ -134,16 +134,20 @@ SectionIn RO ; Read only, always installed
       # Create a shortcut inside $INSTDIR
       CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
 
-      ; Add bin folder to system PATH
-      DetailPrint "- Adding bin directory to system PATH..."
+      ; Add bin folder to user PATH
+      DetailPrint "- Adding bin directory to user PATH..."
       
-      ; Get the current PATH value from the registry
-      ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH"
-      
-      ; Add bin folder (containing 'lemonade-server') to path while avoiding duplicate entries
-      ExecWait 'setx PATH "$INSTDIR\bin;$0" /m'
-      
-      DetailPrint "- Successfully updated system PATH"
+      ; Add to user path without replication
+      ; If the folder is already on path, we move it to the top
+      ExecWait '"$INSTDIR\python\python.exe" add_to_path.py $INSTDIR\bin' $8
+      DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
+
+      ; Check if path setting was successful
+      ; If the exit code is 0, move to the next line (+1), otherwise install_failed
+      StrCmp $8 0 +1 install_failed
+
+      ; Notify Windows that environment variables have changed
+      SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
 
       Goto end
 

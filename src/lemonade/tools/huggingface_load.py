@@ -100,7 +100,7 @@ def get_base_model(checkpoint: str) -> Optional[str]:
                 return info.cardData["base_model"]
             else:
                 # This is itself a base model
-                return checkpoint
+                return [checkpoint]
     except Exception:  # pylint: disable=broad-except
         pass
     return None

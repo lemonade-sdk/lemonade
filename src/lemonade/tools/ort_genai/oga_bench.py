@@ -1,7 +1,6 @@
 import argparse
 import statistics
 from statistics import StatisticsError
-import tqdm
 from turnkeyml.state import State
 from lemonade.cache import Keys
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
@@ -74,12 +73,12 @@ class OgaBench(Bench):
         per_iteration_tokens_per_second = []
 
         # Don't capture time for warmup
-        for count in tqdm.tqdm(range(warmup_iterations), desc="warmup"):
+        for count in range(warmup_iterations):
             outputs = model.generate(input_ids, max_new_tokens=output_tokens)
             self.tokens_out_len_list.append(len(outputs[0]) - len(input_ids))
             report_progress_fn((count + 1) / (warmup_iterations + iterations))
 
-        for count in tqdm.tqdm(range(iterations), desc="iterations"):
+        for count in range(iterations):
             outputs = model.generate(
                 input_ids,
                 max_new_tokens=output_tokens,

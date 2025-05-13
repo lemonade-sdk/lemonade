@@ -22,7 +22,7 @@ from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.quark.quark_load import QuarkLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.report.llm_report import LemonadeReport
-from lemonade.tools.serve import Server
+from lemonade.tools.server.serve import Server
 
 
 def main():

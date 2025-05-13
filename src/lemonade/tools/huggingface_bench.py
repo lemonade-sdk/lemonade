@@ -5,7 +5,6 @@ import statistics
 from statistics import StatisticsError
 from contextlib import nullcontext
 import torch
-import tqdm
 from turnkeyml.state import State
 from lemonade.cache import Keys
 from lemonade.tools.bench import Bench
@@ -25,11 +24,6 @@ def benchmark_huggingface_llm(
     report_progress_fn,
 ) -> List[Tuple[float, int]]:
 
-    # Inform the user whether the current execution is to measure
-    # prefill or generation performance, since we need to run this
-    # method once for each of those modes
-    mode = "prefill" if target_output_tokens == 1 else "generation"
-
     amp_enabled = True if (dtype == torch.float16 or dtype == torch.bfloat16) else False
     # The "if amp_enabled else nullcontext()" is to get around a bug in PyTorch 2.1
     # where torch.cpu.amp.autocast(enabled=False) does nothing
@@ -47,7 +41,7 @@ def benchmark_huggingface_llm(
 
         with torch.no_grad(), torch.inference_mode():
             # Don't capture time for warmup
-            for count in tqdm.tqdm(range(warmup_iterations), desc=f"{mode} warmup"):
+            for count in range(warmup_iterations):
                 outputs = model.generate(
                     input_ids,
                     num_beams=num_beams,
@@ -59,7 +53,7 @@ def benchmark_huggingface_llm(
                 tokens_out_len_list.append(outputs.shape[1] - input_ids.shape[1])
                 report_progress_fn((count + 1) / (warmup_iterations + iterations))
 
-            for count in tqdm.tqdm(range(iterations), desc=f"{mode} iterations"):
+            for count in range(iterations):
                 # CUDA synchronization is required prior to GPU benchmarking
                 # This has no negative effect on CPU-only benchmarks, and is more robust than
                 # checking `model.device == "cuda"` since it applies to multi-GPU environments

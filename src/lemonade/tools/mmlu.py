@@ -4,7 +4,6 @@ import tarfile
 from pathlib import Path
 from typing import List, Optional
 import subprocess
-import tqdm
 import numpy as np
 import pandas as pd
 import requests
@@ -136,7 +135,7 @@ class AccuracyMMLU(Tool):
         questions_completed = 0
 
         summary_data = []
-        for subject in tqdm.tqdm(tests_to_run):
+        for subject in tests_to_run:
             dev_df = _safe_read_csv(
                 os.path.join(dataset_dir, "dev", f"{subject}_dev.csv")
             )[:ntrain]

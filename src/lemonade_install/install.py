@@ -46,13 +46,13 @@ import glob
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 from typing import Optional
 import zipfile
 import requests
-
 
 DEFAULT_RYZEN_AI_VERSION = "1.4.0"
 version_info_filename = "version_info.json"
@@ -62,6 +62,9 @@ DEFAULT_QUARK_VERSION = "quark-0.6.0"
 DEFAULT_QUARK_DIR = os.path.join(
     lemonade_install_dir, "install", "quark", DEFAULT_QUARK_VERSION
 )
+
+# List of supported Ryzen AI processor series (can be extended in the future)
+SUPPORTED_RYZEN_AI_SERIES = ["300"]
 
 npu_install_data = {
     "1.3.0": {
@@ -250,6 +253,70 @@ def unzip_file(zip_path, extract_to):
         zip_ref.extractall(extract_to)
 
 
+def check_ryzen_ai_processor():
+    """
+    Checks if the current system has a supported Ryzen AI processor.
+
+    Raises:
+        UnsupportedPlatformError: If the processor is not a supported Ryzen AI models.
+    """
+    if not sys.platform.startswith("win"):
+        raise UnsupportedPlatformError(
+            "Ryzen AI installation is only supported on Windows."
+        )
+
+    is_supported = False
+    cpu_name = ""
+
+    try:
+        # Use Windows registry to get CPU information
+        result = subprocess.run(
+            [
+                "reg",
+                "query",
+                "HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                "/v",
+                "ProcessorNameString",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        # Parse the output to extract the CPU name
+        for line in result.stdout.splitlines():
+            if "ProcessorNameString" in line:
+                # The format is typically: name REG_SZ value
+                parts = line.strip().split("REG_SZ")
+                if len(parts) >= 2:
+                    cpu_name = parts[1].strip()
+                break
+
+        # Check if CPU name contains "Ryzen AI" and a model number
+        if "Ryzen AI" in cpu_name:
+            # Check for any supported series
+            for series in SUPPORTED_RYZEN_AI_SERIES:
+                # Look for the series number pattern - matches any processor in the supported series
+                pattern = rf"Ryzen AI.*\b{series[0]}\d{{2}}\b"
+                match = re.search(pattern, cpu_name, re.IGNORECASE)
+                if match:
+                    is_supported = True
+                    break
+    except Exception:  # pylint: disable=broad-exception-caught
+        supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
+        raise UnsupportedPlatformError(
+            f"Ryzen AI installation requires a Ryzen AI {supported_series_str} "
+            f"series processor. Processor detection failed."
+        )
+
+    if not is_supported:
+        supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
+        raise UnsupportedPlatformError(
+            f"Ryzen AI installation requires a Ryzen AI {supported_series_str} "
+            f"series processor. Your current processor ({cpu_name}) is not supported."
+        )
+
+
 def download_and_extract_package(
     url: str,
     version: str,
@@ -314,6 +381,12 @@ def download_and_extract_package(
 class LicenseRejected(Exception):
     """
     Raise an exception if the user rejects the license prompt.
+    """
+
+
+class UnsupportedPlatformError(Exception):
+    """
+    Raise an exception if the hardware is not supported.
     """
 
 
@@ -577,6 +650,8 @@ class Install:
 
     @staticmethod
     def _install_ryzenai(ryzenai, build_model, yes, token):
+        # Check if the processor is supported before proceeding
+        check_ryzen_ai_processor()
 
         # Delete any previous Ryzen AI installation in this environment
         ryzen_ai_folder = get_ryzen_ai_path(check_exists=False)
