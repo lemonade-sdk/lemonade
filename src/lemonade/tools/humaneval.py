@@ -6,10 +6,10 @@ import requests
 from human_eval.data import write_jsonl, read_problems
 from human_eval.evaluation import evaluate_functional_correctness
 
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
 
 
 class AccuracyHumaneval(Tool):

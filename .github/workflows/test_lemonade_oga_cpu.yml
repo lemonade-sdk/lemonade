@@ -52,9 +52,9 @@ jobs:
           lemonade -i TinyPixel/small-llama2 oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
 
           # Test low-level APIs
-          python test/lemonade/oga_cpu_api.py
+          python test/oga_cpu_api.py
 
           # Test high-level APIs
-          python examples/lemonade/api_oga_cpu.py
-          python examples/lemonade/api_oga_cpu_streaming.py
+          python examples/api_oga_cpu.py
+          python examples/api_oga_cpu_streaming.py
 

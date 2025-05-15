@@ -4,7 +4,7 @@
 
 ## Installation
 
-See [Lemonade Installation](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md#install) for the OGA iGPU backend.
+See [Lemonade Installation](./README.md#installation) for the OGA iGPU backend.
 
 ## Get models
 

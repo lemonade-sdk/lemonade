@@ -1,7 +1,7 @@
 import argparse
 import statistics
 from statistics import StatisticsError
-from turnkeyml.state import State
+from lemonade.state import State
 from lemonade.cache import Keys
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 from lemonade.tools.bench import Bench

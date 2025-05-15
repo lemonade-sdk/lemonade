@@ -3,10 +3,10 @@ import argparse
 import pandas as pd
 import torch
 from datasets import load_dataset
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
 
 
 class AccuracyPerplexity(Tool):

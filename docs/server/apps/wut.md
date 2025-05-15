@@ -16,7 +16,7 @@ It is not especially convenient to use `wut` with Windows until the developers r
 
 ### Prerequisites
 
-1. Install and launch Lemonade Server using the [installer .exe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md#lemonade-server-installer).
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 
 
 `wut` currently requires a `tmux` terminal in order to function. We found the simplest way to achieve this on Windows was through the Windows Subsystem for Linux (WSL).

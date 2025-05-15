@@ -37,9 +37,9 @@ Lemonade supports integration with lm-eval through its local LLM server. The bas
 1. Running lm-eval tests against the model through the lemonade server.
 
 
-### Step 1: Enviroment setup and Installation
+### Step 1: Environment setup and Installation
 
-Please refer to the [installation guide](https://github.com/onnx/turnkeyml/tree/main/docs/lemonade#installing-from-pypi) for environment setup.
+Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
 
 
 ### Step 2: Start the Lemonade Server
@@ -61,7 +61,7 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/v0/load" -Method Post -Headers
 
 Where:
 - `checkpoint` can be changed to use other from Hugging Face (e.g., "meta-llama/Llama-3.2-3B-Instruct")
-- `recipe` can be changed to use different backends (e.g., "oga-cpu" for CPU inference on OnnxRuntime GenAI, "oga-hybrid" for AMD Ryzen™ AI acceleration). For more information on Lemonade recipes, see the [Lemonade API ReadMe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md).
+- `recipe` can be changed to use different backends (e.g., "oga-cpu" for CPU inference on OnnxRuntime GenAI, "oga-hybrid" for AMD Ryzen™ AI acceleration). For more information on Lemonade recipes, see the [Lemonade API ReadMe](../../lemonade_api.md).
 
 ### Step 4: Run lm-eval Tests
 
@@ -88,7 +88,7 @@ These tests evaluate a model's ability to assign probabilities to different poss
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Enviroment setup and Installation - Please refer to the [installation guide](https://github.com/onnx/turnkeyml/tree/main/docs/lemonade#installing-from-pypi) for environment setup.
+**Step 1:** Enviroment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -115,7 +115,7 @@ These tests evaluate a model's ability to predict text by measuring the perplexi
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Enviroment setup and Installation - Please refer to the [installation guide](https://github.com/onnx/turnkeyml/tree/main/docs/lemonade#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -142,7 +142,7 @@ These tests evaluate a model's ability to generate full responses to prompts. Th
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Enviroment setup and Installation - Please refer to the [installation guide](https://github.com/onnx/turnkeyml/tree/main/docs/lemonade#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 

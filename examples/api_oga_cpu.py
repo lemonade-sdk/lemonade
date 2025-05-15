@@ -5,7 +5,7 @@ and then use it to generate the response to a prompt.
 
 Make sure you have set up your OGA device in your Python environment.
 See for details:
-https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md#install
+https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 """
 
 from lemonade.api import from_pretrained

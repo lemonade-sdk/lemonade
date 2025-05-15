@@ -9,9 +9,9 @@ import math
 import numpy as np
 import onnx
 import onnxruntime as ort
-import turnkeyml.common.exceptions as exp
-from turnkeyml.state import State
-import turnkeyml.common.build as build
+import lemonade.common.exceptions as exp
+from lemonade.state import State
+import lemonade.common.build as build
 
 
 def check_model(onnx_file, success_message, fail_message) -> bool:

@@ -93,7 +93,7 @@ def pull(model_names: List[str]):
                     f"Failed to install {model_name}. Check the "
                     "Lemonade Server log for more information. A list of supported models "
                     "is provided at "
-                    "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md"
+                    "https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_models.md"
                 )
     else:
         from lemonade_server.model_manager import ModelManager
@@ -105,7 +105,7 @@ def version():
     """
     Print the version number
     """
-    from turnkeyml import __version__ as version_number
+    from lemonade import __version__ as version_number
 
     print(f"{version_number}")
 
@@ -206,7 +206,7 @@ def main():
         help="Install an LLM",
         epilog=(
             "More information: "
-            "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md"
+            "https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_models.md"
         ),
     )
     pull_parser.add_argument(

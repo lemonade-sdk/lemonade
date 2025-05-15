@@ -37,7 +37,7 @@ from openai.types.responses import (
     ResponseCompletedEvent,
 )
 
-from turnkeyml.tools.management_tools import ManagementTool
+from lemonade.tools.management_tools import ManagementTool
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.tool_calls import extract_tool_calls
@@ -374,9 +374,9 @@ class Server(ManagementTool):
                 <div class="links">
                     <h3>Documentation:</h3>
                     <ul>
-                        <li><a href="https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server">Examples & Usage</a></li>
-                        <li><a href="https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_integration.md">Integration Guide</a></li>
-                        <li><a href="https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md">Server Specification</a></li>
+                        <li><a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/server/featured_apps.md">Examples & Usage</a></li>
+                        <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_integration.md">Integration Guide</a></li>
+                        <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_spec.md">Server Specification</a></li>
                     </ul>
                 </div>
             </body>

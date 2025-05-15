@@ -1,8 +1,8 @@
 import unittest
 import shutil
 import os
-from turnkeyml.state import State
-import turnkeyml.common.test_helpers as common
+from lemonade.state import State
+import lemonade.common.test_helpers as common
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize

@@ -18,7 +18,7 @@ import sys
 import io
 import httpx
 from server import kill_process_on_port, PORT
-from turnkeyml import __version__ as version_number
+from lemonade import __version__ as version_number
 
 try:
     from openai import OpenAI, AsyncOpenAI

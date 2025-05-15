@@ -2,10 +2,9 @@ import os
 import sys
 from typing import Dict, Optional, Any
 import yaml
-import turnkeyml.common.build as build
-import turnkeyml.common.filesystem as fs
-from turnkeyml.version import __version__ as turnkey_version
-from turnkeyml.memory_tracker import MemoryTracker
+import lemonade.common.build as build
+import lemonade.common.filesystem as fs
+from lemonade.version import __version__ as lemonade_version
 
 
 def _is_nice_to_write(value):
@@ -76,12 +75,11 @@ class State:
         self.cache_dir = parsed_cache_dir
         self.build_name = build_name
         self.sequence_info = sequence_info
-        self.turnkey_version = turnkey_version
+        self.lemonade_version = lemonade_version
         self.build_status = build.FunctionStatus.NOT_STARTED
         self.downcast_applied = False
         self.uid = build.unique_id()
         self.results = None
-        self.memory_tracker = MemoryTracker()
 
         # Store any additional kwargs as members
         for key, value in kwargs.items():

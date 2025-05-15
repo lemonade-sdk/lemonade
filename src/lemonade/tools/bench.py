@@ -3,8 +3,8 @@ import argparse
 import os
 import platform
 import psutil
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
+from lemonade.state import State
+from lemonade.tools import Tool
 from lemonade.cache import Keys
 
 default_iterations = 10

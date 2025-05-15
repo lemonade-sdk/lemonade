@@ -88,7 +88,7 @@ SectionIn RO ; Read only, always installed
     DetailPrint '  Minimum NPU Driver Version: ${NPU_DRIVER_VERSION}'
     DetailPrint '-------------------------------------------'
 
-    # Pack turnkeyml repo into the installer
+    # Pack lemonade repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
     File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py
 

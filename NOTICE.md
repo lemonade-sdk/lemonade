@@ -1,5 +1,11 @@
 PORTIONS LICENSED AS FOLLOWS
 
+Lemonade SDK used the [ONNX TurnkeyML](https://github.com/onnx/turnkeyml) project as a starting point under the [Apache 2.0 license](./LICENSE).
+
+## TurnkeyML Attribution
+
+TurnkeyML used code from other open source projects as a starting point (see [NOTICE.md](NOTICE.md)). Thank you Philip Colangelo, Derek Elkins, Jeremy Fowers, Dan Gard, Victoria Godsoe, Mark Heaps, Daniel Holanda, Brian Kurtz, Mariah Larwood, Philip Lassen, Andrew Ling, Adrian Macias, Gary Malik, Sarah Massengill, Ashwin Murthy, Hatice Ozen, Tim Sears, Sean Settle, Krishna Sivakumar, Aviv Weinstein, Xueli Xao, Bill Xing, and Lev Zlotnik for your contributions to that work.
+
 \>  TurnkeyML used code from the [MLAgility](https://github.com/groq/mlagility) and [GroqFlow](https://github.com/groq/groqflow) projects as a starting point. Much of that code was refactored, improved, or replaced by the time TurnkeyML was published. 
 
 \> TurnkeyML uses the [Microsoft lemon emoji](https://github.com/microsoft/fluentui-emoji) as an icon for the lemoande tool.

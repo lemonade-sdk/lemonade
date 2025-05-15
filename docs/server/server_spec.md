@@ -31,7 +31,7 @@ The additional endpoints under development are:
 - GET `/api/v0/health` - Check server health
 - GET `/api/v0/stats` - Performance statistics from the last request
 
-> 🚧 We are in the process of developing this interface. Let us know what's important to you on Github or by email (turnkeyml at amd dot com).
+> 🚧 We are in the process of developing this interface. Let us know what's important to you on Github or by email (lemonade at amd dot com).
 
 ## Start the REST API Server
 
@@ -39,7 +39,7 @@ The additional endpoints under development are:
 
 ### Windows Installer
 
-See the [Lemonade_Server_Installer.exe instructions](lemonade_server_exe.md) to get started. 
+See the [Lemonade Server getting started instructions](server/README.md). 
 
 ### Python Environment
 
@@ -70,7 +70,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -163,7 +163,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Example request
 
@@ -225,7 +225,7 @@ Responses API. You provide an input and receive a response. This API will also l
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv0load-status).
 
 #### Streaming Events
 
@@ -293,7 +293,7 @@ For streaming responses, the API returns a series of events. Refer to [OpenAI st
 
 Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
 
-This [list](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
+This [list](./server_models.md) is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
 
 #### Parameters
 
@@ -341,7 +341,7 @@ Install a model by downloading it and registering it with Lemonade Server.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) to load. |
+| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
 
 Example request:
 
@@ -371,8 +371,8 @@ Explicitly load a model into memory. This is useful to ensure that the model is 
 #### Parameters
 
 There are two distinct ways to load a model:
- - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server. The names are documented [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
- - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu"). For more information on Lemonade recipes, see the [Lemonade API ReadMe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md).
+ - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server. The names are documented [here](./server_models.md).
+ - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu"). For more information on Lemonade recipes, see the [Lemonade API ReadMe](../lemonade_api.md).
 
 The parameters for these two ways of loading are mutually exclusive. We intend load-by-name to be used in the general case, since that references a curated set of models in a concise way. Load-by-checkpoint can be used in the event that a user/developer wants to try a model that isn't in the curated list.
 
@@ -380,7 +380,7 @@ The parameters for these two ways of loading are mutually exclusive. We intend l
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md) to load. |
+| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
 
 Example request:
 

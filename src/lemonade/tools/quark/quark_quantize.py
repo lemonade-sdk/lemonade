@@ -5,10 +5,10 @@ from pathlib import Path
 
 import torch
 from transformers import AutoProcessor
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
 from lemonade_install.install import DEFAULT_QUARK_DIR
 
 

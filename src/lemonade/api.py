@@ -1,8 +1,8 @@
 # pylint: disable=no-member
 
 from typing import Tuple, Dict
-from turnkeyml.state import State
-import turnkeyml.common.printing as printing
+from lemonade.state import State
+import lemonade.common.printing as printing
 import lemonade.cache as cache
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 

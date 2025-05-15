@@ -1,6 +1,6 @@
 # Utility that helps users install software. It is structured like a
 # ManagementTool, however it is not a ManagementTool because it cannot
-# import any lemonade or turnkey modules in order to avoid any installation
+# import any lemonade modules in order to avoid any installation
 # collisions on imported modules.
 #
 # This tool can install Ryzen AI software artifacts (libraries, wheels, etc.).
@@ -22,7 +22,7 @@
 # about the installed Ryzen AI artifacts.
 #
 # In any python environment, only one set of artifacts can be installed at a time.
-# Python environments created by TurnkeyML 6.1.x or earlier will need to be recreated.
+# Python environments created by Lemonade v6.1.x or earlier will need to be recreated.
 #
 # The Ryzen AI 1.3.0 artifact files use a different directory hierarchy.
 # The Ryzen AI 1.3.0 hybrid artifacts directory hierarchy is:

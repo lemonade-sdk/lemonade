@@ -2,9 +2,11 @@
 
 This folder contains examples of how to deploy `lemonade` into applications. 
 
-## Server Examples
+## Notebooks
 
-The `server/` folder contains examples of how to use Lemonade Server with existing applications that support server interfaces. Learn more in `server/README.md`. 
+The `notebooks/` folder contains Jupyter notebooks that give tutorials on deeper topics.
+
+TODO: ADD TABLE
 
 ## API Examples
 

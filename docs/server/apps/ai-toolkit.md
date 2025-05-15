@@ -8,14 +8,14 @@ The [AI Toolkit for Visual Studio Code](https://learn.microsoft.com/en-us/window
 
 We have found that most LLMs work well with this application. 
 
-However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see [server_spec.md](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) for details).
+However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see [server_spec.md](../server_spec.md) for details).
 
 
 ## Setup
 
 ### Prerequisites
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 
 ### Install AI Toolkit for VS Code
 
@@ -37,7 +37,7 @@ The AI Toolkit now supports "Bring Your Own Model" functionality, allowing you t
     http://localhost:8000/api/v0/chat/completions
     ```
 5. When prompted to "Enter the exact model name as in the API" select a model (e.g., `Phi-3-Mini-Instruct-Hybrid`)
-    - Note: You can get a list of all models available [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
+    - Note: You can get a list of all models available [here](../server_models.md).
 6. Select the same name as the display model name.
 7. Skip the HTTP authentication step by pressing "Enter".
 

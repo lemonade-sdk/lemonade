@@ -6,8 +6,8 @@ import os
 import copy
 import torch
 import numpy as np
-import turnkeyml.common.exceptions as exp
-import turnkeyml.common.build as build
+import lemonade.common.exceptions as exp
+import lemonade.common.build as build
 
 
 # Checks whether a given input has the expected shape

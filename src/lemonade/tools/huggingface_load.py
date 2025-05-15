@@ -5,10 +5,10 @@ import socket
 import transformers
 import torch
 from huggingface_hub import model_info
-from turnkeyml.state import State
-import turnkeyml.common.status as status
-import turnkeyml.common.printing as printing
-from turnkeyml.tools import FirstTool
+from lemonade.state import State
+import lemonade.common.status as status
+import lemonade.common.printing as printing
+from lemonade.tools import FirstTool
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 from lemonade.cache import Keys
 

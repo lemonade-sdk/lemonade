@@ -5,7 +5,7 @@ import statistics
 from statistics import StatisticsError
 from contextlib import nullcontext
 import torch
-from turnkeyml.state import State
+from lemonade.state import State
 from lemonade.cache import Keys
 from lemonade.tools.bench import Bench
 

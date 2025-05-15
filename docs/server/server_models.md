@@ -1,14 +1,14 @@
 
 # 🍋 Lemonade Server Models
  
-This document provides the models we recommend for use with Lemonade Server. Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md) used to load the model.
+This document provides the models we recommend for use with Lemonade Server. Click on any model to learn more details about it, such as the [Lemonade Recipe](../lemonade_api.md) used to load the model.
 
 ## Naming Convention
 The format of each Lemonade name is a combination of the name in the base checkpoint and the backend where the model will run. So, if the base checkpoint is `meta-llama/Llama-3.2-1B-Instruct`, and it has been optimized to run on Hybrid, the resulting name is Llama-3.2-3B-Instruct-Hybrid.
 
 ## Installing Additional Models
 
-Once you've installed Lemonade Server, you can install any model on this list using the `lemonade-server pull` command. 
+Once you've installed Lemonade Server, you can install any model on this list using the `pull` command in the [`lemonade-server` CLI](./lemonade-server-cli.md).
 
 Example:
 

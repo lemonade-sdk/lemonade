@@ -7,11 +7,11 @@ import subprocess
 import numpy as np
 import pandas as pd
 import requests
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
-import turnkeyml.common.filesystem as fs
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
+import lemonade.common.filesystem as fs
 
 # Constants
 choices = ["A", "B", "C", "D"]

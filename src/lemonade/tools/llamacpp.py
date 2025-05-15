@@ -2,9 +2,9 @@ import argparse
 import os
 from typing import Optional
 import subprocess
-from turnkeyml.state import State
-import turnkeyml.common.status as status
-from turnkeyml.tools import FirstTool
+from lemonade.state import State
+import lemonade.common.status as status
+from lemonade.tools import FirstTool
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.cache import Keys
 from lemonade.tools.huggingface_load import get_base_model
