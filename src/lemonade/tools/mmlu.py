@@ -321,3 +321,7 @@ def download_and_extract_dataset(data_cache_dir: str, dataset_url: str):
 
     # MMLU data is stored in data.tar/data
     return os.path.join(data_cache_dir, "data")
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

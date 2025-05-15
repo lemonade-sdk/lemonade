@@ -255,3 +255,7 @@ class LoadLlamaCpp(FirstTool):
         status.add_to_state(state=state, name=input, model=model_to_use)
 
         return state
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

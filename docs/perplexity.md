@@ -70,3 +70,5 @@ Practical Implications
 
 **Comparison Across Different Data:** Comparing perplexity scores across models trained or tested on different datasets can be misleading because the intrinsic difficulty of the datasets can affect the perplexity.
 
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

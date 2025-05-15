@@ -30,3 +30,6 @@ if %ERRORLEVEL% neq 0 (
         pause
     )
 )
+
+REM This file was originally licensed under Apache 2.0. It has been modified.
+REM Modifications Copyright (c) 2025 AMD 

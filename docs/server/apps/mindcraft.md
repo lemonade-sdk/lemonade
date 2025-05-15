@@ -343,3 +343,6 @@ The following are examples of requests made by the Mindcraft software to the Lem
     TRACE:    ::1:56890 - ASGI [6] Completed
     TRACE:    ::1:56890 - HTTP connection lost
     ```
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

@@ -146,3 +146,6 @@ Finally, if you don't want to create a desktop shortcut during installation, use
 ```bash
 Lemonade_Server_Installer.exe /S /NoDesktopShortcut
 ```
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

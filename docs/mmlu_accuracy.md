@@ -100,3 +100,6 @@ Use the syntax provided in the table to run that test subject with the `accuracy
 | US Foreign Policy                   | Politics          | us_foreign_policy                   |
 | Virology                            | Health            | virology                            |
 | World Religions                     | Philosophy        | world_religions                     |
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

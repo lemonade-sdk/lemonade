@@ -262,3 +262,6 @@ To add a new tool:
 1. Register the class by adding it to the list of `tools` near the top of `src/lemonade/cli.py`.
 
 You can learn more about contributing on the repository's [contribution guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md).
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

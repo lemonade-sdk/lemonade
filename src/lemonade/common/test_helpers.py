@@ -22,3 +22,7 @@ def create_test_dir(
 
 def strip_dot_py(test_script_file: str) -> str:
     return test_script_file.split(".")[0]
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

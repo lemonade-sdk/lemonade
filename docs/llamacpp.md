@@ -125,3 +125,6 @@ The integration provides:
 - Performance metrics collection
 - Configurable generation parameters (temperature, top_p, top_k)
 - 10-minute timeout for model generation to prevent indefinite hangs
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

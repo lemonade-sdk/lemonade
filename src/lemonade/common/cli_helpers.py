@@ -133,3 +133,7 @@ Management tools:
     evaluation_tools = [tool_classes[cmd] for cmd in evaluation_tools]
 
     return global_args, tool_instances, evaluation_tools
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

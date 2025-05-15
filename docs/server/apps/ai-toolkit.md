@@ -55,3 +55,6 @@ Once you've set up the Lemonade model in AI Toolkit, you can:
 - [AI Toolkit for VS Code Documentation](https://learn.microsoft.com/en-us/windows/ai/toolkit/)
 - [AI Toolkit GitHub Repository](https://github.com/microsoft/vscode-ai-toolkit)
 - [Bring Your Own Models on AI Toolkit](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/bring-your-own-models-on-ai-toolkit---using-ollama-and-api-keys/4369411)
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

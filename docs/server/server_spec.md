@@ -568,3 +568,6 @@ Where `[level]` can be one of:
 - **info**: (Default) General informational messages about server operation.
 - **debug**: Detailed diagnostic information for troubleshooting, including metrics such as input/output token counts, Time To First Token (TTFT), and Tokens Per Second (TPS).
 - **trace**: Very detailed tracing information, including everything from debug level plus all input prompts.
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

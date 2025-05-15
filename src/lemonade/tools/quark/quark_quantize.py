@@ -433,3 +433,7 @@ class QuarkQuantize(Tool):
         state.model.model = model
         state.dtype = model.dtype
         printing.log_info("QuarkQuantize process completed.")
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

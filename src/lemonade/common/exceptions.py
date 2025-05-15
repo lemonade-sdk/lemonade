@@ -92,3 +92,7 @@ class SkipBuild(Exception):
     """
     Indicates that an exception is deliberately being raised to skip a build
     """
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

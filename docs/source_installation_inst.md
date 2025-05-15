@@ -45,3 +45,6 @@ The following provides the steps to install Lemonade from source code. We also p
     - llama.cpp: see [instructions](llamacpp.md).
 
 4. Use `lemonade -h` to explore the LLM tools, and see the [commands](README.md#cli-commands) and [APIs](README.md#api) in the [Lemonade SDK REAMDE](README.md).
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->
