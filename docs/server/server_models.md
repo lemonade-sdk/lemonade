@@ -17,7 +17,7 @@ You can change the directory for Hugging Face Hub by [setting the `HF_HOME` or `
 
 ## Installing Additional Models
 
-Once you've installed Lemonade Server, you can install any model on this list using the `pull` command in the [`lemonade-server` CLI](server/lemonade-server-cli.md).
+Once you've installed Lemonade Server, you can install any model on this list using the `pull` command in the [`lemonade-server` CLI](./lemonade-server-cli.md).
 
 Example:
 

@@ -39,11 +39,11 @@ The additional endpoints under development are:
 
 ### Windows Installer
 
-See the [Lemonade Server getting started instructions](server/README.md). 
+See the [Lemonade Server getting started instructions](./README.md). 
 
 ### Python Environment
 
-If you have Lemonade [installed in a Python environment](README.md#install), simply activate it and run the following command to start the server:
+If you have Lemonade [installed in a Python environment](../README.md#installation), simply activate it and run the following command to start the server:
 
 ```bash
 lemonade serve
