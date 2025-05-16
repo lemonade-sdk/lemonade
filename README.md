@@ -4,13 +4,13 @@
 
 ## 🍋 Lemonade SDK: Quickly serve, benchmark and deploy LLMs
 
-The [Lemonade SDK](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md) is designed to make it easy to serve, benchmark, and deploy large language models (LLMs) on a variety of hardware platforms, including CPU, GPU, and NPU. 
+The [Lemonade SDK](./docs/README.md) is designed to make it easy to serve, benchmark, and deploy large language models (LLMs) on a variety of hardware platforms, including CPU, GPU, and NPU. 
 
 <div align="center">
   <img src="https://download.amd.com/images/lemonade_640x480_1.gif" alt="Lemonade Demo" title="Lemonade in Action">
 </div>
 
-The [Lemonade SDK](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md) is comprised of the following:
+The [Lemonade SDK](./docs/README.md) is comprised of the following:
 
 - 🌐 **Lemonade Server**: A server interface that uses the standard Open AI API, allowing applications to integrate with local LLMs.
 - 🐍 **Lemonade Python API**: Offers High-Level API for easy integration of Lemonade LLMs into Python applications and Low-Level API for custom experiments.
@@ -20,11 +20,11 @@ The [Lemonade SDK](https://github.com/lemonade-sdk/lemonade/blob/main/docs/READM
   - Benchmarking an LLM to get the time-to-first-token and tokens per second.
   - Profiling the memory usage of an LLM.
 
-### [Click here to get started with Lemonade.](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md)
+### [Click here to get started with Lemonade.](./docs/README.md)
 
 ## Contributing
 
-We are actively seeking collaborators from across the industry. If you would like to contribute to this project, please check out our [contribution guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md).
+We are actively seeking collaborators from across the industry. If you would like to contribute to this project, please check out our [contribution guide](./docs/contribute.md).
 
 ## Maintainers
 
