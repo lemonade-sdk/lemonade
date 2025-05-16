@@ -3,8 +3,6 @@ from setuptools import setup
 with open("src/lemonade/version.py", encoding="utf-8") as fp:
     version = fp.read().split('"')[1]
 
-ipex_version = "2.2.0"
-
 setup(
     name="lemonade-sdk",
     version=version,
@@ -21,8 +19,6 @@ setup(
         "lemonade.tools.quark",
         "lemonade.tools.report",
         "lemonade.tools.server",
-        "lemonade.nda_tools",
-        "lemonade.nda_profilers",
         "lemonade_install",
         "lemonade_server",
     ],
@@ -99,27 +95,6 @@ setup(
         ],
         "llm-oga-unified": [
             "lemonade-sdk[llm-oga-hybrid]",
-        ],
-        "vllm": [
-            "vllm",
-            "lemonade-sdk[llm]",
-        ],
-        "apptitude": [
-            "svgwrite",
-            "colorama",
-            "tabulate",
-            "wand",
-            "azure-identity",
-            "pyodbc",
-            "huggingface_hub",
-            "wmi",
-            "lemonade-sdk[llm]",
-        ],
-        "ipex": [
-            f"intel-extension-for-pytorch=={ipex_version}",
-            f"torch=={ipex_version}",
-            "transformers==4.35.2",
-            "lemonade-sdk[llm]",
         ],
     },
     classifiers=[],
