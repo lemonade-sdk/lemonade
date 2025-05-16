@@ -16,7 +16,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 
 > 🚧 These additional endpoints are a preview that is under active development. The API specification is subject to change.
 
-These additional endpoints were inspired by the [LM Studio REST API](https://lmstudio.ai/docs/api-reference/rest-api), [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), and [OpenAI API](https://platform.openai.com/docs/api-reference/introduction).
+These additional endpoints were inspired by the [LM Studio REST API](https://lmstudio.ai/docs/app/api/endpoints/openai), [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md), and [OpenAI API](https://platform.openai.com/docs/api-reference/introduction).
 
 They focus on enabling client applications by extending existing cloud-focused APIs (e.g., OpenAI) to also include the ability to load and unload models before completion requests are made. These extensions allow for a greater degree of UI/UX responsiveness in native applications by allowing applications to:
 - Pre-load models at UI-loading-time, as opposed to completion-request time.

@@ -6,7 +6,7 @@ Mindcraft is an open-source project that creates Minecraft bots powered by large
 
 ## Expectations
 
-We found the `Qwen-1.5-7B-Chat-Hybrid` model to be the most effective for this task, delivering fast responses with higher accuracy. However, as a smaller model running locally, with a limited context length, it may occasionally struggle with certain requests—for instance, it might attempt to build a structure, but the result may not be correct. For more detailed information, please refer to the [Data Insights](#-data-insights) section.
+We found the `Qwen-1.5-7B-Chat-Hybrid` model to be the most effective for this task, delivering fast responses with higher accuracy. However, as a smaller model running locally, with a limited context length, it may occasionally struggle with certain requests—for instance, it might attempt to build a structure, but the result may not be correct. For more detailed information, please refer to the [Data Insights](#data-insights) section.
 
 ## Setup
 

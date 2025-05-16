@@ -1,7 +1,7 @@
 # Using LM-Evaluation-Harness with Lemonade
 
 This guide demonstrates how to use Lemonade with LM-Evaluation-Harness (lm-eval) to evaluate language model performance across a variety of standardized benchmarks. Whether you're comparing different model implementations or validating model capabilities, lm-eval provides a comprehensive framework for model assessment.
-Refer to [Lemonade Server](server_spec.md) to learn more about the server interface used by lm-eval for evaluations.
+Refer to [Lemonade Server](../server_spec.md) to learn more about the server interface used by lm-eval for evaluations.
 
 ## What is LM-Evaluation-Harness?
 
