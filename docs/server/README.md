@@ -6,7 +6,7 @@ Once you've installed, we recommend checking out these resources:
 
 | Documentation | Description |
 |---------------|-------------|
-| [Supported Applications](./featured_apps.md) | Explore applications that work out-of-the-box with Lemonade Server. |
+| [Supported Applications](./apps/README.md) | Explore applications that work out-of-the-box with Lemonade Server. |
 | [Lemonade Server Concepts](./concepts.md) | Background knowledge about local LLM servers and the OpenAI standard. |
 | [`lemonade-server` CLI Guide](./lemonade-server-cli.md) | Learn how to manage the server process and install new models using the command-line interface. |
 | [Models List](./server_models.md) | Browse a curated set of LLMs available for serving. |

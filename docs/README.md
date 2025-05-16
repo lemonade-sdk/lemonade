@@ -45,7 +45,7 @@ There are 3 ways a user can install the Lemonade SDK:
 
 The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade Server getting started guide](server/README.md) for installation instructions and the [server spec](./server/server_spec.md) to learn more about the functionality.
 
-The Lemonade Server [featured apps](./server/featured_apps.md) has guides for how to use Lemonade Server with a collection of applications that we have tested.
+The Lemonade Server [featured apps](./server/apps/README.md) has guides for how to use Lemonade Server with a collection of applications that we have tested.
 
 ## Installing From PyPI
 

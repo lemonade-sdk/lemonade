@@ -379,7 +379,7 @@ class Server(ManagementTool):
                 <div class="links">
                     <h3>Documentation:</h3>
                     <ul>
-                        <li><a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/server/featured_apps.md">Examples & Usage</a></li>
+                        <li><a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/server/apps/README.md">Examples & Usage</a></li>
                         <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_integration.md">Integration Guide</a></li>
                         <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_spec.md">Server Specification</a></li>
                     </ul>
