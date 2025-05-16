@@ -12,7 +12,10 @@ class PullError(Exception):
     """
 
 
-def serve(port: int):
+def serve(
+    port: int,
+    log_level: str = None,
+):
     """
     Execute the serve command
     """
@@ -30,11 +33,20 @@ def serve(port: int):
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.server.serve import Server, DEFAULT_PORT
+    from lemonade.tools.server.serve import Server, DEFAULT_PORT, DEFAULT_LOG_LEVEL
 
     server = Server()
     port = port if port is not None else DEFAULT_PORT
-    server.run(port=port)
+    log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
+
+    # Hidden environment variable to enable input truncation (experimental feature)
+    truncate_inputs = "LEMONADE_TRUNCATE_INPUTS" in os.environ
+
+    server.run(
+        port=port,
+        log_level=log_level,
+        truncate_inputs=truncate_inputs,
+    )
 
 
 def stop():
@@ -193,6 +205,13 @@ def main():
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
     serve_parser.add_argument("--port", type=int, help="Port number to serve on")
+    serve_parser.add_argument(
+        "--log-level",
+        type=str,
+        help="Log level for the server",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        default="info",
+    )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Check if server is running")
@@ -220,7 +239,10 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
-        serve(args.port)
+        serve(
+            args.port,
+            args.log_level,
+        )
     elif args.command == "status":
         status()
     elif args.command == "pull":

@@ -7,7 +7,6 @@ import logging
 import traceback
 from typing import Optional, Union
 import json
-from typing import List, Dict
 
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -37,9 +36,9 @@ from openai.types.responses import (
     ResponseCompletedEvent,
 )
 
-from lemonade.tools.management_tools import ManagementTool
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
+from lemonade.tools.management_tools import ManagementTool
 from lemonade.tools.server.tool_calls import extract_tool_calls
 
 # Set to a high number to allow for interesting experiences in real apps
@@ -238,6 +237,9 @@ class Server(ManagementTool):
         self.output_tokens = None
         self.decode_token_times = None
 
+        # Input truncation settings
+        self.truncate_inputs = False
+
         # Store debug logging state
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
 
@@ -293,7 +295,10 @@ class Server(ManagementTool):
         _=None,
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
+        truncate_inputs: bool = False,
     ):
+        # Store truncation settings
+        self.truncate_inputs = truncate_inputs
 
         # Define TRACE level
         logging.TRACE = 9  # Lower than DEBUG which is 10
@@ -900,10 +905,25 @@ class Server(ManagementTool):
             self.llm_loaded.max_prompt_length
             and self.input_tokens > self.llm_loaded.max_prompt_length
         ):
-            raise RuntimeError(
-                f"Prompt tokens ({self.input_tokens}) cannot be greater "
-                f"than the model's max prompt length ({self.llm_loaded.max_prompt_length})"
-            )
+            if self.truncate_inputs:
+                # Truncate input ids
+                truncate_amount = self.input_tokens - self.llm_loaded.max_prompt_length
+                input_ids = input_ids[: self.llm_loaded.max_prompt_length]
+
+                # Update token count
+                self.input_tokens = len(input_ids)
+
+                # Show warning message
+                truncation_message = (
+                    f"Input exceeded {self.llm_loaded.max_prompt_length} tokens. "
+                    f"Truncated {truncate_amount} tokens."
+                )
+                logging.warning(truncation_message)
+            else:
+                raise RuntimeError(
+                    f"Prompt tokens ({self.input_tokens}) cannot be greater "
+                    f"than the model's max prompt length ({self.llm_loaded.max_prompt_length})"
+                )
 
         # Log the input tokens early to avoid this not showing due to potential crashes
         logging.debug(f"Input Tokens: {self.input_tokens}")

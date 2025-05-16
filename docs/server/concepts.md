@@ -93,3 +93,5 @@ print(response)
 ```
 
 The Python above will work with Lemonade Server, along with a variety of other cloud and local LLM servers, just by changing the `base_url`, `api_key`, and `model` as needed. This example demonstrates that details like deployment location (local vs. cloud), hardware type (GPU vs. NPU), and backend implementation (OGA vs. llama.cpp), etc. are hidden behind a unified interface.
+
+<!--Copyright (c) 2025 AMD-->

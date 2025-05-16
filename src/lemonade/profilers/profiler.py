@@ -50,3 +50,6 @@ class Profiler(abc.ABC):
         The timestamp can be used for filename in current working directory.
         The start times contain a list of tools and start times.
         """
+
+
+# Copyright (c) 2025 AMD

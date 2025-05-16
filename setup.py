@@ -3,11 +3,11 @@ from setuptools import setup
 with open("src/lemonade/version.py", encoding="utf-8") as fp:
     version = fp.read().split('"')[1]
 
+
 setup(
     name="lemonade-sdk",
     version=version,
     description="Lemonade SDK: Your LLM Aide for Validation and Deployment",
-    author="Jeremy Fowers, Daniel Holanda, Ramakrishnan Sivakumar, Victoria Godsoe, Gabe Weisz",
     author_email="lemonade@amd.com",
     package_dir={"": "src"},
     packages=[

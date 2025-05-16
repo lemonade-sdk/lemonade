@@ -20,7 +20,7 @@ These additional endpoints were inspired by the [LM Studio REST API](https://lms
 
 They focus on enabling client applications by extending existing cloud-focused APIs (e.g., OpenAI) to also include the ability to load and unload models before completion requests are made. These extensions allow for a greater degree of UI/UX responsiveness in native applications by allowing applications to:
 - Pre-load models at UI-loading-time, as opposed to completion-request time.
-- Load models from the local system that were downloaded by other applications (i.e., a common system-wide models cache). 
+- Load models from the local system that were downloaded by other applications (i.e., a common system-wide models cache).
 - Unload models to save memory space.
 
 The additional endpoints under development are:
@@ -98,11 +98,11 @@ Bash:
 ```bash
 curl -X POST http://localhost:8000/api/v0/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{ 
-        "model": "Llama-3.2-1B-Instruct-Hybrid", 
-        "messages": [ 
-          {"role": "user", "content": "What is the population of Paris?"} 
-        ], 
+  -d '{
+        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "messages": [
+          {"role": "user", "content": "What is the population of Paris?"}
+        ],
         "stream": false
       }'
 ```

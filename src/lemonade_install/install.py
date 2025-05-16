@@ -292,16 +292,15 @@ def check_ryzen_ai_processor():
                     cpu_name = parts[1].strip()
                 break
 
-        # Check if CPU name contains "Ryzen AI" and a model number
-        if "Ryzen AI" in cpu_name:
-            # Check for any supported series
-            for series in SUPPORTED_RYZEN_AI_SERIES:
-                # Look for the series number pattern - matches any processor in the supported series
-                pattern = rf"Ryzen AI.*\b{series[0]}\d{{2}}\b"
-                match = re.search(pattern, cpu_name, re.IGNORECASE)
-                if match:
-                    is_supported = True
-                    break
+        # Check for any supported series
+        for series in SUPPORTED_RYZEN_AI_SERIES:
+            # Look for the series number pattern - matches any processor in the supported series
+            pattern = rf"ryzen ai.*\b{series[0]}\d{{2}}\b"
+            match = re.search(pattern, cpu_name.lower(), re.IGNORECASE)
+            if match:
+                is_supported = True
+                break
+
     except Exception:  # pylint: disable=broad-exception-caught
         supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
         raise UnsupportedPlatformError(

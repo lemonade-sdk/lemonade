@@ -30,6 +30,7 @@ Var currentChar
 ; Used for string manipulation
 !include "StrFunc.nsh"
 ${StrLoc}
+${StrCase}
 
 ; Define a section for the installation
 Section "Install Main Components" SEC01
@@ -452,7 +453,9 @@ Function .onInit
   ; Check if CPU name contains "Ryzen AI" and a 3-digit number starting with 3
   StrCpy $isCpuSupported "false" ; Initialize CPU allowed flag to false
   
-  ${StrLoc} $ryzenAiPos $cpuName "Ryzen AI" ">"
+  ; Convert cpuName to lowercase
+  ${StrCase} $cpuName "$cpuName" "L"
+  ${StrLoc} $ryzenAiPos $cpuName "ryzen ai" ">"
   ${If} $ryzenAiPos != ""
     ; Found "Ryzen AI", now look for 3xx series
     ${StrLoc} $seriesStartPos $cpuName " 3" ">"

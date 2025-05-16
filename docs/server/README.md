@@ -14,3 +14,5 @@ Once you've installed, we recommend checking out these resources:
 | [Integration Guide](../server_integration.md) | Step-by-step instructions for integrating Lemonade Server into your own applications. |
 
 > Note: if you want to develop Lemonade Server itself, you can [install from source](../source_installation_inst.md).
+
+<!--Copyright (c) 2025 AMD-->
