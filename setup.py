@@ -3,11 +3,13 @@ from setuptools import setup
 with open("src/lemonade/version.py", encoding="utf-8") as fp:
     version = fp.read().split('"')[1]
 
+ipex_version = "2.2.0"
 
 setup(
     name="lemonade-sdk",
     version=version,
     description="Lemonade SDK: Your LLM Aide for Validation and Deployment",
+    author="Jeremy Fowers, Daniel Holanda, Ramakrishnan Sivakumar, Victoria Godsoe, Gabe Weisz",
     author_email="lemonade@amd.com",
     package_dir={"": "src"},
     packages=[
@@ -19,6 +21,8 @@ setup(
         "lemonade.tools.quark",
         "lemonade.tools.report",
         "lemonade.tools.server",
+        "lemonade.nda_tools",
+        "lemonade.nda_profilers",
         "lemonade_install",
         "lemonade_server",
     ],
@@ -43,10 +47,6 @@ setup(
         "tabulate",
         # huggingface-hub==0.31.0 introduces a new transfer protocol that was causing us issues
         "huggingface-hub==0.30.2",
-        # Conditional dependencies for ONNXRuntime backends
-        "onnxruntime >=1.10.1,<1.22.0;platform_system=='Linux' and extra != 'llm-oga-cuda'",
-        "onnxruntime-directml >=1.19.0,<1.22.0;platform_system=='Windows' and extra != 'llm-oga-cuda'",
-        "onnxruntime-gpu >=1.19.1,<1.22.0;extra == 'llm-oga-cuda'",
     ],
     extras_require={
         "llm": [
@@ -66,17 +66,20 @@ setup(
         ],
         "llm-oga-cpu": [
             "onnxruntime-genai==0.6.0",
+            "onnxruntime >=1.10.1,<1.22.0",
             "torch>=2.0.0,<2.4",
             "lemonade-sdk[llm]",
         ],
         "llm-oga-igpu": [
             "onnxruntime-genai-directml==0.6.0",
+            "onnxruntime-directml>=1.19.0,<1.22.0",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
         ],
         "llm-oga-cuda": [
             "onnxruntime-genai-cuda==0.6.0",
+            "onnxruntime-gpu >=1.19.1,<1.22.0",
             "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
@@ -96,6 +99,27 @@ setup(
         ],
         "llm-oga-unified": [
             "lemonade-sdk[llm-oga-hybrid]",
+        ],
+        "vllm": [
+            "vllm",
+            "lemonade-sdk[llm]",
+        ],
+        "apptitude": [
+            "svgwrite",
+            "colorama",
+            "tabulate",
+            "wand",
+            "azure-identity",
+            "pyodbc",
+            "huggingface_hub",
+            "wmi",
+            "lemonade-sdk[llm]",
+        ],
+        "ipex": [
+            f"intel-extension-for-pytorch=={ipex_version}",
+            f"torch=={ipex_version}",
+            "transformers==4.35.2",
+            "lemonade-sdk[llm]",
         ],
     },
     classifiers=[],
