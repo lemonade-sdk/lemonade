@@ -117,7 +117,9 @@ You can skip the conversion step by using pre-quantized models from AMD’s Hugg
 
 ## 📚 Additional Resources
 
-- [Lemonade API Examples](https://github.com/onnx/turnkeyml/blob/main/examples/lemonade#api-examples)
-- [lemonade.api source](https://github.com/onnx/turnkeyml/blob/main/src/lemonade/api.py)
+- [Lemonade API Examples](https://github.com/lemonade-sdk/lemonade/blob/main/examples#api-examples)
+- [lemonade.api source](https://github.com/lemonade-sdk/lemonade/blob/main/src/lemonade/api.py)
 - [Model Support Matrix (ONNX Runtime GenAI)](https://github.com/microsoft/onnxruntime-genai)
 
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

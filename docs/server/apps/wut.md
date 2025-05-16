@@ -16,7 +16,7 @@ It is not especially convenient to use `wut` with Windows until the developers r
 
 ### Prerequisites
 
-1. Install and launch Lemonade Server using the [installer .exe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md#lemonade-server-installer).
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 
 
 `wut` currently requires a `tmux` terminal in order to function. We found the simplest way to achieve this on Windows was through the Windows Subsystem for Linux (WSL).
@@ -109,3 +109,5 @@ And then `wut` provides some helpful feedback:
 
 > Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. The output wut is the name of the activated Conda environment. To create a pull request, use git request-pull or git pull with the --pr option. 
 
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

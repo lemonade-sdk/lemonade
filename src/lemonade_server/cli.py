@@ -12,7 +12,10 @@ class PullError(Exception):
     """
 
 
-def serve(port: int):
+def serve(
+    port: int,
+    log_level: str = None,
+):
     """
     Execute the serve command
     """
@@ -30,11 +33,20 @@ def serve(port: int):
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.server.serve import Server, DEFAULT_PORT
+    from lemonade.tools.server.serve import Server, DEFAULT_PORT, DEFAULT_LOG_LEVEL
 
     server = Server()
     port = port if port is not None else DEFAULT_PORT
-    server.run(port=port)
+    log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
+
+    # Hidden environment variable to enable input truncation (experimental feature)
+    truncate_inputs = "LEMONADE_TRUNCATE_INPUTS" in os.environ
+
+    server.run(
+        port=port,
+        log_level=log_level,
+        truncate_inputs=truncate_inputs,
+    )
 
 
 def stop():
@@ -93,7 +105,7 @@ def pull(model_names: List[str]):
                     f"Failed to install {model_name}. Check the "
                     "Lemonade Server log for more information. A list of supported models "
                     "is provided at "
-                    "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md"
+                    "https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_models.md"
                 )
     else:
         from lemonade_server.model_manager import ModelManager
@@ -105,7 +117,7 @@ def version():
     """
     Print the version number
     """
-    from turnkeyml import __version__ as version_number
+    from lemonade import __version__ as version_number
 
     print(f"{version_number}")
 
@@ -193,6 +205,13 @@ def main():
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
     serve_parser.add_argument("--port", type=int, help="Port number to serve on")
+    serve_parser.add_argument(
+        "--log-level",
+        type=str,
+        help="Log level for the server",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        default="info",
+    )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Check if server is running")
@@ -206,7 +225,7 @@ def main():
         help="Install an LLM",
         epilog=(
             "More information: "
-            "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md"
+            "https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_models.md"
         ),
     )
     pull_parser.add_argument(
@@ -220,7 +239,10 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
-        serve(args.port)
+        serve(
+            args.port,
+            args.log_level,
+        )
     elif args.command == "status":
         status()
     elif args.command == "pull":
@@ -233,3 +255,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

@@ -8,11 +8,11 @@ from typing import Callable, List, Union, Dict, Optional
 import textwrap
 import psutil
 import torch
-from turnkeyml.common import printing
-from turnkeyml.state import State
-import turnkeyml.common.build as build
-import turnkeyml.common.filesystem as fs
-import turnkeyml.common.analyze_model as analyze_model
+from lemonade.common import printing
+from lemonade.state import State
+import lemonade.common.build as build
+import lemonade.common.filesystem as fs
+import lemonade.common.analyze_model as analyze_model
 
 
 def _pretty_print_key(key: str) -> str:
@@ -300,7 +300,7 @@ class UniqueInvocationInfo(BasicInfo):
                     pass
 
             if self.traceback is not None:
-                if os.environ.get("TURNKEY_TRACEBACK") != "False":
+                if os.environ.get("LEMONADE_TRACEBACK") != "False":
                     for line in self.traceback:
                         for subline in line.split("\n")[:-1]:
                             print(f"{self.indent}\t{subline}")
@@ -308,7 +308,7 @@ class UniqueInvocationInfo(BasicInfo):
                 else:
                     printing.logn(
                         f"{self.indent}\t\t\tTo see the full stack trace, "
-                        "rerun with `export TURNKEY_TRACEBACK=True`.\n",
+                        "rerun with `export LEMONADE_TRACEBACK=True`.\n",
                         c=self.status_message_color,
                     )
             else:
@@ -484,3 +484,7 @@ def add_to_state(
         )
     }
     state.invocation_info.params = state.models_found["the_model"].params
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

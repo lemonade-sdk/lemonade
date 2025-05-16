@@ -7,14 +7,15 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import pytz
 import psutil
-import turnkeyml.common.printing as printing
-import turnkeyml.common.exceptions as exp
-import turnkeyml.common.build as build
-from turnkeyml.common.system_info import get_system_info_dict
-import turnkeyml.common.filesystem as fs
-import turnkeyml.common.status as status
-from turnkeyml.tools.tool import Tool
-from turnkeyml.state import State
+import lemonade.common.printing as printing
+import lemonade.common.exceptions as exp
+import lemonade.common.build as build
+from lemonade.common.system_info import get_system_info_dict
+import lemonade.common.filesystem as fs
+import lemonade.common.status as status
+from lemonade.tools.tool import Tool
+from lemonade.profilers.profiler import Profiler
+from lemonade.state import State
 
 
 def _rewind_stdout(lines: int = 1):
@@ -38,9 +39,11 @@ class Sequence:
     def __init__(
         self,
         tools: Dict[Tool, List[str]],
+        profilers: List[Profiler] = None,
     ):
 
         self.tools = tools
+        self.profilers = [] if profilers is None else profilers
 
         # Make sure all the tool names are unique
         self.tool_names = [tool.__class__.unique_name for tool in self.tools.keys()]
@@ -105,29 +108,32 @@ class Sequence:
         state: State,
         lean_cache: bool = False,
         monitor: Optional[bool] = None,
-        track_memory_interval: Optional[float] = None,
         stats_to_save: Optional[Dict] = None,
     ) -> State:
         """
         Executes the sequence of tools.
         """
 
+        current_time = datetime.now()
+        timestamp = current_time.strftime("%Y-%m-%d-%H%M%S")
+        start_times = {"warmup": time.time()}
+
         # Allow monitor to be globally disabled by an environment variable
         if monitor is None:
-            if os.environ.get("TURNKEY_BUILD_MONITOR") == "False":
+            if os.environ.get("LEMONADE_BUILD_MONITOR") == "False":
                 monitor_setting = False
             else:
                 monitor_setting = True
         else:
             monitor_setting = monitor
 
-        # Start tracking memory usage
-        if track_memory_interval is not None:
-            build_dir = build.output_dir(state.cache_dir, state.build_name)
-            state.memory_tracker.start(os.getpid(), build_dir, track_memory_interval)
-
         # Create a build directory in the cache
         fs.make_build_dir(state.cache_dir, state.build_name)
+
+        # Start profilers
+        build_dir = build.output_dir(state.cache_dir, state.build_name)
+        for profiler in self.profilers:
+            profiler.start(build_dir)
 
         self.show_monitor(state, monitor_setting)
 
@@ -136,7 +142,7 @@ class Sequence:
             build_model() is running a build on a model that already built successfully, which
             should not happen because the build should have loaded from cache or rebuilt from scratch.
             If you are using custom tools and Sequences then you have some debugging to do. Otherwise,
-            please file an issue at https://github.com/onnx/turnkeyml/issues
+            please file an issue at https://github.com/lemonade-sdk/lemonade/issues
             """
             raise exp.Error(msg)
 
@@ -192,9 +198,11 @@ class Sequence:
         for tool, argv in self.tools.items():
 
             start_time = time.time()
+            start_times[tool.unique_name] = start_time
 
-            # Insert tool name into memory tracker queue before new tool starts
-            state.memory_tracker.set_label(tool.unique_name)
+            # Inform profiler of name of tool about to start
+            for profiler in self.profilers:
+                profiler.tool_starting(tool.unique_name)
 
             try:
 
@@ -232,7 +240,7 @@ class Sequence:
             # all exceptions (including those we can't anticipate)
             except Exception as e:  # pylint: disable=broad-except
 
-                if os.environ.get("TURNKEY_DEBUG", "").lower() == "true":
+                if os.environ.get("LEMONADE_DEBUG", "").lower() == "true":
                     # It may be useful to raise the exception here, since
                     # if any of the subsequent lines of code raise another
                     # exception it will be very hard to root cause e.
@@ -276,11 +284,15 @@ class Sequence:
                 # Store current memory and peak working memory
                 state.save_stat(tool.memory_key, self._get_mem_usage_str())
 
-                # sample each tool at least once
-                state.memory_tracker.sample()
+                # Inform profilers that tool has finished
+                for profiler in self.profilers:
+                    profiler.tool_stopping()
 
-        # Stop tracking memory
-        state.memory_tracker.stop()
+        start_times["cool down"] = time.time()
+
+        # Tell the profilers to stop gathering data
+        for profiler in self.profilers:
+            profiler.stop()
 
         if not saved_exception:
             state.build_status = build.FunctionStatus.SUCCESSFUL
@@ -291,21 +303,19 @@ class Sequence:
                 )
                 state.invocation_info.status_message_color = printing.Colors.OKGREEN
 
-        plot_path = state.memory_tracker.create_plot(state.build_name)
-        if plot_path is not None:
-            printing.log_info(f"Saved plot of memory usage to {plot_path}")
-            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, plot_path)
-        elif track_memory_interval is not None:
-            printing.log_info("Error in memory usage tracking, no plot generated")
-            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, "NONE")
+        # Generate profiler output
+        for profiler in self.profilers:
+            profiler.generate_results(state, timestamp, start_times)
 
         if vars(state).get("models_found") and vars(state).get("invocation_info"):
 
             # Present status statistics from the tools
             for tool in self.tools:
                 state.invocation_info.stats_keys += tool.status_stats
-            if track_memory_interval is not None:
-                state.invocation_info.stats_keys += [fs.Keys.MEMORY_USAGE_PLOT]
+
+            # Present status statistics from the profilers
+            for profiler in self.profilers:
+                state.invocation_info.stats_keys += profiler.status_stats
 
             print()
 
@@ -347,3 +357,7 @@ class Sequence:
         """
 
         return {tool.__class__.unique_name: argv for tool, argv in self.tools.items()}
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

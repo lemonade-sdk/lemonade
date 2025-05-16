@@ -1,13 +1,14 @@
 import argparse
 import abc
 from typing import List
-import turnkeyml.common.filesystem as fs
-import turnkeyml.common.exceptions as exp
-import turnkeyml.common.printing as printing
-from turnkeyml.tools.tool import ToolParser
-from turnkeyml.version import __version__ as turnkey_version
-from turnkeyml.common.system_info import get_system_info_dict
-from turnkeyml.common.build import output_dir
+import lemonade.common.filesystem as fs
+import lemonade.common.exceptions as exp
+import lemonade.common.printing as printing
+from lemonade.tools.tool import ToolParser
+from lemonade.version import __version__ as lemonade_version
+from lemonade.common.system_info import get_system_info_dict
+from lemonade.common.build import output_dir
+import lemonade.cache as lemonade_cache
 
 
 class ManagementTool(abc.ABC):
@@ -26,7 +27,7 @@ class ManagementTool(abc.ABC):
         )
 
         return ToolParser(
-            prog=f"turnkey {cls.unique_name}",
+            prog=f"lemonade {cls.unique_name}",
             short_description=short_description,
             description=cls.__doc__,
             epilog=epilog,
@@ -81,7 +82,7 @@ class ManagementTool(abc.ABC):
 
 class Version(ManagementTool):
     """
-    Simply prints the version number of the turnkeyml installation.
+    Simply prints the version number of the lemonade installation.
     """
 
     unique_name = "version"
@@ -89,22 +90,23 @@ class Version(ManagementTool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Print the turnkeyml version number",
+            short_description="Print the lemonade version number",
             add_help=add_help,
         )
 
         return parser
 
     def run(self, _):
-        print(turnkey_version)
+        print(lemonade_version)
 
 
 class Cache(ManagementTool):
     # pylint: disable=pointless-statement,f-string-without-interpolation
     f"""
-    A set of functions for managing the turnkey build cache. The default
-    cache location is {fs.DEFAULT_CACHE_DIR}, and can also be selected with
-    the global --cache-dir option or the TURNKEY_CACHE_DIR environment variable.
+    A set of functions for managing the lemonade build cache. The default
+    cache location is {lemonade_cache.DEFAULT_CACHE_DIR}, and can also be 
+    selected with
+    the global --cache-dir option or the LEMONADE_CACHE_DIR environment variable.
 
     Users must set either "--all" or "--build-names" to let the tool
     know what builds to operate on.
@@ -118,7 +120,7 @@ class Cache(ManagementTool):
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        # NOTE: `--cache-dir` is set as a global input to the turnkey CLI and
+        # NOTE: `--cache-dir` is set as a global input to the lemonade CLI and
         # passed directly to the `run()` method
 
         parser = __class__.helpful_parser(
@@ -227,50 +229,15 @@ class Cache(ManagementTool):
             else:
                 raise exp.CacheError(
                     f"No build found with name: {build}. "
-                    "Try running `turnkey cache list` to see the builds in your build cache."
+                    "Try running `lemonade cache --list` to see the builds in your build cache."
                 )
 
         print()
 
 
-class ModelsLocation(ManagementTool):
-    """
-    Prints the location of the turnkeyml built in models corpora.
-
-    This is especially useful for when turnkey was installed from PyPI
-    with `pip install turnkeyml`. Example usage in this context:
-        models=$(turnkey models-location --quiet)
-        turnkey -i $models/selftest/linear.py discover export-pytorch
-    """
-
-    unique_name = "models-location"
-
-    @staticmethod
-    def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        parser = __class__.helpful_parser(
-            short_description="Print the location of the built-in turnkeyml models",
-            add_help=add_help,
-        )
-
-        parser.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            help="Print only the file path, with no other text",
-        )
-
-        return parser
-
-    def run(self, _, quiet: bool = False):
-        if quiet:
-            print(fs.MODELS_DIR)
-        else:
-            printing.log_info(f"The models directory is: {fs.MODELS_DIR}")
-
-
 class SystemInfo(ManagementTool):
     """
-    Prints system information for the turnkeyml installation.
+    Prints system information for the lemonade installation.
     """
 
     unique_name = "system-info"
@@ -300,3 +267,7 @@ class SystemInfo(ManagementTool):
     def run(self, _):
         system_info_dict = get_system_info_dict()
         self.pretty_print(system_info_dict)
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

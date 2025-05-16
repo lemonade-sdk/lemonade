@@ -2,9 +2,11 @@
 
 This folder contains examples of how to deploy `lemonade` into applications. 
 
-## Server Examples
+## Notebooks
 
-The `server/` folder contains examples of how to use Lemonade Server with existing applications that support server interfaces. Learn more in `server/README.md`. 
+The `notebooks/` folder contains Jupyter notebooks that give tutorials on deeper topics.
+
+TODO: ADD TABLE
 
 ## API Examples
 
@@ -22,3 +24,6 @@ This table shows which API examples are available:
 | OGA with streaming         | api_oga_cpu_streaming.py  | api_oga_igpu_streaming.py | api_oga_npu_streaming.py | api_oga_hybrid_streaming.py |
 
 To run an API example, first set up a conda environment with the appropriate framework and backend support. Then run the scripts with a command like `python api_basic.py`.
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

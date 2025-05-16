@@ -1,10 +1,10 @@
 import argparse
 import os
 import matplotlib.pyplot as plt
-import turnkeyml.common.build as build
-import turnkeyml.common.printing as printing
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
+import lemonade.common.build as build
+import lemonade.common.printing as printing
+from lemonade.state import State
+from lemonade.tools import Tool
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 from lemonade.cache import Keys
 
@@ -222,3 +222,7 @@ class LLMPrompt(Tool):
         state.save_stat(Keys.RESPONSE, sanitize_text(response_texts))
 
         return state
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

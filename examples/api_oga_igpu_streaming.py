@@ -8,7 +8,7 @@ i.e., OGA-based recipes such as oga-cpu, oga-igpu, oga-npu, and oga-hybrid.
 
 Make sure you have set up your OGA device in your Python environment.
 See for details:
-https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/README.md#install
+https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 """
 
 from threading import Thread
@@ -37,3 +37,6 @@ for new_text in streamer:
     print(new_text)
 
 thread.join()
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

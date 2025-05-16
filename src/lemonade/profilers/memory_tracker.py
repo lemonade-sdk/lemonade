@@ -1,23 +1,47 @@
 import os
 import time
+import textwrap
 from multiprocessing import Process, Queue
 import matplotlib.pyplot as plt
 import psutil
 import yaml
+import lemonade.common.filesystem as fs
+import lemonade.common.printing as printing
+from lemonade.profilers import Profiler
 
 
 DEFAULT_TRACK_MEMORY_INTERVAL = 0.25
 MEMORY_USAGE_YAML_FILENAME = "memory_usage.yaml"
-MEMORY_USAGE_PNGL_FILENAME = "memory_usage.png"
+MEMORY_USAGE_PNG_FILENAME = "memory_usage.png"
 
 
-class MemoryTracker:
+class MemoryTracker(Profiler):
+
+    unique_name = "memory"
+
+    @staticmethod
+    def add_arguments_to_parser(parser):
+        parser.add_argument(
+            "-m",
+            f"--{MemoryTracker.unique_name}",
+            nargs="?",
+            metavar="TRACK_INTERVAL",
+            type=float,
+            default=None,
+            const=DEFAULT_TRACK_MEMORY_INTERVAL,
+            help="Track memory usage and plot the results. "
+            "Optionally, set the tracking interval in seconds "
+            f"(default: {DEFAULT_TRACK_MEMORY_INTERVAL})",
+        )
 
     @staticmethod
     def get_time_mem_list(process):
         return [time.time(), process.memory_info().rss]
 
-    def __init__(self):
+    def __init__(self, parser_arg_value):
+        super().__init__()
+        self.status_stats += [fs.Keys.MEMORY_USAGE_PLOT]
+        self.track_memory_interval = parser_arg_value
         self.process_being_tracked = None
         self.build_dir = None
         self.queue = None
@@ -25,23 +49,22 @@ class MemoryTracker:
         self.tracking_active = False
         self.yaml_path = None
 
-    def start(
-        self, track_pid, build_dir, track_memory_interval=DEFAULT_TRACK_MEMORY_INTERVAL
-    ):
+    def start(self, build_dir):
         if self.tracking_active:
             raise RuntimeError("Cannot start tracking while already tracking")
 
-        # Get the process being tracked
-        self.process_being_tracked = psutil.Process(track_pid)
-
         # Save the folder where data and plot will be stored
         self.build_dir = build_dir
+
+        # Get the process being tracked
+        track_pid = os.getpid()
+        self.process_being_tracked = psutil.Process(track_pid)
 
         # Create queue for passing messages to the tracker
         self.queue = Queue()
 
         # The yaml file where the memory usage data will be saved
-        self.yaml_path = os.path.join(build_dir, MEMORY_USAGE_YAML_FILENAME)
+        self.yaml_path = os.path.join(self.build_dir, MEMORY_USAGE_YAML_FILENAME)
 
         # Create process to continuously sample memory usage
         self.tracker_process = Process(
@@ -50,12 +73,18 @@ class MemoryTracker:
                 track_pid,
                 self.queue,
                 self.yaml_path,
-                track_memory_interval,
+                self.track_memory_interval,
             ),
         )
         self.tracker_process.start()
         self.tracking_active = True
         self.set_label("start")
+        self.sample()
+
+    def tool_starting(self, tool_name):
+        self.set_label(tool_name)
+
+    def tool_stopping(self):
         self.sample()
 
     def set_label(self, label):
@@ -71,25 +100,36 @@ class MemoryTracker:
             self.queue.put(None)
             self.tracking_active = False
 
-    def create_plot(self, build_name: None):
+    def generate_results(self, state, timestamp, _):
         if self.tracker_process is None:
-            return None
+            return
 
         if self.tracking_active:
             self.stop()
 
         # Wait for memory tracker to finish writing yaml data file
         while self.tracker_process.is_alive():
-            self.tracker_process.join(timeout=0.5)
+            self.tracker_process.join(timeout=1.0)
 
         try:
             with open(self.yaml_path, "r", encoding="utf-8") as f:
                 memory_tracks = yaml.safe_load(f)
         except FileNotFoundError as e:
-            print(f"Memory tracker file not found: {e.filename}")
-            return None
+            printing.log_info(
+                f"Memory tracker file not found: {e.filename}.  No memory usage plot generated"
+            )
+            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, None)
+            return
 
-        # Find final time in the startup track (first track) to subtract from all other times
+        # Add check to ensure that memory_tracks is not empty or improperly formatted
+        if not memory_tracks or not isinstance(memory_tracks, list):
+            printing.log_info(
+                f"Memory tracker file contains no data or is improperly formatted: {self.yaml_path}"
+            )
+            state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, None)
+            return
+
+        # Find final time in the start track (first track) to subtract from all other times
         _, track = memory_tracks[0]
         t0 = track[-1][0]
 
@@ -112,16 +152,24 @@ class MemoryTracker:
                 last_y = y[-1]
         plt.xlabel("Time (sec)")
         plt.ylabel("GB")
-        title_str = "Physical Memory Usage"
-        if build_name is not None:
-            title_str += "\n" + build_name
+        title_str = "Physical Memory Usage\n" + "\n".join(
+            textwrap.wrap(state.build_name, 60)
+        )
         plt.title(title_str)
         plt.legend()
         plt.grid()
-        plot_path = os.path.join(self.build_dir, MEMORY_USAGE_PNGL_FILENAME)
-        plt.savefig(plot_path)
+        plt.tight_layout()
 
-        return plot_path
+        # Save plot to cache and to current folder
+        plot_path = os.path.join(
+            self.build_dir, f"{timestamp}_{MEMORY_USAGE_PNG_FILENAME}"
+        )
+        plt.savefig(plot_path)
+        plot_path = os.path.join(
+            os.getcwd(), f"{timestamp}_{MEMORY_USAGE_PNG_FILENAME}"
+        )
+        plt.savefig(plot_path)
+        state.save_stat(fs.Keys.MEMORY_USAGE_PLOT, plot_path)
 
     @staticmethod
     def _memory_tracker_(
@@ -203,3 +251,7 @@ class MemoryTracker:
             # safely assume that tracking is no longer needed
             # NOTE: this only seems to be needed on Windows
             pass
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

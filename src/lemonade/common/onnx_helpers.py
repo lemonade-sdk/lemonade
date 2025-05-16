@@ -9,9 +9,9 @@ import math
 import numpy as np
 import onnx
 import onnxruntime as ort
-import turnkeyml.common.exceptions as exp
-from turnkeyml.state import State
-import turnkeyml.common.build as build
+import lemonade.common.exceptions as exp
+from lemonade.state import State
+import lemonade.common.build as build
 
 
 def check_model(onnx_file, success_message, fail_message) -> bool:
@@ -170,3 +170,7 @@ def dummy_inputs(onnx_file: str) -> dict:
 
 def get_opset(model: onnx.ModelProto) -> int:
     return getattr(model.opset_import[0], "version", None)
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

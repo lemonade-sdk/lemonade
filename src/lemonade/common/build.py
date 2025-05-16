@@ -2,30 +2,13 @@ import os
 import logging
 import sys
 import traceback
-from typing import Dict, Union
+from typing import Dict
 import hashlib
 import psutil
 import yaml
 import torch
 import numpy as np
-import turnkeyml.common.exceptions as exp
-
-UnionValidModelInstanceTypes = Union[
-    None,
-    str,
-    torch.nn.Module,
-    torch.jit.ScriptModule,
-]
-
-if os.environ.get("TURNKEY_ONNX_OPSET"):
-    DEFAULT_ONNX_OPSET = int(os.environ.get("TURNKEY_ONNX_OPSET"))
-else:
-    DEFAULT_ONNX_OPSET = 14
-
-MINIMUM_ONNX_OPSET = 11
-
-DEFAULT_REBUILD_POLICY = "if_needed"
-REBUILD_OPTIONS = ["if_needed", "always", "never"]
+import lemonade.common.exceptions as exp
 
 state_file_name = "state.yaml"
 
@@ -65,48 +48,6 @@ def state_file(cache_dir, build_name):
     return path
 
 
-def hash_model(model, hash_params: bool = True):
-    # If the model is a path to a file, hash the file
-    if isinstance(model, str):
-        if model.endswith(".onnx"):
-            # TODO: Implement a way of hashing the models but not the parameters
-            # of ONNX inputs.
-            if not hash_params:
-                msg = "hash_params must be True for ONNX files"
-                raise ValueError(msg)
-            if os.path.isfile(model):
-                with open(model, "rb") as f:
-                    file_content = f.read()
-                return hashlib.sha256(file_content).hexdigest()
-            else:
-                raise ValueError(
-                    "hash_model received str model that doesn't correspond to a file"
-                )
-        else:
-            with open(model, "rb") as f:
-                file_content = f.read()
-            return hashlib.sha256(file_content).hexdigest()
-
-    if isinstance(model, (torch.nn.Module, torch.jit.ScriptModule)):
-        # Convert model parameters and topology to string
-        hashable_params = {}
-        for name, param in model.named_parameters():
-            hashable_params[name] = param.data
-        if hash_params:
-            hashable_model = (str(model) + str(hashable_params)).encode()
-        else:
-            hashable_model = str(model).encode()
-
-        # Return hash of topology and parameters
-        return hashlib.sha256(hashable_model).hexdigest()
-
-    else:
-        msg = f"""
-        model type "{type(model)}" unsupported by this hash_model function
-        """
-        raise ValueError(msg)
-
-
 class FunctionStatus:
     """
     Status values that are assigned to tools, builds, benchmarks, and other
@@ -118,13 +59,13 @@ class FunctionStatus:
     SUCCESSFUL = "successful"
 
     # ERROR means the tool/build/benchmark failed and threw some error that
-    # was caught by turnkey. You should proceed by looking at the build
+    # was caught by lemonade. You should proceed by looking at the build
     # logs to see what happened.
 
     ERROR = "error"
 
     # TIMEOUT means the tool/build/benchmark failed because it exceeded the timeout
-    # set for the turnkey command.
+    # set for the lemonade command.
     TIMEOUT = "timeout"
 
     # KILLED means the build/benchmark failed because the system killed it. This can
@@ -137,16 +78,16 @@ class FunctionStatus:
     # It will be replaced by one of the other status values if the tool/build/benchmark
     # has a chance to start running.
     # A value of NOT_STARTED in the report CSV indicates that the tool/build/benchmark
-    # never had a chance to start because turnkey exited before that functionality had
+    # never had a chance to start because lemonade exited before that functionality had
     # a chance to start running.
     NOT_STARTED = "not_started"
 
     # INCOMPLETE indicates that a tool/build/benchmark started running and did not complete.
     # Each tool, build, and benchmark are marked as INCOMPLETE when they start running.
-    # If you open the turnkey_stats.yaml file while the tool/build/benchmark
+    # If you open the lemonade_stats.yaml file while the tool/build/benchmark
     # is still running, the status will show as INCOMPLETE. If the tool/build/benchmark
     # is killed without the chance to do any stats cleanup, the status will continue to
-    # show as INCOMPLETE in turnkey_stats.yaml.
+    # show as INCOMPLETE in lemonade_stats.yaml.
     # When the report CSV is created, any instance of an INCOMPLETE tool/build/benchmark
     # status will be replaced by KILLED.
     INCOMPLETE = "incomplete"
@@ -215,7 +156,7 @@ class Logger:
         initial_message: str,
         log_path: str = None,
     ):
-        self.debug = os.environ.get("TURNKEY_BUILD_DEBUG") == "True"
+        self.debug = os.environ.get("LEMONADE_BUILD_DEBUG") == "True"
         self.terminal = sys.stdout
         self.terminal_err = sys.stderr
         self.log_path = log_path
@@ -276,3 +217,7 @@ class Logger:
     def flush(self):
         # needed for python 3 compatibility.
         pass
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

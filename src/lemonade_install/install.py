@@ -1,6 +1,6 @@
 # Utility that helps users install software. It is structured like a
 # ManagementTool, however it is not a ManagementTool because it cannot
-# import any lemonade or turnkey modules in order to avoid any installation
+# import any lemonade modules in order to avoid any installation
 # collisions on imported modules.
 #
 # This tool can install Ryzen AI software artifacts (libraries, wheels, etc.).
@@ -22,7 +22,7 @@
 # about the installed Ryzen AI artifacts.
 #
 # In any python environment, only one set of artifacts can be installed at a time.
-# Python environments created by TurnkeyML 6.1.x or earlier will need to be recreated.
+# Python environments created by Lemonade v6.1.x or earlier will need to be recreated.
 #
 # The Ryzen AI 1.3.0 artifact files use a different directory hierarchy.
 # The Ryzen AI 1.3.0 hybrid artifacts directory hierarchy is:
@@ -292,16 +292,15 @@ def check_ryzen_ai_processor():
                     cpu_name = parts[1].strip()
                 break
 
-        # Check if CPU name contains "Ryzen AI" and a model number
-        if "Ryzen AI" in cpu_name:
-            # Check for any supported series
-            for series in SUPPORTED_RYZEN_AI_SERIES:
-                # Look for the series number pattern - matches any processor in the supported series
-                pattern = rf"Ryzen AI.*\b{series[0]}\d{{2}}\b"
-                match = re.search(pattern, cpu_name, re.IGNORECASE)
-                if match:
-                    is_supported = True
-                    break
+        # Check for any supported series
+        for series in SUPPORTED_RYZEN_AI_SERIES:
+            # Look for the series number pattern - matches any processor in the supported series
+            pattern = rf"ryzen ai.*\b{series[0]}\d{{2}}\b"
+            match = re.search(pattern, cpu_name.lower(), re.IGNORECASE)
+            if match:
+                is_supported = True
+                break
+
     except Exception:  # pylint: disable=broad-exception-caught
         supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
         raise UnsupportedPlatformError(
@@ -770,3 +769,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

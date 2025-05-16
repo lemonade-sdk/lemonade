@@ -140,3 +140,7 @@ def extract_tool_calls(
         cleaned_text = cleaned_text[: match.start()] + cleaned_text[match.end() :]
 
     return extracted_tool_calls, cleaned_text.strip()
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

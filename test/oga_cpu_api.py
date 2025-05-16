@@ -2,10 +2,10 @@ import unittest
 import shutil
 import os
 import urllib3
-from turnkeyml.state import State
-import turnkeyml.common.test_helpers as common
-import turnkeyml.common.filesystem as fs
-from turnkeyml.common.build import builds_dir
+from lemonade.state import State
+import lemonade.common.test_helpers as common
+import lemonade.common.filesystem as fs
+from lemonade.common.build import builds_dir
 from lemonade.cache import Keys
 from lemonade.tools.ort_genai.oga import OgaLoad, OrtGenaiModel
 from lemonade.tools.prompt import LLMPrompt
@@ -238,3 +238,6 @@ if __name__ == "__main__":
     # Set exit code based on test results
     if not result.wasSuccessful():
         sys.exit(1)
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

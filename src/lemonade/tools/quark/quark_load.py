@@ -3,10 +3,10 @@ import os
 import sys
 
 import torch
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
 from lemonade_install.install import DEFAULT_QUARK_DIR
 
 
@@ -166,3 +166,7 @@ class QuarkLoad(Tool):
             printing.log_error(f"An error occurred during the QuarkLoad process: {e}")
             raise
         return state
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

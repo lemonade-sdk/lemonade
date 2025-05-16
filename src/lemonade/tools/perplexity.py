@@ -3,10 +3,10 @@ import argparse
 import pandas as pd
 import torch
 from datasets import load_dataset
-from turnkeyml.state import State
-from turnkeyml.tools import Tool
-import turnkeyml.common.printing as printing
-import turnkeyml.common.build as build
+from lemonade.state import State
+from lemonade.tools import Tool
+import lemonade.common.printing as printing
+import lemonade.common.build as build
 
 
 class AccuracyPerplexity(Tool):
@@ -140,3 +140,7 @@ class AccuracyPerplexity(Tool):
             os.path.join(model_results_dir, "summary_results.csv"), index=False
         )
         return state
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

@@ -8,11 +8,11 @@ import re
 from typing import Tuple, Dict
 from multiprocessing import Process, Queue
 import psutil
-import turnkeyml.common.printing as printing
-import turnkeyml.common.exceptions as exp
-import turnkeyml.common.build as build
-import turnkeyml.common.filesystem as fs
-from turnkeyml.state import State
+import lemonade.common.printing as printing
+import lemonade.common.exceptions as exp
+import lemonade.common.build as build
+import lemonade.common.filesystem as fs
+from lemonade.state import State
 
 
 def _spinner(message, q: Queue):
@@ -24,7 +24,7 @@ def _spinner(message, q: Queue):
     percent_complete = None
     # Get sleep time from environment variable, default to 0.5s if not set
     try:
-        sleep_time = float(os.getenv("TURNKEY_BUILD_MONITOR_FREQUENCY", "0.5"))
+        sleep_time = float(os.getenv("LEMONADE_BUILD_MONITOR_FREQUENCY", "0.5"))
     except ValueError:
         sleep_time = 0.5
 
@@ -107,7 +107,7 @@ class ToolParser(argparse.ArgumentParser):
                 # This was probably a misspelled tool name
                 message = message + (
                     f". If `{unrecognized}` was intended to invoke "
-                    "a tool, please run `turnkey -h` and check the spelling and "
+                    "a tool, please run `lemonade -h` and check the spelling and "
                     "availability of that tool."
                 )
         self.print_usage()
@@ -136,14 +136,14 @@ class Tool(abc.ABC):
     def helpful_parser(cls, short_description: str, **kwargs):
         epilog = (
             f"`{cls.unique_name}` is a Tool. It is intended to be invoked as "
-            "part of a sequence of Tools, for example: `turnkey -i INPUTS tool-one "
+            "part of a sequence of Tools, for example: `lemonade -i INPUTS tool-one "
             "tool-two tool-three`. Tools communicate data to each other via State. "
             "You can learn more at "
-            "https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/tools_user_guide.md"
+            "https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md"
         )
 
         return ToolParser(
-            prog=f"turnkey {cls.unique_name}",
+            prog=f"lemonade {cls.unique_name}",
             short_description=short_description,
             description=cls.__doc__,
             epilog=epilog,
@@ -328,11 +328,11 @@ class Tool(abc.ABC):
             # as that is reserved for Sequence.launch()
             if state.build_status == build.FunctionStatus.SUCCESSFUL:
                 raise exp.ToolError(
-                    "TurnkeyML Tools are not allowed to set "
+                    "Lemonade Tools are not allowed to set "
                     "`state.build_status == build.FunctionStatus.SUCCESSFUL`, "
                     "however that has happened. If you are a plugin developer, "
                     "do not do this. If you are a user, please file an issue at "
-                    "https://github.com/onnx/turnkeyml/issues."
+                    "https://github.com/lemonade-sdk/lemonade/issues."
                 )
 
         finally:
@@ -358,7 +358,7 @@ class FirstTool(Tool):
     def helpful_parser(cls, short_description: str, **kwargs):
         parser = super().helpful_parser(short_description, **kwargs)
 
-        # Argument required by TurnkeyML for any tool that starts a sequence
+        # Argument required for any tool that starts a sequence
         parser.add_argument("--input", help=argparse.SUPPRESS)
 
         return parser
@@ -368,3 +368,7 @@ class FirstTool(Tool):
         """
         The run() method of any FirstTool must accept the `input` argument
         """
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

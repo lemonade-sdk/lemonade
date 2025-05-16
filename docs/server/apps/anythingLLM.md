@@ -18,7 +18,7 @@ Keep in mind that when using the `@agent` feature, multi-turn conversations can 
 
 ### Prerequisites
 
-1. Install Lemonade Server using the [installer .exe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md#lemonade-server-installer)
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 2. Install and set up AnythingLLM from their [GitHub](https://github.com/Mintplex-Labs/anything-llm#quick-start) or [website](https://anythingllm.com/desktop).
 
 
@@ -67,7 +67,7 @@ Here are some examples on how you can interact with Anything LLM agents:
     - `@agent My name is Dr Lemon. Remember this in our next conversation`
     - Then, on a follow up chat you can ask `@agent What is my name according to your memory?`
 - **Scrape Websites**
-    - `@agent Scrape this website and tell me what are the two ways of installing lemonade https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md`
+    - `@agent Scrape this website and tell me what are the two ways of installing lemonade https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/README.md`
 - **Web Search** (enable skill before trying)
     - `@agent Search the web for the best place to buy shoes`
 
@@ -79,3 +79,5 @@ You can find more details about agent usage [here](https://docs.anythingllm.com/
 - [AnythingLLM GitHub](https://github.com/Mintplex-Labs/anything-llm)
 - [AnythingLLM Documentation](https://docs.anythingllm.com/)
 
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

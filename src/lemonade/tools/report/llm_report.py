@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 import re
 from typing import List
-import turnkeyml.common.printing as printing
-import turnkeyml.common.filesystem as fs
-from turnkeyml.tools.management_tools import ManagementTool
+import lemonade.common.printing as printing
+import lemonade.common.filesystem as fs
+from lemonade.tools.management_tools import ManagementTool
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.report.table import LemonadeTable, LemonadePerfTable
 
@@ -15,7 +15,6 @@ class LemonadeReport(ManagementTool):
     """
     Analyzes the input lemonade cache(s) and produces an aggregated report
     in csv format that contains the build stats for all builds in all cache(s).
-    (Identical to the turnkeyml report tool, except default input cache and output folders.)
 
     In addition, summary information is printed to the console and saved to a text file.
 
@@ -32,8 +31,6 @@ class LemonadeReport(ManagementTool):
             short_description="Export statistics from each lemonade run to a CSV file",
             add_help=add_help,
         )
-
-        parser.prog = parser.prog.replace("turnkey", "lemonade")
 
         parser.add_argument(
             "-i",
@@ -200,3 +197,7 @@ class LemonadeReport(ManagementTool):
         printing.logn(str(txt_path), printing.Colors.OKGREEN)
         printing.log("Report spreadsheet saved at ")
         printing.logn(str(report_path), printing.Colors.OKGREEN)
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

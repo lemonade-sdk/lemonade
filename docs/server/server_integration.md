@@ -12,7 +12,7 @@ The first part of this guide contains instructions that are common for both inte
 
 ### Identifying Existing Installation
 
-To identify if Lemonade Server is installed on a system, you can use the `lemonade-server` CLI command, which is added to path when using our installer. This is a reliable method to: 
+To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to: 
 - Verify if the server is installed.
 - Check which version is currently available is running the command below.
 
@@ -34,14 +34,14 @@ This command will return either `Server is not running` or `Server is running on
 
 ### Identifying Compatible Devices
 
-AMD Ryzen™ AI `Hybrid` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name contains "Ryzen AI" and a 3-digit number starting with 3 as shown below.
+AMD Ryzen™ AI `Hybrid` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and a 3-digit number starting with 3 as shown below.
 
 ```
-Ryzen AI.*\b3\d{2}\b
+ryzen ai.*\b3\d{2}\b
 ```
 
 Explanation:
-- `Ryzen AI`: Matches the literal phrase "Ryzen AI".
+- `ryzen ai`: Matches the literal phrase "Ryzen AI".
 - `.*`: Allows any characters (including spaces) to appear after "Ryzen AI".
 - `\b3\d{2}\b`: Matches a three-digit number starting with 3, ensuring it's a standalone number.
 
@@ -51,34 +51,36 @@ There are several ways to check the CPU name on a Windows computer. A reliable w
 reg query "HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0" /v ProcessorNameString
 ```
 
+Once you capture the CPU name, make sure to convert it to lowercase before using the regular expression.
+
 ### Downloading Server Installer
 
-The recommended way of directing users to the server installer is pointing users to our releases page at [`https://github.com/onnx/turnkeyml/releases`](https://github.com/onnx/turnkeyml/releases). Alternatively, you may also provide the direct path to the installer itself or download the installer programmatically as shown below:
+The recommended way of directing users to the server installer is pointing users to our releases page at [`https://github.com/lemonade-sdk/lemonade/releases`](https://github.com/lemonade-sdk/lemonade/releases). Alternatively, you may also provide the direct path to the installer itself or download the installer programmatically as shown below:
 
 
 Latest version:
 
 ```bash
-https://github.com/onnx/turnkeyml/releases/latest/download/Lemonade_Server_Installer.exe
+https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe
 ```
 
 Specific version:
 
 ```bash
-https://github.com/onnx/turnkeyml/releases/download/v6.0.0/Lemonade_Server_Installer.exe
+https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/getting_started.md#from-source-code).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](../source_installation_inst.md).
 
 ### Installing Additional Models
 
 Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:
 
 - Discovering which LLMs are available:
-  - [A human-readable list of supported models](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
-  - [A JSON file with the list of supported models](https://github.com/onnx/turnkeyml/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
+  - [A human-readable list of supported models](./server_models.md).
+  - [A JSON file with the list of supported models](https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
 - Installing LLMs:
-  - [The `pull` endpoint in the server](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md#get-apiv0pull-).
+  - [The `pull` endpoint in the server](./server_spec.md#get-apiv0pull-).
   - `lemonade-server pull MODEL` on the command line interface.
 
 ## Stand-Alone Server Integration
@@ -139,10 +141,13 @@ Only `Qwen2.5-0.5B-Instruct-CPU` is installed by default in silent mode. If you 
 Lemonade_Server_Installer.exe /S /Extras=hybrid /Models="Qwen2.5-0.5B-Instruct-CPU Llama-3.2-1B-Instruct-Hybrid"
 ```
 
-The available modes are documented [here](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_models.md).
+The available modes are documented [here](./server_models.md).
 
 Finally, if you don't want to create a desktop shortcut during installation, use the `/NoDesktopShortcut` parameter:
 
 ```bash
 Lemonade_Server_Installer.exe /S /NoDesktopShortcut
 ```
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

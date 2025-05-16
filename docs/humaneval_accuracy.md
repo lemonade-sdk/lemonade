@@ -106,3 +106,6 @@ The evaluation produces metrics in the following format:
 
 1. [Evaluating Large Language Models Trained on Code](https://arxiv.org/abs/2107.03374)
 2. [OpenAI HumanEval Repository](https://github.com/openai/human-eval) 
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

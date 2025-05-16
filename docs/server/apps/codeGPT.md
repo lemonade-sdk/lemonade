@@ -14,7 +14,7 @@ However, we do not recommend using this model for analyzing large codebases at o
 
 ### Prerequisites
 
-1. Install Lemonade Server using the [installer .exe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_server_exe.md#lemonade-server-installer).
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 
 ### Install CodeGPT in VS Code
 
@@ -56,3 +56,6 @@ To try out CodeGPT:
 - Use /Fix to find and fix a minor bug.
 - Use /Document to come up with docstrings and comments for a file.
 - Use /UnitTest to make a  test file.
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->

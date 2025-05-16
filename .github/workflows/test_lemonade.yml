@@ -54,9 +54,12 @@ jobs:
           lemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
           
           # Test low-level APIs
-          python test/lemonade/llm_api.py
+          python test/llm_api.py
           
 
           # Test high-level APIs
-          python examples/lemonade/api_basic.py
-          python examples/lemonade/api_streaming.py
+          python examples/api_basic.py
+          python examples/api_streaming.py
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

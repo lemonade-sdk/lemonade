@@ -1,9 +1,9 @@
 import argparse
 import sys
 from typing import List, Dict, Tuple, Any
-from turnkeyml.tools import Tool, FirstTool
-import turnkeyml.common.printing as printing
-from turnkeyml.tools.management_tools import ManagementTool
+from lemonade.tools import Tool, FirstTool
+import lemonade.common.printing as printing
+from lemonade.tools.management_tools import ManagementTool
 
 
 class CustomArgumentParser(argparse.ArgumentParser):
@@ -30,12 +30,12 @@ def _tool_list_help(tools: List[Tool], subclass, exclude=None) -> str:
 
 
 def parse_tools(
-    parser: argparse.ArgumentParser, supported_tools: List[Tool], cli_name="turnkey"
+    parser: argparse.ArgumentParser, supported_tools: List[Tool], cli_name="lemonade"
 ) -> Tuple[Dict[str, Any], Dict[Tool, List[str]], List[str]]:
     """
     Add the help for parsing tools and their args to an ArgumentParser.
 
-    Then, perform the task of parsing a full turnkey CLI command including
+    Then, perform the task of parsing a full CLI command including
     teasing apart the global arguments and separate tool invocations.
     """
 
@@ -78,7 +78,7 @@ Management tools:
             # Make sure each tool was only called once
             if cmd[0] in tools_invoked.keys():
                 parser.error(
-                    "A single call to turnkey can only invoke each tool once, "
+                    "A single call to lemonade can only invoke each tool once, "
                     f"however this call invokes tool {cmd[0]} multiple times."
                 )
             current_tool = cmd.pop(0)
@@ -115,8 +115,8 @@ Management tools:
 
     if len(management_tools) > 0 and len(evaluation_tools) > 0:
         parser.error(
-            "This call to turnkey invoked both management and "
-            "evaluation tools, however each call to turnkey "
+            "This call to lemonade invoked both management and "
+            "evaluation tools, however each call to lemonade "
             "is only allowed to invoke one or the other. "
             f"Management tools: {management_tools};"
             f"Evaluation tools: {evaluation_tools}."
@@ -124,7 +124,7 @@ Management tools:
 
     if len(management_tools) == 0 and len(evaluation_tools) == 0:
         parser.error(
-            "Calls to turnkey are required to call at least "
+            "Calls to lemonade are required to call at least "
             "one tool or management tool."
         )
 
@@ -133,3 +133,7 @@ Management tools:
     evaluation_tools = [tool_classes[cmd] for cmd in evaluation_tools]
 
     return global_args, tool_instances, evaluation_tools
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

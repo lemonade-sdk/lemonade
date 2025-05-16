@@ -4,9 +4,8 @@ import re
 from typing import Tuple, Dict, List
 import textwrap
 from tabulate import tabulate
-import turnkeyml.common.build as build
-import turnkeyml.common.filesystem as fs
-import turnkeyml.tools.report as tkml_report
+import lemonade.common.build as build
+import lemonade.common.filesystem as fs
 from lemonade.cache import Keys
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.llamacpp_bench import LlamaCppBench
@@ -14,7 +13,7 @@ from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.ort_genai.oga_bench import OgaBench
 
 # List of python packages for which to log the version
-PYTHON_PACKAGES = ["onnxruntime", "transformers", "turnkeyml", "voe"]
+PYTHON_PACKAGES = ["onnxruntime", "transformers", "lemonade-sdk", "voe"]
 
 # Key value in local build data dict
 SW_VERSIONS = "sw_versions"
@@ -446,8 +445,15 @@ class Table(ABC):
         )
 
     @staticmethod
-    def get_report_name() -> str:
-        return tkml_report.get_report_name()
+    def get_report_name(prefix: str = "") -> str:
+        """
+        Returns the name of the .csv report
+        """
+        day = datetime.now().day
+        month = datetime.now().month
+        year = datetime.now().year
+        date_key = f"{year}-{str(month).zfill(2)}-{str(day).zfill(2)}"
+        return f"{prefix}{date_key}.csv"
 
 
 ################################################################################
@@ -727,3 +733,7 @@ class LemonadePerfTable(Table):
         current_time = datetime.now(timezone.utc)
         timestamp = current_time.strftime("%Y-%m-%d-%H%M%S")
         return f"{timestamp}_perf.csv"
+
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

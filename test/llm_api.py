@@ -8,10 +8,10 @@ import logging
 import urllib3
 import requests
 import torch
-from turnkeyml.state import State
-import turnkeyml.common.filesystem as fs
-import turnkeyml.common.test_helpers as common
-import turnkeyml.common.build as build
+from lemonade.state import State
+import lemonade.common.filesystem as fs
+import lemonade.common.test_helpers as common
+import lemonade.common.build as build
 from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -532,3 +532,6 @@ if __name__ == "__main__":
     # Set exit code based on test results
     if not result.wasSuccessful():
         sys.exit(1)
+
+# This file was originally licensed under Apache 2.0. It has been modified.
+# Modifications Copyright (c) 2025 AMD

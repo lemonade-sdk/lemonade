@@ -37,15 +37,15 @@ The Lemonade SDK provides everything needed to get up and running quickly with L
 There are 3 ways a user can install the Lemonade SDK:
 
 1. Use the [Lemonade Server Installer](#installing-from-lemonade_server_installerexe). This provides a no code way to run LLMs locally and integrate with OpenAI compatible applications.
-1. Use [PyPI installation](#installing-from-pypi) by installing the `turnkeyml` package with the appropriate extras for your backend. This will install the full set of Turnkey and Lemonade SDK tools, including Lemonade Server, API, and CLI commands.
+1. Use [PyPI installation](#installing-from-pypi) by installing the `lemonade-sdk` package with the appropriate extras for your backend. This will install the full set of Lemonade SDK tools, including Lemonade Server, API, and CLI commands.
 1. Use [source installation](#installing-from-source) if you plan to contribute or customize the Lemonade SDK.
 
 
 ## Installing From Lemonade_Server_Installer.exe
 
-The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade_Server_Installer.exe guide](lemonade_server_exe.md) for installation instructions and the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the functionality.
+The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade Server getting started guide](server/README.md) for installation instructions and the [server spec](./server/server_spec.md) to learn more about the functionality.
 
-The Lemonade Server [examples folder](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server) has guides for how to use Lemonade Server with a collection of applications that we have tested.
+The Lemonade Server [featured apps](./server/apps/README.md) has guides for how to use Lemonade Server with a collection of applications that we have tested.
 
 ## Installing From PyPI
 
@@ -61,14 +61,14 @@ To install the Lemonade SDK from PyPI:
     ```
 
 3. Install Lemonade for your backend of choice: 
-    - [OnnxRuntime GenAI with CPU backend](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md): 
+    - [OnnxRuntime GenAI with CPU backend](./ort_genai_igpu.md): 
         ```bash
-        pip install turnkeyml[llm-oga-cpu]
+        pip install lemonade-sdk[llm-oga-cpu]
         ```
-    - [OnnxRuntime GenAI with Integrated GPU (iGPU, DirectML) backend](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/ort_genai_igpu.md):
+    - [OnnxRuntime GenAI with Integrated GPU (iGPU, DirectML) backend](./ort_genai_igpu.md):
         > Note: Requires Windows and a DirectML-compatible iGPU.
         ```bash
-        pip install turnkeyml[llm-oga-igpu]
+        pip install lemonade-sdk[llm-oga-igpu]
         ```
     - OnnxRuntime GenAI with Ryzen AI Hybrid (NPU + iGPU) backend:
         > Note: Ryzen AI Hybrid requires a Windows 11 PC with an AMD Ryzen™ AI 300-series processor.
@@ -76,15 +76,15 @@ To install the Lemonade SDK from PyPI:
         - Follow the environment setup instructions [here](https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html)
     - Hugging Face (PyTorch) LLMs for CPU backend:
         ```bash
-            pip install turnkeyml[llm]
+            pip install lemonade-sdk[llm]
         ```
-    - llama.cpp: see [instructions](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/llamacpp.md).
+    - llama.cpp: see [instructions](./llamacpp.md).
 
 4. Use `lemonade -h` to explore the LLM tools, and see the [command](#cli-commands) and [API](#api) examples below.
 
 ## Installing From Source
 
-The Lemonade SDK can be installed from source code by cloning this repository and following the instructions [here](source_installation_inst.md).
+The Lemonade SDK can be installed from source code by cloning this repository and following the instructions [here](./source_installation_inst.md).
 
 
 # CLI Commands
@@ -126,7 +126,7 @@ You can also replace the `facebook/opt-125m` with any Hugging Face checkpoint yo
 
 You can also set the `--device` argument in `oga-load` and `huggingface-load` to load your LLM on a different device.
 
-The `-t` (or `--template`) flag instructs lemonade to insert the prompt string into the model's chat template.
+The `-t` (or `--template`) flag instructs Lemonade to insert the prompt string into the model's chat template.
 This typically results in the model returning a higher quality response.
 
 Run `lemonade huggingface-load -h` and `lemonade llm-prompt -h` to learn more about these tools.
@@ -145,7 +145,7 @@ Hugging Face:
     lemonade -i facebook/opt-125m huggingface-load accuracy-mmlu --tests management
 ```
 
-This command will run just the management test from MMLU on your LLM and save the score to the lemonade cache at `~/.cache/lemonade`. You can also run other subject tests by replacing management with the new test subject name. For the full list of supported subjects, see the [MMLU Accuracy Read Me](mmlu_accuracy.md).
+This command will run just the management test from MMLU on your LLM and save the score to the Lemonade cache at `~/.cache/lemonade`. You can also run other subject tests by replacing management with the new test subject name. For the full list of supported subjects, see the [MMLU Accuracy Read Me](mmlu_accuracy.md).
 
 You can run the full suite of MMLU subjects by omitting the `--test` argument. You can learn more about this with `lemonade accuracy-mmlu -h`.
 
@@ -170,14 +170,15 @@ The prompt size, number of output tokens, and number iterations are all paramete
 ## LLM Report
 
 To see a report that contains all the benchmarking results and all the accuracy results, use the `report` tool with the `--perf` flag:
-
-`lemonade report --perf`
+```bash
+    lemonade report --perf
+```
 
 The results can be filtered by model name, device type and data type.  See how by running `lemonade report -h`.
 
 ## Memory Usage
 
-The peak memory used by the `lemonade` build is captured in the build output. To capture more granular
+The peak memory used by the Lemonade execution sequence is captured in the build output. To capture more granular
 memory usage information, use the `--memory` flag.  For example:
 
 OGA iGPU:
@@ -190,20 +191,18 @@ Hugging Face:
     lemonade --memory -i facebook/opt-125m huggingface-load huggingface-bench
 ```
 
-In this case a `memory_usage.png` file will be generated and stored in the build folder.  This file
-contains a figure plotting the memory usage over the build time.  Learn more by running `lemonade -h`.
+This generates a PNG file that is stored in the current folder and the build folder.  This file
+contains a figure plotting the memory usage over the Lemonade tool sequence.  Learn more by running `lemonade -h`.
 
 ## Serving
 
 You can launch an OpenAI-compatible server with:
 
 ```bash
-    lemonade serve
+    lemonade-server serve
 ```
 
-Visit the [server spec](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/server_spec.md) to learn more about the endpoints provided as well as how to launch the server with more detailed informational messages enabled.
-
-See the Lemonade Server [examples folder](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade/server) to see a collection of applications that we have tested with Lemonade Server.
+Visit the [server README](./server/README.md) to learn more about the server's capabilities.
 
 # API
 
@@ -211,7 +210,7 @@ Lemonade is also available via API.
 
 ## High-Level APIs
 
-The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications. For more information on recipes and compatibility, see the [Lemonade API ReadMe](https://github.com/onnx/turnkeyml/blob/main/docs/lemonade/lemonade_api.md).
+The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications. For more information on recipes and compatibility, see the [Lemonade API ReadMe](./lemonade_api.md).
 
 OGA iGPU:
 ```python
@@ -225,7 +224,7 @@ response = model.generate(input_ids, max_new_tokens=30)
 print(tokenizer.decode(response[0]))
 ```
 
-You can learn more about the high-level APIs [here](https://github.com/onnx/turnkeyml/tree/main/examples/lemonade).
+You can find examples for the high-level APIs [here](https://github.com/lemonade-sdk/lemonade/tree/main/examples).
 
 ## Low-Level API
 
@@ -236,7 +235,7 @@ Here's a quick example of how to prompt a Hugging Face LLM using the low-level A
 ```python
 import lemonade.tools.torch_llm as tl
 import lemonade.tools.prompt as pt
-from turnkeyml.state import State
+from lemonade.state import State
 
 state = State(cache_dir="cache", build_name="test")
 
@@ -252,14 +251,17 @@ Contributions are welcome! If you decide to contribute, please:
 
 - Do so via a pull request.
 - Write your code in keeping with the same style as the rest of this repo's code.
-- Add a test under `test/lemonade` that provides coverage of your new feature.
+- Add a test under `test/` that provides coverage of your new feature.
 
 The best way to contribute is to add new tools to cover more devices and usage scenarios.
 
 To add a new tool:
 
 1. (Optional) Create a new `.py` file under `src/lemonade/tools` (or use an existing file if your tool fits into a pre-existing family of tools).
-1. Define a new class that inherits the `Tool` class from `TurnkeyML`.
+1. Define a new class that inherits the `Tool` class.
 1. Register the class by adding it to the list of `tools` near the top of `src/lemonade/cli.py`.
 
-You can learn more about contributing on the repository's [contribution guide](https://github.com/onnx/turnkeyml/blob/main/docs/contribute.md).
+You can learn more about contributing on the repository's [contribution guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md).
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->
