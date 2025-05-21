@@ -47,7 +47,7 @@ setup(
     extras_require={
         "llm": [
             "torch>=2.0.0",
-            "transformers",
+            "transformers==4.52.1",
             "accelerate",
             "py-cpuinfo",
             "sentencepiece",
