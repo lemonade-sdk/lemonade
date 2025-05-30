@@ -1,10 +1,20 @@
 # Lemonade Server Spec
 
-The `lemonade` SDK provides a standards-compliant server process that provides a REST API to enable communication with other applications. Right now, the [key endpoints of the OpenAI API](#openai-compatible-endpoints) are available. Our plan is to add more OpenAI endpoints, as well as Ollama-compatible endpoints, in the near future.
+The `lemonade` SDK provides a standards-compliant server process that provides a REST API to enable communication with other applications.
+
+Lemonade Server currently supports two backends:
+
+| Backend                                                                 | Model Format | Description                                                                                                                |
+|----------------------------------------------------------------------|--------------|----------------------------------------------------------------------------------------------------------------------------|
+| [ONNX Runtime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai) | `.ONNX`      | Lemonade's built-in server, recommended for standard use on AMD platforms.                                                |
+| [Llama.cpp](https://github.com/ggml-org/llama.cpp) _(Experimental)_    | `.GGUF`      | Uses llama.cpp's Vulkan-powered llama-server backend. More details [here](#experimental-gguf-support).                    |
+
+
+## OGA Endpoints Overview
+
+Right now, the [key endpoints of the OpenAI API](#openai-compatible-endpoints) are available.
 
 We are also actively investigating and developing [additional endpoints](#additional-endpoints) that will improve the experience of local applications.
-
-## Endpoints Overview
 
 ### OpenAI-Compatible Endpoints
 - POST `/api/v1/chat/completions` - Chat Completions (messages -> completion)
@@ -575,6 +585,29 @@ Where `[level]` can be one of:
 - **info**: (Default) General informational messages about server operation.
 - **debug**: Detailed diagnostic information for troubleshooting, including metrics such as input/output token counts, Time To First Token (TTFT), and Tokens Per Second (TPS).
 - **trace**: Very detailed tracing information, including everything from debug level plus all input prompts.
+
+# Experimental GGUF Support
+
+The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced experimental support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) Vulkan `llama-server` as an alternative backend for CPU and GPU.
+
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Details:
+- Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
+  - The `chat/completions` endpoint, in streaming mode, is the only completions/responses endpoint supported. 
+  - Non-streaming, non-chat `completions`, and `responses` are not supported at this time.
+- A single Lemonade Server process can seamlessly switch between OGA and GGUF models.
+  - Lemonade Server will attempt to load models onto GPU with Vulkan first, and if that doesn't work it will fall back to CPU.
+  - From the end-user's perspective, OGA vs. GGUF should be completely transparent: they wont be aware of whether the built-in server or `llama-server` is serving their model.
+
+To load an arbitrary GGUF from Hugging Face, use the [load endpoint](#get-apiv0load-status) with the recipe set to `llamacpp`:
+
+```bash
+curl http://localhost:8000/api/v0/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+    "recipe": "llamacpp"
+  }'
+```
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

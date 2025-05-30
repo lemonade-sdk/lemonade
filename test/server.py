@@ -765,6 +765,37 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         assert tool_call_count > 0
 
+    # Endpoint: /api/v1/chat/completions
+    def test_019_test_llamacpp_chat_completion_streaming(self):
+        # Only run this test on Windows
+        if os.name != "nt":
+            self.skipTest(
+                "test_018_test_llamacpp_chat_completion_streaming runs only on Windows."
+            )
+
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.chat.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            messages=self.messages,
+            stream=True,
+            max_completion_tokens=10,
+        )
+
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                complete_response += chunk.choices[0].delta.content
+                print(chunk.choices[0].delta.content, end="")
+                chunk_count += 1
+
+        assert chunk_count > 5
+        assert len(complete_response) > 5
+
 
 if __name__ == "__main__":
     args = parse_args()

@@ -1,7 +1,5 @@
 # 🍋 Lemonade SDK
 
-*The long-term objective of the Lemonade SDK is to provide the ONNX ecosystem with the same kind of tools available in the GGUF ecosystem.*
-
 Lemonade SDK is built on top of [OnnxRuntime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai), an ONNX LLM inference engine developed by Microsoft to improve the LLM experience on AI PCs, especially those with accelerator hardware such as Neural Processing Units (NPUs).
 
 The Lemonade SDK provides everything needed to get up and running quickly with LLMs on OGA:

@@ -276,5 +276,104 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 </details>
 
 
+### GGUF
+
+<details>
+<summary>Qwen3-0.6B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-0.6B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-0.6B-GGUF:Q4_0">unsloth/Qwen3-0.6B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-1.7B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-1.7B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-1.7B-GGUF:Q4_0">unsloth/Qwen3-1.7B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-4B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-4B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-4B-GGUF:Q4_0">unsloth/Qwen3-4B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-8B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-8B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-8B-GGUF:Q4_0">unsloth/Qwen3-8B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-14B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-14B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-14B-GGUF:Q4_0">unsloth/Qwen3-14B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-30B-A3B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-30B-A3B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_0">unsloth/Qwen3-30B-A3B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

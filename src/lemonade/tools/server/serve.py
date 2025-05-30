@@ -7,6 +7,7 @@ import logging
 import traceback
 from typing import Optional, Union
 import json
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,7 +15,6 @@ from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 import uvicorn
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 from tabulate import tabulate
@@ -46,12 +46,18 @@ from openai.types.responses import (
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.management_tools import ManagementTool
+import lemonade.tools.server.llamacpp as llamacpp
+from lemonade.tools.server.pydantic_models import (
+    DEFAULT_MAX_NEW_TOKENS,
+    LoadConfig,
+    CompletionRequest,
+    ChatCompletionRequest,
+    ResponsesRequest,
+    PullConfig,
+)
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.server.instructions import get_instructions_html
 
-# Set to a high number to allow for interesting experiences in real apps
-# Tests should use the max_new_tokens argument to set a lower value
-DEFAULT_MAX_NEW_TOKENS = 1500
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
@@ -107,82 +113,6 @@ class StopOnEvent(StoppingCriteria):
 
     def __call__(self, input_ids, scores, **kwargs):
         return self.stop_event.is_set()
-
-
-class PullConfig(BaseModel):
-    """
-    Configurating for installing a supported LLM.
-    """
-
-    model_name: str
-
-
-class LoadConfig(BaseModel):
-    """
-    Configuration for loading a language model.
-
-    Specifies the model checkpoint, generation parameters,
-    and hardware/framework configuration (recipe) for model loading.
-    """
-
-    model_name: Optional[str] = None
-    checkpoint: Optional[str] = None
-    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
-    recipe: Optional[str] = None
-    # Indicates the maximum prompt length allowed for that specific
-    # checkpoint + recipe combination
-    max_prompt_length: Optional[int] = None
-    # Indicates whether the model is a reasoning model, like DeepSeek
-    reasoning: Optional[bool] = False
-
-
-class CompletionRequest(BaseModel):
-    """
-    Request model for text completion API endpoint.
-
-    Contains a prompt, a model identifier, and a streaming
-    flag to control response delivery.
-    """
-
-    prompt: str
-    model: str
-    echo: bool = False
-    stream: bool = False
-    logprobs: int | None = False
-    stop: list[str] | str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-
-
-class ChatCompletionRequest(BaseModel):
-    """
-    Request model for chat completion API endpoint.
-
-    Contains a list of chat messages, a model identifier,
-    and a streaming flag to control response delivery.
-    """
-
-    messages: list[dict]
-    model: str
-    stream: bool = False
-    logprobs: int | None = False
-    stop: list[str] | str | None = None
-    temperature: float | None = None
-    tools: list[dict] | None = None
-    max_tokens: int | None = None
-    max_completion_tokens: int | None = None
-
-
-class ResponsesRequest(BaseModel):
-    """
-    Request model for responses API endpoint.
-    """
-
-    input: list[dict] | str
-    model: str
-    max_output_tokens: int | None = None
-    temperature: float | None = None
-    stream: bool = False
 
 
 class Server(ManagementTool):
@@ -265,6 +195,12 @@ class Server(ManagementTool):
 
         # Add lock for load/unload operations
         self._load_lock = asyncio.Lock()
+
+        # Subprocess handle for llama_server.exe
+        self.llama_server_process: subprocess.Popen = None
+
+        # Telemetry instance for llama server
+        self.llama_telemetry = llamacpp.LlamaTelemetry()
 
     def setup_routes(self, api_prefixes: list[str]):
         for prefix in api_prefixes:
@@ -537,6 +473,11 @@ class Server(ManagementTool):
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc, internal_call=True)
+
+        if self.llm_loaded.recipe == "llamacpp":
+            return llamacpp.chat_completion(
+                chat_completion_request, self.llama_telemetry
+            )
 
         # Convert chat messages to text using the model's chat template
         text = self.apply_chat_template(
@@ -1067,6 +1008,11 @@ class Server(ManagementTool):
         """
         Send performance statistics to the client.
         """
+        # If using llama server, get telemetry from the telemetry instance
+        if self.llm_loaded and self.llm_loaded.recipe == "llamacpp":
+            return self.llama_telemetry.get_telemetry_data()
+
+        # For built-in server, use the existing telemetry
         return {
             "time_to_first_token": self.time_to_first_token,
             "tokens_per_second": self.tokens_per_second,
@@ -1278,9 +1224,17 @@ class Server(ManagementTool):
 
             logging.info(f"Loading llm: {model_reference}")
             try:
-                self.model, self.tokenizer = lemonade_api.from_pretrained(
-                    checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
-                )
+                if config_to_use.recipe == "llamacpp":
+                    self.llama_server_process = llamacpp.server_load(
+                        checkpoint=config_to_use.checkpoint,
+                        model_reference=model_reference,
+                        telemetry=self.llama_telemetry,
+                    )
+
+                else:
+                    self.model, self.tokenizer = lemonade_api.from_pretrained(
+                        checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
+                    )
                 self.llm_loaded = config_to_use
 
                 return {
@@ -1310,6 +1264,9 @@ class Server(ManagementTool):
                 # Acquire all generate locks
                 for _ in range(self.max_concurrent_generations):
                     await self._generate_semaphore.acquire()
+
+            if self.llm_loaded.recipe == "llamacpp":
+                self.llama_server_process.terminate()
 
             self.llm_loaded = None
             self.tokenizer = None

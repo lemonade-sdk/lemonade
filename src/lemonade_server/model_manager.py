@@ -50,7 +50,7 @@ class ModelManager:
         downloaded_models = {}
         for model in self.supported_models:
             if (
-                self.supported_models[model]["checkpoint"]
+                self.supported_models[model]["checkpoint"].split(":")[0]
                 in self.downloaded_hf_checkpoints
             ):
                 downloaded_models[model] = self.supported_models[model]
@@ -64,6 +64,16 @@ class ModelManager:
         """
         return self.filter_models_by_backend(self.downloaded_models)
 
+    def download_gguf(self, checkpoint) -> str:
+        # The colon after the checkpoint name indicates which
+        # specific GGUF to download
+        repo_id = checkpoint.split(":")[0]
+        pattern_to_match = f'*{checkpoint.split(":")[1]}.gguf'
+        return huggingface_hub.snapshot_download(
+            repo_id=repo_id,
+            allow_patterns=[pattern_to_match],
+        )
+
     def download_models(self, models: list[str]):
         """
         Downloads the specified models from Hugging Face.
@@ -76,7 +86,11 @@ class ModelManager:
                 )
             checkpoint = self.supported_models[model]["checkpoint"]
             print(f"Downloading {model} ({checkpoint})")
-            huggingface_hub.snapshot_download(repo_id=checkpoint)
+
+            if "gguf" in checkpoint.lower():
+                self.download_gguf(checkpoint)
+            else:
+                huggingface_hub.snapshot_download(repo_id=checkpoint)
 
     def filter_models_by_backend(self, models: dict) -> dict:
         """
