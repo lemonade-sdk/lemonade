@@ -265,7 +265,11 @@ def check_ryzen_ai_processor():
             "Ryzen AI installation is only supported on Windows."
         )
 
-    skip_check = os.getenv("RYZENAI_SKIP_PROCESSOR_CHECK", "").lower() in {"1", "true", "yes"}
+    skip_check = os.getenv("RYZENAI_SKIP_PROCESSOR_CHECK", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if skip_check:
         print("[WARNING]: Processor check skipped.")
         return
