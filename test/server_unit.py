@@ -3,7 +3,7 @@ Usage: python server_unit.py
 """
 
 import unittest
-from lemonade.tools.server.tool_calls import extract_tool_calls
+from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 
 
 # Mock the tokenizer's added_tokens_decoder
@@ -34,7 +34,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             "1": Token("<tool_call>"),
             "2": Token("</tool_call>"),
         }
-        tool_calls, message = extract_tool_calls(pattern1, mock_special_tokens)
+        tool_call_pattern = get_tool_call_pattern(mock_special_tokens)
+        tool_calls, message = extract_tool_calls(pattern1, tool_call_pattern)
         assert tool_calls == expected_tool_calls
         assert message == expected_message
 
@@ -45,7 +46,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         mock_special_tokens = {
             "1": Token("[TOOL_CALLS]"),
         }
-        tool_calls, message = extract_tool_calls(pattern2, mock_special_tokens)
+        tool_call_pattern = get_tool_call_pattern(mock_special_tokens)
+        tool_calls, message = extract_tool_calls(pattern2, tool_call_pattern)
         assert tool_calls == expected_tool_calls
         assert message == expected_message
 
@@ -54,7 +56,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         {"name": "get_current_weather", "arguments": {"location": "Paris"}}
         """
         mock_special_tokens = {}
-        tool_calls, message = extract_tool_calls(pattern3, mock_special_tokens)
+        tool_call_pattern = None
+        tool_calls, message = extract_tool_calls(pattern3, tool_call_pattern)
         assert tool_calls == expected_tool_calls
 
         # Pattern 4: Json array
@@ -64,7 +67,9 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         ]
         """
         mock_special_tokens = {}
-        tool_calls, message = extract_tool_calls(pattern4, mock_special_tokens)
+        tool_call_pattern = None
+        tool_calls, message = extract_tool_calls(pattern4, tool_call_pattern)
+        assert tool_calls == expected_tool_calls
 
 
 if __name__ == "__main__":

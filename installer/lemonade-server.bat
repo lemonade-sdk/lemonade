@@ -16,7 +16,7 @@ for %%a in (%*) do (
 REM Change to parent directory where conda env and bin folders are located
 pushd "%~dp0.."
 
-REM Run the Python CLI script through conda, passing filtered arguments
+REM Run the Python CLI script, passing filtered arguments
 call "%CD%\python\Scripts\lemonade-server-dev" !ARGS!
 popd
 

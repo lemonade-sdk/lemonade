@@ -3,6 +3,7 @@
 This guide provides instructions on how to integrate Lemonade Server into your application.
 
 There are two main ways in which Lemonade Sever might integrate into apps:
+
 * User-Managed Server: User is responsible for installing and managing Lemonade Server.
 * App-Managed Server: App is responsible for installing and managing Lemonade Server on behalf of the user.
 
@@ -12,7 +13,8 @@ The first part of this guide contains instructions that are common for both inte
 
 ### Identifying Existing Installation
 
-To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to: 
+To identify if Lemonade Server is installed on a system, you can use the [`lemonade-server` CLI command](./lemonade-server-cli.md), which is added to path when using our installer. This is a reliable method to:
+
 - Verify if the server is installed.
 - Check which version is currently available is running the command below.
 
@@ -41,6 +43,7 @@ ryzen ai.*\b3\d{2}\b
 ```
 
 Explanation:
+
 - `ryzen ai`: Matches the literal phrase "Ryzen AI".
 - `.*`: Allows any characters (including spaces) to appear after "Ryzen AI".
 - `\b3\d{2}\b`: Matches a three-digit number starting with 3, ensuring it's a standalone number.
@@ -70,7 +73,7 @@ Specific version:
 https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](../source_installation_inst.md).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://github.com/lemonade-sdk/lemonade/blob/main/docs/source_installation_inst.md).
 
 ### Installing Additional Models
 
@@ -80,7 +83,7 @@ Lemonade Server installations always come with at least one LLM installed. If yo
   - [A human-readable list of supported models](./server_models.md).
   - [A JSON file with the list of supported models](https://github.com/lemonade-sdk/lemonade/tree/main/src/lemonade_server/server_models.json) is included in every Lemonade Server installation.
 - Installing LLMs:
-  - [The `pull` endpoint in the server](./server_spec.md#get-apiv0pull-).
+  - [The `pull` endpoint in the server](./server_spec.md#get-apiv1pull).
   - `lemonade-server pull MODEL` on the command line interface.
 
 ## Stand-Alone Server Integration
@@ -88,6 +91,7 @@ Lemonade Server installations always come with at least one LLM installed. If yo
 Some apps might prefer to be responsible for installing and managing Lemonade Server on behalf of the user. This part of the guide includes steps for installing and running Lemonade Server so that your users don't have to install Lemonade Server separately.
 
 Definitions:
+
 - Command line usage allows the server process to be launched programmatically, so that your application can manage starting and stopping the server process on your user's behalf.
 - "Silent installation" refers to an automatic command for installing Lemonade Server without running any GUI or prompting the user for any questions. It does assume that the end-user fully accepts the license terms, so be sure that your own application makes this clear to the user.
 

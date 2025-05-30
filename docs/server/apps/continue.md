@@ -4,6 +4,13 @@
 
 [Continue](https://www.continue.dev/) is a coding assistant that lives inside of a VS Code extension. It supports chatting with your codebase, making edits, and a lot more.
 
+## Demo Video
+
+▶️ [Watch on YouTube](https://www.youtube.com/watch?v=bP_MZnDpbUc&source_ve_path=MjM4NTE)
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/bP_MZnDpbUc?si=0KZLzQzFlRvW9J9f" 
+title="YouTube video player" frameborder="0" allowfullscreen></iframe>
+
 ## Expectations
 
 We have found that the `Qwen-1.5-7B-Chat-Hybrid` model is the best Hybrid model available for coding. It is good at chatting with a few files at a time in your codebase to learn more about them. It can also make simple code editing suggestions pertaining to a few lines of code at a time.
@@ -41,7 +48,7 @@ models:
   - name: Lemonade
     provider: openai
     model: Qwen-1.5-7B-Chat-Hybrid 
-    apiBase: http://localhost:8000/api/v0
+    apiBase: http://localhost:8000/api/v1
     apiKey: none
 ```
 
@@ -57,12 +64,14 @@ Here are some examples for trying out Continue. These examples assume you have c
 ### Chat with Files
 
 Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or too.
+
   - "What's the fastest way to install Lemonade in `@getting_started.md?`"
   - "According to `@README.md` what do I need to do to set up for `@api_oga_hybrid_streaming.py`?"
 
 ### Editing Files
 
 Open a file, select some code, and push Ctrl+I to start a chat about editing that code.
+
   1. Open `//examples//lemonade//api_basic.py`.
   1. Select the `print(...` line at the bottom and press `ctrl+i`.
   1. Write "Add a helpful comment" in the chat box and press enter.

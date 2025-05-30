@@ -49,7 +49,7 @@ jobs:
           HF_TOKEN: "${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
         run: |
           # Test CLI
-          lemonade -i TinyPixel/small-llama2 oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
+          lemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
 
           # Test low-level APIs
           python test/oga_cpu_api.py

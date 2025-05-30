@@ -124,7 +124,7 @@ jobs:
           }
 
           Write-Host "Checking the /health endpoint"
-          $response = Invoke-WebRequest -Uri http://localhost:8000/api/v0/health -UseBasicParsing
+          $response = Invoke-WebRequest -Uri http://localhost:8000/api/v1/health -UseBasicParsing
 
           if ($response.StatusCode -eq 200) {
               Write-Output "Good: /health status code is 200"

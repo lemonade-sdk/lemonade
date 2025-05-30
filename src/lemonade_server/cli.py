@@ -92,7 +92,7 @@ def pull(model_names: List[str]):
     if server_running:
         import requests
 
-        base_url = f"http://localhost:{port}/api/v0"
+        base_url = f"http://localhost:{port}/api/v1"
 
         for model_name in model_names:
             # Install the model
@@ -143,7 +143,7 @@ def status(verbose: bool = True) -> Tuple[bool, int]:
 
 def is_lemonade_server(pid):
     """
-    Check wether or not a given PID corresponds to a Lemonade server
+    Check whether or not a given PID corresponds to a Lemonade server
     """
     try:
         process = psutil.Process(pid)
@@ -158,6 +158,8 @@ def is_lemonade_server(pid):
                 "lemonade",
             ]:
                 return True
+            elif "llama-server" in process.name():
+                return False
             if not process.parent():
                 return False
             process = process.parent()

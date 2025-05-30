@@ -7,13 +7,16 @@ We're thrilled that you're considering contributing to the project. This project
 Before you start, please take a few moments to read through these guidelines. They are designed to make the contribution process easy and effective for everyone involved. Also take a look at the [code organization](https://github.com/lemonade-sdk/lemonade/blob/main/docs/code.md) for a bird's eye view of the repository.
 
 The guidelines document is organized as the following sections:
-- [Contributing a Lemonade Server Demo](#-contributing-a-lemonade-server-demo)
+
+- [Contributing a Lemonade Server Demo](#contributing-a-lemonade-server-demo)
 - [Contributing to the overall framework](#contributing-to-the-overall-framework)
 - [Issues](#issues)
 - [Pull Requests](#pull-requests)
 - [Testing](#testing)
 - [Versioning](#versioning)
 - [PyPI Release Process](#pypi-release-process)
+
+<a name="contributing-a-lemonade-server-demo"></a>
 
 ## 🍋 Contributing a Lemonade Server Demo
 
@@ -61,6 +64,7 @@ We use semantic versioning, as described in [versioning.md](https://github.com/l
 ## PyPI Release Process
 
 Lemonade SDK is provided as a package on PyPI, the Python Package Index, as [lemonade-sdk](https://pypi.org/project/lemonade-sdk/). The release process for pushing an updated package to PyPI is mostly automated, however (by design), there are a few manual steps.
+
 1. Make sure the version number in [version.py](https://github.com/lemonade-sdk/lemonade/blob/main/src/lemonade/version.py) has a higher value than the current [PyPI package](https://pypi.org/project/lemonade-sdk/).
     - Note: if you don't take care of this, PyPI will reject the updated package and you will need to start over from Step 1 of this guide.
     - If you are unsure what to set the version number to, consult [versioning.md](https://github.com/lemonade-sdk/lemonade/blob/main/docs/versioning.md).

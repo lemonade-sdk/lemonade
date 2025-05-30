@@ -4,7 +4,7 @@ Lemonade API (`lemonade.api`) provides a simple, high-level interface to load an
 
 ## 🧠 What Is a Recipe?
 
-A **recipe** defines how a model is run — including backend (e.g., PyTorch, ONNX Runtime), quantization strategy, and device support. The `from_pretrained()` function in `lemonade.api` uses the recipe to configure everything automatically. For the list of recipes, see [Recipe Compatibility Table](#-recipe-and-checkpoint-compatibility). The following is an example of using the Lemonade API `from_pretrained()` function:
+A **recipe** defines how a model is run — including backend (e.g., PyTorch, ONNX Runtime), quantization strategy, and device support. The `from_pretrained()` function in `lemonade.api` uses the recipe to configure everything automatically. For the list of recipes, see [Recipe Compatibility Table](#recipe-and-checkpoint-compatibility). The following is an example of using the Lemonade API `from_pretrained()` function:
 
 ```python
 from lemonade.api import from_pretrained
@@ -24,6 +24,7 @@ Lemonade API currently supports:
 - Hugging Face hosted **safetensors** checkpoints
 - AMD **OGA** (ONNXRuntime-GenAI) ONNX checkpoints
 
+<a name="recipe-and-checkpoint-compatibility"></a>
 ## 🍴 Recipe and Checkpoint Compatibility
 
 The following table explains what checkpoints work with each recipe, the hardware and OS requirements, and additional notes:

@@ -1,0 +1,118 @@
+# This is the configuration file for MkDocs, a static site generator that uses Markdown files to create documentation sites.
+# The configuration file is written in YAML format and contains various settings for the site.
+
+# To install the MkDocs dependencies, run the following command in the terminal:
+# pip install -r docs/assets/mkdocs_requirements.txt
+
+# To build the site, run the following command in the terminal:
+# mkdocs build
+
+# To serve the site locally, run the following command in the terminal:
+# mkdocs serve
+
+# To deploy the site to GitHub Pages, run the following command in the terminal:
+# mkdocs gh-deploy  <-- this should be updated when we have CI setup with what the real instructions are.
+
+site_name: Lemonade Server Documentation
+site_url: https://lemonade-server.ai/
+site_description: Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.
+
+edit_uri: server/README.md
+
+repo_name: lemonade-sdk/lemonade
+repo_url: https://github.com/lemonade-sdk/lemonade
+
+plugins:
+  - monorepo
+  - search
+
+theme:
+  name: material
+  logo: assets/logo.png  # If we want to use a custom logo instead of an icon
+  icon:
+    repo: fontawesome/brands/github # This is the icon for the repo link in the header
+  favicon: assets/favicon.ico
+  features:
+    - navigation.footer
+    - navigation.tracking
+    - navigation.expand
+    - navigation.top
+    - content.code.annotate
+    - content.code.copy
+  palette:
+
+    # Light mode settings
+    - scheme: lightmode
+      primary: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+    # Dark mode settings
+    - scheme: slate
+      primary: amber
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  nav_style: dark
+
+# Add the list of markdown files to be included in the documentation
+# The order of the files in the list will determine the order they appear in the documentation
+nav:
+  - Downloading and Getting Started: server/README.md
+  - Supported Applications: server/apps/README.md
+  - Application Guides:
+      - AI Toolkit: server/apps/ai-toolkit.md
+      - AnythingLLM: server/apps/anythingLLM.md
+      - CodeGPT: server/apps/codeGPT.md
+      - Continue: server/apps/continue.md
+      - LM-Eval-Harness: server/apps/lm-eval.md
+      - Mindcraft: server/apps/mindcraft.md
+      - Wut: server/apps/wut.md
+  - Lemonade Server CLI Guide: server/lemonade-server-cli.md
+  - Understanding local LLM servers: server/concepts.md
+  - Models List: server/server_models.md
+  - Server Spec: server/server_spec.md
+  - Integration Guide: server/server_integration.md
+  - Contribution Guide: contribute.md
+
+not_in_nav: |
+  /index.md
+  /lemonade_api.md
+  
+exclude_docs: |
+  code.md
+  humaneval_accuracy.md
+  mmlu_accuracy.md
+  perplexity.md
+  quark.md
+  versioning.md
+  source_installation_inst.md
+  ort_genai_igpu.md
+  llamacpp.md
+
+# The following adds icons on the bottom of the page
+extra:
+  homepage: https://lemonade-server.ai
+  social:
+    - icon: simple/youtube
+      link: https://www.youtube.com/@AMDDevCentral
+    - icon: simple/github
+      link: https://github.com/lemonade-sdk/lemonade
+
+copyright: Copyright &copy; 2025 AMD. All rights reserved.
+
+# The custom CSS for colors and more
+extra_css:
+  - assets/extra.css
+
+# The custom JavaScript for the carousel for the videos
+extra_javascript:
+  - assets/carousel.js
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences  # Better code blocks
+  - pymdownx.tabbed:      # Tabbed code blocks
+      alternate_style: true

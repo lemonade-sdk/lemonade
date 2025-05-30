@@ -24,20 +24,27 @@ Keep in mind that when using the `@agent` feature, multi-turn conversations can 
 
 ### Configure AnythingLLM to Use Lemonade
 
-1. In the bottom of the left menu, click on the wrench icon to "Open Settings".
-2. Under the menu "AI Providers", click "LLM".
-3. Select "Generic OpenAI" and enter the following info:
-   - **Base URL**: `http://localhost:8000/api/v0`
-   - **API Key**: `-`
-   - **Chat Model Name**: `Qwen-1.5-7B-Chat-Hybrid`
-   - **Token context window**: `3000`
-   - **Max Tokens**: `3000`
-4. In the bottom left, click the back button to exit.
-5. In the left menu, click "New Workspace" and give it a name.
-6. Where you see your new workspace, click the gear icon to open the "Workspace Settings"
-7. In the top menu of the window that opens, click on "Agent Configuration"
-8. Under Chat Settings, select Generic OpenAI and click save.
-9. Under Workspace Agent LLM Provider, select "Generic OpenAI" and click save.
+<ol>
+  <li>In the bottom of the left menu, click on the wrench icon to "Open Settings".</li>
+  <li>Under the menu "AI Providers", click "LLM".</li>
+  <li>
+    Select "Generic OpenAI" and enter the following info:
+    <table>
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td><b>Base URL</b></td><td><code>http://localhost:8000/api/v1</code></td></tr>
+      <tr><td><b>API Key</b></td><td><code>-</code></td></tr>
+      <tr><td><b>Chat Model Name</b></td><td><code>Qwen-1.5-7B-Chat-Hybrid</code></td></tr>
+      <tr><td><b>Token context window</b></td><td><code>3000</code></td></tr>
+      <tr><td><b>Max Tokens</b></td><td><code>3000</code></td></tr>
+    </table>
+  </li>
+  <li>In the bottom left, click the back button to exit.</li>
+  <li>In the left menu, click "New Workspace" and give it a name.</li>
+  <li>Where you see your new workspace, click the gear icon to open the "Workspace Settings"</li>
+  <li>In the top menu of the window that opens, click on "Agent Configuration"</li>
+  <li>Under Chat Settings, select Generic OpenAI and click save.</li>
+  <li>Under Workspace Agent LLM Provider, select "Generic OpenAI" and click save.</li>
+</ol>
 
 ## Usage with @agent
 
@@ -52,6 +59,7 @@ To start an agent session, simply go to any workspace and type `@agent <your pro
 You may turn on and off specific `Agent Skills` by going to your `Workspace Settings` → `Agent Configuration` → `Configure Agent Skills`.
 
 Available agent skills include:
+
 * RAG & long-term memory
 * View and summarize documents
 * Scrape Websites
@@ -63,6 +71,7 @@ Available agent skills include:
 ### Examples
 
 Here are some examples on how you can interact with Anything LLM agents:
+
 - **Rag & long-term memory**
     - `@agent My name is Dr Lemon. Remember this in our next conversation`
     - Then, on a follow up chat you can ask `@agent What is my name according to your memory?`

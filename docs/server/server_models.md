@@ -39,11 +39,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Llama-3.2-1B-Instruct-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -54,11 +55,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Llama-3.2-3B-Instruct-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -69,11 +71,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Phi-3-Mini-Instruct-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -84,11 +87,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -99,11 +103,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid](https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | True |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
 
 </details>
 
@@ -114,11 +119,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid](https://huggingface.co/amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | True |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
 
 </details>
 
@@ -129,11 +135,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Mistral-7B-v0.3-Instruct-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid](https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -144,11 +151,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Llama-3.1-8B-Instruct-Hybrid
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid](https://huggingface.co/amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid) |
-| Recipe | oga-hybrid |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -162,11 +170,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx](https://huggingface.co/amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx) |
-| Recipe | oga-cpu |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx">amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -177,11 +186,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Llama-3.2-1B-Instruct-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx](https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx) |
-| Recipe | oga-cpu |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx">amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -192,11 +202,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Llama-3.2-3B-Instruct-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx](https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx) |
-| Recipe | oga-cpu |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx">amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -207,11 +218,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Phi-3-Mini-Instruct-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu](https://huggingface.co/amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu) |
-| Recipe | oga-cpu |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu">amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -222,11 +234,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull Qwen-1.5-7B-Chat-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu](https://huggingface.co/amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu) |
-| Recipe | oga-cpu |
-| Reasoning | False |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu">amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
 
 </details>
 
@@ -237,11 +250,12 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull DeepSeek-R1-Distill-Llama-8B-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu](https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu) |
-| Recipe | oga-cpu |
-| Reasoning | True |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
 
 </details>
 
@@ -252,11 +266,111 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
     lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-CPU
 ```
 
-| Key | Value |
-| --- | ----- |
-| Checkpoint | [amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu](https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu) |
-| Recipe | oga-cpu |
-| Reasoning | True |
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu</a></td></tr>
+<tr><td>Recipe</td><td>oga-cpu</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+
+### GGUF
+
+<details>
+<summary>Qwen3-0.6B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-0.6B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-0.6B-GGUF:Q4_0">unsloth/Qwen3-0.6B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-1.7B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-1.7B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-1.7B-GGUF:Q4_0">unsloth/Qwen3-1.7B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-4B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-4B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-4B-GGUF:Q4_0">unsloth/Qwen3-4B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-8B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-8B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-8B-GGUF:Q4_0">unsloth/Qwen3-8B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-14B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-14B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-14B-GGUF:Q4_0">unsloth/Qwen3-14B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-30B-A3B-GGUF</summary>
+
+```bash
+    lemonade-server pull Qwen3-30B-A3B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF:Q4_0">unsloth/Qwen3-30B-A3B-GGUF:Q4_0</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>True</td></tr>
+</table>
 
 </details>
 
