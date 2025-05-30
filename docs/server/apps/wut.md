@@ -16,23 +16,26 @@ It is not especially convenient to use `wut` with Windows until the developers r
 
 ### Prerequisites
 
+#### Install Lemonade Server
+
 1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
 
+#### Installing Windows Subsystem for Linux (WSL)
 
 `wut` currently requires a `tmux` terminal in order to function. We found the simplest way to achieve this on Windows was through the Windows Subsystem for Linux (WSL).
 
 1. Install [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install).
-1. Open the `WSL Settings` app, navigate to `Networking`, and make sure the `Networking mode` is `Mirrored`.
-  - This is required for WSL terminals to be able to see the Lemonade server running in Windows.
-
-3. If needed: shut down WSL to make sure the changes apply:
+1. Open the `WSL Settings` app, navigate to `Networking`, and make sure the `Networking mode` is `Mirrored`. This is required for WSL terminals to be able to see the Lemonade server running in Windows.
+1. If needed: shut down WSL to make sure the changes apply:
 
 ```powershell
 wsl --shutdown
 ```
 
-4. Start a WSL terminal.
-5. Install [`pipx`](https://github.com/pypa/pipx), as recommended by the following `wut` instructions:
+### Installing Wut
+
+* Start a WSL terminal.
+* Install [`pipx`](https://github.com/pypa/pipx), as recommended by the following `wut` instructions:
 
 ```bash
 sudo apt update
@@ -40,18 +43,18 @@ sudo apt install pipx
 pipx ensurepath
 ```
 
-6. Re-launch your terminal to make sure `pipx` is available, then install `wut`:
+* Re-launch your terminal to make sure `pipx` is available, then install `wut`:
 
 ```bash
 pipx install wut-cli
 ```
 
-7. Add `wut`'s required environment variables to your `.bashrc` file:
+* Add `wut`'s required environment variables to your `.bashrc` file:
 
 ```bash
 export OPENAI_API_KEY="-"
 export OPENAI_MODEL="Llama-3.2-3B-Instruct-Hybrid"
-export OPENAI_BASE_URL="http://localhost:8000/api/v0"
+export OPENAI_BASE_URL="http://localhost:8000/api/v1"
 ```
 
 ## Usage
@@ -72,14 +75,14 @@ Then, try some of these example commands that `wut` can help explain.
 People often ask exactly what Lemonade Server's `models` endpoint does. Fortunately, `wut` is able to intuit the answer!
 
 ```bash
-curl http://localhost:8000/api/v0/models
+curl http://localhost:8000/api/v1/models
 wut
 ```
 
 The terminal response of the `curl` command is this (only intelligible by machines):
 
 ```
-curl http://localhost:8000/api/v0/models
+curl http://localhost:8000/api/v1/models
 {"object":"list","data":[{"id":"Qwen2.5-0.5B-Instruct-CPU","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-1B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Llama-3.2-3B-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Phi-3-Mini-Instruct-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"Qwen-1.5-7B-Chat-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Llama-8B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"},{"id":"DeepSeek-R1-Distill-Qwen-7B-Hybrid","created":1744226681,"object":"model","owned_by":"lemonade"}]}
 ```
 

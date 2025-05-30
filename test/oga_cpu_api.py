@@ -16,7 +16,7 @@ import sys
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
 
-checkpoint = "TinyPixel/small-llama2"
+checkpoint = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 device = "cpu"
 dtype = "int4"
 force = False

@@ -138,5 +138,47 @@
         "recipe": "oga-igpu",
         "reasoning": false,
         "suggested": false
+    },
+    "Qwen3-0.6B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Qwen3-1.7B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Qwen3-4B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-4B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Qwen3-8B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "DeepSeek-Qwen3-8B-GGUF": {
+        "checkpoint": "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_1",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Qwen3-14B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-14B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
+    },
+    "Qwen3-30B-A3B-GGUF": {
+        "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "reasoning": true,
+        "suggested": true
     }
 }

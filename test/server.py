@@ -27,6 +27,7 @@ import contextlib
 from unittest.mock import patch
 import urllib.request
 import os
+import requests
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -45,6 +46,20 @@ except ImportError:
 MODEL_NAME = "Qwen2.5-0.5B-Instruct-CPU"
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
+
+# Sample tool schema based on https://github.com/githejie/mcp-server-calculator
+sample_tool = {
+    "type": "function",
+    "function": {
+        "name": "calculator_calculate",
+        "parameters": {
+            "properties": {"expression": {"title": "Expression", "type": "string"}},
+            "required": ["expression"],
+            "title": "calculateArguments",
+            "type": "object",
+        },
+    },
+}
 
 
 def parse_args():
@@ -176,7 +191,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         Start lemonade server process
         """
         print("\n=== Starting new test ===")
-        self.base_url = f"http://localhost:{PORT}/api/v0"
+        self.base_url = f"http://localhost:{PORT}/api/v1"
         self.messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Who won the world series in 2020?"},
@@ -255,7 +270,36 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         kill_process_on_port(PORT)
 
-    # Endpoint: /api/v0/chat/completions
+    def test_000_endpoints_available(self):
+        # List of endpoints to check
+        valid_endpoints = [
+            "chat/completions",
+            "completions",
+            "models",
+            "responses",
+            "pull",
+            "load",
+            "unload",
+            "health",
+            "halt",
+            "stats",
+        ]
+
+        # Ensure that we get a 404 error when the endpoint is not registered
+        url = f"http://localhost:{PORT}/api/v0/nonexistent"
+        response = requests.get(url)
+        assert response.status_code == 404
+
+        # Check that all endpoints are properly registered on both v0 and v1
+        for endpoint in valid_endpoints:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = requests.get(url)
+                assert (
+                    response.status_code != 404
+                ), f"Endpoint {endpoint} is not registered on {version}"
+
+    # Endpoint: /api/v1/chat/completions
     def test_001_test_chat_completion(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -271,7 +315,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         print(completion.choices[0].message.content)
         assert len(completion.choices[0].message.content) > 5
 
-    # Endpoint: /api/v0/chat/completions
+    # Endpoint: /api/v1/chat/completions
     def test_002_test_chat_completion_streaming(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -295,7 +339,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/chat/completions
+    # Endpoint: /api/v1/chat/completions
     async def test_003_test_chat_completion_streaming_async(self):
         client = AsyncOpenAI(
             base_url=self.base_url,
@@ -320,7 +364,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/models
+    # Endpoint: /api/v1/models
     def test_004_test_models(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -341,7 +385,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             for model in l.data
         )
 
-    # Endpoint: /api/v0/completions
+    # Endpoint: /api/v1/completions
     def test_005_test_completions(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -358,7 +402,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         print(completion.choices[0].text)
         assert len(completion.choices[0].text) > 5
 
-    # Endpoint: /api/v0/completions
+    # Endpoint: /api/v1/completions
     def test_006_test_completions_streaming(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -383,7 +427,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/completions
+    # Endpoint: /api/v1/completions
     async def test_007_test_completions_streaming_async(self):
         client = AsyncOpenAI(
             base_url=self.base_url,
@@ -408,7 +452,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/completions with stop parameter
+    # Endpoint: /api/v1/completions with stop parameter
     def test_008_test_completions_with_stop(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -426,7 +470,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(completion.choices[0].text) > 2
         assert "apples" not in completion.choices[0].text
 
-    # Endpoint: /api/v0/chat/completions with stop parameter
+    # Endpoint: /api/v1/chat/completions with stop parameter
     def test_009_test_chat_completion_with_stop(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -449,7 +493,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(completion.choices[0].message.content) > 2
         assert "apples" not in completion.choices[0].message.content
 
-    # Endpoint: /api/v0/completions with echo parameter
+    # Endpoint: /api/v1/completions with echo parameter
     def test_010_test_completions_with_echo(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -556,7 +600,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             print(completion.choices[0].text)
             assert len(completion.choices[0].text) > 5
 
-    # Endpoint: /api/v0/responses
+    # Endpoint: /api/v1/responses
     def test_014_test_responses(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -574,7 +618,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         print(response.output[0].content[0].text)
         assert len(response.output[0].content[0].text) > 5
 
-    # Endpoint: /api/v0/responses
+    # Endpoint: /api/v1/responses
     def test_015_test_responses_streaming(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -619,7 +663,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert last_event_type == "response.completed"
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/responses
+    # Endpoint: /api/v1/responses
     async def test_016_test_responses_streaming_async(self):
         client = AsyncOpenAI(
             base_url=self.base_url,
@@ -664,28 +708,12 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert last_event_type == "response.completed"
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v0/chat/completions with tool calls
+    # Endpoint: /api/v1/chat/completions with tool calls
     def test_017_test_chat_completion_with_tool_calls(self):
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
         )
-
-        # Sample tool schema based on https://github.com/githejie/mcp-server-calculator
-        sample_tool = {
-            "type": "function",
-            "function": {
-                "name": "calculator_calculate",
-                "parameters": {
-                    "properties": {
-                        "expression": {"title": "Expression", "type": "string"}
-                    },
-                    "required": ["expression"],
-                    "title": "calculateArguments",
-                    "type": "object",
-                },
-            },
-        }
 
         completion = client.chat.completions.create(
             model=MODEL_NAME,
@@ -702,6 +730,71 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
         assert tool_calls is not None
         assert len(tool_calls) == 1
+
+    # Endpoint: /api/v1/chat/completions with tool calls
+    def test_018_test_chat_completion_with_tool_calls_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Run the calculator_calculate tool with expression set to 1+1",
+                }
+            ],
+            tools=[sample_tool],
+            max_completion_tokens=50,
+            stream=True,
+        )
+
+        tool_call_count = 0
+        for chunk in stream:
+            delta = (
+                chunk.choices[0].delta
+                if chunk.choices and len(chunk.choices) > 0
+                else None
+            )
+            if delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    print(tool_call)
+                    tool_call_count += 1
+
+        assert tool_call_count > 0
+
+    # Endpoint: /api/v1/chat/completions
+    def test_019_test_llamacpp_chat_completion_streaming(self):
+        # Only run this test on Windows
+        if os.name != "nt":
+            self.skipTest(
+                "test_018_test_llamacpp_chat_completion_streaming runs only on Windows."
+            )
+
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.chat.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            messages=self.messages,
+            stream=True,
+            max_completion_tokens=10,
+        )
+
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                complete_response += chunk.choices[0].delta.content
+                print(chunk.choices[0].delta.content, end="")
+                chunk_count += 1
+
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
 
 if __name__ == "__main__":

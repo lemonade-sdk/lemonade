@@ -7,11 +7,14 @@ import logging
 import traceback
 from typing import Optional, Union
 import json
+import subprocess
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 from tabulate import tabulate
@@ -24,7 +27,11 @@ from openai.types.chat.chat_completion_message_tool_call import (
     Function,
 )
 from openai.types.chat.chat_completion import Choice
-from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from openai.types.chat.chat_completion_chunk import (
+    ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
+)
 from openai.types.completion_choice import Logprobs
 from openai.types.model import Model
 from openai.types.responses import (
@@ -39,11 +46,18 @@ from openai.types.responses import (
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.management_tools import ManagementTool
-from lemonade.tools.server.tool_calls import extract_tool_calls
+import lemonade.tools.server.llamacpp as llamacpp
+from lemonade.tools.server.pydantic_models import (
+    DEFAULT_MAX_NEW_TOKENS,
+    LoadConfig,
+    CompletionRequest,
+    ChatCompletionRequest,
+    ResponsesRequest,
+    PullConfig,
+)
+from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
+from lemonade.tools.server.instructions import get_instructions_html
 
-# Set to a high number to allow for interesting experiences in real apps
-# Tests should use the max_new_tokens argument to set a lower value
-DEFAULT_MAX_NEW_TOKENS = 1500
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
@@ -101,97 +115,21 @@ class StopOnEvent(StoppingCriteria):
         return self.stop_event.is_set()
 
 
-class PullConfig(BaseModel):
-    """
-    Configurating for installing a supported LLM.
-    """
-
-    model_name: str
-
-
-class LoadConfig(BaseModel):
-    """
-    Configuration for loading a language model.
-
-    Specifies the model checkpoint, generation parameters,
-    and hardware/framework configuration (recipe) for model loading.
-    """
-
-    model_name: Optional[str] = None
-    checkpoint: Optional[str] = None
-    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
-    recipe: Optional[str] = None
-    # Indicates the maximum prompt length allowed for that specific
-    # checkpoint + recipe combination
-    max_prompt_length: Optional[int] = None
-    # Indicates whether the model is a reasoning model, like DeepSeek
-    reasoning: Optional[bool] = False
-
-
-class CompletionRequest(BaseModel):
-    """
-    Request model for text completion API endpoint.
-
-    Contains a prompt, a model identifier, and a streaming
-    flag to control response delivery.
-    """
-
-    prompt: str
-    model: str
-    echo: bool = False
-    stream: bool = False
-    logprobs: int | None = False
-    stop: list[str] | str | None = None
-    temperature: float | None = None
-    max_tokens: int | None = None
-
-
-class ChatCompletionRequest(BaseModel):
-    """
-    Request model for chat completion API endpoint.
-
-    Contains a list of chat messages, a model identifier,
-    and a streaming flag to control response delivery.
-    """
-
-    messages: list[dict]
-    model: str
-    stream: bool = False
-    logprobs: int | None = False
-    stop: list[str] | str | None = None
-    temperature: float | None = None
-    tools: list[dict] | None = None
-    max_tokens: int | None = None
-    max_completion_tokens: int | None = None
-
-
-class ResponsesRequest(BaseModel):
-    """
-    Request model for responses API endpoint.
-    """
-
-    input: list[dict] | str
-    model: str
-    max_output_tokens: int | None = None
-    temperature: float | None = None
-    stream: bool = False
-
-
 class Server(ManagementTool):
     """
     Open a web server that apps can use to communicate with the LLM.
 
     The server exposes these endpoints:
-    - /api/v0/pull: install an LLM by its Lemonade Server Model Name.
-    - /api/v0/load: load a model checkpoint.
-    - /api/v0/unload: unload a model checkpoint.
-    - /api/v0/health: check whether a model is loaded and ready to serve.
-    - /api/v0/stats: performance statistics for the generation.
-    - /api/v0/halt: stop an in-progress generation from make more tokens.
-    - /api/v0/completions: completion responses using HTTP chunked transfer encoding.
-    - /api/v0/chat/completions: chat completion responses using HTTP chunked transfer encoding.
-    - /api/v0/responses: responses API using HTTP chunked transfer encoding.
-    - /api/v0/models: list all available models.
+    - /api/v1/pull: install an LLM by its Lemonade Server Model Name.
+    - /api/v1/load: load a model checkpoint.
+    - /api/v1/unload: unload a model checkpoint.
+    - /api/v1/health: check whether a model is loaded and ready to serve.
+    - /api/v1/stats: performance statistics for the generation.
+    - /api/v1/halt: stop an in-progress generation from make more tokens.
+    - /api/v1/completions: completion responses using HTTP chunked transfer encoding.
+    - /api/v1/chat/completions: chat completion responses using HTTP chunked transfer encoding.
+    - /api/v1/responses: responses API using HTTP chunked transfer encoding.
+    - /api/v1/models: list all available models.
     """
 
     unique_name = "serve"
@@ -200,7 +138,7 @@ class Server(ManagementTool):
         super().__init__()
 
         # Initialize FastAPI app
-        self.app = FastAPI()
+        self.app = FastAPI(lifespan=lifespan)
 
         # Add CORS middleware
         self.app.add_middleware(
@@ -212,22 +150,17 @@ class Server(ManagementTool):
         )
 
         # Set up custom routes
-        self.app.post("/api/v0/pull")(self.pull)
-        self.app.post("/api/v0/load")(self.load_llm)
-        self.app.post("/api/v0/unload")(self.unload_llm)
-        self.app.get("/api/v0/health")(self.health)
-        self.app.get("/api/v0/halt")(self.halt_generation)
-        self.app.get("/api/v0/stats")(self.send_stats)
-        self.app.post("/api/v0/completions")(self.completions)
-        self.app.post("/api/v0/responses")(self.responses)
-
-        # Set up OpenAI-compatible routes
-        self.app.post("/api/v0/chat/completions")(self.chat_completions)
-        self.app.post("/api/v0/completions")(self.completions)
-        self.app.get("/api/v0/models")(self.models)
+        self.setup_routes(["/api/v0", "/api/v1"])
 
         # Set up instructions
         self.app.get("/")(self.instructions)
+
+        # Mount a static assets dir for HTML responses, such
+        # as the instructions
+        static_dir = Path(__file__).parent / "static"
+        self.app.mount(
+            "/static", StaticFiles(directory=static_dir), name="static_assets"
+        )
 
         # Performance stats that are set during /ws and can be
         # fetched in /stats
@@ -262,6 +195,28 @@ class Server(ManagementTool):
 
         # Add lock for load/unload operations
         self._load_lock = asyncio.Lock()
+
+        # Subprocess handle for llama_server.exe
+        self.llama_server_process: subprocess.Popen = None
+
+        # Telemetry instance for llama server
+        self.llama_telemetry = llamacpp.LlamaTelemetry()
+
+    def setup_routes(self, api_prefixes: list[str]):
+        for prefix in api_prefixes:
+            # Custom routes
+            self.app.post(f"{prefix}/pull")(self.pull)
+            self.app.post(f"{prefix}/load")(self.load_llm)
+            self.app.post(f"{prefix}/unload")(self.unload_llm)
+            self.app.get(f"{prefix}/health")(self.health)
+            self.app.get(f"{prefix}/halt")(self.halt_generation)
+            self.app.get(f"{prefix}/stats")(self.send_stats)
+            self.app.post(f"{prefix}/completions")(self.completions)
+            self.app.post(f"{prefix}/responses")(self.responses)
+
+            # OpenAI-compatible routes
+            self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
+            self.app.get(f"{prefix}/models")(self.models)
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -334,6 +289,10 @@ class Server(ManagementTool):
             # Print the elapsed time for each request
             self.setup_middleware_timer()
 
+        # Let the app know what port it's running on, so
+        # that the lifespan can access it
+        self.app.port = port
+
         uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
 
     async def _show_telemetry(self):
@@ -363,31 +322,8 @@ class Server(ManagementTool):
         """
         Show instructions on how to use the server.
         """
-        html_content = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Lemonade Server</title>
-                <link rel="icon" href="data:,">
-            </head>
-            <body>
-                <h1>🍋 Welcome to Lemonade Server!</h1>
-                <p>
-                    A standards-compliant server that provides REST APIs for LLM communication.
-                    To get started, simply point your OpenAI-compatible application at the server's endpoint.
-                </p>
-                <div class="links">
-                    <h3>Documentation:</h3>
-                    <ul>
-                        <li><a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/server/apps/README.md">Examples & Usage</a></li>
-                        <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_integration.md">Integration Guide</a></li>
-                        <li><a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_spec.md">Server Specification</a></li>
-                    </ul>
-                </div>
-            </body>
-            </html>
-            """
-        return HTMLResponse(content=html_content, status_code=200)
+
+        return get_instructions_html(port=self.app.port)
 
     def initialize_load_config(
         self, request: Union[ChatCompletionRequest, CompletionRequest]
@@ -530,10 +466,6 @@ class Server(ManagementTool):
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
 
-        if chat_completion_request.tools and chat_completion_request.stream:
-            logging.warning(
-                "tools are only supported on non-streaming chat completions"
-            )
         if chat_completion_request.logprobs:
             logging.warning("logprobs is not supported on chat completion")
 
@@ -542,14 +474,15 @@ class Server(ManagementTool):
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc, internal_call=True)
 
+        if self.llm_loaded.recipe == "llamacpp":
+            return llamacpp.chat_completion(
+                chat_completion_request, self.llama_telemetry
+            )
+
         # Convert chat messages to text using the model's chat template
         text = self.apply_chat_template(
             chat_completion_request.messages,
-            tools=(
-                chat_completion_request.tools
-                if not chat_completion_request.stream
-                else None
-            ),
+            tools=chat_completion_request.tools,
         )
 
         # If the model supports reasoning, we:
@@ -585,6 +518,12 @@ class Server(ManagementTool):
             "max_new_tokens": max_new_tokens,
         }
 
+        if chat_completion_request.tools:
+            # Get the tool call pattern
+            tool_call_pattern = get_tool_call_pattern(
+                self.tokenizer.auto_tokenizer.added_tokens_decoder
+            )
+
         if chat_completion_request.stream:
 
             # Stream the response
@@ -594,7 +533,38 @@ class Server(ManagementTool):
                 # in the inner function
                 nonlocal reasoning_first_token
 
+                # Keep track of the full response for tool call extraction
+                full_response = ""
+
                 async for token in self._generate_tokens(**generation_args):
+                    # Continuously look for tool calls embedded into the generated text
+                    openai_tool_calls = None
+                    if chat_completion_request.tools:
+
+                        # Append the token to the full response
+                        full_response += token
+
+                        tool_calls, _ = extract_tool_calls(
+                            full_response,
+                            tool_call_pattern,
+                        )
+
+                        # If there are tool calls, reset the full response for the next tool call
+                        if tool_calls:
+                            openai_tool_calls = []
+                            full_response = ""
+                        for tool_call in tool_calls:
+                            openai_tool_calls.append(
+                                ChoiceDeltaToolCall(
+                                    index=0,
+                                    id="-",
+                                    function=ChoiceDeltaToolCallFunction(
+                                        arguments=json.dumps(tool_call["arguments"]),
+                                        name=tool_call["name"],
+                                    ),
+                                    type="function",
+                                )
+                            )
 
                     # Create a ChatCompletionChunk
                     chunk = ChatCompletionChunk.model_construct(
@@ -613,7 +583,7 @@ class Server(ManagementTool):
                                     ),
                                     function_call=None,
                                     role="assistant",
-                                    tool_calls=None,
+                                    tool_calls=openai_tool_calls,
                                     refusal=None,
                                 ),
                                 finish_reason=None,
@@ -648,7 +618,7 @@ class Server(ManagementTool):
             openai_tool_calls = None
             if chat_completion_request.tools:
                 tool_calls, full_response = extract_tool_calls(
-                    full_response, self.tokenizer.auto_tokenizer.added_tokens_decoder
+                    full_response, tool_call_pattern
                 )
                 if tool_calls:
                     openai_tool_calls = []
@@ -767,6 +737,7 @@ class Server(ManagementTool):
                 created_event = ResponseCreatedEvent(
                     response=response,
                     type="response.created",
+                    sequence_number=0,
                 )
                 yield f"data: {created_event.model_dump_json()}\n\n".encode("utf-8")
 
@@ -781,6 +752,7 @@ class Server(ManagementTool):
                         item_id="0 ",
                         output_index=0,
                         type="response.output_text.delta",
+                        sequence_number=0,
                     )
                     full_response += token
 
@@ -815,6 +787,7 @@ class Server(ManagementTool):
                 completed_event = ResponseCompletedEvent(
                     response=response,
                     type="response.completed",
+                    sequence_number=0,
                 )
                 yield f"data: {completed_event.model_dump_json()}\n\n".encode("utf-8")
 
@@ -1035,6 +1008,11 @@ class Server(ManagementTool):
         """
         Send performance statistics to the client.
         """
+        # If using llama server, get telemetry from the telemetry instance
+        if self.llm_loaded and self.llm_loaded.recipe == "llamacpp":
+            return self.llama_telemetry.get_telemetry_data()
+
+        # For built-in server, use the existing telemetry
         return {
             "time_to_first_token": self.time_to_first_token,
             "tokens_per_second": self.tokens_per_second,
@@ -1246,9 +1224,17 @@ class Server(ManagementTool):
 
             logging.info(f"Loading llm: {model_reference}")
             try:
-                self.model, self.tokenizer = lemonade_api.from_pretrained(
-                    checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
-                )
+                if config_to_use.recipe == "llamacpp":
+                    self.llama_server_process = llamacpp.server_load(
+                        checkpoint=config_to_use.checkpoint,
+                        model_reference=model_reference,
+                        telemetry=self.llama_telemetry,
+                    )
+
+                else:
+                    self.model, self.tokenizer = lemonade_api.from_pretrained(
+                        checkpoint=config_to_use.checkpoint, recipe=config_to_use.recipe
+                    )
                 self.llm_loaded = config_to_use
 
                 return {
@@ -1278,6 +1264,9 @@ class Server(ManagementTool):
                 # Acquire all generate locks
                 for _ in range(self.max_concurrent_generations):
                     await self._generate_semaphore.acquire()
+
+            if self.llm_loaded.recipe == "llamacpp":
+                self.llama_server_process.terminate()
 
             self.llm_loaded = None
             self.tokenizer = None
@@ -1348,6 +1337,23 @@ class Server(ManagementTool):
                 if self.debug_logging_enabled:
                     logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Code here will run when the application starts up
+
+    logging.info(
+        "\n"
+        "\n"
+        "🍋  Lemonade Server Ready!\n"
+        f"🍋    Open http://localhost:{app.port} in your browser for:\n"
+        "🍋      💬 chat\n"
+        "🍋      💻 model management\n"
+        "🍋      📄 docs\n"
+    )
+
+    yield
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

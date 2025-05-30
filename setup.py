@@ -3,7 +3,6 @@ from setuptools import setup
 with open("src/lemonade/version.py", encoding="utf-8") as fp:
     version = fp.read().split('"')[1]
 
-
 setup(
     name="lemonade-sdk",
     version=version,
@@ -46,8 +45,8 @@ setup(
     ],
     extras_require={
         "llm": [
-            "torch>=2.0.0",
-            "transformers",
+            "torch>=2.6.0",
+            "transformers<=4.51.3",
             "accelerate",
             "py-cpuinfo",
             "sentencepiece",
@@ -57,26 +56,23 @@ setup(
             "human-eval-windows==1.0.4",
             "fastapi",
             "uvicorn[standard]",
-            "openai>=1.66.0",
+            "openai>=1.81.0",
             "lm-eval[api]",
         ],
         "llm-oga-cpu": [
             "onnxruntime-genai==0.6.0",
             "onnxruntime >=1.10.1,<1.22.0",
-            "torch>=2.0.0,<2.4",
             "lemonade-sdk[llm]",
         ],
         "llm-oga-igpu": [
             "onnxruntime-genai-directml==0.6.0",
             "onnxruntime-directml>=1.19.0,<1.22.0",
-            "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
         ],
         "llm-oga-cuda": [
             "onnxruntime-genai-cuda==0.6.0",
             "onnxruntime-gpu >=1.19.1,<1.22.0",
-            "torch>=2.0.0,<2.4",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
         ],
@@ -111,6 +107,7 @@ setup(
     include_package_data=True,
     package_data={
         "lemonade_server": ["server_models.json"],
+        "lemonade": ["tools/server/static/styles.css"],
     },
 )
 

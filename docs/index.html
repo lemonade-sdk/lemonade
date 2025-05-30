@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lemonade Server</title>
+  <link rel="icon" href="./favicon.ico">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      background: #fffbe9;
+      color: #222;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 5rem;
+    }
+    .navbar {
+      display: flex;
+      justify-content: center;
+      gap: 2.5rem;
+      padding: 2rem 0 1.5rem 0;
+      font-size: 1.25rem;
+      font-weight: 500;
+      background: transparent;
+      letter-spacing: 0.02em;
+    }
+    .navbar a {
+      color: #444;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .navbar a:hover {
+      color: #e6b800;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 60vh;
+      margin-top: 16rem;
+    }
+    .title {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 2.5rem;
+      letter-spacing: 0.01em;
+      text-align: center;
+    }
+    .subtitle {
+      font-size: 1.05rem;
+      color: #555;
+      margin-bottom: 3rem;
+      text-align: center;
+      max-width: 500px;
+    }
+    .download-btn {
+      background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+      color: #222;
+      font-size: 1.4rem;
+      font-weight: 700;
+      padding: 1.2rem 3rem 0.9rem 3rem;
+      border: none;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 24px #ffe06677, 0 1.5px 0 #fffbe9 inset;
+      cursor: pointer;
+      transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
+      margin-bottom: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.18;
+      position: relative;
+      outline: none;
+      letter-spacing: 0.01em;
+      text-decoration: none;
+      min-width: 150px;
+    }
+    .download-btn:hover, .download-btn:focus {
+      /* Keep the gradient direction the same as normal state */
+      background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+      box-shadow: 0 6px 20px #ffe06699, 0 1.5px 0 #fffbe9 inset;
+      transform: translateY(-1px) scale(1.01);
+      transition: background 0.25s, box-shadow 0.25s, transform 0.18s;
+    }
+    .download-btn:active {
+      background: #ffe066;
+      box-shadow: 0 2px 8px #ffe06655;
+      transform: scale(0.98);
+    }
+    .download-btn:visited {
+      color: #222;
+    }
+    .download-btn .download-sub {
+      font-size: 1rem;
+      color: #3d4000;
+      font-weight: 400;
+      opacity: 0.7;
+      margin-top: 0.25em;
+      letter-spacing: 0.01em;
+      font-style: italic;
+      text-decoration: none;
+    }
+    .ai-art {
+      margin: 3rem auto 1.5rem auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      min-height: 120px;
+    }
+    .dad-joke {
+      color: #4ca64c;
+      font-size: 1.12rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      opacity: 0.98;
+      letter-spacing: 0.01em;
+      padding: 0.2em 0;
+      width: fit-content;
+      margin-left: auto;
+      margin-right: auto;
+      background: none;
+      border-radius: 0;
+      display: block;
+    }
+    .copyright {
+      text-align: center;
+      font-size: 0.95rem;
+      color: #aaa;
+      margin-bottom: 0.5rem;
+    }
+
+    .site-footer {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      background-color: #fffbe9;
+      padding-top: 0.5rem;
+      z-index: 100;
+    }
+
+    @media (max-width: 600px) {
+      .title { font-size: 2rem; }
+      .subtitle { font-size: 1rem; }
+      .navbar { font-size: 1rem; gap: 1.2rem; }
+      .download-btn { font-size: 1rem; padding: 0.8rem 1.5rem; }
+      .download-btn .download-sub { font-size: 0.85rem; }
+      .main { margin-top: 6rem; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
+    <a href="docs/">Docs</a>
+    <a href="docs/server/server_models/">Models</a>
+    <a href="docs/server/apps/">Featured Apps</a>
+  </nav>
+  <main class="main">
+    <div class="title">🍋 Lemonade Server</div>
+    <div class="subtitle">
+      Refreshingly fast LLMs on the NPUs of Ryzen AI 300-series PCs.<br>
+      Integrate with <a href="https://www.youtube.com/watch?v=PXNTDZREJ_A">Open WebUI</a>, <a href="https://youtu.be/JecpotOZ6qo?si=WxWVQhUBCJQgE6vX">AI Toolkit</a>, or <a href="docs/server/server_integration/">your own app</a> in minutes.
+    </div>
+    <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">
+      Download<br>
+      <span class="download-sub">for Windows 11</span>
+    </a>
+  </main>
+  <footer class="site-footer">
+    <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
+    <div class="copyright">Copyright 2025 AMD</div>
+  </footer>
+</body>
+</html>

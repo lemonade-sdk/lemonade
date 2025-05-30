@@ -1,0 +1,62 @@
+/* Note: I have not figured out all the color variables yet */
+
+[data-md-color-scheme="lightmode"] {
+  --md-primary-fg-color:        #FFFBE9;        /* Header, Selected Page Font */
+  --md-primary-bg-color:        #000000;    /* Header Font, Icon Color*/
+  --md-primary-bg-color--light: #000000;    /* Search bar font color */
+  --md-accent-fg-color:         #FFD744;    /* Hover color of links */
+  --md-footer-fg-color:                #E59800;      /* Nav Footer Font Color */
+  --md-footer-fg-color--light:         #3b3b3b;      /* Footer Font Color */
+  --md-footer-fg-color--lighter:       #3b3b3b;      /* Made With... color */
+  --md-footer-bg-color:                #FFFBE9;      /* Nav Footer Background  Color */
+  --md-footer-bg-color--dark:          #FFFBE9;      /* Footer Background Color */
+  --md-default-bg-color:               #FFFBE9;       /* Main background color */
+  --md-code-bg-color:                #ffefb5;      /* Code block background color */
+  --md-code-fg-color:                #000000;      /* Code block font color */
+  --md-default-fg-color--light:             #E59800;      /* Blockquote color */
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #FFD500;        /* Header, Selected Page Font */
+  --md-primary-bg-color:        #000000;    /* Header Font, Icon Color*/
+  --md-primary-bg-color--light: #000000;    /* Search bar font color */
+  --md-accent-fg-color:         #FFD500;    /* Hover color of links */
+  --md-accent-fg-color--transparent: #E59800;
+  --md-footer-fg-color:                #E59800;      /* Nav Footer Font Color */
+  --md-footer-fg-color--light:         #929292;      /* Footer Font Color */
+  --md-footer-fg-color--lighter:       #929292;      /* Made With... color */
+  --md-footer-bg-color:                #000000;      /* Nav Footer Background  Color */
+  --md-footer-bg-color--dark:          #000000;      /* Footer Background Color */
+  --md-primary-bg-color--light:          #000000;      /* Search Font */
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 320; /* between 0 and 360 */
+  /* --md-saturation: 50; /* between 0 and 100 */
+  /* --md-lightness: 100; between 0 and 100 */
+  --md-footer-bg-color:  #141413;      /* Nav Footer Background  Color */
+  --md-default-bg-color: #141413 !important; /* Dark background */
+  --md-primary-fg-color: #E59800 !important; /* Header, Selected Page Font */
+  --md-footer-bg-color--dark: #1f1503 !important; /* Footer Background Color */
+}
+
+.hide-in-mkdocs { display: none; }
+
+/* docs/assets/extra.css */
+.mkdocs-only { display: block; }
+
+/* Hide the page title in the navigation sidebar */
+.md-nav__title {
+  display: none !important;
+}
+
+/* Make page titles (h1) a darker grey in light mode, lighter in dark mode */
+[data-md-color-scheme="lightmode"] h1,
+[data-md-color-scheme="lightmode"] .md-typeset h1 {
+  color: #222 !important;
+}
+[data-md-color-scheme="slate"] h1,
+[data-md-color-scheme="slate"] .md-typeset h1 {
+  color: #cfcfcf !important;
+}
+

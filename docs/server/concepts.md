@@ -3,6 +3,7 @@
 This document gives background information about the main concepts for local LLM servers and 🍋Lemonade Server.
 
 The intention is to answer these FAQs:
+
 - [What is a Local Server?](#what-is-a-local-server)
 - [What is a Local LLM Server?](#what-is-a-local-llm-server)
 - [What is the OpenAI Standard?](#what-is-the-openai-standard)
@@ -61,7 +62,7 @@ from openai import OpenAI
 
 # The base_url points to an LLM server, which can either be
 # local (localhost address) or cloud-based (web address)
-base_url = f"http://localhost:8000/api/v0"
+base_url = f"http://localhost:8000/api/v1"
 
 # The `client` instance here provides APIs to request
 # LLM invocations from the server

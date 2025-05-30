@@ -8,13 +8,14 @@ Refer to [Lemonade Server](../server_spec.md) to learn more about the server int
 [LM-Evaluation-Harness](https://github.com/EleutherAI/lm-evaluation-harness) (often called `lm-eval`) is an open-source framework for evaluating language models across a wide variety of tasks and benchmarks. Developed by EleutherAI, it has become a standard tool in the AI research community for consistent evaluation of language model capabilities.
 
 The framework supports evaluating models on more than 200 tasks and benchmarks, including popular ones such as:
+
 - MMLU (Massive Multitask Language Understanding)
 - GSM8K (Grade School Math)
 - HumanEval (Code generation)
 - TruthfulQA
 - WinoGrande
 - HellaSwag
-- And many others ...
+- And many others...
 
 ## Advantages of Using lm-eval for Accuracy Measurement
 
@@ -37,14 +38,15 @@ Lemonade supports integration with lm-eval through its local LLM server. The bas
 1. Running lm-eval tests against the model through the lemonade server.
 
 
-### Step 1: Environment setup and Installation
+### Step 1: Environment Setup and Installation
 
-Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
+Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
 
 
 ### Step 2: Start the Lemonade Server
 
 In a terminal with your environment activated, run the following command:
+
 ```powershell
 lemonade-server-dev serve
 ```
@@ -56,10 +58,11 @@ This starts a local LLM server on port 8000 by default.
 Use the following PowerShell command to load a model into the server:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/api/v0/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
 ```
 
 Where:
+
 - `checkpoint` can be changed to use other from Hugging Face (e.g., "meta-llama/Llama-3.2-3B-Instruct")
 - `recipe` can be changed to use different backends (e.g., "oga-cpu" for CPU inference on OnnxRuntime GenAI, "oga-hybrid" for AMD Ryzen™ AI acceleration). For more information on Lemonade recipes, see the [Lemonade API ReadMe](../../lemonade_api.md).
 
@@ -68,7 +71,7 @@ Where:
 Now that the model is loaded, open a new PowerShell terminal, activate your environment, and run lm-eval tests using the following command:
 
 ```powershell
-lm_eval --model local-completions --tasks mmlu_abstract_algebra --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v0/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
+lm_eval --model local-completions --tasks mmlu_abstract_algebra --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v1/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
 ```
 
 Where:
@@ -88,7 +91,7 @@ These tests evaluate a model's ability to assign probabilities to different poss
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Enviroment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
+**Step 1:** Enviroment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -100,12 +103,12 @@ lemonade-server-dev serve
 **Step 3:** Load a Model
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/api/v0/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
 ```
 **Step 4:** Run MMLU Tests
 
 ```powershell
-lm_eval --model local-completions --tasks mmlu_abstract_algebra --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v0/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
+lm_eval --model local-completions --tasks mmlu_abstract_algebra --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v1/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
 ```
 ### 2. Rolling Log Probability Tests (e.g., WikiText)
 
@@ -115,7 +118,7 @@ These tests evaluate a model's ability to predict text by measuring the perplexi
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Environment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -127,12 +130,12 @@ lemonade-server-dev serve
 **Step 3:** Load a Model
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/api/v0/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
 ```
 **Step 4:** Run Wikitext Tests
 
 ```powershell
-lm_eval --model local-completions --tasks wikitext --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v0/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
+lm_eval --model local-completions --tasks wikitext --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v1/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
 ```
 ### 3. Generation-Based Tests (e.g., GSM8K)
 
@@ -142,7 +145,7 @@ These tests evaluate a model's ability to generate full responses to prompts. Th
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Environment setup and Installation - Please refer to the [installation guide](../../README.md#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -154,12 +157,12 @@ lemonade-server-dev serve
 **Step 3:** Load a Model
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/api/v0/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/load" -Method Post -Headers @{ "Content-Type" = "application/json" } -Body '{ "checkpoint": "meta-llama/Llama-3.2-1B-Instruct", "recipe": "hf-cpu" }'
 ```
 **Step 4:** Run GSM8k Tests
 
 ```powershell
-lm_eval --model local-completions --tasks gsm8k --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v0/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
+lm_eval --model local-completions --tasks gsm8k --model_args model=meta-llama/Llama-3.2-1B-Instruct,base_url=http://localhost:8000/api/v1/completions,num_concurrent=1,max_retries=0,tokenized_requests=False --limit 5
 ```
 ## Interpreting Results
 
