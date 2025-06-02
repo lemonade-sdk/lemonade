@@ -1,0 +1,108 @@
+# Evaluating Models with lm-eval-harness
+
+The `lm-eval-harness` tool in Lemonade provides an easy way to evaluate language models on a variety of standardized benchmarks using the [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) framework from EleutherAI. This tool allows you to generate standardized accuracy metrics across a wide range of tasks and datasets.
+
+## How It Works
+
+Lemonade makes model evaluation simple by handling the entire workflow for you:
+
+1. **Load Your Model**: First, you load your model using either Hugging Face (`huggingface-load`) or ONNX Runtime GenAI (`oga-load`) with your preferred settings like device and dtype.
+
+2. **Start Evaluation Server**: Lemonade automatically starts a local server with your loaded model, making it accessible to the evaluation framework.
+
+3. **Run lm-evaluation-harness**: Lemonade then runs the lm-evaluation-harness against the server, executing the specific tasks and benchmarks requested.
+
+4. **Organize Results**: Finally, Lemonade processes the raw evaluation data and organizes it into clear, readable reports with key metrics like accuracy percentages, saving everything to the model's build directory for easy access.
+
+## Usage
+
+The basic syntax follows this pattern:
+
+```bash
+lemonade -i <checkpoint> <loading_method> [loading_options] lm-eval-harness --task <task_name> [options]
+```
+
+### Common Options
+
+- `--task`: Specifies which task to evaluate on (e.g., gsm8k, mmlu, mmlu_*).
+- `--limit`: Optional number of examples to evaluate (useful for quick tests).
+- `--num-fewshot`: Number of examples to use in few-shot prompts (default: 0).
+- `--log_samples`: Log individual samples and predictions.
+
+### Examples
+
+#### ONNX Runtime GenAI:
+
+```bash
+lemonade -i meta-llama/Llama-3.2-1B-Instruct oga-load --device cpu --dtype int4 lm-eval-harness --task mmlu_abstract_algebra --limit 10
+```
+
+This example:
+- Loads the Llama 3.2 1B model with OGA.
+- Quantizes to INT4 precision.
+- Evaluates on the abstract algebra subset of MMLU.
+- Limits evaluation to 10 questions.
+
+#### Hugging Face:
+
+```bash
+lemonade -i meta-llama/Llama-3.2-1B-Instruct huggingface-load --device cpu lm-eval-harness --task mmlu_abstract_algebra
+```
+
+This example:
+- Loads the Llama 3.2 1B model using Hugging Face.
+- Evaluates on the abstract algebra subset of MMLU.
+- Uses the full test set.
+
+## Supported Tasks
+
+The tool supports all tasks available in lm-evaluation-harness, including:
+
+- **MMLU**: Massive Multitask Language Understanding (use `mmlu` for all subjects or `mmlu_<subject>` for specific subjects).
+- **GSM8K**: Grade School Math word problems.
+- **HumanEval**: Code generation and completion.
+- **TruthfulQA**: Testing model truthfulness.
+- **MATH**: Complex mathematical problem solving.
+- And many more (see the [full list in the lm-evaluation-harness repository](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/tasks/README.md)).
+
+## Understanding Results
+
+Results are displayed in the terminal and saved to the model's build directory. 
+
+### Metrics
+
+The key metrics vary by task, but commonly include:
+
+- **exact_match**: Percentage of exact matches between model predictions and expected answers.
+- **acc** or **accuracy**: Accuracy score (varies by task).
+- **f1**: F1 score for tasks that require partial matching.
+
+For multiple-choice tasks like MMLU, scores represent the percentage of correct answers. For generative tasks like GSM8K, results often include metrics for both strict and flexible matching:
+
+- **exact_match,strict-match**: Requires the model to produce the exact correct answer.
+- **exact_match,flexible-extract**: Allows for variations in formatting but requires the correct numerical answer.
+
+### Result Files
+
+Detailed result files are saved in:
+```
+<cache_dir>/builds/<model_name>_<timestamp>/lm_eval_results/<task_name>_results/
+```
+
+These include the full evaluation data in JSON format.
+
+## Interpreting Results
+
+When evaluating models, consider:
+
+1. **Task Relevance**: Different tasks measure different capabilities. Choose tasks relevant to your use case.
+
+2. **Comparison Context**: Compare results against other models of similar size/architecture for meaningful insights.
+
+3. **Few-shot Performance**: Many models perform significantly better with examples (try `--num-fewshot 5`).
+
+4. **Limitations**: Low scores on specific tasks may highlight limitations in the model's training data or capabilities.
+
+## Further Information
+
+For more details on lm-evaluation-harness and its capabilities, see the [official documentation](https://github.com/EleutherAI/lm-evaluation-harness). 

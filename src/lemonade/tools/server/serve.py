@@ -8,7 +8,6 @@ import traceback
 from typing import Optional, Union
 import json
 import subprocess
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status, Request
@@ -16,6 +15,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from uvicorn.config import Config
+from uvicorn.server import Server as UvicornServer
 from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 from tabulate import tabulate
 
@@ -57,7 +58,7 @@ from lemonade.tools.server.pydantic_models import (
 )
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.server.instructions import get_instructions_html
-
+from lemonade.tools.server.port_utils import lifespan
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
@@ -243,15 +244,22 @@ class Server(ManagementTool):
 
         return parser
 
-    def run(
+    def _setup_server_common(
         self,
-        # ManagementTool has a required cache_dir arg, but
-        # we always use the default cache directory
-        _=None,
-        port: int = DEFAULT_PORT,
-        log_level: str = DEFAULT_LOG_LEVEL,
+        port: int,
         truncate_inputs: bool = False,
+        log_level: str = DEFAULT_LOG_LEVEL,
+        threaded_mode: bool = False,
     ):
+        """
+        Common setup logic shared between run() and run_in_thread().
+
+        Args:
+            port: Port number for the server
+            truncate_inputs: Whether to truncate inputs if they exceed max length
+            log_level: Logging level to configure
+            threaded_mode: Whether this is being set up for threaded execution
+        """
         # Store truncation settings
         self.truncate_inputs = truncate_inputs
 
@@ -265,22 +273,27 @@ class Server(ManagementTool):
 
         logging.trace = trace
 
-        # Configure logging to match uvicorn's format
-        logging_level = getattr(logging, log_level.upper())
-        logging.basicConfig(
-            level=logging_level,
-            format="%(levelprefix)s %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+        # Configure logging based on mode
+        if threaded_mode:
+            # Configure logging for warning level (to reduce noise in threaded execution)
+            logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+        else:
+            # Configure logging to match uvicorn's format
+            logging_level = getattr(logging, log_level.upper())
+            logging.basicConfig(
+                level=logging_level,
+                format="%(levelprefix)s %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
 
-        # Add uvicorn's log formatter
-        logging.root.handlers[0].formatter = uvicorn.logging.DefaultFormatter(
-            fmt="%(levelprefix)s %(message)s",
-            use_colors=True,
-        )
+            # Add uvicorn's log formatter
+            logging.root.handlers[0].formatter = uvicorn.logging.DefaultFormatter(
+                fmt="%(levelprefix)s %(message)s",
+                use_colors=True,
+            )
 
-        # Ensure the log level is properly set
-        logging.getLogger().setLevel(logging_level)
+            # Ensure the log level is properly set
+            logging.getLogger().setLevel(logging_level)
 
         # Update debug logging state after setting log level
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
@@ -293,7 +306,61 @@ class Server(ManagementTool):
         # that the lifespan can access it
         self.app.port = port
 
+    def run(
+        self,
+        # ManagementTool has a required cache_dir arg, but
+        # we always use the default cache directory
+        _=None,
+        port: int = DEFAULT_PORT,
+        log_level: str = DEFAULT_LOG_LEVEL,
+        truncate_inputs: bool = False,
+    ):
+        # Common setup
+        self._setup_server_common(
+            port=port,
+            truncate_inputs=truncate_inputs,
+            log_level=log_level,
+            threaded_mode=False,
+        )
+
         uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
+
+    def run_in_thread(
+        self,
+        port: int = DEFAULT_PORT,
+        host: str = "localhost",
+        log_level: str = "warning",
+        truncate_inputs: bool = False,
+    ):
+        """
+        Set up the server for running in a thread.
+        Returns a uvicorn server instance that can be controlled externally.
+        """
+        # Common setup
+        self._setup_server_common(
+            port=port,
+            truncate_inputs=truncate_inputs,
+            log_level=log_level,
+            threaded_mode=True,
+        )
+
+        class CustomServer(UvicornServer):
+            """Custom Uvicorn server that can be properly shutdown from another thread"""
+
+            def install_signal_handlers(self):
+                pass
+
+        # Configure the server
+        config = Config(
+            app=self.app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            log_config=None,
+        )
+
+        # Create and return the uvicorn server
+        return CustomServer(config=config)
 
     async def _show_telemetry(self):
         """
@@ -1241,6 +1308,8 @@ class Server(ManagementTool):
                     "status": "success",
                     "message": f"Loaded model: {model_reference}",
                 }
+            except HTTPException:
+                raise
             except Exception:  # pylint: disable=broad-exception-caught
                 self.model_load_failure(model_reference)
 
@@ -1337,23 +1406,6 @@ class Server(ManagementTool):
                 if self.debug_logging_enabled:
                     logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Code here will run when the application starts up
-
-    logging.info(
-        "\n"
-        "\n"
-        "🍋  Lemonade Server Ready!\n"
-        f"🍋    Open http://localhost:{app.port} in your browser for:\n"
-        "🍋      💬 chat\n"
-        "🍋      💻 model management\n"
-        "🍋      📄 docs\n"
-    )
-
-    yield
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
