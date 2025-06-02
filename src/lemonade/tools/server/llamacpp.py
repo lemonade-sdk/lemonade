@@ -16,9 +16,9 @@ from openai import OpenAI
 
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.pydantic_models import ChatCompletionRequest
+from lemonade.tools.server.port_utils import find_free_port
 
 LLAMA_VERSION = "b5543"
-LLAMA_SERVER_PORT = "8081"
 
 LLAMA_SERVER_EXE_DIR = os.path.join(
     os.path.dirname(sys.executable),
@@ -43,6 +43,23 @@ class LlamaTelemetry:
         self.tokens_per_second = None
         self.prompt_eval_time = None
         self.eval_time = None
+        self.port = None
+
+    def choose_port(self):
+        """
+        Users probably don't care what port we start llama-server on, so let's
+        search for an empty port
+        """
+
+        self.port = find_free_port()
+
+        if self.port is None:
+            msg = "Failed to find an empty port to start llama-server on"
+            logging.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=msg,
+            )
 
     def parse_telemetry_line(self, line: str):
         """
@@ -128,10 +145,12 @@ def _log_subprocess_output(
                 break
 
 
-def _wait_for_load(llama_server_process: subprocess.Popen, fail_message: str):
+def _wait_for_load(
+    llama_server_process: subprocess.Popen, port: int, fail_message: str
+):
     status_code = None
     while not llama_server_process.poll() and status_code != 200:
-        health_url = f"http://localhost:{LLAMA_SERVER_PORT}/health"
+        health_url = f"http://localhost:{port}/health"
         try:
             health_response = requests.get(health_url)
         except requests.exceptions.ConnectionError:
@@ -152,12 +171,17 @@ def _launch_llama_subprocess(
     Launch llama server subprocess with GPU or CPU configuration
     """
 
+    # Find a port, and save it in the telemetry object for future reference
+    # by other functions
+    telemetry.choose_port()
+
     base_command = [
         LLAMA_SERVER_EXE_PATH,
         "-m",
         model_path,
         "--port",
-        LLAMA_SERVER_PORT,
+        str(telemetry.port),
+        "--jinja",
     ]
 
     # Configure GPU layers: 99 for GPU, 0 for CPU-only
@@ -227,6 +251,7 @@ def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry
     # Check the /health endpoint until GPU server is ready
     _wait_for_load(
         llama_server_process,
+        telemetry.port,
         f"Loading {model_reference} on GPU didn't work, re-attempting on CPU",
     )
 
@@ -239,6 +264,7 @@ def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry
         # Check the /health endpoint until CPU server is ready
         _wait_for_load(
             llama_server_process,
+            telemetry.port,
             f"Loading {model_reference} on CPU didn't work",
         )
 
@@ -254,7 +280,7 @@ def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry
 def chat_completion(
     chat_completion_request: ChatCompletionRequest, telemetry: LlamaTelemetry
 ):
-    base_url = f"http://127.0.0.1:{LLAMA_SERVER_PORT}/v1"
+    base_url = f"http://127.0.0.1:{telemetry.port}/v1"
     client = OpenAI(
         base_url=base_url,
         api_key="lemonade",

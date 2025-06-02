@@ -9,13 +9,13 @@
         "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-uint4-float16-cpu-onnx",
         "recipe": "oga-cpu",
         "reasoning": false,
-        "suggested": true
+        "suggested": false
     },
     "Llama-3.2-3B-Instruct-CPU": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-uint4-float16-cpu-onnx",
         "recipe": "oga-cpu",
         "reasoning": false,
-        "suggested": true
+        "suggested": false
     },
     "Phi-3-Mini-Instruct-CPU": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu",
@@ -103,6 +103,13 @@
         "max_prompt_length": 2000,
         "suggested": true
     },
+    "Llama-xLAM-2-8b-fc-r-Hybrid": {
+        "checkpoint": "amd/Llama-xLAM-2-8b-fc-r-awq-g128-int4-asym-bfp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "reasoning": false,
+        "max_prompt_length": 2000,
+        "suggested": true
+    },
     "Llama-3.2-1B-Instruct-DirectML": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-dml-int4-awq-block-128-directml",
         "recipe": "oga-igpu",
@@ -158,7 +165,7 @@
         "suggested": true
     },
     "Qwen3-8B-GGUF": {
-        "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_0",
+        "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_1",
         "recipe": "llamacpp",
         "reasoning": true,
         "suggested": true

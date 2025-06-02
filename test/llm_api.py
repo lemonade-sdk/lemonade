@@ -16,6 +16,7 @@ from lemonade.tools.huggingface_load import HuggingfaceLoad
 from lemonade.tools.huggingface_bench import HuggingfaceBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
+from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.llamacpp import LoadLlamaCpp
 from lemonade.tools.llamacpp_bench import LlamaCppBench
@@ -287,6 +288,43 @@ class Testing(unittest.TestCase):
         assert isinstance(
             stats["humaneval_pass@1"], (int, float)
         ), "HumanEval pass@1 metric should be numeric"
+
+    def test_004_accuracy_lmeval(self):
+        """Test lm-eval-harness benchmarking with known model"""
+        checkpoint = "facebook/opt-125m"
+
+        state = State(
+            cache_dir=cache_dir,
+            build_name="test_lmeval",
+        )
+
+        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = LMEvalHarness().run(
+            state,
+            task="mmlu_abstract_algebra",
+            limit=1,
+            num_fewshot=0,
+        )
+
+        # Verify results
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        # Check if any lm_eval stats were saved
+        lm_eval_stats = [k for k in stats.keys() if k.startswith("lm_eval_")]
+        assert len(lm_eval_stats) > 0, "No lm-eval-harness metrics found in stats"
+
+        # Check for specific metrics that should exist
+        for metric_name in lm_eval_stats:
+            if metric_name.endswith("_units"):
+                # Units stats should be strings (e.g., "%")
+                assert isinstance(
+                    stats[metric_name], str
+                ), f"{metric_name} should be a string (units)"
+            else:
+                # All other lm_eval stats should be numeric
+                assert isinstance(
+                    stats[metric_name], (int, float)
+                ), f"{metric_name} should be numeric"
 
     def test_004_huggingface_bench(self):
         # Benchmark OPT
