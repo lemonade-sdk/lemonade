@@ -14,8 +14,8 @@ from fastapi.responses import StreamingResponse
 
 from openai import OpenAI
 
+from lemonade_server.pydantic_models import ChatCompletionRequest
 from lemonade_server.model_manager import ModelManager
-from lemonade.tools.server.pydantic_models import ChatCompletionRequest
 from lemonade.tools.server.port_utils import find_free_port
 
 LLAMA_VERSION = "b5543"
@@ -165,24 +165,25 @@ def _wait_for_load(
 
 
 def _launch_llama_subprocess(
-    model_path: str, use_gpu: bool, telemetry: LlamaTelemetry
+    snapshot_files: dict, use_gpu: bool, telemetry: LlamaTelemetry
 ) -> subprocess.Popen:
     """
     Launch llama server subprocess with GPU or CPU configuration
     """
 
+    # Build the base command
+    base_command = [LLAMA_SERVER_EXE_PATH, "-m", snapshot_files["variant"]]
+    if "mmproj" in snapshot_files:
+        base_command.extend(["--mmproj", snapshot_files["mmproj"]])
+        if not use_gpu:
+            base_command.extend(["--no-mmproj-offload"])
+
     # Find a port, and save it in the telemetry object for future reference
     # by other functions
     telemetry.choose_port()
 
-    base_command = [
-        LLAMA_SERVER_EXE_PATH,
-        "-m",
-        model_path,
-        "--port",
-        str(telemetry.port),
-        "--jinja",
-    ]
+    # Add port and jinja to enable tool use
+    base_command.extend(["--port", str(telemetry.port), "--jinja"])
 
     # Configure GPU layers: 99 for GPU, 0 for CPU-only
     ngl_value = "99" if use_gpu else "0"
@@ -204,7 +205,7 @@ def _launch_llama_subprocess(
     return process
 
 
-def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry):
+def server_load(model_config: dict, model_reference: str, telemetry: LlamaTelemetry):
     # Download llama.cpp server if it isn't already available
     if not os.path.exists(LLAMA_SERVER_EXE_DIR):
         # Download llama.cpp server zip
@@ -236,16 +237,15 @@ def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry
         logging.info("Cleaned up zip file")
 
     # Download the gguf to the hugging face cache
-    snapshot_path = ModelManager().download_gguf(checkpoint)
-    model_path = os.path.join(snapshot_path, os.listdir(snapshot_path)[0])
-    logging.debug(f"GGUF file path: {model_path}")
+    snapshot_files = ModelManager().download_gguf(model_config)
+    logging.debug(f"GGUF file paths: {snapshot_files}")
 
     # Start the llama-serve.exe process
     logging.debug(f"Using llama_server for GGUF model: {LLAMA_SERVER_EXE_PATH}")
 
     # Attempt loading on GPU first
     llama_server_process = _launch_llama_subprocess(
-        model_path, use_gpu=True, telemetry=telemetry
+        snapshot_files, use_gpu=True, telemetry=telemetry
     )
 
     # Check the /health endpoint until GPU server is ready
@@ -258,7 +258,7 @@ def server_load(checkpoint: str, model_reference: str, telemetry: LlamaTelemetry
     # If loading on GPU failed, try loading on CPU
     if llama_server_process.poll():
         llama_server_process = _launch_llama_subprocess(
-            model_path, use_gpu=False, telemetry=telemetry
+            snapshot_files, use_gpu=False, telemetry=telemetry
         )
 
         # Check the /health endpoint until CPU server is ready

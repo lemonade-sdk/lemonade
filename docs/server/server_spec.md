@@ -428,6 +428,7 @@ In case of an error, the status will be `error` and the message will contain the
 | `checkpoint` | Yes | HuggingFace checkpoint to load. |
 | `recipe` | Yes | Lemonade API recipe to load the model on. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+| `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:
 

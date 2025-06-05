@@ -24,6 +24,8 @@ class LoadConfig(BaseModel):
     max_prompt_length: Optional[int] = None
     # Indicates whether the model is a reasoning model, like DeepSeek
     reasoning: Optional[bool] = False
+    # Indicates which Multimodal Projector (mmproj) file to use
+    mmproj: Optional[str] = None
 
 
 class CompletionRequest(BaseModel):
