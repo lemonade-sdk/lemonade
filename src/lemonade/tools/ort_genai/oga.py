@@ -139,6 +139,7 @@ class OrtGenaiModel(ModelAdapter):
         pad_token_id=None,
         stopping_criteria=None,
         max_length=None,
+        random_seed=1,
     ):
         params = og.GeneratorParams(self.model)
 
@@ -179,6 +180,9 @@ class OrtGenaiModel(ModelAdapter):
         if use_oga_pre_6_api:
             params.input_ids = input_ids
 
+        if random_seed is None:
+            random_seed = -1  # In og.Generator, -1 = seed with random device
+
         if self.config and "search" in self.config:
             search_config = self.config["search"]
             params.set_search_options(
@@ -196,10 +200,7 @@ class OrtGenaiModel(ModelAdapter):
                 past_present_share_buffer=search_config.get(
                     "past_present_share_buffer", True
                 ),
-                # Make sure that results do not vary across laptops
-                # by default, random_seed=-1 causes different laptops to give
-                # different results
-                random_seed=1,
+                random_seed=random_seed,
                 # Not currently supported by OGA
                 # diversity_penalty=search_config.get('diversity_penalty', 0.0),
                 # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),
@@ -212,6 +213,7 @@ class OrtGenaiModel(ModelAdapter):
                 temperature=temperature,
                 max_length=max_length_to_use,
                 min_length=min_length,
+                random_seed=random_seed,
             )
         params.try_graph_capture_with_max_batch_size(1)
 

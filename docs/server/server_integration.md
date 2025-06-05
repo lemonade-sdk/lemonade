@@ -73,7 +73,7 @@ Specific version:
 https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://github.com/lemonade-sdk/lemonade/blob/main/docs/source_installation_inst.md).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
 
 ### Installing Additional Models
 

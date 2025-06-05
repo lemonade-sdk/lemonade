@@ -1,7 +1,7 @@
 import json
 import os
 import huggingface_hub
-import pkg_resources
+from importlib.metadata import distributions
 
 
 class ModelManager:
@@ -97,9 +97,11 @@ class ModelManager:
         Returns a filtered dict of models that are enabled by the
         current environment.
         """
+        installed_packages = {dist.metadata["Name"].lower() for dist in distributions()}
+
         hybrid_installed = (
-            "onnxruntime-vitisai" in pkg_resources.working_set.by_key
-            and "onnxruntime-genai-directml-ryzenai" in pkg_resources.working_set.by_key
+            "onnxruntime-vitisai" in installed_packages
+            and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
         filtered = {}
         for model, value in models.items():

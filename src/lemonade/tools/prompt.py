@@ -15,6 +15,7 @@ DEFAULT_GENERATE_PARAMS = {
     "temperature": 0.7,
 }
 
+DEFAULT_RANDOM_SEED = 1
 DEFAULT_MAX_NEW_TOKENS = 512
 DEFAULT_N_TRIALS = 1
 
@@ -108,6 +109,19 @@ class LLMPrompt(Tool):
             f"(useful for testing, default is {DEFAULT_N_TRIALS})",
         )
 
+        parser.add_argument(
+            "--random-seed",
+            "-r",
+            default=str(DEFAULT_RANDOM_SEED),
+            help="Positive integer seed for random number generator used in "
+            "sampling tokens "
+            f"(default is {DEFAULT_RANDOM_SEED}). If the number of trials is "
+            "greater than one, then the seed is incremented by one for each "
+            "trial. Set to `None` for random, non-repeatable results.  This "
+            "random seed behavior only applies to models loaded with "
+            "`oga-load` or `huggingface-load`.",
+        )
+
         return parser
 
     def parse(self, state: State, args, known_only=True) -> argparse.Namespace:
@@ -123,6 +137,11 @@ class LLMPrompt(Tool):
             with open(parsed_args.prompt, "r", encoding="utf-8") as f:
                 parsed_args.prompt = f.read()
 
+        if parsed_args.random_seed == "None":
+            parsed_args.random_seed = None
+        else:
+            parsed_args.random_seed = int(parsed_args.random_seed)
+
         return parsed_args
 
     def run(
@@ -132,6 +151,7 @@ class LLMPrompt(Tool):
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
         n_trials: int = DEFAULT_N_TRIALS,
         template: bool = False,
+        random_seed: int = DEFAULT_RANDOM_SEED,
     ) -> State:
 
         model: ModelAdapter = state.model
@@ -170,8 +190,15 @@ class LLMPrompt(Tool):
 
             # Get the response from the LLM, which may include the prompt in it
             response = model.generate(
-                input_ids, max_new_tokens=max_new_tokens, **DEFAULT_GENERATE_PARAMS
+                input_ids,
+                max_new_tokens=max_new_tokens,
+                random_seed=random_seed,
+                **DEFAULT_GENERATE_PARAMS,
             )
+
+            # Increment random seed if not none
+            if random_seed is not None:
+                random_seed += 1
 
             # Flatten the input and response
             input_ids_array = (

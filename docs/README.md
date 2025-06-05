@@ -16,9 +16,6 @@ The Lemonade SDK provides everything needed to get up and running quickly with L
 ## Table of Contents
 
 - [Installation](#installation)
-  - [Installing Lemonade Server via Executable](#installing-from-lemonade_server_installerexe)
-  - [Installing Lemonade SDK From PyPI](#installing-from-pypi)
-  - [Installing Lemonade SDK From Source](#installing-from-source)
 - [CLI Commands](#cli-commands)
   - [Prompting](#prompting)
   - [Accuracy](#accuracy)
@@ -34,57 +31,14 @@ The Lemonade SDK provides everything needed to get up and running quickly with L
 
 ## Installation
 
-There are 3 ways a user can install the Lemonade SDK:
 
-1. Use the [Lemonade Server Installer](#installing-from-lemonade_server_installerexe). This provides a no code way to run LLMs locally and integrate with OpenAI compatible applications.
-1. Use [PyPI installation](#installing-from-pypi) by installing the `lemonade-sdk` package with the appropriate extras for your backend. This will install the full set of Lemonade SDK tools, including Lemonade Server, API, and CLI commands.
-1. Use [source installation](#installing-from-source) if you plan to contribute or customize the Lemonade SDK.
+[Click here for Lemonade SDK installation options](https://lemonade-server.ai/install_options.html).
 
+For a quick start with Hugging Face (PyTorch) LLMs on CPU, run the following installation commands in an active Python 3 environment, and then try one of the CLI commands below.
 
-### Installing From Lemonade_Server_Installer.exe
-
-The Lemonade Server is available as a standalone tool with a one-click Windows installer `.exe`. Check out the [Lemonade Server getting started guide](server/README.md) for installation instructions and the [server spec](./server/server_spec.md) to learn more about the functionality.
-
-The Lemonade Server [featured apps](./server/apps/README.md) has guides for how to use Lemonade Server with a collection of applications that we have tested.
-
-### Installing From PyPI
-
-To install the Lemonade SDK from PyPI:
-
-1. Create and activate a [miniconda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe) environment.
-    ```bash
-    conda create -n lemon python=3.10
-    ```
-
-    ```bash
-    conda activate lemon
-    ```
-
-3. Install Lemonade for your backend of choice: 
-    - [OnnxRuntime GenAI with CPU backend](./ort_genai_igpu.md): 
-        ```bash
-        pip install lemonade-sdk[llm-oga-cpu]
-        ```
-    - [OnnxRuntime GenAI with Integrated GPU (iGPU, DirectML) backend](./ort_genai_igpu.md):
-        > Note: Requires Windows and a DirectML-compatible iGPU.
-        ```bash
-        pip install lemonade-sdk[llm-oga-igpu]
-        ```
-    - OnnxRuntime GenAI with Ryzen AI Hybrid (NPU + iGPU) backend:
-        > Note: Ryzen AI Hybrid requires a Windows 11 PC with an AMD Ryzen™ AI 300-series processor.
-
-        - Follow the environment setup instructions [here](https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html)
-    - Hugging Face (PyTorch) LLMs for CPU backend:
-        ```bash
-            pip install lemonade-sdk[llm]
-        ```
-    - llama.cpp: see [instructions](./llamacpp.md).
-
-4. Use `lemonade -h` to explore the LLM tools, and see the [command](#cli-commands) and [API](#api) examples below.
-
-### Installing From Source
-
-The Lemonade SDK can be installed from source code by cloning this repository and following the instructions [here](./source_installation_inst.md).
+```bash
+pip install lemonade-sdk[llm]
+```
 
 
 ## CLI Commands
@@ -96,12 +50,12 @@ Each unit of functionality (e.g., loading a model, running a test, deploying a s
 You can read each command out loud to understand what it is doing. For example, a command like this:
 
 ```bash
-lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are"
+lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are"
 ```
 
 Can be read like this:
 
-> Run `lemonade` on the input `(-i)` checkpoint `microsoft/Phi-3-mini-4k-instruct`. First, load it in the OnnxRuntime GenAI framework (`oga-load`), onto the integrated GPU device (`--device igpu`) in the int4 data type (`--dtype int4`). Then, pass the OGA model to the prompting tool (`llm-prompt`) with the prompt (`-p`) "Hello, my thoughts are" and print the response.
+> Run `lemonade` on the input `(-i)` checkpoint `amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid` (which is meta-llama/Llama-3.2-1B-Instruct optimized for OGA and hybrid). First, load it in the OnnxRuntime GenAI framework (`oga-load`), onto hybrid NPU/GPU acceleration (`--device hybrid`) in the int4 data type (`--dtype int4`). Then, pass the OGA model to the prompting tool (`llm-prompt`) with the prompt (`-p`) "Hello, my thoughts are" and print the response.
 
 The `lemonade -h` command will show you which options and Tools are available, and `lemonade TOOL -h` will tell you more about that specific Tool.
 
@@ -110,9 +64,9 @@ The `lemonade -h` command will show you which options and Tools are available, a
 
 To prompt your LLM, try one of the following:
 
-OGA iGPU:
+OGA Hybrid:
 ```bash
-    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
 ```
 
 Hugging Face:
@@ -122,7 +76,7 @@ Hugging Face:
 
 The LLM will run with your provided prompt, and the LLM's response to your prompt will be printed to the screen. You can replace the `"Hello, my thoughts are"` with any prompt you like.
 
-You can also replace the `facebook/opt-125m` with any Hugging Face checkpoint you like, including LLaMA-2, Phi-2, Qwen, Mamba, etc.
+You can also replace the `facebook/opt-125m` with any Hugging Face checkpoint you like, including LLaMA, Phi, Qwen, Mamba, etc.
 
 You can also set the `--device` argument in `oga-load` and `huggingface-load` to load your LLM on a different device.
 
@@ -135,9 +89,9 @@ Run `lemonade huggingface-load -h` and `lemonade llm-prompt -h` to learn more ab
 
 To measure the accuracy of an LLM using MMLU (Measuring Massive Multitask Language Understanding), try the following:
 
-OGA iGPU:
+OGA Hybrid:
 ```bash
-    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 accuracy-mmlu --tests management
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 accuracy-mmlu --tests management
 ```
 
 Hugging Face:
@@ -153,9 +107,9 @@ You can run the full suite of MMLU subjects by omitting the `--test` argument. Y
 
 To measure the time-to-first-token and tokens/second of an LLM, try the following:
 
-OGA iGPU:
+OGA Hybrid:
 ```bash
-    lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 oga-bench
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 oga-bench
 ```
 
 Hugging Face:
@@ -181,9 +135,9 @@ The results can be filtered by model name, device type and data type.  See how b
 The peak memory used by the Lemonade execution sequence is captured in the build output. To capture more granular
 memory usage information, use the `--memory` flag.  For example:
 
-OGA iGPU:
+OGA Hybrid:
 ```bash
-    lemonade --memory -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 oga-bench
+    lemonade --memory -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 oga-bench
 ```
 
 Hugging Face:
@@ -194,29 +148,19 @@ Hugging Face:
 This generates a PNG file that is stored in the current folder and the build folder.  This file
 contains a figure plotting the memory usage over the Lemonade tool sequence.  Learn more by running `lemonade -h`.
 
-### Serving
-
-You can launch an OpenAI-compatible server with:
-
-```bash
-    lemonade-server serve
-```
-
-Visit the [server README](./server/README.md) to learn more about the server's capabilities.
-
 ## API
 
 Lemonade is also available via API.
 
 ### High-Level APIs
 
-The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, iGPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications. For more information on recipes and compatibility, see the [Lemonade API ReadMe](./lemonade_api.md).
+The high-level Lemonade API abstracts loading models from any supported framework (e.g., Hugging Face, OGA) and backend (e.g., CPU, Hybrid) using the popular `from_pretrained()` function. This makes it easy to integrate Lemonade LLMs into Python applications. For more information on recipes and compatibility, see the [Lemonade API ReadMe](./lemonade_api.md).
 
-OGA iGPU:
+OGA Hybrid:
 ```python
 from lemonade.api import from_pretrained
 
-model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-igpu")
+model, tokenizer = from_pretrained("amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid", recipe="oga-hybrid")
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 response = model.generate(input_ids, max_new_tokens=30)

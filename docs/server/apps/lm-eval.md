@@ -40,7 +40,7 @@ Lemonade supports integration with lm-eval through its local LLM server. The bas
 
 ### Step 1: Environment Setup and Installation
 
-Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
+Please refer to the [installation guide](https://lemonade-server.ai/install_options.html), using the PyPI or From Source methods, for environment setup.
 
 
 ### Step 2: Start the Lemonade Server
@@ -91,7 +91,7 @@ These tests evaluate a model's ability to assign probabilities to different poss
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Enviroment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://lemonade-server.ai/install_options.html), using the PyPI or From Source methods, for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -118,7 +118,7 @@ These tests evaluate a model's ability to predict text by measuring the perplexi
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://lemonade-server.ai/install_options.html), using the PyPI or From Source methods, for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
@@ -145,7 +145,7 @@ These tests evaluate a model's ability to generate full responses to prompts. Th
 
 #### Commands to Log Probability-Based Tests
 
-**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installing-from-pypi) for environment setup.
+**Step 1:** Environment setup and installation - Please refer to the [installation guide](https://lemonade-server.ai/install_options.html), using the PyPI or From Source methods, for environment setup.
 
 **Step 2:** Start the Lemonade Server.
 
