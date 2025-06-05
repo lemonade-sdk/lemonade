@@ -65,13 +65,6 @@ The following table explains what checkpoints work with each recipe, the hardwar
     <td>Use models from the <a href="https://huggingface.co/collections/amd/oga-cpu-llm-collection-6808280dc18d268d57353be8">CPU Collection.</a></td>
   </tr>
   <tr>
-    <td rowspan="2"><code>oga-igpu</code></td>
-    <td>safetensors (Hugging Face)</td>
-    <td>AMD Ryzen AI PC</td>
-    <td>Windows</td>
-    <td>Converted from safetensors via `model_builder`. Accuracy loss due to RTN quantization.</td>
-  </tr>
-  <tr>
     <td>OGA ONNX</td>
     <td>AMD Ryzen AI PC</td>
     <td>Windows</td>
@@ -113,7 +106,7 @@ You can skip the conversion step by using pre-quantized models from AMD’s Hugg
 | `oga-hybrid` | [Hybrid Collection](https://huggingface.co/collections/amd/ryzenai-14-llm-hybrid-models-67da31231bba0f733750a99c)                               |
 | `oga-npu`    | [NPU Collection](https://huggingface.co/collections/amd/ryzenai-14-llm-npu-models-67da3494ec327bd3aa3c83d7)                                     |
 | `oga-cpu`    | [CPU Collection](https://huggingface.co/collections/amd/oga-cpu-llm-collection-6808280dc18d268d57353be8) |
-| `oga-dml`    | [GPU Collection](https://huggingface.co/collections/amd/ryzenai-oga-dml-models-67f940914eee51cbd794b95b)                                                                                                                          |
+
 
 
 ## 📚 Additional Resources

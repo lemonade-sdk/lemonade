@@ -326,6 +326,7 @@ class HuggingfaceAdapter(ModelAdapter):
     def generate(
         self,
         input_ids,
+        random_seed=1,
         **kwargs,
     ):
 
@@ -345,6 +346,11 @@ class HuggingfaceAdapter(ModelAdapter):
             "do_sample": kwargs.get("do_sample", True),
             **kwargs,
         }
+
+        if random_seed is None:
+            torch.random.seed()
+        else:
+            torch.random.manual_seed(random_seed)
 
         with torch.no_grad(), torch.inference_mode():
             outputs = self.model.generate(input_ids=input_ids, **generation_kwargs)

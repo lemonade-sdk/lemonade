@@ -1,0 +1,411 @@
+<!-- Lemonade SDK Install Selector -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lemonade SDK Install Selector</title>
+  <style>
+    .lmn-installer-table {
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 1em 0;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      color: #222;
+      box-shadow: 0 2px 12px #ffe06633;
+      border-radius: 12px;
+      overflow: hidden;
+      background: none;
+      table-layout: fixed;
+      width: 100%;
+      max-width: 650px;
+    }    .lmn-installer-table td, .lmn-installer-table th {
+      border: 1px solid #e6b800;
+      padding: 0.5em 1em;
+      text-align: center;
+      font-size: 1.08rem;
+      background: #fff;
+      min-width: 120px;
+      box-sizing: border-box;
+      transition: background 0.2s, color 0.2s;
+      cursor: pointer;
+    }
+    .lmn-installer-table tr:first-child td:first-child,
+    .lmn-installer-table tr:first-child th:first-child {
+      border-top-left-radius: 12px;
+    }
+    .lmn-installer-table tr:first-child td:last-child,
+    .lmn-installer-table tr:first-child th:last-child {
+      border-top-right-radius: 12px;
+    }
+    .lmn-installer-table tr:last-child td:first-child,
+    .lmn-installer-table tr:last-child th:first-child {
+      border-bottom-left-radius: 12px;
+    }
+    .lmn-installer-table tr:last-child td:last-child,
+    .lmn-installer-table tr:last-child th:last-child {
+      border-bottom-right-radius: 12px;
+    }
+    .lmn-installer-table .lmn-active {
+      background: #ffe066;
+      font-weight: 600;
+      color: #222;
+      transition: background 0.2s;
+    }
+    .lmn-installer-table .lmn-disabled {
+      background: #f5f5f5;
+      color: #bbb;
+      text-shadow: none;
+      font-style: italic;
+    }    .lmn-installer-table .lmn-label {
+      background: #f5f5f5;
+      font-weight: bold;
+      color: #444;
+      font-size: 1.08rem;
+      cursor: default;
+    }
+    .lmn-command-area {
+      background: #fffbe9;
+      border: 1.5px solid #ffe066;
+      border-radius: 12px;
+      margin-top: 1.2em;
+      padding: 1.1em 1.2em 1.1em 1.2em;
+      box-shadow: 0 2px 12px #ffe06622;
+      max-width: 600px;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+    }
+    .lmn-command-area b {
+      font-size: 1.13rem;
+      color: #222;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .lmn-command pre {
+      background: #222;
+      color: #fff;
+      border-radius: 6px;
+      padding: 1em 1.2em;
+      font-size: 1.08rem;
+      margin: 0.7em 0 0 0;
+      font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', 'monospace';
+      overflow-x: auto;
+      box-shadow: 0 2px 8px #ffe06633;
+    }
+    .lmn-command code {
+      background: none;
+      color: inherit;
+      font-size: inherit;
+      font-family: inherit;
+      padding: 0;
+    }
+    .lmn-command a {
+      color: #e6b800;
+      text-decoration: underline;
+      font-size: 1.08rem;
+    }
+    .lmn-command a:hover {
+      color: #bfa100;
+    }
+    .lmn-title {
+      font-size: 2.1rem;
+      font-weight: 700;
+      color: #222;
+      letter-spacing: 0.01em;
+      margin: 1.2em 0 0.5em 0;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      text-align: left;
+      display: block;
+    }
+    .lmn-btn {
+      display: inline-block;
+      background: #ffe066;
+      color: #222 !important;
+      font-weight: 600;
+      font-size: 1.08rem;
+      border: 1.5px solid #e6b800;
+      border-radius: 7px;
+      padding: 0.48em 1.25em;
+      margin: 0.2em 0.2em 0.2em 0;
+      text-decoration: none !important;
+      box-shadow: 0 2px 8px #ffe06633;
+      transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+      cursor: pointer;
+      outline: none;
+    }
+    .lmn-btn:hover, .lmn-btn:focus {
+      background: #ffe066;
+      color: #222;
+      box-shadow: 0 4px 16px #ffe06655;
+      border-color: #bfa100;
+    }
+    .lmn-btn:active {
+      background: #ffe066;
+      color: #222;
+      box-shadow: 0 1px 4px #ffe06633;
+    }
+  </style>
+</head>
+<body>
+  <div style="margin: 1.8em 0 1.2em 0;">
+    <a href="#" onclick="window.history.back(); return false;" class="lmn-btn">&lt; Return to Documentation</a>
+  </div>
+  <span class="lmn-title">🍋 Lemonade SDK Installation</span>
+<div id="lmn-installer" style="margin-top: 1.2em;">
+  <table class="lmn-installer-table">
+    <tr>
+      <td class="lmn-label">Operating System</td>
+      <td id="os-win" class="lmn-active" onclick="lmnSet('os','win')">Windows</td>
+      <td id="os-linux" onclick="lmnSet('os','linux')">Linux</td>
+    </tr>
+    <tr>
+      <td class="lmn-label">Installation Method</td>
+      <td id="method-gui" class="lmn-active" onclick="lmnSet('method','gui')">GUI .exe<br>(server only)</td>
+      <td id="method-pypi" onclick="lmnSet('method','pypi')">PyPI</td>
+      <td id="method-src" onclick="lmnSet('method','src')">From Source</td>
+    </tr>
+    <tr>
+      <td class="lmn-label">Framework Support</td>
+      <td id="fw-oga" class="lmn-active" onclick="lmnSet('fw','oga')">OGA</td>
+      <td id="fw-llama" onclick="lmnSet('fw','llama')">llama.cpp</td>
+      <td id="fw-torch" onclick="lmnSet('fw','torch')">PyTorch</td>
+    </tr>
+    <tr>
+      <td class="lmn-label">Device Support</td>
+      <td id="dev-hybrid" class="lmn-active" onclick="lmnSet('dev','hybrid')">Hybrid</td>
+      <td id="dev-cpu" onclick="lmnSet('dev','cpu')">CPU</td>
+      <td id="dev-gpu" onclick="lmnSet('dev','gpu')">GPU</td>
+    </tr>
+  </table>
+  <div class="lmn-command-area" style="margin-top:1em;">
+    <b id="lmn-command-label">Run this Command:</b>
+    <div id="lmn-command" class="lmn-command">
+      <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+    </div>
+  </div>
+</div>
+<div style="margin: 2.8em 0 1.6em 0; text-align:left;">
+    <a href="#" onclick="window.history.back(); return false;" class="lmn-btn">&lt; Return to Documentation</a>
+  </div>
+<script>
+// Updated allowlist based on clarified compatibility
+const lmnAllowlist = [
+  // GUI installer (Windows only)
+  // OGA: Hybrid, CPU
+  {os:'win', method:'gui', fw:'oga', dev:'hybrid'},
+  {os:'win', method:'gui', fw:'oga', dev:'cpu'},
+  // llama.cpp: CPU, GPU
+  {os:'win', method:'gui', fw:'llama', dev:'cpu'},
+  {os:'win', method:'gui', fw:'llama', dev:'gpu'},
+  // PyPI and From Source (Windows & Linux)
+  // OGA: Hybrid, CPU
+  {os:'win', method:'pypi', fw:'oga', dev:'hybrid'},
+  {os:'win', method:'pypi', fw:'oga', dev:'cpu'},
+  {os:'linux', method:'pypi', fw:'oga', dev:'cpu'},
+  {os:'win', method:'src', fw:'oga', dev:'hybrid'},
+  {os:'win', method:'src', fw:'oga', dev:'cpu'},
+  {os:'linux', method:'src', fw:'oga', dev:'cpu'},
+  // PyTorch: CPU only (GPU removed)
+  {os:'win', method:'pypi', fw:'torch', dev:'cpu'},
+  {os:'linux', method:'pypi', fw:'torch', dev:'cpu'},
+  {os:'win', method:'src', fw:'torch', dev:'cpu'},
+  {os:'linux', method:'src', fw:'torch', dev:'cpu'},
+  // llama.cpp: CPU, GPU
+  {os:'win', method:'pypi', fw:'llama', dev:'cpu'},
+  {os:'win', method:'pypi', fw:'llama', dev:'gpu'},
+  {os:'linux', method:'pypi', fw:'llama', dev:'cpu'},
+  {os:'linux', method:'pypi', fw:'llama', dev:'gpu'},
+  {os:'win', method:'src', fw:'llama', dev:'cpu'},
+  {os:'win', method:'src', fw:'llama', dev:'gpu'},
+  {os:'linux', method:'src', fw:'llama', dev:'cpu'},
+  {os:'linux', method:'src', fw:'llama', dev:'gpu'},
+];
+
+const lmnAlwaysEnabledMethod = ['pypi', 'src'];
+
+window.lmnState = { os: 'win', method: 'pypi', fw: 'oga', dev: 'cpu' };
+
+function lmnIsAllowed(os, method, fw, dev) {
+  return lmnAllowlist.some(c => c.os === os && c.method === method && c.fw === fw && c.dev === dev);
+}
+
+function lmnFindClosestValid(newState) {
+  // Try to find a valid combination with the changed field, prefer keeping other fields the same
+  let candidates = lmnAllowlist.filter(c => {
+    for (let k in newState) {
+      if (newState[k] !== undefined && c[k] !== newState[k]) return false;
+    }
+    return true;
+  });
+  if (candidates.length > 0) return candidates[0];
+  // If not found, relax one field at a time (priority: method, fw, dev, os)
+  const keys = ['method','fw','dev','os'];
+  for (let i=0; i<keys.length; ++i) {
+    let relaxed = {...newState};
+    delete relaxed[keys[i]];
+    candidates = lmnAllowlist.filter(c => {
+      for (let k in relaxed) {
+        if (relaxed[k] !== undefined && c[k] !== relaxed[k]) return false;
+      }
+      return true;
+    });
+    if (candidates.length > 0) return candidates[0];
+  }
+  // Fallback: first allowlist entry
+  return lmnAllowlist[0];
+}
+
+window.lmnSet = function(type, val) {
+  let newState = {...lmnState, [type]: val};
+  if (!lmnIsAllowed(newState.os, newState.method, newState.fw, newState.dev)) {
+    // Not allowed, auto-adjust to closest valid
+    newState = lmnFindClosestValid({[type]: val});
+  }
+  window.lmnState = {...newState};
+  lmnRender();
+};
+
+window.lmnRender = function() {
+  // Reset all
+  ['os-win','os-linux','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-hybrid','dev-cpu','dev-gpu'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) {
+      el.className = '';
+      el.onclick = null;
+    }
+  });
+  // Set click handlers for all options
+  document.getElementById('os-win').onclick = function() { lmnSet('os','win'); };
+  document.getElementById('os-linux').onclick = function() { lmnSet('os','linux'); };
+  document.getElementById('method-gui').onclick = function() { lmnSet('method','gui'); };
+  document.getElementById('method-pypi').onclick = function() { lmnSet('method','pypi'); };
+  document.getElementById('method-src').onclick = function() { lmnSet('method','src'); };
+  document.getElementById('fw-oga').onclick = function() { lmnSet('fw','oga'); };
+  document.getElementById('fw-torch').onclick = function() { lmnSet('fw','torch'); };
+  document.getElementById('fw-llama').onclick = function() { lmnSet('fw','llama'); };
+  document.getElementById('dev-hybrid').onclick = function() { lmnSet('dev','hybrid'); };
+  document.getElementById('dev-cpu').onclick = function() { lmnSet('dev','cpu'); };
+  document.getElementById('dev-gpu').onclick = function() { lmnSet('dev','gpu'); };
+
+  // Highlight active
+  document.getElementById('os-'+lmnState.os).classList.add('lmn-active');
+  document.getElementById('method-'+lmnState.method).classList.add('lmn-active');
+  document.getElementById('fw-'+lmnState.fw).classList.add('lmn-active');
+  document.getElementById('dev-'+lmnState.dev).classList.add('lmn-active');
+
+  // Gray out incompatible options (but keep them clickable)
+  const opts = {
+    os: ['win','linux'],
+    method: ['gui','pypi','src'],
+    fw: ['oga','torch','llama'],
+    dev: ['hybrid','cpu','gpu']
+  };
+  // OS
+  opts.os.forEach(os => {
+    if (!lmnIsAllowed(os, lmnState.method, lmnState.fw, lmnState.dev)) {
+      document.getElementById('os-'+os).classList.add('lmn-disabled');
+    }
+  });
+  // Method
+  opts.method.forEach(method => {
+    if (!lmnIsAllowed(lmnState.os, method, lmnState.fw, lmnState.dev) && !lmnAlwaysEnabledMethod.includes(method)) {
+      document.getElementById('method-'+method).classList.add('lmn-disabled');
+    }
+  });
+  // Framework
+  opts.fw.forEach(fw => {
+    if (!lmnIsAllowed(lmnState.os, lmnState.method, fw, lmnState.dev)) {
+      document.getElementById('fw-'+fw).classList.add('lmn-disabled');
+    }
+  });
+  // Device
+  opts.dev.forEach(dev => {
+    if (!lmnIsAllowed(lmnState.os, lmnState.method, lmnState.fw, dev)) {
+      document.getElementById('dev-'+dev).classList.add('lmn-disabled');
+    }
+  });
+
+  // Command rendering
+  var cmd = '';
+  var link = '';
+  var condaBlock = '';
+  var bashBlock = '';
+  // Conda instructions for all pip/from source installs
+  if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw !== 'llama') {
+    condaBlock = '<div style="margin-bottom:0.5em"><a href="https://github.com/conda-forge/miniforge#miniforge3" target="_blank" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em;">Download and Install Miniforge</a></div>';
+  }
+  // Set command and link
+  if (lmnState.method === 'gui') {
+    if (lmnState.fw === 'oga') {
+      if (lmnState.dev === 'hybrid' || lmnState.dev === 'cpu') {
+        cmd = 'Download Lemonade Server Installer (.exe)';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe';
+      }
+    } else if (lmnState.fw === 'llama') {
+      if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
+        cmd = 'Download Lemonade Server Installer (.exe)';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe';
+      }
+    }  } else if (lmnState.method === 'pypi' || lmnState.method === 'src') {
+    if (lmnState.fw === 'oga') {
+      if (lmnState.dev === 'cpu') {
+        if (lmnState.method === 'pypi') {
+          cmd = 'pip install lemonade-sdk[llm-oga-cpu]';
+        } else {
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-cpu]';
+        }
+      } else if (lmnState.dev === 'hybrid') {
+        if (lmnState.method === 'pypi') {
+          cmd = 'pip install lemonade-sdk[llm-oga-hybrid]\nlemonade-install --ryzenai hybrid';
+        } else {
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-hybrid]\nlemonade-install --ryzenai hybrid';
+        }
+      }
+    } else if (lmnState.fw === 'torch') {
+      if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
+        if (lmnState.method === 'pypi') {
+          cmd = 'pip install lemonade-sdk[llm]';
+        } else {
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm]';
+        }
+      }
+    } else if (lmnState.fw === 'llama') {
+      cmd = 'See llama.cpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em; display:inline-block;">llamacpp.md</a>';
+      link = 'https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md';
+    }
+  }
+  // Now set the label based on what will be rendered
+  var label = '';
+  if (link && cmd !== '' && lmnState.method === 'gui') {
+    label = 'Install this tool:';
+  } else if (link && cmd !== '' && lmnState.fw === 'llama' && (lmnState.method === 'pypi' || lmnState.method === 'src')) {
+    label = 'Read this:';  } else if (cmd) {
+    var gitCloneLines = (lmnState.method === 'src' && lmnState.fw !== 'llama') ? 2 : 0; // git clone + cd
+    var cmdLines = (condaBlock ? 2 : 0) + gitCloneLines + (cmd ? cmd.split('\n').length : 0);
+    label = cmdLines > 1 ? 'Run these Commands:' : 'Run this Command:';
+  } else {
+    label = '';
+  }
+  var cmdDiv = document.getElementById('lmn-command');
+  var labelDiv = document.getElementById('lmn-command-label');
+  labelDiv.textContent = label;
+  if (link && cmd !== '' && lmnState.method === 'gui') {
+    cmdDiv.innerHTML = '<div class="lmn-command"><a id="lmn-link" href="'+link+'" class="lmn-btn">'+cmd+'</a></div>';
+  } else if (link && cmd !== '' && lmnState.fw === 'llama') {
+    cmdDiv.innerHTML = '<div class="lmn-command">' + cmd + '</div>';
+  } else if (cmd) {
+    var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash">' +
+      (condaBlock ? 'conda create -n lemon python=3.10\nconda activate lemon\n' : '') +
+      cmd.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') +
+      '</code></pre>';
+    cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
+    // Add hybrid note if Hybrid is selected with PyPI or From Source
+    if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.dev === 'hybrid') {
+      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">Hybrid requires an AMD Ryzen AI 300-series PC with Windows 11.</div>';
+    }
+  } else {
+    cmdDiv.innerHTML = '';
+  }
+};
+lmnRender();
+</script>
+</body>
+</html>

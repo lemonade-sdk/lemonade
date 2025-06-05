@@ -46,9 +46,7 @@ from openai.types.responses import (
 
 import lemonade.api as lemonade_api
 from lemonade_server.model_manager import ModelManager
-from lemonade.tools.management_tools import ManagementTool
-import lemonade.tools.server.llamacpp as llamacpp
-from lemonade.tools.server.pydantic_models import (
+from lemonade_server.pydantic_models import (
     DEFAULT_MAX_NEW_TOKENS,
     LoadConfig,
     CompletionRequest,
@@ -56,6 +54,8 @@ from lemonade.tools.server.pydantic_models import (
     ResponsesRequest,
     PullConfig,
 )
+from lemonade.tools.management_tools import ManagementTool
+import lemonade.tools.server.llamacpp as llamacpp
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.server.instructions import get_instructions_html
 from lemonade.tools.server.port_utils import lifespan
@@ -1200,7 +1200,7 @@ class Server(ManagementTool):
             # We will populate a LoadConfig that has all of the required fields
             config_to_use: LoadConfig
 
-            # First, validate that the arguments are valid
+            # First, ensure that the arguments are valid
             if config.model_name:
                 # Get the dictionary of supported model from disk
                 supported_models = ModelManager().supported_models
@@ -1293,7 +1293,7 @@ class Server(ManagementTool):
             try:
                 if config_to_use.recipe == "llamacpp":
                     self.llama_server_process = llamacpp.server_load(
-                        checkpoint=config_to_use.checkpoint,
+                        model_config=config_to_use,
                         model_reference=model_reference,
                         telemetry=self.llama_telemetry,
                     )

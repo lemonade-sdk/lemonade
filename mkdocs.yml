@@ -88,7 +88,6 @@ exclude_docs: |
   perplexity.md
   quark.md
   versioning.md
-  source_installation_inst.md
   ort_genai_igpu.md
   llamacpp.md
 

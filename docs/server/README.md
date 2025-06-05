@@ -15,6 +15,6 @@ Once you've installed, we recommend checking out these resources:
 | [Server Spec](./server_spec.md) | Review all supported OpenAI-compatible and Lemonade-specific API endpoints. |
 | [Integration Guide](./server_integration.md) | Step-by-step instructions for integrating Lemonade Server into your own applications. |
 
-> Note: if you want to develop Lemonade Server itself, you can [install from source](https://github.com/lemonade-sdk/lemonade/blob/main/docs/source_installation_inst.md).
+> Note: if you want to develop Lemonade Server itself, you can [install from source](https://lemonade-server.ai/install_options.html).
 
 <!--Copyright (c) 2025 AMD-->

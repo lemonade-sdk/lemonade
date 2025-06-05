@@ -26,16 +26,14 @@ def main():
         print("[ERROR] docs/server/README.md not found!")
         sys.exit(1)
 
-    # Read the source README, replacing any ../source_installation_inst.md references with the public GitHub link
+    # Read the source README, making necessary replacements
     with open(src, "r", encoding="utf-8") as f:
         readme_content = f.read()
 
-    # Write the modified content to the destination index.md
+    # Write the content to the destination index.md
     with open(dst, "w", encoding="utf-8") as f:
         f.write(readme_content)
-    print(
-        "[INFO] Copied docs/server/README.md to docs/index.md with updated source_installation_inst.md link."
-    )
+    print("[INFO] Copied docs/server/README.md to docs/index.md.")
 
     # Read the just-written index.md and perform additional link fixes for website publishing
     print("[INFO] Fixing links in docs/index.md...")
@@ -50,20 +48,9 @@ def main():
         (r"\(\./server_models\.md\)", r"(./server/server_models.md)"),
         (r"\(\./server_spec\.md\)", r"(./server/server_spec.md)"),
         (r"\(\./server_integration\.md\)", r"(./server/server_integration.md)"),
-        (
-            r"\(\.\./source_installation_inst\.md\)\.",
-            r"(./source_installation_inst.md).",
-        ),
     ]
     for pattern, repl in replacements:
         content = re.sub(pattern, repl, content)
-
-    # Replace ./source_installation_inst.md with the public GitHub link (in case it appears in a different context)
-    content = re.sub(
-        r"\./source_installation_inst\.md",
-        "https://github.com/lemonade-sdk/lemonade/blob/main/docs/source_installation_inst.md",
-        content,
-    )
 
     # Write the fully processed content back to index.md
     with open(dst, "w", encoding="utf-8") as f:
