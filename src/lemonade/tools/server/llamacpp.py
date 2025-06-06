@@ -145,16 +145,14 @@ def _log_subprocess_output(
                 break
 
 
-def _wait_for_load(
-    llama_server_process: subprocess.Popen, port: int, fail_message: str
-):
+def _wait_for_load(llama_server_process: subprocess.Popen, port: int):
     status_code = None
     while not llama_server_process.poll() and status_code != 200:
         health_url = f"http://localhost:{port}/health"
         try:
             health_response = requests.get(health_url)
         except requests.exceptions.ConnectionError:
-            logging.warning(fail_message)
+            logging.debug("Not able to connect to llama-server yet, will retry")
         else:
             status_code = health_response.status_code
             logging.debug(
@@ -252,11 +250,14 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
     _wait_for_load(
         llama_server_process,
         telemetry.port,
-        f"Loading {model_reference} on GPU didn't work, re-attempting on CPU",
     )
 
     # If loading on GPU failed, try loading on CPU
     if llama_server_process.poll():
+        logging.warning(
+            f"Loading {model_reference} on GPU didn't work, re-attempting on CPU"
+        )
+
         llama_server_process = _launch_llama_subprocess(
             snapshot_files, use_gpu=False, telemetry=telemetry
         )
@@ -265,7 +266,6 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
         _wait_for_load(
             llama_server_process,
             telemetry.port,
-            f"Loading {model_reference} on CPU didn't work",
         )
 
     if llama_server_process.poll():
