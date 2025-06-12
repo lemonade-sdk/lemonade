@@ -202,7 +202,7 @@ class WindowsSystemInfo(SystemInfo):
 
         except subprocess.CalledProcessError:
             return "Windows power setting not found (command failed)"
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             return f"Error retrieving power setting: {str(e)}"
 
     def get_dict(self) -> dict:
