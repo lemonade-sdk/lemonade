@@ -1103,7 +1103,6 @@ class Server(ManagementTool):
         """
         Report server health information to the client.
         """
-        self.stop_event.set()
 
         return {
             "status": "ok",
