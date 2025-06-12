@@ -1,7 +1,8 @@
 import json
 import os
 import huggingface_hub
-import pkg_resources
+from importlib.metadata import distributions
+from lemonade_server.pydantic_models import LoadConfig
 
 
 class ModelManager:
@@ -64,15 +65,44 @@ class ModelManager:
         """
         return self.filter_models_by_backend(self.downloaded_models)
 
-    def download_gguf(self, checkpoint) -> str:
-        # The colon after the checkpoint name indicates which
-        # specific GGUF to download
-        repo_id = checkpoint.split(":")[0]
-        pattern_to_match = f'*{checkpoint.split(":")[1]}.gguf'
-        return huggingface_hub.snapshot_download(
-            repo_id=repo_id,
-            allow_patterns=[pattern_to_match],
+    def download_gguf(self, model_config: LoadConfig) -> dict:
+        """
+        Downloads the GGUF file for the given model configuration.
+        """
+
+        # The variant parameter can be either:
+        # 1. A full GGUF filename (e.g. "model-Q4_0.gguf")
+        # 2. A quantization variant (e.g. "Q4_0")
+        # This code handles both cases by constructing the appropriate filename
+        checkpoint, variant = model_config.checkpoint.split(":")
+        hf_base_name = checkpoint.split("/")[-1].replace("-GGUF", "")
+        variant_name = (
+            variant if variant.endswith(".gguf") else f"{hf_base_name}-{variant}.gguf"
         )
+
+        # If there is a mmproj file, add it to the patterns
+        expected_files = {"variant": variant_name}
+        if model_config.mmproj:
+            expected_files["mmproj"] = model_config.mmproj
+
+        # Download the files
+        snapshot_folder = huggingface_hub.snapshot_download(
+            repo_id=checkpoint,
+            allow_patterns=list(expected_files.values()),
+        )
+
+        # Ensure we downloaded all expected files while creating a dict of the downloaded files
+        snapshot_files = {}
+        for file in expected_files:
+            snapshot_files[file] = os.path.join(snapshot_folder, expected_files[file])
+            if expected_files[file] not in os.listdir(snapshot_folder):
+                raise ValueError(
+                    f"Hugging Face snapshot download for {model_config.checkpoint} "
+                    f"expected file {expected_files[file]} not found in {snapshot_folder}"
+                )
+
+        # Return a dict that points to the snapshot path of the downloaded GGUF files
+        return snapshot_files
 
     def download_models(self, models: list[str]):
         """
@@ -88,7 +118,8 @@ class ModelManager:
             print(f"Downloading {model} ({checkpoint})")
 
             if "gguf" in checkpoint.lower():
-                self.download_gguf(checkpoint)
+                model_config = LoadConfig(**self.supported_models[model])
+                self.download_gguf(model_config)
             else:
                 huggingface_hub.snapshot_download(repo_id=checkpoint)
 
@@ -97,9 +128,11 @@ class ModelManager:
         Returns a filtered dict of models that are enabled by the
         current environment.
         """
+        installed_packages = {dist.metadata["Name"].lower() for dist in distributions()}
+
         hybrid_installed = (
-            "onnxruntime-vitisai" in pkg_resources.working_set.by_key
-            and "onnxruntime-genai-directml-ryzenai" in pkg_resources.working_set.by_key
+            "onnxruntime-vitisai" in installed_packages
+            and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
         filtered = {}
         for model, value in models.items():

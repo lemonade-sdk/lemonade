@@ -187,5 +187,19 @@
         "recipe": "llamacpp",
         "reasoning": true,
         "suggested": true
+    },
+    "Gemma-3-4b-it-GGUF": {
+        "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-model-f16.gguf",
+        "recipe": "llamacpp",
+        "reasoning": false,
+        "suggested": true
+    },
+    "Qwen2.5-VL-7B-Instruct": {
+        "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
+        "recipe": "llamacpp",
+        "reasoning": false,
+        "suggested": true
     }
 }

@@ -55,7 +55,7 @@ See the [Lemonade Server getting started instructions](./README.md).
 
 ### Python Environment
 
-If you have Lemonade [installed in a Python environment](https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation), simply activate it and run the following command to start the server:
+If you have Lemonade [installed in a Python environment](https://lemonade-server.ai/install_options.html), simply activate it and run the following command to start the server:
 
 ```bash
 lemonade-server-dev serve
@@ -428,6 +428,7 @@ In case of an error, the status will be `error` and the message will contain the
 | `checkpoint` | Yes | HuggingFace checkpoint to load. |
 | `recipe` | Yes | Lemonade API recipe to load the model on. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+| `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:
 
