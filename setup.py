@@ -60,7 +60,7 @@ setup(
             "lm-eval[api]",
         ],
         "llm-oga-cpu": [
-            "onnxruntime-genai==0.6.0",
+            "onnxruntime-genai==0.8.2",
             "onnxruntime >=1.10.1,<1.22.0",
             "lemonade-sdk[llm]",
         ],
@@ -71,7 +71,7 @@ setup(
             "lemonade-sdk[llm]",
         ],
         "llm-oga-cuda": [
-            "onnxruntime-genai-cuda==0.6.0",
+            "onnxruntime-genai-cuda==0.8.2",
             "onnxruntime-gpu >=1.19.1,<1.22.0",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
