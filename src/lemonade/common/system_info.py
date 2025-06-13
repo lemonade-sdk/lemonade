@@ -3,6 +3,7 @@ import importlib.metadata
 import platform
 import re
 import subprocess
+import ctypes
 
 
 class SystemInfo(ABC):
@@ -184,11 +185,25 @@ class WindowsSystemInfo(SystemInfo):
             str: Windows power setting.
         """
         try:
-            out = subprocess.check_output(["powercfg", "/getactivescheme"]).decode()
-            return re.search(r"\((.*?)\)", out).group(1)
+            # Capture output as bytes
+            out_bytes = subprocess.check_output(["powercfg", "/getactivescheme"])
+
+            # Get system's OEM code page (e.g., cp437, cp850)
+            oem_cp = "cp" + str(ctypes.windll.kernel32.GetOEMCP())
+
+            # Decode using detected OEM code page
+            out = out_bytes.decode(oem_cp)
+
+            # Extract power scheme name from parentheses
+            match = re.search(r"\((.*?)\)", out)
+            if match:
+                return match.group(1)
+            return "Power scheme name not found in output"
+
         except subprocess.CalledProcessError:
-            pass
-        return "Windows power setting not found"
+            return "Windows power setting not found (command failed)"
+        except Exception as e:  # pylint: disable=broad-except
+            return f"Error retrieving power setting: {str(e)}"
 
     def get_dict(self) -> dict:
         """
