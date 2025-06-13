@@ -61,7 +61,7 @@ setup(
         ],
         "llm-oga-cpu": [
             "onnxruntime-genai==0.8.2",
-            "onnxruntime >=1.10.1,<1.22.0",
+            "onnxruntime==1.22.0",
             "lemonade-sdk[llm]",
         ],
         "llm-oga-igpu": [
@@ -72,7 +72,7 @@ setup(
         ],
         "llm-oga-cuda": [
             "onnxruntime-genai-cuda==0.8.2",
-            "onnxruntime-gpu >=1.19.1,<1.22.0",
+            "onnxruntime==1.22.0",
             "transformers<4.45.0",
             "lemonade-sdk[llm]",
         ],
