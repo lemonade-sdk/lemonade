@@ -106,7 +106,13 @@ lemonade-server serve
 By default, the server runs on port 8000. Optionally, you can specify a custom port using the --port argument:
 
 ```bash
-lemonade-server --port 8123
+lemonade-server serve --port 8123
+```
+
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag:
+
+```bash
+lemonade-server serve --no-tray
 ```
 
 You can also run the server as a background process using a subprocess or any preferred method.

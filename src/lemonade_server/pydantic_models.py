@@ -15,9 +15,8 @@ class LoadConfig(BaseModel):
     and hardware/framework configuration (recipe) for model loading.
     """
 
-    model_name: Optional[str] = None
+    model_name: str
     checkpoint: Optional[str] = None
-    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
     recipe: Optional[str] = None
     # Indicates the maximum prompt length allowed for that specific
     # checkpoint + recipe combination
@@ -77,9 +76,15 @@ class ResponsesRequest(BaseModel):
     stream: bool = False
 
 
-class PullConfig(BaseModel):
+class PullConfig(LoadConfig):
     """
-    Configurating for installing a supported LLM.
+    Pull and load have the same fields.
+    """
+
+
+class DeleteConfig(BaseModel):
+    """
+    Configuration for deleting a supported LLM.
     """
 
     model_name: str

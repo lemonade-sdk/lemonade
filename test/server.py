@@ -202,9 +202,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         # Ensure we kill anything using port 8000
         kill_process_on_port(PORT)
 
+        # The --no-tray option is only available on Windows
+        if os.name == "nt":
+            cmd = ["lemonade-server-dev", "serve", "--no-tray"]
+        else:
+            cmd = ["lemonade-server-dev", "serve"]
+
         # Start the lemonade server
         lemonade_process = subprocess.Popen(
-            ["lemonade", "serve"],
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -278,6 +284,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             "models",
             "responses",
             "pull",
+            "delete",
             "load",
             "unload",
             "health",
@@ -517,23 +524,21 @@ class Testing(unittest.IsolatedAsyncioTestCase):
     # Test simultaneous load requests
     async def test_011_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
-            first_checkpoint = "Qwen/Qwen2.5-0.5B"
-            second_checkpoint = "Qwen/Qwen2.5-1.5B-Instruct"
+            first_model = "Qwen2.5-0.5B-Instruct-CPU"
+            second_model = "Phi-3-Mini-Instruct-CPU"
 
             # Start two load requests simultaneously
             load_tasks = [
                 client.post(
                     "/load",
                     json={
-                        "checkpoint": first_checkpoint,
-                        "recipe": "hf-cpu",
+                        "model_name": first_model,
                     },
                 ),
                 client.post(
                     "/load",
                     json={
-                        "checkpoint": second_checkpoint,
-                        "recipe": "hf-cpu",
+                        "model_name": second_model,
                     },
                 ),
             ]
@@ -549,7 +554,9 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             health_response = await client.get("/health")
             assert health_response.status_code == 200
             health_data = health_response.json()
-            assert health_data["checkpoint_loaded"] == second_checkpoint
+            assert health_data["model_loaded"] == second_model, health_data[
+                "model_loaded"
+            ]
 
     # Test load by model name
     async def test_012_test_load_by_name(self):
@@ -564,13 +571,14 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             health_data = health_response.json()
             assert health_data["model_loaded"] == MODEL_NAME
 
-    # Test completion-by-checkpoint
+    # Test pull to register-and-install
     async def test_013_test_load_checkpoint_completion(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
             load_response = await client.post(
-                "/load",
+                "/pull",
                 json={
+                    "model_name": "user.Qwen2.5-0.5B-HF-CPU",
                     "checkpoint": "Qwen/Qwen2.5-0.5B",
                     "recipe": "hf-cpu",
                 },
@@ -581,17 +589,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             # Verify the model loaded
             health_response = await client.get("/health")
             assert health_response.status_code == 200
-            health_data = health_response.json()
-            assert health_data["checkpoint_loaded"] == "Qwen/Qwen2.5-0.5B"
 
-            # Run a completions request, using the checkpoint as the 'model'
+            # Run a completions request using the new model
             client = OpenAI(
                 base_url=self.base_url,
                 api_key="lemonade",  # required, but unused
             )
 
             completion = client.completions.create(
-                model="Qwen/Qwen2.5-0.5B",
+                model="user.Qwen2.5-0.5B-HF-CPU",
                 prompt="Hello, how are you?",
                 stream=False,
                 max_tokens=10,
@@ -767,12 +773,6 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
     # Endpoint: /api/v1/chat/completions
     def test_019_test_llamacpp_chat_completion_streaming(self):
-        # Only run this test on Windows
-        if os.name != "nt":
-            self.skipTest(
-                "test_018_test_llamacpp_chat_completion_streaming runs only on Windows."
-            )
-
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -795,6 +795,52 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         assert chunk_count > 5
         assert len(complete_response) > 5
+
+    # Endpoint: /api/v1/delete
+    async def test_020_test_delete_model(self):
+        """Test the delete endpoint functionality"""
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+
+            # First, ensure the test model is available by pulling it
+            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+            assert pull_response.status_code == 200
+
+            # Verify the model is in the models list
+            models_response = await client.get("/models")
+            assert models_response.status_code == 200
+            models_data = models_response.json()
+            model_ids = [model["id"] for model in models_data["data"]]
+            assert (
+                MODEL_NAME in model_ids
+            ), f"Model {MODEL_NAME} not found in models list"
+
+            # Test deleting the model
+            delete_response = await client.post(
+                "/delete", json={"model_name": MODEL_NAME}
+            )
+            assert delete_response.status_code == 200
+            delete_data = delete_response.json()
+            assert delete_data["status"] == "success"
+            assert MODEL_NAME in delete_data["message"]
+
+            # Verify the model is no longer in the models list
+            models_response = await client.get("/models")
+            assert models_response.status_code == 200
+            models_data = models_response.json()
+            model_ids = [model["id"] for model in models_data["data"]]
+            assert (
+                MODEL_NAME not in model_ids
+            ), f"Model {MODEL_NAME} still found in models list after deletion"
+
+            # Test deleting a non-existent model (should return error)
+            delete_response = await client.post(
+                "/delete", json={"model_name": "NonExistentModel"}
+            )
+            assert delete_response.status_code == 422  # Unprocessable Entity
+
+            # Re-pull the model for subsequent tests
+            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+            assert pull_response.status_code == 200
 
 
 if __name__ == "__main__":

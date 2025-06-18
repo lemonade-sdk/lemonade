@@ -52,7 +52,6 @@ import subprocess
 import sys
 from typing import Optional
 import zipfile
-import requests
 
 DEFAULT_RYZEN_AI_VERSION = "1.4.0"
 version_info_filename = "version_info.json"
@@ -192,6 +191,8 @@ def get_oga_hybrid_dir():
 
 def download_lfs_file(token, file, output_filename):
     """Downloads a file from LFS"""
+    import requests
+
     # Set up the headers for the request
     headers = {
         "Authorization": f"token {token}",
@@ -229,6 +230,8 @@ def download_lfs_file(token, file, output_filename):
 
 
 def download_file(url: str, output_filename: str, description: str = None):
+    import requests
+
     try:
         response = requests.get(url)
         if response.status_code != 200:
@@ -278,51 +281,54 @@ def check_ryzen_ai_processor():
     cpu_name = ""
 
     try:
-        # Use Windows registry to get CPU information
+        # Use PowerShell command to get processor name
+        powershell_cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty Name",
+        ]
+
         result = subprocess.run(
-            [
-                "reg",
-                "query",
-                "HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                "/v",
-                "ProcessorNameString",
-            ],
+            powershell_cmd,
             capture_output=True,
             text=True,
             check=True,
         )
 
-        # Parse the output to extract the CPU name
-        for line in result.stdout.splitlines():
-            if "ProcessorNameString" in line:
-                # The format is typically: name REG_SZ value
-                parts = line.strip().split("REG_SZ")
-                if len(parts) >= 2:
-                    cpu_name = parts[1].strip()
-                break
+        # Extract the CPU name from PowerShell output
+        cpu_name = result.stdout.strip()
+        if not cpu_name:
+            print(
+                "[WARNING]: Could not detect processor name. Proceeding with installation."
+            )
+            return
 
         # Check for any supported series
         for series in SUPPORTED_RYZEN_AI_SERIES:
             # Look for the series number pattern - matches any processor in the supported series
             pattern = rf"ryzen ai.*\b{series[0]}\d{{2}}\b"
             match = re.search(pattern, cpu_name.lower(), re.IGNORECASE)
+
             if match:
                 is_supported = True
                 break
 
-    except Exception:  # pylint: disable=broad-exception-caught
-        supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
-        raise UnsupportedPlatformError(
-            f"Ryzen AI installation requires a Ryzen AI {supported_series_str} "
-            f"series processor. Processor detection failed."
-        )
+        if not is_supported:
+            print(
+                f"[WARNING]: Processor '{cpu_name}' may not be officially supported for Ryzen AI hybrid execution."
+            )
+            print(
+                "[WARNING]: Installation will proceed, but hybrid features may not work correctly."
+            )
+            print("[WARNING]: Officially supported processors: Ryzen AI 300-series")
 
-    if not is_supported:
-        supported_series_str = ", ".join(SUPPORTED_RYZEN_AI_SERIES)
-        raise UnsupportedPlatformError(
-            f"Ryzen AI installation requires a Ryzen AI {supported_series_str} "
-            f"series processor. Your current processor ({cpu_name}) is not supported."
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(
+            f"[WARNING]: Could not detect processor ({e}). Proceeding with installation."
         )
+        print("[WARNING]: Hybrid features may not work if processor is not supported.")
 
 
 def download_and_extract_package(
@@ -343,6 +349,8 @@ def download_and_extract_package(
     Returns:
         str: Path where package was extracted (renamed to package-version)
     """
+    import requests
+
     zip_filename = f"{package_name}-{version}.zip"
     zip_path = os.path.join(install_dir, zip_filename)
     target_folder = os.path.join(install_dir, f"{package_name}-{version}")
@@ -700,6 +708,7 @@ class Install:
             raise ValueError(
                 f"Value passed to ryzenai argument is not supported: {ryzenai}"
             )
+
         if build_model:
             model_prep_file = Install._install_ryzenai_model_artifacts(
                 ryzen_ai_folder, version

@@ -193,13 +193,15 @@
         "mmproj": "mmproj-model-f16.gguf",
         "recipe": "llamacpp",
         "reasoning": false,
-        "suggested": true
+        "suggested": true,
+        "labels": ["vision"]
     },
-    "Qwen2.5-VL-7B-Instruct": {
+    "Qwen2.5-VL-7B-Instruct-GGUF": {
         "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
         "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
         "recipe": "llamacpp",
         "reasoning": false,
-        "suggested": true
+        "suggested": true,
+        "labels": ["vision"]
     }
 }

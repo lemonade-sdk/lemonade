@@ -327,10 +327,9 @@ window.lmnRender = function() {
   var cmd = '';
   var link = '';
   var condaBlock = '';
-  var bashBlock = '';
-  // Conda instructions for all pip/from source installs
-  if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw !== 'llama') {
-    condaBlock = '<div style="margin-bottom:0.5em"><a href="https://github.com/conda-forge/miniforge#miniforge3" target="_blank" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em;">Download and Install Miniforge</a></div>';
+  var bashBlock = '';  // Conda instructions for all pip/from source installs
+  if (lmnState.method === 'pypi' || lmnState.method === 'src') {
+    condaBlock = '<div style="margin-bottom:0.5em"><a href="https://github.com/conda-forge/miniforge?tab=readme-ov-file#install" target="_blank" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em;">Download and Install Miniforge</a></div>';
   }
   // Set command and link
   if (lmnState.method === 'gui') {
@@ -366,31 +365,30 @@ window.lmnRender = function() {
         } else {
           cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm]';
         }
+      }    } else if (lmnState.fw === 'llama') {
+      if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
+        if (lmnState.method === 'pypi') {
+          cmd = 'pip install lemonade-sdk[llm-oga-cpu]';
+        } else {
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-cpu]';
+        }
       }
-    } else if (lmnState.fw === 'llama') {
-      cmd = 'See llama.cpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em; display:inline-block;">llamacpp.md</a>';
-      link = 'https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md';
     }
-  }
-  // Now set the label based on what will be rendered
+  }  // Now set the label based on what will be rendered
   var label = '';
   if (link && cmd !== '' && lmnState.method === 'gui') {
     label = 'Install this tool:';
-  } else if (link && cmd !== '' && lmnState.fw === 'llama' && (lmnState.method === 'pypi' || lmnState.method === 'src')) {
-    label = 'Read this:';  } else if (cmd) {
-    var gitCloneLines = (lmnState.method === 'src' && lmnState.fw !== 'llama') ? 2 : 0; // git clone + cd
+  } else if (cmd) {
+    var gitCloneLines = (lmnState.method === 'src') ? 2 : 0; // git clone + cd
     var cmdLines = (condaBlock ? 2 : 0) + gitCloneLines + (cmd ? cmd.split('\n').length : 0);
     label = cmdLines > 1 ? 'Run these Commands:' : 'Run this Command:';
   } else {
     label = '';
   }
-  var cmdDiv = document.getElementById('lmn-command');
-  var labelDiv = document.getElementById('lmn-command-label');
+  var cmdDiv = document.getElementById('lmn-command');  var labelDiv = document.getElementById('lmn-command-label');
   labelDiv.textContent = label;
   if (link && cmd !== '' && lmnState.method === 'gui') {
     cmdDiv.innerHTML = '<div class="lmn-command"><a id="lmn-link" href="'+link+'" class="lmn-btn">'+cmd+'</a></div>';
-  } else if (link && cmd !== '' && lmnState.fw === 'llama') {
-    cmdDiv.innerHTML = '<div class="lmn-command">' + cmd + '</div>';
   } else if (cmd) {
     var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash">' +
       (condaBlock ? 'conda create -n lemon python=3.10\nconda activate lemon\n' : '') +
@@ -400,6 +398,10 @@ window.lmnRender = function() {
     // Add hybrid note if Hybrid is selected with PyPI or From Source
     if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.dev === 'hybrid') {
       cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">Hybrid requires an AMD Ryzen AI 300-series PC with Windows 11.</div>';
+    }
+    // Add llama.cpp benchmarking note if CPU is selected with PyPI or From Source
+    if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw === 'llama' && lmnState.dev === 'cpu') {
+      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">For benchmarking, see the llamacpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md" target="_blank" style="color:#e6b800; text-decoration:underline;">llamacpp.md</a></div>';
     }
   } else {
     cmdDiv.innerHTML = '';

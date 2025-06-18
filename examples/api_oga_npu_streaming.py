@@ -13,7 +13,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 
 from threading import Thread
 from lemonade.api import from_pretrained
-from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
+from lemonade.tools.oga.utils import OrtGenaiStreamer
 
 model, tokenizer = from_pretrained(
     "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",

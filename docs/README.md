@@ -1,21 +1,10 @@
 # 🍋 Lemonade SDK
 
-Lemonade SDK is built on top of [OnnxRuntime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai), an ONNX LLM inference engine developed by Microsoft to improve the LLM experience on AI PCs, especially those with accelerator hardware such as Neural Processing Units (NPUs).
-
-The Lemonade SDK provides everything needed to get up and running quickly with LLMs on OGA:
-
-| **Feature**                              | **Description**                                                                                     |
-|------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| **🌐 Local LLM server with OpenAI API compatibility (Lemonade Server)** | Replace cloud-based LLMs with private and free LLMs that run locally on your own PC's NPU and GPU. |
-| **🖥️ CLI with tools for prompting, benchmarking, and accuracy tests**  | Enables convenient interoperability between models, frameworks, devices, accuracy tests, and deployment options. |
-| **🐍 Python API based on `from_pretrained()`**                          | Provides easy integration with Python applications for loading and using LLMs.                      |
-
-
 <div class="hide-in-mkdocs">
 
-## Table of Contents
-
 - [Installation](#installation)
+  - [Hybrid Execution](#hybrid-execution)
+  - [GPU Execution](#gpu-execution)
 - [CLI Commands](#cli-commands)
   - [Prompting](#prompting)
   - [Accuracy](#accuracy)
@@ -40,6 +29,17 @@ For a quick start with Hugging Face (PyTorch) LLMs on CPU, run the following ins
 pip install lemonade-sdk[llm]
 ```
 
+### NPU and Hybrid Execution
+
+Ryzen™ AI 300-series devices have a neural processing unit (NPU) that can run LLMs and accelerate time-to-first-token (TTFT) performance.
+
+The typical way of utilizing the NPU is called *hybrid execution*, where the prompt is processed on the NPU to produce the first token, and the remaining tokens are computed on the Ryzen AI integrated GPU (iGPU).
+
+### GPU Execution
+
+PCs with an integrated GPU (iGPU), such as many laptop SoCs, and/or discrete GPU (dGPU), such as many desktop and workstation PCs, can run LLMs on that GPU hardware. Lemonade Server provides GPU support in every installation via the Vulkan llama.cpp binaries. 
+
+> Note: GPU support is not currently provided for CLI tasks such as benchmarking.
 
 ## CLI Commands
 

@@ -7,11 +7,12 @@ import lemonade.common.status as status
 from lemonade.tools import FirstTool
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.cache import Keys
-from lemonade.tools.huggingface_load import get_base_model
 
 
 class LlamaCppAdapter(ModelAdapter):
-    def __init__(self, model, output_tokens, context_size, threads, executable):
+    def __init__(
+        self, model, output_tokens, context_size, threads, executable, lib_dir=None
+    ):
         super().__init__()
 
         self.model = os.path.normpath(model)
@@ -19,6 +20,7 @@ class LlamaCppAdapter(ModelAdapter):
         self.context_size = context_size
         self.threads = threads
         self.executable = os.path.normpath(executable)
+        self.lib_dir = lib_dir
 
     def generate(
         self,
@@ -78,6 +80,15 @@ class LlamaCppAdapter(ModelAdapter):
         cmd = [str(m) for m in cmd]
 
         try:
+            # Set up environment with library path for Linux
+            env = os.environ.copy()
+            if self.lib_dir and os.name != "nt":  # Not Windows
+                current_ld_path = env.get("LD_LIBRARY_PATH", "")
+                if current_ld_path:
+                    env["LD_LIBRARY_PATH"] = f"{self.lib_dir}:{current_ld_path}"
+                else:
+                    env["LD_LIBRARY_PATH"] = self.lib_dir
+
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -85,6 +96,7 @@ class LlamaCppAdapter(ModelAdapter):
                 universal_newlines=True,
                 encoding="utf-8",
                 errors="replace",
+                env=env,
             )
 
             raw_output, stderr = process.communicate(timeout=600)
@@ -208,10 +220,13 @@ class LoadLlamaCpp(FirstTool):
         output_tokens: int = 512,
         model_binary: Optional[str] = None,
         executable: str = None,
+        lib_dir: Optional[str] = None,
     ) -> State:
         """
         Load a llama.cpp model
         """
+
+        from lemonade.common.network import get_base_model
 
         if executable is None:
             raise Exception(f"{self.__class__.unique_name} requires an executable path")
@@ -241,6 +256,7 @@ class LoadLlamaCpp(FirstTool):
             context_size=context_size,
             threads=threads,
             executable=executable,
+            lib_dir=lib_dir,
         )
         state.tokenizer = PassthroughTokenizer()
 

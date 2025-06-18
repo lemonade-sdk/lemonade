@@ -4,9 +4,6 @@ import tarfile
 from pathlib import Path
 from typing import List, Optional
 import subprocess
-import numpy as np
-import pandas as pd
-import requests
 from lemonade.state import State
 from lemonade.tools import Tool
 import lemonade.common.printing as printing
@@ -83,6 +80,9 @@ class AccuracyMMLU(Tool):
         data_dir: Optional[str] = None,
         tests: List[str] = None,
     ) -> State:
+
+        import numpy as np
+        import pandas as pd
 
         if data_dir:
             data_dir_to_use = data_dir
@@ -224,18 +224,6 @@ class AccuracyMMLU(Tool):
         return state
 
 
-def _list_tests(data_dir):
-    """Lists all available tests based on the files in the test data directory."""
-    test_files = [
-        f for f in os.listdir(os.path.join(data_dir, "test")) if f.endswith("_test.csv")
-    ]
-    print(
-        "Available tests:",
-        *[f.replace("_test.csv", "") for f in sorted(test_files)],
-        sep="\n",
-    )
-
-
 def _format_subject(subject):
     """Formats a subject string by replacing underscores with spaces."""
     return " ".join(subject.split("_"))
@@ -243,6 +231,8 @@ def _format_subject(subject):
 
 def _safe_read_csv(path):
     """Safely reads a CSV file and returns a DataFrame."""
+    import pandas as pd
+
     try:
         return pd.read_csv(path, header=None)
     except FileNotFoundError:
@@ -291,6 +281,8 @@ def download_and_extract_dataset(data_cache_dir: str, dataset_url: str):
     """
     Download the dataset from the given URL and extract it into the target directory.
     """
+
+    import requests
 
     # Create the directory if it does not exist
     Path(data_cache_dir).mkdir(parents=True, exist_ok=True)

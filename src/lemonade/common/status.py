@@ -7,12 +7,10 @@ import dataclasses
 from typing import Callable, List, Union, Dict, Optional
 import textwrap
 import psutil
-import torch
 from lemonade.common import printing
 from lemonade.state import State
 import lemonade.common.build as build
 import lemonade.common.filesystem as fs
-import lemonade.common.analyze_model as analyze_model
 
 
 def _pretty_print_key(key: str) -> str:
@@ -64,7 +62,6 @@ class SkipFields:
 
     file_name: bool = False
     model_name: bool = False
-    parameters: bool = False
     location: bool = False
     input_shape: bool = False
     build_dir: bool = False
@@ -146,18 +143,6 @@ class UniqueInvocationInfo(BasicInfo):
             else:
                 print(f", line {self.line}")
             self.skip.location = True
-
-    def _print_parameters(self):
-        if self.skip.parameters or self.params is None:
-            return
-
-        # Display number of parameters and size
-        parameters_size = parameters_to_size(self.params)
-        print(
-            f"{self.indent}\tParameters:\t{'{:,}'.format(self.params)} ({parameters_size})"
-        )
-
-        self.skip.parameters = True
 
     def _print_unique_input_shape(
         self,
@@ -348,7 +333,6 @@ class UniqueInvocationInfo(BasicInfo):
         if (self.depth == 0 and not model_visited) or (self.depth != 0):
             # Print this information only once per model
             self._print_location()
-            self._print_parameters()
         self._print_unique_input_shape(
             exec_time_formatted, invocation_idx, multiple_unique_invocations
         )
@@ -362,15 +346,12 @@ class UniqueInvocationInfo(BasicInfo):
 
 @dataclasses.dataclass
 class ModelInfo(BasicInfo):
-    model: torch.nn.Module = None
+    model: str = None
     old_forward: Union[Callable, None] = None
     unique_invocations: Union[Dict[str, UniqueInvocationInfo], None] = (
         dataclasses.field(default_factory=dict)
     )
     last_unique_invocation_executed: Union[str, None] = None
-
-    def __post_init__(self):
-        self.params = analyze_model.count_parameters(self.model)
 
 
 def recursive_print(
@@ -447,7 +428,7 @@ def stop_logger_forward() -> None:
 def add_to_state(
     state: State,
     name: str,
-    model: Union[str, torch.nn.Module],
+    model: str,
     extension: str = "",
     input_shapes: Optional[Dict] = None,
 ):

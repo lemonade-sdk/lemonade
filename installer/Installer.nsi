@@ -2,6 +2,9 @@
 
 !define /ifndef NPU_DRIVER_VERSION "32.0.203.237"
 
+; Request user rights only (no admin)
+RequestExecutionLevel user
+
 ; Define main variables
 Name "Lemonade Server"
 OutFile "Lemonade_Server_Installer.exe"
@@ -37,8 +40,8 @@ Section "Install Main Components" SEC01
 SectionIn RO ; Read only, always installed
   DetailPrint "Main Installation Section"
 
-  ; Once we're done downloading and installing the pip packages the size comes out to about 2GB
-  AddSize 2097152
+  ; Once we're done downloading and installing the pip packages the size comes out to about 413 MB
+  AddSize 433672
 
   ; Check if directory exists before proceeding
   IfFileExists "$INSTDIR\*.*" 0 continue_install
@@ -91,11 +94,13 @@ SectionIn RO ; Read only, always installed
 
     # Pack lemonade repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py lemonade_notification.vbs lemonade_server_hidden.vbs
 
     # Create bin directory and move lemonade-server.bat there
     CreateDirectory "$INSTDIR\bin"
     Rename "$INSTDIR\lemonade-server.bat" "$INSTDIR\bin\lemonade-server.bat"
+    Rename "$INSTDIR\lemonade_notification.vbs" "$INSTDIR\bin\lemonade_notification.vbs"
+    Rename "$INSTDIR\lemonade_server_hidden.vbs" "$INSTDIR\bin\lemonade_server_hidden.vbs"
 
     DetailPrint "- Packaged repo"
 
@@ -119,9 +124,9 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
     ${If} $HYBRID_SELECTED == "true"
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm-oga-hybrid] --no-warn-script-location' $8
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-hybrid-minimal] --no-warn-script-location' $8
     ${Else}
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[llm-oga-cpu] --no-warn-script-location' $8
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu-minimal] --no-warn-script-location' $8
     ${EndIf}
     DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 
@@ -133,7 +138,7 @@ SectionIn RO ; Read only, always installed
 
       DetailPrint "*** INSTALLATION COMPLETED ***"
       # Create a shortcut inside $INSTDIR
-      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server_hidden.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
 
       ; Add bin folder to user PATH
       DetailPrint "- Adding bin directory to user PATH..."
@@ -248,7 +253,7 @@ SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
-    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade-server.bat" "serve --keep-alive" "$INSTDIR\img\favicon.ico"
+    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server_hidden.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
   ${EndIf}
 SectionEnd
 
@@ -257,11 +262,12 @@ Function RunServer
 FunctionEnd
 
 ; Define constants for better readability
-!define ICON_FILE "..\img\favicon.ico"
+!define ICON_FILE "..\src\lemonade\tools\server\static\favicon.ico"
 
 ; Finish Page settings
 !define MUI_TEXT_FINISH_INFO_TITLE "$LEMONADE_SERVER_STRING installed successfully!"
 !define MUI_TEXT_FINISH_INFO_TEXT "A shortcut has been added to your Desktop. What would you like to do next?"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "installer_banner.bmp"
 
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION RunServer
@@ -370,6 +376,7 @@ FunctionEnd
 
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "English"
 
@@ -444,8 +451,8 @@ Function .onInit
   ; Check CPU name to determine if Hybrid section should be enabled
   DetailPrint "Checking CPU model..."
   
-  ; Use registry query to get CPU name
-  nsExec::ExecToStack 'reg query "HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0" /v ProcessorNameString'
+  ; Use WMI via PowerShell to get CPU name
+  nsExec::ExecToStack 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty Name"'
   Pop $0 ; Return value
   Pop $cpuName ; Output (CPU name)
   DetailPrint "Detected CPU: $cpuName"

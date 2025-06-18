@@ -2,7 +2,6 @@ import os
 import time
 import textwrap
 from multiprocessing import Process, Queue
-import matplotlib.pyplot as plt
 import psutil
 import yaml
 import lemonade.common.filesystem as fs
@@ -101,6 +100,9 @@ class MemoryTracker(Profiler):
             self.tracking_active = False
 
     def generate_results(self, state, timestamp, _):
+
+        import matplotlib.pyplot as plt
+
         if self.tracker_process is None:
             return
 

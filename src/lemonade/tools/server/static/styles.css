@@ -295,6 +295,484 @@ body {
   cursor: wait;
 }
 
+/* Model label styles */
+.model-label {
+  display: inline-block;
+  background-color: #007acc;
+  color: white;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.model-label.reasoning {
+  background-color: #808080;
+}
+
+.model-label.vision {
+  background-color: #007acc;
+}
+
+.model-label.other {
+  background-color: #27ae60;
+}
+
+.model-labels-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Model Registration Form */
+.model-mgmt-register-form {
+  background: linear-gradient(135deg, #ffffff 0%, #fefdfb 100%);
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  margin-bottom: 1.5em;
+  padding: 1.5em 2em 1.2em 2em;
+  max-width: 750px;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+  position: relative;
+  overflow: visible;
+  transition: padding 0.3s ease;
+}
+
+/* Collapsed state */
+.model-mgmt-register-form.collapsed {
+  padding: 1.5em 2em 1.2em 2em;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.model-mgmt-register-form.collapsed .form-content {
+  display: none;
+}
+
+.model-mgmt-register-form::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #e6b800, #f4c842, #e6b800);
+  border-radius: 12px 12px 0 0;
+}
+
+.model-mgmt-form-title {
+  margin-top: 0;
+  color: #1a1a1a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 1.2em;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.model-mgmt-form-title:hover {
+  color: #333;
+}
+
+/* Collapsed state title margin adjustment */
+.model-mgmt-register-form.collapsed .model-mgmt-form-title {
+  margin-bottom: 0;
+}
+
+.model-mgmt-form-title::before {
+  content: '▶';
+  font-size: 0.8em;
+  color: #666;
+  transition: transform 0.3s ease;
+  transform-origin: center;
+}
+
+/* Rotate chevron when expanded */
+.model-mgmt-register-form:not(.collapsed) .model-mgmt-form-title::before {
+  transform: rotate(90deg);
+}
+
+/* Hide the separate toggle indicator since we're using the gear */
+.form-toggle-indicator {
+  display: none;
+}
+
+/* Specific styling for title tooltip */
+.model-mgmt-form-title .tooltip-icon {
+  margin-left: 12px;
+  font-size: 16px;
+}
+
+.model-mgmt-form-title .tooltip-icon::after {
+  width: 250px;
+  font-size: 13px;
+  left: auto;
+  right: 0;
+  transform: translateX(0);
+}
+
+.model-mgmt-form-title .tooltip-icon:hover::after {
+  transform: translateX(0) translateY(-2px);
+}
+
+.register-form-row {
+  display: flex;
+  align-items: center;
+  gap: 1.2em;
+  margin-bottom: 1em;
+  padding: 0.1em 0;
+  position: relative;
+}
+
+.register-form-row-tight {
+  margin-bottom: 0.8em;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.register-form-row:last-child {
+  margin-bottom: 0;
+  margin-top: 1.4em;
+  padding-top: 1em;
+  border-top: 1px solid #f0f0f0;
+}
+
+.register-label {
+  min-width: 120px;
+  color: #333;
+  font-weight: 600;
+  font-size: 0.95em;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.85em;
+}
+
+.register-label.reasoning-inline {
+  margin-left: 1.5em;
+  font-weight: 500;
+  font-size: 0.9em;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.register-label.reasoning-inline input[type="checkbox"] {
+  transform: scale(1.1);
+  accent-color: #e6b800;
+}
+
+.register-model-name-group {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.register-model-name-group:focus-within {
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
+}
+
+.register-model-prefix {
+  background: #e6b800;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 4px 0 0 4px;
+  padding: 0.45em 0.7em;
+  font-size: 1em;
+  border: 1px solid #ddd;
+  border-right: none;
+}
+
+.styled-prefix {
+  background: linear-gradient(135deg, #f8f8f8 0%, #f0f0f0 100%);
+  color: #666;
+  border: 1px solid #d5d5d5;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  padding: 0.6em 0.8em;
+  font-size: 0.95em;
+  font-family: inherit;
+  font-weight: 500;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+  min-width: 50px;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+#register-model-name {
+  border-radius: 0 6px 6px 0;
+  border: 1px solid #d5d5d5;
+  border-left: none;
+  padding: 0.6em 0.8em;
+  font-size: 0.95em;
+  background: #fff;
+  color: #222;
+  flex: 1;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+#register-model-name:focus {
+  border-color: #e6b800;
+}
+
+.form-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+#register-recipe {
+  min-width: 160px;
+  flex: 1;
+  border-radius: 6px;
+  border: 1px solid #d5d5d5;
+  padding: 0.6em 0.8em;
+  font-size: 0.95em;
+  background: #fff;
+  color: #222;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+#register-recipe:focus {
+  border-color: #e6b800;
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
+}
+
+.register-doc-link {
+  margin-left: 0.8em;
+  color: #007acc;
+  font-size: 0.9em;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  padding: 0.3em 0.6em;
+  border-radius: 4px;
+  background: rgba(0,122,204,0.1);
+  border: 1px solid rgba(0,122,204,0.2);
+  white-space: nowrap;
+}
+
+.register-doc-link:hover {
+  color: #fff;
+  background: #007acc;
+  border-color: #007acc;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,122,204,0.3);
+}
+
+#register-mmproj, #register-checkpoint {
+  border-radius: 6px;
+  border: 1px solid #d5d5d5;
+  padding: 0.6em 0.8em;
+  font-size: 0.95em;
+  background: #fff;
+  color: #222;
+  flex: 1;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+#register-mmproj:focus, #register-checkpoint:focus {
+  border-color: #e6b800;
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
+}
+
+#register-submit {
+  background: linear-gradient(135deg, #e6b800 0%, #f4c842 100%);
+  color: #222;
+  border: none;
+  border-radius: 8px;
+  padding: 0.8em 2em;
+  font-weight: 700;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 0;
+  box-shadow: 0 3px 12px rgba(230,184,0,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  position: relative;
+  overflow: hidden;
+}
+
+#register-submit::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transition: left 0.5s ease;
+}
+
+#register-submit:hover:enabled {
+  background: linear-gradient(135deg, #d4a500 0%, #e6b800 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(230,184,0,0.4);
+}
+
+#register-submit:hover:enabled::before {
+  left: 100%;
+}
+
+#register-submit:disabled {
+  background: linear-gradient(135deg, #ccc 0%, #bbb 100%);
+  color: #666;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.register-status {
+  margin-left: 1.2em;
+  font-size: 0.95em;
+  font-weight: 600;
+  padding: 0.4em 0.8em;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+/* Make placeholder text in Add a Model form lighter and more elegant */
+#register-model-form input::placeholder {
+    color: #aaa;
+    opacity: 1;
+    font-style: italic;
+}
+
+#register-model-form input:focus::placeholder {
+    color: #ccc;
+    transform: translateX(4px);
+    transition: all 0.2s ease;
+}
+
+/* Success status styling */
+.register-status.success {
+  background: rgba(39, 174, 96, 0.1);
+  color: #27ae60;
+  border: 1px solid rgba(39, 174, 96, 0.3);
+}
+
+/* Error status styling */
+.register-status.error {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+/* Tooltip styles */
+.tooltip-icon {
+  display: inline;
+  color: #007acc;
+  font-size: 14px;
+  margin-left: 8px;
+  cursor: help;
+  position: relative;
+  text-transform: none;
+}
+
+.tooltip-icon:hover {
+  color: #0086ef;
+}
+
+.tooltip-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(28, 28, 30, 0.98);
+  color: white;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  width: 200px;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  line-height: 1.4;
+  pointer-events: none;
+  text-transform: none;
+}
+
+.tooltip-icon:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* Smart positioning for tooltips near edges */
+.tooltip-icon:nth-last-child(-n+2)::after,
+.register-form-row:last-child .tooltip-icon::after {
+  left: auto;
+  right: 0;
+  transform: translateX(0);
+  width: 180px;
+}
+
+.tooltip-icon:nth-last-child(-n+2):hover::after,
+.register-form-row:last-child .tooltip-icon:hover::after {
+  transform: translateX(0) translateY(-2px);
+}
+
+/* Adjust label layout to accommodate tooltip icon */
+.register-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+/* Adjust reasoning inline label for tooltip */
+.register-label.reasoning-inline {
+  align-items: center;
+}
+
+.register-label.reasoning-inline .tooltip-icon {
+  margin-left: 8px;
+}
+
+/* Special positioning for reasoning tooltip to prevent overflow */
+.register-label.reasoning-inline .tooltip-icon::after {
+  left: auto !important;
+  right: 0 !important;
+  transform: translateX(0) !important;
+  width: 160px !important;
+  max-width: 260px !important;
+  white-space: pre-line !important;
+  word-break: break-word !important;
+}
+
+.register-label.reasoning-inline .tooltip-icon:hover::after {
+  transform: translateX(0) translateY(-2px) !important;
+}
+
 @media (max-width: 600px) {
   .title { 
     font-size: 2rem; 
@@ -310,4 +788,94 @@ body {
     flex-direction: column;
     gap: 1em;
   }
+}
+
+@media (max-width: 800px) {
+  .model-mgmt-register-form {
+    padding: 1.2em 1em 1em 1em;
+    margin: 0 1em 1.5em 1em;
+  }
+  
+  .register-form-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6em;
+  }
+  
+  .register-label {
+    min-width: 0;
+    font-size: 0.9em;
+  }
+  
+  .register-label.reasoning-inline {
+    margin-left: 0;
+    margin-top: 0.5em;
+    justify-content: flex-start;
+  }
+  
+  #register-model-name, #register-mmproj, #register-checkpoint {
+    min-width: 0;
+    width: 100%;
+  }
+  
+  #register-recipe {
+    min-width: 0;
+    width: 100%;
+  }
+  
+  .register-doc-link {
+    margin-left: 0;
+    margin-top: 0.5em;
+    align-self: flex-start;
+  }
+  
+  .register-form-row:last-child {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1em;
+  }
+  
+  #register-submit {
+    padding: 0.8em 1.5em;
+    font-size: 0.9em;
+  }
+}
+
+/* Ensure form container allows tooltip overflow */
+.model-mgmt-register-form {
+  position: relative;
+  overflow: visible;
+}
+
+.register-form-row {
+  position: relative;
+}
+
+/* Additional positioning rules for better tooltip placement */
+.register-label .tooltip-icon::after {
+  width: 200px;
+}
+
+/* Ensure tooltips for rightmost elements don't get cut off */
+.register-form-row-tight .tooltip-icon:last-child::after {
+  left: auto;
+  right: 0;
+  transform: translateX(0);
+  width: 180px;
+}
+
+.register-form-row-tight .tooltip-icon:last-child:hover::after {
+  transform: translateX(0) translateY(-2px);
+}
+
+.register-form-row-tight .tooltip-icon:last-child::before {
+  left: auto;
+  right: 8px;
+  transform: translateX(0);
+}
+
+.register-form-row-tight .tooltip-icon:last-child:hover::before {
+  transform: translateX(0) translateY(-2px);
 }

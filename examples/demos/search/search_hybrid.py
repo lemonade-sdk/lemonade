@@ -2,7 +2,7 @@ import sys
 from threading import Thread, Event
 from transformers import StoppingCriteriaList
 from lemonade.api import from_pretrained
-from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
+from lemonade.tools.oga.utils import OrtGenaiStreamer
 from lemonade.tools.server.serve import StopOnEvent
 
 employee_handbook = """

@@ -57,7 +57,7 @@ def from_pretrained(
         # Huggingface supports all checkpoints, so there is nothing to check for
 
         import torch
-        from lemonade.tools.huggingface_load import HuggingfaceLoad
+        from lemonade.tools.huggingface.load import HuggingfaceLoad
 
         state = _make_state(recipe, checkpoint)
 
@@ -73,7 +73,7 @@ def from_pretrained(
         # Huggingface Transformers recipe for discrete GPU (Nvidia, Instinct, Radeon)
 
         import torch
-        from lemonade.tools.huggingface_load import HuggingfaceLoad
+        from lemonade.tools.huggingface.load import HuggingfaceLoad
 
         state = _make_state(recipe, checkpoint)
 
@@ -87,7 +87,7 @@ def from_pretrained(
         return state.model, state.tokenizer
 
     elif recipe.startswith("oga-"):
-        import lemonade.tools.ort_genai.oga as oga
+        import lemonade.tools.oga.load as oga
 
         # Make sure the user chose a supported runtime, e.g., oga-cpu
         user_backend = recipe.split("oga-")[1]

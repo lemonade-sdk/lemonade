@@ -4,23 +4,81 @@
 
 ## 🍋 Lemonade SDK: Quickly serve, benchmark and deploy LLMs
 
-The [Lemonade SDK](./docs/README.md) is designed to make it easy to serve, benchmark, and deploy large language models (LLMs) on a variety of hardware platforms, including CPU, GPU, and NPU. 
+The [Lemonade SDK](./docs/README.md) makes it easy to run Large Language Models (LLMs) on your PC. Our focus is using the best tools, such as neural processing units (NPUs) and Vulkan GPU acceleration, to maximize LLM speed and responsiveness.
 
 <div align="center">
   <img src="https://download.amd.com/images/lemonade_640x480_1.gif" alt="Lemonade Demo" title="Lemonade in Action">
 </div>
 
+### Features
+
 The [Lemonade SDK](./docs/README.md) is comprised of the following:
 
-- 🌐 **Lemonade Server**: A server interface that uses the standard Open AI API, allowing applications to integrate with local LLMs.
-- 🐍 **Lemonade Python API**: Offers High-Level API for easy integration of Lemonade LLMs into Python applications and Low-Level API for custom experiments.
-- 🖥️ **Lemonade CLI**: The `lemonade` CLI lets you mix-and-match LLMs, frameworks (PyTorch, ONNX, GGUF), and measurement tools to run experiments. The available tools are:
-  - Prompting an LLM.
-  - Measuring the accuracy of an LLM using a variety of tests.
-  - Benchmarking an LLM to get the time-to-first-token and tokens per second.
-  - Profiling the memory usage of an LLM.
+- 🌐 **[Lemonade Server](https://lemonade-server.ai/docs)**: A local LLM server for running ONNX and GGUF models using the OpenAI API standard. Install and enable your applications with NPU and GPU acceleration in minutes.
+- 🐍 **Lemonade API**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
+- 🖥️ **Lemonade CLI**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with measurement tools to characterize your models on your hardware. The available tools are:
+  - Prompting with templates.
+  - Measuring accuracy with a variety of tests.
+  - Benchmarking to get the time-to-first-token and tokens per second.
+  - Profiling the memory utilization.
 
 ### [Click here to get started with Lemonade.](./docs/README.md)
+
+### Supported Configurations
+
+Maximum LLM performance requires the right hardware accelerator with the right inference engine for your scenario. Lemonade supports the following configurations, while also making it easy to switch between them at runtime.
+
+<table border="1" cellpadding="6" cellspacing="0">
+  <thead>
+    <tr>
+      <th rowspan="2">Hardware</th>
+      <th colspan="3" align="center">🛠️ Engine Support</th>
+      <th colspan="2" align="center">🖥️ OS (x86/x64)</th>
+    </tr>
+    <tr>
+      <th align="center">OGA</th>
+      <th align="center">llamacpp</th>
+      <th align="center">HF</th>
+      <th align="center">Windows</th>
+      <th align="center">Linux</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>🧠 CPU</td>
+      <td align="center">All platforms</td>
+      <td align="center">All platforms</td>
+      <td align="center">All platforms</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>🎮 GPU</td>
+      <td align="center">—</td>
+      <td align="center">Vulkan: All platforms<br><small>Focus: Radeon™ 7000/9000</small></td>
+      <td align="center">—</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>🤖 NPU</td>
+      <td align="center">AMD Ryzen™ AI 300 series</td>
+      <td align="center">—</td>
+      <td align="center">—</td>
+      <td align="center">✅</td>
+      <td align="center">—</td>
+    </tr>
+  </tbody>
+</table>
+
+
+
+#### Inference Engines Overview
+| Engine | Description |
+| :--- | :--- |
+| **OnnxRuntime GenAI (OGA)** | Microsoft engine that runs `.onnx` models and enables hardware vendors to provide their own execution providers (EPs) to support specialized hardware, such as neural processing units (NPUs). |
+| **llamacpp** | Community-driven engine with strong GPU acceleration, support for thousands of `.gguf` models, and advanced features such as vision-language models (VLMs) and mixture-of-experts (MoEs). |
+| **Hugging Face (HF)** | Hugging Face's `transformers` library can run the original `.safetensors` trained weights for models on Meta's PyTorch engine, which provides a source of truth for accuracy measurement. |
 
 ## Contributing
 

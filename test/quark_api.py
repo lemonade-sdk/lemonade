@@ -4,7 +4,7 @@ import os
 from lemonade.state import State
 import lemonade.common.test_helpers as common
 from lemonade.tools.prompt import LLMPrompt
-from lemonade.tools.huggingface_load import HuggingfaceLoad
+from lemonade.tools.huggingface.load import HuggingfaceLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.quark.quark_load import QuarkLoad
 
