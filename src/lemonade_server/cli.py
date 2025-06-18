@@ -81,8 +81,30 @@ def stop():
     # Stop the server
     try:
         process = psutil.Process(running_pid)
+
+        # Get all child processes (including llama-server)
+        children = process.children(recursive=True)
+
+        # Terminate the main process first
         process.terminate()
+
+        # Then terminate all children
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass  # Child already terminated
+
+        # Wait for main process
         process.wait(timeout=10)
+
+        # Kill any children that didn't terminate gracefully
+        for child in children:
+            try:
+                if child.is_running():
+                    child.kill()
+            except psutil.NoSuchProcess:
+                pass  # Child already terminated
     except psutil.NoSuchProcess:
         # Process already terminated
         pass

@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
@@ -422,9 +423,6 @@ class LemonadeTray(SystemTray):
         self.server_thread = threading.Thread(target=self.start_server, daemon=True)
         self.server_thread.start()
 
-        # Close the loading notification
-        self.close_loading_notification()
-
         # Show initial notification
         self.show_balloon_notification(
             "Woohoo!",
@@ -452,3 +450,9 @@ class LemonadeTray(SystemTray):
 
         # Call parent exit method
         super().exit_app(icon, item)
+
+        # Stop the server using the CLI stop command to ensure a rigorous cleanup
+        # This must be a subprocess to ensure the cleanup doesnt kill itself
+        subprocess.Popen(
+            [sys.executable, "-m", "lemonade_server.cli", "stop"], shell=True
+        )

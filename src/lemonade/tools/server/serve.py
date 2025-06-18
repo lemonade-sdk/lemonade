@@ -1295,10 +1295,18 @@ class Server(ManagementTool):
                 self.llm_loaded
                 and config_to_use.checkpoint == self.llm_loaded.checkpoint
             ):
-                return {
-                    "status": "success",
-                    "message": f"Model already loaded: {config.model_name}",
-                }
+                if (
+                    self.llm_loaded.recipe == "llamacpp"
+                    and self.llama_server_process.poll()
+                ):
+                    # llama-server process has gone away for some reason, so we should
+                    # proceed with loading to get it back
+                    pass
+                else:
+                    return {
+                        "status": "success",
+                        "message": f"Model already loaded: {config.model_name}",
+                    }
 
             # Unload the current model if needed
             if self.llm_loaded:

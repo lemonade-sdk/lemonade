@@ -1,6 +1,14 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM Get current time in milliseconds since midnight
+for /f "tokens=1-4 delims=:.," %%a in ("!time!") do (
+    set /a "CURRENT_TIME=((((%%a*60)+1%%b %% 100)*60+1%%c %% 100)*1000)+1%%d %% 1000"
+)
+
+REM Use temp directory for the lock file
+set "LOCK_FILE=%TEMP%\lemonade_server.lock"
+
 REM Show a notification and run the server in tray mode.
 REM Note: command line arguments are parsed in order from left to right
 set TRAY=0
@@ -15,13 +23,26 @@ for %%a in (%*) do (
     )
 )
 
+REM Only check lock file if running in tray mode
+if %TRAY%==1 (
+    REM Check if another instance is starting (within last 10000 milliseconds)
+    if exist "!LOCK_FILE!" (
+        set /p STORED_TIME=<"!LOCK_FILE!"
+        set /a TIME_DIFF=!CURRENT_TIME!-!STORED_TIME!
+        
+        REM Only block if difference is positive and less than 10000 milliseconds (10 seconds)
+        if !TIME_DIFF! gtr 0 if !TIME_DIFF! lss 10000 (
+            echo Another instance of Lemonade Server is currently starting.
+            exit /b 3
+        )
+    )
+
+    REM Set the starting timestamp in lock file
+    echo !CURRENT_TIME!>"!LOCK_FILE!"
+)
+
 REM Change to parent directory where conda env and bin folders are located
 pushd "%~dp0.."
-
-if %TRAY%==1 (
-    REM Non-blocking call to show notification
-    start /min wscript "%~dp0lemonade_notification.vbs" "Lemonade Server" "Initializing Lemonade Server...\nThis window will close automatically when the server is ready."
-)
 
 REM Print exactly the command that will be run
 echo "Running: lemonade-server-dev %ARGS%"
@@ -31,10 +52,8 @@ call "%CD%\python\Scripts\lemonade-server-dev" !ARGS!
 set SERVER_ERRORLEVEL=%ERRORLEVEL%
 popd
 
-if %TRAY%==1 (
-    REM Close the loading notification
-    wmic process where "name='wscript.exe' and commandline like '%%lemonade_notification.vbs%%'" delete >nul 2>&1
-)
+REM Clean up lock file before any exit
+del "!LOCK_FILE!" 2>nul
 
 REM Provide a notification if the server is already running
 if %SERVER_ERRORLEVEL% equ 2 (

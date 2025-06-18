@@ -22,6 +22,7 @@ Var LEMONADE_SERVER_STRING
 Var HYBRID_SELECTED
 Var HYBRID_CLI_OPTION
 Var NO_DESKTOP_SHORTCUT
+Var ADD_TO_STARTUP
 
 ; Variables for CPU detection
 Var cpuName
@@ -94,13 +95,13 @@ SectionIn RO ; Read only, always installed
 
     # Pack lemonade repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
-    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py lemonade_notification.vbs lemonade_server_hidden.vbs
+    File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py lemonade_notification.vbs lemonade_server.vbs
 
     # Create bin directory and move lemonade-server.bat there
     CreateDirectory "$INSTDIR\bin"
     Rename "$INSTDIR\lemonade-server.bat" "$INSTDIR\bin\lemonade-server.bat"
     Rename "$INSTDIR\lemonade_notification.vbs" "$INSTDIR\bin\lemonade_notification.vbs"
-    Rename "$INSTDIR\lemonade_server_hidden.vbs" "$INSTDIR\bin\lemonade_server_hidden.vbs"
+    Rename "$INSTDIR\lemonade_server.vbs" "$INSTDIR\bin\lemonade_server.vbs"
 
     DetailPrint "- Packaged repo"
 
@@ -138,7 +139,7 @@ SectionIn RO ; Read only, always installed
 
       DetailPrint "*** INSTALLATION COMPLETED ***"
       # Create a shortcut inside $INSTDIR
-      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server_hidden.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
+      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
 
       ; Add bin folder to user PATH
       DetailPrint "- Adding bin directory to user PATH..."
@@ -253,12 +254,19 @@ SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
-    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server_hidden.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
+    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
   ${EndIf}
 SectionEnd
 
 Function RunServer
   ExecShell "open" "$INSTDIR\LEMONADE-SERVER.lnk"
+FunctionEnd
+
+Function AddToStartup
+  ; Delete existing shortcut if it exists
+  Delete "$SMSTARTUP\lemonade-server.lnk"
+  ; Create shortcut in the startup folder
+  CreateShortcut "$SMSTARTUP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
 FunctionEnd
 
 ; Define constants for better readability
@@ -273,6 +281,11 @@ FunctionEnd
 !define MUI_FINISHPAGE_RUN_FUNCTION RunServer
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !define MUI_FINISHPAGE_RUN_TEXT "Run Lemonade Server"
+
+!define MUI_FINISHPAGE_SHOWREADME ""
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Run at Startup"
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION AddToStartup
 
 Function .onSelChange
     ; Check hybrid selection status
@@ -429,6 +442,7 @@ Function .onInit
   StrCpy $LEMONADE_SERVER_STRING "Lemonade Server"
   StrCpy $HYBRID_SELECTED "true"
   StrCpy $NO_DESKTOP_SHORTCUT "false"
+  StrCpy $ADD_TO_STARTUP "false"
   
   ; Create a variable to store selected models
   StrCpy $9 ""  ; $9 will hold our list of selected models
@@ -446,6 +460,13 @@ Function .onInit
   ${GetOptions} $CMDLINE "/NoDesktopShortcut" $R0
   ${If} $R0 != ""
     StrCpy $NO_DESKTOP_SHORTCUT "true"
+  ${EndIf}
+
+  ; Check if AddToStartup parameter was used
+  ${GetOptions} $CMDLINE "/AddToStartup" $R0
+  ${If} $R0 != ""
+    StrCpy $ADD_TO_STARTUP "true"
+    Call AddToStartup
   ${EndIf}
 
   ; Check CPU name to determine if Hybrid section should be enabled

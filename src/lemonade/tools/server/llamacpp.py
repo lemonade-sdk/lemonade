@@ -7,6 +7,7 @@ import zipfile
 import re
 import threading
 import platform
+import shutil
 
 import requests
 from tabulate import tabulate
@@ -19,7 +20,7 @@ from lemonade_server.pydantic_models import ChatCompletionRequest, PullConfig
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.utils.port import find_free_port
 
-LLAMA_VERSION = "b5543"
+LLAMA_VERSION = "b5699"
 
 
 def get_llama_server_paths():
@@ -261,6 +262,10 @@ def _launch_llama_subprocess(
     # Add port and jinja to enable tool use
     base_command.extend(["--port", str(telemetry.port), "--jinja"])
 
+    # Use legacy reasoning formatting, since not all apps support the new
+    # reasoning_content field
+    base_command.extend(["--reasoning-format", "none"])
+
     # Configure GPU layers: 99 for GPU, 0 for CPU-only
     ngl_value = "99" if use_gpu else "0"
     command = base_command + ["-ngl", ngl_value]
@@ -305,6 +310,17 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
     # Get platform-specific paths at runtime
     llama_server_exe_dir, llama_server_exe_path = get_llama_server_paths()
 
+    # Check whether the llamacpp install needs an upgrade
+    version_txt_path = os.path.join(llama_server_exe_dir, "version.txt")
+    if os.path.exists(version_txt_path):
+        with open(version_txt_path, "r", encoding="utf-8") as f:
+            llamacpp_installed_version = f.read()
+
+        if llamacpp_installed_version != LLAMA_VERSION:
+            # Remove the existing install, which will trigger a new install
+            # in the next code block
+            shutil.rmtree(llama_server_exe_dir)
+
     # Download llama.cpp server if it isn't already available
     if not os.path.exists(llama_server_exe_dir):
         # Download llama.cpp server zip
@@ -336,7 +352,6 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
                 )
 
         # Save version.txt
-        version_txt_path = os.path.join(llama_server_exe_dir, "version.txt")
         with open(version_txt_path, "w", encoding="utf-8") as vf:
             vf.write(LLAMA_VERSION)
 

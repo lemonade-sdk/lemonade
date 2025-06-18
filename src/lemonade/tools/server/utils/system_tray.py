@@ -393,25 +393,3 @@ class SystemTray:
         ctypes.windll.kernel32.SetConsoleCtrlHandler(handler, True)
 
         return handler  # Return handler to keep it in scope
-
-    def close_loading_notification(self):
-        """
-        Close any running loading notification VBScript processes.
-        """
-        try:
-            # Filter for wscript.exe processes only
-            for proc in psutil.process_iter():
-                try:
-                    if proc.name().lower() == "wscript.exe":
-                        cmdline = proc.cmdline()
-                        if any("lemonade_notification.vbs" in arg for arg in cmdline):
-                            proc.terminate()
-                except (
-                    psutil.NoSuchProcess,
-                    psutil.AccessDenied,
-                    psutil.ZombieProcess,
-                ):
-                    pass
-        except Exception as e:
-            # Silently handle any exceptions since this is cleanup code
-            print(f"Warning: Exception while closing loading notification: {e}")
