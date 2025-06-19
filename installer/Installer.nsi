@@ -476,7 +476,14 @@ Function .onInit
   nsExec::ExecToStack 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty Name"'
   Pop $0 ; Return value
   Pop $cpuName ; Output (CPU name)
-  DetailPrint "Detected CPU: $cpuName"
+  
+  ; Check if WMI call was successful
+  ${If} $0 != "0"
+    DetailPrint "WMI CPU detection failed (return code: $0). Continuing with default behavior."
+    StrCpy $cpuName "Unknown CPU"
+  ${Else}
+    DetailPrint "Detected CPU: $cpuName"
+  ${EndIf}
   
   ; Check if CPU name contains "Ryzen AI" and a 3-digit number starting with 3
   StrCpy $isCpuSupported "false" ; Initialize CPU allowed flag to false
@@ -512,13 +519,18 @@ Function .onInit
   DetailPrint "CPU is compatible with Ryzen AI hybrid software: $isCpuSupported"
   
   ; Check if CPU is in the allowed models list
+  ; Only disable if we successfully detected an incompatible CPU
   ${If} $isCpuSupported != "true"
+    ${AndIf} $cpuName != "Unknown CPU"
     ; Disable Hybrid section if CPU is not in allowed list
     SectionGetFlags ${HybridSec} $0
     IntOp $0 $0 & ${SECTION_OFF}    ; Turn off selection
     IntOp $0 $0 | ${SF_RO}          ; Make it read-only (can't be selected)
     SectionSetFlags ${HybridSec} $0
     StrCpy $HYBRID_SELECTED "false"
+  ${ElseIf} $cpuName == "Unknown CPU"
+    ; If CPU detection failed, allow user to choose but warn them
+    DetailPrint "CPU detection failed - user can choose hybrid mode at their own risk"
   ${EndIf}
 
   ; Disable hybrid mode by default in silent mode
