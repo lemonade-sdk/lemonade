@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 
-import torch
 from lemonade.state import State
 from lemonade.tools import Tool
 import lemonade.common.printing as printing
@@ -100,6 +99,8 @@ class QuarkLoad(Tool):
         Raises:
             Exception: If an error occurs during the QuarkLoad process.
         """
+
+        import torch
 
         try:
             if os.path.isdir(DEFAULT_QUARK_DIR):

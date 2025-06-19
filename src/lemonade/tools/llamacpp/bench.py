@@ -3,7 +3,7 @@ import statistics
 from statistics import StatisticsError
 from lemonade.state import State
 from lemonade.cache import Keys
-from lemonade.tools.llamacpp import LlamaCppAdapter
+from lemonade.tools.llamacpp.load import LlamaCppAdapter
 from lemonade.tools.bench import Bench
 
 

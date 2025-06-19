@@ -6,6 +6,8 @@ import subprocess
 import zipfile
 import re
 import threading
+import platform
+import shutil
 
 import requests
 from tabulate import tabulate
@@ -14,21 +16,83 @@ from fastapi.responses import StreamingResponse
 
 from openai import OpenAI
 
-from lemonade_server.pydantic_models import ChatCompletionRequest
+from lemonade_server.pydantic_models import ChatCompletionRequest, PullConfig
 from lemonade_server.model_manager import ModelManager
-from lemonade.tools.server.port_utils import find_free_port
+from lemonade.tools.server.utils.port import find_free_port
 
-LLAMA_VERSION = "b5543"
+LLAMA_VERSION = "b5699"
 
-LLAMA_SERVER_EXE_DIR = os.path.join(
-    os.path.dirname(sys.executable),
-    "llama_server",
-)
 
-LLAMA_SERVER_EXE_PATH = os.path.join(
-    LLAMA_SERVER_EXE_DIR,
-    "llama-server.exe",
-)
+def get_llama_server_paths():
+    """
+    Get platform-specific paths for llama server directory and executable
+    """
+    base_dir = os.path.join(os.path.dirname(sys.executable), "llama_server")
+
+    if platform.system().lower() == "windows":
+        return base_dir, os.path.join(base_dir, "llama-server.exe")
+    else:  # Linux/Ubuntu
+        # Check if executable exists in build/bin subdirectory (Current Ubuntu structure)
+        build_bin_path = os.path.join(base_dir, "build", "bin", "llama-server")
+        if os.path.exists(build_bin_path):
+            return base_dir, build_bin_path
+        else:
+            # Fallback to root directory
+            return base_dir, os.path.join(base_dir, "llama-server")
+
+
+def get_binary_url_and_filename(version):
+    """
+    Get the appropriate binary URL and filename based on platform
+    """
+    system = platform.system().lower()
+
+    if system == "windows":
+        filename = f"llama-{version}-bin-win-vulkan-x64.zip"
+    elif system == "linux":
+        filename = f"llama-{version}-bin-ubuntu-vulkan-x64.zip"
+    else:
+        raise NotImplementedError(
+            f"Platform {system} not supported for llamacpp. Supported: Windows, Ubuntu Linux"
+        )
+
+    url = (
+        f"https://github.com/ggml-org/llama.cpp/releases/download/{version}/{filename}"
+    )
+    return url, filename
+
+
+def validate_platform_support():
+    """
+    Validate platform support before attempting download
+    """
+    system = platform.system().lower()
+
+    if system not in ["windows", "linux"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Platform {system} not supported for llamacpp. "
+                "Supported: Windows, Ubuntu Linux"
+            ),
+        )
+
+    if system == "linux":
+        # Check if we're actually on Ubuntu/compatible distro and log a warning if not
+        try:
+            with open("/etc/os-release", "r", encoding="utf-8") as f:
+                os_info = f.read().lower()
+                if "ubuntu" not in os_info and "debian" not in os_info:
+                    logging.warning(
+                        "llamacpp binaries are built for Ubuntu. "
+                        "Compatibility with other Linux distributions is not guaranteed."
+                    )
+        except (FileNotFoundError, PermissionError, OSError) as e:
+            logging.warning(
+                "Could not determine Linux distribution (%s). "
+                "llamacpp binaries are built for Ubuntu.",
+                str(e),
+            )
 
 
 class LlamaTelemetry:
@@ -66,10 +130,21 @@ class LlamaTelemetry:
         Parse telemetry data from llama server output lines.
         """
 
+        # Parse Vulkan device detection
+        vulkan_match = re.search(r"ggml_vulkan: Found (\d+) Vulkan devices?:", line)
+        if vulkan_match:
+            device_count = int(vulkan_match.group(1))
+            if device_count > 0:
+                logging.info(
+                    f"GPU acceleration active: {device_count} Vulkan device(s) "
+                    "detected by llama-server"
+                )
+            return
+
         # Parse prompt evaluation line
         prompt_match = re.search(
-            # pylint: disable=C0301
-            r"prompt eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?([\d.]+)\s*tokens per second",
+            r"prompt eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?"
+            r"([\d.]+)\s*tokens per second",
             line,
         )
         if prompt_match:
@@ -83,7 +158,8 @@ class LlamaTelemetry:
 
         # Parse generation evaluation line
         eval_match = re.search(
-            r"eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?([\d.]+)\s*tokens per second",
+            r"eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?"
+            r"([\d.]+)\s*tokens per second",
             line,
         )
         if eval_match:
@@ -169,8 +245,11 @@ def _launch_llama_subprocess(
     Launch llama server subprocess with GPU or CPU configuration
     """
 
+    # Get the current executable path (handles both Windows and Ubuntu structures)
+    _, exe_path = get_llama_server_paths()
+
     # Build the base command
-    base_command = [LLAMA_SERVER_EXE_PATH, "-m", snapshot_files["variant"]]
+    base_command = [exe_path, "-m", snapshot_files["variant"]]
     if "mmproj" in snapshot_files:
         base_command.extend(["--mmproj", snapshot_files["mmproj"]])
         if not use_gpu:
@@ -183,13 +262,33 @@ def _launch_llama_subprocess(
     # Add port and jinja to enable tool use
     base_command.extend(["--port", str(telemetry.port), "--jinja"])
 
+    # Use legacy reasoning formatting, since not all apps support the new
+    # reasoning_content field
+    base_command.extend(["--reasoning-format", "none"])
+
     # Configure GPU layers: 99 for GPU, 0 for CPU-only
     ngl_value = "99" if use_gpu else "0"
     command = base_command + ["-ngl", ngl_value]
 
+    # Set up environment with library path for Linux
+    env = os.environ.copy()
+    if platform.system().lower() == "linux":
+        lib_dir = os.path.dirname(exe_path)  # Same directory as the executable
+        current_ld_path = env.get("LD_LIBRARY_PATH", "")
+        if current_ld_path:
+            env["LD_LIBRARY_PATH"] = f"{lib_dir}:{current_ld_path}"
+        else:
+            env["LD_LIBRARY_PATH"] = lib_dir
+        logging.debug(f"Set LD_LIBRARY_PATH to {env['LD_LIBRARY_PATH']}")
+
     # Start subprocess with output capture
     process = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
     )
 
     # Start background thread to log subprocess output
@@ -203,15 +302,30 @@ def _launch_llama_subprocess(
     return process
 
 
-def server_load(model_config: dict, model_reference: str, telemetry: LlamaTelemetry):
+def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
+
+    # Validate platform support before proceeding
+    validate_platform_support()
+
+    # Get platform-specific paths at runtime
+    llama_server_exe_dir, llama_server_exe_path = get_llama_server_paths()
+
+    # Check whether the llamacpp install needs an upgrade
+    version_txt_path = os.path.join(llama_server_exe_dir, "version.txt")
+    if os.path.exists(version_txt_path):
+        with open(version_txt_path, "r", encoding="utf-8") as f:
+            llamacpp_installed_version = f.read()
+
+        if llamacpp_installed_version != LLAMA_VERSION:
+            # Remove the existing install, which will trigger a new install
+            # in the next code block
+            shutil.rmtree(llama_server_exe_dir)
+
     # Download llama.cpp server if it isn't already available
-    if not os.path.exists(LLAMA_SERVER_EXE_DIR):
+    if not os.path.exists(llama_server_exe_dir):
         # Download llama.cpp server zip
-        # pylint: disable=C0301
-        llama_zip_url = f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_VERSION}/llama-{LLAMA_VERSION}-bin-win-vulkan-x64.zip"
-        llama_zip_path = os.path.join(
-            os.path.dirname(sys.executable), "llama-server.zip"
-        )
+        llama_zip_url, filename = get_binary_url_and_filename(LLAMA_VERSION)
+        llama_zip_path = os.path.join(os.path.dirname(sys.executable), filename)
         logging.info(f"Downloading llama.cpp server from {llama_zip_url}")
 
         with requests.get(llama_zip_url, stream=True) as r:
@@ -221,12 +335,23 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
                     f.write(chunk)
 
         # Extract zip
-        logging.info(f"Extracting {llama_zip_path} to {LLAMA_SERVER_EXE_DIR}")
+        logging.info(f"Extracting {llama_zip_path} to {llama_server_exe_dir}")
         with zipfile.ZipFile(llama_zip_path, "r") as zip_ref:
-            zip_ref.extractall(LLAMA_SERVER_EXE_DIR)
+            zip_ref.extractall(llama_server_exe_dir)
+
+        # Make executable on Linux - need to update paths after extraction
+        if platform.system().lower() == "linux":
+            # Re-get the paths since extraction might have changed the directory structure
+            _, updated_exe_path = get_llama_server_paths()
+            if os.path.exists(updated_exe_path):
+                os.chmod(updated_exe_path, 0o755)
+                logging.info(f"Set executable permissions for {updated_exe_path}")
+            else:
+                logging.warning(
+                    f"Could not find llama-server executable at {updated_exe_path}"
+                )
 
         # Save version.txt
-        version_txt_path = os.path.join(LLAMA_SERVER_EXE_DIR, "version.txt")
         with open(version_txt_path, "w", encoding="utf-8") as vf:
             vf.write(LLAMA_VERSION)
 
@@ -239,7 +364,7 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
     logging.debug(f"GGUF file paths: {snapshot_files}")
 
     # Start the llama-serve.exe process
-    logging.debug(f"Using llama_server for GGUF model: {LLAMA_SERVER_EXE_PATH}")
+    logging.debug(f"Using llama_server for GGUF model: {llama_server_exe_path}")
 
     # Attempt loading on GPU first
     llama_server_process = _launch_llama_subprocess(
@@ -255,7 +380,7 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
     # If loading on GPU failed, try loading on CPU
     if llama_server_process.poll():
         logging.warning(
-            f"Loading {model_reference} on GPU didn't work, re-attempting on CPU"
+            f"Loading {model_config.model_name} on GPU didn't work, re-attempting on CPU"
         )
 
         llama_server_process = _launch_llama_subprocess(
@@ -271,7 +396,7 @@ def server_load(model_config: dict, model_reference: str, telemetry: LlamaTeleme
     if llama_server_process.poll():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Failed to load {model_reference} with llama.cpp",
+            detail=f"Failed to load {model_config.model_name} with llama.cpp",
         )
 
     return llama_server_process

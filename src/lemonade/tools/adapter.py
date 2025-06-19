@@ -1,5 +1,4 @@
 import abc
-from transformers import AutoTokenizer
 
 
 class ModelAdapter(abc.ABC):
@@ -31,7 +30,7 @@ class TokenizerAdapter(abc.ABC):
     Base class for adapting an LLM's tokenizer to work with lemonade's standard tools
     """
 
-    def __init__(self, tokenizer: AutoTokenizer = None):
+    def __init__(self, tokenizer=None):
         self.auto_tokenizer = tokenizer
 
     @abc.abstractmethod

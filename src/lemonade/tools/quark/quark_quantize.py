@@ -2,9 +2,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-
-import torch
-from transformers import AutoProcessor
 from lemonade.state import State
 from lemonade.tools import Tool
 import lemonade.common.printing as printing
@@ -319,14 +316,17 @@ class QuarkQuantize(Tool):
         - Optionally exporting, compiling, and evaluating the model.
         """
 
-        model = state.model.model
-        tokenizer = state.tokenizer
+        import torch
+        from transformers import AutoProcessor
 
         # Importing quark utils after adding to sys.path
         from llm_utils.data_preparation import get_calib_dataloader
         from llm_utils.model_preparation import get_model_type
         from llm_ptq.configuration_preparation import get_config, get_export_config
         from quark.torch import ModelQuantizer, ModelExporter, save_params
+
+        model = state.model.model
+        tokenizer = state.tokenizer
 
         # 1. Load Model
         printing.log_info("Loading model ...")

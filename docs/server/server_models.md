@@ -3,6 +3,10 @@
  
 This document provides the models we recommend for use with Lemonade Server. Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/lemonade-sdk/lemonade/blob/main/docs/lemonade_api.md) used to load the model.
 
+## Model Management GUI
+
+Lemonade Server offers a model management GUI to help you see which models are available, install new models, and delete models. You can access this GUI by starting Lemonade Server, opening <http://localhost:8000> in your web browser, and clicking the Model Management tab.
+
 ## Naming Convention
 
 The format of each Lemonade name is a combination of the name in the base checkpoint and the backend where the model will run. So, if the base checkpoint is `meta-llama/Llama-3.2-1B-Instruct`, and it has been optimized to run on Hybrid, the resulting name is `Llama-3.2-3B-Instruct-Hybrid`.
@@ -36,7 +40,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Llama-3.2-1B-Instruct-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Llama-3.2-1B-Instruct-Hybrid
+lemonade-server pull Llama-3.2-1B-Instruct-Hybrid
 ```
 
 <table>
@@ -52,7 +56,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Llama-3.2-3B-Instruct-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Llama-3.2-3B-Instruct-Hybrid
+lemonade-server pull Llama-3.2-3B-Instruct-Hybrid
 ```
 
 <table>
@@ -68,7 +72,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Phi-3-Mini-Instruct-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Phi-3-Mini-Instruct-Hybrid
+lemonade-server pull Phi-3-Mini-Instruct-Hybrid
 ```
 
 <table>
@@ -84,7 +88,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen-1.5-7B-Chat-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
+lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
 ```
 
 <table>
@@ -100,7 +104,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>DeepSeek-R1-Distill-Llama-8B-Hybrid</summary>
 
 ```bash
-    lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
+lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
 ```
 
 <table>
@@ -116,7 +120,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>DeepSeek-R1-Distill-Qwen-7B-Hybrid</summary>
 
 ```bash
-    lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
+lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
 ```
 
 <table>
@@ -132,7 +136,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Mistral-7B-v0.3-Instruct-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Mistral-7B-v0.3-Instruct-Hybrid
+lemonade-server pull Mistral-7B-v0.3-Instruct-Hybrid
 ```
 
 <table>
@@ -148,7 +152,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Llama-3.1-8B-Instruct-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Llama-3.1-8B-Instruct-Hybrid
+lemonade-server pull Llama-3.1-8B-Instruct-Hybrid
 ```
 
 <table>
@@ -164,7 +168,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Llama-xLAM-2-8b-fc-r-Hybrid</summary>
 
 ```bash
-    lemonade-server pull Llama-xLAM-2-8b-fc-r-Hybrid
+lemonade-server pull Llama-xLAM-2-8b-fc-r-Hybrid
 ```
 
 <table>
@@ -183,7 +187,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen2.5-0.5B-Instruct-CPU</summary>
 
 ```bash
-    lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
+lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 ```
 
 <table>
@@ -199,7 +203,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Phi-3-Mini-Instruct-CPU</summary>
 
 ```bash
-    lemonade-server pull Phi-3-Mini-Instruct-CPU
+lemonade-server pull Phi-3-Mini-Instruct-CPU
 ```
 
 <table>
@@ -215,7 +219,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen-1.5-7B-Chat-CPU</summary>
 
 ```bash
-    lemonade-server pull Qwen-1.5-7B-Chat-CPU
+lemonade-server pull Qwen-1.5-7B-Chat-CPU
 ```
 
 <table>
@@ -231,7 +235,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>DeepSeek-R1-Distill-Llama-8B-CPU</summary>
 
 ```bash
-    lemonade-server pull DeepSeek-R1-Distill-Llama-8B-CPU
+lemonade-server pull DeepSeek-R1-Distill-Llama-8B-CPU
 ```
 
 <table>
@@ -247,7 +251,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>DeepSeek-R1-Distill-Qwen-7B-CPU</summary>
 
 ```bash
-    lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-CPU
+lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-CPU
 ```
 
 <table>
@@ -266,7 +270,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-0.6B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-0.6B-GGUF
+lemonade-server pull Qwen3-0.6B-GGUF
 ```
 
 <table>
@@ -283,7 +287,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-1.7B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-1.7B-GGUF
+lemonade-server pull Qwen3-1.7B-GGUF
 ```
 
 <table>
@@ -300,7 +304,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-4B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-4B-GGUF
+lemonade-server pull Qwen3-4B-GGUF
 ```
 
 <table>
@@ -317,7 +321,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-8B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-8B-GGUF
+lemonade-server pull Qwen3-8B-GGUF
 ```
 
 <table>
@@ -334,7 +338,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>DeepSeek-Qwen3-8B-GGUF</summary>
 
 ```bash
-    lemonade-server pull DeepSeek-Qwen3-8B-GGUF
+lemonade-server pull DeepSeek-Qwen3-8B-GGUF
 ```
 
 <table>
@@ -351,7 +355,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-14B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-14B-GGUF
+lemonade-server pull Qwen3-14B-GGUF
 ```
 
 <table>
@@ -368,7 +372,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Qwen3-30B-A3B-GGUF</summary>
 
 ```bash
-    lemonade-server pull Qwen3-30B-A3B-GGUF
+lemonade-server pull Qwen3-30B-A3B-GGUF
 ```
 
 <table>
@@ -385,7 +389,7 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <summary>Gemma-3-4b-it-GGUF</summary>
 
 ```bash
-    lemonade-server pull Gemma-3-4b-it-GGUF
+lemonade-server pull Gemma-3-4b-it-GGUF
 ```
 
 <table>
@@ -393,6 +397,25 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF">ggml-org/gemma-3-4b-it-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Mmproj</td><td>mmproj-model-f16.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+<tr><td>Labels</td><td>['vision']</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen2.5-VL-7B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen2.5-VL-7B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF">ggml-org/Qwen2.5-VL-7B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Mmproj</td><td>mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Reasoning</td><td>False</td></tr>
 </table>

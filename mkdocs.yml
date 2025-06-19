@@ -63,6 +63,8 @@ nav:
   - Downloading and Getting Started: server/README.md
   - Supported Applications: server/apps/README.md
   - Application Guides:
+      - Open WebUI: server/apps/open-webui.md
+      - AI Dev Gallery: server/apps/ai-dev-gallery.md
       - AI Toolkit: server/apps/ai-toolkit.md
       - AnythingLLM: server/apps/anythingLLM.md
       - CodeGPT: server/apps/codeGPT.md

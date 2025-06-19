@@ -4,18 +4,12 @@ from fastapi.responses import HTMLResponse
 from lemonade_server.model_manager import ModelManager
 
 
-def get_instructions_html(port=8000):
+def get_webapp_html(port=8000):
     """
-    Show instructions on how to use the server.
+    Show Lemonade Web App for LLM chat and model management.
     """
     # Load server models from JSON
-    server_models_path = (
-        Path(__file__).parent.parent.parent.parent
-        / "lemonade_server"
-        / "server_models.json"
-    )
-    with open(server_models_path, "r", encoding="utf-8") as f:
-        server_models = json.load(f)
+    server_models = ModelManager().supported_models
 
     # Use shared filter function from model_manager.py
     filtered_models = ModelManager().filter_models_by_backend(server_models)
@@ -26,7 +20,7 @@ def get_instructions_html(port=8000):
     )
 
     # Load HTML template
-    template_path = Path(__file__).parent / "static" / "instructions.html"
+    template_path = Path(__file__).parent / "static" / "webapp.html"
     with open(template_path, "r", encoding="utf-8") as f:
         html_template = f.read()
 

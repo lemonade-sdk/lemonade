@@ -13,7 +13,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 
 from threading import Thread
 from lemonade.api import from_pretrained
-from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
+from lemonade.tools.oga.utils import OrtGenaiStreamer
 
 model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-cpu")
 

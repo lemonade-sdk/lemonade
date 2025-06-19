@@ -1,4 +1,8 @@
 import os
+
+# pylint: disable=C0413
+# Prevent HF warnings from showing on every import
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 from lemonade.version import __version__ as version_number
 from lemonade.tools import FirstTool, NiceHelpFormatter
 from lemonade.profilers.memory_tracker import MemoryTracker
@@ -8,12 +12,12 @@ from lemonade.sequence import Sequence
 from lemonade.tools.management_tools import Cache, Version, SystemInfo
 from lemonade.state import State
 
-from lemonade.tools.huggingface_load import HuggingfaceLoad
-
-from lemonade.tools.huggingface_bench import HuggingfaceBench
-from lemonade.tools.ort_genai.oga_bench import OgaBench
-from lemonade.tools.llamacpp_bench import LlamaCppBench
-from lemonade.tools.llamacpp import LoadLlamaCpp
+from lemonade.tools.huggingface.load import HuggingfaceLoad
+from lemonade.tools.huggingface.bench import HuggingfaceBench
+from lemonade.tools.oga.load import OgaLoad
+from lemonade.tools.oga.bench import OgaBench
+from lemonade.tools.llamacpp.bench import LlamaCppBench
+from lemonade.tools.llamacpp.load import LoadLlamaCpp
 
 import lemonade.cache as cache
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -24,7 +28,6 @@ from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.quark.quark_load import QuarkLoad
 from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.report.llm_report import LemonadeReport
-from lemonade.tools.server.serve import Server
 
 
 def main():
@@ -40,25 +43,16 @@ def main():
         LMEvalHarness,
         LLMPrompt,
         HuggingfaceBench,
+        OgaLoad,
         OgaBench,
         QuarkQuantize,
         QuarkLoad,
         LemonadeReport,
-        Server,
         # Inherited from lemonade
         Cache,
         Version,
         SystemInfo,
     ]
-
-    # Import onnxruntime-genai recipes
-    try:
-        from lemonade.tools.ort_genai.oga import OgaLoad
-
-        tools = tools + [OgaLoad]
-
-    except ModuleNotFoundError:
-        pass
 
     # List the available profilers
     profilers = [MemoryTracker]

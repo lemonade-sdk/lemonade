@@ -7,12 +7,13 @@ import lemonade.common.test_helpers as common
 import lemonade.common.filesystem as fs
 from lemonade.common.build import builds_dir
 from lemonade.cache import Keys
-from lemonade.tools.ort_genai.oga import OgaLoad, OrtGenaiModel
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.accuracy import LMEvalHarness
-from lemonade.tools.ort_genai.oga_bench import OgaBench
+from lemonade.tools.oga.load import OgaLoad
+from lemonade.tools.oga.utils import OrtGenaiModel
+from lemonade.tools.oga.bench import OgaBench
 import sys
 
 ci_mode = os.getenv("LEMONADE_CI_MODE", False)
@@ -125,7 +126,7 @@ class Testing(unittest.TestCase):
 
         state = OgaLoad().run(state, input=checkpoint, device=device, dtype=dtype)
         state = OgaBench().run(
-            state, iterations=20, prompts=["word " * 30, "word " * 62]
+            state, iterations=3, warmup_iterations=1, prompts=["word " * 30, "word " * 62]
         )
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats

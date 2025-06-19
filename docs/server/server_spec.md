@@ -350,13 +350,17 @@ curl http://localhost:8000/api/v1/models
 
 ### `GET /api/v1/pull` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Install a model by downloading it and registering it with Lemonade Server.
+Register and install models for use with Lemonade Server.
 
 #### Parameters
 
+The Lemonade Server built-in model registry has a collection of model names that can be pulled and loaded. The `pull` endpoint can install any registered model, and it can also register-then-install any model available on Hugging Face.
+
+**Install a Model that is Already Registered**
+
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
+| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to install. |
 
 Example request:
 
@@ -379,20 +383,81 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
-### `GET /api/v1/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+**Register and Install a Model**
 
-Explicitly load a model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
+Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
+
+The `recipe` field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the [Lemonade API README](../lemonade_api.md). For information on GGUF recipes, see [llamacpp](#experimental-gguf-support).
+
+> Note: the `model_name` for registering a new model must use the `user` namespace, to prevent collisions with built-in models. For example, `user.Phi-4-Mini-GGUF`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
+| `checkpoint` | Yes | HuggingFace checkpoint to install. |
+| `recipe` | Yes | Lemonade API recipe to load the model with. |
+| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+| `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
+
+Example request:
+
+```bash
+curl http://localhost:8000/api/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.Phi-4-Mini-GGUF",
+    "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M",
+    "recipe": "llamacpp"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status":"success",
+  "message":"Installed model: user.Phi-4-Mini-GGUF"
+}
+```
+
+In case of an error, the status will be `error` and the message will contain the error message.
+
+### `POST /api/v1/delete` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
 
 #### Parameters
 
-There are two distinct ways to load a model:
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | [Lemonade Server model name](./server_models.md) to delete. |
 
- - Load by Lemonade Server model name: uses the short names such as "Qwen2.5-0.5B-Instruct-CPU" found throughout Lemonade Server. The names are documented [here](./server_models.md).
- - Load by checkpoint and recipe: uses a Hugging Face checkpoint as the model source, and then a Lemonade API recipe that determines the framework/device backend to use (e.g., "oga-cpu"). For more information on Lemonade recipes, see the [Lemonade API ReadMe](../lemonade_api.md).
+Example request:
 
-The parameters for these two ways of loading are mutually exclusive. We intend load-by-name to be used in the general case, since that references a curated set of models in a concise way. Load-by-checkpoint can be used in the event that a user/developer wants to try a model that isn't in the curated list.
+```bash
+curl http://localhost:8000/api/v1/delete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+  }'
+```
 
-**Load by Lemonade Server Model Name (Recommended)**
+Response format:
+
+```json
+{
+  "status":"success",
+  "message":"Deleted model: Qwen2.5-0.5B-Instruct-CPU"
+}
+```
+
+In case of an error, the status will be `error` and the message will contain the error message.
+
+### `GET /api/v1/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
+
+#### Parameters
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -414,39 +479,6 @@ Response format:
 {
   "status":"success",
   "message":"Loaded model: Qwen2.5-0.5B-Instruct-CPU"
-}
-```
-
-In case of an error, the status will be `error` and the message will contain the error message.
-
-**Load by Hugging Face Checkpoint and Lemonade Recipe**
-
-> Note: load-by-checkpoint will download that checkpoint if it is not already available in your Hugging Face cache.
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `checkpoint` | Yes | HuggingFace checkpoint to load. |
-| `recipe` | Yes | Lemonade API recipe to load the model on. |
-| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
-| `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
-
-Example request:
-
-```bash
-curl http://localhost:8000/api/v1/load \
-  -H "Content-Type: application/json" \
-  -d '{
-    "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-    "recipe": "oga-cpu"
-  }'
-```
-
-Response format:
-
-```json
-{
-  "status":"success",
-  "message":"Loaded model: amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 }
 ```
 
@@ -575,7 +607,7 @@ curl http://localhost:8000/api/v1/stats
 To help debug the Lemonade server, you can use the `--log-level` parameter to control the verbosity of logging information. The server supports multiple logging levels that provide increasing amounts of detail about server operations.
 
 ```
-lemonade serve --log-level [level]
+lemonade-server serve --log-level [level]
 ```
 
 Where `[level]` can be one of:
@@ -591,7 +623,7 @@ Where `[level]` can be one of:
 
 The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced experimental support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) Vulkan `llama-server` as an alternative backend for CPU and GPU.
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions` endpoint, in streaming mode, is the only completions/responses endpoint supported. 
   - Non-streaming, non-chat `completions`, and `responses` are not supported at this time.
@@ -599,16 +631,19 @@ The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as w
   - Lemonade Server will attempt to load models onto GPU with Vulkan first, and if that doesn't work it will fall back to CPU.
   - From the end-user's perspective, OGA vs. GGUF should be completely transparent: they wont be aware of whether the built-in server or `llama-server` is serving their model.
 
-To load an arbitrary GGUF from Hugging Face, use the [load endpoint](#get-apiv0load-status) with the recipe set to `llamacpp`:
+## Installing GGUF Models
 
-```bash
-curl http://localhost:8000/api/v0/load \
-  -H "Content-Type: application/json" \
-  -d '{
-    "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-    "recipe": "llamacpp"
-  }'
-```
+To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:8000 in your web browser and click the Model Management tab.
+
+## Platform Support Matrix
+
+| Platform | Vulkan GPU | x64 CPU      |
+|----------|------------|--------------|
+| Windows  | ✅         | ✅           |
+| Ubuntu   | ✅         | ✅           |
+| Other Linux | ⚠️*     | ⚠️*          |
+
+*Other Linux distributions may work but are not officially supported.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

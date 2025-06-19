@@ -1,8 +1,5 @@
 import os
 import argparse
-import pandas as pd
-import torch
-from datasets import load_dataset
 from lemonade.state import State
 from lemonade.tools import Tool
 import lemonade.common.printing as printing
@@ -40,6 +37,10 @@ class AccuracyPerplexity(Tool):
         self,
         state: State,
     ) -> State:
+
+        import pandas as pd
+        import torch
+        from datasets import load_dataset
 
         try:
             printing.log_info("Downloading dataset ...")

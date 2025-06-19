@@ -6,8 +6,6 @@ from typing import Dict
 import hashlib
 import psutil
 import yaml
-import torch
-import numpy as np
 import lemonade.common.exceptions as exp
 
 state_file_name = "state.yaml"
@@ -99,51 +97,6 @@ def unique_id():
     p = psutil.Process(pid)
     start_time = p.create_time()
     return hashlib.sha256(f"{pid}{start_time}".encode()).hexdigest()
-
-
-def get_shapes_and_dtypes(inputs: dict):
-    """
-    Return the shape and data type of each value in the inputs dict
-    """
-    shapes = {}
-    dtypes = {}
-    for key in sorted(inputs):
-        value = inputs[key]
-        if isinstance(
-            value,
-            (list, tuple),
-        ):
-            for v, i in zip(value, range(len(value))):
-                if isinstance(v, (list, tuple)):
-                    # Handle nested lists/tuples, for example past_key_values
-                    # in an LLM that has KV-caching enabled
-                    for v2, i2 in zip(v, range(len(v))):
-                        subsubkey = f"{key}[{i}][{i2}]"
-                        shapes[subsubkey] = np.array(v2).shape
-                        dtypes[subsubkey] = np.array(v2).dtype.name
-                else:
-                    # Handle single list/tuple
-                    subkey = f"{key}[{i}]"
-                    shapes[subkey] = np.array(v).shape
-                    dtypes[subkey] = np.array(v).dtype.name
-        elif torch.is_tensor(value):
-            shapes[key] = np.array(value.detach()).shape
-            dtypes[key] = np.array(value.detach()).dtype.name
-        elif isinstance(value, np.ndarray):
-            shapes[key] = value.shape
-            dtypes[key] = value.dtype.name
-        elif isinstance(value, (bool, int, float)):
-            shapes[key] = (1,)
-            dtypes[key] = type(value).__name__
-        elif value is None:
-            pass
-        else:
-            raise exp.Error(
-                "One of the provided inputs contains the unsupported "
-                f' type {type(value)} at key "{key}".'
-            )
-
-    return shapes, dtypes
 
 
 class Logger:

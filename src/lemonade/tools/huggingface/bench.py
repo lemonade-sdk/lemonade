@@ -1,98 +1,11 @@
 import argparse
-from typing import List, Tuple
-import time
 import statistics
 from statistics import StatisticsError
-from contextlib import nullcontext
-import torch
 from lemonade.state import State
 from lemonade.cache import Keys
 from lemonade.tools.bench import Bench
 
 default_beams = 1
-
-
-def benchmark_huggingface_llm(
-    model: torch.nn.Module,
-    tokenizer,
-    input_ids,
-    dtype,
-    num_beams: int,
-    target_output_tokens: int,
-    iterations: int,
-    warmup_iterations: int,
-    report_progress_fn,
-) -> List[Tuple[float, int]]:
-
-    amp_enabled = True if (dtype == torch.float16 or dtype == torch.bfloat16) else False
-    # The "if amp_enabled else nullcontext()" is to get around a bug in PyTorch 2.1
-    # where torch.cpu.amp.autocast(enabled=False) does nothing
-    with (
-        torch.cpu.amp.autocast(enabled=amp_enabled, dtype=dtype)
-        if amp_enabled
-        else nullcontext()
-    ):
-
-        per_iteration_result = []
-        tokens_out_len_list = []
-
-        # Early stopping is only a valid parameter with multiple beams
-        early_stopping = num_beams > 1
-
-        with torch.no_grad(), torch.inference_mode():
-            # Don't capture time for warmup
-            for count in range(warmup_iterations):
-                outputs = model.generate(
-                    input_ids,
-                    num_beams=num_beams,
-                    max_new_tokens=target_output_tokens,
-                    min_new_tokens=target_output_tokens,
-                    early_stopping=early_stopping,
-                    pad_token_id=tokenizer.eos_token_id,
-                )
-                tokens_out_len_list.append(outputs.shape[1] - input_ids.shape[1])
-                report_progress_fn((count + 1) / (warmup_iterations + iterations))
-
-            for count in range(iterations):
-                # CUDA synchronization is required prior to GPU benchmarking
-                # This has no negative effect on CPU-only benchmarks, and is more robust than
-                # checking `model.device == "cuda"` since it applies to multi-GPU environments
-                # Synchronization is done before collecting the start time because this will
-                # ensure that the GPU has finished initialization tasks such as loading weights
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                start_time = time.perf_counter()
-
-                outputs = model.generate(
-                    input_ids,
-                    num_beams=num_beams,
-                    max_new_tokens=target_output_tokens,
-                    min_new_tokens=target_output_tokens,
-                    early_stopping=early_stopping,
-                    pad_token_id=tokenizer.eos_token_id,
-                )
-
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                end_time = time.perf_counter()
-
-                latency = end_time - start_time
-
-                token_len = outputs.shape[1] - input_ids.shape[1]
-                tokens_out_len_list.append(token_len)
-
-                # Only count an iteration if it produced enough tokens
-                if token_len >= target_output_tokens:
-                    per_iteration_result.append((latency, token_len))
-
-                report_progress_fn(
-                    (warmup_iterations + count + 1) / (warmup_iterations + iterations)
-                )
-
-        if not per_iteration_result:
-            raise Bench.not_enough_tokens(target_output_tokens)
-
-    return per_iteration_result, tokens_out_len_list
 
 
 class HuggingfaceBench(Bench):
@@ -170,6 +83,8 @@ class HuggingfaceBench(Bench):
             execution_latency = latency of generate(output_tokens=output_tokens)
             tokens_per_second = (new_tokens - 1) / (execution_latency - prefill_latency)
         """
+
+        from lemonade.tools.huggingface.utils import benchmark_huggingface_llm
 
         if self.first_run_prompt:
             if vars(state).get(Keys.MODEL) is None:

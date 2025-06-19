@@ -1,9 +1,12 @@
+import sys
 import argparse
 import asyncio
 import statistics
 import time
 from threading import Thread, Event
 import logging
+import platform
+import tempfile
 import traceback
 from typing import Optional, Union
 import json
@@ -17,7 +20,6 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from uvicorn.config import Config
 from uvicorn.server import Server as UvicornServer
-from transformers import TextIteratorStreamer, StoppingCriteria, StoppingCriteriaList
 from tabulate import tabulate
 
 from openai.types.completion import Completion, CompletionChoice
@@ -53,12 +55,17 @@ from lemonade_server.pydantic_models import (
     ChatCompletionRequest,
     ResponsesRequest,
     PullConfig,
+    DeleteConfig,
 )
 from lemonade.tools.management_tools import ManagementTool
 import lemonade.tools.server.llamacpp as llamacpp
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
-from lemonade.tools.server.instructions import get_instructions_html
-from lemonade.tools.server.port_utils import lifespan
+from lemonade.tools.server.webapp import get_webapp_html
+from lemonade.tools.server.utils.port import lifespan
+
+# Only import tray on Windows
+if platform.system() == "Windows":
+    from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
@@ -100,7 +107,7 @@ class GeneratorThread(Thread):
             self.streamer.done()
 
 
-class StopOnEvent(StoppingCriteria):
+class StopOnEvent:
     """
     Custom stopping criteria that halts text generation when a specified event is set.
 
@@ -122,6 +129,7 @@ class Server(ManagementTool):
 
     The server exposes these endpoints:
     - /api/v1/pull: install an LLM by its Lemonade Server Model Name.
+    - /api/v1/delete: delete an LLM by its Lemonade Server Model Name.
     - /api/v1/load: load a model checkpoint.
     - /api/v1/unload: unload a model checkpoint.
     - /api/v1/health: check whether a model is loaded and ready to serve.
@@ -141,6 +149,10 @@ class Server(ManagementTool):
         # Initialize FastAPI app
         self.app = FastAPI(lifespan=lifespan)
 
+        # Lifespan will load some tasks in the background, and then set the
+        # app.initialized flag to True when this is done
+        self.app.initialized = False
+
         # Add CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
@@ -153,11 +165,11 @@ class Server(ManagementTool):
         # Set up custom routes
         self.setup_routes(["/api/v0", "/api/v1"])
 
-        # Set up instructions
-        self.app.get("/")(self.instructions)
+        # Set up Web App
+        self.app.get("/")(self.webapp)
 
         # Mount a static assets dir for HTML responses, such
-        # as the instructions
+        # as the Web App
         static_dir = Path(__file__).parent / "static"
         self.app.mount(
             "/static", StaticFiles(directory=static_dir), name="static_assets"
@@ -207,6 +219,7 @@ class Server(ManagementTool):
         for prefix in api_prefixes:
             # Custom routes
             self.app.post(f"{prefix}/pull")(self.pull)
+            self.app.post(f"{prefix}/delete")(self.delete)
             self.app.post(f"{prefix}/load")(self.load_llm)
             self.app.post(f"{prefix}/unload")(self.unload_llm)
             self.app.get(f"{prefix}/health")(self.health)
@@ -226,6 +239,14 @@ class Server(ManagementTool):
             add_help=add_help,
         )
 
+        # Only add the tray option on Windows
+        if platform.system() == "Windows":
+            parser.add_argument(
+                "--tray",
+                action="store_true",
+                help="Run the server in system tray mode",
+            )
+
         parser.add_argument(
             "--port",
             required=False,
@@ -242,6 +263,13 @@ class Server(ManagementTool):
             help=f"Logging level (default: {DEFAULT_LOG_LEVEL})",
         )
 
+        parser.add_argument(
+            "--log-file",
+            required=False,
+            type=str,
+            help="Path to the log file",
+        )
+
         return parser
 
     def _setup_server_common(
@@ -249,6 +277,8 @@ class Server(ManagementTool):
         port: int,
         truncate_inputs: bool = False,
         log_level: str = DEFAULT_LOG_LEVEL,
+        tray: bool = False,
+        log_file: str = None,
         threaded_mode: bool = False,
     ):
         """
@@ -280,23 +310,43 @@ class Server(ManagementTool):
         else:
             # Configure logging to match uvicorn's format
             logging_level = getattr(logging, log_level.upper())
-            logging.basicConfig(
-                level=logging_level,
-                format="%(levelprefix)s %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
 
-            # Add uvicorn's log formatter
-            logging.root.handlers[0].formatter = uvicorn.logging.DefaultFormatter(
+            # Set up file handler for logging to lemonade.log
+            uvicorn_formatter = uvicorn.logging.DefaultFormatter(
                 fmt="%(levelprefix)s %(message)s",
                 use_colors=True,
             )
+            if not log_file:
+                log_file = tempfile.NamedTemporaryFile(
+                    prefix="lemonade_", suffix=".log", delete=False
+                ).name
+            file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+            file_handler.setLevel(logging_level)
+            file_handler.setFormatter(uvicorn_formatter)
 
-            # Ensure the log level is properly set
-            logging.getLogger().setLevel(logging_level)
+            # Set up console handler
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging_level)
+            console_handler.setFormatter(uvicorn_formatter)
+
+            # Configure root logger with both handlers
+            logging.basicConfig(
+                level=logging_level,
+                handlers=[file_handler, console_handler],
+                force=True,
+            )
 
         # Update debug logging state after setting log level
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
+        if tray:
+            # Save original stdout/stderr
+            sys.stdout = OutputDuplicator(log_file, sys.stdout)
+            sys.stderr = OutputDuplicator(log_file, sys.stderr)
+
+            # Open lemonade server in tray mode
+            # lambda function used for deferred instantiation and thread safety
+            LemonadeTray(log_file, port, lambda: Server()).run()
+            sys.exit(0)
 
         if self.debug_logging_enabled:
             # Print the elapsed time for each request
@@ -314,6 +364,8 @@ class Server(ManagementTool):
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
         truncate_inputs: bool = False,
+        tray: bool = False,
+        log_file: str = None,
     ):
         # Common setup
         self._setup_server_common(
@@ -321,6 +373,8 @@ class Server(ManagementTool):
             truncate_inputs=truncate_inputs,
             log_level=log_level,
             threaded_mode=False,
+            tray=tray,
+            log_file=log_file,
         )
 
         uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
@@ -342,6 +396,7 @@ class Server(ManagementTool):
             truncate_inputs=truncate_inputs,
             log_level=log_level,
             threaded_mode=True,
+            tray=False,
         )
 
         class CustomServer(UvicornServer):
@@ -385,12 +440,12 @@ class Server(ManagementTool):
         # Show telemetry in debug while complying with uvicorn's log indentation
         logging.debug("\n          ".join(table))
 
-    def instructions(self):
+    def webapp(self):
         """
-        Show instructions on how to use the server.
+        Serve the Web App to the user's browser.
         """
 
-        return get_instructions_html(port=self.app.port)
+        return get_webapp_html(port=self.app.port)
 
     def initialize_load_config(
         self, request: Union[ChatCompletionRequest, CompletionRequest]
@@ -405,7 +460,8 @@ class Server(ManagementTool):
         # Get model config
         if "/" in request.model:
             # We know the model is a Hugging Face checkpoint if it contains a /
-            lc = LoadConfig(checkpoint=request.model)
+            # This scenario is only supported for run-as-thread
+            lc = LoadConfig(model_name="custom", checkpoint=request.model)
         else:
             # The model should be a reference to a built-in model
             lc = LoadConfig(model_name=request.model)
@@ -420,7 +476,7 @@ class Server(ManagementTool):
         lc = self.initialize_load_config(completion_request)
 
         # Load the model if it's different from the currently loaded one
-        await self.load_llm(lc, internal_call=True)
+        await self.load_llm(lc)
 
         # Check if the model supports reasoning
         reasoning_first_token = self.llm_loaded.reasoning
@@ -539,7 +595,7 @@ class Server(ManagementTool):
         lc = self.initialize_load_config(chat_completion_request)
 
         # Load the model if it's different from the currently loaded one
-        await self.load_llm(lc, internal_call=True)
+        await self.load_llm(lc)
 
         if self.llm_loaded.recipe == "llamacpp":
             return llamacpp.chat_completion(
@@ -758,7 +814,7 @@ class Server(ManagementTool):
         lc = self.initialize_load_config(responses_request)
 
         # Load the model if it's different from the currently loaded one
-        await self.load_llm(lc, internal_call=True)
+        await self.load_llm(lc)
 
         # Convert chat messages to text using the model's chat template
         if isinstance(responses_request.input, str):
@@ -912,6 +968,16 @@ class Server(ManagementTool):
         Core streaming completion logic, separated from response handling.
         Returns an async generator that yields tokens.
         """
+
+        while not self.app.initialized:
+            # Wait for the app's background tasks to finish before
+            # allowing generation to proceed
+            logging.debug("Waiting for server to fully initialize")
+            asyncio.sleep(0.5)
+        # These should already be imported as part of the app initialization process,
+        # they are just here to make 100% certain and to make the linter happy
+        from transformers import TextIteratorStreamer, StoppingCriteriaList
+
         model = self.model
         tokenizer = self.tokenizer
 
@@ -930,7 +996,7 @@ class Server(ManagementTool):
 
         # Set up the generation parameters
         if "oga-" in self.llm_loaded.recipe:
-            from lemonade.tools.ort_genai.oga import OrtGenaiStreamer
+            from lemonade.tools.oga.utils import OrtGenaiStreamer
 
             streamer = OrtGenaiStreamer(tokenizer)
             self.input_tokens = len(input_ids)
@@ -969,7 +1035,13 @@ class Server(ManagementTool):
         logging.debug(f"Input Tokens: {self.input_tokens}")
         logging.trace(f"Input Message: {message}")
 
-        stopping_criteria = StoppingCriteriaList([StopOnEvent(self.stop_event)])
+        if self.llm_loaded.recipe.startswith("hf"):
+            stopping_criteria = StoppingCriteriaList([StopOnEvent(self.stop_event)])
+        else:
+            # HF expects StoppingCriteriaList, which requires torch
+            # If we aren't using HF, we can just use a list of StopOnEvent to
+            # avoid the torch dep
+            stopping_criteria = [StopOnEvent(self.stop_event)]
 
         generation_kwargs = {
             "input_ids": input_ids,
@@ -1138,56 +1210,58 @@ class Server(ManagementTool):
             detail=detail,
         )
 
-    def recipe_missing_error(self, model_reference: str):
-        self.model_load_failure(
-            model_reference,
-            message=(
-                f"Attempted to load model by checkpoint name {model_reference}, "
-                "however the required 'recipe' parameter was not provided"
-            ),
-        )
-
     async def pull(self, config: PullConfig):
         """
         Install a supported LLM by its Lemonade Model Name.
         """
 
         # Install the model
-        ModelManager().download_models([config.model_name])
+        ModelManager().download_models(
+            [config.model_name],
+            checkpoint=config.checkpoint,
+            recipe=config.recipe,
+            reasoning=config.reasoning,
+            mmproj=config.mmproj,
+        )
 
         # Refresh the list of downloaded models, to ensure it
         # includes the model we just installed
         self.local_models = ModelManager().downloaded_models_enabled
 
-    async def load_llm(self, config: LoadConfig, internal_call=False):
+    async def delete(self, config: DeleteConfig):
         """
-        Load an LLM into system memory.
+        Delete a supported LLM by its Lemonade Model Name.
+        """
+        try:
+            # If the model to be deleted is currently loaded, unload it first
+            if self.llm_loaded and self.llm_loaded.model_name == config.model_name:
+                await self.unload_llm(require_lock=True)
+
+            # Delete the model
+            ModelManager().delete_model(config.model_name)
+
+            # Refresh the list of downloaded models
+            self.local_models = ModelManager().downloaded_models_enabled
+
+            return {
+                "status": "success",
+                "message": f"Deleted model: {config.model_name}",
+            }
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(e),
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete model {config.model_name}: {str(e)}",
+            )
+
+    async def load_llm(self, config: LoadConfig):
+        """
+        Load a registered LLM into system memory. Install the model first, if needed.
             config: the information required to load the model
-            internal_call: indicates whether the call to this function came from
-                an endpoint (False) or a method of this class (True)
-
-        There are 3 ways this method can be called:
-          1. An external application asks to load a model by name, using the load endpoint
-              a. This only differs from #2 in that an external application may
-                  provide more parameters than in #2, so we need to validate
-                  that those parameters are ok.
-              b. Load the model
-
-          2. An external application asks to load a model by name,
-                  using the completions or chat_completions endpoints
-              a. Look up the name in the built-in model dictionary to create
-                  a fully-populated LoadConfig.
-              b. Load the model
-
-          3. An external application asks to load a model by checkpoint and recipe,
-                  using the load endpoint
-              a. Populate the checkpoint and recipe into a LoadConfig
-              b. Load the model
-
-          4. Completions or ChatCompletions asks to "load" a model by checkpoint
-              a. This is only available when #3 has already been executed
-              b. Verify that the checkpoint is already loaded,
-                  and raise an exception if it hasn't (don't load anything new)
         """
         try:
             await self._load_lock.acquire()
@@ -1196,104 +1270,53 @@ class Server(ManagementTool):
             for _ in range(self.max_concurrent_generations):
                 await self._generate_semaphore.acquire()
 
-            # We will populate a LoadConfig that has all of the required fields
-            config_to_use: LoadConfig
+            # Make sure the model is already registered
+            supported_models = ModelManager().supported_models
 
-            # First, ensure that the arguments are valid
-            if config.model_name:
-                # Get the dictionary of supported model from disk
-                supported_models = ModelManager().supported_models
-
-                # Refer to the model by name, since we know the name
-                model_reference = config.model_name
-
-                if config.checkpoint or config.recipe:
-                    # Option #1, verify that there are no parameter mismatches
-                    built_in_config = supported_models[config.model_name]
-                    if config.checkpoint != built_in_config["checkpoint"]:
-                        self.model_load_failure(
-                            model_reference,
-                            message=(
-                                f"Load request for model_name={config.model_name} "
-                                "included a mismatched "
-                                f"checkpoint={config.checkpoint} parameter. Remove the checkpoint "
-                                f"parameter, or change it to {built_in_config['checkpoint']}."
-                            ),
-                        )
-                    if config.recipe != built_in_config["recipe"]:
-                        self.model_load_failure(
-                            model_reference,
-                            message=(
-                                f"Load request for model_name={config.model_name} "
-                                "included a mismatched "
-                                f"recipe={config.recipe} parameter. Remove the checkpoint "
-                                f"parameter, or change it to {built_in_config['recipe']}."
-                            ),
-                        )
-
-                    # Use the config as-is
-                    config_to_use = config
-                else:
-                    # Option #2, look up the config from the supported models dictionary
-                    config_to_use = LoadConfig(**supported_models[config.model_name])
-
-            elif config.checkpoint:
-                # Refer to the model by checkpoint
-                model_reference = config.checkpoint
-
-                if config.recipe and not internal_call:
-                    # Option 3, use the config as-is, but add a custom model name
-                    config_to_use = config
-                    config_to_use.model_name = "Custom"
-                elif internal_call:
-                    # Option 4, make sure the right checkpoint is loaded and then return
-                    if (
-                        self.llm_loaded
-                        and config.checkpoint == self.llm_loaded.checkpoint
-                    ):
-                        return {
-                            "status": "success",
-                            "message": f"Model already loaded: {model_reference}",
-                        }
-                    else:
-                        self.model_load_failure(
-                            model_reference,
-                            message=(
-                                "Attempted run completions by using model=<checkpoint name>, "
-                                "however, "
-                                "this feature only works if the model has already been loaded "
-                                "using the load endpoint."
-                            ),
-                        )
-                else:
-                    self.recipe_missing_error(model_reference)
+            # The `custom` name allows run-as-thread servers to bypass loading
+            if config.model_name == "custom":
+                config_to_use = config
             else:
-                self.model_load_failure(
-                    None,
-                    message="Load requests must contain either a model_name or a "
-                    "checkpoint parameter",
-                )
+                if config.model_name not in supported_models.keys():
+                    self.model_load_failure(
+                        config.model_name,
+                        message=(
+                            f"Load request for model_name={config.model_name} "
+                            "not registered with Lemonade Server. You can register and "
+                            "install new models with a `pull` request."
+                        ),
+                    )
+
+                # Get additional properties from the model registry
+                config_to_use = LoadConfig(**supported_models[config.model_name])
 
             # Caching mechanism: if the checkpoint is already loaded there is nothing else to do
             if (
                 self.llm_loaded
                 and config_to_use.checkpoint == self.llm_loaded.checkpoint
             ):
-                return {
-                    "status": "success",
-                    "message": f"Model already loaded: {model_reference}",
-                }
+                if (
+                    self.llm_loaded.recipe == "llamacpp"
+                    and self.llama_server_process.poll()
+                ):
+                    # llama-server process has gone away for some reason, so we should
+                    # proceed with loading to get it back
+                    pass
+                else:
+                    return {
+                        "status": "success",
+                        "message": f"Model already loaded: {config.model_name}",
+                    }
 
             # Unload the current model if needed
             if self.llm_loaded:
                 await self.unload_llm(require_lock=False)
 
-            logging.info(f"Loading llm: {model_reference}")
+            logging.info(f"Loading llm: {config.model_name}")
             try:
                 if config_to_use.recipe == "llamacpp":
                     self.llama_server_process = llamacpp.server_load(
                         model_config=config_to_use,
-                        model_reference=model_reference,
                         telemetry=self.llama_telemetry,
                     )
 
@@ -1305,12 +1328,12 @@ class Server(ManagementTool):
 
                 return {
                     "status": "success",
-                    "message": f"Loaded model: {model_reference}",
+                    "message": f"Loaded model: {config.model_name}",
                 }
             except HTTPException:
                 raise
             except Exception:  # pylint: disable=broad-exception-caught
-                self.model_load_failure(model_reference)
+                self.model_load_failure(config.model_name)
 
         finally:
             self._load_lock.release()

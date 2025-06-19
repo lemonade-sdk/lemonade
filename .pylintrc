@@ -75,7 +75,6 @@ enable =
   useless-else-on-loop,
   expression-not-assigned,
   confusing-with-statement,
-  unnecessary-lambda,
   redeclared-assigned-name,
   pointless-statement,
   pointless-string-statement,

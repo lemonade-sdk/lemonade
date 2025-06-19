@@ -7,21 +7,19 @@ import zipfile
 import logging
 import urllib3
 import requests
-import torch
 from lemonade.state import State
 import lemonade.common.filesystem as fs
 import lemonade.common.test_helpers as common
 import lemonade.common.build as build
-from lemonade.tools.huggingface_load import HuggingfaceLoad
-from lemonade.tools.huggingface_bench import HuggingfaceBench
+from lemonade.tools.huggingface.load import HuggingfaceLoad
+from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
-from lemonade.tools.llamacpp import LoadLlamaCpp
-from lemonade.tools.llamacpp_bench import LlamaCppBench
-from lemonade.cache import Keys, DEFAULT_CACHE_DIR
-from lemonade.api import from_pretrained
+from lemonade.tools.llamacpp.load import LoadLlamaCpp
+from lemonade.tools.llamacpp.bench import LlamaCppBench
+from lemonade.cache import Keys
 
 # Configure logging
 logging.basicConfig(
@@ -60,8 +58,8 @@ def download_llamacpp_binary():
     logger.info(f"Detected platform: {system} {machine}")
 
     if system == "windows":
-        # Windows uses AVX2 by default
-        asset_pattern = "win-avx2-x64"
+        # Windows CPU binary pattern
+        asset_pattern = "win-cpu-x64"
     elif system == "linux":
         asset_pattern = "ubuntu-x64"
     else:
@@ -113,23 +111,58 @@ def download_llamacpp_binary():
         raise
 
     # Find the executable
-    if system == "windows":
-        executable = os.path.join(binary_dir, "llama-cli.exe")
-    else:
-        executable = os.path.join(binary_dir, "llama-cli")
-        # Make executable on Linux
-        os.chmod(executable, 0o755)
+    executable = None
+    executable_name = "llama-cli.exe" if system == "windows" else "llama-cli"
 
-    if not os.path.exists(executable):
+    # For Linux, check build/bin first since that's the standard structure
+    if system != "windows":
+        build_bin_path = os.path.join(binary_dir, "build", "bin", executable_name)
+        if os.path.isfile(build_bin_path):
+            executable = build_bin_path
+            logger.info(f"Found executable in standard location: {executable}")
+
+    # If not found in standard location, search the entire directory tree
+    if executable is None:
+        for root, dirs, files in os.walk(binary_dir):
+            if executable_name in files:
+                executable = os.path.join(root, executable_name)
+                logger.info(f"Found executable at: {executable}")
+                break
+
+    if executable is None:
+        # Collect available files for error reporting
+        all_files = []
+        for root, dirs, files in os.walk(binary_dir):
+            for file in files:
+                rel_path = os.path.relpath(os.path.join(root, file), binary_dir)
+                all_files.append(rel_path)
+
         error_msg = (
-            f"Expected executable not found at {executable} after extraction. "
-            f"Contents of {binary_dir}: {os.listdir(binary_dir)}"
+            f"Expected executable '{executable_name}' not found after extraction. "
+            f"Available files: {all_files[:20]}{'...' if len(all_files) > 20 else ''}"
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
+    # Make executable on Linux
+    if system != "windows":
+        os.chmod(executable, 0o755)
+
+    # Find shared libraries directory for Linux
+    lib_dir = None
+    if system != "windows":
+        # Look for libllama.so in the extracted directory
+        for root, dirs, files in os.walk(binary_dir):
+            if any(f.startswith("libllama.so") for f in files):
+                lib_dir = root
+                logger.info(f"Found shared libraries in: {lib_dir}")
+                break
+
     logger.info(f"Successfully prepared executable at: {executable}")
-    return executable
+    if lib_dir:
+        logger.info(f"Shared libraries directory: {lib_dir}")
+
+    return executable, lib_dir
 
 
 class TestLlamaCpp(unittest.TestCase):
@@ -138,7 +171,7 @@ class TestLlamaCpp(unittest.TestCase):
         """Download llama.cpp binary once for all tests"""
         logger.info("Setting up TestLlamaCpp class...")
         try:
-            cls.executable = download_llamacpp_binary()
+            cls.executable, cls.lib_dir = download_llamacpp_binary()
         except Exception as e:
             error_msg = f"Failed to download llama.cpp binary: {str(e)}"
             logger.error(error_msg)
@@ -184,6 +217,7 @@ class TestLlamaCpp(unittest.TestCase):
             model_binary=self.model_path,
             context_size=512,
             threads=1,
+            lib_dir=self.lib_dir,
         )
 
         self.assertIsNotNone(state.model)
@@ -191,7 +225,10 @@ class TestLlamaCpp(unittest.TestCase):
     def test_002_generate_text(self):
         """Test text generation with llama.cpp"""
         state = LoadLlamaCpp().run(
-            self.state, executable=self.executable, model_binary=self.model_path
+            self.state,
+            executable=self.executable,
+            model_binary=self.model_path,
+            lib_dir=self.lib_dir,
         )
 
         prompt = "What is the capital of France?"
@@ -203,7 +240,10 @@ class TestLlamaCpp(unittest.TestCase):
     def test_003_benchmark(self):
         """Test benchmarking with llama.cpp"""
         state = LoadLlamaCpp().run(
-            self.state, executable=self.executable, model_binary=self.model_path
+            self.state,
+            executable=self.executable,
+            model_binary=self.model_path,
+            lib_dir=self.lib_dir,
         )
 
         # Use longer output tokens to ensure we get valid performance metrics

@@ -7,14 +7,10 @@ import sys
 import time
 from typing import Optional
 
-import requests
-
 from lemonade.state import State
 from lemonade.tools import Tool
 import lemonade.common.printing as printing
 import lemonade.common.build as build
-
-from lemonade.tools.server.thread_utils import ServerRunner
 
 
 def is_port_in_use(port, host="localhost"):
@@ -192,6 +188,9 @@ class LMEvalHarness(Tool):
         log_samples: bool = False,
         output_path: Optional[str] = None,
     ) -> State:
+
+        import requests
+        from lemonade.tools.server.utils.thread import ServerRunner
 
         model = state.model
         tokenizer = state.tokenizer

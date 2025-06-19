@@ -2,9 +2,7 @@ import argparse
 import os
 import csv
 from typing import Dict, Optional, Any
-import requests
-from human_eval.data import write_jsonl, read_problems
-from human_eval.evaluation import evaluate_functional_correctness
+
 
 from lemonade.state import State
 from lemonade.tools import Tool
@@ -95,6 +93,7 @@ class AccuracyHumaneval(Tool):
         Returns:
             Updated state with evaluation results
         """
+
         # Validate required state components
         if not hasattr(state, "model") or not hasattr(state, "tokenizer"):
             raise ValueError("State must contain both 'model' and 'tokenizer'")
@@ -128,6 +127,9 @@ class AccuracyHumaneval(Tool):
 
     def _download_dataset(self, output_path: str) -> None:
         """Download HumanEval dataset if not already present."""
+
+        import requests
+
         if os.path.exists(output_path):
             printing.log_info(f"Dataset already exists at: {output_path}")
             return
@@ -170,6 +172,10 @@ class AccuracyHumaneval(Tool):
         Returns:
             Dictionary containing evaluation metrics
         """
+
+        from human_eval.data import write_jsonl, read_problems
+        from human_eval.evaluation import evaluate_functional_correctness
+
         dataset = read_problems(data_path)
 
         # Limit to first N problems

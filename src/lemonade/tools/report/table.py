@@ -7,10 +7,10 @@ from tabulate import tabulate
 import lemonade.common.build as build
 import lemonade.common.filesystem as fs
 from lemonade.cache import Keys
-from lemonade.tools.huggingface_bench import HuggingfaceBench
-from lemonade.tools.llamacpp_bench import LlamaCppBench
+from lemonade.tools.huggingface.bench import HuggingfaceBench
+from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.mmlu import AccuracyMMLU
-from lemonade.tools.ort_genai.oga_bench import OgaBench
+from lemonade.tools.oga.bench import OgaBench
 
 # List of python packages for which to log the version
 PYTHON_PACKAGES = ["onnxruntime", "transformers", "lemonade-sdk", "voe"]

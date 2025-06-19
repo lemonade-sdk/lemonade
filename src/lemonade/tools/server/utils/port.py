@@ -1,8 +1,15 @@
 import socketserver
 import sys
 import logging
+import importlib
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+
+_lazy_imports = {
+    "TextIteratorStreamer": ("transformers", "TextIteratorStreamer"),
+    "StoppingCriteriaList": ("transformers", "StoppingCriteriaList"),
+}
 
 
 def find_free_port():
@@ -23,9 +30,7 @@ def find_free_port():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Code here will run when the application starts up
-    # Check if console can handle Unicode by testing emoji encoding
-
+    # Only do minimal setup here so endpoints are available immediately
     try:
         if sys.stdout.encoding:
             "🍋".encode(sys.stdout.encoding)
@@ -53,5 +58,19 @@ async def lifespan(app: FastAPI):
             "[Lemonade]      model management\n"
             "[Lemonade]      docs\n"
         )
+
+    # Start lazy imports in the background, and set app.initialized = True
+    # when the imports are available
+    async def lazy_imports_bg():
+        for object_name, import_info in _lazy_imports.items():
+            module_name = import_info[0]
+            class_name = import_info[1]
+            module = importlib.import_module(module_name)
+            obj = getattr(module, class_name)
+            globals()[object_name] = obj
+
+        app.initialized = True
+
+    asyncio.create_task(lazy_imports_bg())
 
     yield

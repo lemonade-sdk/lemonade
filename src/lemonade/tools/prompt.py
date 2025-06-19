@@ -1,6 +1,5 @@
 import argparse
 import os
-import matplotlib.pyplot as plt
 import lemonade.common.build as build
 import lemonade.common.printing as printing
 from lemonade.state import State
@@ -153,6 +152,8 @@ class LLMPrompt(Tool):
         template: bool = False,
         random_seed: int = DEFAULT_RANDOM_SEED,
     ) -> State:
+
+        import matplotlib.pyplot as plt
 
         model: ModelAdapter = state.model
         tokenizer: TokenizerAdapter = state.tokenizer

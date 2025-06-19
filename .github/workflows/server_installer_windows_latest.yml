@@ -91,7 +91,7 @@ jobs:
           Start-Sleep -Seconds 30
           
           Write-Host "Check if server process successfully launched"
-          $serverRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+          $serverRunning = Get-Process -Name "*lemonade*" -ErrorAction SilentlyContinue
           if (-not $serverRunning) {
             Write-Host "Error: Server process isn't running, even though we just tried to start it!"
             Write-Host "Standard Output:"
@@ -102,6 +102,7 @@ jobs:
             exit 1
           } else {
             Write-Host "Server process is alive."
+            $serverPid = $serverRunning.Id
           }
 
           Write-Host "Wait for the server port to come up"
@@ -152,13 +153,21 @@ jobs:
           }
 
           Write-Host "Close the server process"
-
           function Kill-Tree {
               Param([int]$ppid)
               Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $ppid } | ForEach-Object { Kill-Tree $_.ProcessId }
-              Stop-Process -Id $ppid
+              Stop-Process -Id $ppid -ErrorAction SilentlyContinue
           }
-          Kill-Tree $serverProcess.Id
+          Kill-Tree $serverPid
+
+          Write-Host "Ensure the server process is closed"
+          $serverRunning = Get-Process -Name "*lemonade*" -ErrorAction SilentlyContinue
+          if ($serverRunning) {
+              Write-Host "Error: Server process is still running!"
+              exit 1
+          } else {
+              Write-Host "Server process is closed."
+          }
 
       - name: Release
         uses: softprops/action-gh-release@v2
