@@ -128,6 +128,17 @@ class ModelManager:
             allow_patterns=list(expected_files.values()),
         )
 
+        # Make sure we downloaded something
+        # If we didn't that can indicate that no patterns from allow_patterns match
+        # any files in the HF repo
+        if not os.path.exists(snapshot_folder):
+            raise ValueError(
+                "No patterns matched the variant parameter (CHECKPOINT:VARIANT). "
+                "Try again, providing the full filename of your target .gguf file as the variant."
+                " For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:"
+                "qwen2.5-coder-3b-instruct-q4_0.gguf"
+            )
+
         # Ensure we downloaded all expected files while creating a dict of the downloaded files
         snapshot_files = {}
         for file in expected_files:
@@ -179,6 +190,7 @@ class ModelManager:
                         "`reasoning` and `mmproj` arguments as appropriate. "
                     )
 
+                # JSON content that will be used for registration if the download succeeds
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
@@ -201,7 +213,34 @@ class ModelManager:
                         "qwen2.5-coder-3b-instruct-q4_0.gguf"
                     )
 
-                # Register the model in user_models.json, creating that file if needed
+                # Create a PullConfig we will use to download the model
+                new_registration_model_config = PullConfig(
+                    model_name=model_name,
+                    checkpoint=checkpoint,
+                    recipe=recipe,
+                    reasoning=reasoning,
+                )
+            else:
+                new_registration_model_config = None
+
+            # Download the model
+            if new_registration_model_config:
+                checkpoint_to_download = checkpoint
+                gguf_model_config = new_registration_model_config
+            else:
+                checkpoint_to_download = self.supported_models[model]["checkpoint"]
+                gguf_model_config = PullConfig(**self.supported_models[model])
+            print(f"Downloading {model} ({checkpoint_to_download})")
+
+            if "gguf" in checkpoint_to_download.lower():
+                self.download_gguf(gguf_model_config)
+            else:
+                huggingface_hub.snapshot_download(repo_id=checkpoint_to_download)
+
+            # Register the model in user_models.json, creating that file if needed
+            # We do this registration after the download so that we don't register
+            # any incorrectly configured models where the download would fail
+            if new_registration_model_config:
                 if os.path.exists(USER_MODELS_FILE):
                     with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
                         user_models: dict = json.load(file)
@@ -212,16 +251,6 @@ class ModelManager:
 
                 with open(USER_MODELS_FILE, mode="w", encoding="utf-8") as file:
                     json.dump(user_models, fp=file)
-
-            # Download the model
-            checkpoint = self.supported_models[model]["checkpoint"]
-            print(f"Downloading {model} ({checkpoint})")
-
-            if "gguf" in checkpoint.lower():
-                model_config = PullConfig(**self.supported_models[model])
-                self.download_gguf(model_config)
-            else:
-                huggingface_hub.snapshot_download(repo_id=checkpoint)
 
     def filter_models_by_backend(self, models: dict) -> dict:
         """
