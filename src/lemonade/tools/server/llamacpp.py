@@ -416,25 +416,43 @@ def chat_completion(
         exclude_unset=True, exclude_none=True
     )
 
-    def event_stream():
+    # Check if streaming is requested
+    if chat_completion_request.stream:
+
+        def event_stream():
+            try:
+                # Enable streaming
+                for chunk in client.chat.completions.create(**request_dict):
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+                yield "data: [DONE]\n\n"
+
+                # Show telemetry after completion
+                telemetry.show_telemetry()
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                yield f'data: {{"error": "{str(e)}"}}\n\n'
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+    else:
+        # Non-streaming response
         try:
-            # Enable streaming
-            request_dict["stream"] = True
-            for chunk in client.chat.completions.create(**request_dict):
-                yield f"data: {chunk.model_dump_json()}\n\n"
-            yield "data: [DONE]\n\n"
+            # Disable streaming for non-streaming requests
+            response = client.chat.completions.create(**request_dict)
 
             # Show telemetry after completion
             telemetry.show_telemetry()
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            yield f'data: {{"error": "{str(e)}"}}\n\n'
+            return response
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        },
-    )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Chat completion error: {str(e)}",
+            )

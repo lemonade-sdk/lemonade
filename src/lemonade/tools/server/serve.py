@@ -29,6 +29,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
     ChatCompletionMessageToolCall,
     Function,
 )
+from openai.types.completion_usage import CompletionUsage
 from openai.types.chat.chat_completion import Choice
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDelta,
@@ -576,9 +577,16 @@ class Server(ManagementTool):
                 logprobs=logprobs,
             )
 
+            usage = CompletionUsage(
+                prompt_tokens=self.input_tokens,
+                completion_tokens=self.output_tokens,
+                total_tokens=self.input_tokens + self.output_tokens,
+            )
+
             return Completion(
                 id="0",
                 choices=[choice],
+                usage=usage,
                 model=self.llm_loaded.checkpoint,
                 object="text_completion",
                 created=int(time.time()),
@@ -773,9 +781,16 @@ class Server(ManagementTool):
                 logprobs=None,
             )
 
+            usage = CompletionUsage(
+                prompt_tokens=self.input_tokens,
+                completion_tokens=self.output_tokens,
+                total_tokens=self.input_tokens + self.output_tokens,
+            )
+
             return ChatCompletion(
                 id="0",
                 choices=[choice],
+                usage=usage,
                 model=self.llm_loaded.checkpoint,
                 object="chat.completion",
                 created=int(time.time()),

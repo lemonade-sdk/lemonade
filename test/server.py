@@ -322,6 +322,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         print(completion.choices[0].message.content)
         assert len(completion.choices[0].message.content) > 5
 
+        # Check usage fields
+        assert completion.usage.prompt_tokens > 0
+        assert completion.usage.completion_tokens > 0
+        assert completion.usage.total_tokens > 0
+        assert (
+            completion.usage.total_tokens
+            == completion.usage.prompt_tokens + completion.usage.completion_tokens
+        )
+
     # Endpoint: /api/v1/chat/completions
     def test_002_test_chat_completion_streaming(self):
         client = OpenAI(
@@ -408,6 +417,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         print(completion.choices[0].text)
         assert len(completion.choices[0].text) > 5
+
+        # Check usage fields
+        assert completion.usage.prompt_tokens > 0
+        assert completion.usage.completion_tokens > 0
+        assert completion.usage.total_tokens > 0
+        assert (
+            completion.usage.total_tokens
+            == completion.usage.prompt_tokens + completion.usage.completion_tokens
+        )
 
     # Endpoint: /api/v1/completions
     def test_006_test_completions_streaming(self):
@@ -796,8 +814,26 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
+    # Endpoint: /api/v1/chat/completions
+    def test_020_test_llamacpp_chat_completion_non_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        response = client.chat.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            messages=self.messages,
+            stream=False,
+            max_completion_tokens=10,
+        )
+
+        assert response.choices[0].message.content is not None
+        assert len(response.choices[0].message.content) > 5
+        print(response.choices[0].message.content)
+
     # Endpoint: /api/v1/delete
-    async def test_020_test_delete_model(self):
+    async def test_021_test_delete_model(self):
         """Test the delete endpoint functionality"""
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 

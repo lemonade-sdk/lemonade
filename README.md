@@ -55,7 +55,7 @@ Maximum LLM performance requires the right hardware accelerator with the right i
     <tr>
       <td>🎮 GPU</td>
       <td align="center">—</td>
-      <td align="center">Vulkan: All platforms<br><small>Focus: Radeon™ 7000/9000</small></td>
+      <td align="center">Vulkan: All platforms<br><small>Focus:<br/>Ryzen™ AI 7000/8000/300<br/>Radeon™ 7000/9000</small></td>
       <td align="center">—</td>
       <td align="center">✅</td>
       <td align="center">✅</td>
@@ -79,6 +79,10 @@ Maximum LLM performance requires the right hardware accelerator with the right i
 | **OnnxRuntime GenAI (OGA)** | Microsoft engine that runs `.onnx` models and enables hardware vendors to provide their own execution providers (EPs) to support specialized hardware, such as neural processing units (NPUs). |
 | **llamacpp** | Community-driven engine with strong GPU acceleration, support for thousands of `.gguf` models, and advanced features such as vision-language models (VLMs) and mixture-of-experts (MoEs). |
 | **Hugging Face (HF)** | Hugging Face's `transformers` library can run the original `.safetensors` trained weights for models on Meta's PyTorch engine, which provides a source of truth for accuracy measurement. |
+
+## Integrate Lemonade Server with Your Application
+
+Lemonade Server enables languages including Python, C++, Java, C#, Node.js, Go, Ruby, Rust, and PHP. For the full list and integration details, see [docs/server/README.md](./docs/server/README.md).
 
 ## Contributing
 

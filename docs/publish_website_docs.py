@@ -56,6 +56,11 @@ def main():
     with open(dst, "w", encoding="utf-8") as f:
         f.write(content)
 
+    # Remove existing docs/docs if it exists
+    if os.path.exists("docs/docs"):
+        print("Removing ", os.path.abspath("docs/docs"))
+        shutil.rmtree("docs/docs")
+
     # Build the documentation using mkdocs
     print("[INFO] Building documentation with mkdocs...")
     subprocess.run(["mkdocs", "build", "--clean"], check=True)
@@ -64,23 +69,19 @@ def main():
     print("[INFO] Moving site/ to docs/docs/...")
 
     # Check what mkdocs actually generated
-    if os.path.exists("site/docs"):
+    if os.path.exists(os.path.abspath("site/docs")):
         # If mkdocs generated site/docs/, move that content
-        source_dir = "site/docs"
-    elif os.path.exists("site"):
+        source_dir = os.path.abspath("site/docs")
+    elif os.path.exists(os.path.abspath("site")):
         # If mkdocs generated site/, move that content
-        source_dir = "site"
+        source_dir = os.path.abspath("site")
     else:
         print("[ERROR] No site directory found after mkdocs build!")
         sys.exit(1)
 
-    # Remove existing docs/docs if it exists
-    if os.path.exists("docs/docs"):
-        shutil.rmtree("docs/docs")
-
     # Move the correct source directory
     shutil.move(source_dir, "docs/docs")
-    print(f"[INFO] Moved {source_dir} to docs/docs/")
+    print(f"[INFO] Moved {os.path.abspath(source_dir)} to docs/docs/")
 
 
 if __name__ == "__main__":
