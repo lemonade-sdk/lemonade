@@ -417,19 +417,20 @@
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
-            throw new Error(err.detail || 'Failed to register model');
-          }          registerStatus.textContent = 'Model installed!';
+            throw new Error(err.detail || 'Failed to register model.');          }
+          registerStatus.textContent = 'Model installed!';
           registerStatus.style.color = '#27ae60';
           registerStatus.className = 'register-status success';
           registerForm.reset();
           await refreshModelMgmtUI();
           await loadModels(); // update chat dropdown too
-        } catch (e) {          registerStatus.textContent = e.message;
+        } catch (e) {
+          registerStatus.textContent = e.message + ' See the Lemonade Server log for details.';
           registerStatus.style.color = '#dc3545';
           registerStatus.className = 'register-status error';
         }
         btn.disabled = false;
-        btn.textContent = 'Register & Install';
+        btn.textContent = 'Install';
         refreshModelMgmtUI();
       };
     }

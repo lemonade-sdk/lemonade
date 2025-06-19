@@ -132,7 +132,9 @@ class ModelManager:
         snapshot_files = {}
         for file in expected_files:
             snapshot_files[file] = os.path.join(snapshot_folder, expected_files[file])
-            if expected_files[file] not in os.listdir(snapshot_folder):
+            if expected_files[file].lower() not in [
+                name.lower() for name in os.listdir(snapshot_folder)
+            ]:
                 raise ValueError(
                     f"Hugging Face snapshot download for {model_config.checkpoint} "
                     f"expected file {expected_files[file]} not found in {snapshot_folder}"
@@ -187,6 +189,17 @@ class ModelManager:
 
                 if mmproj:
                     new_user_model["mmproj"] = mmproj
+
+                # Make sure that a variant is provided for GGUF models before registering the model
+                if "gguf" in checkpoint.lower() and ":" not in checkpoint.lower():
+                    raise ValueError(
+                        "You are required to provide a 'variant' in the checkpoint field when "
+                        "registering a GGUF model. The variant is provided "
+                        "as CHECKPOINT:VARIANT. For example: "
+                        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:"
+                        "qwen2.5-coder-3b-instruct-q4_0.gguf"
+                    )
 
                 # Register the model in user_models.json, creating that file if needed
                 if os.path.exists(USER_MODELS_FILE):
