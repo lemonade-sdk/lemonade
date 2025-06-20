@@ -62,6 +62,7 @@ class ChatCompletionRequest(BaseModel):
     tools: list[dict] | None = None
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
+    response_format: dict | None = None
 
 
 class ResponsesRequest(BaseModel):
