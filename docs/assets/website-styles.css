@@ -1,0 +1,731 @@
+/* Lemonade Website - Consolidated Styles */
+
+/* === Base Styles === */
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Arial', sans-serif;
+  background: #fffbe9;
+  color: #222;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 5rem;
+}
+
+/* Body variants for different page layouts */
+body.install-options {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* === Navigation Styles === */
+.navbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem 2rem 1.5rem 2rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+  background: transparent;
+  letter-spacing: 0.02em;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.navbar-context {
+  position: absolute;
+  left: 2rem;
+  font-size: 0.95rem;
+  color: #666;
+  display: none;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.navbar-context.show {
+  display: flex;
+}
+
+.navbar-links {
+  display: flex;
+  gap: 2.5rem;
+}
+
+.navbar a {
+  color: #444;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.navbar a:hover {
+  color: #e6b800;
+}
+
+.navbar-back {
+  color: #e6b800;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+.navbar-back:hover {
+  color: #bfa100;
+}
+
+/* Breadcrumb Navigation */
+.breadcrumb {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(255, 251, 233, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(230, 184, 0, 0.2);
+  padding: 0.8rem 2rem;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  font-size: 0.95rem;
+  color: #666;
+  box-sizing: border-box;
+  min-height: 60px;
+}
+
+.breadcrumb-back {
+  color: #e6b800;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.breadcrumb-back:hover {
+  color: #bfa100;
+}
+
+.breadcrumb-separator {
+  margin: 0 0.8rem;
+  color: #ccc;
+  white-space: nowrap;
+}
+
+/* === Main Content Areas === */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 60vh;
+  margin-top: 8rem;
+}
+
+.main.hidden {
+  display: none;
+}
+
+.lmn-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 4rem;
+  padding-top: 80px; /* Account for breadcrumb height */
+}
+
+/* === Typography === */
+.title {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 2.5rem;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+.subtitle {
+  font-size: 1.05rem;
+  color: #555;
+  margin-bottom: 3rem;
+  text-align: center;
+  max-width: 500px;
+}
+
+.lmn-install-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #222;
+  letter-spacing: 0.01em;
+  margin: 0.8em 0 0.3em 0;
+  font-family: inherit;
+  text-align: center;
+  display: block;
+}
+
+/* === Buttons === */
+.download-btn, .dev-btn {
+  background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+  color: #222;
+  font-size: 1.4rem;
+  font-weight: 700;
+  padding: 1.2rem 3rem 0.9rem 3rem;
+  border: none;
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 24px #ffe06677, 0 1.5px 0 #fffbe9 inset;
+  cursor: pointer;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
+  margin-bottom: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.18;
+  position: relative;
+  outline: none;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  min-width: 150px;
+}
+
+.dev-btn {
+  background: #fff;
+  color: #222;
+  border: 2px solid #e6e6e6;
+  box-shadow: 0 4px 24px #ffe06622, 0 1.5px 0 #fffbe9 inset;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.12s, border-color 0.18s;
+}
+
+.download-btn:hover, .download-btn:focus {
+  background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+  box-shadow: 0 6px 20px #ffe06699, 0 1.5px 0 #fffbe9 inset;
+  transform: translateY(-1px) scale(1.01);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.18s;
+}
+
+.download-btn:active {
+  background: #ffe066;
+  box-shadow: 0 2px 8px #ffe06655;
+  transform: scale(0.98);
+}
+
+.dev-btn:hover, .dev-btn:focus {
+  background: #f9f9f2;
+  border-color: #bbb;
+  box-shadow: 0 6px 20px #bbb3, 0 1.5px 0 #fffbe9 inset;
+  transform: translateY(-1px) scale(1.01);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.18s, border-color 0.18s;
+}
+
+.dev-btn:active {
+  background: #ededed;
+  box-shadow: 0 2px 8px #bbb2;
+  border-color: #888;
+  transform: scale(0.98);
+}
+
+.dev-btn:visited {
+  color: #222;
+}
+
+.download-btn .download-sub, .dev-btn .dev-sub {
+  font-size: 1rem;
+  color: #3d4000;
+  font-weight: 400;
+  opacity: 0.7;
+  margin-top: 0.25em;
+  letter-spacing: 0.01em;
+  font-style: italic;
+  text-decoration: none;
+}
+
+.button-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 2.5rem;
+}
+
+.lmn-btn {
+  display: inline-block;
+  background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+  color: #222 !important;
+  font-weight: 700;
+  font-size: 1.18rem;
+  border: none;
+  border-radius: 1.5rem;
+  padding: 1.1em 2.5em 0.9em 2.5em;
+  margin: 0.2em 0.2em 0.2em 0;
+  text-decoration: none !important;
+  box-shadow: 0 4px 24px #ffe06677, 0 1.5px 0 #fffbe9 inset;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.12s;
+  cursor: pointer;
+  outline: none;
+  letter-spacing: 0.01em;
+  min-width: 150px;
+}
+
+.lmn-btn:hover, .lmn-btn:focus {
+  background: linear-gradient(90deg, #ffe066 0%, #ffd43b 100%);
+  color: #222;
+  box-shadow: 0 6px 20px #ffe06699, 0 1.5px 0 #fffbe9 inset;
+  border: none;
+  transform: translateY(-1px) scale(1.01);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.18s;
+}
+
+.lmn-btn:active {
+  background: #ffe066;
+  color: #222;
+  box-shadow: 0 2px 8px #ffe06655;
+  transform: scale(0.98);
+}
+
+.lmn-btn:visited {
+  color: #222;
+}
+
+/* === Install Selector Components === */
+.lmn-installer-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0.5em 0;
+  font-family: inherit;
+  color: #222;
+  box-shadow: 0 4px 24px #ffe06633;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff;
+  table-layout: fixed;
+  width: 100%;
+  max-width: 650px;
+}
+
+.lmn-installer-table td, .lmn-installer-table th {
+  border: 1px solid #e6b800;
+  padding: 0.5em 1em;
+  text-align: center;
+  font-size: 1.08rem;
+  background: #fff;
+  min-width: 120px;
+  box-sizing: border-box;
+  transition: background 0.2s, color 0.2s;
+  cursor: pointer;
+}
+
+.lmn-installer-table tr:first-child td:first-child,
+.lmn-installer-table tr:first-child th:first-child {
+  border-top-left-radius: 18px;
+}
+
+.lmn-installer-table tr:first-child td:last-child,
+.lmn-installer-table tr:first-child th:last-child {
+  border-top-right-radius: 18px;
+}
+
+.lmn-installer-table tr:last-child td:first-child,
+.lmn-installer-table tr:last-child th:first-child {
+  border-bottom-left-radius: 18px;
+}
+
+.lmn-installer-table tr:last-child td:last-child,
+.lmn-installer-table tr:last-child th:last-child {
+  border-bottom-right-radius: 18px;
+}
+
+.lmn-installer-table .lmn-active {
+  background: #ffe066;
+  font-weight: 600;
+  color: #222;
+  transition: background 0.2s;
+}
+
+.lmn-installer-table .lmn-disabled {
+  background: #f5f5f5;
+  color: #bbb;
+  text-shadow: none;
+  font-style: italic;
+}
+
+.lmn-installer-table .lmn-label {
+  background: #f5f5f5;
+  font-weight: bold;
+  color: #444;
+  font-size: 1.08rem;
+  cursor: default;
+}
+
+.lmn-command-area {
+  background: #fffbe9;
+  border: none;
+  border-radius: 18px;
+  margin-top: 0.8em;
+  padding: 0.8em 1em 0.8em 1em;
+  box-shadow: none;
+  max-width: 600px;
+  width: 100%;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.lmn-command-area b {
+  font-size: 1.13rem;
+  color: #222;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin-bottom: 0.5em;
+  display: block;
+}
+
+.lmn-command pre {
+  background: #222;
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.8em 4.5em 0.8em 1em; /* plenty of right padding for button */
+  font-size: 1.08rem;
+  margin: 0.5em 0 0 0;
+  font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', 'monospace';
+  overflow-x: auto;
+  box-shadow: 0 2px 8px #ffe06633;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+}
+
+.lmn-command code {
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lmn-command a {
+  color: #e6b800;
+  text-decoration: underline;
+  font-size: 1.08rem;
+}
+
+.lmn-command a:hover {
+  color: #bfa100;
+}
+
+.lmn-command-line {
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding-right: 0;
+  min-width: 0;
+  word-break: break-all;
+  width: calc(100% + 5.7em); /* extend to cover padding areas */
+  box-sizing: border-box;
+  margin-left: -1.2em; /* extend hover area to cover left padding */
+  padding-left: 1.2em; /* restore visual left padding */
+}
+
+.lmn-command-line span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding-right: 0.5em;
+  max-width: calc(100% - 5.7em); /* prevent text from going into button area */
+}
+
+.lmn-copy-btn {
+  display: none;
+  position: absolute;
+  right: 0.7em;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #ffe066;
+  border: none;
+  border-radius: 0.7em;
+  color: #222;
+  font-size: 1.02rem;
+  padding: 0.2em 0.8em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #ffe06633;
+  transition: background 0.18s, color 0.18s;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.lmn-command-line:hover .lmn-copy-btn {
+  display: inline-block;
+}
+
+.lmn-copy-btn:active {
+  background: #ffd43b;
+}
+
+.lmn-install-view {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0 2rem;
+  box-sizing: border-box;
+}
+
+.lmn-installer-container {
+  margin-top: 0.8em;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* === Decorative Elements === */
+.ai-art {
+  margin: 3rem auto 1.5rem auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: 120px;
+}
+
+.dad-joke {
+  color: #4ca64c;
+  font-size: 1.12rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  opacity: 0.98;
+  letter-spacing: 0.01em;
+  padding: 0.2em 0;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  background: none;
+  border-radius: 0;
+  display: block;
+}
+
+.copyright {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #aaa;
+  margin-bottom: 0.5rem;
+}
+
+.site-footer {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  background-color: #fffbe9;
+  padding-top: 0.5rem;
+  z-index: 100;
+}
+
+/* === Responsive Design === */
+
+/* Large screens and tablets */
+@media (max-width: 1000px) {
+  .lmn-install-view {
+    margin-top: 1rem; /* Less margin when navbar context is stacked */
+  }
+  
+  .main {
+    margin-top: 6rem; /* Reduce excessive top margin for tablets */
+  }
+}
+
+/* Medium screens */
+@media (max-width: 900px) {
+  .navbar {
+    padding: 1.5rem 1.5rem 1.2rem 1.5rem;
+    font-size: 1.1rem;
+  }
+  .navbar-links {
+    gap: 2rem;
+  }
+  .navbar-context {
+    left: 1.5rem;
+    font-size: 0.9rem;
+  }
+  
+  .main {
+    margin-top: 5rem;
+  }
+}
+
+@media (max-width: 800px) {
+  .navbar {
+    padding: 1.2rem 1.2rem 1rem 1.2rem;
+  }
+  .navbar-links {
+    gap: 1.8rem;
+    font-size: 1rem;
+  }
+  .navbar-context {
+    left: 1.2rem;
+    font-size: 0.85rem;
+  }
+  
+  .main {
+    margin-top: 4rem;
+  }
+}
+
+/* Small screens and mobile */
+@media (max-width: 700px) {
+  .navbar {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.2rem;
+  }
+  .navbar-links {
+    gap: 1.5rem;
+    font-size: 1rem;
+  }
+  .navbar-context {
+    position: static;
+    font-size: 0.85rem;
+    order: -1;
+  }
+  
+  .main {
+    margin-top: 3rem; /* Further reduced for mobile */
+  }
+  
+  .lmn-install-view {
+    padding: 0 1rem;
+    margin-top: 0.5rem;
+  }
+  
+  .lmn-install-title { 
+    font-size: 1.5rem; 
+  }
+  
+  .lmn-installer-table { 
+    font-size: 0.98rem; 
+    max-width: 99vw; 
+  }
+  
+  .lmn-command-area { 
+    max-width: 99vw; 
+  }
+  
+  .lmn-btn { 
+    font-size: 1rem; 
+    padding: 0.8rem 1.5rem; 
+  }
+  
+  .breadcrumb {
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    min-height: 50px;
+  }
+  
+  .breadcrumb-separator {
+    margin: 0 0.5rem;
+  }
+  
+  .lmn-center {
+    padding-top: 70px; /* Adjusted for mobile */
+  }
+  
+  .lmn-install-title {
+    font-size: 1.8rem !important; /* Ensure mobile title sizing */
+    margin: 0.8em 0 0.4em 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .title { 
+    font-size: 2rem; 
+  }
+  
+  .subtitle { 
+    font-size: 1rem; 
+  }
+  
+  .navbar { 
+    font-size: 1rem; 
+    gap: 1.2rem; 
+  }
+  
+  .navbar-links {
+    font-size: 1rem; /* Ensure navbar links stay readable */
+  }
+  
+  .download-btn { 
+    font-size: 1rem; 
+    padding: 0.8rem 1.5rem; 
+  }
+  
+  .download-btn .download-sub { 
+    font-size: 0.85rem; 
+  }
+  
+  .main { 
+    margin-top: 4rem; /* Reduced from 6rem */
+  }
+  
+  .button-row { 
+    flex-direction: column; 
+    gap: 1.2rem; 
+  }
+  
+  .dev-btn { 
+    font-size: 1rem; 
+    padding: 0.8rem 1.5rem; 
+  }
+  
+  .dev-btn .dev-sub { 
+    font-size: 0.85rem; 
+  }
+}
+
+@media (max-width: 500px) {
+  .navbar-links {
+    gap: 1.2rem;
+    font-size: 1rem; /* Keep navbar links readable - don't make them too small */
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .breadcrumb {
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+    min-height: auto;
+  }
+  
+  .breadcrumb-back {
+    font-size: 0.8rem;
+  }
+  
+  .lmn-center {
+    padding-top: 65px;
+  }
+  
+  .lmn-install-title {
+    font-size: 1.5rem !important;
+    margin: 0.6em 0 0.3em 0;
+  }
+}
+
+/* === Utility Classes === */
+.text-muted {
+  color: #ccc;
+}
+
+.command-margin {
+  margin-top: 0.6em;
+}
