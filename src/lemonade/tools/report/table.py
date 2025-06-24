@@ -7,6 +7,7 @@ from tabulate import tabulate
 import lemonade.common.build as build
 import lemonade.common.filesystem as fs
 from lemonade.cache import Keys
+from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -525,6 +526,14 @@ class LemonadePerfTable(Table):
                     fs.Keys.AVERAGE_MMLU_ACCURACY + "|^mmlu_",
                     fs.Keys.AVERAGE_MMLU_ACCURACY,
                     ".2f",
+                )
+            ],
+            LMEvalHarness: [
+                AdditionalStat(
+                    "EleutherAI\nLM Evaluation",
+                    "^lm_eval_",
+                    "^lm_eval_",
+                    ".1f",
                 )
             ],
         },

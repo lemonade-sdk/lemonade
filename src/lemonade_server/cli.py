@@ -4,7 +4,6 @@ import os
 from typing import Tuple, Optional
 import psutil
 from typing import List
-import subprocess
 
 
 # Error codes for different CLI scenarios
@@ -88,23 +87,26 @@ def stop():
         # Terminate the main process first
         process.terminate()
 
-        # Then terminate all children
+        # Then terminate llama-server child process (known to be stubborn)
+        # We avoid killing other child processes, such as the installer
         for child in children:
-            try:
-                child.terminate()
-            except psutil.NoSuchProcess:
-                pass  # Child already terminated
+            if "llama-server" in child.name():
+                try:
+                    child.terminate()
+                except psutil.NoSuchProcess:
+                    pass  # Child already terminated
 
         # Wait for main process
         process.wait(timeout=10)
 
-        # Kill any children that didn't terminate gracefully
+        # Kill llama-server child process if it didn't terminate gracefully
         for child in children:
-            try:
-                if child.is_running():
-                    child.kill()
-            except psutil.NoSuchProcess:
-                pass  # Child already terminated
+            if "llama-server" in child.name():
+                try:
+                    if child.is_running():
+                        child.kill()
+                except psutil.NoSuchProcess:
+                    pass  # Child already terminated
     except psutil.NoSuchProcess:
         # Process already terminated
         pass

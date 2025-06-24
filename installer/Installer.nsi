@@ -44,8 +44,34 @@ SectionIn RO ; Read only, always installed
   ; Once we're done downloading and installing the pip packages the size comes out to about 413 MB
   AddSize 433672
 
+  ; Run `lemonade-server stop` and wait for it to return before continuing to ensure Lemonade has been properly stopped.
+  DetailPrint "Stopping any running Lemonade Server instances..."
+  
+  ; Check if lemonade-server.bat exists in the installation folder
+  IfFileExists "$INSTDIR\bin\lemonade-server.bat" 0 stop_complete
+    ; Use the existing lemonade-server.bat to stop the server (in background)
+    nsExec::Exec '"$INSTDIR\bin\lemonade-server.bat" stop'
+    Pop $0
+    ${If} $0 == 0
+      DetailPrint "- Lemonade Server stopped successfully"
+    ${Else}
+      DetailPrint "- Lemonade Server stop command failed (continuing anyway)"
+    ${EndIf}
+    Goto stop_complete
+
+  stop_complete:
+
   ; Check if directory exists before proceeding
   IfFileExists "$INSTDIR\*.*" 0 continue_install
+  ; Directory exists, first check if it's in use by trying to rename it
+  Rename "$INSTDIR" "$INSTDIR.tmp"
+    
+  ; Check if rename was successful
+  IfFileExists "$INSTDIR.tmp\*.*" 0 folder_in_use
+    ; Rename was successful, rename it back - directory is not in use
+    Rename "$INSTDIR.tmp" "$INSTDIR"
+    
+    ; Now ask user if they want to remove it
     ${IfNot} ${Silent}
       MessageBox MB_YESNO "An existing $LEMONADE_SERVER_STRING installation was found at $INSTDIR.$\n$\nWould you like to remove it and continue with the installation?" IDYES remove_dir
       ; If user selects No, show exit message and quit the installer
@@ -55,12 +81,18 @@ SectionIn RO ; Read only, always installed
       Goto remove_dir
     ${EndIf}
 
+  folder_in_use:
+    ; Rename failed, folder is in use
+    ${IfNot} ${Silent}
+      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, click 'Quit' from the tray icon$\n3. Open a terminal and run: lemonade-server stop$\n4. If still running, end lemonade-server.exe and llama-server.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
+    ${EndIf}
+    Quit
+
   remove_dir:
-    ; Try to remove directory and verify it was successful
-    
-    ; Delete all remaining files
+    ; Remove directory (we already know it's not in use)
     RMDir /r "$INSTDIR"
     
+    ; Verify deletion was successful
     IfFileExists "$INSTDIR\*.*" 0 continue_install
       ${IfNot} ${Silent}
         MessageBox MB_OK "Unable to remove existing installation. Please close any applications using $LEMONADE_SERVER_STRING and try again."
