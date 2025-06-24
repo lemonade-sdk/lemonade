@@ -266,7 +266,7 @@ class LemonadeTray(SystemTray):
             self.logger.error(f"Error changing port: {str(e)}")
             self.show_balloon_notification("Error", f"Failed to change port: {str(e)}")
 
-    def upgrade_to_latest(self, icon, item):
+    def upgrade_to_latest(self, _, __):
         """
         Download and launch the Lemonade Server installer
         """
@@ -281,21 +281,34 @@ class LemonadeTray(SystemTray):
         installer_path = os.path.join(
             tempfile.gettempdir(), "Lemonade_Server_Installer.exe"
         )
+        if os.path.exists(installer_path):
+            os.remove(installer_path)
 
         # Download the installer
         response = requests.get(self.latest_version_url, stream=True)
         response.raise_for_status()
 
-        # Save the installer to disk
+        # Save the installer to disk and force write to disk
         with open(installer_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
+            f.flush()
+            os.fsync(f.fileno())
 
-        # Launch the installer
-        subprocess.Popen([installer_path], shell=True)
+        # Launch the installer as a completely detached process
+        # subprocess.DETACHED_PROCESS - Creates a process that's not attached to the console
+        # subprocess.CREATE_NEW_PROCESS_GROUP - Creates a new process group
+        # close_fds=True - Closes file descriptors to prevent inheritance
+        subprocess.Popen(
+            [installer_path],
+            creationflags=subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+            shell=True,
+            cwd=tempfile.gettempdir(),
+        )
 
-        # Quit the application
-        self.exit_app(icon, item)
+        # No need to quit the application, the installer will handle it
 
     def create_menu(self):
         """
