@@ -44,9 +44,6 @@ if %TRAY%==1 (
 REM Change to parent directory where conda env and bin folders are located
 pushd "%~dp0.."
 
-REM Print exactly the command that will be run
-echo "Running: lemonade-server-dev %ARGS%"
-
 REM Run the Python CLI script, passing filtered arguments
 call "%CD%\python\Scripts\lemonade-server-dev" !ARGS!
 set SERVER_ERRORLEVEL=%ERRORLEVEL%

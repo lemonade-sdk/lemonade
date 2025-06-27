@@ -238,32 +238,32 @@ window.lmnRender = function() {
     if (lmnState.fw === 'oga') {
       if (lmnState.dev === 'cpu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-cpu-minimal]' : 'pip install lemonade-sdk[llm-oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-cpu]' : 'pip install lemonade-sdk[dev,oga-cpu]';
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-cpu-minimal]' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-cpu]' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-cpu]';
         }
       } else if (lmnState.dev === 'hybrid') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-hybrid-minimal]\nlemonade-install --ryzenai hybrid' : 'pip install lemonade-sdk[llm-oga-hybrid]\nlemonade-install --ryzenai hybrid';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-hybrid]\nlemonade-install --ryzenai hybrid' : 'pip install lemonade-sdk[dev,oga-hybrid]\nlemonade-install --ryzenai hybrid';
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-hybrid-minimal]\nlemonade-install --ryzenai hybrid' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-hybrid]\nlemonade-install --ryzenai hybrid';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-hybrid]\nlemonade-install --ryzenai hybrid' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-hybrid]\nlemonade-install --ryzenai hybrid';
         }
       }
     } else if (lmnState.fw === 'torch') {
       // PyTorch not available for server-only
       if (lmnState.type === 'full' && (lmnState.dev === 'cpu' || lmnState.dev === 'gpu')) {
         if (lmnState.method === 'pypi') {
-          cmd = 'pip install lemonade-sdk[llm]';
+          cmd = 'pip install lemonade-sdk[dev]';
         } else {
-          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm]';
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
         }
       }
     } else if (lmnState.fw === 'llama') {
       if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-cpu-minimal]' : 'pip install lemonade-sdk[llm-oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install lemonade-sdk[dev]';
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-cpu-minimal]' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[llm-oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
         }
       }
     }

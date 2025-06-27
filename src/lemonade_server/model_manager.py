@@ -249,6 +249,9 @@ class ModelManager:
 
                 user_models[model_name] = new_user_model
 
+                # Ensure the cache directory exists before writing the file
+                os.makedirs(os.path.dirname(USER_MODELS_FILE), exist_ok=True)
+
                 with open(USER_MODELS_FILE, mode="w", encoding="utf-8") as file:
                     json.dump(user_models, fp=file)
 

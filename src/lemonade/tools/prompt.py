@@ -176,12 +176,21 @@ class LLMPrompt(Tool):
 
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
         if isinstance(input_ids, (list, str)):
-            # OGA models return a list of tokens
+            # OGA models return a list of tokens (older versions)
             # Our llama.cpp adapter returns a string
             len_tokens_in = len(input_ids)
-        else:
+        elif hasattr(input_ids, "shape"):
             # HF models return a 2-D tensor
-            len_tokens_in = input_ids.shape[1]
+            # OGA models with newer versions may return numpy arrays
+            if len(input_ids.shape) == 1:
+                # 1-D array from newer OGA versions
+                len_tokens_in = len(input_ids)
+            else:
+                # 2-D tensor from HF models
+                len_tokens_in = input_ids.shape[1]
+        else:
+            # Fallback: try to get length directly
+            len_tokens_in = len(input_ids)
 
         len_tokens_out = []
         response_texts = []
@@ -202,9 +211,15 @@ class LLMPrompt(Tool):
                 random_seed += 1
 
             # Flatten the input and response
-            input_ids_array = (
-                input_ids if isinstance(input_ids, (list, str)) else input_ids[0]
-            )
+            if isinstance(input_ids, (list, str)):
+                input_ids_array = input_ids
+            elif hasattr(input_ids, "shape") and len(input_ids.shape) == 1:
+                # 1-D array from newer OGA versions - already flat
+                input_ids_array = input_ids
+            else:
+                # 2-D tensor from HF models - take first row
+                input_ids_array = input_ids[0]
+
             response_array = response if isinstance(response, str) else response[0]
 
             # Separate the prompt from the response

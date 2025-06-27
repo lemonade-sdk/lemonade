@@ -197,11 +197,17 @@ class LemonadeTray(SystemTray):
         """
         webbrowser.open("https://lemonade-server.ai/docs/")
 
+    def open_llm_chat(self, _, __):
+        """
+        Open the LLM chat in the default web browser.
+        """
+        webbrowser.open(f"http://localhost:{self.port}/#llm-chat")
+
     def open_model_manager(self, _, __):
         """
         Open the model manager in the default web browser.
         """
-        webbrowser.open(f"http://localhost:{self.port}/")
+        webbrowser.open(f"http://localhost:{self.port}/#model-management")
 
     def check_server_state(self):
         """
@@ -339,16 +345,25 @@ class LemonadeTray(SystemTray):
 
         # Create menu items for all downloaded models
         model_menu_items = []
-        for model_name, _ in self.downloaded_models.items():
-            # Create a function that returns the lambda to properly capture the variables
-            def create_handler(mod):
-                return lambda icon, item: self.load_llm(icon, item, mod)
+        if not self.downloaded_models:
+            model_menu_items.append(
+                MenuItem(
+                    "No models available: Use the Model Manager to pull models",
+                    None,
+                    enabled=False,
+                )
+            )
+        else:
+            for model_name, _ in self.downloaded_models.items():
+                # Create a function that returns the lambda to properly capture the variables
+                def create_handler(mod):
+                    return lambda icon, item: self.load_llm(icon, item, mod)
 
-            model_item = MenuItem(model_name, create_handler(model_name))
+                model_item = MenuItem(model_name, create_handler(model_name))
 
-            # Set checked property instead of modifying the text
-            model_item.checked = model_name == self.loaded_llm
-            model_menu_items.append(model_item)
+                # Set checked property instead of modifying the text
+                model_item.checked = model_name == self.loaded_llm
+                model_menu_items.append(model_item)
 
         load_submenu = Menu(*model_menu_items)
 
@@ -391,6 +406,7 @@ class LemonadeTray(SystemTray):
             )
 
         items.append(MenuItem("Documentation", self.open_documentation))
+        items.append(MenuItem("LLM Chat", self.open_llm_chat))
         items.append(MenuItem("Model Manager", self.open_model_manager))
         items.append(MenuItem("Show Logs", self.show_logs))
         items.append(Menu.SEPARATOR)

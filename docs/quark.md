@@ -11,7 +11,7 @@ Quark is indeed AMD's recommended quantization framework for targeting Ryzen AI 
 2. Install requirements to setup this environment.
 Depending on your usecase you can install for CPU, NPU pr hybrid. 
     ```bash
-    pip install -e .[llm-oga-cpu] # Can also work with llm-oga-npu or llm-oga-hybrid
+    pip install -e .[dev,oga-cpu] # Can also work with llm-oga-npu or llm-oga-hybrid
     ```
 2. Install `quark` using `lemonade-install` for easy install
     ```bash

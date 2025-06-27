@@ -48,7 +48,10 @@ class Profiler(abc.ABC):
         This method is called so that the profiler can create its output files.
         The state is passed so that build info can be gathered and stats can be written.
         The timestamp can be used for filename in current working directory.
-        The start times contain a list of tools and start times.
+        The start times parameter is a dict with the keys being the tools names and
+        the values being the time the tool started.  There is an initial "warmup" key
+        that has a start time before the first tool and a "cool down" key that contains the
+        time when the last tool ended.
         """
 
 

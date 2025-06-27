@@ -383,6 +383,10 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
             f"Loading {model_config.model_name} on GPU didn't work, re-attempting on CPU"
         )
 
+        if os.environ.get("LEMONADE_LLAMACPP_NO_FALLBACK"):
+            # Used for testing, when the test should fail if GPU didn't work
+            raise Exception("llamacpp GPU loading failed")
+
         llama_server_process = _launch_llama_subprocess(
             snapshot_files, use_gpu=False, telemetry=telemetry
         )

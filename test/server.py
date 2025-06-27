@@ -543,7 +543,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
     async def test_011_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
             first_model = "Qwen2.5-0.5B-Instruct-CPU"
-            second_model = "Phi-3-Mini-Instruct-CPU"
+            second_model = "Qwen3-0.6B-GGUF"
 
             # Start two load requests simultaneously
             load_tasks = [

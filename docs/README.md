@@ -26,7 +26,7 @@
 For a quick start with Hugging Face (PyTorch) LLMs on CPU, run the following installation commands in an active Python 3 environment, and then try one of the CLI commands below.
 
 ```bash
-pip install lemonade-sdk[llm]
+pip install lemonade-sdk[dev]
 ```
 
 ### NPU and Hybrid Execution
