@@ -5,7 +5,7 @@ This document provides the models we recommend for use with Lemonade Server. Cli
 
 ## Model Management GUI
 
-Lemonade Server offers a model management GUI to help you see which models are available, install new models, and delete models. You can access this GUI by starting Lemonade Server, opening <http://localhost:8000> in your web browser, and clicking the Model Management tab.
+Lemonade Server offers a model management GUI to help you see which models are available, install new models, and delete models. You can access this GUI by starting Lemonade Server, opening http://localhost:8000 in your web browser, and clicking the Model Management tab.
 
 ## Naming Convention
 
@@ -399,7 +399,6 @@ lemonade-server pull Gemma-3-4b-it-GGUF
 <tr><td>Mmproj</td><td>mmproj-model-f16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Reasoning</td><td>False</td></tr>
-<tr><td>Labels</td><td>['vision']</td></tr>
 </table>
 
 </details>
@@ -416,6 +415,24 @@ lemonade-server pull Qwen2.5-VL-7B-Instruct-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/ggml-org/Qwen2.5-VL-7B-Instruct-GGUF">ggml-org/Qwen2.5-VL-7B-Instruct-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Mmproj</td><td>mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Reasoning</td><td>False</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Llama-4-Scout-17B-16E-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Llama-4-Scout-17B-16E-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF">unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_S</td></tr>
+<tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Reasoning</td><td>False</td></tr>
 </table>

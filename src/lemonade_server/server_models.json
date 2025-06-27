@@ -203,5 +203,13 @@
         "reasoning": false,
         "suggested": true,
         "labels": ["vision"]
+    },
+    "Llama-4-Scout-17B-16E-Instruct-GGUF": {
+        "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "reasoning": false,
+        "suggested": true,
+        "labels": ["vision"]
     }
 }

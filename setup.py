@@ -52,7 +52,7 @@ setup(
         "huggingface-hub==0.33.0",
     ],
     extras_require={
-        # The server- extras are meant to deploy specific backends into end-user
+        # The non-dev extras are meant to deploy specific backends into end-user
         # applications, without including developer-focused tools
         "oga-hybrid": [
             # Note: `lemonade-install --ryzenai hybrid` is necessary
@@ -65,6 +65,8 @@ setup(
             "onnxruntime-genai==0.8.2",
             "onnxruntime >=1.22.0",
         ],
+        # Developer-focused tools for benchmarking, accuracy testing, and
+        # model preparation (ONNX export, quantization, device-specifc optimization, etc.)
         "dev": [
             # Minimal dependencies for developers to use all features of
             # Lemonade SDK, including building and optimizing models
