@@ -37,6 +37,13 @@ If HEADLESS = True Then
     ' Headless mode: open a terminal and run the server without the tray
     wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve --no-tray", 1, True
 Else
-    ' GUI mode: Run the server on a hidden window with the tray
-    wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve", 0, False
+    ' Check if we're in CI mode via environment variable
+    ciMode = wshShell.ExpandEnvironmentStrings("%LEMONADE_CI_MODE%")
+    If ciMode <> "%LEMONADE_CI_MODE%" And (LCase(ciMode) = "true" Or LCase(ciMode) = "1") Then
+        ' CI mode: run without tray even in GUI environment
+        wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve --no-tray", 1, True
+    Else
+        ' GUI mode: Run the server on a hidden window with the tray
+        wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve", 0, False
+    End If
 End If

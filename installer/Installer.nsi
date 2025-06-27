@@ -157,9 +157,9 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
     ${If} $HYBRID_SELECTED == "true"
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-hybrid-minimal] --no-warn-script-location' $8
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-hybrid] --no-warn-script-location' $8
     ${Else}
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu-minimal] --no-warn-script-location' $8
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
     ${EndIf}
     DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 

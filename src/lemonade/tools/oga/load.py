@@ -1,12 +1,6 @@
 # onnxruntime_genai is not lint-friendly yet and PyLint can't
 # find any of the class methods
 # pylint: disable=no-member
-#
-# Model builder constraints:
-#   11/10/24 Need transformers <4.45.0 OR onnxruntime-genai 0.5.0 (which must be built from source)
-#   (transformers v4.45 changes the format of the tokenizer.json file which will be supported in
-#   onnxruntime-genai 0.5)
-#
 
 import argparse
 import os
@@ -51,8 +45,8 @@ def import_error_heler(e: Exception):
     """
     raise ImportError(
         f"{e}\n Please install lemonade-sdk with "
-        "one of the llm-oga extras, for example:\n"
-        "pip install lemonade-sdk[llm-oga-cpu]\n"
+        "one of the oga extras, for example:\n"
+        "pip install lemonade-sdk[dev,oga-cpu]\n"
         "See https://lemonade_server.ai/install_options.html for details"
     )
 

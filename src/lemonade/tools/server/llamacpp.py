@@ -210,15 +210,20 @@ def _log_subprocess_output(
     """
 
     if process.stdout:
-        for line in iter(process.stdout.readline, ""):
-            if line:
-                line_stripped = line.strip()
-                logging.debug("%s: %s", prefix, line_stripped)
+        try:
+            for line in iter(process.stdout.readline, ""):
+                if line:
+                    line_stripped = line.strip()
+                    logging.debug("%s: %s", prefix, line_stripped)
 
-                telemetry.parse_telemetry_line(line_stripped)
+                    telemetry.parse_telemetry_line(line_stripped)
 
-            if process.poll() is not None:
-                break
+                if process.poll() is not None:
+                    break
+        except UnicodeDecodeError as e:
+            logging.debug("Unicode decode error reading subprocess output: %s", str(e))
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Unexpected error reading subprocess output: %s", str(e))
 
 
 def _wait_for_load(llama_server_process: subprocess.Popen, port: int):
@@ -287,6 +292,8 @@ def _launch_llama_subprocess(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         env=env,
     )
@@ -382,6 +389,10 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
         logging.warning(
             f"Loading {model_config.model_name} on GPU didn't work, re-attempting on CPU"
         )
+
+        if os.environ.get("LEMONADE_LLAMACPP_NO_FALLBACK"):
+            # Used for testing, when the test should fail if GPU didn't work
+            raise Exception("llamacpp GPU loading failed")
 
         llama_server_process = _launch_llama_subprocess(
             snapshot_files, use_gpu=False, telemetry=telemetry

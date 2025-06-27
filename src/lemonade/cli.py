@@ -90,9 +90,9 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
     )
 
     profiler_instances = [
-        profiler(global_args[profiler.unique_name])
+        profiler(global_args[profiler.unique_name.replace("-", "_")])
         for profiler in profilers
-        if global_args.get(profiler.unique_name, None) is not None
+        if global_args.get(profiler.unique_name.replace("-", "_"), None) is not None
     ]
 
     if len(evaluation_tools) > 0:

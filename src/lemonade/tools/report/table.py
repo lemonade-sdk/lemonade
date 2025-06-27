@@ -74,6 +74,7 @@ class SimpleStat(TableColumn):
         align="center",
         omit_if_lean=False,
         wrap=None,
+        stat_fn=None,
     ):
         self.column_header = column_header
         self.stat = stat
@@ -81,6 +82,7 @@ class SimpleStat(TableColumn):
         self.align = align
         self.omit_if_lean = omit_if_lean
         self.wrap = wrap or self.default_wrap
+        self.stat_fn = stat_fn
 
     def get_str(self, build_stats, lean=False):
         if lean and self.omit_if_lean:
@@ -88,6 +90,8 @@ class SimpleStat(TableColumn):
         data = build_stats.get(self.stat, None)
         if data is None:
             return ""
+        if self.stat_fn:
+            data = self.stat_fn(data)
         cell_str = "\n".join(
             [_wrap(f"{x:{self.format_str}}", self.wrap) for x in _to_list(data)]
         )
@@ -233,6 +237,47 @@ class AdditionalStat(TableColumn):
         return "\n".join(cell_entry)
 
 
+class DictListStat(TableColumn):
+    """
+    A statistic that is a list of dicts and values from a given list of keys will be
+    pulled out of each dict and placed in the cell
+    """
+
+    def __init__(
+        self,
+        column_header,
+        statistic_name,
+        key_format_list,
+        align="center",
+        omit_if_lean=False,
+        wrap=None,
+    ):
+        self.column_header = column_header
+        self.statistic_name = statistic_name
+        self.key_format_list = key_format_list
+        self.align = align
+        self.omit_if_lean = omit_if_lean
+        self.wrap = wrap or self.default_wrap
+
+    def get_str(self, build_stats, lean=False):
+        if lean and self.omit_if_lean:
+            return None
+        stat = build_stats.get(self.statistic_name, None)
+        if not stat:
+            return ""
+        cell_entry = []
+        for stat_dict in stat:
+            line = [
+                format_str.format(stat_dict[key])
+                for key, format_str in self.key_format_list
+            ]
+            cell_entry.append(" ".join(line))
+        return "\n".join(cell_entry)
+
+    def get_keys(self):
+        return [self.statistic_name]
+
+
 ################################################################################
 # ABSTRACT BASE CLASS FOR DEFINING A TABLE
 ################################################################################
@@ -350,6 +395,28 @@ class Table(ABC):
                     headers.append(column.column_header)
                     col_align += (column.align,)
 
+        # Stat column headers
+        stat_columns = self.table_descriptor.get("stat_columns", [])
+        stat_columns_include = []
+        for column in stat_columns:
+            # Check to see that at least one build has data for the column
+            keep_column = False
+            if not (self.lean and column.omit_if_lean):
+                keys = column.get_keys()
+                for build_stats in self.all_stats:
+                    found = [(key in build_stats) for key in keys]
+                    if any(found):
+                        keep_column = True
+                        headers.append(column.column_header)
+                        col_align += (column.align,)
+                        break
+            stat_columns_include.append(keep_column)
+        stat_columns = [
+            column
+            for column, include in zip(stat_columns, stat_columns_include)
+            if include
+        ]
+
         # Final headers
         last_columns = self.table_descriptor.get("last_columns", [])
         for column in last_columns:
@@ -385,6 +452,12 @@ class Table(ABC):
                     entry_str = entry.get_str(build_stats, self.lean)
                     if entry_str is not None:
                         row.append(entry_str)
+
+            # Per stat columns
+            for entry in stat_columns:
+                entry_str = entry.get_str(build_stats, self.lean)
+                if entry_str is not None:
+                    row.append(entry_str)
 
             # Final columns
             for entry in last_columns:
@@ -515,6 +588,12 @@ class LemonadePerfTable(Table):
                     ".2f",
                 ),
                 SimpleStat(
+                    _wrap("Total Generated Tokens", 9),
+                    Keys.RESPONSE_TOKENS,
+                    "d",
+                    stat_fn=sum,
+                ),
+                SimpleStat(
                     _wrap("Memory Used (GB)", 8), Keys.MAX_MEMORY_USED_GBYTE, ".3f"
                 ),
             ],
@@ -537,6 +616,7 @@ class LemonadePerfTable(Table):
                 )
             ],
         },
+        "stat_columns": [],
         "last_columns": [
             SimpleStat(
                 "System Info",

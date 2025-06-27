@@ -110,19 +110,52 @@
     </footer>
     <script src="https://cdn.jsdelivr.net/npm/openai@4.21.0/dist/openai.min.js"></script> 
     <script>    // Tab switching logic 
-    function showTab(tab) { 
+    function showTab(tab, updateHash = true) { 
         document.getElementById('tab-chat').classList.remove('active'); 
         document.getElementById('tab-models').classList.remove('active'); 
         document.getElementById('content-chat').classList.remove('active'); 
         document.getElementById('content-models').classList.remove('active'); 
         if (tab === 'chat') { 
             document.getElementById('tab-chat').classList.add('active'); 
-            document.getElementById('content-chat').classList.add('active'); 
+            document.getElementById('content-chat').classList.add('active');
+            if (updateHash) {
+                window.location.hash = 'llm-chat';
+            }
         } else { 
             document.getElementById('tab-models').classList.add('active'); 
-            document.getElementById('content-models').classList.add('active'); 
+            document.getElementById('content-models').classList.add('active');
+            if (updateHash) {
+                window.location.hash = 'model-management';
+            }
         } 
     }
+
+    // Handle hash changes for anchor navigation
+    function handleHashChange() {
+        const hash = window.location.hash.slice(1); // Remove the # symbol
+        if (hash === 'llm-chat') {
+            showTab('chat', false);
+        } else if (hash === 'model-management') {
+            showTab('models', false);
+        }
+    }
+
+    // Initialize tab based on URL hash on page load
+    function initializeTabFromHash() {
+        const hash = window.location.hash.slice(1);
+        if (hash === 'llm-chat') {
+            showTab('chat', false);
+        } else if (hash === 'model-management') {
+            showTab('models', false);
+        }
+        // If no hash or unrecognized hash, keep default (chat tab is already active)
+    }
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', handleHashChange);
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', initializeTabFromHash);
 
     // Toggle Add Model form
     function toggleAddModelForm() {

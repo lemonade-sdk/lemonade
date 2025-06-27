@@ -7,8 +7,7 @@ on:
       - v*
       - RC*
   pull_request:
-    branches:
-      - '**'
+  merge_group:
 
 jobs:
   build-n-publish:
@@ -33,7 +32,7 @@ jobs:
         shell: bash -el {0}
         run: |
           python -m pip install --upgrade pip
-          pip install "dist/lemonade_sdk-${{ env.VERSION }}-py3-none-any.whl[llm]"
+          pip install "dist/lemonade_sdk-${{ env.VERSION }}-py3-none-any.whl[dev]"
           lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "Hello, my thoughts are"
       - name: Publish distribution package to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
