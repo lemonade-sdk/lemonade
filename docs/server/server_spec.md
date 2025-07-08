@@ -625,7 +625,7 @@ The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
-  - The `chat/completions` endpoint is the only completions/responses endpoint supported. 
+  - The `chat/completions`, `embeddings`, and `reranking` endpoints are supported. 
   - Non-chat `completions`, and `responses` are not supported at this time.
 - A single Lemonade Server process can seamlessly switch between OGA and GGUF models.
   - Lemonade Server will attempt to load models onto GPU with Vulkan first, and if that doesn't work it will fall back to CPU.

@@ -27,7 +27,7 @@ def min_handle_none(*args: int):
 
 class AccuracyMMLU(Tool):
     """
-    See docs/lemonade/mmlu_accuracy.md for more details
+    See docs/dev_cli/mmlu_accuracy.md for more details
     """
 
     unique_name = "accuracy-mmlu"

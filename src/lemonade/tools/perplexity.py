@@ -17,7 +17,7 @@ class AccuracyPerplexity(Tool):
 
     Output state produced: None
 
-    See docs/lemonade/perplexity.md for more details.
+    See docs/dev_cli/perplexity.md for more details.
     """
 
     unique_name = "accuracy-perplexity"
@@ -63,7 +63,7 @@ class AccuracyPerplexity(Tool):
             # try-except will allow a few more LLMs to work
             max_length = 2048
         # Set stride to half of the maximum input length for overlapping window processing
-        # Refer to docs/perplexity.md for more information on sliding window
+        # Refer to docs/dev_cli/perplexity.md for more information on sliding window
         stride = max_length // 2
         # Determine the total sequence length of the tokenized input
         seq_len = encodings.input_ids.size(1)

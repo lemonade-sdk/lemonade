@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union, List, Any
 
 from pydantic import BaseModel
 
@@ -63,6 +63,30 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
     response_format: dict | None = None
+
+
+class EmbeddingsRequest(BaseModel):
+    """
+    Request model for embeddings API endpoint.
+
+    Generates embeddings for the provided input text or tokens.
+    """
+
+    input: Union[str, List]
+    model: Optional[str] = None
+    encoding_format: Optional[str] = "float"  # "float" or "base64"
+
+
+class RerankingRequest(BaseModel):
+    """
+    Request model for reranking API endpoint.
+
+    Reranks a list of documents based on their relevance to a query.
+    """
+
+    query: str
+    documents: List[str]
+    model: str
 
 
 class ResponsesRequest(BaseModel):

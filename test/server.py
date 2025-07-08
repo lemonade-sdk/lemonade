@@ -28,6 +28,7 @@ from unittest.mock import patch
 import urllib.request
 import os
 import requests
+import numpy as np
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -281,6 +282,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         valid_endpoints = [
             "chat/completions",
             "completions",
+            "embeddings",
             "models",
             "responses",
             "pull",
@@ -832,8 +834,140 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(response.choices[0].message.content) > 5
         print(response.choices[0].message.content)
 
+    # Endpoint: /api/v1/embeddings
+    def test_021_test_embeddings(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+        model_id = "nomic-embed-text-v2-moe-GGUF"
+
+        # Test 1: Single string
+        response = client.embeddings.create(
+            input="Hello, how are you today?",
+            model=model_id,
+            encoding_format="float",
+        )
+        assert response.data is not None
+        assert len(response.data) == 1
+        assert response.data[0].embedding is not None
+        assert len(response.data[0].embedding) > 0
+        print(f"Single string embedding dimension: {len(response.data[0].embedding)}")
+
+        # Test 2: Array of strings
+        response = client.embeddings.create(
+            input=["Hello world", "How are you?", "This is a test"],
+            model=model_id,
+            encoding_format="float",
+        )
+        assert response.data is not None
+        assert len(response.data) == 3
+        for i, embedding in enumerate(response.data):
+            assert embedding.embedding is not None
+            assert len(embedding.embedding) > 0
+            print(f"Array embedding {i+1} dimension: {len(embedding.embedding)}")
+
+        # Test 3: Base64 encoding format
+        response = client.embeddings.create(
+            input="Test base64 encoding",
+            model=model_id,
+            encoding_format="base64",
+        )
+        assert response.data is not None
+        assert len(response.data) == 1
+        assert response.data[0].embedding is not None
+        assert len(response.data[0].embedding) > 0
+        print(f"Base64 embedding length: {len(response.data[0].embedding)}")
+
+        # Test 4: Token IDs (if supported by model)
+        response = client.embeddings.create(
+            input=[15496, 11, 1268, 527, 499, 3432, 30],
+            model=model_id,
+            encoding_format="float",
+        )
+        assert response.data is not None
+        assert len(response.data) == 1
+        print(f"Token embedding dimension: {len(response.data[0].embedding)}")
+
+        # Test 5: Mixed input types (if supported by model)
+        response = client.embeddings.create(
+            input=[15496, "hello", 527, "world"],
+            model=model_id,
+            encoding_format="float",
+        )
+        assert response.data is not None
+        print(f"Mixed input embedding dimension: {len(response.data[0].embedding)}")
+
+        # Test 6: Semantic similarity comparison
+        texts = [
+            "The cat sat on the mat",
+            "A feline rested on the carpet",
+            "Dogs are loyal animals",
+            "Python is a programming language",
+        ]
+        response = client.embeddings.create(
+            input=texts,
+            model=model_id,
+            encoding_format="float",
+        )
+        assert response.data is not None
+        assert len(response.data) == 4
+
+        def cosine_similarity(a, b):
+            return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+        emb1 = np.array(response.data[0].embedding)
+        emb2 = np.array(response.data[1].embedding)
+        emb3 = np.array(response.data[2].embedding)
+
+        sim_12 = cosine_similarity(emb1, emb2)
+        sim_13 = cosine_similarity(emb1, emb3)
+
+        print(f"Similarity cat/mat vs feline/carpet: {sim_12:.4f}")
+        print(f"Similarity cat/mat vs dogs: {sim_13:.4f}")
+        assert (
+            sim_12 > sim_13
+        ), f"Semantic similarity test failed: {sim_12:.4f} <= {sim_13:.4f}"
+
+    # Endpoint: /api/v1/reranking
+    def test_022_test_reranking(self):
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",  # index 0
+            "The girl is carrying a baby.",  # index 1
+            "A man is riding a horse.",  # index 2
+            "A young girl is playing violin.",  # index 3
+            "A man is eating a piece of bread.",  # index 4
+            "A man is eating noodles.",  # index 5
+        ]
+
+        # Make the reranking request
+        payload = {
+            "query": query,
+            "documents": documents,
+            "model": "jina-reranker-v1-tiny-en-GGUF",
+        }
+        response = requests.post(f"{self.base_url}/reranking", json=payload)
+        response.raise_for_status()
+        result = response.json()
+
+        # Sort results by score
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        # Get the indices of the top 3 ranked documents
+        top_3_indices = [r["index"] for r in results[:3]]
+
+        # The food-related documents should be in top 3 (indices 0, 4, and 5)
+        expected_top_3 = {0, 4, 5}
+        actual_top_3 = set(top_3_indices)
+
+        assert (
+            actual_top_3 == expected_top_3
+        ), f"Expected food-related documents (indices {expected_top_3}) to be in top 3, but got {actual_top_3}"
+
     # Endpoint: /api/v1/delete
-    async def test_021_test_delete_model(self):
+    async def test_023_test_delete_model(self):
         """Test the delete endpoint functionality"""
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 

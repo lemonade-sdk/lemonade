@@ -1,6 +1,6 @@
 [![Lemonade tests](https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg)](https://github.com/lemonade-sdk/lemonade/tree/main/test "Check out our tests")
 [![OS - Windows | Linux](https://img.shields.io/badge/OS-windows%20%7C%20linux-blue)](docs/README.md#installation "Check out our instructions")
-[![Made with Python](https://img.shields.io/badge/Python-3.8,3.10-blue?logo=python&logoColor=white)](docs/README.md#installation "Check out our instructions")
+[![Made with Python](https://img.shields.io/badge/Python-3.10-blue?logo=python&logoColor=white)](docs/README.md#installation "Check out our instructions")
 
 ## 🍋 Lemonade SDK: Quickly serve, benchmark and deploy LLMs
 
@@ -15,8 +15,8 @@ The [Lemonade SDK](./docs/README.md) makes it easy to run Large Language Models 
 The [Lemonade SDK](./docs/README.md) is comprised of the following:
 
 - 🌐 **[Lemonade Server](https://lemonade-server.ai/docs)**: A local LLM server for running ONNX and GGUF models using the OpenAI API standard. Install and enable your applications with NPU and GPU acceleration in minutes.
-- 🐍 **Lemonade API**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
-- 🖥️ **Lemonade CLI**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with measurement tools to characterize your models on your hardware. The available tools are:
+- 🐍 **[Lemonade API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
+- 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with measurement tools to characterize your models on your hardware. The available tools are:
   - Prompting with templates.
   - Measuring accuracy with a variety of tests.
   - Benchmarking to get the time-to-first-token and tokens per second.
@@ -71,14 +71,7 @@ Maximum LLM performance requires the right hardware accelerator with the right i
   </tbody>
 </table>
 
-
-
-#### Inference Engines Overview
-| Engine | Description |
-| :--- | :--- |
-| **OnnxRuntime GenAI (OGA)** | Microsoft engine that runs `.onnx` models and enables hardware vendors to provide their own execution providers (EPs) to support specialized hardware, such as neural processing units (NPUs). |
-| **llamacpp** | Community-driven engine with strong GPU acceleration, support for thousands of `.gguf` models, and advanced features such as vision-language models (VLMs) and mixture-of-experts (MoEs). |
-| **Hugging Face (HF)** | Hugging Face's `transformers` library can run the original `.safetensors` trained weights for models on Meta's PyTorch engine, which provides a source of truth for accuracy measurement. |
+To learn more about the supported hardware and software, visit the documentation [here](./docs/README.md#software-and-hardware-overview).
 
 ## Integrate Lemonade Server with Your Application
 

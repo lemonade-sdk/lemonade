@@ -89,7 +89,7 @@ body {
   margin-bottom: 2em;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  max-width: 900px;
+  max-width: 1000px;
   width: 100%;
 }
 
@@ -130,8 +130,8 @@ body {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 400px;
-  max-width: 600px;
+  height: 600px;
+  max-width: 800px;
   margin: 0 auto;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
@@ -186,6 +186,155 @@ body {
   color: #222;
   border-bottom-left-radius: 4px;
   align-self: flex-start;
+}
+
+/* Markdown styling within chat bubbles */
+.chat-bubble h1,
+.chat-bubble h2,
+.chat-bubble h3,
+.chat-bubble h4,
+.chat-bubble h5,
+.chat-bubble h6 {
+  margin: 0.5em 0 0.3em 0;
+  color: inherit;
+  font-weight: bold;
+}
+
+.chat-bubble h1 { font-size: 1.4em; }
+.chat-bubble h2 { font-size: 1.3em; }
+.chat-bubble h3 { font-size: 1.2em; }
+.chat-bubble h4 { font-size: 1.1em; }
+.chat-bubble h5 { font-size: 1.05em; }
+.chat-bubble h6 { font-size: 1em; }
+
+.chat-bubble p {
+  margin: 0.5em 0;
+  line-height: 1.4;
+}
+
+.chat-bubble p:first-child {
+  margin-top: 0;
+}
+
+.chat-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-bubble ul,
+.chat-bubble ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.chat-bubble li {
+  margin: 0.2em 0;
+}
+
+.chat-bubble blockquote {
+  margin: 0.5em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid #ccc;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.chat-bubble code {
+  background: rgba(0,0,0,0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.chat-bubble pre {
+  background: rgba(0,0,0,0.05);
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 6px;
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.chat-bubble pre code {
+  background: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  font-size: inherit;
+}
+
+.chat-bubble table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+
+.chat-bubble th,
+.chat-bubble td {
+  border: 1px solid #ddd;
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.chat-bubble th {
+  background: rgba(0,0,0,0.05);
+  font-weight: bold;
+}
+
+.chat-bubble a {
+  color: #007acc;
+  text-decoration: none;
+}
+
+.chat-bubble a:hover {
+  text-decoration: underline;
+}
+
+.chat-bubble hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1em 0;
+}
+
+.chat-bubble strong {
+  font-weight: bold;
+}
+
+.chat-bubble em {
+  font-style: italic;
+}
+
+.chat-bubble del {
+  text-decoration: line-through;
+}
+
+/* Special styling for code blocks in LLM bubbles */
+.chat-bubble.llm pre {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+}
+
+/* Apply special styling to inline code elements */
+.chat-bubble.llm code {
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+}
+
+/* Remove styling from code elements inside pre blocks */
+.chat-bubble.llm pre code {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.chat-bubble.llm blockquote {
+  background: rgba(0,0,0,0.03);
+  border-left-color: #999;
 }
 
 .chat-input-row {
@@ -318,6 +467,14 @@ body {
 
 .model-label.other {
   background-color: #27ae60;
+}
+
+.model-label.embeddings {
+  background-color: #9b59b6;
+}
+
+.model-label.reranking {
+  background-color: #ca4747;
 }
 
 .model-labels-container {
@@ -878,4 +1035,267 @@ body {
 
 .register-form-row-tight .tooltip-icon:last-child:hover::before {
   transform: translateX(0) translateY(-2px);
+}
+
+/* App Suggestions Section */
+.app-suggestions-section {
+  margin-top: 2rem;
+  padding: 1.5rem 0;
+  text-align: center;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.suggestion-text {
+  font-size: 1.1rem;
+  color: #555;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.suggestion-highlight {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+  opacity: 0.8;
+}
+
+.app-logos-grid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  flex-wrap: nowrap;
+  padding: 0 1rem;
+}
+
+.app-logo-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.3rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+  position: relative;
+}
+
+.app-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.app-logo-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  background: #fff;
+}
+
+.app-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  transition: color 0.3s ease;
+}
+
+/* Fallback styling for broken images */
+.app-logo-item.image-failed {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 2px dashed #dee2e6;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem;
+}
+
+.app-logo-item.image-failed:hover {
+  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+  border-color: #adb5bd;
+}
+
+.app-logo-item.image-failed .app-logo-img {
+  display: none;
+}
+
+.app-logo-item.image-failed .app-name {
+  display: block;
+  font-size: 0.7rem;
+  color: #6c757d;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Default hidden state for app names */
+.app-logo-item:not(.image-failed) .app-name {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .app-logos-grid {
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+  }
+  
+  .app-logo-item {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .app-logo-img {
+    border-radius: 3px;
+  }
+  
+  .suggestion-text {
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .app-logo-item.image-failed .app-name {
+    font-size: 0.6rem;
+    line-height: 1.0;
+  }
+  
+  .app-logo-item.image-failed {
+    padding: 0.3rem;
+  }
+}
+
+/* Think tokens styling */
+.think-tokens-container {
+  margin: 0.5em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.1);
+  background: rgba(0,0,0,0.02);
+  transition: all 0.2s ease;
+}
+
+.think-tokens-header {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 0.6em 0.8em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.think-tokens-header:hover {
+  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+}
+
+.think-tokens-chevron {
+  font-size: 0.8em;
+  color: #666;
+  transition: transform 0.2s ease;
+  width: 12px;
+  text-align: center;
+}
+
+.think-tokens-label {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: #555;
+  font-style: italic;
+}
+
+.think-tokens-content {
+  padding: 1em;
+  background: rgba(0,0,0,0.03);
+  border-top: 1px solid rgba(0,0,0,0.05);
+  display: block;
+}
+
+.think-tokens-container.collapsed .think-tokens-content {
+  display: none;
+}
+
+.think-tokens-container.collapsed .think-tokens-header {
+  border-bottom: none;
+}
+
+.main-response {
+  margin-top: 0.5em;
+}
+
+/* Ensure think tokens content inherits proper styling */
+.think-tokens-content h1,
+.think-tokens-content h2,
+.think-tokens-content h3,
+.think-tokens-content h4,
+.think-tokens-content h5,
+.think-tokens-content h6 {
+  margin: 0.5em 0 0.3em 0;
+  color: inherit;
+  font-weight: bold;
+}
+
+.think-tokens-content p {
+  margin: 0.5em 0;
+  line-height: 1.4;
+}
+
+.think-tokens-content ul,
+.think-tokens-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.think-tokens-content li {
+  margin: 0.2em 0;
+}
+
+.think-tokens-content blockquote {
+  margin: 0.5em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid #ccc;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.think-tokens-content code {
+  background: rgba(0,0,0,0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.think-tokens-content pre {
+  background: rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 6px;
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.think-tokens-content pre code {
+  background: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  font-size: inherit;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
