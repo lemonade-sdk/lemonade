@@ -90,6 +90,7 @@ body {
   border-radius: 8px;
   border: 1px solid #e0e0e0;
   max-width: 1000px;
+  min-width: 320px;
   width: calc(100% - 2rem); /* Responsive width with margin */
   margin-left: 1rem;
   margin-right: 1rem;
@@ -643,6 +644,7 @@ body {
   border-radius: 6px;
   overflow: hidden;
   transition: box-shadow 0.2s ease;
+  min-width: 0;
 }
 
 .register-model-name-group:focus-within {
@@ -691,6 +693,8 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 #register-model-name:focus {
@@ -714,6 +718,7 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
 }
 
 #register-recipe:focus {
@@ -753,6 +758,8 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 #register-mmproj:focus, #register-checkpoint:focus {
@@ -950,6 +957,19 @@ body {
     flex-direction: column;
     gap: 1em;
   }
+  
+  .tab-container {
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+    width: calc(100% - 1rem);
+  }
+  
+  /* Ensure all input fields are properly constrained on very narrow screens */
+  #register-model-name, #register-mmproj, #register-checkpoint, #register-recipe {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 @media (max-width: 800px) {
@@ -983,6 +1003,7 @@ body {
   #register-recipe {
     min-width: 0;
     width: 100%;
+    max-width: 100%;
   }
   
   .register-doc-link {
