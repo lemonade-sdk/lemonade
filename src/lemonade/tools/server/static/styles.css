@@ -90,7 +90,10 @@ body {
   border-radius: 8px;
   border: 1px solid #e0e0e0;
   max-width: 1000px;
-  width: 100%;
+  min-width: 320px;
+  width: calc(100% - 2rem); /* Responsive width with margin */
+  margin-left: 1rem;
+  margin-right: 1rem;
 }
 
 .tabs {
@@ -130,8 +133,11 @@ body {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 600px;
+  height: calc(100vh - 650px); /* Subtract space for navbar, title, wall of logos, etc */
+  min-height: 300px;
+  max-height: 1200px;
   max-width: 800px;
+  width: 100%;
   margin: 0 auto;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
@@ -638,6 +644,7 @@ body {
   border-radius: 6px;
   overflow: hidden;
   transition: box-shadow 0.2s ease;
+  min-width: 0;
 }
 
 .register-model-name-group:focus-within {
@@ -686,6 +693,8 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 #register-model-name:focus {
@@ -709,6 +718,7 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
 }
 
 #register-recipe:focus {
@@ -748,6 +758,8 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 #register-mmproj:focus, #register-checkpoint:focus {
@@ -930,6 +942,18 @@ body {
   transform: translateX(0) translateY(-2px) !important;
 }
 
+@media (max-width: 800px) {
+  .model-mgmt-container {
+    flex-direction: column;
+    gap: 1.5em;
+  }
+  
+  .model-mgmt-pane {
+    flex: none;
+    width: 100%;
+  }
+}
+
 @media (max-width: 600px) {
   .title { 
     font-size: 2rem; 
@@ -942,61 +966,20 @@ body {
     margin-top: 1rem; 
   }
   .model-mgmt-container {
-    flex-direction: column;
-    gap: 1em;
-  }
-}
-
-@media (max-width: 800px) {
-  .model-mgmt-register-form {
-    padding: 1.2em 1em 1em 1em;
-    margin: 0 1em 1.5em 1em;
-  }
-  
-  .register-form-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.6em;
-  }
-  
-  .register-label {
-    min-width: 0;
-    font-size: 0.9em;
-  }
-  
-  .register-label.reasoning-inline {
-    margin-left: 0;
-    margin-top: 0.5em;
-    justify-content: flex-start;
-  }
-  
-  #register-model-name, #register-mmproj, #register-checkpoint {
-    min-width: 0;
-    width: 100%;
-  }
-  
-  #register-recipe {
-    min-width: 0;
-    width: 100%;
-  }
-  
-  .register-doc-link {
-    margin-left: 0;
-    margin-top: 0.5em;
-    align-self: flex-start;
-  }
-  
-  .register-form-row:last-child {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
     gap: 1em;
   }
   
-  #register-submit {
-    padding: 0.8em 1.5em;
-    font-size: 0.9em;
+  .tab-container {
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+    width: calc(100% - 1rem);
+  }
+  
+  /* Ensure all input fields are properly constrained on very narrow screens */
+  #register-model-name, #register-mmproj, #register-checkpoint, #register-recipe {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
@@ -1141,7 +1124,7 @@ body {
   display: none;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 800px) {
   .app-logos-grid {
     gap: 0.5rem;
     padding: 0 0.5rem;
