@@ -135,7 +135,7 @@ body {
   flex-direction: column;
   height: calc(100vh - 650px); /* Subtract space for navbar, title, wall of logos, etc */
   min-height: 300px;
-  max-height: 700px;
+  max-height: 1200px;
   max-width: 800px;
   width: 100%;
   margin: 0 auto;
