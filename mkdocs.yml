@@ -85,13 +85,15 @@ not_in_nav: |
   
 exclude_docs: |
   code.md
-  humaneval_accuracy.md
-  mmlu_accuracy.md
-  perplexity.md
-  quark.md
   versioning.md
-  ort_genai_igpu.md
-  llamacpp.md
+  dev_cli/README.md
+  dev_cli/humaneval_accuracy.md
+  dev_cli/mmlu_accuracy.md
+  dev_cli/perplexity.md
+  dev_cli/quark.md
+  dev_cli/ort_genai_igpu.md
+  dev_cli/llamacpp.md
+  dev_cli/lm-eval.md
 
 # The following adds icons on the bottom of the page
 extra:

@@ -18,7 +18,7 @@ class QuarkLoad(Tool):
     Output:
         - state of the loaded model
 
-    See docs/quark.md for more details.
+    See docs/dev_cli/quark.md for more details.
     """
 
     unique_name = "quark-load"

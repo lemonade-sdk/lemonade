@@ -16,11 +16,29 @@ from fastapi.responses import StreamingResponse
 
 from openai import OpenAI
 
-from lemonade_server.pydantic_models import ChatCompletionRequest, PullConfig
+from lemonade_server.pydantic_models import (
+    ChatCompletionRequest,
+    PullConfig,
+    EmbeddingsRequest,
+    RerankingRequest,
+)
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.utils.port import find_free_port
 
-LLAMA_VERSION = "b5699"
+LLAMA_VERSION = "b5787"
+
+
+def llamacpp_address(port: int) -> str:
+    """
+    Generate the base URL for the llamacpp server.
+
+    Args:
+        port: The port number the llamacpp server is running on
+
+    Returns:
+        The base URL for the llamacpp server
+    """
+    return f"http://127.0.0.1:{port}/v1"
 
 
 def get_llama_server_paths():
@@ -244,10 +262,24 @@ def _wait_for_load(llama_server_process: subprocess.Popen, port: int):
 
 
 def _launch_llama_subprocess(
-    snapshot_files: dict, use_gpu: bool, telemetry: LlamaTelemetry
+    snapshot_files: dict,
+    use_gpu: bool,
+    telemetry: LlamaTelemetry,
+    supports_embeddings: bool = False,
+    supports_reranking: bool = False,
 ) -> subprocess.Popen:
     """
-    Launch llama server subprocess with GPU or CPU configuration
+    Launch llama server subprocess with appropriate configuration.
+
+    Args:
+        snapshot_files: Dictionary of model files to load
+        use_gpu: Whether to use GPU acceleration
+        telemetry: Telemetry object for tracking performance metrics
+        supports_embeddings: Whether the model supports embeddings
+        supports_reranking: Whether the model supports reranking
+
+    Returns:
+        Subprocess handle for the llama server
     """
 
     # Get the current executable path (handles both Windows and Ubuntu structures)
@@ -270,6 +302,14 @@ def _launch_llama_subprocess(
     # Use legacy reasoning formatting, since not all apps support the new
     # reasoning_content field
     base_command.extend(["--reasoning-format", "none"])
+
+    # Add embeddings support if the model supports it
+    if supports_embeddings:
+        base_command.append("--embeddings")
+
+    # Add reranking support if the model supports it
+    if supports_reranking:
+        base_command.append("--reranking")
 
     # Configure GPU layers: 99 for GPU, 0 for CPU-only
     ngl_value = "99" if use_gpu else "0"
@@ -310,7 +350,6 @@ def _launch_llama_subprocess(
 
 
 def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
-
     # Validate platform support before proceeding
     validate_platform_support()
 
@@ -367,15 +406,26 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
         logging.info("Cleaned up zip file")
 
     # Download the gguf to the hugging face cache
-    snapshot_files = ModelManager().download_gguf(model_config)
+    model_manager = ModelManager()
+    snapshot_files = model_manager.download_gguf(model_config)
     logging.debug(f"GGUF file paths: {snapshot_files}")
+
+    # Check if model supports embeddings
+    supported_models = model_manager.supported_models
+    model_info = supported_models.get(model_config.model_name, {})
+    supports_embeddings = "embeddings" in model_info.get("labels", [])
+    supports_reranking = "reranking" in model_info.get("labels", [])
 
     # Start the llama-serve.exe process
     logging.debug(f"Using llama_server for GGUF model: {llama_server_exe_path}")
 
     # Attempt loading on GPU first
     llama_server_process = _launch_llama_subprocess(
-        snapshot_files, use_gpu=True, telemetry=telemetry
+        snapshot_files,
+        use_gpu=True,
+        telemetry=telemetry,
+        supports_embeddings=supports_embeddings,
+        supports_reranking=supports_reranking,
     )
 
     # Check the /health endpoint until GPU server is ready
@@ -395,7 +445,11 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
             raise Exception("llamacpp GPU loading failed")
 
         llama_server_process = _launch_llama_subprocess(
-            snapshot_files, use_gpu=False, telemetry=telemetry
+            snapshot_files,
+            use_gpu=False,
+            telemetry=telemetry,
+            supports_embeddings=supports_embeddings,
+            supports_reranking=supports_reranking,
         )
 
         # Check the /health endpoint until CPU server is ready
@@ -416,7 +470,7 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
 def chat_completion(
     chat_completion_request: ChatCompletionRequest, telemetry: LlamaTelemetry
 ):
-    base_url = f"http://127.0.0.1:{telemetry.port}/v1"
+    base_url = llamacpp_address(telemetry.port)
     client = OpenAI(
         base_url=base_url,
         api_key="lemonade",
@@ -467,3 +521,70 @@ def chat_completion(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Chat completion error: {str(e)}",
             )
+
+
+def embeddings(embeddings_request: EmbeddingsRequest, telemetry: LlamaTelemetry):
+    """
+    Generate embeddings using the llamacpp server.
+
+    Args:
+        embeddings_request: The embeddings request containing input text/tokens
+        telemetry: Telemetry object containing the server port
+
+    Returns:
+        Embeddings response from the llamacpp server
+    """
+    base_url = llamacpp_address(telemetry.port)
+    client = OpenAI(
+        base_url=base_url,
+        api_key="lemonade",
+    )
+
+    # Convert Pydantic model to dict and remove unset/null values
+    request_dict = embeddings_request.model_dump(exclude_unset=True, exclude_none=True)
+
+    try:
+        # Call the embeddings endpoint
+        response = client.embeddings.create(**request_dict)
+        return response
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Embeddings error: {str(e)}",
+        )
+
+
+def reranking(reranking_request: RerankingRequest, telemetry: LlamaTelemetry):
+    """
+    Rerank documents based on their relevance to a query using the llamacpp server.
+
+    Args:
+        reranking_request: The reranking request containing query and documents
+        telemetry: Telemetry object containing the server port
+
+    Returns:
+        Reranking response from the llamacpp server containing ranked documents and scores
+    """
+    base_url = llamacpp_address(telemetry.port)
+
+    try:
+        # Convert Pydantic model to dict and exclude unset/null values
+        request_dict = reranking_request.model_dump(
+            exclude_unset=True, exclude_none=True
+        )
+
+        # Call the reranking endpoint directly since it's not supported by the OpenAI API
+        response = requests.post(
+            f"{base_url}/rerank",
+            json=request_dict,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except Exception as e:
+        logging.error("Error during reranking: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Reranking error: {str(e)}",
+        ) from e

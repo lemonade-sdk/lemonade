@@ -54,6 +54,17 @@ class ModelManager:
                 for model_name, model_info in user_models.items()
             }
 
+            # Backwards compatibility for user models that were created before version 8.0.4
+            # "reasoning" was a boolean, but as of 8.0.4 it became a label
+            for _, model_info in user_models.items():
+                if "reasoning" in model_info:
+                    model_info["labels"] = (
+                        ["reasoning"]
+                        if not model_info["labels"]
+                        else model_info["labels"] + ["reasoning"]
+                    )
+                    del model_info["reasoning"]
+
             models.update(user_models)
 
         # Add the model name as a key in each entry, to make it easier
@@ -268,9 +279,8 @@ class ModelManager:
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
-                    "reasoning": reasoning,
                     "suggested": True,
-                    "labels": ["custom"],
+                    "labels": ["custom"] + (["reasoning"] if reasoning else []),
                 }
 
                 if mmproj:

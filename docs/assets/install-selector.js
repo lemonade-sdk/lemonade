@@ -293,7 +293,7 @@ window.lmnRender = function() {
     }
     // Add llama.cpp benchmarking note if CPU is selected with PyPI or From Source and Full SDK
     if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw === 'llama' && lmnState.dev === 'cpu' && lmnState.type === 'full') {
-      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">For benchmarking, see the llamacpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/llamacpp.md" target="_blank" style="color:#e6b800; text-decoration:underline;">llamacpp.md</a></div>';
+      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">For benchmarking, see the llamacpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/llamacpp.md" target="_blank" style="color:#e6b800; text-decoration:underline;">llamacpp.md</a></div>';
     }
     // Render command lines with copy buttons
     setTimeout(function() {

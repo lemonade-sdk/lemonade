@@ -25,7 +25,7 @@ class QuarkQuantize(Tool):
     Output:
         - Modifies `state` with quantized and optionally exported model.
 
-    See docs/quark.md for more details.
+    See docs/dev_cli/quark.md for more details.
     """
 
     unique_name = "quark-quantize"
@@ -94,7 +94,7 @@ class QuarkQuantize(Tool):
             help="Number of samples for calibration.",
         )
 
-        # See docs/quark.md for more details.
+        # See docs/dev_cli/quark.md for more details.
         parser.add_argument(
             "--quant-scheme",
             type=str,
