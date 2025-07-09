@@ -942,6 +942,18 @@ body {
   transform: translateX(0) translateY(-2px) !important;
 }
 
+@media (max-width: 800px) {
+  .model-mgmt-container {
+    flex-direction: column;
+    gap: 1.5em;
+  }
+  
+  .model-mgmt-pane {
+    flex: none;
+    width: 100%;
+  }
+}
+
 @media (max-width: 600px) {
   .title { 
     font-size: 2rem; 
@@ -954,7 +966,6 @@ body {
     margin-top: 1rem; 
   }
   .model-mgmt-container {
-    flex-direction: column;
     gap: 1em;
   }
   
@@ -969,60 +980,6 @@ body {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-}
-
-@media (max-width: 800px) {
-  .model-mgmt-register-form {
-    padding: 1.2em 1em 1em 1em;
-    margin: 0 1em 1.5em 1em;
-  }
-  
-  .register-form-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.6em;
-  }
-  
-  .register-label {
-    min-width: 0;
-    font-size: 0.9em;
-  }
-  
-  .register-label.reasoning-inline {
-    margin-left: 0;
-    margin-top: 0.5em;
-    justify-content: flex-start;
-  }
-  
-  #register-model-name, #register-mmproj, #register-checkpoint {
-    min-width: 0;
-    width: 100%;
-  }
-  
-  #register-recipe {
-    min-width: 0;
-    width: 100%;
-    max-width: 100%;
-  }
-  
-  .register-doc-link {
-    margin-left: 0;
-    margin-top: 0.5em;
-    align-self: flex-start;
-  }
-  
-  .register-form-row:last-child {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1em;
-  }
-  
-  #register-submit {
-    padding: 0.8em 1.5em;
-    font-size: 0.9em;
   }
 }
 
@@ -1167,7 +1124,7 @@ body {
   display: none;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 800px) {
   .app-logos-grid {
     gap: 0.5rem;
     padding: 0 0.5rem;
