@@ -42,6 +42,7 @@ The additional endpoints under development are:
 - POST `/api/v1/params` - Set generation parameters
 - GET `/api/v1/health` - Check server health
 - GET `/api/v1/stats` - Performance statistics from the last request
+- GET `/api/v1/system-info` - System information and device enumeration
 
 > 🚧 We are in the process of developing this interface. Let us know what's important to you on Github or by email (lemonade at amd dot com).
 
@@ -601,6 +602,63 @@ curl http://localhost:8000/api/v1/stats
   "decode_token_times": [0.01, 0.02, 0.03, 0.04, 0.05]
 }
 ```
+
+### `GET /api/v1/system-info` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+System information endpoint that provides complete hardware details and device enumeration.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `verbose` | No | Include detailed system information. When `false` (default), returns essential information (OS, processor, memory, devices). When `true`, includes additional details like Python packages and extended system information. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "Basic system information"
+
+    ```bash
+    curl "http://localhost:8000/api/v1/system-info"
+    ```
+
+=== "Detailed system information"
+
+    ```bash
+    curl "http://localhost:8000/api/v1/system-info?verbose=true"
+    ```
+
+#### Response format
+
+=== "Basic response (verbose=false)"
+
+    ```json
+    {
+      "OS Version": "Windows-10-10.0.26100-SP0",
+      "Processor": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+      "Physical Memory": "32.0 GB",
+      "devices": {
+        "cpu": {
+          "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
+          "cores": 12,
+          "threads": 24,
+          "available": true
+        },
+        "amd_igpu": {
+          "name": "AMD Radeon(TM) 890M Graphics",
+          "memory_mb": 512,
+          "driver_version": 32.0.12010.10001,
+          "available": true
+        },
+        "amd_dgpu": [],
+        "npu": {
+          "name": "AMD NPU",
+          "driver_version": "32.0.203.257",
+          "power_mode": "Default",
+          "available": true
+        }
+      }
+    }
+    ```
 
 # Debugging
 

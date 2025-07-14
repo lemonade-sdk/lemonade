@@ -47,7 +47,6 @@ lemonade-server pull Llama-3.2-1B-Instruct-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -63,7 +62,6 @@ lemonade-server pull Llama-3.2-3B-Instruct-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -79,7 +77,6 @@ lemonade-server pull Phi-3-Mini-Instruct-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -95,7 +92,6 @@ lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -111,7 +107,7 @@ lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -127,7 +123,7 @@ lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -143,7 +139,6 @@ lemonade-server pull Mistral-7B-v0.3-Instruct-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid">amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -159,7 +154,6 @@ lemonade-server pull Llama-3.1-8B-Instruct-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -175,7 +169,6 @@ lemonade-server pull Llama-xLAM-2-8b-fc-r-Hybrid
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Llama-xLAM-2-8b-fc-r-awq-g128-int4-asym-bfp16-onnx-hybrid">amd/Llama-xLAM-2-8b-fc-r-awq-g128-int4-asym-bfp16-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -194,7 +187,6 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx">amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx</a></td></tr>
 <tr><td>Recipe</td><td>oga-cpu</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -210,7 +202,6 @@ lemonade-server pull Phi-3-Mini-Instruct-CPU
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu">amd/Phi-3-mini-4k-instruct_int4_float16_onnx_cpu</a></td></tr>
 <tr><td>Recipe</td><td>oga-cpu</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -226,7 +217,6 @@ lemonade-server pull Qwen-1.5-7B-Chat-CPU
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu">amd/Qwen1.5-7B-Chat_uint4_asym_g128_float16_onnx_cpu</a></td></tr>
 <tr><td>Recipe</td><td>oga-cpu</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
 </table>
 
 </details>
@@ -242,7 +232,7 @@ lemonade-server pull DeepSeek-R1-Distill-Llama-8B-CPU
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu</a></td></tr>
 <tr><td>Recipe</td><td>oga-cpu</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -258,7 +248,7 @@ lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-CPU
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu</a></td></tr>
 <tr><td>Recipe</td><td>oga-cpu</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -278,7 +268,7 @@ lemonade-server pull Qwen3-0.6B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-0.6B-GGUF">unsloth/Qwen3-0.6B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_0</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -295,7 +285,7 @@ lemonade-server pull Qwen3-1.7B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-1.7B-GGUF">unsloth/Qwen3-1.7B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_0</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -312,7 +302,7 @@ lemonade-server pull Qwen3-4B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-4B-GGUF">unsloth/Qwen3-4B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_0</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -329,7 +319,7 @@ lemonade-server pull Qwen3-8B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-8B-GGUF">unsloth/Qwen3-8B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_1</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -346,7 +336,7 @@ lemonade-server pull DeepSeek-Qwen3-8B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF">unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_1</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -363,7 +353,7 @@ lemonade-server pull Qwen3-14B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-14B-GGUF">unsloth/Qwen3-14B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_0</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -380,7 +370,7 @@ lemonade-server pull Qwen3-30B-A3B-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-GGUF">unsloth/Qwen3-30B-A3B-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_0</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>True</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 </table>
 
 </details>
@@ -398,7 +388,7 @@ lemonade-server pull Gemma-3-4b-it-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Mmproj</td><td>mmproj-model-f16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
+<tr><td>Labels</td><td>vision</td></tr>
 </table>
 
 </details>
@@ -416,7 +406,7 @@ lemonade-server pull Qwen2.5-VL-7B-Instruct-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Mmproj</td><td>mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
+<tr><td>Labels</td><td>vision</td></tr>
 </table>
 
 </details>
@@ -434,7 +424,57 @@ lemonade-server pull Llama-4-Scout-17B-16E-Instruct-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_S</td></tr>
 <tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Reasoning</td><td>False</td></tr>
+<tr><td>Labels</td><td>vision</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>nomic-embed-text-v1-GGUF</summary>
+
+```bash
+lemonade-server pull nomic-embed-text-v1-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/nomic-ai/nomic-embed-text-v1-GGUF">nomic-ai/nomic-embed-text-v1-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_S</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>embeddings</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>nomic-embed-text-v2-moe-GGUF</summary>
+
+```bash
+lemonade-server pull nomic-embed-text-v2-moe-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF">nomic-ai/nomic-embed-text-v2-moe-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q8_0</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>embeddings</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>bge-reranker-v2-m3-GGUF</summary>
+
+```bash
+lemonade-server pull bge-reranker-v2-m3-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/pqnet/bge-reranker-v2-m3-Q8_0-GGUF">pqnet/bge-reranker-v2-m3-Q8_0-GGUF</a></td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>reranking</td></tr>
 </table>
 
 </details>

@@ -1,12 +1,17 @@
 import argparse
 import abc
+import json
 from typing import List
 import lemonade.common.filesystem as fs
 import lemonade.common.exceptions as exp
 import lemonade.common.printing as printing
 from lemonade.tools.tool import ToolParser
 from lemonade.version import __version__ as lemonade_version
-from lemonade.common.system_info import get_system_info_dict
+from lemonade.common.system_info import (
+    get_system_info_dict,
+    get_device_info_dict,
+    get_system_info,
+)
 from lemonade.common.build import output_dir
 import lemonade.cache as lemonade_cache
 
@@ -245,8 +250,18 @@ class SystemInfo(ManagementTool):
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
-            short_description="Print system information",
+            short_description="Print system and device information",
             add_help=add_help,
+        )
+
+        parser.add_argument(
+            "--format", choices=["table", "json"], default="table", help="Output format"
+        )
+
+        parser.add_argument(
+            "--verbose",
+            action="store_true",
+            help="Show detailed system information",
         )
 
         return parser
@@ -254,19 +269,50 @@ class SystemInfo(ManagementTool):
     @staticmethod
     def pretty_print(my_dict: dict, level=0):
         for k, v in my_dict.items():
+            if k == "available" and v is True:
+                continue
+
             if isinstance(v, dict):
-                print("    " * level + f"{k}:")
-                SystemInfo.pretty_print(v, level + 1)
+                # Special handling for device availability
+                if v.get("available") is False:
+                    error_msg = v.get("error", "Not available")
+                    print("    " * level + f"{k}: {error_msg}")
+                else:
+                    print("    " * level + f"{k}:")
+                    SystemInfo.pretty_print(v, level + 1)
             elif isinstance(v, list):
                 print("    " * level + f"{k}:")
                 for item in v:
-                    print("    " * (level + 1) + f"{item}")
+                    if isinstance(item, dict):
+                        SystemInfo.pretty_print(item, level + 1)
+                        print()
+                    else:
+                        print("    " * (level + 1) + f"{item}")
             else:
                 print("    " * level + f"{k}: {v}")
 
-    def run(self, _):
+    def run(self, _, format="table", verbose=False):
+        # Get basic system info
         system_info_dict = get_system_info_dict()
-        self.pretty_print(system_info_dict)
+
+        # Always include devices
+        system_info_dict["Devices"] = get_device_info_dict()
+
+        # Filter out verbose-only information if not in verbose mode
+        if not verbose:
+            essential_keys = ["OS Version", "Processor", "Physical Memory", "Devices"]
+            system_info_dict = {
+                k: v for k, v in system_info_dict.items() if k in essential_keys
+            }
+        else:
+            # In verbose mode, add Python packages at the end
+            system_info = get_system_info()
+            system_info_dict["Python Packages"] = system_info.get_python_packages()
+
+        if format == "json":
+            print(json.dumps(system_info_dict, indent=2))
+        else:
+            self.pretty_print(system_info_dict)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

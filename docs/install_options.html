@@ -46,11 +46,24 @@
           <td id="dev-gpu" onclick="lmnSet('dev','gpu')">GPU</td>
         </tr>
       </table>
-      <div class="lmn-command-area command-margin">
-        <b id="lmn-command-label">Run this Command:</b>
-        <div id="lmn-command" class="lmn-command">
-          <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
-        </div>      </div>
+      <div class="lmn-content-section">
+        <div class="lmn-section-header">
+          Installation Instructions
+        </div>
+        <div id="lmn-badges" class="lmn-badges"></div>
+        <div id="lmn-install-content">
+          <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
+            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+          </div>
+          <div id="lmn-command" class="lmn-command"></div>
+        </div>
+      </div>
+      <div id="lmn-explore-section" class="lmn-content-section" style="margin-top: 1.5em;">
+        <div class="lmn-section-header lmn-explore-header">
+          Quick Start
+        </div>
+        <div id="lmn-explore-command" class="lmn-command"></div>
+      </div>
     </div>
   </div>
   <script src="assets/install-selector.js"></script>

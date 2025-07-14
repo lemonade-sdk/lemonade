@@ -13,6 +13,9 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 | `status`            | Check if server is running. If it is, print the port number. |
 | `stop`              | Stop any running Lemonade Server process. |
 | `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See the [server models guide](./server_models.md) for more information. |
+| `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. |
+| `list`              | List all models. |
+
 
 Example:
 

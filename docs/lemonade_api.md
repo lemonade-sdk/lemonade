@@ -16,6 +16,30 @@ Function Arguments:
 - checkpoint: The Hugging Face or OGA checkpoint that defines the LLM.
 - recipe: Defines the implementation and hardware used for the LLM. Default is "hf-cpu".
 
+## 🔍 System Information Functions
+
+The Lemonade API also provides functions to programmatically access system and device information:
+
+```python
+from lemonade.api import get_system_info, get_device_info
+
+# Get essential system information (OS, processor, memory, devices)
+system_info = get_system_info()
+
+# Get detailed system information including Python packages and extended details
+system_info_verbose = get_system_info(verbose=True)
+
+# Get only device information (CPU, GPU, NPU details)
+device_info = get_device_info()
+```
+
+These functions return the same information available through the `lemonade system-info` CLI command and the `/api/v1/system-info` server endpoint, including:
+- Hardware details (CPU, memory, BIOS)
+- Device availability (AMD iGPU, dGPU, NPU)
+- Inference engine compatibility per device
+- Driver versions and system configuration
+- Python package versions (verbose mode only)
+
 
 ## 📜 Supported Model Formats
 

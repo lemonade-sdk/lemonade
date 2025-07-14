@@ -215,6 +215,61 @@ window.lmnRender = function() {
   });
 
   // Command rendering
+  
+  // Generate badges
+  function generateBadges() {
+    var badges = '';
+    
+    // Python version badge
+    var pythonVersions = '';
+    if (lmnState.dev === 'hybrid' || lmnState.method === 'gui') {
+      pythonVersions = '3.10';
+    } else {
+      pythonVersions = '3.10%20%7C%203.12';
+    }
+    badges += '<img src="https://img.shields.io/badge/Python-' + pythonVersions + '-blue" alt="Python versions" style="margin-right: 0.5em;">';
+    
+    // OS version badge
+    var osVersions = '';
+    if (lmnState.os === 'linux') {
+      osVersions = 'Ubuntu%2024.04%20%7C%2025.04';
+    } else { // windows
+      osVersions = 'Windows%2011';
+    }
+    badges += '<img src="https://img.shields.io/badge/OS-' + osVersions + '-green" alt="OS versions">';
+    
+    return badges;
+  }
+  
+  // Generate explore commands
+  function generateExploreCommands() {
+    var commands = [];
+    
+    if (lmnState.type === 'full') {
+      commands.push('lemonade -h');
+    }
+    
+    if (lmnState.type === 'server') {
+      if (lmnState.method === 'gui') {
+        commands.push('lemonade-server -h');
+        commands.push('lemonade-server run Gemma-3-4b-it-GGUF');
+      } else {
+        commands.push('lemonade-server-dev -h');
+        commands.push('lemonade-server-dev run Gemma-3-4b-it-GGUF');
+      }
+    } else { // full
+      if (lmnState.method === 'gui') {
+        commands.push('lemonade-server -h');
+        commands.push('lemonade-server run Gemma-3-4b-it-GGUF');
+      } else {
+        commands.push('lemonade-server-dev -h');
+        commands.push('lemonade-server-dev run Gemma-3-4b-it-GGUF');
+      }
+    }
+    
+    return commands;
+  }
+  
   var cmd = '';
   var link = '';
   var condaBlock = '';
@@ -275,50 +330,114 @@ window.lmnRender = function() {
   } else if (cmd) {
     var gitCloneLines = (lmnState.method === 'src') ? 2 : 0; // git clone + cd
     var cmdLines = (condaBlock ? 2 : 0) + gitCloneLines + (cmd ? cmd.split('\n').length : 0);
-    label = cmdLines > 1 ? 'Run these Commands:' : 'Run this Command:';
+    label = cmdLines > 1 ? 'Run these Commands to Install:' : 'Run this Command to Install:';
   } else {
     label = '';
   }
   var cmdDiv = document.getElementById('lmn-command');
-  var labelDiv = document.getElementById('lmn-command-label');
-  labelDiv.textContent = label;
+  var downloadArea = document.getElementById('lmn-download-area');
+  var badgesDiv = document.getElementById('lmn-badges');
+  var exploreDiv = document.getElementById('lmn-explore-command');
+  var exploreSection = document.getElementById('lmn-explore-section');
+  
+  // Render badges
+  if (badgesDiv) {
+    badgesDiv.innerHTML = generateBadges();
+  }
+  
+  // Handle GUI downloads vs commands
   if (link && cmd !== '' && lmnState.method === 'gui') {
-    cmdDiv.innerHTML = '<div class="lmn-command"><a id="lmn-link" href="'+link+'" class="lmn-btn">'+cmd+'</a></div>';
-  } else if (cmd) {
-    var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
-    cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
-    // Add hybrid note if Hybrid is selected with PyPI or From Source
-    if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.dev === 'hybrid') {
-      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">Hybrid requires an AMD Ryzen AI 300-series PC with Windows 11.</div>';
-    }
-    // Add llama.cpp benchmarking note if CPU is selected with PyPI or From Source and Full SDK
-    if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw === 'llama' && lmnState.dev === 'cpu' && lmnState.type === 'full') {
-      cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#222; font-size:1.04rem; font-style:italic;">For benchmarking, see the llamacpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/llamacpp.md" target="_blank" style="color:#e6b800; text-decoration:underline;">llamacpp.md</a></div>';
-    }
-    // Render command lines with copy buttons
-    setTimeout(function() {
-      var pre = document.getElementById('lmn-pre-block');
-      if (pre) {
-        var lines = [];
-        if (condaBlock) {
-          lines.push('conda create -n lemon python=3.10');
-          lines.push('conda activate lemon');
-        }
-        cmd.split('\n').forEach(function(line) { lines.push(line); });
-        pre.innerHTML = lines.map(function(line, idx) {
-          var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          return '<div class="lmn-command-line"><span>'+safeLine+'</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, '+idx+')">📋</button></div>';
-        }).join('');
+    // Show download area, hide command area
+    if (downloadArea) {
+      downloadArea.style.display = 'block';
+      var linkElement = document.getElementById('lmn-link');
+      if (linkElement) {
+        linkElement.href = link;
+        linkElement.textContent = cmd;
       }
-    }, 0);
+    }
+    if (cmdDiv) {
+      cmdDiv.innerHTML = '';
+    }
+  } else if (cmd) {
+    // Show command area, hide download area
+    if (downloadArea) {
+      downloadArea.style.display = 'none';
+    }
+    if (cmdDiv) {
+      var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
+      cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
+      
+      // Add hybrid note if Hybrid is selected with PyPI or From Source
+      if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.dev === 'hybrid') {
+        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem; font-style:italic;">Hybrid requires an AMD Ryzen AI 300-series PC with Windows 11.</div>';
+      }
+      // Add llama.cpp benchmarking note if CPU is selected with PyPI or From Source and Full SDK
+      if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.fw === 'llama' && lmnState.dev === 'cpu' && lmnState.type === 'full') {
+        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem; font-style:italic;">For benchmarking, see the llamacpp instructions in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/llamacpp.md" target="_blank" style="color:#e6b800; text-decoration:underline;">llamacpp.md</a></div>';
+      }
+      
+      // Render command lines with copy buttons
+      setTimeout(function() {
+        var pre = document.getElementById('lmn-pre-block');
+        if (pre) {
+          var lines = [];
+          if (condaBlock) {
+            lines.push('conda create -n lemon python=3.10');
+            lines.push('conda activate lemon');
+          }
+          cmd.split('\n').forEach(function(line) { lines.push(line); });
+          pre.innerHTML = lines.map(function(line, idx) {
+            var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return '<div class="lmn-command-line"><span>'+safeLine+'</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, '+idx+')">📋</button></div>';
+          }).join('');
+        }
+      }, 0);
+    }
   } else {
-    cmdDiv.innerHTML = '';
+    if (cmdDiv) cmdDiv.innerHTML = '';
+    if (downloadArea) downloadArea.style.display = 'none';
+  }
+  
+  // Render explore commands
+  if (exploreDiv && exploreSection) {
+    var exploreCommands = generateExploreCommands();
+    if (exploreCommands.length > 0) {
+      exploreSection.style.display = 'block';
+      exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
+      
+      setTimeout(function() {
+        var explorePre = document.getElementById('lmn-explore-pre-block');
+        if (explorePre) {
+          explorePre.innerHTML = exploreCommands.map(function(line, idx) {
+            var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return '<div class="lmn-command-line"><span>'+safeLine+'</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyExploreLine(event, '+idx+')">📋</button></div>';
+          }).join('');
+        }
+      }, 0);
+    } else {
+      exploreSection.style.display = 'none';
+    }
   }
 };
 
 window.lmnCopyLine = function(e, idx) {
   e.stopPropagation();
   var pre = document.getElementById('lmn-pre-block');
+  if (!pre) return;
+  var lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(function(span) { return span.textContent; });
+  if (lines[idx] !== undefined) {
+    navigator.clipboard.writeText(lines[idx]);
+    var btn = e.currentTarget;
+    var old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(function() { btn.textContent = old; }, 900);
+  }
+};
+
+window.lmnCopyExploreLine = function(e, idx) {
+  e.stopPropagation();
+  var pre = document.getElementById('lmn-explore-pre-block');
   if (!pre) return;
   var lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(function(span) { return span.textContent; });
   if (lines[idx] !== undefined) {
@@ -367,11 +486,23 @@ window.lmnInit = function() {
           <td id="dev-gpu" onclick="lmnSet('dev','gpu')">GPU</td>
         </tr>
       </table>
-      <div class="lmn-command-area" style="margin-top:1em;">
-        <b id="lmn-command-label">Run this Command:</b>
-        <div id="lmn-command" class="lmn-command">
-          <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+      <div class="lmn-content-section">
+        <div class="lmn-section-header">
+          Installation Instructions
         </div>
+        <div id="lmn-badges" class="lmn-badges"></div>
+        <div id="lmn-install-content">
+          <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
+            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+          </div>
+          <div id="lmn-command" class="lmn-command"></div>
+        </div>
+      </div>
+      <div id="lmn-explore-section" class="lmn-content-section" style="margin-top: 1.5em;">
+        <div class="lmn-section-header lmn-explore-header">
+          Quick Start
+        </div>
+        <div id="lmn-explore-command" class="lmn-command"></div>
       </div>
     `;
   }
