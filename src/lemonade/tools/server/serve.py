@@ -228,6 +228,7 @@ class Server(ManagementTool):
             self.app.get(f"{prefix}/health")(self.health)
             self.app.get(f"{prefix}/halt")(self.halt_generation)
             self.app.get(f"{prefix}/stats")(self.send_stats)
+            self.app.get(f"{prefix}/system-info")(self.get_system_info)
             self.app.post(f"{prefix}/completions")(self.completions)
             self.app.post(f"{prefix}/responses")(self.responses)
 
@@ -1275,6 +1276,34 @@ class Server(ManagementTool):
                 else None
             ),
         }
+
+    async def get_system_info(self, request: Request):
+        """
+        Return system and device enumeration information.
+        Supports optional 'verbose' query parameter.
+        """
+        from lemonade.common.system_info import (
+            get_system_info_dict,
+            get_device_info_dict,
+            get_system_info as get_system_info_obj,
+        )
+
+        # Get verbose parameter from query string (default to False)
+        verbose = request.query_params.get("verbose", "false").lower() in ["true", "1"]
+
+        info = get_system_info_dict()
+        info["devices"] = get_device_info_dict()
+
+        # Filter out verbose-only information if not in verbose mode
+        if not verbose:
+            essential_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
+            info = {k: v for k, v in info.items() if k in essential_keys}
+        else:
+            # In verbose mode, add Python packages at the end
+            system_info_obj = get_system_info_obj()
+            info["Python Packages"] = system_info_obj.get_python_packages()
+
+        return info
 
     def model_load_failure(self, model_reference: str, message: Optional[str] = None):
         """

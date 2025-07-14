@@ -5,6 +5,11 @@ from lemonade.state import State
 import lemonade.common.printing as printing
 import lemonade.cache as cache
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
+from lemonade.common.system_info import (
+    get_system_info_dict,
+    get_device_info_dict,
+    get_system_info as get_system_info_obj,
+)
 
 
 class NotSupported(Exception):
@@ -119,6 +124,51 @@ def from_pretrained(
 
     else:
         _raise_not_supported(recipe, checkpoint)
+
+
+def get_system_info(verbose: bool = False) -> Dict:
+    """
+    Get comprehensive system information including hardware details and device information.
+
+    Returns:
+        dict: Complete system information including:
+            - Basic system info (OS, processor, memory, BIOS, etc.).
+            - Device information (CPU, AMD iGPU, AMD dGPU, NPU).
+            - Inference engine availability per device.
+            - Python package versions (verbose mode only).
+    """
+
+    # Get basic system info
+    info = get_system_info_dict()
+
+    # Add device information
+    info["Devices"] = get_device_info_dict()
+
+    # Filter out verbose-only information if not in verbose mode
+    if not verbose:
+        essential_keys = ["OS Version", "Processor", "Physical Memory", "Devices"]
+        info = {k: v for k, v in info.items() if k in essential_keys}
+    else:
+        # In verbose mode, add Python packages at the end
+        system_info_obj = get_system_info_obj()
+        info["Python Packages"] = system_info_obj.get_python_packages()
+
+    return info
+
+
+def get_device_info() -> Dict:
+    """
+    Get device information including CPU, AMD iGPU, AMD dGPU, and NPU details.
+
+    Returns:
+        dict: Device information including:
+            - cpu: CPU details with inference engine availability.
+            - amd_igpu: AMD integrated GPU information.
+            - amd_dgpu: List of AMD discrete GPU information.
+            - npu: NPU information.
+    """
+
+    return get_device_info_dict()
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

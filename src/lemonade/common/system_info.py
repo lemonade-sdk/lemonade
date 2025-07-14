@@ -1,29 +1,96 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 import importlib.metadata
 import platform
 import re
 import subprocess
 import ctypes
+from .inference_engines import detect_inference_engines
+
+# AMD GPU classification keywords - shared across all OS implementations
+# If a GPU name contains any of these keywords, it's considered discrete
+# Everything else is assumed to be integrated
+AMD_DISCRETE_GPU_KEYWORDS = [
+    "rx ",
+    "xt",
+    "pro w",
+    "pro v",
+    "radeon pro",
+    "firepro",
+    "fury",
+]
 
 
 class SystemInfo(ABC):
-    """Abstract base class for OS-dependent system information classes"""
+    """
+    Abstract base class for OS-dependent system information classes.
+    """
 
     def __init__(self):
         pass
 
     def get_dict(self):
         """
-        Retrieves all the system information into a dictionary
+        Retrieves all the system information into a dictionary.
 
         Returns:
-            dict: System information
+            dict: System information.
         """
         info_dict = {
             "OS Version": self.get_os_version(),
-            "Python Packages": self.get_python_packages(),
         }
         return info_dict
+
+    def get_device_dict(self):
+        """
+        Retrieves device information into a dictionary.
+
+        Returns:
+            dict: Device information.
+        """
+
+        device_dict = {
+            "cpu": self.get_cpu_device(),
+            "amd_igpu": self.get_amd_igpu_device(),
+            "amd_dgpu": self.get_amd_dgpu_devices(),
+            "npu": self.get_npu_device(),
+        }
+        return device_dict
+
+    @abstractmethod
+    def get_cpu_device(self) -> dict:
+        """
+        Retrieves CPU device information.
+
+        Returns:
+            dict: CPU device information.
+        """
+
+    @abstractmethod
+    def get_amd_igpu_device(self) -> dict:
+        """
+        Retrieves AMD integrated GPU device information.
+
+        Returns:
+            dict: AMD iGPU device information.
+        """
+
+    @abstractmethod
+    def get_amd_dgpu_devices(self) -> list:
+        """
+        Retrieves AMD discrete GPU device information.
+
+        Returns:
+            list: List of AMD dGPU device information.
+        """
+
+    @abstractmethod
+    def get_npu_device(self) -> dict:
+        """
+        Retrieves NPU device information.
+
+        Returns:
+            dict: NPU device information.
+        """
 
     @staticmethod
     def get_os_version() -> str:
@@ -31,7 +98,7 @@ class SystemInfo(ABC):
         Retrieves the OS version.
 
         Returns:
-            str: OS Version
+            str: OS Version.
         """
         try:
             return platform.platform()
@@ -55,13 +122,157 @@ class SystemInfo(ABC):
 
 
 class WindowsSystemInfo(SystemInfo):
-    """Class used to access system information in Windows"""
+    """
+    Class used to access system information in Windows.
+    """
 
     def __init__(self):
         super().__init__()
         import wmi
 
         self.connection = wmi.WMI()
+
+    def get_cpu_device(self) -> dict:
+        """
+        Retrieves CPU device information using WMI.
+
+        Returns:
+            dict: CPU device information.
+        """
+        try:
+            processors = self.connection.Win32_Processor()
+            if processors:
+                processor = processors[0]
+                cpu_info = {
+                    "name": processor.Name.strip(),
+                    "cores": processor.NumberOfCores,
+                    "threads": processor.NumberOfLogicalProcessors,
+                    "max_clock_speed_mhz": processor.MaxClockSpeed,
+                    "available": True,
+                }
+
+                # Add inference engine detection
+                cpu_info["inference_engines"] = self._detect_inference_engines("cpu")
+                return cpu_info
+
+        except Exception as e:  # pylint: disable=broad-except
+            return {"available": False, "error": f"CPU detection failed: {e}"}
+
+        return {"available": False, "error": "No CPU information found"}
+
+    def _detect_amd_gpus(self, gpu_type: str):
+        """
+        Shared AMD GPU detection logic for both integrated and discrete GPUs.
+        Uses keyword-based classification for simplicity and reliability.
+
+        Args:
+            gpu_type: Either "integrated" or "discrete"
+
+        Returns:
+            list: List of detected GPU info dictionaries
+        """
+        gpu_devices = []
+        try:
+            video_controllers = self.connection.Win32_VideoController()
+            for controller in video_controllers:
+                if (
+                    controller.Name
+                    and "AMD" in controller.Name
+                    and "Radeon" in controller.Name
+                ):
+
+                    name_lower = controller.Name.lower()
+
+                    # Keyword-based classification - simple and reliable
+                    is_discrete_by_name = any(
+                        kw in name_lower for kw in AMD_DISCRETE_GPU_KEYWORDS
+                    )
+                    is_integrated = not is_discrete_by_name
+
+                    # Filter based on requested type
+                    if (gpu_type == "integrated" and is_integrated) or (
+                        gpu_type == "discrete" and not is_integrated
+                    ):
+
+                        driver_version = self.get_driver_version(
+                            "AMD-OpenCL User Mode Driver"
+                        )
+
+                        device_type = "amd_igpu" if is_integrated else "amd_dgpu"
+                        gpu_info = {
+                            "name": controller.Name,
+                            "driver_version": (
+                                driver_version if driver_version else "Unknown"
+                            ),
+                            "available": True,
+                        }
+
+                        # Add inference engine detection
+                        gpu_info["inference_engines"] = self._detect_inference_engines(
+                            device_type
+                        )
+                        gpu_devices.append(gpu_info)
+
+        except Exception as e:  # pylint: disable=broad-except
+            error_msg = f"AMD {gpu_type} GPU detection failed: {e}"
+            return [{"available": False, "error": error_msg}]
+
+        return gpu_devices
+
+    def get_amd_igpu_device(self) -> dict:
+        """
+        Retrieves AMD integrated GPU device information using keyword-based classification.
+
+        Returns:
+            dict: AMD iGPU device information.
+        """
+        igpu_devices = self._detect_amd_gpus("integrated")
+        return (
+            igpu_devices[0]
+            if igpu_devices
+            else {"available": False, "error": "No AMD integrated GPU found"}
+        )
+
+    def get_amd_dgpu_devices(self):
+        """
+        Retrieves AMD discrete GPU device information using keyword-based classification.
+
+        Returns:
+            list: List of AMD dGPU device information.
+        """
+        dgpu_devices = self._detect_amd_gpus("discrete")
+        return (
+            dgpu_devices
+            if dgpu_devices
+            else {"available": False, "error": "No AMD discrete GPU found"}
+        )
+
+    def get_npu_device(self) -> dict:
+        """
+        Retrieves NPU device information using existing methods.
+
+        Returns:
+            dict: NPU device information.
+        """
+        try:
+            # Check if NPU driver is present
+            driver_version = self.get_driver_version("NPU Compute Accelerator Device")
+            if driver_version:
+                power_mode = self.get_npu_power_mode()
+                npu_info = {
+                    "name": "AMD NPU",
+                    "driver_version": driver_version,
+                    "power_mode": power_mode,
+                    "available": True,
+                }
+
+                # Add inference engine detection
+                npu_info["inference_engines"] = self._detect_inference_engines("npu")
+                return npu_info
+        except Exception as e:  # pylint: disable=broad-except
+            return {"available": False, "error": f"NPU detection failed: {e}"}
+
+        return {"available": False, "error": "No NPU device found"}
 
     def get_processor_name(self) -> str:
         """
@@ -77,6 +288,18 @@ class WindowsSystemInfo(SystemInfo):
                 f"({processors[0].NumberOfCores} cores, "
                 f"{processors[0].NumberOfLogicalProcessors} logical processors)"
             )
+        return "Processor information not found."
+
+    def get_basic_processor_name(self) -> str:
+        """
+        Retrieves the basic name of the processor without core/thread details.
+
+        Returns:
+            str: Basic name of the processor.
+        """
+        processors = self.connection.Win32_Processor()
+        if processors:
+            return processors[0].Name.strip()
         return "Processor information not found."
 
     def get_system_model(self) -> str:
@@ -96,19 +319,13 @@ class WindowsSystemInfo(SystemInfo):
         Retrieves the physical memory of the computer system.
 
         Returns:
-            str: Physical memory
+            str: Physical memory.
         """
         memory = self.connection.Win32_PhysicalMemory()
         if memory:
             total_capacity = sum([int(m.Capacity) for m in memory])
             total_capacity_str = f"{total_capacity/(1024**3)} GB"
-            details_str = " + ".join(
-                [
-                    f"{m.Manufacturer} {int(m.Capacity)/(1024**3)} GB {m.Speed} ns"
-                    for m in memory
-                ]
-            )
-            return total_capacity_str + " (" + details_str + ")"
+            return total_capacity_str
         return "Physical memory information not found."
 
     def get_bios_version(self) -> str:
@@ -116,7 +333,7 @@ class WindowsSystemInfo(SystemInfo):
         Retrieves the BIOS Version of the computer system.
 
         Returns:
-            str: BIOS Version
+            str: BIOS Version.
         """
         bios = self.connection.Win32_BIOS()
         if bios:
@@ -128,7 +345,7 @@ class WindowsSystemInfo(SystemInfo):
         Retrieves the max clock speed of the CPU of the system.
 
         Returns:
-            str: Max CPU clock speed
+            str: Max CPU clock speed.
         """
         processor = self.connection.Win32_Processor()
         if processor:
@@ -140,7 +357,7 @@ class WindowsSystemInfo(SystemInfo):
         Retrieves the driver version for the specified device name.
 
         Returns:
-            str: Driver version, or None if device driver not found
+            str: Driver version, or None if device driver not found.
         """
         drivers = self.connection.Win32_PnPSignedDriver(DeviceName=device_name)
         if drivers:
@@ -153,7 +370,7 @@ class WindowsSystemInfo(SystemInfo):
         Retrieves the NPU power mode.
 
         Returns:
-            str: NPU power mode
+            str: NPU power mode.
         """
         try:
             out = subprocess.check_output(
@@ -207,37 +424,66 @@ class WindowsSystemInfo(SystemInfo):
 
     def get_dict(self) -> dict:
         """
-        Retrieves all the system information into a dictionary
+        Retrieves all the system information into a dictionary.
 
         Returns:
-            dict: System information
+            dict: System information.
         """
         info_dict = super().get_dict()
-        info_dict["Processor"] = self.get_processor_name()
+        info_dict["Processor"] = self.get_basic_processor_name()
         info_dict["OEM System"] = self.get_system_model()
         info_dict["Physical Memory"] = self.get_physical_memory()
         info_dict["BIOS Version"] = self.get_bios_version()
         info_dict["CPU Max Clock"] = self.get_max_clock_speed()
         info_dict["Windows Power Setting"] = self.get_windows_power_setting()
-        if "AMD" in info_dict["Processor"]:
-            device_names = [
-                "NPU Compute Accelerator Device",
-                "AMD-OpenCL User Mode Driver",
-            ]
-            driver_versions = {
-                device_name: self.get_driver_version(device_name)
-                for device_name in device_names
-            }
-            info_dict["Driver Versions"] = {
-                k: (v if len(v) else "DEVICE NOT FOUND")
-                for k, v in driver_versions.items()
-            }
-            info_dict["NPU Power Mode"] = self.get_npu_power_mode()
         return info_dict
+
+    def _detect_inference_engines(self, device_type: str) -> dict:
+        """
+        Detect available inference engines for a specific device type.
+
+        Args:
+            device_type: Device type ("cpu", "amd_igpu", "amd_dgpu", "npu")
+
+        Returns:
+            dict: Available inference engines and their information.
+        """
+        try:
+            from .inference_engines import detect_inference_engines
+
+            return detect_inference_engines(device_type)
+        except Exception as e:  # pylint: disable=broad-except
+            return {"error": f"Inference engine detection failed: {str(e)}"}
 
 
 class WSLSystemInfo(SystemInfo):
-    """Class used to access system information in WSL"""
+    """
+    Class used to access system information in WSL.
+    """
+
+    def get_cpu_device(self) -> dict:
+        """
+        Retrieves CPU device information in WSL environment.
+        """
+        return {"available": False, "error": "Device detection not supported in WSL"}
+
+    def get_amd_igpu_device(self) -> dict:
+        """
+        Retrieves AMD integrated GPU device information in WSL environment.
+        """
+        return {"available": False, "error": "GPU detection not supported in WSL"}
+
+    def get_amd_dgpu_devices(self) -> list:
+        """
+        Retrieves AMD discrete GPU device information in WSL environment.
+        """
+        return []
+
+    def get_npu_device(self) -> dict:
+        """
+        Retrieves NPU device information in WSL environment.
+        """
+        return {"available": False, "error": "NPU detection not supported in WSL"}
 
     @staticmethod
     def get_system_model() -> str:
@@ -265,10 +511,10 @@ class WSLSystemInfo(SystemInfo):
 
     def get_dict(self) -> dict:
         """
-        Retrieves all the system information into a dictionary
+        Retrieves all the system information into a dictionary.
 
         Returns:
-            dict: System information
+            dict: System information.
         """
         info_dict = super().get_dict()
         info_dict["OEM System"] = self.get_system_model()
@@ -276,7 +522,147 @@ class WSLSystemInfo(SystemInfo):
 
 
 class LinuxSystemInfo(SystemInfo):
-    """Class used to access system information in Linux"""
+    """
+    Class used to access system information in Linux.
+    """
+
+    def get_cpu_device(self) -> dict:
+        """
+        Retrieves CPU device information using /proc/cpuinfo and lscpu.
+
+        Returns:
+            dict: CPU device information.
+        """
+        try:
+            cpu_info = subprocess.check_output("lscpu", shell=True).decode()
+            cpu_data = {}
+
+            for line in cpu_info.split("\n"):
+                if "Model name:" in line:
+                    cpu_data["name"] = line.split(":")[1].strip()
+                elif "CPU(s):" in line and "NUMA" not in line:
+                    cpu_data["threads"] = int(line.split(":")[1].strip())
+                elif "Core(s) per socket:" in line:
+                    cores_per_socket = int(line.split(":")[1].strip())
+                    sockets = (
+                        1  # Default to 1 socket as most laptops have a single socket
+                    )
+                    for l in cpu_info.split("\n"):
+                        if "Socket(s):" in l:
+                            sockets = int(l.split(":")[1].strip())
+                            break
+                    cpu_data["cores"] = cores_per_socket * sockets
+                elif "Architecture:" in line:
+                    cpu_data["architecture"] = line.split(":")[1].strip()
+
+            if "name" in cpu_data:
+                cpu_info = {
+                    "name": cpu_data.get("name", "Unknown"),
+                    "cores": cpu_data.get("cores", "Unknown"),
+                    "threads": cpu_data.get("threads", "Unknown"),
+                    "architecture": cpu_data.get("architecture", "Unknown"),
+                    "available": True,
+                }
+
+                # Add inference engine detection
+                cpu_info["inference_engines"] = self._detect_inference_engines("cpu")
+                return cpu_info
+        except Exception as e:  # pylint: disable=broad-except
+            return {"available": False, "error": f"CPU detection failed: {e}"}
+
+        return {"available": False, "error": "No CPU information found"}
+
+    def _detect_amd_gpus(self, gpu_type: str):
+        """
+        Shared AMD GPU detection logic for both integrated and discrete GPUs.
+        Uses keyword-based classification for simplicity and reliability.
+
+        Args:
+            gpu_type: Either "integrated" or "discrete".
+
+        Returns:
+            list: List of detected GPU info dictionaries.
+        """
+        gpu_devices = []
+        try:
+            lspci_output = subprocess.check_output(
+                "lspci | grep -i 'vga\\|3d\\|display'", shell=True
+            ).decode()
+
+            for line in lspci_output.split("\n"):
+                if line.strip() and "AMD" in line:
+                    name_lower = line.lower()
+
+                    # Keyword-based classification - simple and reliable
+                    is_discrete_by_name = any(
+                        kw in name_lower for kw in AMD_DISCRETE_GPU_KEYWORDS
+                    )
+                    is_integrated = not is_discrete_by_name
+
+                    # Filter based on requested type
+                    if (gpu_type == "integrated" and is_integrated) or (
+                        gpu_type == "discrete" and not is_integrated
+                    ):
+
+                        device_type = "amd_igpu" if is_integrated else "amd_dgpu"
+                        device_name = line.split(": ")[1] if ": " in line else line
+
+                        gpu_info = {
+                            "name": device_name,
+                            "available": True,
+                        }
+
+                        # Add inference engine detection
+                        gpu_info["inference_engines"] = self._detect_inference_engines(
+                            device_type
+                        )
+                        gpu_devices.append(gpu_info)
+
+        except Exception as e:  # pylint: disable=broad-except
+            error_msg = f"AMD {gpu_type} GPU detection failed: {e}"
+            return [{"available": False, "error": error_msg}]
+
+        return gpu_devices
+
+    def get_amd_igpu_device(self) -> dict:
+        """
+        Retrieves AMD integrated GPU device information using keyword-based classification.
+
+        Returns:
+            dict: AMD iGPU device information.
+        """
+        igpu_devices = self._detect_amd_gpus("integrated")
+        return (
+            igpu_devices[0]
+            if igpu_devices
+            else {"available": False, "error": "No AMD integrated GPU found"}
+        )
+
+    def get_amd_dgpu_devices(self):
+        """
+        Retrieves AMD discrete GPU device information using keyword-based classification.
+
+        Returns:
+            list: List of AMD dGPU device information.
+        """
+        dgpu_devices = self._detect_amd_gpus("discrete")
+        return (
+            dgpu_devices
+            if dgpu_devices
+            else {"available": False, "error": "No AMD discrete GPU found"}
+        )
+
+    def get_npu_device(self) -> dict:
+        """
+        Retrieves NPU device information (limited support on Linux).
+
+        Returns:
+            dict: NPU device information.
+        """
+        return {
+            "available": False,
+            "error": "NPU detection not yet implemented for Linux",
+        }
 
     @staticmethod
     def get_processor_name() -> str:
@@ -328,7 +714,7 @@ class LinuxSystemInfo(SystemInfo):
         Retrieves the physical memory of the computer system.
 
         Returns:
-            str: Physical memory
+            str: Physical memory.
         """
         try:
             mem_info = (
@@ -344,10 +730,10 @@ class LinuxSystemInfo(SystemInfo):
 
     def get_dict(self) -> dict:
         """
-        Retrieves all the system information into a dictionary
+        Retrieves all the system information into a dictionary.
 
         Returns:
-            dict: System information
+            dict: System information.
         """
         info_dict = super().get_dict()
         info_dict["Processor"] = self.get_processor_name()
@@ -355,16 +741,66 @@ class LinuxSystemInfo(SystemInfo):
         info_dict["Physical Memory"] = self.get_physical_memory()
         return info_dict
 
+    def _detect_inference_engines(self, device_type: str) -> dict:
+        """
+        Detect available inference engines for a specific device type.
+
+        Args:
+            device_type: Device type ("cpu", "amd_igpu", "amd_dgpu", "npu")
+
+        Returns:
+            dict: Available inference engines and their information.
+        """
+        try:
+            return detect_inference_engines(device_type)
+        except Exception as e:  # pylint: disable=broad-except
+            return {"error": f"Inference engine detection failed: {str(e)}"}
+
 
 class UnsupportedOSSystemInfo(SystemInfo):
-    """Class used to access system information in unsupported operating systems"""
+    """
+    Class used to access system information in unsupported operating systems.
+    """
+
+    def get_cpu_device(self) -> dict:
+        """
+        Retrieves CPU device information for unsupported OS.
+        """
+        return {
+            "available": False,
+            "error": "Device detection not supported on this operating system",
+        }
+
+    def get_amd_igpu_device(self) -> dict:
+        """
+        Retrieves AMD integrated GPU device information for unsupported OS.
+        """
+        return {
+            "available": False,
+            "error": "Device detection not supported on this operating system",
+        }
+
+    def get_amd_dgpu_devices(self) -> list:
+        """
+        Retrieves AMD discrete GPU device information for unsupported OS.
+        """
+        return []
+
+    def get_npu_device(self) -> dict:
+        """
+        Retrieves NPU device information for unsupported OS.
+        """
+        return {
+            "available": False,
+            "error": "Device detection not supported on this operating system",
+        }
 
     def get_dict(self):
         """
-        Retrieves all the system information into a dictionary
+        Retrieves all the system information into a dictionary.
 
         Returns:
-            dict: System information
+            dict: System information.
         """
         info_dict = super().get_dict()
         info_dict["Error"] = "UNSUPPORTED OS"
@@ -382,7 +818,7 @@ def get_system_info() -> SystemInfo:
     if os_type == "Windows":
         return WindowsSystemInfo()
     elif os_type == "Linux":
-        # WSL has to be handled differently compared to native Linux
+        # WSL has to be handled differently compared to native Linux.
         if "microsoft" in str(platform.release()):
             return WSLSystemInfo()
         else:
@@ -399,6 +835,16 @@ def get_system_info_dict() -> dict:
         dict: Dictionary containing the system information.
     """
     return get_system_info().get_dict()
+
+
+def get_device_info_dict() -> dict:
+    """
+    Puts the device information into a dictionary.
+
+    Returns:
+        dict: Dictionary containing the device information.
+    """
+    return get_system_info().get_device_dict()
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

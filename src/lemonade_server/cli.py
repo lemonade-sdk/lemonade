@@ -27,43 +27,75 @@ class DeleteError(Exception):
     """
 
 
+class ServerTimeoutError(Exception):
+    """
+    The server failed to start within the timeout period
+    """
+
+
+class ModelNotAvailableError(Exception):
+    """
+    The specified model is not available on the server
+    """
+
+
 def serve(
-    port: int,
+    port: int = None,
     log_level: str = None,
     tray: bool = False,
+    use_thread: bool = False,
 ):
     """
     Execute the serve command
     """
 
-    # Check if Lemonade Server is already running
-    _, running_port = get_server_info()
-    if running_port is not None:
-        print(
-            (
-                f"Lemonade Server is already running on port {running_port}\n"
-                "Please stop the existing server before starting a new instance."
-            ),
-        )
-        sys.exit(ExitCodes.SERVER_ALREADY_RUNNING)
-
     # Otherwise, start the server
     print("Starting Lemonade Server...")
     from lemonade.tools.server.serve import Server, DEFAULT_PORT, DEFAULT_LOG_LEVEL
 
-    server = Server()
     port = port if port is not None else DEFAULT_PORT
     log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
 
     # Hidden environment variable to enable input truncation (experimental feature)
     truncate_inputs = "LEMONADE_TRUNCATE_INPUTS" in os.environ
 
-    server.run(
-        port=port,
-        log_level=log_level,
-        truncate_inputs=truncate_inputs,
-        tray=tray,
-    )
+    # Start the server
+    serve_kwargs = {
+        "log_level": log_level,
+        "truncate_inputs": truncate_inputs,
+        "tray": tray,
+    }
+    server = Server()
+    if not use_thread:
+        server.run(
+            port=port,
+            **serve_kwargs,
+        )
+    else:
+        from threading import Thread
+        import time
+
+        # Start a background thread to run the server
+        server_thread = Thread(
+            target=server.run,
+            args=(port,),
+            kwargs=serve_kwargs,
+            daemon=True,
+        )
+        server_thread.start()
+
+        # Wait for the server to be ready
+        max_wait_time = 30
+        wait_interval = 0.5
+        waited = 0
+        while waited < max_wait_time:
+            time.sleep(wait_interval)
+            _, running_port = get_server_info()
+            if running_port is not None:
+                break
+            waited += wait_interval
+
+        return port, server_thread
 
 
 def stop():
@@ -161,9 +193,8 @@ def pull(
             if pull_response.status_code != 200:
                 raise PullError(
                     f"Failed to install {model_name}. Check the "
-                    "Lemonade Server log for more information. A list of supported models "
-                    "is provided at "
-                    "https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/server_models.md"
+                    "Lemonade Server log for more information. You can list "
+                    "supported models with `lemonade-server list`"
                 )
     else:
         from lemonade_server.model_manager import ModelManager
@@ -210,6 +241,53 @@ def delete(model_names: List[str]):
 
         for model_name in model_names:
             ModelManager().delete_model(model_name)
+
+
+def run(model_name: str):
+    """
+    Start the server if not running and open the webapp with the specified model
+    """
+    import webbrowser
+    import time
+
+    # Start the server if not running
+    _, port = get_server_info()
+    server_previously_running = port is not None
+    if not server_previously_running:
+        port, server_thread = serve(use_thread=True, tray=True, log_level="info")
+
+    # Pull model
+    pull([model_name])
+
+    # Load model
+    load(model_name, port)
+
+    # Open the webapp with the specified model
+    url = f"http://localhost:{port}/?model={model_name}#llm-chat"
+    print(f"You can now chat with {model_name} at {url}")
+    webbrowser.open(url)
+
+    # Keep the server running if we started it
+    if not server_previously_running:
+        while server_thread.is_alive():
+            time.sleep(0.5)
+
+
+def load(model_name: str, port: int):
+    """
+    Load a model using the endpoint
+    """
+    import requests
+
+    base_url = f"http://localhost:{port}/api/v1"
+
+    # Load the model
+    load_response = requests.post(f"{base_url}/load", json={"model_name": model_name})
+    if load_response.status_code != 200:
+        raise ModelLoadError(
+            f"Failed to load {model_name}. Check the "
+            "Lemonade Server log for more information."
+        )
 
 
 def version():
@@ -294,6 +372,46 @@ def get_server_info() -> Tuple[int | None, int | None]:
     return None, None
 
 
+def list_models():
+    """
+    List recommended models and their download status
+    """
+    from tabulate import tabulate
+    from lemonade_server.model_manager import ModelManager
+
+    model_manager = ModelManager()
+
+    # Get all supported models and downloaded models
+    supported_models = model_manager.supported_models
+    downloaded_models = model_manager.downloaded_models
+
+    # Filter to only show recommended models
+    recommended_models = {
+        model_name: model_info
+        for model_name, model_info in supported_models.items()
+        if model_info.get("suggested", False)
+    }
+
+    # Create table data
+    table_data = []
+    for model_name, model_info in recommended_models.items():
+        downloaded_status = "Yes" if model_name in downloaded_models else "No"
+
+        # Get model labels/type
+        labels = model_info.get("labels", [])
+        model_type = ", ".join(labels) if labels else "-"
+
+        table_data.append([model_name, downloaded_status, model_type])
+
+    # Sort by model name for consistent display
+    # Show downloaded models first
+    table_data.sort(key=lambda x: (x[1] == "No", x[0].lower()))
+
+    # Display table
+    headers = ["Model Name", "Downloaded", "Details"]
+    print(tabulate(table_data, headers=headers, tablefmt="simple"))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
@@ -332,6 +450,11 @@ def main():
 
     # Stop command
     stop_parser = subparsers.add_parser("stop", help="Stop the server")
+
+    # List command
+    list_parser = subparsers.add_parser(
+        "list", help="List recommended models and their download status"
+    )
 
     # Pull command
     pull_parser = subparsers.add_parser(
@@ -381,6 +504,16 @@ def main():
         nargs="+",
     )
 
+    # Run command
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Chat with specified model (starts server if needed)",
+    )
+    run_parser.add_argument(
+        "model",
+        help="Lemonade Server model name to run",
+    )
+
     args = parser.parse_args()
 
     if os.name != "nt":
@@ -389,6 +522,15 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
+        _, running_port = get_server_info()
+        if running_port is not None:
+            print(
+                (
+                    f"Lemonade Server is already running on port {running_port}\n"
+                    "Please stop the existing server before starting a new instance."
+                ),
+            )
+            sys.exit(ExitCodes.SERVER_ALREADY_RUNNING)
         serve(
             port=args.port,
             log_level=args.log_level,
@@ -396,6 +538,8 @@ def main():
         )
     elif args.command == "status":
         status()
+    elif args.command == "list":
+        list_models()
     elif args.command == "pull":
         pull(
             args.model,
@@ -408,6 +552,8 @@ def main():
         delete(args.model)
     elif args.command == "stop":
         stop()
+    elif args.command == "run":
+        run(args.model)
     elif args.command == "help" or not args.command:
         parser.print_help()
 

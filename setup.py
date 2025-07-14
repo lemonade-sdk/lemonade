@@ -118,7 +118,7 @@ setup(
             "lemonade-server-dev=lemonade_server.cli:main",
         ]
     },
-    python_requires=">=3.10, <3.12",
+    python_requires=">=3.10, <3.13",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     include_package_data=True,

@@ -63,7 +63,7 @@ Here are some examples for trying out Continue. These examples assume you have c
 
 ### Chat with Files
 
-Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or too.
+Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or tool.
 
   - "What's the fastest way to install Lemonade in `@getting_started.md?`"
   - "According to `@README.md` what do I need to do to set up for `@api_oga_hybrid_streaming.py`?"

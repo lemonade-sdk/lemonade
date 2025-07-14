@@ -115,6 +115,41 @@ Hugging Face:
 This generates a PNG file that is stored in the current folder and the build folder.  This file
 contains a figure plotting the memory usage over the Lemonade tool sequence.  Learn more by running `lemonade -h`.
 
+### System Information
+
+To view system information and available devices, use the `system-info` tool:
+
+```bash
+lemonade system-info
+```
+
+By default, this shows essential information including OS version, processor, physical memory, and device details.
+
+For detailed system information including BIOS version, CPU max clock, Windows power setting, and Python packages, use the `--verbose` flag:
+
+```bash
+lemonade system-info --verbose
+```
+
+For JSON output format, use the `--format` flag:
+
+```bash
+lemonade system-info --format json
+```
+
+Both default and verbose modes work with JSON format:
+
+```bash
+lemonade system-info --verbose --format json
+```
+
+The system information includes:
+- **Default**: OS version, processor, physical memory, and device details
+- **Verbose**: All default information plus BIOS version, CPU max clock, Windows power setting, and Python packages
+- **Devices**: CPU details (name, cores, threads, architecture, clock speed), AMD integrated GPU, AMD discrete GPUs, and NPU information
+
+Learn more by running `lemonade system-info -h`.
+
 ### API
 
 Lemonade's low-level API is useful for designing custom experiments. For example, sweeping over specific checkpoints, devices, and/or tools.

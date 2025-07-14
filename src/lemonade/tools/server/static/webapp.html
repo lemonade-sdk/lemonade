@@ -327,7 +327,11 @@
             let filteredModels = [];
             let defaultIndex = 0;
             
-            data.data.forEach(function(model) {
+            // Check if model is specified in URL parameters
+            const urlModel = new URLSearchParams(window.location.search).get('model');
+            let urlModelIndex = -1;
+            
+            data.data.forEach(function(model, index) {
                 const modelId = model.id || model.name || model;
                 const modelInfo = allModels[modelId] || {};
                 const labels = modelInfo.labels || [];
@@ -341,9 +345,17 @@
                 const opt = document.createElement('option');
                 opt.value = modelId;
                 opt.textContent = modelId;
+                
+                // Check if this model matches the URL parameter
+                if (urlModel && modelId === urlModel) {
+                    urlModelIndex = filteredModels.length - 1;
+                }
+                
+                // Default fallback for backwards compatibility
                 if (modelId === 'Llama-3.2-1B-Instruct-Hybrid') {
                     defaultIndex = filteredModels.length - 1;
                 }
+                
                 select.appendChild(opt);
             });
             
@@ -352,7 +364,16 @@
                 return;
             }
             
-            select.selectedIndex = defaultIndex;
+            // Select the URL-specified model if found, otherwise use default
+            if (urlModelIndex !== -1) {
+                select.selectedIndex = urlModelIndex;
+                console.log(`Selected model from URL parameter: ${urlModel}`);
+            } else {
+                select.selectedIndex = defaultIndex;
+                if (urlModel) {
+                    console.warn(`Model '${urlModel}' specified in URL not found in available models`);
+                }
+            }
         } catch (e) {
             const select = document.getElementById('model-select');
             select.innerHTML = `<option>Error loading models: ${e.message}</option>`;
