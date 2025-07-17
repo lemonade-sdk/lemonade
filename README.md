@@ -202,7 +202,7 @@ New contributors can find beginner-friendly issues tagged with "Good First Issue
 
 ## Maintainers
 
-This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), email [lemonade@amd.com](mailto:lemonade@amd.com), or join our [Discord](https://discord.gg/5xXzkMu8Zk).
+This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
 
 ## License
 

@@ -1,13 +1,11 @@
-import sys
 import os
+import sys
 import logging
 import time
 import subprocess
-import zipfile
 import re
 import threading
 import platform
-import shutil
 
 import requests
 from tabulate import tabulate
@@ -18,12 +16,18 @@ from openai import OpenAI
 
 from lemonade_server.pydantic_models import (
     ChatCompletionRequest,
+    CompletionRequest,
     PullConfig,
     EmbeddingsRequest,
     RerankingRequest,
 )
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.utils.port import find_free_port
+from lemonade.tools.llamacpp.utils import (
+    get_llama_server_exe_path,
+    install_llamacpp,
+    download_gguf,
+)
 
 LLAMA_VERSION = "b5787"
 
@@ -78,39 +82,6 @@ def get_binary_url_and_filename(version):
         f"https://github.com/ggml-org/llama.cpp/releases/download/{version}/{filename}"
     )
     return url, filename
-
-
-def validate_platform_support():
-    """
-    Validate platform support before attempting download
-    """
-    system = platform.system().lower()
-
-    if system not in ["windows", "linux"]:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Platform {system} not supported for llamacpp. "
-                "Supported: Windows, Ubuntu Linux"
-            ),
-        )
-
-    if system == "linux":
-        # Check if we're actually on Ubuntu/compatible distro and log a warning if not
-        try:
-            with open("/etc/os-release", "r", encoding="utf-8") as f:
-                os_info = f.read().lower()
-                if "ubuntu" not in os_info and "debian" not in os_info:
-                    logging.warning(
-                        "llamacpp binaries are built for Ubuntu. "
-                        "Compatibility with other Linux distributions is not guaranteed."
-                    )
-        except (FileNotFoundError, PermissionError, OSError) as e:
-            logging.warning(
-                "Could not determine Linux distribution (%s). "
-                "llamacpp binaries are built for Ubuntu.",
-                str(e),
-            )
 
 
 class LlamaTelemetry:
@@ -283,7 +254,7 @@ def _launch_llama_subprocess(
     """
 
     # Get the current executable path (handles both Windows and Ubuntu structures)
-    _, exe_path = get_llama_server_paths()
+    exe_path = get_llama_server_exe_path()
 
     # Build the base command
     base_command = [exe_path, "-m", snapshot_files["variant"]]
@@ -350,68 +321,23 @@ def _launch_llama_subprocess(
 
 
 def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
-    # Validate platform support before proceeding
-    validate_platform_support()
+    # Install and/or update llama.cpp if needed
+    try:
+        install_llamacpp()
+    except NotImplementedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
 
     # Get platform-specific paths at runtime
-    llama_server_exe_dir, llama_server_exe_path = get_llama_server_paths()
-
-    # Check whether the llamacpp install needs an upgrade
-    version_txt_path = os.path.join(llama_server_exe_dir, "version.txt")
-    if os.path.exists(version_txt_path):
-        with open(version_txt_path, "r", encoding="utf-8") as f:
-            llamacpp_installed_version = f.read()
-
-        if llamacpp_installed_version != LLAMA_VERSION:
-            # Remove the existing install, which will trigger a new install
-            # in the next code block
-            shutil.rmtree(llama_server_exe_dir)
-
-    # Download llama.cpp server if it isn't already available
-    if not os.path.exists(llama_server_exe_dir):
-        # Download llama.cpp server zip
-        llama_zip_url, filename = get_binary_url_and_filename(LLAMA_VERSION)
-        llama_zip_path = os.path.join(os.path.dirname(sys.executable), filename)
-        logging.info(f"Downloading llama.cpp server from {llama_zip_url}")
-
-        with requests.get(llama_zip_url, stream=True) as r:
-            r.raise_for_status()
-            with open(llama_zip_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-        # Extract zip
-        logging.info(f"Extracting {llama_zip_path} to {llama_server_exe_dir}")
-        with zipfile.ZipFile(llama_zip_path, "r") as zip_ref:
-            zip_ref.extractall(llama_server_exe_dir)
-
-        # Make executable on Linux - need to update paths after extraction
-        if platform.system().lower() == "linux":
-            # Re-get the paths since extraction might have changed the directory structure
-            _, updated_exe_path = get_llama_server_paths()
-            if os.path.exists(updated_exe_path):
-                os.chmod(updated_exe_path, 0o755)
-                logging.info(f"Set executable permissions for {updated_exe_path}")
-            else:
-                logging.warning(
-                    f"Could not find llama-server executable at {updated_exe_path}"
-                )
-
-        # Save version.txt
-        with open(version_txt_path, "w", encoding="utf-8") as vf:
-            vf.write(LLAMA_VERSION)
-
-        # Delete zip file
-        os.remove(llama_zip_path)
-        logging.info("Cleaned up zip file")
+    llama_server_exe_path = get_llama_server_exe_path()
 
     # Download the gguf to the hugging face cache
-    model_manager = ModelManager()
-    snapshot_files = model_manager.download_gguf(model_config)
+    snapshot_files = download_gguf(model_config.checkpoint, model_config.mmproj)
     logging.debug(f"GGUF file paths: {snapshot_files}")
 
     # Check if model supports embeddings
-    supported_models = model_manager.supported_models
+    supported_models = ModelManager().supported_models
     model_info = supported_models.get(model_config.model_name, {})
     supports_embeddings = "embeddings" in model_info.get("labels", [])
     supports_reranking = "reranking" in model_info.get("labels", [])
@@ -520,6 +446,68 @@ def chat_completion(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Chat completion error: {str(e)}",
+            )
+
+
+def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry):
+    """
+    Handle text completions using the llamacpp server.
+
+    Args:
+        completion_request: The completion request containing prompt and parameters
+        telemetry: Telemetry object containing the server port
+
+    Returns:
+        Completion response from the llamacpp server
+    """
+    base_url = llamacpp_address(telemetry.port)
+    client = OpenAI(
+        base_url=base_url,
+        api_key="lemonade",
+    )
+
+    # Convert Pydantic model to dict and remove unset/null values
+    request_dict = completion_request.model_dump(exclude_unset=True, exclude_none=True)
+
+    # Check if streaming is requested
+    if completion_request.stream:
+
+        def event_stream():
+            try:
+                # Enable streaming
+                for chunk in client.completions.create(**request_dict):
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+                yield "data: [DONE]\n\n"
+
+                # Show telemetry after completion
+                telemetry.show_telemetry()
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                yield f'data: {{"error": "{str(e)}"}}\n\n'
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+    else:
+        # Non-streaming response
+        try:
+            # Disable streaming for non-streaming requests
+            response = client.completions.create(**request_dict)
+
+            # Show telemetry after completion
+            telemetry.show_telemetry()
+
+            return response
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Completion error: {str(e)}",
             )
 
 

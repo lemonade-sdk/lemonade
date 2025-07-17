@@ -74,12 +74,12 @@ class OgaBench(Bench):
 
         # Don't capture time for warmup
         for count in range(warmup_iterations):
-            outputs = model.generate(input_ids, max_new_tokens=output_tokens)
-            self.tokens_out_len_list.append(len(outputs[0]) - len(input_ids))
+            _ = model.generate(input_ids, max_new_tokens=output_tokens)
+            self.tokens_out_len_list.append(model.response_tokens)
             report_progress_fn((count + 1) / (warmup_iterations + iterations))
 
         for count in range(iterations):
-            outputs = model.generate(
+            _ = model.generate(
                 input_ids,
                 max_new_tokens=output_tokens,
                 min_new_tokens=output_tokens,
@@ -88,11 +88,10 @@ class OgaBench(Bench):
                 (warmup_iterations + count + 1) / (warmup_iterations + iterations)
             )
 
-            token_len = len(outputs[0]) - len(input_ids)
-            self.tokens_out_len_list.append(token_len)
+            self.tokens_out_len_list.append(model.response_tokens)
 
             # Only count an iteration if it produced enough tokens
-            if token_len >= output_tokens:
+            if model.response_tokens >= output_tokens:
                 per_iteration_time_to_first_token.append(model.time_to_first_token)
                 per_iteration_tokens_per_second.append(model.tokens_per_second)
 

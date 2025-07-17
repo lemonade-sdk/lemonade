@@ -108,7 +108,9 @@ class HuggingfaceAdapter(ModelAdapter):
         with torch.no_grad(), torch.inference_mode():
             outputs = self.model.generate(input_ids=input_ids, **generation_kwargs)
 
-            return outputs
+        self.prompt_tokens = input_ids.shape[1]
+        self.response_tokens = len(outputs[0]) - self.prompt_tokens
+        return outputs
 
     def _model_call(self, input_tensor):
         """Forward pass through the model to get logits
@@ -341,12 +343,11 @@ def benchmark_huggingface_llm(
 
                 latency = end_time - start_time
 
-                token_len = outputs.shape[1] - input_ids.shape[1]
-                tokens_out_len_list.append(token_len)
+                tokens_out_len_list.append(model.response_tokens)
 
                 # Only count an iteration if it produced enough tokens
-                if token_len >= target_output_tokens:
-                    per_iteration_result.append((latency, token_len))
+                if model.response_tokens >= target_output_tokens:
+                    per_iteration_result.append((latency, model.response_tokens))
 
                 report_progress_fn(
                     (warmup_iterations + count + 1) / (warmup_iterations + iterations)

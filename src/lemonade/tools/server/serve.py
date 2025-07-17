@@ -487,6 +487,9 @@ class Server(ManagementTool):
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
+        if self.llm_loaded.recipe == "llamacpp":
+            return llamacpp.completion(completion_request, self.llama_telemetry)
+
         # Check if the model supports reasoning
         reasoning_first_token = self.llm_loaded.reasoning
 

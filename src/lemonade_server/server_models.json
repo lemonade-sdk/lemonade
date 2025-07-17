@@ -213,5 +213,16 @@
         "recipe": "llamacpp",
         "suggested": false,
         "labels": ["reranking"]
+    },
+    "Devstral-Small-2507-GGUF":{
+        "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true
+    },
+    "Qwen2.5-Coder-32B-Instruct-GGUF": {
+        "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,  
+        "labels": ["reasoning"]
     }
 }

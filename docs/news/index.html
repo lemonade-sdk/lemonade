@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lemonade News</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <script src="../assets/news-data.js"></script>
+  <script>
+    // Function to generate news tiles
+    function generateNewsTiles(filterType = 'all', sortOrder = 'newest') {
+      const newsPostsContainer = document.querySelector('.news-posts');
+      newsPostsContainer.innerHTML = ''; // Clear existing tiles
+      
+      let filteredData = filterType === 'all' 
+        ? [...newsData] 
+        : newsData.filter(item => item.type === filterType);
+      
+      // Sort data by date
+      filteredData.sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+        
+        if (sortOrder === 'newest') {
+          return dateB - dateA; // Newest first
+        } else {
+          return dateA - dateB; // Oldest first
+        }
+      });
+      
+      filteredData.forEach(item => {
+        const article = document.createElement('article');
+        article.className = 'news-tile';
+        
+        const isVideo = item.type === 'video';
+        const isTutorial = item.type === 'tutorial';
+        const isRelease = item.type === 'release';
+        let badgeText, badgeClass;
+        
+        if (isVideo) {
+          badgeText = 'Video';
+          badgeClass = 'video-badge';
+        } else if (isTutorial) {
+          badgeText = 'Tutorial';
+          badgeClass = 'tutorial-badge';
+        } else if (isRelease) {
+          badgeText = 'Release';
+          badgeClass = 'release-badge';
+        } else {
+          badgeText = 'Blog';
+          badgeClass = 'blog-badge';
+        }
+        
+        const playButton = isVideo ? '<div class="youtube-play-button">▶</div>' : '';
+        
+        article.innerHTML = `
+          <a href="${item.url}" target="_blank" class="news-tile-link">
+            <div class="news-image">
+              <img src="${item.image}" alt="${item.title}" style="${item.imageStyle}">
+              ${playButton}
+            </div>
+            <div class="news-content">
+              <h3>${item.title}</h3>
+              <div class="news-date">${item.date}</div>
+              <p>${item.description}</p>
+              <div class="content-type-badge ${badgeClass}">${badgeText}</div>
+            </div>
+          </a>
+        `;
+        
+        newsPostsContainer.appendChild(article);
+      });
+    }
+
+    // Function to handle filter changes
+    function handleFilterChange(filterType) {
+      // Update active button
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
+      
+      // Get current sort order
+      const sortOrder = document.getElementById('sortSelect').value;
+      
+      // Re-generate tiles with filter and sort
+      generateNewsTiles(filterType, sortOrder);
+    }
+
+    // Function to handle sort changes
+    function handleSortChange(sortOrder) {
+      // Get current filter
+      const activeFilter = document.querySelector('.filter-btn.active').getAttribute('data-filter');
+      
+      // Re-generate tiles with current filter and new sort
+      generateNewsTiles(activeFilter, sortOrder);
+    }
+
+    // Generate tiles when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      generateNewsTiles();
+      
+      // Add event listeners to filter buttons
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const filterType = btn.getAttribute('data-filter');
+          handleFilterChange(filterType);
+        });
+      });
+      
+      // Add event listener to sort dropdown
+      document.getElementById('sortSelect').addEventListener('change', (e) => {
+        handleSortChange(e.target.value);
+      });
+      
+      // Back to top button functionality
+      const backToTopBtn = document.getElementById('backToTop');
+      
+      // Show/hide button based on scroll position
+      window.addEventListener('scroll', () => {
+        if (window.scrollY > 300) {
+          backToTopBtn.classList.add('show');
+        } else {
+          backToTopBtn.classList.remove('show');
+        }
+      });
+      
+      // Smooth scroll to top when clicked
+      backToTopBtn.addEventListener('click', () => {
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        });
+      });
+      
+      // Sidebar toggle functionality for mobile
+      const sidebarToggle = document.getElementById('sidebarToggle');
+      const newsSidebar = document.getElementById('newsSidebar');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+      const collapseBtn = document.getElementById('collapseBtn');
+      const expandBtn = document.getElementById('expandBtn');
+      const newsView = document.querySelector('.news-view');
+      
+      // Mobile sidebar toggle
+      sidebarToggle.addEventListener('click', () => {
+        newsSidebar.classList.toggle('mobile-open');
+        sidebarOverlay.classList.toggle('active');
+      });
+      
+      // Close sidebar when clicking overlay
+      sidebarOverlay.addEventListener('click', () => {
+        newsSidebar.classList.remove('mobile-open');
+        sidebarOverlay.classList.remove('active');
+      });
+      
+      // Desktop sidebar collapse/expand
+      collapseBtn.addEventListener('click', () => {
+        newsSidebar.classList.add('collapsed');
+        newsView.classList.add('sidebar-collapsed');
+        expandBtn.classList.add('show');
+        localStorage.setItem('sidebarCollapsed', 'true');
+      });
+      
+      expandBtn.addEventListener('click', () => {
+        newsSidebar.classList.remove('collapsed');
+        newsView.classList.remove('sidebar-collapsed');
+        expandBtn.classList.remove('show');
+        localStorage.setItem('sidebarCollapsed', 'false');
+      });
+      
+      // Restore sidebar state from localStorage
+      const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+      if (sidebarCollapsed && window.innerWidth > 768) {
+        newsSidebar.classList.add('collapsed');
+        newsView.classList.add('sidebar-collapsed');
+        expandBtn.classList.add('show');
+      }
+      
+      // Close sidebar when window is resized to desktop
+      window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+          newsSidebar.classList.remove('mobile-open');
+          sidebarOverlay.classList.remove('active');
+          
+          // Restore collapsed state on desktop
+          const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+          if (sidebarCollapsed) {
+            newsSidebar.classList.add('collapsed');
+            newsView.classList.add('sidebar-collapsed');
+            expandBtn.classList.add('show');
+          }
+        } else {
+          // Reset collapsed state on mobile
+          newsSidebar.classList.remove('collapsed');
+          newsView.classList.remove('sidebar-collapsed');
+          expandBtn.classList.remove('show');
+        }
+      });
+    });
+  </script>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar-brand">
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
+    </div>
+    <div class="navbar-links">
+      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
+      <a href="../docs/">Docs</a>
+      <a href="../docs/server/server_models/">Models</a>
+      <a href="../docs/server/apps/">Featured Apps</a>
+      <a href="index.html">News</a>
+    </div>
+
+    <!-- Place buttons here so they don't overlap the brand -->
+    <button class="sidebar-toggle" id="sidebarToggle">
+      ➤ Filters
+    </button>
+    <button class="expand-btn" id="expandBtn">
+      ➤ Filters
+    </button>
+  </nav>
+
+  <!-- Sidebar Overlay (Mobile) -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- News Sidebar -->
+  <div class="news-sidebar" id="newsSidebar">
+    <button class="collapse-btn" id="collapseBtn">
+      ← Hide
+    </button>
+
+    <div class="sidebar-header">
+      <h3>🍋 Filters</h3>
+      <p>Filter content by type or sort by date</p>
+    </div>
+
+    <!-- Filter Buttons -->
+    <div class="filter-container">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="blog">📝 Blogs</button>
+      <button class="filter-btn" data-filter="video">🎥 Videos</button>
+      <button class="filter-btn" data-filter="tutorial">🎓 Tutorials</button>
+      <button class="filter-btn" data-filter="release">📦 Releases</button>
+    </div>
+
+    <!-- Sort Dropdown -->
+    <div class="sort-container">
+      <label for="sortSelect" class="sort-label">Sort by:</label>
+      <select id="sortSelect" class="sort-select">
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- News View -->
+  <div class="news-view">
+    <div class="hero-section">
+      <div class="main-heading">
+        Latest News & Updates
+      </div>
+      <div class="subtitle">
+        Discover insights, tutorials, and the latest developments from Lemonade
+      </div>
+    </div>
+
+    <div class="news-posts">
+      <!-- News tiles will be generated by JavaScript -->
+    </div>
+  </div>
+</body>
+
+  <!-- Back to Top Button -->
+  <button id="backToTop" class="back-to-top-btn" title="Back to top">
+    <span class="back-to-top-icon">↑</span>
+  </button>
+
+  <footer class="site-footer">
+    <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
+    <div class="copyright">Copyright 2025 AMD</div>
+  </footer>
+</html>

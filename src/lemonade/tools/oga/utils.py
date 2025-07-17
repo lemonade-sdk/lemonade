@@ -99,13 +99,16 @@ class OrtGenaiModel(ModelAdapter):
     ):
         params = og.GeneratorParams(self.model)
 
+        # OGA models return a list of tokens (older versions) or 1d numpy array (newer versions)
         prompt_length = len(input_ids)
+
         max_prompt_length = self.config.get("max_prompt_length")
         if max_prompt_length and prompt_length > max_prompt_length:
             raise ValueError(
                 f"This prompt (length {prompt_length}) exceeds the model's "
                 f"maximum allowed prompt length ({max_prompt_length})."
             )
+        self.prompt_tokens = prompt_length
 
         # There is a breaking API change in OGA 0.6.0
         # Determine whether we should use the old or new APIs
@@ -206,18 +209,21 @@ class OrtGenaiModel(ModelAdapter):
                     )
                     self.tokens_per_second = 1 / avg_token_gen_latency_s
 
-            return [generator.get_sequence(0)]
+            response = generator.get_sequence(0)
+            self.response_tokens = len(response) - self.prompt_tokens
+            return [response]
         else:
             if use_oga_post_6_api:
                 generator.append_tokens(input_ids)
             tokenizer_stream = streamer.tokenizer.tokenizer.create_stream()
-
+            self.response_tokens = 0
             stop_early = False
 
             while not generator.is_done() and not stop_early:
                 if use_oga_pre_6_api:
                     generator.compute_logits()
                 generator.generate_next_token()
+                self.response_tokens += 1
 
                 new_token = generator.get_next_tokens()[0]
                 new_text = tokenizer_stream.decode(new_token)

@@ -126,7 +126,10 @@ class Testing(unittest.TestCase):
 
         state = OgaLoad().run(state, input=checkpoint, device=device, dtype=dtype)
         state = OgaBench().run(
-            state, iterations=3, warmup_iterations=1, prompts=["word " * 30, "word " * 62]
+            state,
+            iterations=3,
+            warmup_iterations=1,
+            prompts=["word " * 30, "word " * 62],
         )
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
