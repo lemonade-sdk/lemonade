@@ -479,6 +479,39 @@ lemonade-server pull bge-reranker-v2-m3-GGUF
 
 </details>
 
+<details>
+<summary>Devstral-Small-2507-GGUF</summary>
+
+```bash
+lemonade-server pull Devstral-Small-2507-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/mistralai/Devstral-Small-2507_gguf">mistralai/Devstral-Small-2507_gguf</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen2.5-Coder-32B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen2.5-Coder-32B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF">Qwen/Qwen2.5-Coder-32B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
+</table>
+
+</details>
+
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
