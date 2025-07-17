@@ -13,6 +13,9 @@ class ModelAdapter(abc.ABC):
         """
         self.tokens_per_second = None
         self.time_to_first_token = None
+        self.prompt_tokens = None
+        self.response_tokens = None
+
         self.type = "generic"
 
     @abc.abstractmethod
@@ -22,6 +25,9 @@ class ModelAdapter(abc.ABC):
 
         We try to keep the signature here minimal to allow for maximum compatibility
         with recipe components, which themselves may not support a lot of arguments.
+
+        The generate method should store prompt and response lengths (in tokens)
+        in the prompt_tokens and response_tokens members.
         """
 
 

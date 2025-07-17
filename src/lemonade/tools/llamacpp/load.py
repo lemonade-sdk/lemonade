@@ -1,165 +1,21 @@
 import argparse
 import os
-from typing import Optional
-import subprocess
-from lemonade.state import State
+import lemonade.common.printing as printing
 import lemonade.common.status as status
+from lemonade.state import State
 from lemonade.tools import FirstTool
-from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.cache import Keys
 
 
-class LlamaCppAdapter(ModelAdapter):
-    def __init__(
-        self, model, output_tokens, context_size, threads, executable, lib_dir=None
-    ):
-        super().__init__()
-
-        self.model = os.path.normpath(model)
-        self.output_tokens = output_tokens
-        self.context_size = context_size
-        self.threads = threads
-        self.executable = os.path.normpath(executable)
-        self.lib_dir = lib_dir
-
-    def generate(
-        self,
-        input_ids: str,
-        max_new_tokens: Optional[int] = None,
-        temperature: float = 0.8,
-        top_p: float = 0.95,
-        top_k: int = 40,
-        return_raw: bool = False,
-        **kwargs,  # pylint: disable=unused-argument
-    ):
-        """
-        Pass a text prompt into the llamacpp inference CLI.
-
-        The input_ids arg here should receive the original text that
-        would normally be encoded by a tokenizer.
-
-        Args:
-            input_ids: The input text prompt
-            max_new_tokens: Maximum number of tokens to generate
-            temperature: Temperature for sampling (0.0 = greedy)
-            top_p: Top-p sampling threshold
-            top_k: Top-k sampling threshold
-            return_raw: If True, returns the complete raw output including timing info
-            **kwargs: Additional arguments (ignored)
-
-        Returns:
-            List containing a single string with the generated text, or raw output if
-            return_raw=True
-        """
-
-        prompt = input_ids
-        n_predict = max_new_tokens if max_new_tokens is not None else self.output_tokens
-
-        cmd = [
-            self.executable,
-            "-m",
-            self.model,
-            "--ctx-size",
-            str(self.context_size),
-            "-n",
-            str(n_predict),
-            "-t",
-            str(self.threads),
-            "-p",
-            prompt,
-            "--temp",
-            str(temperature),
-            "--top-p",
-            str(top_p),
-            "--top-k",
-            str(top_k),
-            "-e",
-            "-no-cnv",
-        ]
-
-        cmd = [str(m) for m in cmd]
-
-        try:
-            # Set up environment with library path for Linux
-            env = os.environ.copy()
-            if self.lib_dir and os.name != "nt":  # Not Windows
-                current_ld_path = env.get("LD_LIBRARY_PATH", "")
-                if current_ld_path:
-                    env["LD_LIBRARY_PATH"] = f"{self.lib_dir}:{current_ld_path}"
-                else:
-                    env["LD_LIBRARY_PATH"] = self.lib_dir
-
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-            )
-
-            raw_output, stderr = process.communicate(timeout=600)
-            if process.returncode != 0:
-                error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
-                error_msg += f"Command: {' '.join(cmd)}\n"
-                error_msg += f"Error output:\n{stderr}\n"
-                error_msg += f"Standard output:\n{raw_output}"
-                raise Exception(error_msg)
-
-            if raw_output is None:
-                raise Exception("No output received from llama.cpp process")
-
-            # Parse timing information
-            for line in raw_output.splitlines():
-                if "llama_perf_context_print:        eval time =" in line:
-                    parts = line.split("(")[1].strip()
-                    parts = parts.split(",")
-                    ms_per_token = float(parts[0].split("ms per token")[0].strip())
-                    self.tokens_per_second = (
-                        1000 / ms_per_token if ms_per_token > 0 else 0
-                    )
-                if "llama_perf_context_print: prompt eval time =" in line:
-                    parts = line.split("=")[1].split("/")[0]
-                    time_to_first_token_ms = float(parts.split("ms")[0].strip())
-                    self.time_to_first_token = time_to_first_token_ms / 1000
-
-            if return_raw:
-                return [raw_output, stderr]
-
-            # Find where the prompt ends and the generated text begins
-            prompt_found = False
-            output_text = ""
-            prompt_first_line = prompt.split("\n")[0]
-            for line in raw_output.splitlines():
-                if prompt_first_line in line:
-                    prompt_found = True
-                if prompt_found:
-                    line = line.replace("</s> [end of text]", "")
-                    output_text = output_text + line
-
-            if not prompt_found:
-                raise Exception(
-                    f"Could not find prompt '{prompt_first_line}' in llama.cpp output. "
-                    "This usually means the model failed to process the prompt correctly.\n"
-                    f"Raw output:\n{raw_output}\n"
-                    f"Stderr:\n{stderr}"
-                )
-
-            # Return list containing the generated text
-            return [output_text]
-
-        except Exception as e:
-            error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
-            error_msg += f"Command: {' '.join(cmd)}"
-            raise Exception(error_msg)
-
-
 class LoadLlamaCpp(FirstTool):
-    unique_name = "load-llama-cpp"
+    unique_name = "llamacpp-load"
 
     def __init__(self):
         super().__init__(monitor_message="Loading llama.cpp model")
+
+        self.status_stats = [
+            Keys.DEVICE,
+        ]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -169,28 +25,29 @@ class LoadLlamaCpp(FirstTool):
         )
 
         parser.add_argument(
-            "--executable",
-            required=True,
-            type=str,
-            help="Path to the llama.cpp executable (e.g., llama-cli or llama-cli.exe)",
+            "-d",
+            "--device",
+            choices=["cpu", "igpu"],
+            default="igpu",
+            help="Which device to load the model on to (default: igpu)",
         )
 
-        default_threads = 1
+        default_threads = -1
         parser.add_argument(
             "--threads",
             required=False,
             type=int,
             default=default_threads,
-            help=f"Number of threads to use for generation (default: {default_threads})",
+            help=f"Number of threads to use during generation (default: {default_threads})",
         )
 
-        context_size = 512
+        context_size = 4096
         parser.add_argument(
             "--context-size",
             required=False,
             type=int,
             default=context_size,
-            help=f"Context size of the prompt (default: {context_size})",
+            help=f"Size of the prompt context (default: {context_size}. 0 = loaded from model)",
         )
 
         output_tokens = 512
@@ -199,14 +56,13 @@ class LoadLlamaCpp(FirstTool):
             required=False,
             type=int,
             default=output_tokens,
-            help=f"Maximum number of output tokens the LLM should make (default: {output_tokens})",
+            help=f"Maximum number of output tokens to generate (default: {output_tokens})",
         )
 
         parser.add_argument(
-            "--model-binary",
-            required=True,
-            type=str,
-            help="Path to a .gguf model file",
+            "--reasoning",
+            action="store_true",
+            help="Set this flag to indicate the model is a reasoning model",
         )
 
         return parser
@@ -215,61 +71,113 @@ class LoadLlamaCpp(FirstTool):
         self,
         state: State,
         input: str = "",
+        device: str = "igpu",
         context_size: int = 512,
         threads: int = 1,
         output_tokens: int = 512,
-        model_binary: Optional[str] = None,
-        executable: str = None,
-        lib_dir: Optional[str] = None,
+        reasoning: bool = False,
     ) -> State:
         """
         Load a llama.cpp model
         """
 
-        from lemonade.common.network import get_base_model
+        from lemonade.common.network import is_offline
+        from lemonade.tools.llamacpp.utils import (
+            install_llamacpp,
+            get_llama_cli_exe_path,
+            get_llama_installed_version,
+            parse_checkpoint,
+            download_gguf,
+            get_local_checkpoint_path,
+            LlamaCppTokenizerAdapter,
+            LlamaCppAdapter,
+        )
 
-        if executable is None:
-            raise Exception(f"{self.__class__.unique_name} requires an executable path")
+        # Validate and install llama.cpp, if needed
+        install_llamacpp()
 
-        # Convert paths to platform-specific format
-        executable = os.path.normpath(executable)
+        # Check if input is a local folder containing a .GGUF model
+        if os.path.isdir(input):
+            # input is a local folder
+            local_model_folder = os.path.abspath(input)
+            checkpoint = "local_model"
+            state.checkpoint = checkpoint
+            state.save_stat(Keys.CHECKPOINT, checkpoint)
+            state.save_stat(Keys.LOCAL_MODEL_FOLDER, local_model_folder)
 
-        if model_binary:
-            model_to_use = os.path.normpath(model_binary)
+            # See if there is a file ending in ".gguf" in this folder
+            dir = os.listdir(input)
+            gguf_files = [filename for filename in dir if filename.endswith(".gguf")]
+            if len(gguf_files) == 0:
+                raise ValueError(
+                    f"The folder {input} does not contain a GGUF model file."
+                )
+            model_to_use = gguf_files[0]
+            full_model_path = os.path.join(local_model_folder, model_to_use)
+
         else:
-            model_binary = input
-            model_to_use = os.path.normpath(model_binary) if model_binary else None
+            # Input is a model checkpoint
+            checkpoint = input
+            state.checkpoint = checkpoint
+            state.save_stat(Keys.CHECKPOINT, checkpoint)
 
-            if not model_binary:
-                model_to_use = state.get(Keys.MODEL)
+            # Make sure that a variant is provided for the GGUF model
+            base_checkpoint, variant = parse_checkpoint(checkpoint)
+            if variant is None:
+                raise ValueError(
+                    "You are required to provide a 'variant' when "
+                    "selecting a GGUF model. The variant is provided "
+                    "as CHECKPOINT:VARIANT. For example: "
+                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+                )
 
-        if model_to_use is None:
-            raise Exception(
-                f"{self.__class__.unique_name} requires the preceding tool to pass a "
-                "Llamacpp model, "
-                "or for the user to supply a model with `--model-binary`"
-            )
+            # Auto-detect offline status
+            offline = is_offline()
+            if offline:
+                printing.log_warning(
+                    "Network connectivity to huggingface.co not detected. Running in offline mode."
+                )
+                full_model_path, model_to_use = get_local_checkpoint_path(
+                    base_checkpoint, variant
+                )
+                if not full_model_path:
+                    raise ValueError(
+                        f"Model {checkpoint} is not available locally."
+                        f"Cannot download in offline mode."
+                    )
 
+            else:
+
+                snapshot_files = download_gguf(checkpoint)
+                full_model_path = snapshot_files["variant"]
+                model_to_use = os.path.basename(full_model_path)
+
+        llama_cli_exe_path = get_llama_cli_exe_path()
+        printing.log_info(f"Using llama_cli for GGUF model: {llama_cli_exe_path}")
+
+        # Get the directory containing the executable for shared libraries
+        lib_dir = os.path.dirname(llama_cli_exe_path)
+
+        # Pass the model and inputs into state
         state.model = LlamaCppAdapter(
-            model=model_to_use,
+            model=full_model_path,
+            device=device,
             output_tokens=output_tokens,
             context_size=context_size,
             threads=threads,
-            executable=executable,
+            executable=llama_cli_exe_path,
+            reasoning=reasoning,
             lib_dir=lib_dir,
         )
-        state.tokenizer = PassthroughTokenizer()
+        state.tokenizer = LlamaCppTokenizerAdapter()
+        state.device = device
 
-        # Save stats about the model
-        state.save_stat(Keys.CHECKPOINT, model_to_use)
-
-        # Get base model information if this is a converted HF model
-        base_model = get_base_model(input)
-        if base_model is not None:
-            state.save_stat("base_model", base_model)
+        # Save initial stats
+        state.save_stat(Keys.DEVICE, device)
+        state.save_stat(Keys.LLAMA_CLI_VERSION_INFO, get_llama_installed_version())
 
         status.add_to_state(state=state, name=input, model=model_to_use)
-
         return state
 
 

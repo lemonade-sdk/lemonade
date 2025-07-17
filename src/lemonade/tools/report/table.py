@@ -758,15 +758,18 @@ class LemonadePerfTable(Table):
             data[key] = model_stats.get(key, "")
 
         # Create a new entry with Driver Versions and relevant Python Packages
-        sw_versions = [
-            key + ": " + value
-            for key, value in data[fs.Keys.SYSTEM_INFO]["Driver Versions"].items()
-        ]
-        sw_versions += [
-            pkg
-            for pkg in data[fs.Keys.SYSTEM_INFO]["Python Packages"]
-            if any(name in pkg for name in PYTHON_PACKAGES)
-        ]
+        sw_versions = []
+        if "Driver Versions" in data[fs.Keys.SYSTEM_INFO]:
+            sw_versions += [
+                key + ": " + value
+                for key, value in data[fs.Keys.SYSTEM_INFO]["Driver Versions"].items()
+            ]
+        if "Python Packages" in data[fs.Keys.SYSTEM_INFO]:
+            sw_versions += [
+                pkg
+                for pkg in data[fs.Keys.SYSTEM_INFO]["Python Packages"]
+                if any(name in pkg for name in PYTHON_PACKAGES)
+            ]
         if isinstance(data[Keys.RYZEN_AI_VERSION_INFO], dict):
             sw_versions += [
                 "Ryzen AI: " + value

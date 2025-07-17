@@ -7,7 +7,7 @@ import unittest
 import tempfile
 import platform
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
-from lemonade_server.model_manager import ModelManager
+from lemonade.tools.llamacpp.utils import parse_checkpoint, identify_gguf_models
 
 # Only import system tray related modules on Windows
 if platform.system() == "Windows":
@@ -81,43 +81,32 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert tool_calls == expected_tool_calls
 
     def test_002_gguf_model_identification(self):
-        model_manager = ModelManager()
 
         # Case 1. Full filename: exact file to download
-        checkpoint, variant = model_manager.parse_checkpoint(
+        checkpoint, variant = parse_checkpoint(
             "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q3_K_S.gguf"
         )
-        core_files, sharded_files = model_manager.identify_gguf_models(
-            checkpoint, variant, None
-        )
+        core_files, sharded_files = identify_gguf_models(checkpoint, variant, None)
         assert core_files == {"variant": "Qwen3-0.6B-Q3_K_S.gguf"}
         assert sharded_files == []
 
         # Case 2. None/empty: gets the first .gguf file in the repository (excludes mmproj files)
-        checkpoint, variant = model_manager.parse_checkpoint("unsloth/Qwen3-0.6B-GGUF")
-        core_files, sharded_files = model_manager.identify_gguf_models(
-            checkpoint, variant, None
-        )
+        checkpoint, variant = parse_checkpoint("unsloth/Qwen3-0.6B-GGUF")
+        core_files, sharded_files = identify_gguf_models(checkpoint, variant, None)
         assert core_files == {"variant": "Qwen3-0.6B-BF16.gguf"}
         assert sharded_files == []
 
         # Case 3. Quantization variant: find a single file ending with the variant name (case insensitive)
-        checkpoint, variant = model_manager.parse_checkpoint(
-            "unsloth/Qwen3-0.6B-GGUF:Q3_K_S"
-        )
-        core_files, sharded_files = model_manager.identify_gguf_models(
-            checkpoint, variant, None
-        )
+        checkpoint, variant = parse_checkpoint("unsloth/Qwen3-0.6B-GGUF:Q3_K_S")
+        core_files, sharded_files = identify_gguf_models(checkpoint, variant, None)
         assert core_files == {"variant": "Qwen3-0.6B-Q3_K_S.gguf"}
         assert sharded_files == []
 
         # Case 4. Folder name: downloads all .gguf files in the folder that matches the variant name (case insensitive)
-        checkpoint, variant = model_manager.parse_checkpoint(
+        checkpoint, variant = parse_checkpoint(
             "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S"
         )
-        core_files, sharded_files = model_manager.identify_gguf_models(
-            checkpoint, variant, None
-        )
+        core_files, sharded_files = identify_gguf_models(checkpoint, variant, None)
         assert core_files == {
             "variant": "Q4_K_S/Llama-4-Scout-17B-16E-Instruct-Q4_K_S-00001-of-00002.gguf"
         }
@@ -127,10 +116,10 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         ]
 
         # Common on all cases: mmproj file
-        checkpoint, variant = model_manager.parse_checkpoint(
+        checkpoint, variant = parse_checkpoint(
             "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:BF16"
         )
-        core_files, sharded_files = model_manager.identify_gguf_models(
+        core_files, sharded_files = identify_gguf_models(
             checkpoint, variant, "mmproj-BF16.gguf"
         )
         assert core_files == {

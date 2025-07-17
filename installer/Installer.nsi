@@ -142,7 +142,7 @@ SectionIn RO ; Read only, always installed
     ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip"'
     ExecWait 'tar -xf "$INSTDIR\python\python.zip" -C "$INSTDIR\python"'
     ExecWait 'curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py'
-    ExecWait '$INSTDIR\python\python.exe get-pip.py --no-warn-script-location'
+    ExecWait '"$INSTDIR\python\python.exe" get-pip.py --no-warn-script-location'
     
     FileOpen $2 "$INSTDIR\python\python310._pth" a
     FileSeek $2 0 END
@@ -178,7 +178,7 @@ SectionIn RO ; Read only, always installed
       
       ; Add to user path without replication
       ; If the folder is already on path, we move it to the top
-      ExecWait '"$INSTDIR\python\python.exe" add_to_path.py $INSTDIR\bin' $8
+      ExecWait '"$INSTDIR\python\python.exe" add_to_path.py "$INSTDIR\bin"' $8
       DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 
       ; Check if path setting was successful

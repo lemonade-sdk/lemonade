@@ -6,30 +6,12 @@ import huggingface_hub
 from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
+from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
 
 class ModelManager:
-
-    @staticmethod
-    def parse_checkpoint(checkpoint: str) -> tuple[str, str | None]:
-        """
-        Parse a checkpoint string that may contain a variant separated by a colon.
-
-        For GGUF models, the format is "repository:variant" (e.g., "unsloth/Qwen3-0.6B-GGUF:Q4_0").
-        For other models, there is no variant.
-
-        Args:
-            checkpoint: The checkpoint string, potentially with variant
-
-        Returns:
-            tuple: (base_checkpoint, variant) where variant is None if no colon is present
-        """
-        if ":" in checkpoint:
-            base_checkpoint, variant = checkpoint.split(":", 1)
-            return base_checkpoint, variant
-        return checkpoint, None
 
     @property
     def supported_models(self) -> dict:
@@ -98,7 +80,7 @@ class ModelManager:
         downloaded_models = {}
         downloaded_checkpoints = self.downloaded_hf_checkpoints
         for model in self.supported_models:
-            base_checkpoint = self.parse_checkpoint(
+            base_checkpoint = parse_checkpoint(
                 self.supported_models[model]["checkpoint"]
             )[0]
             if base_checkpoint in downloaded_checkpoints:
@@ -112,132 +94,6 @@ class ModelManager:
         the current installation.
         """
         return self.filter_models_by_backend(self.downloaded_models)
-
-    def identify_gguf_models(
-        self, checkpoint: str, variant: str, mmproj: str
-    ) -> tuple[dict, list[str]]:
-        """
-        Identifies the GGUF model files in the repository that match the variant.
-        """
-
-        hint = """
-        The CHECKPOINT:VARIANT scheme is used to specify model files in Hugging Face repositories.
-
-        The VARIANT format can be one of several types:
-        1. Full filename: exact file to download
-        2. None/empty: gets the first .gguf file in the repository (excludes mmproj files)
-        3. Quantization variant: find a single file ending with the variant name (case insensitive)
-        4. Folder name: downloads all .gguf files in the folder that matches the variant name (case insensitive)
-        
-        Examples:
-        - "unsloth/Qwen3-8B-GGUF:qwen3.gguf" -> downloads "qwen3.gguf"
-        - "unsloth/Qwen3-30B-A3B-GGUF" -> downloads "Qwen3-30B-A3B-GGUF.gguf"
-        - "unsloth/Qwen3-8B-GGUF:Q4_1" -> downloads "Qwen3-8B-GGUF-Q4_1.gguf"
-        - "unsloth/Qwen3-30B-A3B-GGUF:Q4_0" -> downloads all files in "Q4_0/" folder
-        """
-
-        repo_files = huggingface_hub.list_repo_files(checkpoint)
-        sharded_files = []
-
-        # (case 1) If variant ends in .gguf, use it directly
-        if variant and variant.endswith(".gguf"):
-            variant_name = variant
-            if variant_name not in repo_files:
-                raise ValueError(
-                    f"File {variant} not found in Hugging Face repository {checkpoint}. {hint}"
-                )
-        # (case 2) If no variant is provided, get the first .gguf file in the repository
-        elif variant is None:
-            all_variants = [
-                f for f in repo_files if f.endswith(".gguf") and "mmproj" not in f
-            ]
-            if len(all_variants) == 0:
-                raise ValueError(
-                    f"No .gguf files found in Hugging Face repository {checkpoint}. {hint}"
-                )
-            variant_name = all_variants[0]
-        else:
-            # (case 3) Find a single file ending with the variant name (case insensitive)
-            end_with_variant = [
-                f
-                for f in repo_files
-                if f.lower().endswith(f"{variant}.gguf".lower())
-                and "mmproj" not in f.lower()
-            ]
-            if len(end_with_variant) == 1:
-                variant_name = end_with_variant[0]
-            elif len(end_with_variant) > 1:
-                raise ValueError(
-                    f"Multiple .gguf files found for variant {variant}, but only one is allowed. {hint}"
-                )
-            # (case 4) Check whether the variant corresponds to a folder with sharded files (case insensitive)
-            else:
-                sharded_files = [
-                    f
-                    for f in repo_files
-                    if f.endswith(".gguf")
-                    and f.lower().startswith(f"{variant}/".lower())
-                ]
-
-                if not sharded_files:
-                    raise ValueError(
-                        f"No .gguf files found for variant {variant}. {hint}"
-                    )
-
-                # Sort to ensure consistent ordering
-                sharded_files.sort()
-
-                # Use first file as primary (this is how llamacpp handles it)
-                variant_name = sharded_files[0]
-
-        core_files = {"variant": variant_name}
-
-        # If there is a mmproj file, add it to the patterns
-        if mmproj:
-            if mmproj not in repo_files:
-                raise ValueError(
-                    f"The provided mmproj file {mmproj} was not found in {checkpoint}."
-                )
-            core_files["mmproj"] = mmproj
-
-        return core_files, sharded_files
-
-    def download_gguf(self, model_config: PullConfig) -> dict:
-        """
-        Downloads the GGUF file for the given model configuration.
-
-        For sharded models, if the variant points to a folder (e.g. Q4_0), all files in that folder
-        will be downloaded but only the first file will be returned for loading.
-        """
-
-        # This code handles all cases by constructing the appropriate filename or pattern
-        checkpoint, variant = self.parse_checkpoint(model_config.checkpoint)
-
-        # Identify the GGUF model files in the repository that match the variant
-        core_files, sharded_files = self.identify_gguf_models(
-            checkpoint, variant, model_config.mmproj
-        )
-
-        # Download the files
-        snapshot_folder = huggingface_hub.snapshot_download(
-            repo_id=checkpoint,
-            allow_patterns=list(core_files.values()) + sharded_files,
-        )
-
-        # Ensure we downloaded all expected files
-        for file in list(core_files.values()) + sharded_files:
-            expected_path = os.path.join(snapshot_folder, file)
-            if not os.path.exists(expected_path):
-                raise ValueError(
-                    f"Hugging Face snapshot download for {model_config.checkpoint} "
-                    f"expected file {file} not found at {expected_path}"
-                )
-
-        # Return a dict of the full path of the core GGUF files
-        return {
-            file_name: os.path.join(snapshot_folder, file_path)
-            for file_name, file_path in core_files.items()
-        }
 
     def download_models(
         self,
@@ -317,7 +173,7 @@ class ModelManager:
             print(f"Downloading {model} ({checkpoint_to_download})")
 
             if "gguf" in checkpoint_to_download.lower():
-                self.download_gguf(gguf_model_config)
+                download_gguf(gguf_model_config.checkpoint, gguf_model_config.mmproj)
             else:
                 huggingface_hub.snapshot_download(repo_id=checkpoint_to_download)
 
@@ -373,7 +229,7 @@ class ModelManager:
         print(f"Deleting {model_name} ({checkpoint})")
 
         # Handle GGUF models that have the format "checkpoint:variant"
-        base_checkpoint = self.parse_checkpoint(checkpoint)[0]
+        base_checkpoint = parse_checkpoint(checkpoint)[0]
 
         try:
             # Get the local path using snapshot_download with local_files_only=True

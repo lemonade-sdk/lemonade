@@ -39,6 +39,8 @@ jobs:
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
       - name: Run server tests (unit tests)
         shell: bash -el {0}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           python test/server_unit.py
       - name: Run server tests (network online mode)

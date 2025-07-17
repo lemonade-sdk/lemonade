@@ -1014,7 +1014,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             assert pull_response.status_code == 200
 
     # Endpoint: /api/v1/system-info
-    def test_022_test_system_info_endpoint(self):
+    def test_024_test_system_info_endpoint(self):
         """
         Test the system-info endpoint functionality.
         """
@@ -1055,13 +1055,63 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
 
         verbose_system_info = verbose_response.json()
-        assert isinstance(verbose_system_info, dict), "Verbose system info should return a dictionary"
+        assert isinstance(
+            verbose_system_info, dict
+        ), "Verbose system info should return a dictionary"
 
         # Check that Python Packages is present in verbose mode
-        assert "Python Packages" in verbose_system_info, "Python Packages should be present in verbose mode"
+        assert (
+            "Python Packages" in verbose_system_info
+        ), "Python Packages should be present in verbose mode"
         packages = verbose_system_info["Python Packages"]
         assert isinstance(packages, list)
         assert len(packages) > 0
+
+    def test_025_test_llamacpp_completions_non_streaming(self):
+        """Test completion endpoint specifically with llamacpp model (non-streaming)"""
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        completion = client.completions.create(
+            model="Qwen3-0.6B-GGUF",  # This will use llamacpp recipe
+            prompt="Hello, how are you?",
+            stream=False,
+            max_tokens=20,
+        )
+
+        # Basic validation (same as existing completion tests)
+        assert len(completion.choices[0].text) > 5
+        assert completion.usage.prompt_tokens > 0
+        assert completion.usage.completion_tokens > 0
+
+        print(f"LlamaCPP completion: {completion.choices[0].text}")
+
+    def test_026_test_llamacpp_completions_streaming(self):
+        """Test streaming completion endpoint specifically with llamacpp model"""
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        stream = client.completions.create(
+            model="Qwen3-0.6B-GGUF",  # This will use llamacpp recipe
+            prompt="def hello_world():",
+            stream=True,
+            max_tokens=20,
+        )
+
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].text is not None:
+                complete_response += chunk.choices[0].text
+                print(chunk.choices[0].text, end="")
+                chunk_count += 1
+
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
 
 if __name__ == "__main__":

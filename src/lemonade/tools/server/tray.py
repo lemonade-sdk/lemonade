@@ -87,8 +87,15 @@ class LemonadeTray(SystemTray):
         Update the latest version information.
         """
         try:
+            # Prepare headers for GitHub API request
+            headers = {}
+            github_token = os.environ.get("GITHUB_TOKEN")
+            if github_token:
+                headers["Authorization"] = f"token {github_token}"
+
             response = requests.get(
                 "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest",
+                headers=headers,
                 timeout=10,  # Add timeout to prevent hanging
             )
             response.raise_for_status()

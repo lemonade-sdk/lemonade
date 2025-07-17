@@ -45,7 +45,7 @@ setup(
         "fastapi",
         "uvicorn[standard]",
         "openai>=1.81.0",
-        "transformers<=4.51.3",
+        "transformers<=4.53.2",
         "jinja2",
         "tabulate",
         "sentencepiece",

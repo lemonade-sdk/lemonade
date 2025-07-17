@@ -12,14 +12,19 @@
     {{SERVER_MODELS_JS}}
 </head>
 <body>
-    <nav class="navbar">
-        <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a>
-        <a href="https://lemonade-server.ai/docs/" target="_blank">Docs</a>
-        <a href="https://lemonade-server.ai/docs/server/server_models/" target="_blank">Models</a>
-        <a href="https://lemonade-server.ai/docs/server/apps/" target="_blank">Featured Apps</a>
+    <nav class="navbar" id="navbar">
+        <div class="navbar-brand">
+            <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
+        </div>
+        <div class="navbar-links">
+            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a>
+            <a href="https://lemonade-server.ai/docs/" target="_blank">Docs</a>
+            <a href="https://lemonade-server.ai/docs/server/server_models/" target="_blank">Models</a>
+            <a href="https://lemonade-server.ai/docs/server/apps/" target="_blank">Featured Apps</a>
+            <a href="https://lemonade-server.ai/news/" target="_blank">News</a>
+        </div>
     </nav>
     <main class="main">
-        <div class="title">🍋 Lemonade Server</div>
         <div class="tab-container"> 
             <div class="tabs"> 
                 <button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button> 

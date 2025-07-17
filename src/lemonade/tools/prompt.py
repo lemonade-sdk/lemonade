@@ -161,7 +161,11 @@ class LLMPrompt(Tool):
         # If template flag is set, then wrap prompt in template
         if template:
             # Embed prompt in model's chat template
-            if tokenizer.chat_template:
+            if not hasattr(tokenizer, "prompt_template"):
+                printing.log_warning(
+                    "Templates for this model type are not yet implemented."
+                )
+            elif tokenizer.chat_template:
                 # Use the model's built-in chat template if available
                 messages_dict = [{"role": "user", "content": prompt}]
                 prompt = tokenizer.apply_chat_template(
@@ -175,25 +179,10 @@ class LLMPrompt(Tool):
                 state.save_stat(Keys.PROMPT_TEMPLATE, "Default")
 
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
-        if isinstance(input_ids, (list, str)):
-            # OGA models return a list of tokens (older versions)
-            # Our llama.cpp adapter returns a string
-            len_tokens_in = len(input_ids)
-        elif hasattr(input_ids, "shape"):
-            # HF models return a 2-D tensor
-            # OGA models with newer versions may return numpy arrays
-            if len(input_ids.shape) == 1:
-                # 1-D array from newer OGA versions
-                len_tokens_in = len(input_ids)
-            else:
-                # 2-D tensor from HF models
-                len_tokens_in = input_ids.shape[1]
-        else:
-            # Fallback: try to get length directly
-            len_tokens_in = len(input_ids)
 
         len_tokens_out = []
         response_texts = []
+        prompt_tokens = None  # will be determined in generate function
         for trial in range(n_trials):
             if n_trials > 1:
                 self.set_percent_progress(100.0 * trial / n_trials)
@@ -222,19 +211,22 @@ class LLMPrompt(Tool):
 
             response_array = response if isinstance(response, str) else response[0]
 
-            # Separate the prompt from the response
-            len_tokens_out.append(len(response_array) - len_tokens_in)
+            prompt_tokens = model.prompt_tokens
+            len_tokens_out.append(model.response_tokens)
 
-            input_token = 0
+            # Remove the input from the response
+            # (up to the point they diverge, which they should not)
+            counter = 0
+            len_input_ids = len(input_ids_array)
             while (
-                input_token < len_tokens_in
-                and input_ids_array[input_token] == response_array[input_token]
+                counter < len_input_ids
+                and input_ids_array[counter] == response_array[counter]
             ):
-                input_token += 1
+                counter += 1
 
             # Only decode the actual response (not the prompt)
             response_text = tokenizer.decode(
-                response_array[input_token:], skip_special_tokens=True
+                response_array[counter:], skip_special_tokens=True
             ).strip()
             response_texts.append(response_text)
 
@@ -259,7 +251,7 @@ class LLMPrompt(Tool):
             plt.savefig(figure_path)
             state.save_stat(Keys.RESPONSE_LENGTHS_HISTOGRAM, figure_path)
 
-        state.save_stat(Keys.PROMPT_TOKENS, len_tokens_in)
+        state.save_stat(Keys.PROMPT_TOKENS, prompt_tokens)
         state.save_stat(Keys.PROMPT, prompt)
         state.save_stat(Keys.RESPONSE_TOKENS, len_tokens_out)
         state.save_stat(Keys.RESPONSE, sanitize_text(response_texts))

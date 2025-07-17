@@ -7,36 +7,106 @@
   <link rel="stylesheet" href="assets/website-styles.css">
 </head>
 <body>  <nav class="navbar" id="navbar">
-    <div class="navbar-context" id="navbar-context">
-      <a class="navbar-back" onclick="showMain(); return false;">← Back</a>
-      <span class="text-muted">Installation Setup</span>
+    <div class="navbar-brand">
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
     </div>
     <div class="navbar-links">
       <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
       <a href="docs/">Docs</a>
       <a href="docs/server/server_models/">Models</a>
       <a href="docs/server/apps/">Featured Apps</a>
+      <a href="news/">News</a>
     </div>
   </nav>
   
   <main class="main">
-    <div class="title">🍋 Lemonade Server</div>
-    <div class="subtitle">
-      Refreshingly fast local LLMs on GPUs and NPUs.<br>
-      Integrate with <a href="https://www.youtube.com/watch?v=PXNTDZREJ_A">Open WebUI</a>, <a href="https://youtu.be/JecpotOZ6qo?si=WxWVQhUBCJQgE6vX">AI Toolkit</a>, or <a href="docs/server/server_integration/">your own app</a> in minutes.
+    <div class="hero-section">
+      <div class="main-heading">
+        Refreshingly fast LLMs on<br>
+        GPUs and NPUs
+      </div>
+      <!-- Subtitle -->
+      <div class="subtitle">
+        Install, run LLMs locally, and integrate with apps in minutes
+      </div>
+      <div class="button-row">
+        <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">
+          Download<br>
+          <span class="download-sub">for Windows 11</span>
+        </a>
+        <a class="dev-btn" href="#" onclick="showInstaller(); return false;">
+          Developer Setup<br>
+          <span class="dev-sub">For Ubuntu and Windows</span>
+        </a>
+      </div>
     </div>
-    <div class="button-row">
-      <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">
-        Download<br>
-        <span class="download-sub">for Windows 11</span>
-      </a>      <a class="dev-btn" href="#" onclick="showInstaller(); return false;">
-        Developer Setup<br>
-        <span class="dev-sub">For Ubuntu and Windows</span>
-      </a>    </div>
+
+        
+    <!-- Video Section -->
+    <div class="video-section">
+      <div class="video-container">
+        <iframe 
+          src="https://www.youtube.com/embed/mcf7dDybUco?si=TLSD1EWtvMm1_O3L" 
+          title="Getting Started with Lemonade Server" 
+          frameborder="0" 
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+          referrerpolicy="strict-origin-when-cross-origin" 
+          allowfullscreen>
+        </iframe>
+      </div>
+    </div>
+    
+    <!-- Partner Apps Section -->
+    <div class="partner-apps">
+      <div class="subtitle">
+        Lemonade is compatible with the top open-source apps!
+      </div>
+      <div class="partner-apps-images">
+        <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png" alt="Continue" width="60" />
+        </a>
+        <a href="https://github.com/amd/gaia" title="Gaia" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico" alt="Gaia" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png" alt="AnythingLLM" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/" title="AI Dev Gallery" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp" alt="AI Dev Gallery" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/lm-eval/" title="LM-Eval" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/codeGPT/" title="CodeGPT" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/codegpt.jpg" alt="CodeGPT" width="60" />
+        </a>
+        <a href="https://lemonade-server.ai/docs/server/apps/ai-toolkit/" title="AI Toolkit" target="_blank">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" width="60" />
+        </a>
+      </div>
+    </div>
+    
+    <!-- Release Announcement Section -->
+    <div class="release-announcement" id="releaseAnnouncement">
+      <div class="release-content">
+        <div class="release-info">
+          <h3 class="release-title">Latest Release</h3>
+          <p class="release-name" id="releaseName">Loading latest release...</p>
+          <p class="release-date" id="releaseDate"></p>
+          <div class="release-highlights" id="releaseHighlights"></div>
+        </div>
+      </div>
+      <a class="release-link" href="#" id="releaseLink" target="_blank">
+        View Release
+      </a>
+    </div>
   </main>
     <!-- Install Selector View -->
   <div id="lmn-install-view" class="lmn-install-view">
-    <span class="lmn-install-title">🍋 Installation Setup</span>
+    <span class="lmn-install-title">Installation Setup</span>
     <div id="lmn-installer" class="lmn-installer-container">
       <table class="lmn-installer-table">
         <tr>
@@ -90,18 +160,118 @@
   </div>
   
   <footer class="site-footer">
-    <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>    <div class="copyright">Copyright 2025 AMD</div>
+    <div class="footer-content">
+      <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
+      <div class="copyright">Copyright 2025 AMD</div>
+    </div>
   </footer>
   
   <script src="assets/install-selector.js"></script>  <script>
+    // Fetch latest release from GitHub API
+    async function fetchLatestRelease() {
+      try {
+        const response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest');
+        const release = await response.json();
+        
+        // Update the release announcement
+        const releaseName = document.getElementById('releaseName');
+        const releaseDate = document.getElementById('releaseDate');
+        const releaseLink = document.getElementById('releaseLink');
+        const releaseHighlights = document.getElementById('releaseHighlights');
+        
+        if (release.name) {
+          releaseName.textContent = release.name;
+          releaseDate.textContent = `Released ${new Date(release.published_at).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}`;
+          releaseLink.href = release.html_url;
+          
+          // Parse and display headline items
+          if (release.body) {
+            const headlines = parseHeadlineSection(release.body);
+            if (headlines.length > 0) {
+              releaseHighlights.innerHTML = headlines.map(item => `<div class="highlight-item">${item}</div>`).join('');
+            }
+          }
+        } else {
+          // Fallback if no release name
+          releaseName.textContent = release.tag_name || 'Latest Release';
+          releaseDate.textContent = `Released ${new Date(release.published_at).toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}`;
+          releaseLink.href = release.html_url;
+        }
+      } catch (error) {
+        console.error('Error fetching release:', error);
+        // Fallback content
+        document.getElementById('releaseName').textContent = 'Visit GitHub for Latest Release';
+        document.getElementById('releaseDate').textContent = 'Check for updates';
+        document.getElementById('releaseLink').href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
+      }
+    }
+    
+    // Parse the headline section from release body
+    function parseHeadlineSection(body) {
+      const lines = body.split('\n');
+      const headlines = [];
+      let inHeadlineSection = false;
+      
+      for (const line of lines) {
+        if (line.trim() === '## Headline') {
+          inHeadlineSection = true;
+          continue;
+        }
+        
+        if (inHeadlineSection) {
+          if (line.trim().startsWith('## ')) {
+            // End of headline section
+            break;
+          }
+          
+          if (line.trim().startsWith('- ')) {
+            // Extract headline item, remove markdown formatting
+            let item = line.trim().substring(2).trim();
+            // Remove backticks and @ mentions for cleaner display
+            item = item.replace(/`([^`]+)`/g, '$1');
+            item = item.replace(/@\w+/g, '');
+            item = item.trim();
+            headlines.push(item);
+          }
+        }
+      }
+      
+      return headlines;
+    }
+    
+    // Load release info when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      fetchLatestRelease();
+      
+      // Initialize the installer if we're on the installer view
+      if (document.getElementById('lmn-install-view').style.display === 'flex') {
+        if (typeof lmnInit === 'function') {
+          lmnInit();
+        }
+      }
+    });
+    
     function showInstaller() {
       document.querySelector('.main').classList.add('hidden');
       document.getElementById('lmn-install-view').style.display = 'flex';
-      document.getElementById('navbar-context').classList.add('show');
-      // Initialize the installer if not already done
-      if (typeof lmnInit === 'function') {
-        lmnInit();
-      }
+      
+      // Initialize the installer after the view is shown
+      setTimeout(function() {
+        if (typeof lmnInit === 'function') {
+          console.log('Initializing installer...');
+          lmnInit();
+        } else {
+          console.error('lmnInit function not found');
+        }
+      }, 100);
     }
     
     function showMain() {

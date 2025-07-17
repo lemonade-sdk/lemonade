@@ -34,7 +34,7 @@ def build_name(input_name):
     """
     Name the lemonade build by concatenating these two factors:
         1. Sanitize the input name (typically a model checkpoint name) by
-            replacing any `/` characters with `_`.
+            replacing any `/` characters with `_` and ':' characters with '-'.
         2. Timestamp to ensure that builds in the same cache will not
             collide in the same build directory.
 
@@ -47,6 +47,7 @@ def build_name(input_name):
     else:
         # Sanitize the input name
         input_name_sanitized = input_name.replace("/", "_")
+        input_name_sanitized = input_name_sanitized.replace(":", "-")
 
     # Get the formatted timestamp string
     timestamp = get_timestamp()
@@ -79,6 +80,7 @@ class Keys:
     MAX_MEMORY_USED_GB = "max_memory_used_GB"
     MAX_MEMORY_USED_GBYTE = "max_memory_used_gbyte"
     RYZEN_AI_VERSION_INFO = "ryzen_ai_version_info"
+    LLAMA_CLI_VERSION_INFO = "llama_cli_version_info"
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
