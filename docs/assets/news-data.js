@@ -136,10 +136,19 @@ const newsData = [
     type: "blog"
     },
     {
+    title: "Lemonade Server v8.0.6 Release",
+    url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.6",
+    date: "July 17, 2025",
+    description: "Overhauled llamacpp support in the Lemonade Developer CLI.",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
+    type: "release"
+    },
+    {
     title: "Lemonade Server v8.0.5 Release",
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.5",
     date: "July 14, 2025",
-    description: "Added device enumeration capability on Windows and Linux to `lemonade system-info` command",
+    description: "Added device enumeration capability on Windows and Linux to `lemonade system-info` command.",
     image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "release"
@@ -148,7 +157,7 @@ const newsData = [
     title: "Lemonade Server v8.0.4 Release",
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.4",
     date: "July 09, 2025",
-    description: "Added `reranking` and `embeddings` support to Lemonade Server",
+    description: "Added `reranking` and `embeddings` support to Lemonade Server.",
     image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "release"
