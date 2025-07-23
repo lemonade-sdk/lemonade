@@ -1392,6 +1392,7 @@ body::before {
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   z-index: 10000;
   font-weight: 600;
+  white-space: pre-line;
   display: none;
   animation: fadeIn 0.2s ease;
   align-items: center;
