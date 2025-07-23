@@ -228,10 +228,16 @@
     async function httpRequest(url, options = {}) {
         const resp = await fetch(url, options);
         if (!resp.ok) {
-            let detail = resp.statusText;
+            let detail = resp.statusText || 'Request failed';
             try {
-                const data = await resp.json();
-                if (data && data.detail) detail = data.detail;
+                const contentType = resp.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const data = await resp.json();
+                    if (data && data.detail) detail = data.detail;
+                } else {
+                    const text = await resp.text();
+                    if (text) detail = text.trim();
+                }
             } catch (_) {}
             throw new Error(detail);
         }
@@ -685,14 +691,15 @@
         const llmBubble = appendMessage('llm', '...');
         try {
             // Use the correct endpoint for chat completions
+            const payload = {
+                model: modelSelect.value,
+                messages: messages,
+                stream: true
+            };
             const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: modelSelect.value,
-                    messages: messages,
-                    stream: true
-                })
+                body: JSON.stringify(payload)
             });
             if (!resp.body) throw new Error('No stream');
             const reader = resp.body.getReader();
@@ -728,10 +735,21 @@
                     }
                 }
             }
+            if (!llmText) throw new Error('No response');
             messages.push({ role: 'assistant', content: llmText });
         } catch (e) {
-            llmBubble.textContent = '[Error: ' + e.message + ']';
-            showErrorBanner(`Chat error: ${e.message}`);
+            let detail = e.message;
+            try {
+                const errPayload = { ...payload, stream: false };
+                const errResp = await httpJson(getServerBaseUrl() + '/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(errPayload)
+                });
+                if (errResp && errResp.detail) detail = errResp.detail;
+            } catch (_) {}
+            llmBubble.textContent = '[Error: ' + detail + ']';
+            showErrorBanner(`Chat error: ${detail}`);
         }
         sendBtn.disabled = false;
     }
