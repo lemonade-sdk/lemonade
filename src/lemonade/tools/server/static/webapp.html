@@ -24,7 +24,10 @@
             <a href="https://lemonade-server.ai/news/" target="_blank">News</a>
         </div>
     </nav>
-    <div id="error-banner" class="error-banner" style="display:none;"></div>
+    <div id="error-banner" class="error-banner" style="display:none;">
+        <span id="error-banner-msg"></span>
+        <button class="close-btn" onclick="hideErrorBanner()">&times;</button>
+    </div>
     <main class="main">
         <div class="tab-container"> 
             <div class="tabs"> 
@@ -218,10 +221,19 @@
     function showErrorBanner(msg) {
         const banner = document.getElementById('error-banner');
         if (!banner) return;
-        banner.textContent = msg;
-        banner.style.display = 'block';
-        clearTimeout(banner._hideTimer);
-        banner._hideTimer = setTimeout(() => { banner.style.display = 'none'; }, 5000);
+        const msgEl = document.getElementById('error-banner-msg');
+        const fullMsg = msg + ' Check the Lemonade Server logs via the system tray app for more information.';
+        if (msgEl) {
+            msgEl.textContent = fullMsg;
+        } else {
+            banner.textContent = fullMsg;
+        }
+        banner.style.display = 'flex';
+    }
+
+    function hideErrorBanner() {
+        const banner = document.getElementById('error-banner');
+        if (banner) banner.style.display = 'none';
     }
 
     // Helper fetch wrappers that surface server error details

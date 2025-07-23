@@ -1394,4 +1394,20 @@ body::before {
   font-weight: 600;
   display: none;
   animation: fadeIn 0.2s ease;
+  align-items: center;
+}
+
+.error-banner .close-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2em;
+  margin-left: 0.8em;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.error-banner .close-btn:hover {
+  opacity: 0.8;
 }
