@@ -1378,3 +1378,20 @@ body::before {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Error banner styles */
+.error-banner {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #dc3545;
+  color: #fff;
+  padding: 0.6em 1.2em;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 10000;
+  font-weight: 600;
+  display: none;
+  animation: fadeIn 0.2s ease;
+}
