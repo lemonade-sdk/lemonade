@@ -24,22 +24,6 @@
 # In any python environment, only one set of artifacts can be installed at a time.
 # Python environments created by Lemonade v6.1.x or earlier will need to be recreated.
 #
-# The Ryzen AI 1.3.0 artifact files use a different directory hierarchy.
-# The Ryzen AI 1.3.0 hybrid artifacts directory hierarchy is:
-#
-#     RYZEN_AI\hybrid\hybrid-llm-artifacts_1.3.0_lounge\hybrid-llm-artifacts\
-#         onnxruntime_genai\lib
-#         onnxruntime_genai\wheel
-#         onnx_utils\bin
-#         eula\eula
-#
-# The Ryzen AI 1.3.0 npu artifacts directory hierarchy is:
-#
-#     RYZEN_AI\npu\amd_oga\
-#         bins\xclbin\stx
-#         libs
-#         wheels
-#
 
 import argparse
 import glob
@@ -56,6 +40,13 @@ import zipfile
 DEFAULT_RYZEN_AI_VERSION = "1.4.0"
 version_info_filename = "version_info.json"
 
+# NPU Driver configuration
+NPU_DRIVER_DOWNLOAD_URL = (
+    "https://account.amd.com/en/forms/downloads/"
+    "ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip"
+)
+REQUIRED_NPU_DRIVER_VERSION = "32.0.203.280"
+
 lemonade_install_dir = Path(__file__).parent.parent.parent
 DEFAULT_QUARK_VERSION = "quark-0.6.0"
 DEFAULT_QUARK_DIR = os.path.join(
@@ -66,14 +57,6 @@ DEFAULT_QUARK_DIR = os.path.join(
 SUPPORTED_RYZEN_AI_SERIES = ["300"]
 
 npu_install_data = {
-    "1.3.0": {
-        "artifacts_zipfile": "ryzen_ai_13_ga/npu-llm-artifacts_1.3.0.zip",
-        "license_file": (
-            "https://account.amd.com/content/dam/account/en/licenses/download/"
-            "amd-end-user-license-agreement.pdf"
-        ),
-        "license_tag": "Beta ",
-    },
     "1.4.0": {
         "artifacts_zipfile": (
             "https://www.xilinx.com/bin/public/openDownload?"
@@ -88,17 +71,6 @@ npu_install_data = {
 }
 
 hybrid_install_data = {
-    "1.3.0": {
-        "artifacts_zipfile": (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            "filename=hybrid-llm-artifacts_1.3.0_012725.zip"
-        ),
-        "license_file": (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            "filename=AMD%20End%20User%20License%20Agreement.pdf"
-        ),
-        "license_tag": "",
-    },
     "1.4.0": {
         "artifacts_zipfile": (
             "https://www.xilinx.com/bin/public/openDownload?"
@@ -154,10 +126,7 @@ def get_oga_npu_dir():
     version_info = get_ryzen_ai_version_info()
     version = version_info["version"]
     ryzen_ai_folder = get_ryzen_ai_path()
-    if "1.3.0" in version:
-        npu_dir = os.path.join(ryzen_ai_folder, "npu", "amd_oga")
-    else:
-        npu_dir = os.path.join(ryzen_ai_folder, "npu")
+    npu_dir = os.path.join(ryzen_ai_folder, "npu")
     if not os.path.isdir(npu_dir):
         raise RuntimeError(
             f"The npu artifacts are missing from the Ryzen AI folder {ryzen_ai_folder}. "
@@ -171,15 +140,7 @@ def get_oga_hybrid_dir():
     version_info = get_ryzen_ai_version_info()
     version = version_info["version"]
     ryzen_ai_folder = get_ryzen_ai_path()
-    if "1.3.0" in version:
-        hybrid_dir = os.path.join(
-            ryzen_ai_folder,
-            "hybrid",
-            "hybrid-llm-artifacts_1.3.0_lounge",
-            "hybrid-llm-artifacts",
-        )
-    else:
-        hybrid_dir = os.path.join(ryzen_ai_folder, "hybrid")
+    hybrid_dir = os.path.join(ryzen_ai_folder, "hybrid")
     if not os.path.isdir(hybrid_dir):
         raise RuntimeError(
             f"The hybrid artifacts are missing from the Ryzen AI folder {ryzen_ai_folder}. "
@@ -187,6 +148,37 @@ def get_oga_hybrid_dir():
             "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
         )
     return hybrid_dir, version
+
+
+def _get_ryzenai_version_info(device=None):
+    """
+    Centralized version detection for RyzenAI installations.
+    Uses lazy imports to avoid import errors when OGA is not installed.
+    """
+    try:
+        # Lazy import to avoid errors when OGA is not installed
+        from packaging.version import Version
+        import onnxruntime_genai as og
+
+        if Version(og.__version__) >= Version("0.7.0"):
+            oga_path = os.path.dirname(og.__file__)
+            if og.__version__ == "0.7.0.2":
+                return "1.5.0", oga_path
+            else:
+                return "1.4.0", oga_path
+        else:
+            if device == "npu":
+                oga_path, version = get_oga_npu_dir()
+            else:
+                oga_path, version = get_oga_hybrid_dir()
+            return version, oga_path
+    except ImportError as e:
+        raise ImportError(
+            f"{e}\n Please install lemonade-sdk with "
+            "one of the oga extras, for example:\n"
+            "pip install lemonade-sdk[dev,oga-cpu]\n"
+            "See https://lemonade_server.ai/install_options.html for details"
+        ) from e
 
 
 def download_lfs_file(token, file, output_filename):
@@ -426,8 +418,6 @@ class Install:
                 "npu",
                 "hybrid",
                 "unified",
-                "npu-1.3.0",
-                "hybrid-1.3.0",
                 "npu-1.4.0",
                 "hybrid-1.4.0",
                 "unified-1.4.0",
@@ -524,25 +514,14 @@ class Install:
         # Install all whl files in the specified wheels folder
         if wheels_full_path is not None:
             print(f"\nInstalling wheels from {wheels_full_path}\n")
-            if version == "1.3.0":
-                # Install one wheel file at a time (1.3.0 npu build only works this way)
-                for file in os.listdir(wheels_full_path):
-                    if file.endswith(".whl"):
-                        install_cmd = (
-                            f"{sys.executable} -m pip install "
-                            f"{os.path.join(wheels_full_path, file)}"
-                        )
-                        print(f"\nInstalling {file} with command {install_cmd}\n")
-                        subprocess.run(install_cmd, check=True, shell=True)
-            else:
-                # Install all the wheel files together, allowing pip to work out the dependencies
-                wheel_files = glob.glob(os.path.join(wheels_full_path, "*.whl"))
-                install_cmd = [sys.executable, "-m", "pip", "install"] + wheel_files
-                subprocess.run(
-                    install_cmd,
-                    check=True,
-                    shell=True,
-                )
+            # Install all the wheel files together, allowing pip to work out the dependencies
+            wheel_files = glob.glob(os.path.join(wheels_full_path, "*.whl"))
+            install_cmd = [sys.executable, "-m", "pip", "install"] + wheel_files
+            subprocess.run(
+                install_cmd,
+                check=True,
+                shell=True,
+            )
 
         # Delete the zip file
         print(f"\nCleaning up, removing {archive_file_path}\n")
@@ -611,10 +590,7 @@ class Install:
         license_file = npu_install_data[version].get("license_file", None)
         license_tag = npu_install_data[version].get("license_tag", None)
         install_dir = os.path.join(ryzen_ai_folder, "npu")
-        if version == "1.3.0":
-            wheels_full_path = os.path.join(install_dir, "amd_oga/wheels")
-        else:
-            wheels_full_path = os.path.join(install_dir, "wheels")
+        wheels_full_path = os.path.join(install_dir, "wheels")
 
         if license_file:
             Install._get_license_acceptance(version, license_file, license_tag, yes)
@@ -641,17 +617,7 @@ class Install:
         license_file = hybrid_install_data[version].get("license_file", None)
         license_tag = hybrid_install_data[version].get("license_tag", None)
         install_dir = os.path.join(ryzen_ai_folder, "hybrid")
-        if version == "1.3.0":
-            wheels_full_path = os.path.join(
-                ryzen_ai_folder,
-                "hybrid",
-                "hybrid-llm-artifacts_1.3.0_lounge",
-                "hybrid-llm-artifacts",
-                "onnxruntime_genai",
-                "wheel",
-            )
-        else:
-            wheels_full_path = os.path.join(install_dir, "wheels")
+        wheels_full_path = os.path.join(install_dir, "wheels")
 
         if license_file:
             Install._get_license_acceptance(version, license_file, license_tag, yes)
@@ -668,6 +634,21 @@ class Install:
     def _install_ryzenai(ryzenai, build_model, yes, token):
         # Check if the processor is supported before proceeding
         check_ryzen_ai_processor()
+
+        warning_msg = (
+            "\n" + "=" * 80 + "\n"
+            "WARNING: IMPORTANT: NEW RYZEN AI 1.5.0 INSTALLATION PROCESS\n"
+            + "=" * 80
+            + "\n"
+            "Starting with Ryzen AI 1.5.0, installation is now available through PyPI.\n"
+            "For new installations, consider using:\n\n"
+            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple\n\n"
+            "This legacy installation method (lemonade-install --ryzenai) is still\n"
+            "supported for version 1.4.0, but may be deprecated in future releases.\n"
+            + "=" * 80
+            + "\n"
+        )
+        print(warning_msg)
 
         # Delete any previous Ryzen AI installation in this environment
         ryzen_ai_folder = get_ryzen_ai_path(check_exists=False)

@@ -1,12 +1,30 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "Styrk AI & AMD: Guardrails for Your On-Device AI Revolution",
+    url: "https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/",
+    date: "July 14, 2025",
+    description: "AMD and Styrk AI bring real-time, on-device LLM security. Powered by AMD NPUs, GPUs, and Lemonade Server, with built-in guardrails for filtering, adversarial detection, and prompt injection defense.",
+    image: "https://styrk.ai/wp-content/uploads/2025/07/styrk-ai_amd-768x432.webp",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
+    type: "blog"
+    },
+    {
     title: "AMD and XMPro Deliver Autonomous Intelligence at the Edge",
     url: "https://www.amd.com/en/developer/resources/technical-articles/2025/empowering-local-industrial-compute.html",
     date: "July 15, 2025",
     description: "AMD and XMPro have partnered to bring advanced AI capabilities to the industrial edge using AMD hardware and the Lemonade Server for efficient, private, local AI workloads.",
     image: "https://www.amd.com/en/developer/resources/technical-articles/2025/empowering-local-industrial-compute/_jcr_content/_cq_featuredimage.coreimg.jpeg/1752678519383/3598267-amd-x-xmpro-image-edit-1200x627-no-copy.jpeg",
-    imageStyle: "width: 110%; height: 110%; object-fit: cover; object-position: center;",
+    imageStyle: "width: 110%; height: 110%; object-fit: cover; object-position: center top;",
+    type: "blog"
+    },
+    {
+    title: "Rethinking Local AI: Lemonade Server’s Python Advantage",
+    url: "https://www.amd.com/en/developer/resources/technical-articles/2025/rethinking-local-ai-lemonade-servers-python-advantage.html",
+    date: "July 21, 2025",
+    description: "Learn about why we chose Python for deploying local LLMs with Lemonade and how integrating with your app is incredibly easy.",
+    image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/technical-blogs/rethinking-local-ai/figure%203%20our%20approach%20to%20python%20gives%20us%20both%20development%20agility%20and%20the%20expected%20level%20of%20production%20readines.png",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
     type: "blog"
     },
     {

@@ -39,19 +39,16 @@
     "Llama-3.2-1B-Instruct-Hybrid": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 3000,
         "suggested": true
     },
     "Llama-3.2-3B-Instruct-Hybrid": {
         "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
         "suggested": true
     },
     "Phi-3-Mini-Instruct-Hybrid": {
         "checkpoint": "amd/Phi-3-mini-4k-instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
         "suggested": true
     },
     "Phi-3.5-Mini-Instruct-Hybrid": {
@@ -62,13 +59,26 @@
     "Qwen-1.5-7B-Chat-Hybrid": {
         "checkpoint": "amd/Qwen1.5-7B-Chat-awq-g128-int4-asym-fp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 3000,
+        "suggested": true
+    },
+    "Qwen-2.5-7B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-7B-Instruct-awq-uint4-asym-g128-lmhead-g32-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "suggested": true
+    },
+    "Qwen-2.5-3B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-3B-Instruct-awq-uint4-asym-g128-lmhead-g32-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
+        "suggested": true
+    },
+    "Qwen-2.5-1.5B-Instruct-Hybrid": {
+        "checkpoint": "amd/Qwen2.5-1.5B-Instruct-awq-uint4-asym-g128-lmhead-g32-fp16-onnx-hybrid",
+        "recipe": "oga-hybrid",
         "suggested": true
     },
     "DeepSeek-R1-Distill-Llama-8B-Hybrid": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
         "suggested": true,
         "labels": ["reasoning"]
     },
@@ -76,25 +86,32 @@
         "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid",
         "recipe": "oga-hybrid",
         "max_prompt_length": 2000,
-        "suggested": true,
+        "suggested": false,
         "labels": ["reasoning"]
     },
     "Mistral-7B-v0.3-Instruct-Hybrid": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-fp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
         "suggested": true
     },
     "Llama-3.1-8B-Instruct-Hybrid": {
         "checkpoint": "amd/Llama-3.1-8B-Instruct-awq-asym-uint4-g128-lmhead-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
         "suggested": true
     },
     "Llama-xLAM-2-8b-fc-r-Hybrid": {
         "checkpoint": "amd/Llama-xLAM-2-8b-fc-r-awq-g128-int4-asym-bfp16-onnx-hybrid",
         "recipe": "oga-hybrid",
-        "max_prompt_length": 2000,
+        "suggested": true
+    },
+    "Qwen-2.5-7B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-7B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": true
+    },
+    "Qwen-2.5-1.5B-Instruct-NPU": {
+        "checkpoint": "amd/Qwen2.5-1.5B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
         "suggested": true
     },
     "Llama-3.2-1B-Instruct-DirectML": {
@@ -169,6 +186,12 @@
         "suggested": true,
         "labels": ["reasoning"]
     },
+    "Qwen3-30B-A3B-Instruct-2507-GGUF": {
+        "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["coding"]
+    },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-model-f16.gguf",
@@ -217,12 +240,13 @@
     "Devstral-Small-2507-GGUF":{
         "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
         "recipe": "llamacpp",
-        "suggested": true
+        "suggested": true,
+        "labels": ["coding"]
     },
     "Qwen2.5-Coder-32B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,  
-        "labels": ["reasoning"]
+        "labels": ["reasoning", "coding"]
     }
 }

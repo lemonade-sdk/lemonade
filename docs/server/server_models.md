@@ -97,6 +97,21 @@ lemonade-server pull Qwen-1.5-7B-Chat-Hybrid
 </details>
 
 <details>
+<summary>Qwen-2.5-7B-Instruct-Hybrid</summary>
+
+```bash
+lemonade-server pull Qwen-2.5-7B-Instruct-Hybrid
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-7B-Instruct-awq-uint4-asym-g128-lmhead-g32-fp16-onnx-hybrid">amd/Qwen2.5-7B-Instruct-awq-uint4-asym-g128-lmhead-g32-fp16-onnx-hybrid</a></td></tr>
+<tr><td>Recipe</td><td>oga-hybrid</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>DeepSeek-R1-Distill-Llama-8B-Hybrid</summary>
 
 ```bash
@@ -106,22 +121,6 @@ lemonade-server pull DeepSeek-R1-Distill-Llama-8B-Hybrid
 <table>
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
-<tr><td>Recipe</td><td>oga-hybrid</td></tr>
-<tr><td>Labels</td><td>reasoning</td></tr>
-</table>
-
-</details>
-
-<details>
-<summary>DeepSeek-R1-Distill-Qwen-7B-Hybrid</summary>
-
-```bash
-lemonade-server pull DeepSeek-R1-Distill-Qwen-7B-Hybrid
-```
-
-<table>
-<tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid">amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-hybrid</a></td></tr>
 <tr><td>Recipe</td><td>oga-hybrid</td></tr>
 <tr><td>Labels</td><td>reasoning</td></tr>
 </table>
@@ -376,6 +375,23 @@ lemonade-server pull Qwen3-30B-A3B-GGUF
 </details>
 
 <details>
+<summary>Qwen3-30B-A3B-Instruct-2507-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-30B-A3B-Instruct-2507-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF">unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>coding</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>Gemma-3-4b-it-GGUF</summary>
 
 ```bash
@@ -491,6 +507,7 @@ lemonade-server pull Devstral-Small-2507-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/mistralai/Devstral-Small-2507_gguf">mistralai/Devstral-Small-2507_gguf</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>coding</td></tr>
 </table>
 
 </details>
@@ -507,7 +524,7 @@ lemonade-server pull Qwen2.5-Coder-32B-Instruct-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF">Qwen/Qwen2.5-Coder-32B-Instruct-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Labels</td><td>reasoning</td></tr>
+<tr><td>Labels</td><td>reasoning, coding</td></tr>
 </table>
 
 </details>

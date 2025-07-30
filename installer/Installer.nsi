@@ -1,6 +1,6 @@
 ; Lemonade Server Installer Script
 
-!define /ifndef NPU_DRIVER_VERSION "32.0.203.237"
+!define /ifndef NPU_DRIVER_VERSION "32.0.203.280"
 
 ; Request user rights only (no admin)
 RequestExecutionLevel user
@@ -35,6 +35,8 @@ Var currentChar
 !include "StrFunc.nsh"
 ${StrLoc}
 ${StrCase}
+${StrTrimNewLines}
+${StrTok}
 
 ; Define a section for the installation
 Section "Install Main Components" SEC01
@@ -155,16 +157,44 @@ SectionIn RO ; Read only, always installed
     DetailPrint "-------------------------" 
 
 
-    DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
-    ${If} $HYBRID_SELECTED == "true"
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-hybrid] --no-warn-script-location' $8
-    ${Else}
-      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
-    ${EndIf}
-    DetailPrint "- $LEMONADE_SERVER_STRING install return code: $8"
 
-    ; Check if installation was successful (exit code should be 0)
-    StrCmp $8 0 install_success install_failed
+
+    DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
+    
+    ; Always install base CPU version first to ensure lemonade-server-dev.exe is available
+    ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
+    DetailPrint "- Base lemonade installation return code: $8"
+    
+    ; Check if base installation was successful
+    StrCmp $8 0 base_install_success base_install_failed
+    
+    base_install_success:
+      DetailPrint "- Base $LEMONADE_SERVER_STRING installation successful"
+      
+      ; If hybrid mode is selected, upgrade to hybrid
+      ${If} $HYBRID_SELECTED == "true"
+        DetailPrint "- Upgrading to hybrid mode..."
+                 ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
+        DetailPrint "- Hybrid upgrade return code: $8"
+        
+        ; Check if hybrid upgrade was successful
+        StrCmp $8 0 hybrid_upgrade_success hybrid_upgrade_failed
+        
+        hybrid_upgrade_success:
+          DetailPrint "- Hybrid mode upgrade successful"
+          Goto install_success
+          
+        hybrid_upgrade_failed:
+          DetailPrint "- Hybrid mode upgrade failed"
+          Goto install_failed
+      ${Else}
+        DetailPrint "- CPU-only installation completed"
+        Goto install_success
+      ${EndIf}
+      
+    base_install_failed:
+      DetailPrint "- Base $LEMONADE_SERVER_STRING installation failed"
+      Goto install_failed
 
     install_success:
       DetailPrint "- $LEMONADE_SERVER_STRING installation successful"
@@ -200,28 +230,10 @@ SectionIn RO ; Read only, always installed
     end:
 SectionEnd
 
-Section "Install Ryzen AI Hybrid Execution" HybridSec
-  DetailPrint "Ryzen AI Section"
-
-  ; Once we're done downloading and installing the archive the size comes out to about 370MB
-  AddSize 388882
-
-  nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-install --ryzenai hybrid -y'
-
-  Pop $R0  ; Return value
-  DetailPrint "Hybrid execution mode install return code: $R0"
-
-  ; Check if installation was successful (exit code should be 0)
-  StrCmp $R0 0 end install_failed
-
-  install_failed:
-      DetailPrint "- Hybrid installation failed"
-      ${IfNot} ${Silent}
-        MessageBox MB_OK "ERROR: Hybrid mode failed to install using pip. Installation will be aborted."
-      ${EndIf}
-      Quit
-
-  end:
+Section "Hybrid Execution Mode" HybridSec
+  SectionIn 1
+  AddSize 0
+  StrCpy $HYBRID_SELECTED "true"
 SectionEnd
 
 SubSection /e "Selected Models" ModelsSec
@@ -504,8 +516,8 @@ Function .onInit
   ; Check CPU name to determine if Hybrid section should be enabled
   DetailPrint "Checking CPU model..."
   
-  ; Use WMI via PowerShell to get CPU name
-  nsExec::ExecToStack 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty Name"'
+  ; Use PowerShell to get CPU name (RemoteSigned is less suspicious than Bypass)
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty Name"'
   Pop $0 ; Return value
   Pop $cpuName ; Output (CPU name)
   

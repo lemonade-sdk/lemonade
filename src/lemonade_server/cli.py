@@ -57,7 +57,7 @@ def serve(
     log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
 
     # Hidden environment variable to enable input truncation (experimental feature)
-    truncate_inputs = "LEMONADE_TRUNCATE_INPUTS" in os.environ
+    truncate_inputs = os.environ.get("LEMONADE_TRUNCATE_INPUTS", None)
 
     # Start the server
     serve_kwargs = {

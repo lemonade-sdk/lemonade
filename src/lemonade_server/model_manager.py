@@ -7,6 +7,7 @@ from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
+from lemonade.common.network import custom_snapshot_download
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
@@ -175,7 +176,7 @@ class ModelManager:
             if "gguf" in checkpoint_to_download.lower():
                 download_gguf(gguf_model_config.checkpoint, gguf_model_config.mmproj)
             else:
-                huggingface_hub.snapshot_download(repo_id=checkpoint_to_download)
+                custom_snapshot_download(checkpoint_to_download)
 
             # Register the model in user_models.json, creating that file if needed
             # We do this registration after the download so that we don't register
@@ -233,8 +234,8 @@ class ModelManager:
 
         try:
             # Get the local path using snapshot_download with local_files_only=True
-            snapshot_path = huggingface_hub.snapshot_download(
-                repo_id=base_checkpoint, local_files_only=True
+            snapshot_path = custom_snapshot_download(
+                base_checkpoint, local_files_only=True
             )
 
             # Navigate up to the model directory (parent of snapshots directory)
