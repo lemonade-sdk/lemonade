@@ -92,7 +92,7 @@ lemonade-server list
 
 ## Model Library
 
-Lemonade supports both GGUF and ONNX models as detailed in the [Supported Configuration](#supported-configurations) section. A list of all built-in models is available [here](https://lemonade-server.ai/docs/server/models/).
+Lemonade supports both GGUF and ONNX models as detailed in the [Supported Configuration](#supported-configurations) section. A list of all built-in models is available [here](https://lemonade-server.ai/docs/server/server_models/).
 
 You can also import custom GGUF and ONNX models from Hugging Face by using our [Model Manager](http://localhost:8000/#model-management) (requires server to be running).
 <p align="center">
@@ -181,7 +181,7 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-For more detailed integration instructions, see the [Integration Guide](./server_integration.md).
+For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
 ## Beyond an LLM Server
 
@@ -189,6 +189,10 @@ The [Lemonade SDK](./docs/README.md) also include the following components:
 
 - 🐍 **[Lemonade API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
 - 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
+
+## FAQ
+
+To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
 
 ## Contributing
 

@@ -27,7 +27,6 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: 5rem;
 }
 
 body::before {
@@ -102,13 +101,9 @@ body::before {
 }
 
 .site-footer {
-  position: fixed;
-  left: 0;
-  bottom: 0;
-  width: 100%;
   background: transparent;
   padding-top: 0.5rem;
-  z-index: 100;
+  margin-top: auto;
 }
 
 .dad-joke {
@@ -533,6 +528,10 @@ body::before {
 
 .model-label.reranking {
   background-color: #ca4747;
+}
+
+.model-label.coding {
+  background-color: #ff6b35;
 }
 
 .model-labels-container {

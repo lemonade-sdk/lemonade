@@ -3,25 +3,24 @@
 # pylint: disable=no-member
 
 import argparse
+import subprocess
+import sys
 import os
 import json
-import shutil
+import webbrowser
 from fnmatch import fnmatch
-import subprocess
-
 
 from lemonade.state import State
 from lemonade.tools import FirstTool
+from lemonade.cache import Keys
 import lemonade.common.status as status
 import lemonade.common.printing as printing
-from lemonade.cache import Keys
 from lemonade_install.install import (
-    get_ryzen_ai_version_info,
-    get_oga_npu_dir,
-    get_oga_hybrid_dir,
+    _get_ryzenai_version_info,
     SUPPORTED_RYZEN_AI_SERIES,
+    NPU_DRIVER_DOWNLOAD_URL,
+    REQUIRED_NPU_DRIVER_VERSION,
 )
-
 
 # ONNX Runtime GenAI models will be cached in this subfolder of the lemonade cache folder
 oga_models_path = "oga_models"
@@ -39,6 +38,42 @@ execution_providers = {
 }
 
 
+def _get_npu_driver_version():
+    """
+    Get the NPU driver version using PowerShell directly.
+    Returns the driver version string or None if not found.
+    """
+    try:
+
+        # Use PowerShell directly to avoid wmi issues in embedded Python environments
+        powershell_cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            (
+                "Get-WmiObject -Class Win32_PnPSignedDriver | "
+                'Where-Object { $_.DeviceName -like "*NPU Compute Accelerator Device*" } | '
+                "Select-Object -ExpandProperty DriverVersion"
+            ),
+        ]
+
+        result = subprocess.run(
+            powershell_cmd, capture_output=True, text=True, check=True, timeout=30
+        )
+
+        driver_version = result.stdout.strip()
+
+        if driver_version and driver_version != "":
+            return driver_version
+        else:
+            return None
+
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
 def import_error_heler(e: Exception):
     """
     Print a helpful message in the event of an import error
@@ -47,8 +82,24 @@ def import_error_heler(e: Exception):
         f"{e}\n Please install lemonade-sdk with "
         "one of the oga extras, for example:\n"
         "pip install lemonade-sdk[dev,oga-cpu]\n"
-        "See https://lemonade_server.ai/install_options.html for details"
+        "See https://lemonade-server.ai/install_options.html for details"
     )
+
+
+def _open_driver_install_page():
+    """
+    Opens the driver installation page in the user's default web browser.
+    """
+    try:
+        driver_page_url = "https://lemonade-server.ai/driver_install.html"
+        printing.log_info(f"Opening driver installation guide: {driver_page_url}")
+        webbrowser.open(driver_page_url)
+    except Exception as e:  # pylint: disable=broad-except
+        printing.log_info(f"Could not open browser automatically: {e}")
+        printing.log_info(
+            "Please visit https://lemonade-server.ai/driver_install.html "
+            "for driver installation instructions."
+        )
 
 
 class OgaLoad(FirstTool):
@@ -208,7 +259,7 @@ class OgaLoad(FirstTool):
             files that have locally been quantized/converted to OGA format and any other
             models that have been manually added by the user.
         """
-        from huggingface_hub import snapshot_download
+        from lemonade.common.network import custom_snapshot_download
 
         if subfolder is None:
             subfolder = f"{execution_providers[device]}-{dtype}"
@@ -232,8 +283,8 @@ class OgaLoad(FirstTool):
         # If not found in lemonade cache, check in Hugging Face cache
         if not model_exists_locally:
             try:
-                snapshot_path = snapshot_download(
-                    repo_id=checkpoint,
+                snapshot_path = custom_snapshot_download(
+                    checkpoint,
                     local_files_only=True,
                 )
 
@@ -258,25 +309,101 @@ class OgaLoad(FirstTool):
         return full_model_path, model_exists_locally
 
     @staticmethod
-    def _update_hybrid_custom_ops_library_path(full_model_path):
+    def _setup_model_dependencies(full_model_path, device, ryzenai_version, oga_path):
         """
-        Modifies the genai_config.json file in the hybrid model folder to set the custom_ops_library
-        path to the location of the onnx_custom_ops.dll in the current environment.
-        This is needed for hybrid inference.
+        Sets up model dependencies for hybrid and NPU inference by:
+        1. Configuring the custom_ops_library path in genai_config.json.
+        2. Adding DLL source directories to PATH for dependent DLL discovery.
+        3. Check NPU driver version if required for device and ryzenai_version.
         """
-        oga_path, version = get_oga_hybrid_dir()
 
-        if "1.3.0" in version:
-            custom_ops_path = os.path.join(
-                oga_path,
-                "onnx_utils",
-                "bin",
-                "onnx_custom_ops.dll",
-            )
+        env_path = sys.prefix
+
+        if "1.4.0" in ryzenai_version:
+            if device == "npu":
+                custom_ops_path = os.path.join(
+                    oga_path, "libs", "onnxruntime_vitis_ai_custom_ops.dll"
+                )
+            else:
+                custom_ops_path = os.path.join(oga_path, "libs", "onnx_custom_ops.dll")
         else:
-            custom_ops_path = os.path.join(oga_path, "libs", "onnx_custom_ops.dll")
+            # For 1.5.0+, check NPU driver version for NPU and hybrid devices
+            if device in ["npu", "hybrid"]:
+                required_driver_version = REQUIRED_NPU_DRIVER_VERSION
 
-        # Insert the custom_ops_path into the model config file
+                current_driver_version = _get_npu_driver_version()
+
+                if not current_driver_version:
+                    printing.log_warning(
+                        f"NPU driver not found. {device.upper()} inference requires NPU driver "
+                        f"version {required_driver_version}.\n"
+                        "Please download and install the NPU Driver from:\n"
+                        f"{NPU_DRIVER_DOWNLOAD_URL}\n"
+                        "NPU functionality may not work properly."
+                    )
+                    _open_driver_install_page()
+
+                elif current_driver_version != required_driver_version:
+                    printing.log_warning(
+                        f"Incorrect NPU driver version detected: {current_driver_version}\n"
+                        f"{device.upper()} inference with RyzenAI 1.5.0 requires driver "
+                        f"version {required_driver_version}.\n"
+                        "Please download and install the correct NPU Driver from:\n"
+                        f"{NPU_DRIVER_DOWNLOAD_URL}\n"
+                        "NPU functionality may not work properly."
+                    )
+                    _open_driver_install_page()
+
+            if device == "npu":
+                # For 1.5.0, custom ops are in the conda environment's onnxruntime package
+                custom_ops_path = os.path.join(
+                    env_path,
+                    "Lib",
+                    "site-packages",
+                    "onnxruntime",
+                    "capi",
+                    "onnxruntime_vitis_ai_custom_ops.dll",
+                )
+                dll_source_path = os.path.join(
+                    env_path, "Lib", "site-packages", "onnxruntime", "capi"
+                )
+                required_dlls = ["dyn_dispatch_core.dll", "xaiengine.dll"]
+            else:
+                custom_ops_path = os.path.join(
+                    env_path,
+                    "Lib",
+                    "site-packages",
+                    "onnxruntime_genai",
+                    "onnx_custom_ops.dll",
+                )
+                dll_source_path = os.path.join(
+                    env_path, "Lib", "site-packages", "onnxruntime_genai"
+                )
+                required_dlls = ["libutf8_validity.dll", "abseil_dll.dll"]
+
+            # Validate that all required DLLs exist in the source directory
+            missing_dlls = []
+            if not os.path.exists(custom_ops_path):
+                missing_dlls.append(custom_ops_path)
+
+            for dll_name in required_dlls:
+                dll_source = os.path.join(dll_source_path, dll_name)
+                if not os.path.exists(dll_source):
+                    missing_dlls.append(dll_source)
+
+            if missing_dlls:
+                dll_list = "\n  - ".join(missing_dlls)
+                raise RuntimeError(
+                    f"Required DLLs not found for {device} inference:\n  - {dll_list}\n"
+                    f"Please ensure your RyzenAI installation is complete and supports {device}."
+                )
+
+            # Add the DLL source directory to PATH
+            current_path = os.environ.get("PATH", "")
+            if dll_source_path not in current_path:
+                os.environ["PATH"] = dll_source_path + os.pathsep + current_path
+
+        # Update the model config with custom_ops_library path
         config_path = os.path.join(full_model_path, "genai_config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
@@ -363,63 +490,32 @@ class OgaLoad(FirstTool):
         return full_model_path
 
     @staticmethod
-    def _setup_npu_environment():
+    def _setup_npu_environment(ryzenai_version, oga_path):
         """
         Sets up environment for NPU flow of ONNX model and returns saved state to be restored
         later in cleanup.
         """
-        oga_path, version = get_oga_npu_dir()
-
-        if not os.path.exists(os.path.join(oga_path, "libs", "onnxruntime.dll")):
-            raise RuntimeError(
-                f"Cannot find libs/onnxruntime.dll in lib folder: {oga_path}"
-            )
-
-        # Save current state so they can be restored after inference.
-        saved_state = {"cwd": os.getcwd(), "path": os.environ["PATH"]}
-
-        # Setup NPU environment (cwd and path will be restored later)
-        os.chdir(oga_path)
-        os.environ["PATH"] = (
-            os.path.join(oga_path, "libs") + os.pathsep + os.environ["PATH"]
-        )
-        if "1.3.0" in version:
-            os.environ["DD_ROOT"] = ".\\bins"
-            os.environ["DEVICE"] = "stx"
-            os.environ["XLNX_ENABLE_CACHE"] = "0"
-
-        return saved_state
-
-    @staticmethod
-    def _setup_hybrid_environment():
-        """
-        Sets up the environment for the Hybrid flow and returns saved state to be restored later
-        in cleanup.
-        """
-        # Determine the Ryzen AI OGA version and hybrid artifacts path
-        oga_path, version = get_oga_hybrid_dir()
-
-        if "1.3.0" in version:
-            dst_dll = os.path.join(
-                oga_path,
-                "onnx_utils",
-                "bin",
-                "DirectML.dll",
-            )
-            if not os.path.isfile(dst_dll):
-                # Artifacts 1.3.0 has DirectML.dll in different subfolder, so copy it to the
-                # correct place.  This should not be needed in later RAI release artifacts.
-                src_dll = os.path.join(
-                    oga_path,
-                    "onnxruntime_genai",
-                    "lib",
-                    "DirectML.dll",
+        if "1.5.0" in ryzenai_version:
+            # For PyPI installation (1.5.0+), no environment setup needed
+            return None
+        elif "1.4.0" in ryzenai_version:
+            # Legacy lemonade-install approach for 1.4.0
+            if not os.path.exists(os.path.join(oga_path, "libs", "onnxruntime.dll")):
+                raise RuntimeError(
+                    f"Cannot find libs/onnxruntime.dll in lib folder: {oga_path}"
                 )
-                os.makedirs(os.path.dirname(dst_dll), exist_ok=True)
-                shutil.copy2(src_dll, dst_dll)
 
-        saved_state = None
-        return saved_state
+            # Save current state so they can be restored after inference.
+            saved_state = {"cwd": os.getcwd(), "path": os.environ["PATH"]}
+
+            # Setup NPU environment (cwd and path will be restored later)
+            os.chdir(oga_path)
+            os.environ["PATH"] = (
+                os.path.join(oga_path, "libs") + os.pathsep + os.environ["PATH"]
+            )
+            return saved_state
+        else:
+            raise ValueError(f"Unsupported RyzenAI version: {ryzenai_version}")
 
     @staticmethod
     def _load_model_and_setup_state(
@@ -431,7 +527,6 @@ class OgaLoad(FirstTool):
         """
 
         try:
-            from transformers import AutoTokenizer
             from lemonade.tools.oga.utils import OrtGenaiModel, OrtGenaiTokenizer
             from lemonade.common.network import is_offline
         except ImportError as e:
@@ -455,6 +550,11 @@ class OgaLoad(FirstTool):
 
         # Auto-detect offline mode
         offline = is_offline()
+
+        try:
+            from transformers import AutoTokenizer
+        except ImportError as e:
+            import_error_heler(e)
 
         try:
             # Always try to use local files first
@@ -495,42 +595,52 @@ class OgaLoad(FirstTool):
             os.chdir(saved_state["cwd"])
             os.environ["PATH"] = saved_state["path"]
 
-    def _generate_model_for_hybrid_or_npu(
-        self, output_model_path, device, input_model_path
-    ):
+    def _generate_model_for_oga(self, output_model_path, device, input_model_path):
         """
-        Uses a subprocess to run the 'model_generate' command for hybrid or npu devices.
+        Uses the model_generate tool to generate the model for OGA hybrid or npu targets.
         """
+        try:
+            import model_generate
+        except ImportError as e:
+            raise ImportError(
+                f"{e}\nYou are trying to use a developer tool that may not be "
+                "installed. Please install the required package using:\n"
+                "pip install -e .[dev,oga-ryzenai] \
+                    --extra-index-url https://pypi.amd.com/simple"
+            )
 
         # Determine the appropriate flag based on the device type
         if device == "hybrid":
-            device_flag = "--hybrid"
+            device_flag = "hybrid"
         elif device == "npu":
-            device_flag = "--npu"
+            device_flag = "npu"
         else:
             raise ValueError(f"Unsupported device type for model generation: {device}")
 
-        command = [
-            "model_generate",
-            device_flag,
-            output_model_path,  # Output model directory
-            input_model_path,  # Input model directory
-        ]
+        printing.log_info(
+            f"Generating model for device: {device_flag}, \
+            input: {input_model_path}, output: {output_model_path}"
+        )
 
-        printing.log_info(f"Running command: {' '.join(command)}")
         try:
-            with open(self.logfile_path, "w", encoding="utf-8") as log_file:
-                subprocess.run(
-                    command, check=True, text=True, stdout=log_file, stderr=log_file
+            if device_flag == "npu":
+                model_generate.generate_npu_model(
+                    input_model=input_model_path,
+                    output_dir=output_model_path,
+                    packed_const=False,
                 )
-        except FileNotFoundError as e:
-            error_message = (
-                "The 'model_generate' package is missing from your system. "
-                "Ensure all required packages are installed. "
-                "To install it, run the following command:\n\n"
-                "    lemonade-install --ryzenai <target> --build-model\n"
-            )
-            raise RuntimeError(error_message) from e
+            else:  # hybrid
+                model_generate.generate_hybrid_model(
+                    input_model=input_model_path,
+                    output_dir=output_model_path,
+                    # script_option="jit_npu",
+                    # mode="bf16",
+                    # dml_only=False,
+                )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to generate model for {device_flag} device. Error: {e}"
+            ) from e
 
     def run(
         self,
@@ -545,8 +655,11 @@ class OgaLoad(FirstTool):
         trust_remote_code=False,
         subfolder: str = None,
     ) -> State:
-        from huggingface_hub import snapshot_download
-        from lemonade.common.network import get_base_model, is_offline
+        from lemonade.common.network import (
+            custom_snapshot_download,
+            get_base_model,
+            is_offline,
+        )
 
         # Auto-detect offline status
         offline = is_offline()
@@ -562,7 +675,8 @@ class OgaLoad(FirstTool):
         state.save_stat(Keys.DTYPE, dtype)
         state.save_stat(Keys.DEVICE, device)
         if device in ["hybrid", "npu"]:
-            ryzen_ai_version_info = get_ryzen_ai_version_info()
+            ryzenai_version, _ = _get_ryzenai_version_info(device)
+            ryzen_ai_version_info = {"version": ryzenai_version}
             state.save_stat(Keys.RYZEN_AI_VERSION_INFO, ryzen_ai_version_info)
 
         # Check if input is a local folder
@@ -627,8 +741,8 @@ class OgaLoad(FirstTool):
                         "The (device, dtype, checkpoint) combination is not supported: "
                         f"({device}, {dtype}, {checkpoint})"
                     )
-                input_model_path = snapshot_download(
-                    repo_id=checkpoint,
+                input_model_path = custom_snapshot_download(
+                    checkpoint,
                     ignore_patterns=["*.md", "*.txt"],
                     local_files_only=offline,
                 )
@@ -661,7 +775,7 @@ class OgaLoad(FirstTool):
                         else:
                             # If ONNX but not modified yet for Hybrid or NPU,
                             # needs further optimization
-                            self._generate_model_for_hybrid_or_npu(
+                            self._generate_model_for_oga(
                                 full_model_path,
                                 device,
                                 input_model_path,
@@ -673,7 +787,7 @@ class OgaLoad(FirstTool):
                                 config = json.load(f)
                             if "quantization_config" in config:
                                 # If quantized, use subprocess to generate the model
-                                self._generate_model_for_hybrid_or_npu(
+                                self._generate_model_for_oga(
                                     full_model_path, device, input_model_path
                                 )
                             else:
@@ -708,18 +822,31 @@ class OgaLoad(FirstTool):
 
         # Load model if download-only argument is not set
         if not download_only:
+            # Get version information for NPU/Hybrid devices
+            if device in ["hybrid", "npu"]:
+                ryzenai_version, oga_path = _get_ryzenai_version_info(device)
+            else:
+                ryzenai_version, oga_path = None, None
 
             saved_env_state = None
+
+            # Setup model dependencies for NPU/Hybrid devices
+            if device in ["hybrid", "npu"]:
+                self._setup_model_dependencies(
+                    full_model_path, device, ryzenai_version, oga_path
+                )
+
             try:
                 if device == "npu":
-                    saved_env_state = self._setup_npu_environment()
+                    saved_env_state = self._setup_npu_environment(
+                        ryzenai_version, oga_path
+                    )
                     # Set USE_AIE_RoPE based on model type
                     os.environ["USE_AIE_RoPE"] = (
                         "0" if "phi-" in checkpoint.lower() else "1"
                     )
                 elif device == "hybrid":
-                    saved_env_state = self._setup_hybrid_environment()
-                    self._update_hybrid_custom_ops_library_path(full_model_path)
+                    saved_env_state = None
 
                 self._load_model_and_setup_state(
                     state, full_model_path, checkpoint, trust_remote_code

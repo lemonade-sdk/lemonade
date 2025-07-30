@@ -44,7 +44,7 @@ setup(
         "zstandard",
         "fastapi",
         "uvicorn[standard]",
-        "openai>=1.81.0",
+        "openai>=1.81.0,<1.97.1",
         "transformers<=4.53.2",
         "jinja2",
         "tabulate",
@@ -54,11 +54,9 @@ setup(
     extras_require={
         # The non-dev extras are meant to deploy specific backends into end-user
         # applications, without including developer-focused tools
-        "oga-hybrid": [
-            # Note: `lemonade-install --ryzenai hybrid` is necessary
-            # to complete installation
-            "onnx==1.16.1",
-            "numpy==1.26.4",
+        # Primary NPU extra using unified PyPI package
+        "oga-ryzenai": [
+            "onnxruntime-genai-directml-ryzenai==0.7.0.2",
             "protobuf>=6.30.1",
         ],
         "oga-cpu": [
@@ -81,11 +79,31 @@ setup(
             "lm-eval[api]",
         ],
         # Keep backwards compatibility for old extras names
-        "oga-hybrid-minimal": ["lemonade-sdk[oga-hybrid]"],
+        "oga-hybrid": ["lemonade-sdk[oga-ryzenai]"],
+        "oga-unified": ["lemonade-sdk[oga-ryzenai]"],
+        "oga-hybrid-minimal": ["lemonade-sdk[oga-ryzenai]"],
         "oga-cpu-minimal": ["lemonade-sdk[oga-cpu]"],
+        "oga-npu-minimal": ["lemonade-sdk[oga-ryzenai]"],
         "llm": ["lemonade-sdk[dev]"],
         "llm-oga-cpu": ["lemonade-sdk[dev,oga-cpu]"],
         # The following extras are deprecated and/or not commonly used
+        "llm-oga-npu": [
+            "onnx==1.16.0",
+            # NPU requires specific onnxruntime version for Ryzen AI compatibility
+            # This may conflict with other OGA extras that require >=1.22.0
+            "onnxruntime==1.18.0",
+            "numpy==1.26.4",
+            "protobuf>=6.30.1",
+            "lemonade-sdk[dev]",
+        ],
+        "llm-oga-hybrid": [
+            # Note: `lemonade-install --ryzenai hybrid` is necessary
+            # to complete installation for RAI 1.4.0.
+            "onnx==1.16.1",
+            "numpy==1.26.4",
+            "protobuf>=6.30.1",
+        ],
+        "llm-oga-unified": ["lemonade-sdk[dev, llm-oga-hybrid]"],
         "llm-oga-igpu": [
             "onnxruntime-genai-directml==0.6.0",
             "onnxruntime-directml>=1.19.0,<1.22.0",
@@ -98,17 +116,6 @@ setup(
             "transformers<=4.51.3",
             "lemonade-sdk[dev]",
         ],
-        "llm-oga-npu": [
-            "onnx==1.16.0",
-            # NPU requires specific onnxruntime version for Ryzen AI compatibility
-            # This may conflict with other OGA extras that require >=1.22.0
-            "onnxruntime==1.18.0",
-            "numpy==1.26.4",
-            "protobuf>=6.30.1",
-            "lemonade-sdk[dev]",
-        ],
-        "llm-oga-hybrid": ["lemonade-sdk[dev,oga-hybrid]"],
-        "llm-oga-unified": ["lemonade-sdk[llm-oga-hybrid]"],
     },
     classifiers=[],
     entry_points={

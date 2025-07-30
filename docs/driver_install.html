@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NPU Driver Installation - Lemonade Server</title>
+  <link rel="icon" href="./assets/favicon.ico">
+  <link rel="stylesheet" href="assets/website-styles.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar">
+    <div class="navbar-brand">
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
+    </div>
+    <div class="navbar-links">
+      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
+      <a href="docs/">Docs</a>
+      <a href="docs/server/server_models/">Models</a>
+      <a href="docs/server/apps/">Featured Apps</a>
+      <a href="news/">News</a>
+    </div>
+  </nav>
+  
+  <main class="main">
+    <div class="hero-section">
+      <div class="main-heading">
+        NPU Driver Installation
+      </div>
+      <div class="subtitle">
+        Install the required NPU driver for AMD Ryzen AI processors
+      </div>
+    </div>
+
+    <!-- Driver Installation Content -->
+    <div class="install-content">
+      <div class="install-section">
+        <h2>Why do I need the NPU driver?</h2>
+        <p>
+          Lemonade uses Ryzen AI Software to access the NPU (Neural Processing Unit) on AMD Ryzen AI processors. 
+          New releases of Ryzen AI Software often require an updated NPU driver. 
+          The NPU driver is required for AI acceleration and enables hardware-accelerated inference for machine learning models on compatible systems.
+          <br><br>
+          <strong>Note:</strong> The minimum required NPU driver version for RyzenAI 1.5.0 is <code>32.0.203.280</code>.
+        </p>
+      </div>
+
+      <div class="install-section">
+        <h2>Installation Steps</h2>
+        <div class="step-container">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Download the NPU Driver</h3>
+              <p>Click the button below to download the latest NPU driver from AMD's official website:</p>
+              <a class="download-btn" href="https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip" target="_blank">
+                Download NPU Driver
+              </a>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Install the Driver</h3>
+              <p>
+                Unzip the downloaded folder. Then, open an Administrator Command Prompt, navigate to the unzipped folder, and run <code>npu_sw_installer.exe</code>. Follow the installation wizard to complete the process.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Verify Installation</h3>
+              <p>Try Lemonade Server again to verify the NPU driver is working correctly.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="install-section">
+        <h2>Need Help?</h2>
+        <p>
+          If you continue to experience issues after following these steps:
+        </p>
+        <ul>
+          <li>Check the <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issues</a> page</li>
+          <li>Contact us on <a href="https://discord.gg/lemonade-server">Discord</a></li>
+        </ul>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer will be inserted here by footer.js -->
+  <div class="footer-placeholder"></div>
+  
+  <script src="assets/footer.js"></script>
+  <script>
+    // Initialize footer when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof initializeFooter === 'function') {
+        initializeFooter();
+      }
+    });
+  </script>
+
+  <style>
+    .install-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .install-section {
+      margin-bottom: 3rem;
+    }
+
+    .install-section h2 {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .install-section ul {
+      margin-left: 2rem;
+      line-height: 1.8;
+    }
+
+    .install-section p {
+      line-height: 1.6;
+      color: #555;
+      margin-bottom: 1rem;
+    }
+
+    .step-container {
+      margin: 2rem 0;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #3498db;
+    }
+
+    .step-number {
+      background: #3498db;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.2rem;
+      margin-right: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .step-content h3 {
+      margin: 0 0 0.5rem 0;
+      color: #2c3e50;
+    }
+
+    .step-content p {
+      margin: 0 0 1rem 0;
+    }
+
+    .download-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #3498db, #2980b9);
+      color: white;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+    }
+
+    @media (max-width: 768px) {
+      .install-content {
+        padding: 0 1rem;
+      }
+      
+      .step {
+        flex-direction: column;
+        text-align: center;
+      }
+      
+      .step-number {
+        margin: 0 auto 1rem auto;
+      }
+    }
+  </style>
+</body>
+</html> 

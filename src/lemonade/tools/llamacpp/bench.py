@@ -68,7 +68,9 @@ class LlamaCppBench(Bench):
                 # and error handling
                 model.time_to_first_token = None
                 model.tokens_per_second = None
-                raw_output, stderr = model.generate(prompt, return_raw=True)
+                raw_output, stderr = model.generate(
+                    prompt, max_new_tokens=output_tokens, return_raw=True
+                )
 
                 if model.time_to_first_token is None or model.tokens_per_second is None:
                     error_msg = (

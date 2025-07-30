@@ -109,6 +109,7 @@
                         </label>
                         <select id="register-recipe" name="recipe" required>
                             <option value="llamacpp">llamacpp</option>
+                            <option value="oga-npu">oga-npu</option>
                             <option value="oga-hybrid">oga-hybrid</option>
                             <option value="oga-cpu">oga-cpu</option>
                         </select>
@@ -413,6 +414,8 @@
                     labelClass = 'reasoning';
                 } else if (labelLower === 'reranking') {
                     labelClass = 'reranking';
+                } else if (labelLower === 'coding') {
+                    labelClass = 'coding';
                 }
                 labelSpan.className = `model-label ${labelClass}`;
                 labelSpan.textContent = label;

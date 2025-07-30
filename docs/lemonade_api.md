@@ -99,14 +99,14 @@ The following table explains what checkpoints work with each recipe, the hardwar
     <td>Pre-quantized OGA ONNX</td>
     <td>AMD Ryzen AI 300 series PC</td>
     <td>Windows</td>
-    <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-14-llm-hybrid-models-67da31231bba0f733750a99c">Hybrid Collection</a>. Optimized with AWQ to INT4.</td>
+    <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0">Hybrid Collection</a>. Optimized with AWQ to INT4.</td>
   </tr>
   <tr>
     <td><code>oga-npu</code></td>
     <td>Pre-quantized OGA ONNX</td>
     <td>AMD Ryzen AI 300 series PC</td>
     <td>Windows</td>
-    <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-14-llm-npu-models-67da3494ec327bd3aa3c83d7">NPU Collection</a>. Optimized with AWQ to INT4.</td>
+    <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0">NPU Collection</a>. Optimized with AWQ to INT4.</td>
   </tr>
 </table>
 
@@ -127,8 +127,8 @@ You can skip the conversion step by using pre-quantized models from AMD’s Hugg
 
 | Recipe       | Collection                                                                                                                                      |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oga-hybrid` | [Hybrid Collection](https://huggingface.co/collections/amd/ryzenai-14-llm-hybrid-models-67da31231bba0f733750a99c)                               |
-| `oga-npu`    | [NPU Collection](https://huggingface.co/collections/amd/ryzenai-14-llm-npu-models-67da3494ec327bd3aa3c83d7)                                     |
+| `oga-hybrid` | [Hybrid Collection](https://huggingface.co/collections/amd/ryzenai-15-llm-hybrid-models-6859a64b421b5c27e1e53899)                               |
+| `oga-npu`    | [NPU Collection](https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0)                                     |
 | `oga-cpu`    | [CPU Collection](https://huggingface.co/collections/amd/oga-cpu-llm-collection-6808280dc18d268d57353be8) |
 
 

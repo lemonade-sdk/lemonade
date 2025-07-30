@@ -13,6 +13,7 @@ This allows the same application to leverage local LLMs instead of relying on Op
 ## 🎥 Video Tutorials
 
 <div id="yt-carousel" data-videos='[
+  {"id": "mcf7dDybUco", "title": "Getting Started with Lemonade Server"},
   {"id": "PXNTDZREJ_A", "title": "Open WebUI Demo"},
   {"id": "JecpotOZ6qo", "title": "Microsoft AI Toolkit Demo"},
   {"id": "bP_MZnDpbUc", "title": "Continue Coding Assistant"},

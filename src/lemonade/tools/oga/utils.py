@@ -11,6 +11,7 @@ from lemonade.tools.adapter import (
     TokenizerAdapter,
     PassthroughTokenizerResult,
 )
+from lemonade_install.install import _get_ryzenai_version_info
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
@@ -67,18 +68,29 @@ class OrtGenaiModel(ModelAdapter):
 
     def load_config(self, input_folder):
         rai_config_path = os.path.join(input_folder, "rai_config.json")
-        if os.path.exists(rai_config_path):
-            with open(rai_config_path, "r", encoding="utf-8") as f:
-                max_prompt_length = json.load(f)["max_prompt_length"]["1.4.1"]
-        else:
-            max_prompt_length = None
+        max_prompt_length = None
+
+        try:
+            detected_version, _ = _get_ryzenai_version_info()
+
+            if os.path.exists(rai_config_path):
+                with open(rai_config_path, "r", encoding="utf-8") as f:
+                    rai_config = json.load(f)
+                    if (
+                        "max_prompt_length" in rai_config
+                        and detected_version in rai_config["max_prompt_length"]
+                    ):
+                        max_prompt_length = rai_config["max_prompt_length"][
+                            detected_version
+                        ]
+        except:  # pylint: disable=bare-except
+            pass
 
         config_path = os.path.join(input_folder, "genai_config.json")
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 config_dict = json.load(f)
-                if max_prompt_length:
-                    config_dict["max_prompt_length"] = max_prompt_length
+                config_dict["max_prompt_length"] = max_prompt_length
                 return config_dict
         return None
 
