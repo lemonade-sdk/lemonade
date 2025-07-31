@@ -114,17 +114,17 @@
         "recipe": "oga-npu",
         "suggested": true
     },
-    "DeepSeek-R1-8B-Instruct-NPU": {
+    "DeepSeek-R1-Distill-Llama-8B-NPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
         "recipe": "oga-npu",
         "suggested": true
     },
-    "DeepSeek-R1-7B-Instruct-NPU": {
+    "DeepSeek-R1-Distill-Qwen-7B-NPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
         "recipe": "oga-npu",
         "suggested": true
     },
-    "DeepSeek-R1-1.5B-Instruct-NPU": {
+    "DeepSeek-R1-Distill-Qwen-1.5B-NPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
         "recipe": "oga-npu",
         "suggested": true
@@ -139,7 +139,7 @@
         "recipe": "oga-npu",
         "suggested": true
     },
-    "Mistral-7B-Instruct-NPU": {
+    "Mistral-7B-v0.3-Instruct-NPU": {
         "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
         "recipe": "oga-npu",
         "suggested": true
