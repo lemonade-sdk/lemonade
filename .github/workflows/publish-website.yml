@@ -13,6 +13,8 @@ jobs:
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@main
+          with:
+            fetch-depth: 0
         - uses: conda-incubator/setup-miniconda@v3
           with:
             miniconda-version: "latest"
@@ -23,6 +25,11 @@ jobs:
           run: |
             python -m pip install --upgrade pip
             pip install -r docs/assets/mkdocs_requirements.txt
+        - name: Configure git
+          shell: bash -el {0}
+          run: |
+            git config --global user.name "Lemonade Bot"
+            git config --global user.email "lemonade@amd.com"
         - name: Capture main branch commit hash
           shell: bash -el {0}
           run: |
@@ -31,7 +38,7 @@ jobs:
           shell: bash -el {0}
           run: |
             git checkout website
-            git merge main -X theirs
+            git merge origin/main -X theirs
         - name: Run mkdocs update script
           shell: bash -el {0}
           run: |
