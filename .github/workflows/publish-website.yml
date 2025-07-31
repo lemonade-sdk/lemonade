@@ -47,5 +47,9 @@ jobs:
           shell: bash -el {0}
           run: |
             git add .
-            git commit -am "Update website for: ${MAIN_COMMIT_HASH}"
+            if git diff --staged --quiet; then
+              echo "No changes to commit, skipping commit step"
+            else
+              git commit -m "Update website for: ${MAIN_COMMIT_HASH}"
+            fi
             git push
