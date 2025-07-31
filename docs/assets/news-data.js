@@ -154,6 +154,15 @@ const newsData = [
     type: "blog"
     },
     {
+    title: "Lemonade Server v8.1.0 Release",
+    url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.1.0",
+    date: "July 30, 2025",
+    description: "Support for Ryzen AI Software v1.5.0 and NPU-only execution.",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
+    type: "release"
+    },
+    {
     title: "Lemonade Server v8.0.6 Release",
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.6",
     date: "July 17, 2025",
