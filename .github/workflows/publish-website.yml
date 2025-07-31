@@ -46,5 +46,6 @@ jobs:
         - name: Push updates
           shell: bash -el {0}
           run: |
+            git add .
             git commit -am "Update website for: ${MAIN_COMMIT_HASH}"
             git push
