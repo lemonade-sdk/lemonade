@@ -49,7 +49,7 @@ setup(
         "jinja2",
         "tabulate",
         "sentencepiece",
-        "huggingface-hub==0.33.0",
+        "huggingface-hub[hf_xet]==0.33.0",
     ],
     extras_require={
         # The non-dev extras are meant to deploy specific backends into end-user
