@@ -1,0 +1,43 @@
+name: Publish Website
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - v*
+  workflow_dispatch:
+
+jobs:
+    build-n-publish-website:
+      name: Build and publish lemonade-server.ai website
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@main
+        - uses: conda-incubator/setup-miniconda@v3
+          with:
+            miniconda-version: "latest"
+            activate-environment: lemon
+            python-version: "3.10"
+        - name: Install dependencies
+          shell: bash -el {0}
+          run: |
+            python -m pip install --upgrade pip
+            pip install -r docs/assets/mkdocs_requirements.txt
+        - name: Capture main branch commit hash
+          shell: bash -el {0}
+          run: |
+            echo "MAIN_COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        - name: Merge into website branch
+          shell: bash -el {0}
+          run: |
+            git checkout website
+            git merge main -X theirs
+        - name: Run mkdocs update script
+          shell: bash -el {0}
+          run: |
+            python docs/publish_website_docs.py
+        - name: Push updates
+          shell: bash -el {0}
+          run: |
+            git commit -am "Update website for: ${MAIN_COMMIT_HASH}"
+            git push

@@ -2,18 +2,18 @@
 // Updated allowlist based on clarified compatibility
 const lmnAllowlist = [
   // GUI installer (Windows only)
-  // OGA: Hybrid, CPU
-  {os:'win', method:'gui', fw:'oga', dev:'hybrid'},
+  // OGA: NPU, CPU
+  {os:'win', method:'gui', fw:'oga', dev:'npu'},
   {os:'win', method:'gui', fw:'oga', dev:'cpu'},
   // llama.cpp: CPU, GPU
   {os:'win', method:'gui', fw:'llama', dev:'cpu'},
   {os:'win', method:'gui', fw:'llama', dev:'gpu'},
   // PyPI and From Source (Windows & Linux)
-  // OGA: Hybrid, CPU
-  {os:'win', method:'pypi', fw:'oga', dev:'hybrid'},
+  // OGA: NPU, CPU
+  {os:'win', method:'pypi', fw:'oga', dev:'npu'},
   {os:'win', method:'pypi', fw:'oga', dev:'cpu'},
   {os:'linux', method:'pypi', fw:'oga', dev:'cpu'},
-  {os:'win', method:'src', fw:'oga', dev:'hybrid'},
+  {os:'win', method:'src', fw:'oga', dev:'npu'},
   {os:'win', method:'src', fw:'oga', dev:'cpu'},
   {os:'linux', method:'src', fw:'oga', dev:'cpu'},
   // PyTorch: CPU only (GPU removed)
@@ -34,7 +34,7 @@ const lmnAllowlist = [
 
 const lmnAlwaysEnabledMethod = ['pypi', 'src'];
 
-window.lmnState = { os: 'win', type: 'server', method: 'gui', fw: 'oga', dev: 'hybrid' };
+window.lmnState = { os: 'win', type: 'server', method: 'gui', fw: 'oga', dev: 'npu' };
 
 function lmnIsAllowed(os, method, fw, dev, type) {
   // PyTorch not allowed for server-only
@@ -149,7 +149,7 @@ window.lmnSet = function(type, val) {
 
 window.lmnRender = function() {
   // Reset all
-  ['os-win','os-linux','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-hybrid','dev-cpu','dev-gpu'].forEach(function(id){
+  ['os-win','os-linux','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) {
       el.className = '';
@@ -177,8 +177,8 @@ window.lmnRender = function() {
   if (fwTorch) fwTorch.onclick = function() { lmnSet('fw','torch'); };
   var fwLlama = document.getElementById('fw-llama');
   if (fwLlama) fwLlama.onclick = function() { lmnSet('fw','llama'); };
-  var devHybrid = document.getElementById('dev-hybrid');
-  if (devHybrid) devHybrid.onclick = function() { lmnSet('dev','hybrid'); };
+  var devNpu = document.getElementById('dev-npu');
+  if (devNpu) devNpu.onclick = function() { lmnSet('dev','npu'); };
   var devCpu = document.getElementById('dev-cpu');
   if (devCpu) devCpu.onclick = function() { lmnSet('dev','cpu'); };
   var devGpu = document.getElementById('dev-gpu');
@@ -202,7 +202,7 @@ window.lmnRender = function() {
     type: ['server','full'],
     method: ['gui','pypi','src'],
     fw: ['oga','torch','llama'],
-    dev: ['hybrid','cpu','gpu']
+    dev: ['npu','cpu','gpu']
   };
   opts.os.forEach(os => {
     if (!lmnIsAllowed(os, lmnState.method, lmnState.fw, lmnState.dev, lmnState.type)) {
@@ -245,7 +245,7 @@ window.lmnRender = function() {
     
     // Python version badge
     var pythonVersions = '';
-    if (lmnState.dev === 'hybrid' || lmnState.method === 'gui') {
+    if (lmnState.dev === 'npu' || lmnState.method === 'gui') {
       pythonVersions = '3.10';
     } else {
       pythonVersions = '3.10%20%7C%203.12';
@@ -302,7 +302,7 @@ window.lmnRender = function() {
   // Set command and link
   if (lmnState.method === 'gui') {
     if (lmnState.fw === 'oga') {
-      if (lmnState.dev === 'hybrid' || lmnState.dev === 'cpu') {
+      if (lmnState.dev === 'npu' || lmnState.dev === 'cpu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
         link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe';
       }
@@ -320,11 +320,11 @@ window.lmnRender = function() {
         } else {
           cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-cpu]' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-cpu]';
         }
-      } else if (lmnState.dev === 'hybrid') {
+      } else if (lmnState.dev === 'npu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-hybrid]\nlemonade-install --ryzenai hybrid' : 'pip install lemonade-sdk[dev,oga-hybrid]\nlemonade-install --ryzenai hybrid';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple' : 'pip install lemonade-sdk[dev,oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple';
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-hybrid]\nlemonade-install --ryzenai hybrid' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-hybrid]\nlemonade-install --ryzenai hybrid';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple';
         }
       }
     } else if (lmnState.fw === 'torch') {
@@ -381,6 +381,10 @@ window.lmnRender = function() {
     }
     if (cmdDiv) {
       cmdDiv.innerHTML = '';
+      // Add NPU driver requirement for GUI installations
+      if (lmnState.dev === 'npu') {
+        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
+      }
     }
   } else if (cmd) {
     // Show command area, hide download area
@@ -391,9 +395,9 @@ window.lmnRender = function() {
       var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
       cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
       
-      // Add hybrid note if Hybrid is selected with PyPI or From Source
-      if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.dev === 'hybrid') {
-        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem; font-style:italic;">Hybrid requires an AMD Ryzen AI 300-series PC with Windows 11.</div>';
+      // Add a note if NPU is selected
+      if (lmnState.dev === 'npu') {
+        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
       }
       
       // Render command lines with copy buttons
@@ -468,6 +472,9 @@ window.lmnCopyExploreLine = function(e, idx) {
   }
 };
 
+// NPU Driver download URL - keep in sync with src/lemonade_install/install.py
+const NPU_DRIVER_URL = "https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip";
+
 // Initialize when DOM is ready
 window.lmnInit = function() {
   // Check if we need to create the table (for standalone page)
@@ -500,7 +507,7 @@ window.lmnInit = function() {
         </tr>
         <tr>
           <td class="lmn-label">Device Support</td>
-          <td id="dev-hybrid" class="lmn-active" onclick="lmnSet('dev','hybrid')">Hybrid</td>
+          <td id="dev-npu" class="lmn-active" onclick="lmnSet('dev','npu')">NPU, Hybrid</td>
           <td id="dev-cpu" onclick="lmnSet('dev','cpu')">CPU</td>
           <td id="dev-gpu" onclick="lmnSet('dev','gpu')">GPU</td>
         </tr>

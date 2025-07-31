@@ -215,10 +215,10 @@ def get_local_checkpoint_path(base_checkpoint, variant):
     full_model_path = None
     model_to_use = None
     try:
-        from huggingface_hub import snapshot_download
+        from lemonade.common.network import custom_snapshot_download
 
-        snapshot_path = snapshot_download(
-            repo_id=base_checkpoint,
+        snapshot_path = custom_snapshot_download(
+            base_checkpoint,
             local_files_only=True,
         )
 
@@ -405,10 +405,10 @@ def download_gguf(config_checkpoint, config_mmproj=None) -> dict:
     core_files, sharded_files = identify_gguf_models(checkpoint, variant, config_mmproj)
 
     # Download the files
-    from huggingface_hub import snapshot_download
+    from lemonade.common.network import custom_snapshot_download
 
-    snapshot_folder = snapshot_download(
-        repo_id=checkpoint,
+    snapshot_folder = custom_snapshot_download(
+        checkpoint,
         allow_patterns=list(core_files.values()) + sharded_files,
     )
 
@@ -573,7 +573,7 @@ class LlamaCppAdapter(ModelAdapter):
                 #
                 if "llama_perf_context_print:        eval time =" in line:
                     parts = line.split("=")[1].split()
-                    self.response_tokens = int(parts[3])
+                    self.response_tokens = int(parts[3]) + 1  # include first token
                     response_time_ms = float(parts[0])
                     self.tokens_per_second = (
                         1000 * self.response_tokens / response_time_ms

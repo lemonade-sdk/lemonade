@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Any
+from typing import Optional, Union, List
 
 from pydantic import BaseModel
 
@@ -18,9 +18,6 @@ class LoadConfig(BaseModel):
     model_name: str
     checkpoint: Optional[str] = None
     recipe: Optional[str] = None
-    # Indicates the maximum prompt length allowed for that specific
-    # checkpoint + recipe combination
-    max_prompt_length: Optional[int] = None
     # Indicates whether the model is a reasoning model, like DeepSeek
     reasoning: Optional[bool] = False
     # Indicates which Multimodal Projector (mmproj) file to use

@@ -284,7 +284,7 @@ class Server(ManagementTool):
     def _setup_server_common(
         self,
         port: int,
-        truncate_inputs: bool = False,
+        truncate_inputs: Optional[int] = None,
         log_level: str = DEFAULT_LOG_LEVEL,
         tray: bool = False,
         log_file: str = None,
@@ -295,7 +295,7 @@ class Server(ManagementTool):
 
         Args:
             port: Port number for the server
-            truncate_inputs: Whether to truncate inputs if they exceed max length
+            truncate_inputs: Truncate messages to this length
             log_level: Logging level to configure
             threaded_mode: Whether this is being set up for threaded execution
         """
@@ -372,7 +372,7 @@ class Server(ManagementTool):
         _=None,
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
-        truncate_inputs: bool = False,
+        truncate_inputs: Optional[int] = None,
         tray: bool = False,
         log_file: str = None,
     ):
@@ -393,7 +393,7 @@ class Server(ManagementTool):
         port: int = DEFAULT_PORT,
         host: str = "localhost",
         log_level: str = "warning",
-        truncate_inputs: bool = False,
+        truncate_inputs: Optional[int] = None,
     ):
         """
         Set up the server for running in a thread.
@@ -1099,29 +1099,20 @@ class Server(ManagementTool):
             )
             self.input_tokens = len(input_ids[0])
 
-        if (
-            self.llm_loaded.max_prompt_length
-            and self.input_tokens > self.llm_loaded.max_prompt_length
-        ):
-            if self.truncate_inputs:
-                # Truncate input ids
-                truncate_amount = self.input_tokens - self.llm_loaded.max_prompt_length
-                input_ids = input_ids[: self.llm_loaded.max_prompt_length]
+        if self.truncate_inputs and self.truncate_inputs > self.input_tokens:
+            # Truncate input ids
+            truncate_amount = self.input_tokens - self.truncate_inputs
+            input_ids = input_ids[: self.truncate_inputs]
 
-                # Update token count
-                self.input_tokens = len(input_ids)
+            # Update token count
+            self.input_tokens = len(input_ids)
 
-                # Show warning message
-                truncation_message = (
-                    f"Input exceeded {self.llm_loaded.max_prompt_length} tokens. "
-                    f"Truncated {truncate_amount} tokens."
-                )
-                logging.warning(truncation_message)
-            else:
-                raise RuntimeError(
-                    f"Prompt tokens ({self.input_tokens}) cannot be greater "
-                    f"than the model's max prompt length ({self.llm_loaded.max_prompt_length})"
-                )
+            # Show warning message
+            truncation_message = (
+                f"Input exceeded {self.truncate_inputs} tokens. "
+                f"Truncated {truncate_amount} tokens."
+            )
+            logging.warning(truncation_message)
 
         # Log the input tokens early to avoid this not showing due to potential crashes
         logging.debug(f"Input Tokens: {self.input_tokens}")
@@ -1317,7 +1308,7 @@ class Server(ManagementTool):
         self.tokenizer = None
         self.model = None
 
-        default_message = f"model {model_reference} not found"
+        default_message = "see stack trace and error message below"
         if message:
             detail = message
         else:

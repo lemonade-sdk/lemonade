@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 import socket
-from huggingface_hub import model_info
+from huggingface_hub import model_info, snapshot_download
 
 
 def is_offline():
@@ -48,3 +48,20 @@ def get_base_model(checkpoint: str) -> Optional[str]:
     except Exception:  # pylint: disable=broad-except
         pass
     return None
+
+
+def custom_snapshot_download(repo_id, **kwargs):
+    """
+    Custom snapshot download with retry logic for Windows symlink privilege errors.
+    """
+    for attempt in range(2):
+        try:
+            return snapshot_download(repo_id=repo_id, **kwargs)
+        except OSError as e:
+            if (
+                hasattr(e, "winerror")
+                and e.winerror == 1314  # pylint: disable=no-member
+                and attempt < 1
+            ):
+                continue
+            raise

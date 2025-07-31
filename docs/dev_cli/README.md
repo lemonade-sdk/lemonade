@@ -17,7 +17,7 @@ Each unit of functionality (e.g., loading a model, running a test, deploying a s
 You can read each command out loud to understand what it is doing. For example, a command like this:
 
 ```bash
-lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are"
+lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are"
 ```
 
 Can be read like this:
@@ -33,7 +33,7 @@ To prompt your LLM, try one of the following:
 
 OGA Hybrid:
 ```bash
-    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
 ```
 
 Hugging Face:
@@ -58,7 +58,7 @@ To measure the accuracy of an LLM using MMLU (Measuring Massive Multitask Langua
 
 OGA Hybrid:
 ```bash
-    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 accuracy-mmlu --tests management
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 accuracy-mmlu --tests management
 ```
 
 Hugging Face:
@@ -76,7 +76,7 @@ To measure the time-to-first-token and tokens/second of an LLM, try the followin
 
 OGA Hybrid:
 ```bash
-    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 oga-bench
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 oga-bench
 ```
 
 Hugging Face:
@@ -104,7 +104,7 @@ memory usage information, use the `--memory` flag.  For example:
 
 OGA Hybrid:
 ```bash
-    lemonade --memory -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid --device hybrid --dtype int4 oga-bench
+    lemonade --memory -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 oga-bench
 ```
 
 Hugging Face:

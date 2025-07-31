@@ -101,6 +101,9 @@
     document.addEventListener('DOMContentLoaded', () => {
       generateNewsTiles();
       
+      // Initialize footer with star count for news page (uses ../ basePath)
+      initializeFooter('../');
+      
       // Add event listeners to filter buttons
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -278,8 +281,8 @@
     <span class="back-to-top-icon">↑</span>
   </button>
 
-  <footer class="site-footer">
-    <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
-    <div class="copyright">Copyright 2025 AMD</div>
-  </footer>
+  <!-- Footer will be inserted here by footer.js -->
+  <div class="footer-placeholder"></div>
+  
+  <script src="../assets/footer.js"></script>
 </html>
