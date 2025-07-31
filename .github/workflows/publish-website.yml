@@ -33,7 +33,7 @@ jobs:
           shell: bash -el {0}
           run: |
             git checkout website
-            git merge main -X theirs
+            git merge origin/main -X theirs
         - name: Run mkdocs update script
           shell: bash -el {0}
           run: |
