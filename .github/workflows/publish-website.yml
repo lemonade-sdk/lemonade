@@ -38,6 +38,11 @@ jobs:
           shell: bash -el {0}
           run: |
             python docs/publish_website_docs.py
+        - name: Configure git
+          shell: bash -el {0}
+          run: |
+            git config --global user.name "Lemonade Bot"
+            git config --global user.email "lemonade@amd.com"
         - name: Push updates
           shell: bash -el {0}
           run: |
