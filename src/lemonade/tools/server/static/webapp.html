@@ -24,6 +24,10 @@
             <a href="https://lemonade-server.ai/news/" target="_blank">News</a>
         </div>
     </nav>
+    <div id="error-banner" class="error-banner" style="display:none;">
+        <span id="error-banner-msg"></span>
+        <button class="close-btn" onclick="hideErrorBanner()">&times;</button>
+    </div>
     <main class="main">
         <div class="tab-container"> 
             <div class="tabs"> 
@@ -214,6 +218,50 @@
         }
     }
 
+    // Display an error message in the banner
+    function showErrorBanner(msg) {
+        const banner = document.getElementById('error-banner');
+        if (!banner) return;
+        const msgEl = document.getElementById('error-banner-msg');
+        const fullMsg = msg + '\nCheck the Lemonade Server logs via the system tray app for more information.';
+        if (msgEl) {
+            msgEl.textContent = fullMsg;
+        } else {
+            banner.textContent = fullMsg;
+        }
+        banner.style.display = 'flex';
+    }
+
+    function hideErrorBanner() {
+        const banner = document.getElementById('error-banner');
+        if (banner) banner.style.display = 'none';
+    }
+
+    // Helper fetch wrappers that surface server error details
+    async function httpRequest(url, options = {}) {
+        const resp = await fetch(url, options);
+        if (!resp.ok) {
+            let detail = resp.statusText || 'Request failed';
+            try {
+                const contentType = resp.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const data = await resp.json();
+                    if (data && data.detail) detail = data.detail;
+                } else {
+                    const text = await resp.text();
+                    if (text) detail = text.trim();
+                }
+            } catch (_) {}
+            throw new Error(detail);
+        }
+        return resp;
+    }
+
+    async function httpJson(url, options = {}) {
+        const resp = await httpRequest(url, options);
+        return await resp.json();
+    }
+
     // Tab switching logic 
     function showTab(tab, updateHash = true) { 
         document.getElementById('tab-chat').classList.remove('active'); 
@@ -315,8 +363,7 @@
     // Populate model dropdown from /api/v1/models endpoint
     async function loadModels() {
         try {
-            const resp = await fetch(getServerBaseUrl() + '/api/v1/models');
-            const data = await resp.json();
+            const data = await httpJson(getServerBaseUrl() + '/api/v1/models');
             const select = document.getElementById('model-select');
             select.innerHTML = '';
             if (!data.data || !Array.isArray(data.data)) {
@@ -384,6 +431,7 @@
             const select = document.getElementById('model-select');
             select.innerHTML = `<option>Error loading models: ${e.message}</option>`;
             console.error('Error loading models:', e);
+            showErrorBanner(`Error loading models: ${e.message}`);
         }
     }
     loadModels();
@@ -431,12 +479,13 @@
         // Get installed models from /api/v1/models
         let installed = [];
         try {
-            const resp = await fetch(getServerBaseUrl() + '/api/v1/models');
-            const data = await resp.json();
+            const data = await httpJson(getServerBaseUrl() + '/api/v1/models');
             if (data.data && Array.isArray(data.data)) {
                 installed = data.data.map(m => m.id || m.name || m);
             }
-        } catch (e) {}
+        } catch (e) {
+            showErrorBanner(`Error loading models: ${e.message}`);
+        }
         // All models from server_models.json (window.SERVER_MODELS)
         const allModels = window.SERVER_MODELS || {};
         // Filter suggested models not installed
@@ -469,21 +518,17 @@
                 btn.textContent = 'Deleting...';
                 btn.style.backgroundColor = '#888';
                 try {
-                    const response = await fetch(getServerBaseUrl() + '/api/v1/delete', {
+                    await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: mid })
                     });
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || 'Failed to delete model');
-                    }
                     await refreshModelMgmtUI();
                     await loadModels(); // update chat dropdown too
                 } catch (e) {
                     btn.textContent = 'Error';
                     btn.disabled = false;
-                    alert(`Failed to delete model: ${e.message}`);
+                    showErrorBanner(`Failed to delete model: ${e.message}`);
                 }
             };
             tdBtn.appendChild(btn);
@@ -513,7 +558,7 @@
                 btn.textContent = 'Installing...';
                 btn.classList.add('installing-btn');
                 try {
-                    await fetch(getServerBaseUrl() + '/api/v1/pull', {
+                    await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: mid })
@@ -522,6 +567,7 @@
                     await loadModels(); // update chat dropdown too
                 } catch (e) {
                     btn.textContent = 'Error';
+                    showErrorBanner(`Failed to install model: ${e.message}`);
                 }
             };
             tdBtn.appendChild(btn);
@@ -660,14 +706,15 @@
         const llmBubble = appendMessage('llm', '...');
         try {
             // Use the correct endpoint for chat completions
-            const resp = await fetch(getServerBaseUrl() + '/api/v1/chat/completions', {
+            const payload = {
+                model: modelSelect.value,
+                messages: messages,
+                stream: true
+            };
+            const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: modelSelect.value,
-                    messages: messages,
-                    stream: true
-                })
+                body: JSON.stringify(payload)
             });
             if (!resp.body) throw new Error('No stream');
             const reader = resp.body.getReader();
@@ -703,9 +750,21 @@
                     }
                 }
             }
+            if (!llmText) throw new Error('No response');
             messages.push({ role: 'assistant', content: llmText });
         } catch (e) {
-            llmBubble.textContent = '[Error: ' + e.message + ']';
+            let detail = e.message;
+            try {
+                const errPayload = { ...payload, stream: false };
+                const errResp = await httpJson(getServerBaseUrl() + '/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(errPayload)
+                });
+                if (errResp && errResp.detail) detail = errResp.detail;
+            } catch (_) {}
+            llmBubble.textContent = '[Error: ' + detail + ']';
+            showErrorBanner(`Chat error: ${detail}`);
         }
         sendBtn.disabled = false;
     }
@@ -738,14 +797,11 @@
         btn.disabled = true;
         btn.textContent = 'Installing...';
         try {
-          const resp = await fetch(getServerBaseUrl() + '/api/v1/pull', {
+          await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
           });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.detail || 'Failed to register model.');          }
           registerStatus.textContent = 'Model installed!';
           registerStatus.style.color = '#27ae60';
           registerStatus.className = 'register-status success';
@@ -756,6 +812,7 @@
           registerStatus.textContent = e.message + ' See the Lemonade Server log for details.';
           registerStatus.style.color = '#dc3545';
           registerStatus.className = 'register-status error';
+          showErrorBanner(`Model install failed: ${e.message}`);
         }
         btn.disabled = false;
         btn.textContent = 'Install';

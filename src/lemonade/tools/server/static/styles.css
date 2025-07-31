@@ -1377,3 +1377,37 @@ body::before {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Error banner styles */
+.error-banner {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #dc3545;
+  color: #fff;
+  padding: 0.6em 1.2em;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 10000;
+  font-weight: 600;
+  white-space: pre-line;
+  display: none;
+  animation: fadeIn 0.2s ease;
+  align-items: center;
+}
+
+.error-banner .close-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2em;
+  margin-left: 0.8em;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.error-banner .close-btn:hover {
+  opacity: 0.8;
+}
