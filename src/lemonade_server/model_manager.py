@@ -43,7 +43,7 @@ class ModelManager:
                 if "reasoning" in model_info:
                     model_info["labels"] = (
                         ["reasoning"]
-                        if not model_info["labels"]
+                        if not model_info.get("labels", None)
                         else model_info["labels"] + ["reasoning"]
                     )
                     del model_info["reasoning"]
