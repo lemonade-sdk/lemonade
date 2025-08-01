@@ -62,13 +62,18 @@ lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 > If you are using Lemonade Server from a Python environment, use the `lemonade-server-dev pull` command instead.
 """
 
-# Separate models into Hybrid, CPU, and GGUF
+# Separate models into Hot, Hybrid, CPU, and GGUF
+hot_models = []
 hybrid_models = []
 npu_models = []
 cpu_models = []
 gguf_models = []
 for model_name, details in models.items():
     if details.get("suggested", False):
+        # Check for hot models first (these can appear in multiple sections)
+        if "labels" in details and "hot" in details["labels"]:
+            hot_models.append((model_name, details))
+        
         if model_name.endswith("-Hybrid"):
             hybrid_models.append((model_name, details))
         elif model_name.endswith("-NPU"):
@@ -112,7 +117,8 @@ def model_section_md(title, models):
     return section
 
 
-# Add models sections using the helper function
+# Add models sections using the helper function - Hot models first!
+markdown_content += model_section_md("🔥 Hot Models", hot_models)
 markdown_content += model_section_md("GGUF", gguf_models)
 markdown_content += model_section_md("Hybrid", hybrid_models)
 markdown_content += model_section_md("NPU", npu_models)

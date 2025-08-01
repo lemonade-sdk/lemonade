@@ -190,7 +190,13 @@
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding"]
+        "labels": ["hot"]
+    },
+    "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
+        "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["coding","hot"]
     },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
@@ -212,6 +218,13 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": ["vision"]
+    },
+    "Cogito-v2-llama-109B-MoE-GGUF": {
+        "checkpoint": "unsloth/cogito-v2-preview-llama-109B-MoE-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["vision","hot"]
     },
     "nomic-embed-text-v1-GGUF": {
         "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
