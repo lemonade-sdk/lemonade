@@ -412,6 +412,30 @@ def list_models():
     print(tabulate(table_data, headers=headers, tablefmt="simple"))
 
 
+def developer_entrypoint():
+    """
+    Developer entry point that starts the server with debug logging
+    Equivalent to running: lemonade-server-dev serve --log-level debug [additional args]
+    
+    This function automatically prepends "serve --log-level debug" to any arguments
+    passed to the lsdev command.
+    """
+    # Save original sys.argv
+    original_argv = sys.argv.copy()
+    
+    try:
+        # Take any additional arguments passed to lsdev and append them
+        # after "serve --log-level debug"
+        additional_args = sys.argv[1:] if len(sys.argv) > 1 else []
+        
+        # Set sys.argv to simulate "serve --log-level debug" + additional args
+        sys.argv = [sys.argv[0], "serve", "--log-level", "debug"] + additional_args
+        main()
+    finally:
+        # Restore original sys.argv
+        sys.argv = original_argv
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
