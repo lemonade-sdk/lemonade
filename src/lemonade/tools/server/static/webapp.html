@@ -485,6 +485,59 @@
         return container;
     }
 
+    // Helper function to render a model table section
+    function renderModelTable(tbody, models, allModels, emptyMessage) {
+        tbody.innerHTML = '';
+        if (models.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 2;
+            td.textContent = emptyMessage;
+            td.style.textAlign = 'center';
+            td.style.fontStyle = 'italic';
+            td.style.color = '#666';
+            td.style.padding = '1em';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            models.forEach(mid => {
+                const tr = document.createElement('tr');
+                const tdName = document.createElement('td');
+                
+                tdName.appendChild(createModelNameWithLabels(mid, allModels));
+                tdName.style.paddingRight = '1em';
+                tdName.style.verticalAlign = 'middle';
+                const tdBtn = document.createElement('td');
+                tdBtn.style.width = '1%';
+                tdBtn.style.verticalAlign = 'middle';
+                const btn = document.createElement('button');
+                btn.textContent = '+';
+                btn.title = 'Install model';
+                btn.onclick = async function() {
+                    btn.disabled = true;
+                    btn.textContent = 'Installing...';
+                    btn.classList.add('installing-btn');
+                    try {
+                        await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model_name: mid })
+                        });
+                        await refreshModelMgmtUI();
+                        await loadModels(); // update chat dropdown too
+                    } catch (e) {
+                        btn.textContent = 'Error';
+                        showErrorBanner(`Failed to install model: ${e.message}`);
+                    }
+                };
+                tdBtn.appendChild(btn);
+                tr.appendChild(tdName);
+                tr.appendChild(tdBtn);
+                tbody.appendChild(tr);
+            });
+        }
+    }
+
     // Model Management Tab Logic
     async function refreshModelMgmtUI() {
         // Get installed models from /api/v1/models
@@ -564,83 +617,12 @@
             installedTbody.appendChild(tr);
         });
         
-        // Render hot models as a table
+        // Render hot models and suggested models using the helper function
         const hotTbody = document.getElementById('hot-models-tbody');
-        hotTbody.innerHTML = '';
-        hotModels.forEach(mid => {
-            const tr = document.createElement('tr');
-            const tdName = document.createElement('td');
-            
-            tdName.appendChild(createModelNameWithLabels(mid, allModels));
-            tdName.style.paddingRight = '1em';
-            tdName.style.verticalAlign = 'middle';
-            const tdBtn = document.createElement('td');
-            tdBtn.style.width = '1%';
-            tdBtn.style.verticalAlign = 'middle';
-            const btn = document.createElement('button');
-            btn.textContent = '+';
-            btn.title = 'Install model';
-            btn.onclick = async function() {
-                btn.disabled = true;
-                btn.textContent = 'Installing...';
-                btn.classList.add('installing-btn');
-                try {
-                    await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model_name: mid })
-                    });
-                    await refreshModelMgmtUI();
-                    await loadModels(); // update chat dropdown too
-                } catch (e) {
-                    btn.textContent = 'Error';
-                    showErrorBanner(`Failed to install model: ${e.message}`);
-                }
-            };
-            tdBtn.appendChild(btn);
-            tr.appendChild(tdName);
-            tr.appendChild(tdBtn);
-            hotTbody.appendChild(tr);
-        });
-        
-        // Render regular suggested models as a table
         const suggestedTbody = document.getElementById('suggested-models-tbody');
-        suggestedTbody.innerHTML = '';
-        regularSuggested.forEach(mid => {
-            const tr = document.createElement('tr');
-            const tdName = document.createElement('td');
-            
-            tdName.appendChild(createModelNameWithLabels(mid, allModels));
-            tdName.style.paddingRight = '1em';
-            tdName.style.verticalAlign = 'middle';
-            const tdBtn = document.createElement('td');
-            tdBtn.style.width = '1%';
-            tdBtn.style.verticalAlign = 'middle';
-            const btn = document.createElement('button');
-            btn.textContent = '+';
-            btn.title = 'Install model';
-            btn.onclick = async function() {
-                btn.disabled = true;
-                btn.textContent = 'Installing...';
-                btn.classList.add('installing-btn');
-                try {
-                    await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model_name: mid })
-                    });
-                    await refreshModelMgmtUI();
-                    await loadModels(); // update chat dropdown too
-                } catch (e) {
-                    btn.textContent = 'Error';
-                    showErrorBanner(`Failed to install model: ${e.message}`);
-                }
-            };
-            tdBtn.appendChild(btn);
-            tr.appendChild(tdName);
-            tr.appendChild(tdBtn);
-            suggestedTbody.appendChild(tr);
-        });
+        
+        renderModelTable(hotTbody, hotModels, allModels, "Nice, you've already installed all these models!");
+        renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
     }
     // Initial load
     refreshModelMgmtUI();
