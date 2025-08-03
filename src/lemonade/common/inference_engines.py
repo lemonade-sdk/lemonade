@@ -6,7 +6,6 @@ import platform
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
-import transformers
 
 
 class InferenceEngineDetector:
@@ -368,6 +367,7 @@ class TransformersDetector(BaseEngineDetector):
 
         try:
             import torch
+            import transformers
 
             if device_type == "cpu":
                 result = {
