@@ -253,7 +253,7 @@ body.install-options {
   font-weight: 400;
   color: #1a1a1a;
   line-height: 1.05;
-  margin: var(--spacing-sm) 0 var(--spacing-xl) 0;
+  margin: var(--spacing-sm) 0 var(--spacing-xxl) 0;
   letter-spacing: -0.03em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: fadeInUp 0.8s ease-out;
@@ -484,7 +484,7 @@ body.install-options {
   justify-content: center;
   align-items: center;
   gap: var(--spacing-lg);
-  margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+  margin: var(--spacing-md) 0 var(--spacing-md) 0;
   max-width: 1000px;
   width: 100%;
   padding: var(--spacing-lg) var(--spacing-lg);
