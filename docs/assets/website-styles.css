@@ -233,7 +233,7 @@ body.install-options {
 .hero-section {
   text-align: center;
   max-width: 1000px;
-  margin: 0 auto var(--spacing-md) auto;
+  margin: 0 auto 0 auto;
   padding: var(--spacing-md);
 }
 
@@ -253,7 +253,7 @@ body.install-options {
   font-weight: 400;
   color: #1a1a1a;
   line-height: 1.05;
-  margin: var(--spacing-sm) 0 var(--spacing-xl) 0;
+  margin: var(--spacing-sm) 0 var(--spacing-xxl) 0;
   letter-spacing: -0.03em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: fadeInUp 0.8s ease-out;
@@ -477,6 +477,51 @@ body.install-options {
   color: var(--text-primary);
 }
 
+/* === Community Section === */
+.community-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-lg);
+  margin: 0;
+  max-width: 1000px;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  animation: fadeInUp 0.8s ease-out 0.5s both;
+  position: relative;
+}
+
+.community-section .subtitle {
+  margin-bottom: var(--spacing-sm);
+  text-align: center;
+}
+
+.community-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.community-buttons a {
+  display: inline-block;
+  transition: var(--transition-medium);
+  opacity: 0.9;
+}
+
+.community-buttons a:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+}
+
+.community-buttons img {
+  height: 32px;
+  transition: var(--transition-medium);
+  border-radius: var(--radius-sm);
+}
+
 /* === Content Sections === */
 .partner-apps {
   display: flex;
@@ -538,7 +583,7 @@ body.install-options {
 
 /* Video Section */
 .video-section {
-  margin: var(--spacing-xl) auto;
+  margin: var(--spacing-xxl) auto var(--spacing-xl) auto;
   max-width: 1000px;
   width: 100%;
   padding: 0 var(--spacing-md);
@@ -2337,6 +2382,16 @@ body.install-options {
     margin: var(--spacing-xl) 0 var(--spacing-xxl) 0;
   }
   
+  .community-section {
+    margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+    padding: var(--spacing-lg) var(--spacing-md);
+  }
+  
+  .community-buttons {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  
   .partner-apps img {
     width: 50px;
     height: 50px;
@@ -2787,5 +2842,46 @@ body.install-options {
     width: 35px;
     height: 35px;
     font-size: 12px;
+  }
+  
+  /* Community links responsive styles */
+  .community-section {
+    margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+    padding: var(--spacing-md);
+  }
+  
+  .community-buttons {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  }
+  
+  .community-stats {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  
+  .community-stat-card {
+    min-width: 260px;
+    max-width: 300px;
+    padding: var(--spacing-md);
+  }
+  
+  .stat-icon {
+    width: 35px;
+    height: 35px;
+    font-size: 1.3rem;
+  }
+  
+  .badges-section {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin: var(--spacing-xl) 0 var(--spacing-lg) 0;
+  }
+  
+  .badge {
+    min-width: 100px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8rem;
   }
 }
