@@ -38,22 +38,6 @@
           <span class="dev-sub">For Ubuntu and Windows</span>
         </a>
       </div>
-      
-      <!-- Community Links -->
-      <div class="badges-section">
-        <a href="https://github.com/lemonade-sdk/lemonade" class="badge-link" target="_blank" rel="noopener">
-          <div class="badge github-badge">
-            <span class="badge-icon">⭐</span>
-            <span class="badge-text">Star on GitHub</span>
-          </div>
-        </a>
-        <a href="https://discord.gg/5xXzkMu8Zk" class="badge-link" target="_blank" rel="noopener">
-          <div class="badge discord-badge">
-            <span class="badge-icon">💬</span>
-            <span class="badge-text">Join Discord</span>
-          </div>
-        </a>
-      </div>
     </div>
 
         
@@ -68,6 +52,32 @@
           referrerpolicy="strict-origin-when-cross-origin" 
           allowfullscreen>
         </iframe>
+      </div>
+    </div>
+    
+    <!-- Community Section -->
+    <div class="community-section">
+      <div class="community-header">
+        <h3>Join the Community</h3>
+        <p>Connect with developers building the future of local AI</p>
+      </div>
+      <div class="community-stats">
+        <a href="https://github.com/lemonade-sdk/lemonade" class="community-stat-card github-card" target="_blank" rel="noopener">
+          <div class="stat-icon">⭐</div>
+          <div class="stat-info">
+            <div class="stat-label">Star on GitHub</div>
+            <div class="stat-value" id="github-stars">—</div>
+          </div>
+          <div class="stat-arrow">→</div>
+        </a>
+        <a href="https://discord.gg/5xXzkMu8Zk" class="community-stat-card discord-card" target="_blank" rel="noopener">
+          <div class="stat-icon">💬</div>
+          <div class="stat-info">
+            <div class="stat-label">Join Discord</div>
+            <div class="stat-value">Active Community</div>
+          </div>
+          <div class="stat-arrow">→</div>
+        </a>
       </div>
     </div>
     
@@ -291,10 +301,38 @@
       return headlines;
     }
     
+    // Fetch GitHub stats
+    async function fetchGitHubStats() {
+      try {
+        const response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
+        const data = await response.json();
+        
+        if (data.stargazers_count) {
+          const starCount = data.stargazers_count;
+          const starElement = document.getElementById('github-stars');
+          if (starElement) {
+            // Format the star count nicely
+            if (starCount >= 1000) {
+              starElement.textContent = `${(starCount / 1000).toFixed(1)}k stars`;
+            } else {
+              starElement.textContent = `${starCount} stars`;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching GitHub stats:', error);
+        const starElement = document.getElementById('github-stars');
+        if (starElement) {
+          starElement.textContent = 'GitHub';
+        }
+      }
+    }
+    
     // Load release info when page loads
     document.addEventListener('DOMContentLoaded', function() {
       loadLatestNews();
       fetchLatestRelease();
+      fetchGitHubStats();
       
       // Initialize footer with star count - add debug logging
       console.log('Initializing footer...');
