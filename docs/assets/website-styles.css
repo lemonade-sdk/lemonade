@@ -477,6 +477,75 @@ body.install-options {
   color: var(--text-primary);
 }
 
+/* === Badge Components === */
+.badges-section {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin: var(--spacing-lg) 0 var(--spacing-xl) 0;
+  animation: fadeInUp 0.8s ease-out 0.4s both;
+}
+
+.badge-link {
+  text-decoration: none;
+  transition: var(--transition-medium);
+}
+
+.badge-link:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.01em;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+  transition: var(--transition-medium);
+  border: 2px solid transparent;
+  min-width: 140px;
+}
+
+.github-badge {
+  background: linear-gradient(135deg, #24292e 0%, #1f2328 100%);
+  color: #fff;
+  border-color: #30363d;
+}
+
+.github-badge:hover {
+  background: linear-gradient(135deg, #1f2328 0%, #161b22 100%);
+  box-shadow: 0 4px 15px rgba(36, 41, 46, 0.3);
+}
+
+.discord-badge {
+  background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+  color: #fff;
+  border-color: #7983f5;
+}
+
+.discord-badge:hover {
+  background: linear-gradient(135deg, #4752c4 0%, #3c46a6 100%);
+  box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+}
+
+.badge-icon {
+  font-size: 1.1em;
+  display: flex;
+  align-items: center;
+}
+
+.badge-text {
+  font-family: var(--font-family);
+  font-weight: 600;
+}
+
 /* === Content Sections === */
 .partner-apps {
   display: flex;
@@ -2787,5 +2856,18 @@ body.install-options {
     width: 35px;
     height: 35px;
     font-size: 12px;
+  }
+  
+  /* Badge responsive styles */
+  .badges-section {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin: var(--spacing-md) 0 var(--spacing-lg) 0;
+  }
+  
+  .badge {
+    min-width: 120px;
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: 0.8rem;
   }
 }
