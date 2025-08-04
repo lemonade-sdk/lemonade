@@ -233,7 +233,7 @@ body.install-options {
 .hero-section {
   text-align: center;
   max-width: 1000px;
-  margin: 0 auto var(--spacing-md) auto;
+  margin: 0 auto 0 auto;
   padding: var(--spacing-md);
 }
 
@@ -484,10 +484,10 @@ body.install-options {
   justify-content: center;
   align-items: center;
   gap: var(--spacing-lg);
-  margin: var(--spacing-md) 0 var(--spacing-md) 0;
+  margin: 0;
   max-width: 1000px;
   width: 100%;
-  padding: var(--spacing-lg) var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-lg);
   animation: fadeInUp 0.8s ease-out 0.5s both;
   position: relative;
 }
@@ -583,7 +583,7 @@ body.install-options {
 
 /* Video Section */
 .video-section {
-  margin: var(--spacing-xl) auto;
+  margin: var(--spacing-xxl) auto var(--spacing-xl) auto;
   max-width: 1000px;
   width: 100%;
   padding: 0 var(--spacing-md);
