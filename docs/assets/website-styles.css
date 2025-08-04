@@ -477,73 +477,75 @@ body.install-options {
   color: var(--text-primary);
 }
 
-/* === Badge Components === */
+/* === Community Links Section === */
 .badges-section {
   display: flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: var(--spacing-md);
-  margin: var(--spacing-lg) 0 var(--spacing-xl) 0;
-  animation: fadeInUp 0.8s ease-out 0.4s both;
+  gap: var(--spacing-xl);
+  margin: calc(var(--spacing-xl) * 2) 0 var(--spacing-xl) 0;
+  animation: fadeInUp 0.8s ease-out 0.6s both;
 }
 
 .badge-link {
   text-decoration: none;
   transition: var(--transition-medium);
+  opacity: 0.8;
 }
 
 .badge-link:hover {
-  transform: translateY(-2px) scale(1.05);
+  transform: translateY(-1px);
+  opacity: 1;
 }
 
 .badge {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-lg);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.85rem;
   letter-spacing: 0.01em;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
   transition: var(--transition-medium);
-  border: 2px solid transparent;
-  min-width: 140px;
+  border: 1.5px solid;
+  background: transparent;
+  min-width: 120px;
 }
 
 .github-badge {
-  background: linear-gradient(135deg, #24292e 0%, #1f2328 100%);
-  color: #fff;
-  border-color: #30363d;
+  color: #24292e;
+  border-color: #24292e;
 }
 
 .github-badge:hover {
-  background: linear-gradient(135deg, #1f2328 0%, #161b22 100%);
-  box-shadow: 0 4px 15px rgba(36, 41, 46, 0.3);
+  background: #24292e;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(36, 41, 46, 0.2);
 }
 
 .discord-badge {
-  background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
-  color: #fff;
-  border-color: #7983f5;
+  color: #5865f2;
+  border-color: #5865f2;
 }
 
 .discord-badge:hover {
-  background: linear-gradient(135deg, #4752c4 0%, #3c46a6 100%);
-  box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+  background: #5865f2;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(88, 101, 242, 0.2);
 }
 
 .badge-icon {
-  font-size: 1.1em;
+  font-size: 0.9em;
   display: flex;
   align-items: center;
 }
 
 .badge-text {
   font-family: var(--font-family);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* === Content Sections === */
@@ -2858,16 +2860,16 @@ body.install-options {
     font-size: 12px;
   }
   
-  /* Badge responsive styles */
+  /* Community links responsive styles */
   .badges-section {
     flex-direction: column;
-    gap: var(--spacing-sm);
-    margin: var(--spacing-md) 0 var(--spacing-lg) 0;
+    gap: var(--spacing-md);
+    margin: var(--spacing-xl) 0 var(--spacing-lg) 0;
   }
   
   .badge {
-    min-width: 120px;
-    padding: var(--spacing-xs) var(--spacing-md);
+    min-width: 100px;
+    padding: var(--spacing-xs) var(--spacing-sm);
     font-size: 0.8rem;
   }
 }
