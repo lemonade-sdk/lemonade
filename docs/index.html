@@ -40,6 +40,20 @@
       </div>
     </div>
 
+    <!-- Community Section -->
+    <div class="community-section">
+      <div class="subtitle">
+        Connect with developers building the future of local AI
+      </div>
+      <div class="community-buttons">
+        <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+          <img src="https://img.shields.io/github/stars/lemonade-sdk/lemonade?style=social" alt="Star on GitHub" />
+        </a>
+        <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
+          <img src="https://img.shields.io/discord/1319076699803906118?style=social&logo=discord&label=Join%20Discord" alt="Join Discord" />
+        </a>
+      </div>
+    </div>
         
     <!-- Video Section -->
     <div class="video-section">
@@ -52,32 +66,6 @@
           referrerpolicy="strict-origin-when-cross-origin" 
           allowfullscreen>
         </iframe>
-      </div>
-    </div>
-    
-    <!-- Community Section -->
-    <div class="community-section">
-      <div class="community-header">
-        <h3>Join the Community</h3>
-        <p>Connect with developers building the future of local AI</p>
-      </div>
-      <div class="community-stats">
-        <a href="https://github.com/lemonade-sdk/lemonade" class="community-stat-card github-card" target="_blank" rel="noopener">
-          <div class="stat-icon">⭐</div>
-          <div class="stat-info">
-            <div class="stat-label">Star on GitHub</div>
-            <div class="stat-value" id="github-stars">—</div>
-          </div>
-          <div class="stat-arrow">→</div>
-        </a>
-        <a href="https://discord.gg/5xXzkMu8Zk" class="community-stat-card discord-card" target="_blank" rel="noopener">
-          <div class="stat-icon">💬</div>
-          <div class="stat-info">
-            <div class="stat-label">Join Discord</div>
-            <div class="stat-value">Active Community</div>
-          </div>
-          <div class="stat-arrow">→</div>
-        </a>
       </div>
     </div>
     
@@ -303,36 +291,13 @@
     
     // Fetch GitHub stats
     async function fetchGitHubStats() {
-      try {
-        const response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade');
-        const data = await response.json();
-        
-        if (data.stargazers_count) {
-          const starCount = data.stargazers_count;
-          const starElement = document.getElementById('github-stars');
-          if (starElement) {
-            // Format the star count nicely
-            if (starCount >= 1000) {
-              starElement.textContent = `${(starCount / 1000).toFixed(1)}k stars`;
-            } else {
-              starElement.textContent = `${starCount} stars`;
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching GitHub stats:', error);
-        const starElement = document.getElementById('github-stars');
-        if (starElement) {
-          starElement.textContent = 'GitHub';
-        }
-      }
+      // No longer needed for shields.io badges
     }
     
     // Load release info when page loads
     document.addEventListener('DOMContentLoaded', function() {
       loadLatestNews();
       fetchLatestRelease();
-      fetchGitHubStats();
       
       // Initialize footer with star count - add debug logging
       console.log('Initializing footer...');
