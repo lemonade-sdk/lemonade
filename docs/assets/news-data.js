@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "Lemonade Server & Open WebUI",
+    url: "https://www.youtube.com/watch?v=yZs-Yzl736E",
+    date: "July 31, 2025",
+    description: "Easily integrate Lemonade Server with Open WebUI to unlock powerful local LLM capabilities on your PC. This video guides you through the installation and setup process.",
+    image: "https://img.youtube.com/vi/yZs-Yzl736E/maxresdefault.jpg",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
+    type: "video"
+    },
+    {
     title: "Styrk AI & AMD: Guardrails for Your On-Device AI Revolution",
     url: "https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/",
     date: "July 14, 2025",
