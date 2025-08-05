@@ -145,7 +145,12 @@
                         </table>
                     </div>
                     <div class="model-mgmt-pane">
-                        <h3>Suggested Models</h3>
+                        <h3>🔥 Hot Models</h3>
+                        <table class="model-table" id="hot-models-table">
+                            <tbody id="hot-models-tbody"></tbody>
+                        </table>
+                        
+                        <h3 style="margin-top: 2em;">Suggested Models</h3>
                         <table class="model-table" id="suggested-models-table">
                             <tbody id="suggested-models-tbody"></tbody>
                         </table>
@@ -451,8 +456,14 @@
         const modelData = allModels[modelId];
         if (modelData && modelData.labels && Array.isArray(modelData.labels)) {
             modelData.labels.forEach(label => {
-                const labelSpan = document.createElement('span');
                 const labelLower = label.toLowerCase();
+                
+                // Skip "hot" labels since they have their own section
+                if (labelLower === 'hot') {
+                    return;
+                }
+                
+                const labelSpan = document.createElement('span');
                 let labelClass = 'other';
                 if (labelLower === 'vision') {
                     labelClass = 'vision';
@@ -474,6 +485,59 @@
         return container;
     }
 
+    // Helper function to render a model table section
+    function renderModelTable(tbody, models, allModels, emptyMessage) {
+        tbody.innerHTML = '';
+        if (models.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 2;
+            td.textContent = emptyMessage;
+            td.style.textAlign = 'center';
+            td.style.fontStyle = 'italic';
+            td.style.color = '#666';
+            td.style.padding = '1em';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            models.forEach(mid => {
+                const tr = document.createElement('tr');
+                const tdName = document.createElement('td');
+                
+                tdName.appendChild(createModelNameWithLabels(mid, allModels));
+                tdName.style.paddingRight = '1em';
+                tdName.style.verticalAlign = 'middle';
+                const tdBtn = document.createElement('td');
+                tdBtn.style.width = '1%';
+                tdBtn.style.verticalAlign = 'middle';
+                const btn = document.createElement('button');
+                btn.textContent = '+';
+                btn.title = 'Install model';
+                btn.onclick = async function() {
+                    btn.disabled = true;
+                    btn.textContent = 'Installing...';
+                    btn.classList.add('installing-btn');
+                    try {
+                        await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model_name: mid })
+                        });
+                        await refreshModelMgmtUI();
+                        await loadModels(); // update chat dropdown too
+                    } catch (e) {
+                        btn.textContent = 'Error';
+                        showErrorBanner(`Failed to install model: ${e.message}`);
+                    }
+                };
+                tdBtn.appendChild(btn);
+                tr.appendChild(tdName);
+                tr.appendChild(tdBtn);
+                tbody.appendChild(tr);
+            });
+        }
+    }
+
     // Model Management Tab Logic
     async function refreshModelMgmtUI() {
         // Get installed models from /api/v1/models
@@ -488,10 +552,25 @@
         }
         // All models from server_models.json (window.SERVER_MODELS)
         const allModels = window.SERVER_MODELS || {};
-        // Filter suggested models not installed
-        const suggested = Object.keys(allModels).filter(
-            k => allModels[k].suggested && !installed.includes(k)
-        );
+        
+        // Separate hot models and regular suggested models not installed
+        const hotModels = [];
+        const regularSuggested = [];
+        
+        Object.keys(allModels).forEach(k => {
+            if (allModels[k].suggested && !installed.includes(k)) {
+                const modelData = allModels[k];
+                const hasHotLabel = modelData.labels && modelData.labels.some(label => 
+                    label.toLowerCase() === 'hot'
+                );
+                
+                if (hasHotLabel) {
+                    hotModels.push(k);
+                } else {
+                    regularSuggested.push(k);
+                }
+            }
+        });
         // Render installed models as a table (two columns, second is invisible)
         const installedTbody = document.getElementById('installed-models-tbody');
         installedTbody.innerHTML = '';
@@ -537,44 +616,13 @@
             tr.appendChild(tdBtn);
             installedTbody.appendChild(tr);
         });
-        // Render suggested models as a table
+        
+        // Render hot models and suggested models using the helper function
+        const hotTbody = document.getElementById('hot-models-tbody');
         const suggestedTbody = document.getElementById('suggested-models-tbody');
-        suggestedTbody.innerHTML = '';
-        suggested.forEach(mid => {
-            const tr = document.createElement('tr');
-            const tdName = document.createElement('td');
-            
-            tdName.appendChild(createModelNameWithLabels(mid, allModels));
-            tdName.style.paddingRight = '1em';
-            tdName.style.verticalAlign = 'middle';
-            const tdBtn = document.createElement('td');
-            tdBtn.style.width = '1%';
-            tdBtn.style.verticalAlign = 'middle';
-            const btn = document.createElement('button');
-            btn.textContent = '+';
-            btn.title = 'Install model';
-            btn.onclick = async function() {
-                btn.disabled = true;
-                btn.textContent = 'Installing...';
-                btn.classList.add('installing-btn');
-                try {
-                    await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model_name: mid })
-                    });
-                    await refreshModelMgmtUI();
-                    await loadModels(); // update chat dropdown too
-                } catch (e) {
-                    btn.textContent = 'Error';
-                    showErrorBanner(`Failed to install model: ${e.message}`);
-                }
-            };
-            tdBtn.appendChild(btn);
-            tr.appendChild(tdName);
-            tr.appendChild(tdBtn);
-            suggestedTbody.appendChild(tr);
-        });
+        
+        renderModelTable(hotTbody, hotModels, allModels, "Nice, you've already installed all these models!");
+        renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
     }
     // Initial load
     refreshModelMgmtUI();

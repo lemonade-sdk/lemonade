@@ -17,6 +17,61 @@ Lemonade Server offers a model management GUI to help you see which models are a
 
 ## Supported Models
 
+### 🔥 Hot Models
+
+<details>
+<summary>Qwen3-30B-A3B-Instruct-2507-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-30B-A3B-Instruct-2507-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF">unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-Coder-30B-A3B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF">unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>coding, hot</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Cogito-v2-llama-109B-MoE-GGUF</summary>
+
+```bash
+lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/cogito-v2-preview-llama-109B-MoE-GGUF">unsloth/cogito-v2-preview-llama-109B-MoE-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>vision, hot</td></tr>
+</table>
+
+</details>
+
+
 ### GGUF
 
 <details>
@@ -150,7 +205,24 @@ lemonade-server pull Qwen3-30B-A3B-Instruct-2507-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF">unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Labels</td><td>coding</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-Coder-30B-A3B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF">unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>coding, hot</td></tr>
 </table>
 
 </details>
@@ -205,6 +277,24 @@ lemonade-server pull Llama-4-Scout-17B-16E-Instruct-GGUF
 <tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>vision</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Cogito-v2-llama-109B-MoE-GGUF</summary>
+
+```bash
+lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/cogito-v2-preview-llama-109B-MoE-GGUF">unsloth/cogito-v2-preview-llama-109B-MoE-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>vision, hot</td></tr>
 </table>
 
 </details>
