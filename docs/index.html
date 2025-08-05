@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">  <title>Lemonade Server</title>  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lemonade Server</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
 </head>
-<body>  <nav class="navbar" id="navbar">
+<body>
+  <nav class="navbar" id="navbar">
     <div class="navbar-brand">
       <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
     </div>
@@ -18,14 +20,12 @@
       <a href="news/">News</a>
     </div>
   </nav>
-  
   <main class="main">
     <div class="hero-section">
       <div class="main-heading">
         Refreshingly fast LLMs on<br>
         GPUs and NPUs
       </div>
-      <!-- Subtitle -->
       <div class="subtitle">
         Install, run LLMs locally, and integrate with apps in minutes
       </div>
@@ -40,8 +40,21 @@
         </a>
       </div>
     </div>
-
-        
+    <!-- Community Section -->
+    <div class="community-section">
+      <div class="subtitle">
+        Connect with developers building the future of local AI
+      </div>
+      <div class="community-buttons">
+        <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+          <img src="https://img.shields.io/github/stars/lemonade-sdk/lemonade?label=Star%20on%20GitHub" alt="Star on GitHub" />
+        </a>
+        <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
+          <img src="https://img.shields.io/discord/1392562559122407535?style=social&logo=discord&label=Join%20Discord" alt="Join Discord" />
+        </a>
+      </div>
+    </div>
+    
     <!-- Video Section -->
     <div class="video-section">
       <div class="video-container">
@@ -274,6 +287,11 @@
       }
       
       return headlines;
+    }
+    
+    // Fetch GitHub stats
+    async function fetchGitHubStats() {
+      // No longer needed for shields.io badges
     }
     
     // Load release info when page loads
