@@ -65,6 +65,13 @@ class LoadLlamaCpp(FirstTool):
             help="Set this flag to indicate the model is a reasoning model",
         )
 
+        parser.add_argument(
+            "--backend",
+            choices=["vulkan", "rocm"],
+            default="vulkan",
+            help="Backend to use for llama.cpp (default: vulkan)",
+        )
+
         return parser
 
     def run(
@@ -76,6 +83,7 @@ class LoadLlamaCpp(FirstTool):
         threads: int = 1,
         output_tokens: int = 512,
         reasoning: bool = False,
+        backend: str = "vulkan",
     ) -> State:
         """
         Load a llama.cpp model
@@ -93,8 +101,7 @@ class LoadLlamaCpp(FirstTool):
             LlamaCppAdapter,
         )
 
-        # Validate and install llama.cpp, if needed
-        install_llamacpp()
+        install_llamacpp(backend)
 
         # Check if input is a local folder containing a .GGUF model
         if os.path.isdir(input):
@@ -153,7 +160,7 @@ class LoadLlamaCpp(FirstTool):
                 full_model_path = snapshot_files["variant"]
                 model_to_use = os.path.basename(full_model_path)
 
-        llama_cli_exe_path = get_llama_cli_exe_path()
+        llama_cli_exe_path = get_llama_cli_exe_path(backend)
         printing.log_info(f"Using llama_cli for GGUF model: {llama_cli_exe_path}")
 
         # Get the directory containing the executable for shared libraries
@@ -175,7 +182,9 @@ class LoadLlamaCpp(FirstTool):
 
         # Save initial stats
         state.save_stat(Keys.DEVICE, device)
-        state.save_stat(Keys.LLAMA_CLI_VERSION_INFO, get_llama_installed_version())
+        state.save_stat(
+            Keys.LLAMA_CLI_VERSION_INFO, get_llama_installed_version(backend)
+        )
 
         status.add_to_state(state=state, name=input, model=model_to_use)
         return state

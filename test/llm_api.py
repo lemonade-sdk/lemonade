@@ -19,6 +19,11 @@ from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
 from lemonade.tools.llamacpp.load import LoadLlamaCpp
 from lemonade.tools.llamacpp.bench import LlamaCppBench
+from lemonade.tools.llamacpp.utils import (
+    install_llamacpp,
+    get_llama_cli_exe_path,
+    get_llama_folder_path,
+)
 from lemonade.cache import Keys
 
 # Configure logging
@@ -35,114 +40,13 @@ cache_dir = None
 corpus_dir = None
 
 
-def download_llamacpp_binary():
+def download_llamacpp_binary(backend: str = "vulkan"):
     """Download the appropriate llama.cpp binary for the current platform"""
-    logger.info("Starting llama.cpp binary download...")
+    # Install llamacpp binary using the official function
+    install_llamacpp(backend)
 
-    # Get latest release info
-    releases_url = "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
-    try:
-        response = requests.get(releases_url)
-        response.raise_for_status()
-        latest_release = response.json()
-        logger.info(
-            f"Found latest release: {latest_release.get('tag_name', 'unknown')}"
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch latest release info: {str(e)}")
-        raise
-
-    # Determine platform-specific binary pattern
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-    logger.info(f"Detected platform: {system} {machine}")
-
-    if system == "windows":
-        # Windows CPU binary pattern
-        asset_pattern = "win-cpu-x64"
-    elif system == "linux":
-        asset_pattern = "ubuntu-x64"
-    else:
-        error_msg = f"Unsupported platform: {system}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    # Find matching asset
-    matching_assets = [
-        asset
-        for asset in latest_release["assets"]
-        if (
-            asset["name"].lower().startswith("llama-")
-            and asset_pattern in asset["name"].lower()
-        )
-    ]
-
-    if not matching_assets:
-        error_msg = (
-            f"No matching binary found for {system} {machine}. "
-            f"Looking for pattern: {asset_pattern}"
-        )
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    asset = matching_assets[0]
-    logger.info(f"Found matching asset: {asset['name']}")
-
-    # Create binaries directory
-    binary_dir = os.path.join(cache_dir, "llama_cpp_binary")
-    os.makedirs(binary_dir, exist_ok=True)
-    logger.info(f"Created binary directory: {binary_dir}")
-
-    # Download and extract
-    zip_path = os.path.join(binary_dir, asset["name"])
-    try:
-        response = requests.get(asset["browser_download_url"])
-        response.raise_for_status()
-
-        with open(zip_path, "wb") as f:
-            f.write(response.content)
-        logger.info(f"Downloaded binary to: {zip_path}")
-
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(binary_dir)
-        logger.info("Extracted binary archive")
-    except Exception as e:
-        logger.error(f"Failed to download or extract binary: {str(e)}")
-        raise
-
-    # Find the executable
-    executable = None
-    executable_name = "llama-cli.exe" if system == "windows" else "llama-cli"
-
-    # For Linux, check build/bin first since that's the standard structure
-    if system != "windows":
-        build_bin_path = os.path.join(binary_dir, "build", "bin", executable_name)
-        if os.path.isfile(build_bin_path):
-            executable = build_bin_path
-            logger.info(f"Found executable in standard location: {executable}")
-
-    # If not found in standard location, search the entire directory tree
-    if executable is None:
-        for root, dirs, files in os.walk(binary_dir):
-            if executable_name in files:
-                executable = os.path.join(root, executable_name)
-                logger.info(f"Found executable at: {executable}")
-                break
-
-    if executable is None:
-        # Collect available files for error reporting
-        all_files = []
-        for root, dirs, files in os.walk(binary_dir):
-            for file in files:
-                rel_path = os.path.relpath(os.path.join(root, file), binary_dir)
-                all_files.append(rel_path)
-
-        error_msg = (
-            f"Expected executable '{executable_name}' not found after extraction. "
-            f"Available files: {all_files[:20]}{'...' if len(all_files) > 20 else ''}"
-        )
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
+    # Get the executable path
+    executable = get_llama_cli_exe_path(backend)
 
     # Make executable on Linux
     if system != "windows":
@@ -150,7 +54,11 @@ def download_llamacpp_binary():
 
     # Find shared libraries directory for Linux
     lib_dir = None
+    system = platform.system().lower()
     if system != "windows":
+        # Get the binary directory
+        binary_dir = get_llama_folder_path(backend)
+
         # Look for libllama.so in the extracted directory
         for root, dirs, files in os.walk(binary_dir):
             if any(f.startswith("libllama.so") for f in files):

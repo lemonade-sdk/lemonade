@@ -12,41 +12,21 @@ If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions
     2. pip install openai
 """
 
-import unittest
-import subprocess
-import psutil
 import asyncio
-import socket
-import time
-from threading import Thread
-import sys
-import io
-import httpx
-import argparse
-import contextlib
-from unittest.mock import patch
-import urllib.request
-import os
-import requests
 import numpy as np
+import requests
 
-try:
-    from openai import OpenAI, AsyncOpenAI
-except ImportError as e:
-    raise ImportError("You must `pip install openai` to run this test", e)
-
-# Import huggingface_hub for patching in offline mode
-try:
-    from huggingface_hub import snapshot_download as original_snapshot_download
-except ImportError:
-    # If huggingface_hub is not installed, create a dummy function
-    def original_snapshot_download(*args, **kwargs):
-        raise ImportError("huggingface_hub is not installed")
-
-
-MODEL_NAME = "Qwen2.5-0.5B-Instruct-CPU"
-MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
-PORT = 8000
+# Import all shared functionality from utils/server_base.py
+from utils.server_base import (
+    ServerTestingBase,
+    run_server_tests_with_class,
+    OpenAI,
+    AsyncOpenAI,
+    httpx,
+    MODEL_NAME,
+    MODEL_CHECKPOINT,
+    PORT,
+)
 
 # Sample tool schema based on https://github.com/githejie/mcp-server-calculator
 sample_tool = {
@@ -63,220 +43,9 @@ sample_tool = {
 }
 
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Test lemonade server")
-    parser.add_argument(
-        "--offline", action="store_true", help="Run tests in offline mode"
-    )
-    return parser.parse_args()
-
-
-@contextlib.contextmanager
-def simulate_offline_mode():
-    """
-    Context manager that simulates a fully offline environment except
-    for local connections needed for testing.
-
-    This patches multiple network-related functions to prevent any
-    external network access during tests.
-    """
-    original_create_connection = socket.create_connection
-
-    def mock_create_connection(address, *args, **kwargs):
-        host, port = address
-        # Allow connections to localhost for testing
-        if host == "localhost" or host == "127.0.0.1":
-            return original_create_connection(address, *args, **kwargs)
-        # Block all other connections
-        raise socket.error("Network access disabled for offline testing")
-
-    # Define a function that raises an error for non-local requests
-    def block_external_requests(original_func):
-        def wrapper(url, *args, **kwargs):
-            # Allow localhost requests
-            if url.startswith(
-                (
-                    "http://localhost",
-                    "https://localhost",
-                    "http://127.0.0.1",
-                    "https://127.0.0.1",
-                )
-            ):
-                return original_func(url, *args, **kwargs)
-            raise ConnectionError(f"Offline mode: network request blocked to {url}")
-
-        return wrapper
-
-    # Apply all necessary patches to simulate offline mode
-    with patch("socket.create_connection", side_effect=mock_create_connection):
-        with patch(
-            "huggingface_hub.snapshot_download",
-            side_effect=lambda *args, **kwargs: (
-                kwargs.get("local_files_only", False)
-                and original_snapshot_download(*args, **kwargs)
-                or (_ for _ in ()).throw(
-                    ValueError("Offline mode: network connection attempted")
-                )
-            ),
-        ):
-            # Also patch urllib and requests to block external requests
-            with patch(
-                "urllib.request.urlopen",
-                side_effect=block_external_requests(urllib.request.urlopen),
-            ):
-                with patch(
-                    "http.client.HTTPConnection.connect",
-                    side_effect=lambda self, *args, **kwargs: (
-                        None
-                        if self.host in ("localhost", "127.0.0.1")
-                        else (_ for _ in ()).throw(
-                            ConnectionError("Offline mode: connection blocked")
-                        )
-                    ),
-                ):
-                    # Set environment variable to signal offline mode
-                    os.environ["LEMONADE_OFFLINE_TEST"] = "1"
-                    try:
-                        yield
-                    finally:
-                        # Clean up environment variable
-                        if "LEMONADE_OFFLINE_TEST" in os.environ:
-                            del os.environ["LEMONADE_OFFLINE_TEST"]
-
-
-def ensure_model_is_cached():
-    """
-    Make sure the test model is downloaded and cached locally before running in offline mode.
-    """
-    try:
-        # Call lemonade-server-dev pull to download the model
-        subprocess.run(
-            ["lemonade-server-dev", "pull", MODEL_NAME],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        print(f"Model {MODEL_NAME} successfully pulled and available in cache")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to download model: {e}")
-        return False
-
-
-def kill_process_on_port(port):
-    """Kill any process that is using the specified port."""
-    killed = False
-    for proc in psutil.process_iter(["pid", "name"]):
-        try:
-            connections = proc.net_connections()
-            for conn in connections:
-                if conn.laddr.port == port:
-                    proc_name = proc.name()
-                    proc_pid = proc.pid
-                    proc.kill()
-                    print(
-                        f"Killed process {proc_name} (PID: {proc_pid}) using port {port}"
-                    )
-                    killed = True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-
-    if not killed:
-        print(f"No process found using port {port}")
-
-
-class Testing(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        """
-        Start lemonade server process
-        """
-        print("\n=== Starting new test ===")
-        self.base_url = f"http://localhost:{PORT}/api/v1"
-        self.messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Who won the world series in 2020?"},
-            {"role": "assistant", "content": "The LA Dodgers won in 2020."},
-            {"role": "user", "content": "In which state was it played?"},
-        ]
-
-        # Ensure we kill anything using port 8000
-        kill_process_on_port(PORT)
-
-        # The --no-tray option is only available on Windows
-        if os.name == "nt":
-            cmd = ["lemonade-server-dev", "serve", "--no-tray"]
-        else:
-            cmd = ["lemonade-server-dev", "serve"]
-
-        # Start the lemonade server
-        lemonade_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
-
-        # Print stdout and stderr in real-time
-        def print_output():
-            while True:
-                stdout = lemonade_process.stdout.readline()
-                stderr = lemonade_process.stderr.readline()
-                if stdout:
-                    print(f"[stdout] {stdout.strip()}")
-                if stderr:
-                    print(f"[stderr] {stderr.strip()}")
-                if not stdout and not stderr and lemonade_process.poll() is not None:
-                    break
-
-        output_thread = Thread(target=print_output, daemon=True)
-        output_thread.start()
-
-        # Wait for the server to start by checking port 8000
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > 60:
-                raise TimeoutError("Server failed to start within 60 seconds")
-            try:
-                conn = socket.create_connection(("localhost", PORT))
-                conn.close()
-                break
-            except socket.error:
-                time.sleep(1)
-
-        # Wait a few other seconds after the port is available
-        time.sleep(5)
-
-        print("Server started successfully")
-
-        self.addCleanup(self.cleanup_lemonade, lemonade_process)
-
-        # Ensure stdout can handle Unicode
-        if sys.stdout.encoding != "utf-8":
-            sys.stdout = io.TextIOWrapper(
-                sys.stdout.buffer, encoding="utf-8", errors="replace"
-            )
-            sys.stderr = io.TextIOWrapper(
-                sys.stderr.buffer, encoding="utf-8", errors="replace"
-            )
-
-    def cleanup_lemonade(self, server_subprocess: subprocess.Popen):
-        """
-        Kill the lemonade server and stop the model
-        """
-
-        # Kill the server subprocess
-        print("\n=== Cleaning up test ===")
-
-        parent = psutil.Process(server_subprocess.pid)
-        for child in parent.children(recursive=True):
-            child.kill()
-
-        server_subprocess.kill()
-
-        kill_process_on_port(PORT)
-
+class Testing(ServerTestingBase):
+    """Main testing class that inherits shared functionality from ServerTestingBase."""
+    
     def test_000_endpoints_available(self):
         # List of endpoints to check
         valid_endpoints = [
@@ -543,10 +312,10 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert len(completion.choices[0].text) > len(prompt)
 
     # Test simultaneous load requests
-    async def test_011_test_simultaneous_load_requests(self):
+    async def test_001_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
             first_model = "Qwen2.5-0.5B-Instruct-CPU"
-            second_model = "Qwen3-0.6B-GGUF"
+            second_model = "Llama-3.2-1B-Instruct-CPU"
 
             # Start two load requests simultaneously
             load_tasks = [
@@ -792,183 +561,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         assert tool_call_count > 0
 
-    # Endpoint: /api/v1/chat/completions
-    def test_019_test_llamacpp_chat_completion_streaming(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
-
-        stream = client.chat.completions.create(
-            model="Qwen3-0.6B-GGUF",
-            messages=self.messages,
-            stream=True,
-            max_completion_tokens=10,
-        )
-
-        complete_response = ""
-        chunk_count = 0
-        for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
-                complete_response += chunk.choices[0].delta.content
-                print(chunk.choices[0].delta.content, end="")
-                chunk_count += 1
-
-        assert chunk_count > 5
-        assert len(complete_response) > 5
-
-    # Endpoint: /api/v1/chat/completions
-    def test_020_test_llamacpp_chat_completion_non_streaming(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
-
-        response = client.chat.completions.create(
-            model="Qwen3-0.6B-GGUF",
-            messages=self.messages,
-            stream=False,
-            max_completion_tokens=10,
-        )
-
-        assert response.choices[0].message.content is not None
-        assert len(response.choices[0].message.content) > 5
-        print(response.choices[0].message.content)
-
-    # Endpoint: /api/v1/embeddings
-    def test_021_test_embeddings(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
-        model_id = "nomic-embed-text-v2-moe-GGUF"
-
-        # Test 1: Single string
-        response = client.embeddings.create(
-            input="Hello, how are you today?",
-            model=model_id,
-            encoding_format="float",
-        )
-        assert response.data is not None
-        assert len(response.data) == 1
-        assert response.data[0].embedding is not None
-        assert len(response.data[0].embedding) > 0
-        print(f"Single string embedding dimension: {len(response.data[0].embedding)}")
-
-        # Test 2: Array of strings
-        response = client.embeddings.create(
-            input=["Hello world", "How are you?", "This is a test"],
-            model=model_id,
-            encoding_format="float",
-        )
-        assert response.data is not None
-        assert len(response.data) == 3
-        for i, embedding in enumerate(response.data):
-            assert embedding.embedding is not None
-            assert len(embedding.embedding) > 0
-            print(f"Array embedding {i+1} dimension: {len(embedding.embedding)}")
-
-        # Test 3: Base64 encoding format
-        response = client.embeddings.create(
-            input="Test base64 encoding",
-            model=model_id,
-            encoding_format="base64",
-        )
-        assert response.data is not None
-        assert len(response.data) == 1
-        assert response.data[0].embedding is not None
-        assert len(response.data[0].embedding) > 0
-        print(f"Base64 embedding length: {len(response.data[0].embedding)}")
-
-        # Test 4: Token IDs (if supported by model)
-        response = client.embeddings.create(
-            input=[15496, 11, 1268, 527, 499, 3432, 30],
-            model=model_id,
-            encoding_format="float",
-        )
-        assert response.data is not None
-        assert len(response.data) == 1
-        print(f"Token embedding dimension: {len(response.data[0].embedding)}")
-
-        # Test 5: Mixed input types (if supported by model)
-        response = client.embeddings.create(
-            input=[15496, "hello", 527, "world"],
-            model=model_id,
-            encoding_format="float",
-        )
-        assert response.data is not None
-        print(f"Mixed input embedding dimension: {len(response.data[0].embedding)}")
-
-        # Test 6: Semantic similarity comparison
-        texts = [
-            "The cat sat on the mat",
-            "A feline rested on the carpet",
-            "Dogs are loyal animals",
-            "Python is a programming language",
-        ]
-        response = client.embeddings.create(
-            input=texts,
-            model=model_id,
-            encoding_format="float",
-        )
-        assert response.data is not None
-        assert len(response.data) == 4
-
-        def cosine_similarity(a, b):
-            return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-        emb1 = np.array(response.data[0].embedding)
-        emb2 = np.array(response.data[1].embedding)
-        emb3 = np.array(response.data[2].embedding)
-
-        sim_12 = cosine_similarity(emb1, emb2)
-        sim_13 = cosine_similarity(emb1, emb3)
-
-        print(f"Similarity cat/mat vs feline/carpet: {sim_12:.4f}")
-        print(f"Similarity cat/mat vs dogs: {sim_13:.4f}")
-        assert (
-            sim_12 > sim_13
-        ), f"Semantic similarity test failed: {sim_12:.4f} <= {sim_13:.4f}"
-
-    # Endpoint: /api/v1/reranking
-    def test_022_test_reranking(self):
-        query = "A man is eating pasta."
-        documents = [
-            "A man is eating food.",  # index 0
-            "The girl is carrying a baby.",  # index 1
-            "A man is riding a horse.",  # index 2
-            "A young girl is playing violin.",  # index 3
-            "A man is eating a piece of bread.",  # index 4
-            "A man is eating noodles.",  # index 5
-        ]
-
-        # Make the reranking request
-        payload = {
-            "query": query,
-            "documents": documents,
-            "model": "jina-reranker-v1-tiny-en-GGUF",
-        }
-        response = requests.post(f"{self.base_url}/reranking", json=payload)
-        response.raise_for_status()
-        result = response.json()
-
-        # Sort results by score
-        results = result.get("results", [])
-        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-
-        # Get the indices of the top 3 ranked documents
-        top_3_indices = [r["index"] for r in results[:3]]
-
-        # The food-related documents should be in top 3 (indices 0, 4, and 5)
-        expected_top_3 = {0, 4, 5}
-        actual_top_3 = set(top_3_indices)
-
-        assert (
-            actual_top_3 == expected_top_3
-        ), f"Expected food-related documents (indices {expected_top_3}) to be in top 3, but got {actual_top_3}"
-
     # Endpoint: /api/v1/delete
-    async def test_023_test_delete_model(self):
+    async def test_019_test_delete_model(self):
         """Test the delete endpoint functionality"""
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
@@ -1014,7 +608,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             assert pull_response.status_code == 200
 
     # Endpoint: /api/v1/system-info
-    def test_024_test_system_info_endpoint(self):
+    def test_020_test_system_info_endpoint(self):
         """
         Test the system-info endpoint functionality.
         """
@@ -1067,78 +661,9 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         assert isinstance(packages, list)
         assert len(packages) > 0
 
-    def test_025_test_llamacpp_completions_non_streaming(self):
-        """Test completion endpoint specifically with llamacpp model (non-streaming)"""
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
-
-        completion = client.completions.create(
-            model="Qwen3-0.6B-GGUF",  # This will use llamacpp recipe
-            prompt="Hello, how are you?",
-            stream=False,
-            max_tokens=20,
-        )
-
-        # Basic validation (same as existing completion tests)
-        assert len(completion.choices[0].text) > 5
-        assert completion.usage.prompt_tokens > 0
-        assert completion.usage.completion_tokens > 0
-
-        print(f"LlamaCPP completion: {completion.choices[0].text}")
-
-    def test_026_test_llamacpp_completions_streaming(self):
-        """Test streaming completion endpoint specifically with llamacpp model"""
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
-
-        stream = client.completions.create(
-            model="Qwen3-0.6B-GGUF",  # This will use llamacpp recipe
-            prompt="def hello_world():",
-            stream=True,
-            max_tokens=20,
-        )
-
-        complete_response = ""
-        chunk_count = 0
-        for chunk in stream:
-            if chunk.choices[0].text is not None:
-                complete_response += chunk.choices[0].text
-                print(chunk.choices[0].text, end="")
-                chunk_count += 1
-
-        assert chunk_count > 5
-        assert len(complete_response) > 5
-
 
 if __name__ == "__main__":
-    args = parse_args()
-
-    if args.offline:
-        print("\n=== STARTING SERVER TESTS IN OFFLINE MODE ===")
-
-        if not ensure_model_is_cached():
-            print("ERROR: Unable to cache the model needed for offline testing")
-            sys.exit(1)
-
-        print("Model is cached. Running tests with network access disabled...")
-
-        # Create a new test suite
-        test_loader = unittest.TestLoader()
-        test_suite = test_loader.loadTestsFromTestCase(Testing)
-
-        # Run the tests in offline mode
-        with simulate_offline_mode():
-            result = unittest.TextTestRunner().run(test_suite)
-
-        # Set exit code based on test results
-        sys.exit(0 if result.wasSuccessful() else 1)
-    else:
-        print("\n=== STARTING SERVER TESTS IN NORMAL MODE ===")
-        unittest.main()
+    run_server_tests_with_class(Testing, "SERVER TESTS")
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD

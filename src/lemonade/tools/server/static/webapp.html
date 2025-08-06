@@ -39,8 +39,15 @@
                     <div class="chat-history" id="chat-history"></div> 
                     <div class="chat-input-row"> 
                         <select id="model-select"></select> 
-                        <input type="text" id="chat-input" placeholder="Type your message..." /> 
+                        <div class="input-with-indicator">
+                            <input type="text" id="chat-input" placeholder="Type your message..." /> 
+                        </div>
+                        <input type="file" id="file-attachment" style="display: none;" multiple accept="image/*">
+                        <button id="attachment-btn" title="Attach files">&#x1F4CE;</button>
                         <button id="send-btn">Send</button> 
+                    </div>
+                    <div class="attachments-preview-container" id="attachments-preview-container">
+                        <div class="attachments-preview-row" id="attachments-preview-row"></div>
                     </div> 
                 </div>
                 <!-- App Suggestions Section -->
@@ -365,6 +372,32 @@
         return `http://localhost:${port}`;
     }
 
+    // Check if current model supports vision
+    function isVisionModel(modelId) {
+        const allModels = window.SERVER_MODELS || {};
+        const modelData = allModels[modelId];
+        if (modelData && modelData.labels && Array.isArray(modelData.labels)) {
+            return modelData.labels.some(label => label.toLowerCase() === 'vision');
+        }
+        return false;
+    }
+
+    // Update attachment button state based on current model
+    function updateAttachmentButtonState() {
+        const currentModel = modelSelect.value;
+        const isVision = isVisionModel(currentModel);
+        
+        if (isVision) {
+            attachmentBtn.style.opacity = '1';
+            attachmentBtn.style.cursor = 'pointer';
+            attachmentBtn.title = 'Attach images';
+        } else {
+            attachmentBtn.style.opacity = '0.5';
+            attachmentBtn.style.cursor = 'not-allowed';
+            attachmentBtn.title = 'Image attachments not supported by this model';
+        }
+    }
+
     // Populate model dropdown from /api/v1/models endpoint
     async function loadModels() {
         try {
@@ -432,6 +465,9 @@
                     console.warn(`Model '${urlModel}' specified in URL not found in available models`);
                 }
             }
+            
+            // Update attachment button state after model is loaded
+            updateAttachmentButtonState();
         } catch (e) {
             const select = document.getElementById('model-select');
             select.innerHTML = `<option>Error loading models: ${e.message}</option>`;
@@ -440,6 +476,38 @@
         }
     }
     loadModels();
+
+    // Add model change handler to clear attachments if switching to non-vision model
+    document.addEventListener('DOMContentLoaded', function() {
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect) {
+            modelSelect.addEventListener('change', function() {
+                const currentModel = this.value;
+                updateAttachmentButtonState(); // Update button visual state
+                
+                if (attachedFiles.length > 0 && !isVisionModel(currentModel)) {
+                    if (confirm(`The selected model "${currentModel}" does not support images. Would you like to remove the attached images?`)) {
+                        clearAttachments();
+                    } else {
+                        // Find a vision model to switch back to
+                        const allModels = window.SERVER_MODELS || {};
+                        const visionModels = Array.from(this.options).filter(option => 
+                            isVisionModel(option.value)
+                        );
+                        
+                        if (visionModels.length > 0) {
+                            this.value = visionModels[0].value;
+                            updateAttachmentButtonState(); // Update button state again
+                            alert(`Switched back to "${visionModels[0].value}" which supports images.`);
+                        } else {
+                            alert('No vision models available. Images will be cleared.');
+                            clearAttachments();
+                        }
+                    }
+                }
+            });
+        }
+    });
 
     // Helper function to create model name with labels
     function createModelNameWithLabels(modelId, allModels) {
@@ -633,8 +701,211 @@
     const chatHistory = document.getElementById('chat-history');
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
+    const attachmentBtn = document.getElementById('attachment-btn');
+    const fileAttachment = document.getElementById('file-attachment');
+    const attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
+    const attachmentsPreviewRow = document.getElementById('attachments-preview-row');
     const modelSelect = document.getElementById('model-select');
     let messages = [];
+    let attachedFiles = [];
+
+    attachmentBtn.onclick = () => {
+        const currentModel = modelSelect.value;
+        if (!isVisionModel(currentModel)) {
+            alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities to attach images.`);
+            return;
+        }
+        fileAttachment.click();
+    };
+
+    function clearAttachments() {
+        attachedFiles = [];
+        fileAttachment.value = '';
+        updateInputPlaceholder();
+        updateAttachmentPreviewVisibility();
+        updateAttachmentPreviews();
+    }
+
+    function updateAttachmentPreviewVisibility() {
+        if (attachedFiles.length > 0) {
+            attachmentsPreviewContainer.classList.add('has-attachments');
+        } else {
+            attachmentsPreviewContainer.classList.remove('has-attachments');
+        }
+    }
+
+    function updateAttachmentPreviews() {
+        // Clear existing previews
+        attachmentsPreviewRow.innerHTML = '';
+        
+        if (attachedFiles.length === 0) {
+            return;
+        }
+        
+        attachedFiles.forEach((file, index) => {
+            // Skip non-image files (extra safety check)
+            if (!file.type.startsWith('image/')) {
+                console.warn(`Skipping non-image file in preview: ${file.name} (${file.type})`);
+                return;
+            }
+            
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'attachment-preview';
+            
+            // Create thumbnail
+            const thumbnail = document.createElement('img');
+            thumbnail.className = 'attachment-thumbnail';
+            thumbnail.alt = file.name;
+            
+            // Create filename display
+            const filename = document.createElement('div');
+            filename.className = 'attachment-filename';
+            filename.textContent = file.name || `pasted-image-${index + 1}`;
+            filename.title = file.name || `pasted-image-${index + 1}`;
+            
+            // Create remove button
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'attachment-remove-btn';
+            removeBtn.innerHTML = '✕';
+            removeBtn.title = 'Remove this image';
+            removeBtn.onclick = () => removeAttachment(index);
+            
+            // Generate thumbnail for image
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                thumbnail.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            
+            previewDiv.appendChild(thumbnail);
+            previewDiv.appendChild(filename);
+            previewDiv.appendChild(removeBtn);
+            attachmentsPreviewRow.appendChild(previewDiv);
+        });
+    }
+
+    function removeAttachment(index) {
+        attachedFiles.splice(index, 1);
+        updateInputPlaceholder();
+        updateAttachmentPreviewVisibility();
+        updateAttachmentPreviews();
+    }
+
+    fileAttachment.addEventListener('change', () => {
+        if (fileAttachment.files.length > 0) {
+            // Check if current model supports vision
+            const currentModel = modelSelect.value;
+            if (!isVisionModel(currentModel)) {
+                alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities or choose a different model.`);
+                fileAttachment.value = ''; // Clear the input
+                return;
+            }
+            
+            // Filter only image files
+            const imageFiles = Array.from(fileAttachment.files).filter(file => {
+                if (!file.type.startsWith('image/')) {
+                    console.warn(`Skipping non-image file: ${file.name} (${file.type})`);
+                    return false;
+                }
+                return true;
+            });
+            
+            if (imageFiles.length === 0) {
+                alert('Please select only image files (PNG, JPG, GIF, etc.)');
+                fileAttachment.value = ''; // Clear the input
+                return;
+            }
+            
+            if (imageFiles.length !== fileAttachment.files.length) {
+                alert(`${fileAttachment.files.length - imageFiles.length} non-image file(s) were skipped. Only image files are supported.`);
+            }
+            
+            attachedFiles = imageFiles;
+            updateInputPlaceholder();
+            updateAttachmentPreviewVisibility();
+            updateAttachmentPreviews();
+        }
+    });
+
+    // Handle paste events for images
+    chatInput.addEventListener('paste', async (e) => {
+        e.preventDefault();
+        
+        const clipboardData = e.clipboardData || window.clipboardData;
+        const items = clipboardData.items;
+        let hasImage = false;
+        let pastedText = '';
+        
+        // Check for text content first
+        for (let item of items) {
+            if (item.type === 'text/plain') {
+                pastedText = clipboardData.getData('text/plain');
+            }
+        }
+        
+        // Check for images
+        for (let item of items) {
+            if (item.type.indexOf('image') !== -1) {
+                hasImage = true;
+                const file = item.getAsFile();
+                if (file && file.type.startsWith('image/')) {
+                    // Check if current model supports vision before adding image
+                    const currentModel = modelSelect.value;
+                    if (!isVisionModel(currentModel)) {
+                        alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities to paste images.`);
+                        // Only paste text, skip the image
+                        if (pastedText) {
+                            chatInput.value = pastedText;
+                        }
+                        return;
+                    }
+                    // Add to attachedFiles array only if it's an image and model supports vision
+                    attachedFiles.push(file);
+                } else if (file) {
+                    console.warn(`Skipping non-image pasted file: ${file.name || 'unknown'} (${file.type})`);
+                }
+            }
+        }
+        
+        // Update input box content - only show text, images will be indicated separately
+        if (pastedText) {
+            chatInput.value = pastedText;
+        }
+        
+        // Update placeholder to show attached images
+        updateInputPlaceholder();
+        updateAttachmentPreviewVisibility();
+        updateAttachmentPreviews();
+    });
+
+    // Function to update input placeholder to show attached files
+    function updateInputPlaceholder() {
+        if (attachedFiles.length > 0) {
+            chatInput.placeholder = `Type your message... (${attachedFiles.length} image${attachedFiles.length > 1 ? 's' : ''} attached)`;
+        } else {
+            chatInput.placeholder = 'Type your message...';
+        }
+    }
+
+    // Add keyboard shortcut to clear attachments
+    chatInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && attachedFiles.length > 0) {
+            e.preventDefault();
+            clearAttachments();
+        } else if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    // Function to convert file to base64
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Remove data:image/...;base64, prefix
+            reader.onerror = error => reject(error);
+        });
+    }
 
     function appendMessage(role, text, isMarkdown = false) {
         const div = document.createElement('div');
@@ -744,11 +1015,74 @@
 
     async function sendMessage() {
         const text = chatInput.value.trim();
-        if (!text) return;
-        appendMessage('user', text);
-        messages.push({ role: 'user', content: text });
+        if (!text && attachedFiles.length === 0) return;
+        
+        // Check if trying to send images to non-vision model
+        if (attachedFiles.length > 0) {
+            const currentModel = modelSelect.value;
+            if (!isVisionModel(currentModel)) {
+                alert(`Cannot send images to model "${currentModel}" as it does not support vision. Please select a model with "Vision" capabilities or remove the attached images.`);
+                return;
+            }
+        }
+        
+        // Create message content
+        let messageContent = [];
+        
+        // Add text if present
+        if (text) {
+            messageContent.push({
+                type: "text",
+                text: text
+            });
+        }
+        
+        // Add images if present
+        if (attachedFiles.length > 0) {
+            for (const file of attachedFiles) {
+                if (file.type.startsWith('image/')) {
+                    try {
+                        const base64 = await fileToBase64(file);
+                        messageContent.push({
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${file.type};base64,${base64}`
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Error converting image to base64:', error);
+                    }
+                }
+            }
+        }
+        
+        // Display user message (show text and file names)
+        let displayText = text;
+        if (attachedFiles.length > 0) {
+            const fileNames = attachedFiles.map(f => f.name || 'pasted-image').join(', ');
+            displayText = displayText ? `${displayText}\n[Images: ${fileNames}]` : `[Images: ${fileNames}]`;
+        }
+        
+        appendMessage('user', displayText);
+        
+        // Add to messages array
+        const userMessage = {
+            role: 'user',
+            content: messageContent.length === 1 && messageContent[0].type === "text" 
+                ? messageContent[0].text 
+                : messageContent
+        };
+        messages.push(userMessage);
+        
+        // Clear input and attachments
         chatInput.value = '';
+        attachedFiles = [];
+        fileAttachment.value = '';
+        updateInputPlaceholder(); // Reset placeholder
+        updateAttachmentPreviewVisibility(); // Hide preview container
+        updateAttachmentPreviews(); // Clear previews
         sendBtn.disabled = true;
+        
         // Streaming OpenAI completions (placeholder, adapt as needed)
         let llmText = '';
         const llmBubble = appendMessage('llm', '...');
@@ -817,9 +1151,6 @@
         sendBtn.disabled = false;
     }
     sendBtn.onclick = sendMessage;
-    chatInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') sendMessage();
-    });
 
     // Register & Install Model logic
     const registerForm = document.getElementById('register-model-form');

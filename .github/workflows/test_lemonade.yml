@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pylint
           python -m pip check
-          pip install -e .[dev]
+          pip install -e .[dev] --extra-index-url https://pypi.amd.com/simple
       - name: Lint with Black
         uses: psf/black@stable
         with:

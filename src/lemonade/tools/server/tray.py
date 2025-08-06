@@ -263,8 +263,10 @@ class LemonadeTray(SystemTray):
                     self.server.uvicorn_server.should_exit = True
                 self.server_thread.join(timeout=2)
 
-            # Update the port
+            # Update the port in both the tray and the server instance
             self.port = new_port
+            if self.server:
+                self.server.port = new_port
 
             # Restart the server
             self.server_thread = threading.Thread(target=self.start_server, daemon=True)
@@ -425,7 +427,7 @@ class LemonadeTray(SystemTray):
         Start the uvicorn server.
         """
         self.server = self.server_factory()
-        self.server.uvicorn_server = self.server.run_in_thread(port=self.port)
+        self.server.uvicorn_server = self.server.run_in_thread()
         self.server.uvicorn_server.run()
 
     def run(self):

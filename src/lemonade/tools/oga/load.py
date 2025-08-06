@@ -633,9 +633,9 @@ class OgaLoad(FirstTool):
                 model_generate.generate_hybrid_model(
                     input_model=input_model_path,
                     output_dir=output_model_path,
-                    # script_option="jit_npu",
-                    # mode="bf16",
-                    # dml_only=False,
+                    script_option="jit_npu",
+                    mode="bf16",
+                    dml_only=False,
                 )
         except Exception as e:
             raise RuntimeError(

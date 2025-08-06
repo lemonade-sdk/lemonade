@@ -451,6 +451,12 @@ class Install:
             choices=["0.6.0"],
         )
 
+        parser.add_argument(
+            "--llamacpp",
+            help="Install llama.cpp binaries with specified backend",
+            choices=["rocm", "vulkan"],
+        )
+
         return parser
 
     @staticmethod
@@ -739,18 +745,32 @@ class Install:
 
         print(f"\nQuark installed successfully at: {quark_path}")
 
+    @staticmethod
+    def _install_llamacpp(backend):
+        """
+        Install llama.cpp binaries with the specified backend.
+
+        Args:
+            backend: The backend to use ('rocm' or 'vulkan')
+        """
+
+        from lemonade.tools.llamacpp.utils import install_llamacpp
+
+        install_llamacpp(backend)
+
     def run(
         self,
         ryzenai: Optional[str] = None,
         build_model: Optional[str] = None,
         quark: Optional[str] = None,
+        llamacpp: Optional[str] = None,
         yes: bool = False,
         token: Optional[str] = None,
     ):
-        if ryzenai is None and quark is None and models is None:
+        if ryzenai is None and quark is None and llamacpp is None:
             raise ValueError(
                 "You must select something to install, "
-                "for example `--ryzenai`, `--quark`, or `--models`"
+                "for example `--ryzenai`, `--quark`, or `--llamacpp`"
             )
 
         if ryzenai is not None:
@@ -758,6 +778,9 @@ class Install:
 
         if quark is not None:
             self._install_quark(quark)
+
+        if llamacpp is not None:
+            self._install_llamacpp(llamacpp)
 
 
 def main():

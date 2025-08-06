@@ -10,21 +10,105 @@ import requests
 import lemonade.common.printing as printing
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 
-LLAMA_VERSION = "b5902"
+from lemonade.common.system_info import get_system_info
+
+from dotenv import set_key, load_dotenv
+
+LLAMA_VERSION_VULKAN = "b6097"
+LLAMA_VERSION_ROCM = "b1021"
 
 
-def get_llama_folder_path():
+def identify_rocm_arch_from_name(device_name: str) -> str | None:
+    """
+    Identify the appropriate ROCm target architecture based on the device name
+    """
+    device_name_lower = device_name.lower()
+    if "radeon" not in device_name_lower:
+        return None
+
+    # Check iGPUs
+    # STX Halo iGPUs (gfx1151 architecture)
+    # Radeon 8050S Graphics / Radeon 8060S Graphics
+    target_arch = None
+    if any(halo_igpu in device_name_lower.lower() for halo_igpu in ["8050s", "8060s"]):
+        return "gfx1151"
+
+    # Check dGPUs
+    # RDNA4 GPUs (gfx120X architecture)
+    # AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
+    # AMD Radeon RX 9070, AMD Radeon RX 9060 XT
+    if any(
+        rdna4_gpu in device_name_lower.lower()
+        for rdna4_gpu in ["r9700", "9060", "9070"]
+    ):
+        return "gfx120X"
+
+    # RDNA3 GPUs (gfx110X architecture)
+    # AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
+    # AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
+    # AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
+    # AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
+    elif any(
+        rdna3_gpu in device_name_lower.lower()
+        for rdna3_gpu in ["7700", "7800", "7900", "v710"]
+    ):
+        return "gfx110X"
+
+    return None
+
+
+def identify_rocm_arch_and_hip_id() -> tuple[str, str]:
+    """
+    Identify the appropriate ROCm target architecture based on the device info
+    Returns tuple of (architecture, gpu_type) where gpu_type is 'igpu' or 'dgpu'
+    """
+
+    # Check for integrated and discrete AMD GPUs
+    system_info = get_system_info()
+    amd_igpu = system_info.get_amd_igpu_device()
+    amd_dgpu = system_info.get_amd_dgpu_devices()
+    target_arch = None
+    gpu_count = 0
+    for gpu in [amd_igpu] + amd_dgpu:
+        if gpu.get("available") and gpu.get("name"):
+            gpu_count += 1
+            target_arch = identify_rocm_arch_from_name(gpu["name"].lower())
+            if target_arch:
+                break
+
+    # Get HIP ID based on the number of GPUs available
+    # Here, we assume that the iGPU will always show up before the dGPUs (if available)
+    # We also assume that selecting the dGPU is preferred over the iGPU
+    # Multiple GPUs are not supported at the moment
+    hip_id = str(gpu_count - 1)
+
+    return target_arch, hip_id
+
+
+def get_llama_version(backend: str) -> str:
+    """
+    Select the appropriate llama.cpp version based on the backend
+    """
+    if backend == "rocm":
+        return LLAMA_VERSION_ROCM
+    elif backend == "vulkan":
+        return LLAMA_VERSION_VULKAN
+    else:
+        raise ValueError(f"Unsupported backend: {backend}")
+
+
+def get_llama_folder_path(backend: str):
     """
     Get path for llama.cpp platform-specific executables folder
     """
-    return os.path.join(os.path.dirname(sys.executable), "llamacpp")
+    return os.path.join(os.path.dirname(sys.executable), backend, "llama_server")
 
 
-def get_llama_exe_path(exe_name):
+def get_llama_exe_path(exe_name: str, backend: str):
     """
     Get path to platform-specific llama-server executable
     """
-    base_dir = get_llama_folder_path()
+    base_dir = get_llama_folder_path(backend)
     if platform.system().lower() == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
     else:  # Linux/Ubuntu
@@ -37,33 +121,33 @@ def get_llama_exe_path(exe_name):
             return os.path.join(base_dir, exe_name)
 
 
-def get_llama_server_exe_path():
+def get_llama_server_exe_path(backend: str):
     """
     Get path to platform-specific llama-server executable
     """
-    return get_llama_exe_path("llama-server")
+    return get_llama_exe_path("llama-server", backend)
 
 
-def get_llama_cli_exe_path():
+def get_llama_cli_exe_path(backend: str):
     """
     Get path to platform-specific llama-cli executable
     """
-    return get_llama_exe_path("llama-cli")
+    return get_llama_exe_path("llama-cli", backend)
 
 
-def get_version_txt_path():
+def get_version_txt_path(backend: str):
     """
     Get path to text file that contains version information
     """
-    return os.path.join(get_llama_folder_path(), "version.txt")
+    return os.path.join(get_llama_folder_path(backend), "version.txt")
 
 
-def get_llama_installed_version():
+def get_llama_installed_version(backend: str):
     """
     Gets version of installed llama.cpp
     Returns None if llama.cpp is not installed
     """
-    version_txt_path = get_version_txt_path()
+    version_txt_path = get_version_txt_path(backend)
     if os.path.exists(version_txt_path):
         with open(version_txt_path, "r", encoding="utf-8") as f:
             llama_installed_version = f.read()
@@ -71,24 +155,48 @@ def get_llama_installed_version():
     return None
 
 
-def get_binary_url_and_filename(version):
+def get_binary_url_and_filename(backend: str, target_arch: str = None):
     """
-    Get the appropriate llama.cpp binary URL and filename based on platform
+    Get the appropriate binary URL and filename based on platform and backend
+
+    Args:
+        backend: Backend to use
     """
     system = platform.system().lower()
 
-    if system == "windows":
-        filename = f"llama-{version}-bin-win-vulkan-x64.zip"
-    elif system == "linux":
-        filename = f"llama-{version}-bin-ubuntu-vulkan-x64.zip"
+    if backend == "rocm":
+
+        # ROCm support from lemonade-sdk/llamacpp-rocm
+        repo = "lemonade-sdk/llamacpp-rocm"
+        version = LLAMA_VERSION_ROCM
+        if system == "windows":
+            filename = f"llama-{version}-windows-rocm-{target_arch}-x64.zip"
+        elif system == "linux":
+            filename = f"llama-{version}-ubuntu-rocm-{target_arch}-x64.zip"
+        else:
+            raise NotImplementedError(
+                f"Platform {system} not supported for ROCm llamacpp. Supported: Windows, Ubuntu Linux"
+            )
+
+    elif backend == "vulkan":
+        # Original Vulkan support from ggml-org/llama.cpp
+        repo = "ggml-org/llama.cpp"
+        version = LLAMA_VERSION_VULKAN
+        if system == "windows":
+            filename = f"llama-{version}-bin-win-vulkan-x64.zip"
+        elif system == "linux":
+            filename = f"llama-{version}-bin-ubuntu-vulkan-x64.zip"
+        else:
+            raise NotImplementedError(
+                f"Platform {system} not supported for Vulkan llamacpp. Supported: Windows, Ubuntu Linux"
+            )
     else:
+        supported_backends = ["vulkan", "rocm"]
         raise NotImplementedError(
-            f"Platform {system} not supported for llamacpp. Supported: Windows, Ubuntu Linux"
+            f"Unsupported backend: {backend}. Supported backends: {supported_backends}"
         )
 
-    url = (
-        f"https://github.com/ggml-org/llama.cpp/releases/download/{version}/{filename}"
-    )
+    url = f"https://github.com/{repo}/releases/download/{version}/{filename}"
     return url, filename
 
 
@@ -122,7 +230,7 @@ def validate_platform_support():
             )
 
 
-def install_llamacpp():
+def install_llamacpp(backend):
     """
     Installs or upgrades llama.cpp binaries if needed
     """
@@ -130,56 +238,108 @@ def install_llamacpp():
     # Exception will be thrown if platform is not supported
     validate_platform_support()
 
-    # Installation location for llama.cpp
-    llama_folder_path = get_llama_folder_path()
+    version = get_llama_version(backend)
+
+    # Get platform-specific paths at runtime
+    llama_server_exe_dir = get_llama_folder_path(backend)
+    llama_server_exe_path = get_llama_server_exe_path(backend)
 
     # Check whether the llamacpp install needs an upgrade
-    if os.path.exists(llama_folder_path):
-        if get_llama_installed_version() != LLAMA_VERSION:
+    version_txt_path = os.path.join(llama_server_exe_dir, "version.txt")
+    backend_txt_path = os.path.join(llama_server_exe_dir, "backend.txt")
+
+    logging.info(f"Using backend: {backend}")
+
+    if os.path.exists(version_txt_path) and os.path.exists(backend_txt_path):
+        with open(version_txt_path, "r", encoding="utf-8") as f:
+            llamacpp_installed_version = f.read().strip()
+        with open(backend_txt_path, "r", encoding="utf-8") as f:
+            llamacpp_installed_backend = f.read().strip()
+
+        if (
+            llamacpp_installed_version != version
+            or llamacpp_installed_backend != backend
+        ):
             # Remove the existing install, which will trigger a new install
             # in the next code block
-            shutil.rmtree(llama_folder_path)
+            shutil.rmtree(llama_server_exe_dir)
+    elif os.path.exists(version_txt_path):
+        # Old installation without backend tracking - remove to upgrade
+        shutil.rmtree(llama_server_exe_dir)
 
     # Download llama.cpp server if it isn't already available
-    if not os.path.exists(llama_folder_path):
-        # Download llama.cpp server zip
-        llama_zip_url, filename = get_binary_url_and_filename(LLAMA_VERSION)
-        llama_zip_path = os.path.join(os.path.dirname(sys.executable), filename)
-        logging.info(f"Downloading llama.cpp server from {llama_zip_url}")
+    if not os.path.exists(llama_server_exe_path):
 
-        with requests.get(llama_zip_url, stream=True) as r:
+        # Create the directory
+        os.makedirs(llama_server_exe_dir, exist_ok=True)
+
+        # Identify the target architecture (only needed for ROCm)
+        target_arch = None
+        if backend == "rocm":
+            # Identify the target architecture
+            target_arch, hip_id = identify_rocm_arch_and_hip_id()
+            if not target_arch:
+                system = platform.system().lower()
+                if system == "linux":
+                    hint = (
+                        "Hint: If you think your device is supported, "
+                        "running `sudo update-pciids` may help identify your hardware."
+                    )
+                else:
+                    hint = ""
+                raise ValueError(
+                    "ROCm backend selected but no compatible ROCm target architecture found. "
+                    "See https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations "
+                    f"for supported configurations. {hint}"
+                )
+
+            # Set HIP_VISIBLE_DEVICES=0 for igpu, =1 for dgpu
+            env_file_path = os.path.join(llama_server_exe_dir, ".env")
+            set_key(env_file_path, "HIP_VISIBLE_DEVICES", hip_id)
+
+        # Direct download for Vulkan/ROCm
+        llama_archive_url, filename = get_binary_url_and_filename(backend, target_arch)
+        llama_archive_path = os.path.join(llama_server_exe_dir, filename)
+        logging.info(f"Downloading llama.cpp server from {llama_archive_url}")
+
+        with requests.get(llama_archive_url, stream=True) as r:
             r.raise_for_status()
-            with open(llama_zip_path, "wb") as f:
+            with open(llama_archive_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
 
-        # Extract zip
-        logging.info(f"Extracting {llama_zip_path} to {llama_folder_path}")
-        with zipfile.ZipFile(llama_zip_path, "r") as zip_ref:
-            zip_ref.extractall(llama_folder_path)
+        logging.info(f"Extracting {filename} to {llama_server_exe_dir}")
+        if filename.endswith(".zip"):
+            with zipfile.ZipFile(llama_archive_path, "r") as zip_ref:
+                zip_ref.extractall(llama_server_exe_dir)
+        else:
+            raise NotImplementedError(f"Unsupported archive format: {filename}")
 
         # Make executable on Linux - need to update paths after extraction
         if platform.system().lower() == "linux":
             # Re-get the paths since extraction might have changed the directory structure
-            for updated_exe_path in [
-                get_llama_server_exe_path(),
-                get_llama_cli_exe_path(),
-            ]:
-                if os.path.exists(updated_exe_path):
-                    os.chmod(updated_exe_path, 0o755)
-                    logging.info(f"Set executable permissions for {updated_exe_path}")
+            exe_paths = [
+                (get_llama_server_exe_path(backend), "llama-server"),
+                (get_llama_cli_exe_path(backend), "llama-cli"),
+            ]
+
+            for exe_path, exe_name in exe_paths:
+                if os.path.exists(exe_path):
+                    os.chmod(exe_path, 0o755)
+                    logging.info(f"Set executable permissions for {exe_path}")
                 else:
                     logging.warning(
-                        f"Could not find llama.cpp executable at {updated_exe_path}"
+                        f"Could not find {exe_name} executable at {exe_path}"
                     )
 
-        # Save version.txt
-        with open(get_version_txt_path(), "w", encoding="utf-8") as vf:
-            vf.write(LLAMA_VERSION)
+        # Save version and backend info
+        with open(version_txt_path, "w", encoding="utf-8") as vf:
+            vf.write(version)
+        with open(backend_txt_path, "w", encoding="utf-8") as bf:
+            bf.write(backend)
 
-        # Delete zip file
-        os.remove(llama_zip_path)
-        logging.info("Cleaned up zip file")
+        # Delete the archive file
+        os.remove(llama_archive_path)
 
 
 def parse_checkpoint(checkpoint: str) -> tuple[str, str | None]:
@@ -525,6 +685,14 @@ class LlamaCppAdapter(ModelAdapter):
         try:
             # Set up environment with library path for Linux
             env = os.environ.copy()
+
+            # Load environment variables from .env file in the executable directory
+            exe_dir = os.path.dirname(self.executable)
+            env_file_path = os.path.join(exe_dir, ".env")
+            if os.path.exists(env_file_path):
+                load_dotenv(env_file_path, override=True)
+                env.update(os.environ)
+
             if self.lib_dir and os.name != "nt":  # Not Windows
                 current_ld_path = env.get("LD_LIBRARY_PATH", "")
                 if current_ld_path:
