@@ -3,7 +3,7 @@
  
 This document provides the models we recommend for use with Lemonade Server.
 
-Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/aigdat/genai/blob/main/docs/lemonade_api.md) used to load the model. Content:
+Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/lemonade-sdk/lemonade/blob/main/docs/lemonade_api.md) used to load the model. Content:
 
 - [Model Management GUI](#model-management-gui)
 - [Supported Models](#supported-models)

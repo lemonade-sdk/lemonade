@@ -39,11 +39,18 @@ class ModelNotAvailableError(Exception):
     """
 
 
+class ModelLoadError(Exception):
+    """
+    The model failed to load on the server
+    """
+
+
 def serve(
     port: int = None,
     log_level: str = None,
     tray: bool = False,
     use_thread: bool = False,
+    llamacpp_backend: str = None,
 ):
     """
     Execute the serve command
@@ -51,26 +58,32 @@ def serve(
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.server.serve import Server, DEFAULT_PORT, DEFAULT_LOG_LEVEL
+    from lemonade.tools.server.serve import (
+        Server,
+        DEFAULT_PORT,
+        DEFAULT_LOG_LEVEL,
+        DEFAULT_LLAMACPP_BACKEND,
+    )
 
     port = port if port is not None else DEFAULT_PORT
     log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
+    llamacpp_backend = (
+        llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
+    )
 
     # Hidden environment variable to enable input truncation (experimental feature)
     truncate_inputs = os.environ.get("LEMONADE_TRUNCATE_INPUTS", None)
 
     # Start the server
-    serve_kwargs = {
-        "log_level": log_level,
-        "truncate_inputs": truncate_inputs,
-        "tray": tray,
-    }
-    server = Server()
+    server = Server(
+        port=port,
+        log_level=log_level,
+        truncate_inputs=truncate_inputs,
+        tray=tray,
+        llamacpp_backend=llamacpp_backend,
+    )
     if not use_thread:
-        server.run(
-            port=port,
-            **serve_kwargs,
-        )
+        server.run()
     else:
         from threading import Thread
         import time
@@ -78,8 +91,6 @@ def serve(
         # Start a background thread to run the server
         server_thread = Thread(
             target=server.run,
-            args=(port,),
-            kwargs=serve_kwargs,
             daemon=True,
         )
         server_thread.start()
@@ -243,7 +254,12 @@ def delete(model_names: List[str]):
             ModelManager().delete_model(model_name)
 
 
-def run(model_name: str):
+def run(
+    model_name: str,
+    port: int = None,
+    log_level: str = None,
+    llamacpp_backend: str = None,
+):
     """
     Start the server if not running and open the webapp with the specified model
     """
@@ -254,7 +270,15 @@ def run(model_name: str):
     _, port = get_server_info()
     server_previously_running = port is not None
     if not server_previously_running:
-        port, server_thread = serve(use_thread=True, tray=True, log_level="info")
+        port, server_thread = serve(
+            port=port,
+            log_level=log_level,
+            tray=True,
+            use_thread=True,
+            llamacpp_backend=llamacpp_backend,
+        )
+    else:
+        port = running_port
 
     # Pull model
     pull([model_name])
@@ -412,6 +436,24 @@ def list_models():
     print(tabulate(table_data, headers=headers, tablefmt="simple"))
 
 
+def _add_server_arguments(parser):
+    """Add common server arguments to a parser"""
+    parser.add_argument("--port", type=int, help="Port number to serve on")
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        help="Log level for the server",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        default="info",
+    )
+    parser.add_argument(
+        "--llamacpp",
+        type=str,
+        help=f"LlamaCpp backend to use",
+        choices=["vulkan", "rocm"],
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
@@ -430,14 +472,7 @@ def main():
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
-    serve_parser.add_argument("--port", type=int, help="Port number to serve on")
-    serve_parser.add_argument(
-        "--log-level",
-        type=str,
-        help="Log level for the server",
-        choices=["critical", "error", "warning", "info", "debug", "trace"],
-        default="info",
-    )
+    _add_server_arguments(serve_parser)
     if os.name == "nt":
         serve_parser.add_argument(
             "--no-tray",
@@ -513,6 +548,7 @@ def main():
         "model",
         help="Lemonade Server model name to run",
     )
+    _add_server_arguments(run_parser)
 
     args = parser.parse_args()
 
@@ -535,6 +571,7 @@ def main():
             port=args.port,
             log_level=args.log_level,
             tray=not args.no_tray,
+            llamacpp_backend=args.llamacpp,
         )
     elif args.command == "status":
         status()
@@ -553,7 +590,12 @@ def main():
     elif args.command == "stop":
         stop()
     elif args.command == "run":
-        run(args.model)
+        run(
+            args.model,
+            port=args.port,
+            log_level=args.log_level,
+            llamacpp_backend=args.llamacpp,
+        )
     elif args.command == "help" or not args.command:
         parser.print_help()
 

@@ -32,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           conda install pylint
           python -m pip check
-          pip install -e .[dev,oga-cpu]
+          pip install -e .[dev,oga-cpu] --extra-index-url https://pypi.amd.com/simple
           lemonade-install --quark 0.6.0
       - name: Lint with Black
         uses: psf/black@stable
