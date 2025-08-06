@@ -51,6 +51,7 @@ def serve(
     tray: bool = False,
     use_thread: bool = False,
     llamacpp_backend: str = None,
+    ctx_size: int = None,
 ):
     """
     Execute the serve command
@@ -63,6 +64,7 @@ def serve(
         DEFAULT_PORT,
         DEFAULT_LOG_LEVEL,
         DEFAULT_LLAMACPP_BACKEND,
+        DEFAULT_CTX_SIZE,
     )
 
     port = port if port is not None else DEFAULT_PORT
@@ -71,14 +73,14 @@ def serve(
         llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
     )
 
-    # Hidden environment variable to enable input truncation (experimental feature)
-    truncate_inputs = os.environ.get("LEMONADE_TRUNCATE_INPUTS", None)
+    # Use ctx_size if provided, otherwise use default
+    ctx_size = ctx_size if ctx_size is not None else DEFAULT_CTX_SIZE
 
     # Start the server
     server = Server(
         port=port,
         log_level=log_level,
-        truncate_inputs=truncate_inputs,
+        ctx_size=ctx_size,
         tray=tray,
         llamacpp_backend=llamacpp_backend,
     )
@@ -259,6 +261,7 @@ def run(
     port: int = None,
     log_level: str = None,
     llamacpp_backend: str = None,
+    ctx_size: int = None,
 ):
     """
     Start the server if not running and open the webapp with the specified model
@@ -276,6 +279,7 @@ def run(
             tray=True,
             use_thread=True,
             llamacpp_backend=llamacpp_backend,
+            ctx_size=ctx_size,
         )
     else:
         port = running_port
@@ -452,6 +456,11 @@ def _add_server_arguments(parser):
         help=f"LlamaCpp backend to use",
         choices=["vulkan", "rocm"],
     )
+    parser.add_argument(
+        "--ctx-size",
+        type=int,
+        help="Context size for the model (default: 4096 for llamacpp, truncates prompts for other recipes)",
+    )
 
 
 def main():
@@ -572,6 +581,7 @@ def main():
             log_level=args.log_level,
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
+            ctx_size=args.ctx_size,
         )
     elif args.command == "status":
         status()
@@ -595,6 +605,7 @@ def main():
             port=args.port,
             log_level=args.log_level,
             llamacpp_backend=args.llamacpp,
+            ctx_size=args.ctx_size,
         )
     elif args.command == "help" or not args.command:
         parser.print_help()

@@ -196,6 +196,7 @@ def _launch_llama_subprocess(
     use_gpu: bool,
     telemetry: LlamaTelemetry,
     backend: str,
+    ctx_size: int,
     supports_embeddings: bool = False,
     supports_reranking: bool = False,
 ) -> subprocess.Popen:
@@ -218,7 +219,13 @@ def _launch_llama_subprocess(
     exe_path = get_llama_server_exe_path(backend)
 
     # Build the base command
-    base_command = [exe_path, "-m", snapshot_files["variant"]]
+    base_command = [
+        exe_path,
+        "-m",
+        snapshot_files["variant"],
+        "--ctx-size",
+        str(ctx_size),
+    ]
     if "mmproj" in snapshot_files:
         base_command.extend(["--mmproj", snapshot_files["mmproj"]])
         if not use_gpu:
@@ -290,7 +297,9 @@ def _launch_llama_subprocess(
     return process
 
 
-def server_load(model_config: PullConfig, telemetry: LlamaTelemetry, backend: str):
+def server_load(
+    model_config: PullConfig, telemetry: LlamaTelemetry, backend: str, ctx_size: int
+):
     # Install and/or update llama.cpp if needed
     try:
         install_llamacpp(backend)
@@ -315,6 +324,7 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry, backend: st
         use_gpu=True,
         telemetry=telemetry,
         backend=backend,
+        ctx_size=ctx_size,
         supports_embeddings=supports_embeddings,
         supports_reranking=supports_reranking,
     )
@@ -340,6 +350,7 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry, backend: st
             use_gpu=False,
             telemetry=telemetry,
             backend=backend,
+            ctx_size=ctx_size,
             supports_embeddings=supports_embeddings,
             supports_reranking=supports_reranking,
         )

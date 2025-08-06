@@ -71,6 +71,40 @@ lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
 
 </details>
 
+<details>
+<summary>gpt-oss-120b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-120b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-120b-GGUF">unsloth/gpt-oss-120b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-20b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-20b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-20b-GGUF">unsloth/gpt-oss-20b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
 
 ### GGUF
 
@@ -379,6 +413,40 @@ lemonade-server pull Qwen2.5-Coder-32B-Instruct-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>reasoning, coding</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-120b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-120b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-120b-GGUF">unsloth/gpt-oss-120b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-20b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-20b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-20b-GGUF">unsloth/gpt-oss-20b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
 </table>
 
 </details>

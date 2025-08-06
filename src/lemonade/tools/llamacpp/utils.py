@@ -14,8 +14,8 @@ from lemonade.common.system_info import get_system_info
 
 from dotenv import set_key, load_dotenv
 
-LLAMA_VERSION_VULKAN = "b5787"
-LLAMA_VERSION_ROCM = "b1013"
+LLAMA_VERSION_VULKAN = "b6097"
+LLAMA_VERSION_ROCM = "b1021"
 
 
 def identify_rocm_arch_from_name(device_name: str) -> str | None:

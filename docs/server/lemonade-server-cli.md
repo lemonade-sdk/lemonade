@@ -41,6 +41,7 @@ lemonade-server run MODEL_NAME [options]
 | `--port [port]`                | Specify the port number to run the server on | 8000 |
 | `--log-level [level]`          | Set the logging level               | info |
 | `--llamacpp [vulkan\|rocm]`    | Specify the LlamaCpp backend to use | vulkan |
+| `--ctx-size [size]`            | Set the context size for the model. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. | 4096 |
 
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
 

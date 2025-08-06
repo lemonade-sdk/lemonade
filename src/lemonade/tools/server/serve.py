@@ -74,6 +74,7 @@ if platform.system() == "Windows":
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LLAMACPP_BACKEND = "vulkan"
+DEFAULT_CTX_SIZE = 4096
 
 
 class ServerModel(Model):
@@ -150,7 +151,7 @@ class Server:
         self,
         port: int = DEFAULT_PORT,
         log_level: str = DEFAULT_LOG_LEVEL,
-        truncate_inputs: Optional[int] = None,
+        ctx_size: int = DEFAULT_CTX_SIZE,
         tray: bool = False,
         log_file: str = None,
         llamacpp_backend: str = DEFAULT_LLAMACPP_BACKEND,
@@ -160,7 +161,7 @@ class Server:
         # Save args as members
         self.port = port
         self.log_level = log_level
-        self.truncate_inputs = truncate_inputs
+        self.ctx_size = ctx_size
         self.tray = tray
         self.log_file = log_file
         self.llamacpp_backend = llamacpp_backend
@@ -263,9 +264,7 @@ class Server:
         Common setup logic shared between run() and run_in_thread().
 
         Args:
-            port: Port number for the server
-            truncate_inputs: Truncate messages to this length
-            log_level: Logging level to configure
+            tray: Whether to run the server in tray mode
             threaded_mode: Whether this is being set up for threaded execution
         """
 
@@ -1047,18 +1046,19 @@ class Server:
             )
             self.input_tokens = len(input_ids[0])
 
-        if self.truncate_inputs and self.truncate_inputs > self.input_tokens:
+        # For non-llamacpp recipes, truncate inputs to ctx_size if needed
+        if self.llm_loaded.recipe != "llamacpp" and self.input_tokens > self.ctx_size:
             # Truncate input ids
-            truncate_amount = self.input_tokens - self.truncate_inputs
-            input_ids = input_ids[: self.truncate_inputs]
+            truncate_amount = self.input_tokens - self.ctx_size
+            input_ids = input_ids[: self.ctx_size]
 
             # Update token count
             self.input_tokens = len(input_ids)
 
             # Show warning message
             truncation_message = (
-                f"Input exceeded {self.truncate_inputs} tokens. "
-                f"Truncated {truncate_amount} tokens."
+                f"Input exceeded {self.ctx_size} tokens. "
+                f"Truncated {truncate_amount} tokens from the beginning."
             )
             logging.warning(truncation_message)
 
@@ -1378,6 +1378,7 @@ class Server:
                         model_config=config_to_use,
                         telemetry=self.llama_telemetry,
                         backend=self.llamacpp_backend,
+                        ctx_size=self.ctx_size,
                     )
 
                 else:
