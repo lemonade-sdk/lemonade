@@ -1,4 +1,4 @@
-# 🍋 Lemonade SDK – FAQ
+# 🍋 Lemonade Frequently Asked Questions
 
 ## Overview
 
@@ -66,8 +66,8 @@
 
 ### 5. **What's the difference between GGUF and ONNX models?**
 
-   - **GGUF**: Used with llama.cpp backend, supports CPU and GPU via Vulkan.
-   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU/hybrid execution and iGPU via DirectML.
+   - **GGUF**: Used with llama.cpp backend, supports CPU, and GPU via Vulkan or ROCm.
+   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU and NPU+iGPU Hybrid execution.
 
 ## Inference Behavior & Performance
 
@@ -119,13 +119,23 @@
    
    While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
 
-## Configuration & Customization
+### 4. **How do I know what model architectures are supported by the NPU?**
 
-### 1. **What is the context length in Lemonade? How does it compare to Ollama or LM Studio?**
+   AMD publishes pre-quantized and optimized models in their Hugging Face collections:
 
-   - **GGUF models**: Context length is the same as in llama.cpp, Ollama, or LM Studio. It depends on the model itself—e.g., 4K, 8K, or 32K tokens.
-   - **Hybrid models**: Context length is currently limited. Each model has a rai_config.json file that specifies the context length for a given Ryzen AI SW version.
+   - [Ryzen AI NPU Models](https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0)
+   - [Ryzen AI Hybrid Models](https://huggingface.co/collections/amd/ryzenai-15-llm-hybrid-models-6859a64b421b5c27e1e53899)
 
+   To find the architecture of a specific model, click on any model in these collections and look for the "Base model" field, which will show you the underlying architecture (e.g., Llama, Qwen, Phi).
+
+### 5. **How can I get better performance from the NPU?**
+
+   Make sure that you've put the NPU in "Turbo" mode to get the best results. This is done by opening a terminal window and running the following commands:
+
+   ```cmd
+   cd C:\Windows\System32\AMD
+   .\xrt-smi configure --pmode turbo
+   ```
 
 ## Support & Roadmap
 
