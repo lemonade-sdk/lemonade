@@ -447,7 +447,9 @@ def list_models():
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
     parser.add_argument("--port", type=int, help="Port number to serve on")
-    parser.add_argument("--host", type=str, help="Address to bind for connections", default="localhost")
+    parser.add_argument(
+        "--host", type=str, help="Address to bind for connections", default="localhost"
+    )
     parser.add_argument(
         "--log-level",
         type=str,

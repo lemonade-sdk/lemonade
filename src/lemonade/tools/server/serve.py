@@ -344,9 +344,7 @@ class Server:
             tray=self.tray,
         )
 
-        uvicorn.run(
-            self.app, host=self.host, port=self.port, log_level=self.log_level
-        )
+        uvicorn.run(self.app, host=self.host, port=self.port, log_level=self.log_level)
 
     def run_in_thread(self, host: str = "localhost"):
         """
