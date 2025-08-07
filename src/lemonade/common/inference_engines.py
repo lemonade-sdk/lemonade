@@ -2,7 +2,6 @@ import os
 import sys
 import importlib.util
 import importlib.metadata
-import platform
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
@@ -19,7 +18,9 @@ class InferenceEngineDetector:
         self.llamacpp_detector = LlamaCppDetector()
         self.transformers_detector = TransformersDetector()
 
-    def detect_engines_for_device(self, device_type: str) -> Dict[str, Dict]:
+    def detect_engines_for_device(
+        self, device_type: str, device_name: str
+    ) -> Dict[str, Dict]:
         """
         Detect all available inference engines for a specific device type.
 
@@ -36,10 +37,19 @@ class InferenceEngineDetector:
         if oga_info:
             engines["oga"] = oga_info
 
-        # Detect llama.cpp availability
-        llamacpp_info = self.llamacpp_detector.detect_for_device(device_type)
+        # Detect llama.cpp vulkan availability
+        llamacpp_info = self.llamacpp_detector.detect_for_device(
+            device_type, device_name, "vulkan"
+        )
         if llamacpp_info:
-            engines["llamacpp"] = llamacpp_info
+            engines["llamacpp-vulkan"] = llamacpp_info
+
+        # Detect llama.cpp rocm availability
+        llamacpp_info = self.llamacpp_detector.detect_for_device(
+            device_type, device_name, "rocm"
+        )
+        if llamacpp_info:
+            engines["llamacpp-rocm"] = llamacpp_info
 
         # Detect Transformers availability
         transformers_info = self.transformers_detector.detect_for_device(device_type)
@@ -206,57 +216,40 @@ class LlamaCppDetector(BaseEngineDetector):
     Detector for llama.cpp.
     """
 
-    def detect_for_device(self, device_type: str) -> Optional[Dict]:
+    def detect_for_device(
+        self, device_type: str, device_name: str, backend: str
+    ) -> Optional[Dict]:
         """
         Detect llama.cpp availability for specific device.
         """
         try:
-            # Map device types to llama.cpp backends
-            device_backend_map = {
-                "cpu": "cpu",
-                "amd_igpu": "vulkan",
-                "amd_dgpu": "vulkan",
-            }
 
-            if device_type not in device_backend_map:
+            if device_type not in ["cpu", "amd_igpu", "amd_dgpu"]:
                 return None
 
-            backend = device_backend_map[device_type]
-            is_installed = self.is_installed()
+            # Check if the device is supported by the backend
+            if device_type == "cpu":
+                device_supported = True
+            elif device_type == "amd_igpu" or device_type == "amd_dgpu":
+                if backend == "vulkan":
+                    device_supported = self._check_vulkan_support()
+                elif backend == "rocm":
+                    device_supported = self._check_rocm_support(device_name.lower())
+            if not device_supported:
+                return {"available": False, "error": f"{backend} not available"}
 
-            # Check requirements based on backend
-            if backend == "vulkan":
-                vulkan_available = self._check_vulkan_support()
-                if not vulkan_available:
-                    return {"available": False, "error": "Vulkan not available"}
+            is_installed = self.is_installed(backend)
+            if not is_installed:
+                return {
+                    "available": False,
+                    "error": f"{backend} binaries not installed",
+                }
 
-                # Vulkan is available
-                if is_installed:
-                    result = {
-                        "available": True,
-                        "version": self._get_llamacpp_version(),
-                        "backend": backend,
-                    }
-                    return result
-                else:
-                    return {
-                        "available": False,
-                        "error": "llama.cpp binaries not installed",
-                    }
-            else:
-                # CPU backend
-                if is_installed:
-                    result = {
-                        "available": True,
-                        "version": self._get_llamacpp_version(),
-                        "backend": backend,
-                    }
-                    return result
-                else:
-                    return {
-                        "available": False,
-                        "error": "llama.cpp binaries not installed",
-                    }
+            return {
+                "available": True,
+                "version": self._get_llamacpp_version(backend),
+                "backend": backend,
+            }
 
         except (ImportError, OSError, subprocess.SubprocessError) as e:
             return {
@@ -264,35 +257,17 @@ class LlamaCppDetector(BaseEngineDetector):
                 "error": f"llama.cpp detection failed: {str(e)}",
             }
 
-    def is_installed(self) -> bool:
+    def is_installed(self, backend: str) -> bool:
         """
-        Check if llama.cpp binaries are available.
+        Check if llama.cpp binaries are available for any backend.
         """
+        from lemonade.tools.llamacpp.utils import get_llama_server_exe_path
 
-        # Check lemonade-managed binary locations
         try:
-
-            # Check lemonade server directory
-            server_base_dir = os.path.join(
-                os.path.dirname(sys.executable), "llama_server"
-            )
-
-            if platform.system().lower() == "windows":
-                server_exe_path = os.path.join(server_base_dir, "llama-server.exe")
-            else:
-                # Check both build/bin and root directory locations
-                build_bin_path = os.path.join(
-                    server_base_dir, "build", "bin", "llama-server"
-                )
-                root_path = os.path.join(server_base_dir, "llama-server")
-                server_exe_path = (
-                    build_bin_path if os.path.exists(build_bin_path) else root_path
-                )
-
+            server_exe_path = get_llama_server_exe_path(backend)
             if os.path.exists(server_exe_path):
                 return True
-
-        except (ImportError, OSError):
+        except (ImportError, OSError, ValueError):
             pass
 
         return False
@@ -334,13 +309,22 @@ class LlamaCppDetector(BaseEngineDetector):
             except OSError:
                 return False
 
-    def _get_llamacpp_version(self) -> str:
+    def _check_rocm_support(self, device_name: str) -> bool:
         """
-        Get llama.cpp version from lemonade's managed installation.
+        Check if ROCM is available for GPU acceleration.
+        """
+        from lemonade.tools.llamacpp.utils import identify_rocm_arch_from_name
+
+        return identify_rocm_arch_from_name(device_name) is not None
+
+    def _get_llamacpp_version(self, backend: str) -> str:
+        """
+        Get llama.cpp version from lemonade's managed installation for specific backend.
         """
         try:
+            # Use backend-specific path - same logic as get_llama_folder_path in utils.py
             server_base_dir = os.path.join(
-                os.path.dirname(sys.executable), "llama_server"
+                os.path.dirname(sys.executable), backend, "llama_server"
             )
             version_file = os.path.join(server_base_dir, "version.txt")
 
@@ -401,15 +385,16 @@ class TransformersDetector(BaseEngineDetector):
         )
 
 
-def detect_inference_engines(device_type: str) -> Dict[str, Dict]:
+def detect_inference_engines(device_type: str, device_name: str) -> Dict[str, Dict]:
     """
     Helper function to detect inference engines for a device type.
 
     Args:
         device_type: "cpu", "amd_igpu", "amd_dgpu", or "npu"
+        device_name: device name
 
     Returns:
         dict: Engine availability information.
     """
     detector = InferenceEngineDetector()
-    return detector.detect_engines_for_device(device_type)
+    return detector.detect_engines_for_device(device_type, device_name)

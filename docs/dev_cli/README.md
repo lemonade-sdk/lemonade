@@ -5,6 +5,7 @@ Contents:
 - [Prompting](#prompting)
 - [Accuracy](#accuracy)
 - [Benchmarking](#benchmarking)
+- [Export a Finetuned Model](#exporting-a-finetuned-model)
 - [LLM Report](#llm-report)
 - [Memory Usage](#memory-usage)
 - [API](#api)
@@ -87,6 +88,27 @@ Hugging Face:
 This command will run a few warm-up iterations, then a few generation iterations where performance data is collected.
 
 The prompt size, number of output tokens, and number iterations are all parameters. Learn more by running `lemonade oga-bench -h` or `lemonade huggingface-bench -h`.
+
+### Exporting a Finetuned Model
+
+To set up your own fine-tuned model:
+
+1. Quantize the model using Quark. This step reduces the model size and improves inference efficiency.
+2. Export the quantized model using Lemonade. This prepares the model for deployment.
+
+Once exported, you can run inference using OGA.
+Make sure the quantized model is available either locally or hosted on Hugging Face before running inference.
+
+OGA Hybrid:
+```bash
+lemonade -i amd/Llama-3.2-1B-Instruct-awq-uint4-asym-g128-bf16-lmhead oga-load --device hybrid --dtype int4
+```
+OGA NPU :
+```bash
+lemonade -i amd/Llama-3.2-1B-Instruct-awq-uint4-asym-g128-bf16-lmhead oga-load --device npu --dtype int4
+```
+
+Refer to the [Finetuned Model Export Guide](finetuned_model_export.md) for detailed instructions on quantizing using Quark.
 
 ### LLM Report
 

@@ -1,5 +1,4 @@
 import sys
-import argparse
 import asyncio
 import statistics
 import time
@@ -48,6 +47,11 @@ from openai.types.responses import (
 )
 
 import lemonade.api as lemonade_api
+import lemonade.tools.server.llamacpp as llamacpp
+from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
+from lemonade.tools.server.webapp import get_webapp_html
+from lemonade.tools.server.utils.port import lifespan
+
 from lemonade_server.model_manager import ModelManager
 from lemonade_server.pydantic_models import (
     DEFAULT_MAX_NEW_TOKENS,
@@ -60,18 +64,17 @@ from lemonade_server.pydantic_models import (
     PullConfig,
     DeleteConfig,
 )
-from lemonade.tools.management_tools import ManagementTool
-import lemonade.tools.server.llamacpp as llamacpp
-from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
-from lemonade.tools.server.webapp import get_webapp_html
-from lemonade.tools.server.utils.port import lifespan
 
 # Only import tray on Windows
 if platform.system() == "Windows":
+    # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
+
 
 DEFAULT_PORT = 8000
 DEFAULT_LOG_LEVEL = "info"
+DEFAULT_LLAMACPP_BACKEND = "vulkan"
+DEFAULT_CTX_SIZE = 4096
 
 
 class ServerModel(Model):
@@ -126,7 +129,7 @@ class StopOnEvent:
         return self.stop_event.is_set()
 
 
-class Server(ManagementTool):
+class Server:
     """
     Open a web server that apps can use to communicate with the LLM.
 
@@ -144,10 +147,24 @@ class Server(ManagementTool):
     - /api/v1/models: list all available models.
     """
 
-    unique_name = "serve"
-
-    def __init__(self):
+    def __init__(
+        self,
+        port: int = DEFAULT_PORT,
+        log_level: str = DEFAULT_LOG_LEVEL,
+        ctx_size: int = DEFAULT_CTX_SIZE,
+        tray: bool = False,
+        log_file: str = None,
+        llamacpp_backend: str = DEFAULT_LLAMACPP_BACKEND,
+    ):
         super().__init__()
+
+        # Save args as members
+        self.port = port
+        self.log_level = log_level
+        self.ctx_size = ctx_size
+        self.tray = tray
+        self.log_file = log_file
+        self.llamacpp_backend = llamacpp_backend
 
         # Initialize FastAPI app
         self.app = FastAPI(lifespan=lifespan)
@@ -185,9 +202,6 @@ class Server(ManagementTool):
         self.input_tokens = None
         self.output_tokens = None
         self.decode_token_times = None
-
-        # Input truncation settings
-        self.truncate_inputs = False
 
         # Store debug logging state
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
@@ -241,66 +255,18 @@ class Server(ManagementTool):
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
 
-    @staticmethod
-    def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        parser = __class__.helpful_parser(
-            short_description="Launch an industry-standard LLM server",
-            add_help=add_help,
-        )
-
-        # Only add the tray option on Windows
-        if platform.system() == "Windows":
-            parser.add_argument(
-                "--tray",
-                action="store_true",
-                help="Run the server in system tray mode",
-            )
-
-        parser.add_argument(
-            "--port",
-            required=False,
-            type=int,
-            default=DEFAULT_PORT,
-            help=f"Port number to run the server on (default: {DEFAULT_PORT})",
-        )
-        parser.add_argument(
-            "--log-level",
-            required=False,
-            type=str,
-            default=DEFAULT_LOG_LEVEL,
-            choices=["critical", "error", "warning", "info", "debug", "trace"],
-            help=f"Logging level (default: {DEFAULT_LOG_LEVEL})",
-        )
-
-        parser.add_argument(
-            "--log-file",
-            required=False,
-            type=str,
-            help="Path to the log file",
-        )
-
-        return parser
-
     def _setup_server_common(
         self,
-        port: int,
-        truncate_inputs: Optional[int] = None,
-        log_level: str = DEFAULT_LOG_LEVEL,
         tray: bool = False,
-        log_file: str = None,
         threaded_mode: bool = False,
     ):
         """
         Common setup logic shared between run() and run_in_thread().
 
         Args:
-            port: Port number for the server
-            truncate_inputs: Truncate messages to this length
-            log_level: Logging level to configure
+            tray: Whether to run the server in tray mode
             threaded_mode: Whether this is being set up for threaded execution
         """
-        # Store truncation settings
-        self.truncate_inputs = truncate_inputs
 
         # Define TRACE level
         logging.TRACE = 9  # Lower than DEBUG which is 10
@@ -318,18 +284,20 @@ class Server(ManagementTool):
             logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
         else:
             # Configure logging to match uvicorn's format
-            logging_level = getattr(logging, log_level.upper())
+            logging_level = getattr(logging, self.log_level.upper())
 
             # Set up file handler for logging to lemonade.log
             uvicorn_formatter = uvicorn.logging.DefaultFormatter(
                 fmt="%(levelprefix)s %(message)s",
                 use_colors=True,
             )
-            if not log_file:
-                log_file = tempfile.NamedTemporaryFile(
+            if not self.log_file:
+                self.log_file = tempfile.NamedTemporaryFile(
                     prefix="lemonade_", suffix=".log", delete=False
                 ).name
-            file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+            file_handler = logging.FileHandler(
+                self.log_file, mode="a", encoding="utf-8"
+            )
             file_handler.setLevel(logging_level)
             file_handler.setFormatter(uvicorn_formatter)
 
@@ -349,12 +317,12 @@ class Server(ManagementTool):
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
         if tray:
             # Save original stdout/stderr
-            sys.stdout = OutputDuplicator(log_file, sys.stdout)
-            sys.stderr = OutputDuplicator(log_file, sys.stderr)
+            sys.stdout = OutputDuplicator(self.log_file, sys.stdout)
+            sys.stderr = OutputDuplicator(self.log_file, sys.stderr)
 
             # Open lemonade server in tray mode
             # lambda function used for deferred instantiation and thread safety
-            LemonadeTray(log_file, port, lambda: Server()).run()
+            LemonadeTray(self.log_file, self.port, lambda: self).run()
             sys.exit(0)
 
         if self.debug_logging_enabled:
@@ -363,47 +331,26 @@ class Server(ManagementTool):
 
         # Let the app know what port it's running on, so
         # that the lifespan can access it
-        self.app.port = port
+        self.app.port = self.port
 
-    def run(
-        self,
-        # ManagementTool has a required cache_dir arg, but
-        # we always use the default cache directory
-        _=None,
-        port: int = DEFAULT_PORT,
-        log_level: str = DEFAULT_LOG_LEVEL,
-        truncate_inputs: Optional[int] = None,
-        tray: bool = False,
-        log_file: str = None,
-    ):
+    def run(self):
         # Common setup
         self._setup_server_common(
-            port=port,
-            truncate_inputs=truncate_inputs,
-            log_level=log_level,
             threaded_mode=False,
-            tray=tray,
-            log_file=log_file,
+            tray=self.tray,
         )
 
-        uvicorn.run(self.app, host="localhost", port=port, log_level=log_level)
+        uvicorn.run(
+            self.app, host="localhost", port=self.port, log_level=self.log_level
+        )
 
-    def run_in_thread(
-        self,
-        port: int = DEFAULT_PORT,
-        host: str = "localhost",
-        log_level: str = "warning",
-        truncate_inputs: Optional[int] = None,
-    ):
+    def run_in_thread(self, host: str = "localhost"):
         """
         Set up the server for running in a thread.
         Returns a uvicorn server instance that can be controlled externally.
         """
         # Common setup
         self._setup_server_common(
-            port=port,
-            truncate_inputs=truncate_inputs,
-            log_level=log_level,
             threaded_mode=True,
             tray=False,
         )
@@ -418,8 +365,8 @@ class Server(ManagementTool):
         config = Config(
             app=self.app,
             host=host,
-            port=port,
-            log_level=log_level,
+            port=self.port,
+            log_level=self.log_level,
             log_config=None,
         )
 
@@ -1099,18 +1046,19 @@ class Server(ManagementTool):
             )
             self.input_tokens = len(input_ids[0])
 
-        if self.truncate_inputs and self.truncate_inputs > self.input_tokens:
+        # For non-llamacpp recipes, truncate inputs to ctx_size if needed
+        if self.llm_loaded.recipe != "llamacpp" and self.input_tokens > self.ctx_size:
             # Truncate input ids
-            truncate_amount = self.input_tokens - self.truncate_inputs
-            input_ids = input_ids[: self.truncate_inputs]
+            truncate_amount = self.input_tokens - self.ctx_size
+            input_ids = input_ids[: self.ctx_size]
 
             # Update token count
             self.input_tokens = len(input_ids)
 
             # Show warning message
             truncation_message = (
-                f"Input exceeded {self.truncate_inputs} tokens. "
-                f"Truncated {truncate_amount} tokens."
+                f"Input exceeded {self.ctx_size} tokens. "
+                f"Truncated {truncate_amount} tokens from the beginning."
             )
             logging.warning(truncation_message)
 
@@ -1429,6 +1377,8 @@ class Server(ManagementTool):
                     self.llama_server_process = llamacpp.server_load(
                         model_config=config_to_use,
                         telemetry=self.llama_telemetry,
+                        backend=self.llamacpp_backend,
+                        ctx_size=self.ctx_size,
                     )
 
                 else:
