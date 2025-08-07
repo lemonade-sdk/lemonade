@@ -463,6 +463,7 @@ def developer_entrypoint():
         # Restore original sys.argv
         sys.argv = original_argv
 
+
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
     parser.add_argument("--port", type=int, help="Port number to serve on")
