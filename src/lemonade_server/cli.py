@@ -260,6 +260,7 @@ def run(
     model_name: str,
     port: int = None,
     log_level: str = None,
+    tray: bool = False,
     llamacpp_backend: str = None,
     ctx_size: int = None,
 ):
@@ -276,7 +277,7 @@ def run(
         port, server_thread = serve(
             port=port,
             log_level=log_level,
-            tray=True,
+            tray=tray,
             use_thread=True,
             llamacpp_backend=llamacpp_backend,
             ctx_size=ctx_size,
@@ -604,6 +605,7 @@ def main():
             args.model,
             port=args.port,
             log_level=args.log_level,
+            tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
         )
