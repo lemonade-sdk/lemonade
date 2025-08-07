@@ -13,8 +13,8 @@
 ### 3. **What are the use cases for different audiences?**
 
    - **End Users**: Use [GAIA](https://github.com/amd/gaia) for a Chatbot experience locally.
-   - **LLM Enthusiasts**: Run models like LLaMA3 on Ryzen AI 300 PCs with minimal setup. See recommended apps listed [here](https://lemonade-server.ai/docs/server/apps/).
-   - **Developers**: Integrate LLMs into apps using standard APIs with no AMD-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
+   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](https://lemonade-server.ai/docs/server/apps/).
+   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
    ).
 
 ## Installation & Compatibility
@@ -37,7 +37,7 @@
 
 ### 1. **What models are supported?**
 
-   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, and Phi. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
+   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
    
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
 
@@ -62,9 +62,7 @@
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
-   👉 [Model Preparation Guide](https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html)
-
-   **Note**: This guide is not maintained by the Lemonade team.
+   👉 [Model Preparation Guide]([https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/finetuned_model_export.md))
 
 ### 5. **What's the difference between GGUF and ONNX models?**
 
@@ -89,6 +87,8 @@
    ```bash
    curl http://localhost:8000/api/v1/stats
    ```
+
+   Or, you can launch `lemonade-server` with the option `--log-level debug` and that will also print out stats.
 
 ### 3. **How does Lemonade's performance compare to llama.cpp?**
 
