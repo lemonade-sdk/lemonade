@@ -125,6 +125,7 @@ setup(
             "lemonade=lemonade:lemonadecli",
             "lemonade-install=lemonade_install:installcli",
             "lemonade-server-dev=lemonade_server.cli:main",
+            "lsdev=lemonade_server.cli:developer_entrypoint",
         ]
     },
     python_requires=">=3.10, <3.13",
