@@ -69,7 +69,7 @@
 ### 5. **What's the difference between GGUF and ONNX models?**
 
    - **GGUF**: Used with llama.cpp backend, supports CPU, and GPU via Vulkan or ROCm.
-   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU/hybrid execution and iGPU.
+   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU and NPU+iGPU Hybrid execution.
 
 ## Inference Behavior & Performance
 
