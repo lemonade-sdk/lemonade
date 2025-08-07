@@ -150,6 +150,9 @@ SectionIn RO ; Read only, always installed
     FileSeek $2 0 END
     FileWrite $2 "$\r$\nLib$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages$\r$\n"
+    FileWrite $2 "$\r$\nLib\site-packages\win32$\r$\n"
+    FileWrite $2 "$\r$\nLib\site-packages\win32\lib$\r$\n"
+    FileWrite $2 "$\r$\nLib\site-packages\Pythonwin$\r$\n"
     FileClose $2
 
     DetailPrint "-------------------------"
