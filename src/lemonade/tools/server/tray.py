@@ -427,7 +427,7 @@ class LemonadeTray(SystemTray):
         Start the uvicorn server.
         """
         self.server = self.server_factory()
-        self.server.uvicorn_server = self.server.run_in_thread()
+        self.server.uvicorn_server = self.server.run_in_thread(self.server.host)
         self.server.uvicorn_server.run()
 
     def run(self):

@@ -72,6 +72,7 @@ if platform.system() == "Windows":
 
 
 DEFAULT_PORT = 8000
+DEFAULT_HOST = "localhost"
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LLAMACPP_BACKEND = "vulkan"
 DEFAULT_CTX_SIZE = 4096
@@ -150,6 +151,7 @@ class Server:
     def __init__(
         self,
         port: int = DEFAULT_PORT,
+        host: str = DEFAULT_HOST,
         log_level: str = DEFAULT_LOG_LEVEL,
         ctx_size: int = DEFAULT_CTX_SIZE,
         tray: bool = False,
@@ -160,6 +162,7 @@ class Server:
 
         # Save args as members
         self.port = port
+        self.host = host
         self.log_level = log_level
         self.ctx_size = ctx_size
         self.tray = tray
@@ -332,6 +335,7 @@ class Server:
         # Let the app know what port it's running on, so
         # that the lifespan can access it
         self.app.port = self.port
+        self.app._host = self.host
 
     def run(self):
         # Common setup
@@ -341,7 +345,7 @@ class Server:
         )
 
         uvicorn.run(
-            self.app, host="localhost", port=self.port, log_level=self.log_level
+            self.app, host=self.host, port=self.port, log_level=self.log_level
         )
 
     def run_in_thread(self, host: str = "localhost"):

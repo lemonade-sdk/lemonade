@@ -47,6 +47,7 @@ class ModelLoadError(Exception):
 
 def serve(
     port: int = None,
+    host: str = "localhost",
     log_level: str = None,
     tray: bool = False,
     use_thread: bool = False,
@@ -79,6 +80,7 @@ def serve(
     # Start the server
     server = Server(
         port=port,
+        host=host,
         log_level=log_level,
         ctx_size=ctx_size,
         tray=tray,
@@ -259,6 +261,7 @@ def delete(model_names: List[str]):
 def run(
     model_name: str,
     port: int = None,
+    host: str = "localhost",
     log_level: str = None,
     llamacpp_backend: str = None,
     ctx_size: int = None,
@@ -275,6 +278,7 @@ def run(
     if not server_previously_running:
         port, server_thread = serve(
             port=port,
+            host=host,
             log_level=log_level,
             tray=True,
             use_thread=True,
@@ -291,7 +295,7 @@ def run(
     load(model_name, port)
 
     # Open the webapp with the specified model
-    url = f"http://localhost:{port}/?model={model_name}#llm-chat"
+    url = f"http://{host}:{port}/?model={model_name}#llm-chat"
     print(f"You can now chat with {model_name} at {url}")
     webbrowser.open(url)
 
@@ -443,6 +447,7 @@ def list_models():
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
     parser.add_argument("--port", type=int, help="Port number to serve on")
+    parser.add_argument("--host", type=str, help="Address to bind for connections", default="localhost")
     parser.add_argument(
         "--log-level",
         type=str,
@@ -578,6 +583,7 @@ def main():
             sys.exit(ExitCodes.SERVER_ALREADY_RUNNING)
         serve(
             port=args.port,
+            host=args.host,
             log_level=args.log_level,
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
@@ -603,6 +609,7 @@ def main():
         run(
             args.model,
             port=args.port,
+            host=args.host,
             log_level=args.log_level,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
