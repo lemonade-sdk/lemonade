@@ -39,6 +39,7 @@ lemonade-server run MODEL_NAME [options]
 | Option                         | Description                         | Default |
 |--------------------------------|-------------------------------------|---------|
 | `--port [port]`                | Specify the port number to run the server on | 8000 |
+| `--host [host]`                | Specify the host address for where to listen connections | `localhost` |
 | `--log-level [level]`          | Set the logging level               | info |
 | `--llamacpp [vulkan\|rocm]`    | Specify the LlamaCpp backend to use | vulkan |
 | `--ctx-size [size]`            | Set the context size for the model. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. | 4096 |
