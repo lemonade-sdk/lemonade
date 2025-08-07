@@ -13,24 +13,35 @@ The `lemonade-server` command-line interface (CLI) provides a set of utility com
 | `status`            | Check if server is running. If it is, print the port number. |
 | `stop`              | Stop any running Lemonade Server process. |
 | `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See the [server models guide](./server_models.md) for more information. |
-| `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. |
+| `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. Supports the same options as `serve`. |
 | `list`              | List all models. |
 
 
-Example:
+Examples:
 
 ```bash
-lemonade-server serve --port 8080 --log-level debug --truncate-inputs
+# Start server with custom settings
+lemonade-server serve --port 8080 --log-level debug --llamacpp vulkan
+
+# Run a specific model with custom server settings
+lemonade-server run llama-3.2-3b-instruct --port 8080 --log-level debug --llamacpp rocm
 ```
 
-## Command Line Options for `serve`
+## Command Line Options for `serve` and `run`
 
-When using the `serve` command, you can configure the server with these additional options:
+When using the `serve` command, you can configure the server with these additional options. The `run` command supports the same options but also requires a `MODEL_NAME` parameter:
+
+```bash
+lemonade-server serve [options]
+lemonade-server run MODEL_NAME [options]
+```
 
 | Option                         | Description                         | Default |
 |--------------------------------|-------------------------------------|---------|
 | `--port [port]`                | Specify the port number to run the server on | 8000 |
 | `--log-level [level]`          | Set the logging level               | info |
+| `--llamacpp [vulkan\|rocm]`    | Specify the LlamaCpp backend to use | vulkan |
+| `--ctx-size [size]`            | Set the context size for the model. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. | 4096 |
 
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
 

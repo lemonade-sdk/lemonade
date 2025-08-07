@@ -50,6 +50,7 @@ setup(
         "tabulate",
         "sentencepiece",
         "huggingface-hub[hf_xet]==0.33.0",
+        "python-dotenv",
     ],
     extras_require={
         # The non-dev extras are meant to deploy specific backends into end-user
@@ -73,6 +74,7 @@ setup(
             "datasets",
             "pandas>=1.5.3",
             "matplotlib",
+            "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
             "human-eval-windows==1.0.4",

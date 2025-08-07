@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 import time
 import subprocess
@@ -9,6 +8,7 @@ import platform
 
 import requests
 from tabulate import tabulate
+from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 
@@ -29,8 +29,6 @@ from lemonade.tools.llamacpp.utils import (
     download_gguf,
 )
 
-LLAMA_VERSION = "b5787"
-
 
 def llamacpp_address(port: int) -> str:
     """
@@ -43,45 +41,6 @@ def llamacpp_address(port: int) -> str:
         The base URL for the llamacpp server
     """
     return f"http://127.0.0.1:{port}/v1"
-
-
-def get_llama_server_paths():
-    """
-    Get platform-specific paths for llama server directory and executable
-    """
-    base_dir = os.path.join(os.path.dirname(sys.executable), "llama_server")
-
-    if platform.system().lower() == "windows":
-        return base_dir, os.path.join(base_dir, "llama-server.exe")
-    else:  # Linux/Ubuntu
-        # Check if executable exists in build/bin subdirectory (Current Ubuntu structure)
-        build_bin_path = os.path.join(base_dir, "build", "bin", "llama-server")
-        if os.path.exists(build_bin_path):
-            return base_dir, build_bin_path
-        else:
-            # Fallback to root directory
-            return base_dir, os.path.join(base_dir, "llama-server")
-
-
-def get_binary_url_and_filename(version):
-    """
-    Get the appropriate binary URL and filename based on platform
-    """
-    system = platform.system().lower()
-
-    if system == "windows":
-        filename = f"llama-{version}-bin-win-vulkan-x64.zip"
-    elif system == "linux":
-        filename = f"llama-{version}-bin-ubuntu-vulkan-x64.zip"
-    else:
-        raise NotImplementedError(
-            f"Platform {system} not supported for llamacpp. Supported: Windows, Ubuntu Linux"
-        )
-
-    url = (
-        f"https://github.com/ggml-org/llama.cpp/releases/download/{version}/{filename}"
-    )
-    return url, filename
 
 
 class LlamaTelemetry:
@@ -125,7 +84,7 @@ class LlamaTelemetry:
             device_count = int(vulkan_match.group(1))
             if device_count > 0:
                 logging.info(
-                    f"GPU acceleration active: {device_count} Vulkan device(s) "
+                    f"GPU acceleration active: {device_count} device(s) "
                     "detected by llama-server"
                 )
             return
@@ -236,6 +195,8 @@ def _launch_llama_subprocess(
     snapshot_files: dict,
     use_gpu: bool,
     telemetry: LlamaTelemetry,
+    backend: str,
+    ctx_size: int,
     supports_embeddings: bool = False,
     supports_reranking: bool = False,
 ) -> subprocess.Popen:
@@ -246,6 +207,7 @@ def _launch_llama_subprocess(
         snapshot_files: Dictionary of model files to load
         use_gpu: Whether to use GPU acceleration
         telemetry: Telemetry object for tracking performance metrics
+        backend: Backend to use (e.g., 'vulkan', 'rocm')
         supports_embeddings: Whether the model supports embeddings
         supports_reranking: Whether the model supports reranking
 
@@ -254,10 +216,16 @@ def _launch_llama_subprocess(
     """
 
     # Get the current executable path (handles both Windows and Ubuntu structures)
-    exe_path = get_llama_server_exe_path()
+    exe_path = get_llama_server_exe_path(backend)
 
     # Build the base command
-    base_command = [exe_path, "-m", snapshot_files["variant"]]
+    base_command = [
+        exe_path,
+        "-m",
+        snapshot_files["variant"],
+        "--ctx-size",
+        str(ctx_size),
+    ]
     if "mmproj" in snapshot_files:
         base_command.extend(["--mmproj", snapshot_files["mmproj"]])
         if not use_gpu:
@@ -288,6 +256,15 @@ def _launch_llama_subprocess(
 
     # Set up environment with library path for Linux
     env = os.environ.copy()
+
+    # Load environment variables from .env file in the executable directory
+    exe_dir = os.path.dirname(exe_path)
+    env_file_path = os.path.join(exe_dir, ".env")
+    if os.path.exists(env_file_path):
+        load_dotenv(env_file_path, override=True)
+        env.update(os.environ)
+        logging.debug(f"Loaded environment variables from {env_file_path}")
+
     if platform.system().lower() == "linux":
         lib_dir = os.path.dirname(exe_path)  # Same directory as the executable
         current_ld_path = env.get("LD_LIBRARY_PATH", "")
@@ -320,17 +297,16 @@ def _launch_llama_subprocess(
     return process
 
 
-def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
+def server_load(
+    model_config: PullConfig, telemetry: LlamaTelemetry, backend: str, ctx_size: int
+):
     # Install and/or update llama.cpp if needed
     try:
-        install_llamacpp()
+        install_llamacpp(backend)
     except NotImplementedError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
         )
-
-    # Get platform-specific paths at runtime
-    llama_server_exe_path = get_llama_server_exe_path()
 
     # Download the gguf to the hugging face cache
     snapshot_files = download_gguf(model_config.checkpoint, model_config.mmproj)
@@ -342,14 +318,13 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
     supports_embeddings = "embeddings" in model_info.get("labels", [])
     supports_reranking = "reranking" in model_info.get("labels", [])
 
-    # Start the llama-serve.exe process
-    logging.debug(f"Using llama_server for GGUF model: {llama_server_exe_path}")
-
     # Attempt loading on GPU first
     llama_server_process = _launch_llama_subprocess(
         snapshot_files,
         use_gpu=True,
         telemetry=telemetry,
+        backend=backend,
+        ctx_size=ctx_size,
         supports_embeddings=supports_embeddings,
         supports_reranking=supports_reranking,
     )
@@ -374,6 +349,8 @@ def server_load(model_config: PullConfig, telemetry: LlamaTelemetry):
             snapshot_files,
             use_gpu=False,
             telemetry=telemetry,
+            backend=backend,
+            ctx_size=ctx_size,
             supports_embeddings=supports_embeddings,
             supports_reranking=supports_reranking,
         )
