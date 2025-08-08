@@ -15,7 +15,9 @@ from threading import Thread
 from lemonade.api import from_pretrained
 from lemonade.tools.oga.utils import OrtGenaiStreamer
 
-model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-cpu")
+model, tokenizer = from_pretrained(
+    "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx", recipe="oga-cpu"
+)
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 

@@ -44,8 +44,6 @@ jobs:
           pylint src/lemonade --rcfile .pylintrc --disable E0401
       - name: Run lemonade tests
         shell: bash -el {0}
-        env:
-          HF_TOKEN: "${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
         run: |
           # Test CLI
           lemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
