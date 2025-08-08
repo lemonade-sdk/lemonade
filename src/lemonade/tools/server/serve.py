@@ -335,7 +335,9 @@ class Server:
         # Let the app know what port it's running on, so
         # that the lifespan can access it
         self.app.port = self.port
-        self.app._host = self.host
+        # FastAPI already has a `host` function and we cannot use `_host` as
+        # PyLint will believe its private
+        self.app.host_ = self.host
 
     def run(self):
         # Common setup
