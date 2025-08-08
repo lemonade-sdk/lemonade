@@ -20,6 +20,7 @@ If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions
     2. pip install openai
 """
 
+import sys
 import asyncio
 import requests
 import numpy as np
@@ -58,6 +59,17 @@ class LlamaCppTesting(ServerTestingBase):
         print("\n=== Cleaning up GGUF/LlamaCPP test ===")
         super().cleanup_lemonade(server_subprocess)
 
+    def test_000_get_hip_devices_returns_zero(self):
+        """ROCm-only: get_hip_devices should report zero devices in CI."""
+        if self.llamacpp_backend != "rocm":
+            return
+        
+        from lemonade.tools.llamacpp.utils import get_hip_devices
+
+        expected_devices = [[0, "AMD Radeon Graphics"]] if sys.platform.startswith("win") else [[0, "AMD Radeon Graphics"]]
+        devices = get_hip_devices()
+        assert devices == expected_devices, f"Expected {expected_devices} devices, got {devices}"
+        
     # Endpoint: /api/v1/chat/completions
     def test_001_test_llamacpp_chat_completion_streaming(self):
         client = OpenAI(

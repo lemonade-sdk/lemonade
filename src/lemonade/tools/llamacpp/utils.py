@@ -57,7 +57,7 @@ def identify_rocm_arch_from_name(device_name: str) -> str | None:
     return None
 
 
-def identify_rocm_arch_and_hip_id() -> tuple[str, str]:
+def identify_rocm_arch() -> str:
     """
     Identify the appropriate ROCm target architecture based on the device info
     Returns tuple of (architecture, gpu_type) where gpu_type is 'igpu' or 'dgpu'
@@ -68,21 +68,54 @@ def identify_rocm_arch_and_hip_id() -> tuple[str, str]:
     amd_igpu = system_info.get_amd_igpu_device()
     amd_dgpu = system_info.get_amd_dgpu_devices()
     target_arch = None
-    gpu_count = 0
     for gpu in [amd_igpu] + amd_dgpu:
         if gpu.get("available") and gpu.get("name"):
-            gpu_count += 1
             target_arch = identify_rocm_arch_from_name(gpu["name"].lower())
             if target_arch:
                 break
 
-    # Get HIP ID based on the number of GPUs available
-    # Here, we assume that the iGPU will always show up before the dGPUs (if available)
-    # We also assume that selecting the dGPU is preferred over the iGPU
-    # Multiple GPUs are not supported at the moment
-    hip_id = str(gpu_count - 1)
+    return target_arch
 
-    return target_arch, hip_id
+
+def identify_hip_id() -> str:
+    """
+    Identify the HIP ID
+    """
+    # Get HIP devices
+    hip_devices = get_hip_devices()
+    logging.debug(f"HIP devices found: {hip_devices}")
+    if len(hip_devices) == 0:
+        raise ValueError("No HIP devices found when identifying HIP ID")
+
+    # Identify HIP devices that are compatible with our ROCm builds
+    rocm_devices = []
+    for device in hip_devices:
+        device_id, device_name = device
+        if identify_rocm_arch_from_name(device_name):
+            rocm_devices.append([device_id, device_name])
+    logging.debug(f"ROCm devices found: {rocm_devices}")
+
+    # If no ROCm devices are found, use the last HIP device
+    # This might be needed in some scenarios where HIP reports generic device names
+    # Example: "AMD Radeon Graphics" for STX Halo iGPU on Ubuntu 24.04
+    if len(rocm_devices) == 0:
+        rocm_devices = [hip_devices[-1]]
+        logging.warning(
+            "No ROCm devices found when identifying HIP ID. "
+            f"Falling back to the following device: {rocm_devices[0]}"
+        )
+    elif len(rocm_devices) > 1:
+        logging.warning(
+            f"Multiple ROCm devices found when identifying HIP ID: {rocm_devices}"
+            "The last device will be used."
+        )
+
+    # Select the last device
+    device_selected = rocm_devices[-1]
+    logging.debug(f"Selected ROCm device: {device_selected}")
+
+    # Return the device ID
+    return device_selected[0]
 
 
 def get_llama_version(backend: str) -> str:
@@ -277,7 +310,7 @@ def install_llamacpp(backend):
         target_arch = None
         if backend == "rocm":
             # Identify the target architecture
-            target_arch, hip_id = identify_rocm_arch_and_hip_id()
+            target_arch = identify_rocm_arch()
             if not target_arch:
                 system = platform.system().lower()
                 if system == "linux":
@@ -292,10 +325,6 @@ def install_llamacpp(backend):
                     "See https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations "
                     f"for supported configurations. {hint}"
                 )
-
-            # Set HIP_VISIBLE_DEVICES=0 for igpu, =1 for dgpu
-            env_file_path = os.path.join(llama_server_exe_dir, ".env")
-            set_key(env_file_path, "HIP_VISIBLE_DEVICES", hip_id)
 
         # Direct download for Vulkan/ROCm
         llama_archive_url, filename = get_binary_url_and_filename(backend, target_arch)
@@ -314,6 +343,12 @@ def install_llamacpp(backend):
                 zip_ref.extractall(llama_server_exe_dir)
         else:
             raise NotImplementedError(f"Unsupported archive format: {filename}")
+
+        # Identify and set HIP ID
+        if backend == "rocm":
+            hip_id = identify_hip_id()
+            env_file_path = os.path.join(llama_server_exe_dir, ".env")
+            set_key(env_file_path, "HIP_VISIBLE_DEVICES", str(hip_id))
 
         # Make executable on Linux - need to update paths after extraction
         if platform.system().lower() == "linux":
@@ -778,3 +813,68 @@ class LlamaCppAdapter(ModelAdapter):
             error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
+
+
+def get_hip_devices():
+    """Get list of HIP devices with their IDs and names."""
+    import ctypes
+    import sys
+    import os
+    import glob
+    from ctypes import c_int, POINTER
+    from ctypes.util import find_library
+
+    # Get llama.cpp path
+    rocm_path = get_llama_folder_path("rocm")
+
+    # Load HIP library
+    hip_library_pattern = (
+        "amdhip64*.dll" if sys.platform.startswith("win") else "libamdhip64*.so"
+    )
+    search_pattern = os.path.join(rocm_path, hip_library_pattern)
+    matching_files = glob.glob(search_pattern)
+    if not matching_files:
+        raise RuntimeError(
+            f"Could not find HIP runtime library matching pattern: {search_pattern}"
+        )
+    try:
+        libhip = ctypes.CDLL(matching_files[0])
+    except OSError:
+        raise RuntimeError(f"Could not load HIP runtime library from {path}")
+
+    # Setup function signatures
+    hipError_t = c_int
+    hipDeviceProp_t = ctypes.c_char * 2048
+    libhip.hipGetDeviceCount.restype = hipError_t
+    libhip.hipGetDeviceCount.argtypes = [POINTER(c_int)]
+    libhip.hipGetDeviceProperties.restype = hipError_t
+    libhip.hipGetDeviceProperties.argtypes = [POINTER(hipDeviceProp_t), c_int]
+    libhip.hipGetErrorString.restype = ctypes.c_char_p
+    libhip.hipGetErrorString.argtypes = [hipError_t]
+
+    # Get device count
+    device_count = c_int()
+    err = libhip.hipGetDeviceCount(ctypes.byref(device_count))
+    if err != 0:
+        logging.error(
+            "hipGetDeviceCount failed:", libhip.hipGetErrorString(err).decode()
+        )
+        return []
+
+    # Get device properties
+    devices = []
+    for i in range(device_count.value):
+        prop = hipDeviceProp_t()
+        err = libhip.hipGetDeviceProperties(ctypes.byref(prop), i)
+        if err != 0:
+            logging.error(
+                f"hipGetDeviceProperties failed for device {i}:",
+                libhip.hipGetErrorString(err).decode(),
+            )
+            continue
+
+        # Extract device name from HIP device properties
+        device_name = ctypes.string_at(prop, 256).decode("utf-8").rstrip("\x00")
+        devices.append([i, device_name])
+
+    return devices
