@@ -369,7 +369,8 @@
     // Helper to get server base URL
     function getServerBaseUrl() {
         const port = window.SERVER_PORT || 8000;
-        return `http://localhost:${port}`;
+        const host = window.location.hostname || 'localhost';
+        return `http://${host}:${port}`;
     }
 
     // Check if current model supports vision

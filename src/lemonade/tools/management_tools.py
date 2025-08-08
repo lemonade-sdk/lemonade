@@ -109,7 +109,7 @@ class Cache(ManagementTool):
     # pylint: disable=pointless-statement,f-string-without-interpolation
     f"""
     A set of functions for managing the lemonade build cache. The default
-    cache location is {lemonade_cache.DEFAULT_CACHE_DIR}, and can also be 
+    cache location is {lemonade_cache.DEFAULT_CACHE_DIR}, and can also be
     selected with
     the global --cache-dir option or the LEMONADE_CACHE_DIR environment variable.
 
