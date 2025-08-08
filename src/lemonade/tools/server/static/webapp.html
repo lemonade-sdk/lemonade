@@ -1134,7 +1134,25 @@
                 }
             }
             if (!llmText) throw new Error('No response');
-            messages.push({ role: 'assistant', content: llmText });
+
+            // Split assistant response into content and reasoning_content so llama.cpp's Jinja does not need to parse <think> tags
+            function splitAssistantResponse(text) {
+                const THINK_OPEN = '<think>';
+                const THINK_CLOSE = '</think>';
+                const result = { content: text };
+                const start = text.indexOf(THINK_OPEN);
+                const end = text.indexOf(THINK_CLOSE);
+                if (start !== -1 && end !== -1 && end > start) {
+                    const reasoning = text.substring(start + THINK_OPEN.length, end).trim();
+                    const visible = (text.substring(0, start) + text.substring(end + THINK_CLOSE.length)).trim();
+                    if (reasoning) result.reasoning_content = reasoning;
+                    result.content = visible;
+                }
+                return result;
+            }
+
+            const assistantMsg = splitAssistantResponse(llmText);
+            messages.push({ role: 'assistant', ...assistantMsg });
         } catch (e) {
             let detail = e.message;
             try {
