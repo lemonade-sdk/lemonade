@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "Lemonade Server & Open WebUI",
+    url: "https://www.youtube.com/watch?v=yZs-Yzl736E",
+    date: "July 31, 2025",
+    description: "Easily integrate Lemonade Server with Open WebUI to unlock powerful local LLM capabilities on your PC. This video guides you through the installation and setup process.",
+    image: "https://img.youtube.com/vi/yZs-Yzl736E/maxresdefault.jpg",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
+    type: "video"
+    },
+    {
     title: "Styrk AI & AMD: Guardrails for Your On-Device AI Revolution",
     url: "https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/",
     date: "July 14, 2025",
@@ -152,6 +161,15 @@ const newsData = [
     image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/technical-blogs/3328050-lemonade-server/3328050-lemonade-server-blog.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "blog"
+    },
+    {
+    title: "Lemonade Server v8.1.0 Release",
+    url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.1.0",
+    date: "July 30, 2025",
+    description: "Support for Ryzen AI Software v1.5.0 and NPU-only execution.",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
+    type: "release"
     },
     {
     title: "Lemonade Server v8.0.6 Release",

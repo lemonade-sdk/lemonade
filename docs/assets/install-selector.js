@@ -343,6 +343,10 @@ window.lmnRender = function() {
         } else {
           cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
         }
+        // Add ROCm requirement for llama.cpp GPU Linux installations (GUI)
+        if (lmnState.os === 'linux' && lmnState.dev === 'gpu') {
+          cmd = 'sudo update-pciids\n' + cmd;
+        }
       }
     }
   }
@@ -428,6 +432,11 @@ window.lmnRender = function() {
     if (exploreCommands.length > 0) {
       exploreSection.style.display = 'block';
       exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
+      
+      // Add llama.cpp tip below Quick Start commands
+      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu') {
+        exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';
+      }
       
       setTimeout(function() {
         var explorePre = document.getElementById('lmn-explore-pre-block');

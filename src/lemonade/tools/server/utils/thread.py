@@ -26,7 +26,7 @@ class ServerRunner(threading.Thread):
     def run(self):
         try:
             # Create the server instance
-            self.server = Server()
+            self.server = Server(port=self.port, log_level="warning")
 
             # Configure the server with model/tokenizer
             self.server.model = self.model
@@ -44,9 +44,7 @@ class ServerRunner(threading.Thread):
             )
 
             # Set up the server for threaded execution
-            self.uvicorn_server = self.server.run_in_thread(
-                port=self.port, host=self.host, log_level="warning"
-            )
+            self.uvicorn_server = self.server.run_in_thread(host=self.host)
 
             # Set the ready event
             self.ready_event.set()

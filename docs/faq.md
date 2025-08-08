@@ -1,4 +1,4 @@
-# 🍋 Lemonade SDK – FAQ
+# 🍋 Lemonade Frequently Asked Questions
 
 ## Overview
 
@@ -13,8 +13,8 @@
 ### 3. **What are the use cases for different audiences?**
 
    - **End Users**: Use [GAIA](https://github.com/amd/gaia) for a Chatbot experience locally.
-   - **LLM Enthusiasts**: Run models like LLaMA3 on Ryzen AI 300 PCs with minimal setup. See recommended apps listed [here](https://lemonade-server.ai/docs/server/apps/).
-   - **Developers**: Integrate LLMs into apps using standard APIs with no AMD-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
+   - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](https://lemonade-server.ai/docs/server/apps/).
+   - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
    ).
 
 ## Installation & Compatibility
@@ -37,7 +37,7 @@
 
 ### 1. **What models are supported?**
 
-   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, and Phi. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
+   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
    
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
 
@@ -62,14 +62,12 @@
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
-   👉 [Model Preparation Guide](https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html)
-
-   **Note**: This guide is not maintained by the Lemonade team.
+   👉 [Model Preparation Guide]([https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/finetuned_model_export.md))
 
 ### 5. **What's the difference between GGUF and ONNX models?**
 
-   - **GGUF**: Used with llama.cpp backend, supports CPU and GPU via Vulkan.
-   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU/hybrid execution and iGPU via DirectML.
+   - **GGUF**: Used with llama.cpp backend, supports CPU, and GPU via Vulkan or ROCm.
+   - **ONNX**: Used with OnnxRuntime GenAI, supports NPU and NPU+iGPU Hybrid execution.
 
 ## Inference Behavior & Performance
 
@@ -89,6 +87,8 @@
    ```bash
    curl http://localhost:8000/api/v1/stats
    ```
+
+   Or, you can launch `lemonade-server` with the option `--log-level debug` and that will also print out stats.
 
 ### 3. **How does Lemonade's performance compare to llama.cpp?**
 
@@ -119,13 +119,23 @@
    
    While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
 
-## Configuration & Customization
+### 4. **How do I know what model architectures are supported by the NPU?**
 
-### 1. **What is the context length in Lemonade? How does it compare to Ollama or LM Studio?**
+   AMD publishes pre-quantized and optimized models in their Hugging Face collections:
 
-   - **GGUF models**: Context length is the same as in llama.cpp, Ollama, or LM Studio. It depends on the model itself—e.g., 4K, 8K, or 32K tokens.
-   - **Hybrid models**: Context length is currently limited. Each model has a rai_config.json file that specifies the context length for a given Ryzen AI SW version.
+   - [Ryzen AI NPU Models](https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0)
+   - [Ryzen AI Hybrid Models](https://huggingface.co/collections/amd/ryzenai-15-llm-hybrid-models-6859a64b421b5c27e1e53899)
 
+   To find the architecture of a specific model, click on any model in these collections and look for the "Base model" field, which will show you the underlying architecture (e.g., Llama, Qwen, Phi).
+
+### 5. **How can I get better performance from the NPU?**
+
+   Make sure that you've put the NPU in "Turbo" mode to get the best results. This is done by opening a terminal window and running the following commands:
+
+   ```cmd
+   cd C:\Windows\System32\AMD
+   .\xrt-smi configure --pmode turbo
+   ```
 
 ## Support & Roadmap
 
