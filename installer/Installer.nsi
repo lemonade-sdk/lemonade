@@ -130,12 +130,15 @@ SectionIn RO ; Read only, always installed
     # Pack lemonade repo into the installer
     # Exclude hidden files (like .git, .gitignore) and the installation folder itself
     File /r /x nsis.exe /x installer /x .* /x *.pyc /x docs /x examples /x utilities ..\*.* lemonade-server.bat add_to_path.py lemonade_notification.vbs lemonade_server.vbs
+    File /r ..\electron\dist\win-unpacked\*.*
 
     # Create bin directory and move lemonade-server.bat there
     CreateDirectory "$INSTDIR\bin"
     Rename "$INSTDIR\lemonade-server.bat" "$INSTDIR\bin\lemonade-server.bat"
     Rename "$INSTDIR\lemonade_notification.vbs" "$INSTDIR\bin\lemonade_notification.vbs"
     Rename "$INSTDIR\lemonade_server.vbs" "$INSTDIR\bin\lemonade_server.vbs"
+    IfFileExists "$INSTDIR\Lemonade.exe" 0 +2
+      Rename "$INSTDIR\Lemonade.exe" "$INSTDIR\lemonade.exe"
 
     DetailPrint "- Packaged repo"
 
@@ -204,7 +207,7 @@ SectionIn RO ; Read only, always installed
 
       DetailPrint "*** INSTALLATION COMPLETED ***"
       # Create a shortcut inside $INSTDIR
-      CreateShortcut "$INSTDIR\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
+      CreateShortcut "$INSTDIR\lemonade.lnk" "$INSTDIR\lemonade.exe" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
 
       ; Add bin folder to user PATH
       DetailPrint "- Adding bin directory to user PATH..."
@@ -301,19 +304,19 @@ SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
-    CreateShortcut "$DESKTOP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
+    CreateShortcut "$DESKTOP\lemonade.lnk" "$INSTDIR\lemonade.exe" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
   ${EndIf}
 SectionEnd
 
 Function RunServer
-  ExecShell "open" "$INSTDIR\LEMONADE-SERVER.lnk"
+  ExecShell "open" "$INSTDIR\lemonade.lnk"
 FunctionEnd
 
 Function AddToStartup
   ; Delete existing shortcut if it exists
-  Delete "$SMSTARTUP\lemonade-server.lnk"
+  Delete "$SMSTARTUP\lemonade.lnk"
   ; Create shortcut in the startup folder
-  CreateShortcut "$SMSTARTUP\lemonade-server.lnk" "$INSTDIR\bin\lemonade_server.vbs" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
+  CreateShortcut "$SMSTARTUP\lemonade.lnk" "$INSTDIR\lemonade.exe" "" "$INSTDIR\src\lemonade\tools\server\static\favicon.ico"
 FunctionEnd
 
 ; Define constants for better readability
