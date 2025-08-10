@@ -276,8 +276,8 @@ def run(
     import time
 
     # Start the server if not running
-    _, port = get_server_info()
-    server_previously_running = port is not None
+    _, running_port = get_server_info()
+    server_previously_running = running_port is not None
     if not server_previously_running:
         port, server_thread = serve(
             port=port,
