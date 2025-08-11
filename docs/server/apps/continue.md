@@ -54,7 +54,7 @@ Continue.dev provides three interaction modes for different development tasks. S
 - **Chat**: Code explanations, debugging discussions, architecture planning
 - **Agent**: Multi-file refactoring, large-scale changes across projects
 
-![Continue Modes Interface](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_modes.png) -->
+![Continue Modes Interface](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_modes.png)
 
 ## Examples
 
