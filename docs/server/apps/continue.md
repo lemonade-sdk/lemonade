@@ -17,8 +17,8 @@ Continue.dev is an open-source AI code assistant for VS Code and JetBrains that 
 3. Search for "Continue" 
 4. Install the Continue extension
 
-![Continue Extension in VS Code Marketplace](placeholder-image-1.png)
-<!-- Image should show: VS Code Extensions view with Continue extension and Install button highlighted -->
+![Continue Extension in VS Code Marketplace](../../../../assets/docs/guides/continue/continue_vscode_marketplace.png)
+<!-- ![Continue Extension in VS Code Marketplace](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_vscode_marketplace.png) -->
 
 ### Configuring with Continue Hub
 
@@ -27,16 +27,16 @@ Continue Hub provides pre-configured model setups that work immediately with Lem
 1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
 2. **Select Configuration**: Browse available Lemonade models and configurations
 
-![Continue Hub Lemonade Models](placeholder-image-2.png)
-<!-- Image should show: Continue Hub interface displaying Lemonade model options -->
+![Continue Hub Lemonade Models](../../../../assets/docs/guides/continue/continue_hub_lemonade.png)
+<!-- ![Continue Hub Lemonade Models](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_lemonade.png) -->
 
 3. **Add to Continue**: Click "Use" on your chosen configuration
-4. **Automatic Setup**: The configuration is automatically added to your Continue extension
+4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in
 
-![Configuration Added to Continue](placeholder-image-3.png)
-<!-- Image should show: Continue sidebar in VS Code with Lemonade model appearing in dropdown -->
+![Configuration Added to Continue](../../../../assets/docs/guides/continue/continue_extension_assistant.png)
+<!-- ![Configuration Added to Continue](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_assistant.png) -->
 
-### Adding Lemonade Models to Default Assistant
+### Adding Lemonade Models to your Assistant
 
 To add Lemonade models to your existing Continue setup:
 
@@ -46,7 +46,8 @@ To add Lemonade models to your existing Continue setup:
 
 For detailed configuration steps, see the [Continue configuration documentation](https://docs.continue.dev/reference/config).
 
-![Continue Configuration Settings](placeholder-image-4.png)
+![Continue Configuration Settings](../../../../assets/docs/guides/continue/continue_hub_assistant_configed.png)
+<!-- ![Continue Configuration Settings](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_assistant_configed.png) -->
 <!-- Image should show: Continue configuration interface with Lemonade Server settings -->
 
 ## Working with Continue.dev
@@ -58,7 +59,8 @@ Continue.dev provides three interaction modes for different development tasks. S
 - **Chat**: Code explanations, debugging discussions, architecture planning
 - **Agent**: Multi-file refactoring, large-scale changes across projects
 
-![Continue Modes Interface](placeholder-image-5.png)
+![Continue Modes Interface](../../../../assets/docs/guides/continue/continue_extension_modes.png)
+<!-- ![Continue Modes Interface](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_modes.png) -->
 <!-- Image should show: Continue sidebar showing Chat and Agent mode options -->
 
 ## Examples
@@ -71,27 +73,39 @@ Continue.dev provides three interaction modes for different development tasks. S
 
 **Chat Conversation**:
 ```
-User: I need to create a simple Asteroids game in Python for a demo. Can you help me build it?
+User: Create a simple asteroids game using pygame
 
-Model: I'll help you create an Asteroids game using Pygame. Let me build it with these features:
-- Player ship that rotates and thrusts
-- Asteroids that split when shot
-- Score tracking and game over conditions
-- Everything wraps around screen edges
+Model: Creating a simple Asteroids game using Pygame involves several steps. Pygame is a popular library for creating games and multimedia applications in Python. Below is a basic implementation of an Asteroids game. This version will include a player-controlled spaceship that can move, rotate, and shoot bullets to destroy asteroids.
 
-Here's the complete game:
-[Model generates ~250 lines of Python/Pygame code]
+First, ensure you have Pygame installed. You can install it using pip if you haven't already:
 
-User: Can you add a yellow trail effect behind the ship?
+Now, let's create the game. We'll write the code in a single file.
 
-Model: Sure! I'll add a trail effect by tracking previous ship positions...
+# generated code ...
+
+User: Add a yellow trail effect behind the ship
+
+Model: To add a yellow trail effect behind the ship, you can keep track of the player's previous positions and draw small circles at those positions. This will create the illusion of a trail. Here's how you can modify the code to include this feature:
+
+# generated code ...
+
 [Model provides the trail implementation code]
 ```
 
 Through this conversational approach, the model helps build and refine the game iteratively, explaining decisions and accommodating new requirements as they arise.
 
-![Chat Mode Game Development](placeholder-image-6.png)
-<!-- Image should show: Continue Chat interface with game development conversation -->
+![Chat Mode Game Development](../../../../assets/docs/guides/continue/continue_extension_asteroids_gen.png)
+<!-- ![Chat Mode Game Development](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_gen.png) -->
+
+After running the `pip install pygame` command to setup dependencies, and applying the chagnes to `main.py`, the game can be run using
+
+`python .\main.py`
+
+This results in the following:
+
+![Asteroids Game Result](../../../../assets/docs/guides/continue/continue_extension_asteroids_result.png)
+<!-- ![Asteroids Game Result](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_result.png) -->
+
 
 ### Example 2: Agent Mode - Converting Callbacks to Async/Await
 
@@ -99,7 +113,7 @@ Through this conversational approach, the model helps build and refine the game 
 
 **Agent Task**:
 ```
-Convert all callback-based functions in the data service files to use async/await:
+Convert all callback-based functions in @run.js use async/await:
 - Convert callback patterns to async/await
 - Add proper try/catch error handling
 - Update all calling code to use await
@@ -110,6 +124,18 @@ Convert all callback-based functions in the data service files to use async/awai
 
 **Before (callback pattern)**:
 ```javascript
+const db = require('./db');
+
+function processUser(user, callback) {
+  setTimeout(() => {
+    if (!user || !user.id) {
+      callback(new Error('Invalid user'), null);
+    } else {
+      callback(null, { ...user, processed: true });
+    }
+  }, 100);
+}
+
 function fetchUserData(userId, callback) {
   db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
     if (err) {
@@ -125,19 +151,45 @@ function fetchUserData(userId, callback) {
     }
   });
 }
+
 ```
 
 **After (async/await)**:
 ```javascript
+const db = require('./db');
+
+async function processUser(user) {
+  return new Promise((resolve, reject) => {
+  setTimeout(() => {
+    if (!user || !user.id) {
+        reject(new Error('Invalid user'));
+    } else {
+        resolve({ ...user, processed: true });
+    }
+  }, 100);
+  });
+}
+
 async function fetchUserData(userId) {
   try {
-    const result = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
-    const processed = await processUser(result);
-    return processed;
-  } catch (error) {
-    throw new Error(`Failed to fetch user data: ${error.message}`);
+    const result = await new Promise((resolve, reject) => {
+  db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
+    if (err) {
+          reject(err);
+    } else {
+          resolve(result);
+        }
+      });
+    });
+
+    const processedUser = await processUser(result);
+    return processedUser;
+  } catch (err) {
+    throw err;
   }
 }
+
+
 ```
 
 **Agent Actions**:
@@ -149,7 +201,8 @@ async function fetchUserData(userId) {
 
 The Agent intelligently handles nested callbacks, error propagation, and ensures all calling code is updated consistently.
 
-![Agent Mode Async/Await Conversion](placeholder-image-7.png)
+![Agent Mode Async/Await Conversion](../../../../assets/docs/guides/continue/continue_extension_async_result.png)
+<!-- ![Agent Mode Async/Await Conversion](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_async_result.png) -->
 <!-- Image should show: Continue Agent interface showing multiple files being converted from callbacks to async/await -->
 
 ## Best Practices
@@ -160,6 +213,11 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 - Start fresh conversations for new features
 - Include only relevant code in prompts
 - Clear chat history when switching tasks
+
+**Model Selection & Assistant Scoping**
+- Avoid adding too many models to an assistant—Continue may switch to a model it thinks is better, but hardware capabilities aren't always considered.
+- Building custom assistants tailored to specific languages or domains (e.g., a JavaScript/TypeScript assistant scoped to Node.js) leads to more relevant results.
+- Scope assistants for particular tasks, such as coding with MCP, using specific prompts, or working with targeted data. See [continue.dev customization](https://docs.continue.dev/customization/overview) for more on effective scoping.
 
 **Model Loading**
 - Pre-load models in Lemonade Server before coding sessions
@@ -178,7 +236,7 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 1. Clear task description
 2. Specific requirements
 3. Technical constraints
-4. Output format
+4. Using `@` for agent mode
 
 **Example Evolution:**
 - Vague: "Create a game"
