@@ -1,112 +1,207 @@
-# Continue Coding Assistant
+# Continue.dev
 
-## Overview
+Continue.dev is an open-source AI code assistant for VS Code and JetBrains that enables developers to leverage local AI models through Lemonade Server for code generation, editing, and chat capabilities.
 
-[Continue](https://www.continue.dev/) is a coding assistant that lives inside of a VS Code extension. It supports chatting with your codebase, making edits, and a lot more.
+## Prerequisites
 
-## Demo Video
+- Visual Studio Code (1.80+) or JetBrains IDE
+- Lemonade Server running on `http://localhost:8000`
+- At least one model loaded in Lemonade Server
 
-▶️ [Watch on YouTube](https://www.youtube.com/watch?v=bP_MZnDpbUc&source_ve_path=MjM4NTE)
+## Installation
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/bP_MZnDpbUc?si=0KZLzQzFlRvW9J9f" 
-title="YouTube video player" frameborder="0" allowfullscreen></iframe>
+### Installing Continue Extension
 
-## Expectations
+1. Open VS Code
+2. Navigate to the Extensions marketplace
+3. Search for "Continue" 
+4. Install the Continue extension
 
-We have found that the `Qwen-1.5-7B-Chat-Hybrid` model is the best Hybrid model available for coding. It is good at chatting with a few files at a time in your codebase to learn more about them. It can also make simple code editing suggestions pertaining to a few lines of code at a time.
+![Continue Extension in VS Code Marketplace](placeholder-image-1.png)
+<!-- Image should show: VS Code Extensions view with Continue extension and Install button highlighted -->
 
-However, we do not recommend using this model for analyzing large codebases at once or making large or complex file edits.
+### Configuring with Continue Hub
 
-## Setup
+Continue Hub provides pre-configured model setups that work immediately with Lemonade Server.
 
-### Prerequisites
+1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
+2. **Select Configuration**: Browse available Lemonade models and configurations
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+![Continue Hub Lemonade Models](placeholder-image-2.png)
+<!-- Image should show: Continue Hub interface displaying Lemonade model options -->
 
-### Install Continue
+3. **Add to Continue**: Click "Use" on your chosen configuration
+4. **Automatic Setup**: The configuration is automatically added to your Continue extension
 
-> Note: they provide their own instructions [here](https://marketplace.visualstudio.com/items?itemName=Continue.continue)
+![Configuration Added to Continue](placeholder-image-3.png)
+<!-- Image should show: Continue sidebar in VS Code with Lemonade model appearing in dropdown -->
 
-1. Open the Extensions tab in VS Code Activity Bar.
-1. Search "Continue - Codestral, Claude, and more" in the Extensions Marketplace search bar.
-1. Select the Continue extension and click install.
+### Adding Lemonade Models to Default Assistant
 
-This will add a Continue tab to your VS Code Activity Bar.
+To add Lemonade models to your existing Continue setup:
 
-### Add Lemonade Server to Continue
+1. Open the Continue sidebar in VS Code
+2. Access the model configuration settings
+3. Add your Lemonade Server endpoint and model details
 
-> Note: The following instructions are based on instructions from Continue found [here](https://docs.continue.dev/customize/model-providers/openai#openai-compatible-servers--apis) 
+For detailed configuration steps, see the [Continue configuration documentation](https://docs.continue.dev/reference/config).
 
-1. Open the Continue tab in your VS Code Activity Bar.
-1. Click the chat box. Some buttons will appear at the bottom of the box, including `Select model`.
-1. Click `Select model`, then `+ Add Chat model` to open the new model dialog box.
-1. Click the `config file` link at the very bottom of the dialog to open `config.yaml`.
-1. Replace the "models" key in the `config.yaml` with the following and save:
+![Continue Configuration Settings](placeholder-image-4.png)
+<!-- Image should show: Continue configuration interface with Lemonade Server settings -->
 
-```yaml
-models:
-  - name: Lemonade
-    provider: openai
-    model: Qwen-1.5-7B-Chat-Hybrid 
-    apiBase: http://localhost:8000/api/v1
-    apiKey: none
+## Working with Continue.dev
+
+Continue.dev provides three interaction modes for different development tasks. See the [Continue documentation](https://docs.continue.dev) for detailed mode descriptions.
+
+### Mode Selection Guide
+
+- **Chat**: Code explanations, debugging discussions, architecture planning
+- **Agent**: Multi-file refactoring, large-scale changes across projects
+
+![Continue Modes Interface](placeholder-image-5.png)
+<!-- Image should show: Continue sidebar showing Chat and Agent mode options -->
+
+## Examples
+
+*Note: Examples demonstrate Chat and Agent modes with local Lemonade models. Additional examples with alternative models will be added once testing hardware is available.*
+
+### Example 1: Chat Mode - Building an Asteroids Game
+
+**Scenario**: You want to quickly prototype a game concept through conversation with the AI.
+
+**Chat Conversation**:
+```
+User: I need to create a simple Asteroids game in Python for a demo. Can you help me build it?
+
+Model: I'll help you create an Asteroids game using Pygame. Let me build it with these features:
+- Player ship that rotates and thrusts
+- Asteroids that split when shot
+- Score tracking and game over conditions
+- Everything wraps around screen edges
+
+Here's the complete game:
+[Model generates ~250 lines of Python/Pygame code]
+
+User: Can you add a yellow trail effect behind the ship?
+
+Model: Sure! I'll add a trail effect by tracking previous ship positions...
+[Model provides the trail implementation code]
 ```
 
-6. Close the dialog box.
-7. Click the chat box again. You should see `Lemonade` where you used to see `Select model`. Ready!
+Through this conversational approach, the model helps build and refine the game iteratively, explaining decisions and accommodating new requirements as they arise.
 
-## Usage
+![Chat Mode Game Development](placeholder-image-6.png)
+<!-- Image should show: Continue Chat interface with game development conversation -->
 
-> Note: see the Continue [user guide](https://docs.continue.dev/) to learn about all of their features.
+### Example 2: Agent Mode - Converting Callbacks to Async/Await
 
-Here are some examples for trying out Continue. These examples assume you have cloned this repo and allowed Continue to index it.
+**Scenario**: You have older code using callback patterns that needs to be modernized to async/await for better readability and error handling.
 
-### Chat with Files
-
-Open the Continue tab in your VS Code Activity Bar, and in the "Ask anything" box, type a question about your code. Use the `@` symbol to specify a file or tool.
-
-  - "What's the fastest way to install Lemonade in `@getting_started.md?`"
-  - "According to `@README.md` what do I need to do to set up for `@api_oga_hybrid_streaming.py`?"
-
-### Editing Files
-
-Open a file, select some code, and push Ctrl+I to start a chat about editing that code.
-
-  1. Open `//examples//lemonade//api_basic.py`.
-  1. Select the `print(...` line at the bottom and press `ctrl+i`.
-  1. Write "Add a helpful comment" in the chat box and press enter.
-  1. Press "accept" if you would like to accept the change.
-
-### Making Files
-
-Start a new chat and prompt: 
-
-> write a script in the style of `@api_basic.py` that uses the microsoft/Phi-4-mini-instruct model on GPU
-
-Here's what we got:
-
-```python
-# Import necessary modules
-from lemonade.api import from_pretrained
-
-# Load the Phi-4-mini-instruct model with the hf-cpu recipe
-model, tokenizer = from_pretrained("microsoft/Phi-4-mini-instruct", recipe="hf-cpu")
-
-# Define your prompt
-prompt = "This is a sample prompt for the Phi-4-mini-instruct model"
-
-# Tokenize the prompt
-input_ids = tokenizer(prompt, return_tensors="pt")
-
-# Generate the response using the model
-response = model.generate(input_ids, max_new_tokens=100)  # Adjust the max_new_tokens as needed
-
-# Decode the generated response
-generated_text = tokenizer.decode(response[0])
-
-# Print the response
-print(generated_text)
+**Agent Task**:
+```
+Convert all callback-based functions in the data service files to use async/await:
+- Convert callback patterns to async/await
+- Add proper try/catch error handling
+- Update all calling code to use await
+- Maintain the same functionality
 ```
 
-<!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
+**Example Conversion**:
+
+**Before (callback pattern)**:
+```javascript
+function fetchUserData(userId, callback) {
+  db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
+    if (err) {
+      callback(err, null);
+    } else {
+      processUser(result, (processErr, processed) => {
+        if (processErr) {
+          callback(processErr, null);
+        } else {
+          callback(null, processed);
+        }
+      });
+    }
+  });
+}
+```
+
+**After (async/await)**:
+```javascript
+async function fetchUserData(userId) {
+  try {
+    const result = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    const processed = await processUser(result);
+    return processed;
+  } catch (error) {
+    throw new Error(`Failed to fetch user data: ${error.message}`);
+  }
+}
+```
+
+**Agent Actions**:
+1. Identifies all callback-based functions in service files
+2. Converts each to async/await syntax
+3. Updates error handling to use try/catch blocks
+4. Updates all calling code to use await
+5. Ensures promise chains are properly handled
+
+The Agent intelligently handles nested callbacks, error propagation, and ensures all calling code is updated consistently.
+
+![Agent Mode Async/Await Conversion](placeholder-image-7.png)
+<!-- Image should show: Continue Agent interface showing multiple files being converted from callbacks to async/await -->
+
+## Best Practices
+
+### Working with Local Models
+
+**Context Management**
+- Start fresh conversations for new features
+- Include only relevant code in prompts
+- Clear chat history when switching tasks
+
+**Model Loading**
+- Pre-load models in Lemonade Server before coding sessions
+- Keep server running throughout development
+- Use appropriate model sizes for different tasks
+
+**Iterative Development**
+- Generate initial implementation
+- Test immediately
+- Refine with targeted prompts
+- No API costs allow unlimited iterations
+
+### Effective Prompts
+
+**Good Prompt Structure:**
+1. Clear task description
+2. Specific requirements
+3. Technical constraints
+4. Output format
+
+**Example Evolution:**
+- Vague: "Create a game"
+- Better: "Create an Asteroids game in Python"
+- Best: "Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting"
+
+## Common Issues
+
+**Issue**: Model not appearing in Continue  
+**Solution**: Verify Lemonade Server is running and model is loaded
+
+**Issue**: Slow response times  
+**Solution**: Ensure model is pre-loaded, check available RAM
+
+**Issue**: Missing error handling in generated code  
+**Solution**: Explicitly request "with comprehensive error handling"
+
+**Issue**: Inconsistent code style  
+**Solution**: Provide example of desired style in prompt
+
+## Resources
+
+- [Continue.dev Documentation](https://docs.continue.dev)
+- [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
+- [Lemonade Discord](https://discord.gg/lemonade)
+- [Example Projects](https://github.com/lemonade-sdk/examples)
