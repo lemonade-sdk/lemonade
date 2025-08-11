@@ -95,7 +95,7 @@ Model: Creating an Asteroids game using PyGame is a fun and educational project!
 
 Here's a simple structure to get you started:
 
-# <model genearted code here>...
+# <model generated code here>...
 
 ### Explanation of the Code:
 1. **Initialize PyGame**: Set up the display and define constants.
