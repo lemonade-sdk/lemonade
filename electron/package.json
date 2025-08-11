@@ -1,0 +1,20 @@
+{
+  "name": "lemonade-desktop",
+  "version": "0.1.0",
+  "description": "Electron wrapper for Lemonade server web app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --dir"
+  },
+  "build": {
+    "productName": "Lemonade",
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.8",
+    "electron-builder": "^24.13.1"
+  }
+}
