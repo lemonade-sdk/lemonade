@@ -17,8 +17,7 @@ Continue.dev is an open-source AI code assistant for VS Code and JetBrains that 
 3. Search for "Continue" 
 4. Install the Continue extension
 
-![Continue Extension in VS Code Marketplace](../../../../assets/docs/guides/continue/continue_vscode_marketplace.png)
-<!-- ![Continue Extension in VS Code Marketplace](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_vscode_marketplace.png) -->
+![Continue Extension in VS Code Marketplace](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_vscode_marketplace.png)
 
 ### Configuring with Continue Hub
 
@@ -27,14 +26,12 @@ Continue Hub provides pre-configured model setups that work immediately with Lem
 1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
 2. **Select Configuration**: Browse available Lemonade models and configurations
 
-![Continue Hub Lemonade Models](../../../../assets/docs/guides/continue/continue_hub_lemonade.png)
-<!-- ![Continue Hub Lemonade Models](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_lemonade.png) -->
+![Continue Hub Lemonade Models](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_lemonade.png)
 
 3. **Add to Continue**: Click "Use" on your chosen configuration
 4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in
 
-![Configuration Added to Continue](../../../../assets/docs/guides/continue/continue_extension_assistant.png)
-<!-- ![Configuration Added to Continue](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_assistant.png) -->
+![Configuration Added to Continue](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_assistant.png)
 
 ### Adding Lemonade Models to your Assistant
 
@@ -46,9 +43,7 @@ To add Lemonade models to your existing Continue setup:
 
 For detailed configuration steps, see the [Continue configuration documentation](https://docs.continue.dev/reference/config).
 
-![Continue Configuration Settings](../../../../assets/docs/guides/continue/continue_hub_assistant_configed.png)
-<!-- ![Continue Configuration Settings](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_assistant_configed.png) -->
-<!-- Image should show: Continue configuration interface with Lemonade Server settings -->
+![Continue Configuration Settings](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
 ## Working with Continue.dev
 
@@ -59,9 +54,7 @@ Continue.dev provides three interaction modes for different development tasks. S
 - **Chat**: Code explanations, debugging discussions, architecture planning
 - **Agent**: Multi-file refactoring, large-scale changes across projects
 
-![Continue Modes Interface](../../../../assets/docs/guides/continue/continue_extension_modes.png)
-<!-- ![Continue Modes Interface](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_modes.png) -->
-<!-- Image should show: Continue sidebar showing Chat and Agent mode options -->
+![Continue Modes Interface](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_modes.png) -->
 
 ## Examples
 
@@ -73,29 +66,72 @@ Continue.dev provides three interaction modes for different development tasks. S
 
 **Chat Conversation**:
 ```
-User: Create a simple asteroids game using pygame
+User: I want to create an asteroids game using PyGame. What guidelines should I follow in the code to do so?
 
-Model: Creating a simple Asteroids game using Pygame involves several steps. Pygame is a popular library for creating games and multimedia applications in Python. Below is a basic implementation of an Asteroids game. This version will include a player-controlled spaceship that can move, rotate, and shoot bullets to destroy asteroids.
+Model: Creating an Asteroids game using PyGame is a fun and educational project! Below are some guidelines you should follow to structure your code effectively:
 
-First, ensure you have Pygame installed. You can install it using pip if you haven't already:
+### 1. Initialize PyGame
+- Always start by initializing PyGame and setting up the display.
 
-Now, let's create the game. We'll write the code in a single file.
+### 2. Define Game Constants
+- Define constants for screen dimensions, colors, speeds, and other game settings.
 
-# generated code ...
+### 3. Create Classes for Game Objects
+- Define classes for different game objects like the Player, Asteroids, Bullets, etc.
+- Each class should handle its own rendering and movement.
 
-User: Add a yellow trail effect behind the ship
+### 4. Implement Game Loop
+- The main game loop should handle updating the game state and rendering the screen.
 
-Model: To add a yellow trail effect behind the ship, you can keep track of the player's previous positions and draw small circles at those positions. This will create the illusion of a trail. Here's how you can modify the code to include this feature:
+### 5. Handle User Input
+- Implement a way to handle keyboard and mouse inputs to control the player's ship.
 
-# generated code ...
+### 6. Collision Detection
+- Implement collision detection between bullets and asteroids, and between the player ship and asteroids.
 
-[Model provides the trail implementation code]
+### 7. Game Logic
+- Implement game logic for spawning asteroids, shooting bullets, and updating the game state.
+
+### 8. Score and Game Over Conditions
+- Keep track of the player's score and implement conditions for game over (e.g., when the player's ship collides with an asteroid).
+
+Here's a simple structure to get you started:
+
+# <model genearted code here>...
+
+### Explanation of the Code:
+1. **Initialize PyGame**: Set up the display and define constants.
+2. **Player Class**: Handles the player's movement and drawing.
+3. **Asteroid Class**: Handles the asteroid's movement and drawing.
+4. **Bullet Class**: Handles the bullet's movement and drawing.
+5. **Game Loop**: Processes input, updates game state, and renders the screen.
+
+This code provides a basic framework for an Asteroids game. You can expand on it by adding more features like collision detection, scoring, and different levels of difficulty.
+
+
+User: what change could we make to ensure that the ship is unchanged, but has a yellow trail effect when it moves?
+
+Model: To create a yellow trail effect for the player's ship, you can maintain a list of the ship's previous positions and draw small circles or short lines at these positions. This will give the appearance of a trailing effect as the ship moves.
+
+Here's how you can modify the `Player` class and the main game loop to include this feature:
+
+# <model genearted>...
+
+### Explanation of Changes:
+1. **Player Class**:
+   - Added a `trail` list to store the previous positions of the ship.
+   - Updated the `move` method to append the current position to the `trail` list and remove the oldest position if the trail exceeds the specified length (`TRAIL_LENGTH`).
+   - Updated the `draw` method to draw small yellow circles at each position in the `trail` list.
+
+2. **Game Loop**:
+   - No changes were needed in the main game loop as the trail effect is handled within the `Player` class.
+
+This code will create a yellow trail effect behind the player's ship as it moves across the screen. You can adjust the `TRAIL_LENGTH` constant to make the trail longer or shorter.
 ```
 
 Through this conversational approach, the model helps build and refine the game iteratively, explaining decisions and accommodating new requirements as they arise.
 
-![Chat Mode Game Development](../../../../assets/docs/guides/continue/continue_extension_asteroids_gen.png)
-<!-- ![Chat Mode Game Development](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_gen.png) -->
+![Chat Mode Game Development](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_gen.png)
 
 After running the `pip install pygame` command to setup dependencies, and applying the chagnes to `main.py`, the game can be run using
 
@@ -103,9 +139,7 @@ After running the `pip install pygame` command to setup dependencies, and applyi
 
 This results in the following:
 
-![Asteroids Game Result](../../../../assets/docs/guides/continue/continue_extension_asteroids_result.png)
-<!-- ![Asteroids Game Result](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_result.png) -->
-
+![Asteroids Game Result](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_result.png)
 
 ### Example 2: Agent Mode - Converting Callbacks to Async/Await
 
@@ -201,9 +235,7 @@ async function fetchUserData(userId) {
 
 The Agent intelligently handles nested callbacks, error propagation, and ensures all calling code is updated consistently.
 
-![Agent Mode Async/Await Conversion](../../../../assets/docs/guides/continue/continue_extension_async_result.png)
-<!-- ![Agent Mode Async/Await Conversion](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_async_result.png) -->
-<!-- Image should show: Continue Agent interface showing multiple files being converted from callbacks to async/await -->
+![Agent Mode Async/Await Conversion](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_async_result.png)
 
 ## Best Practices
 
