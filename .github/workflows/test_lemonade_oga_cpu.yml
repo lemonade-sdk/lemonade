@@ -17,6 +17,9 @@ jobs:
     env:
         LEMONADE_CI_MODE: "True"
     runs-on: windows-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
       - name: Set up Miniconda with 64-bit Python
