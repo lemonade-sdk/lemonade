@@ -3,7 +3,6 @@ from typing import Optional, Union, List
 
 from pydantic import BaseModel
 
-DEFAULT_MAX_NEW_TOKENS = int(os.getenv("LEMONADE_MAX_NEW_TOKENS", "1500"))
 DEFAULT_PORT = int(os.getenv("LEMONADE_PORT", "8000"))
 DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
 DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
