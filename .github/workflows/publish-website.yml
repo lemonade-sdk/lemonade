@@ -11,6 +11,9 @@ jobs:
     build-n-publish-website:
       name: Build and publish lemonade-server.ai website
       runs-on: ubuntu-latest
+      concurrency:
+        group: ${{ github.workflow }}-${{ github.ref }}
+        cancel-in-progress: true
       steps:
         - uses: actions/checkout@main
           with:
