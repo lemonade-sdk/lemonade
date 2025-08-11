@@ -5,6 +5,7 @@ import importlib
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from lemonade.version import __version__
 
 _lazy_imports = {
     "TextIteratorStreamer": ("transformers", "TextIteratorStreamer"),
@@ -42,7 +43,7 @@ async def lifespan(app: FastAPI):
         logging.info(
             "\n"
             "\n"
-            "🍋  Lemonade Server Ready!\n"
+            f"🍋  Lemonade Server v{__version__} Ready!\n"
             f"🍋    Open http://{app.host_}:{app.port} in your browser for:\n"
             "🍋      💬 chat\n"
             "🍋      💻 model management\n"
@@ -52,7 +53,7 @@ async def lifespan(app: FastAPI):
         logging.info(
             "\n"
             "\n"
-            "[Lemonade]  Lemonade Server Ready!\n"
+            f"[Lemonade]  Lemonade Server v{__version__} Ready!\n"
             f"[Lemonade]    Open http://{app.host_}:{app.port} in your browser for:\n"
             "[Lemonade]      chat\n"
             "[Lemonade]      model management\n"
