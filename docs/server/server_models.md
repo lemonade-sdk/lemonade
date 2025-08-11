@@ -3,7 +3,7 @@
  
 This document provides the models we recommend for use with Lemonade Server.
 
-Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/aigdat/genai/blob/main/docs/lemonade_api.md) used to load the model. Content:
+Click on any model to learn more details about it, such as the [Lemonade Recipe](https://github.com/lemonade-sdk/lemonade/blob/main/docs/lemonade_api.md) used to load the model. Content:
 
 - [Model Management GUI](#model-management-gui)
 - [Supported Models](#supported-models)
@@ -67,6 +67,40 @@ lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
 <tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>vision, hot</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-120b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-120b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-120b-GGUF">unsloth/gpt-oss-120b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-20b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-20b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-20b-GGUF">unsloth/gpt-oss-20b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
 </table>
 
 </details>
@@ -383,6 +417,40 @@ lemonade-server pull Qwen2.5-Coder-32B-Instruct-GGUF
 
 </details>
 
+<details>
+<summary>gpt-oss-120b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-120b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-120b-GGUF">unsloth/gpt-oss-120b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-20b-GGUF</summary>
+
+```bash
+lemonade-server pull gpt-oss-20b-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/gpt-oss-20b-GGUF">unsloth/gpt-oss-20b-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
 
 ### Hybrid
 
@@ -580,6 +648,51 @@ lemonade-server pull Qwen-2.5-1.5B-Instruct-NPU
 <table>
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-1.5B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Qwen2.5-1.5B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
+<tr><td>Recipe</td><td>oga-npu</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>DeepSeek-R1-Distill-Llama-8B-NPU</summary>
+
+```bash
+lemonade-server pull DeepSeek-R1-Distill-Llama-8B-NPU
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
+<tr><td>Recipe</td><td>oga-npu</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Mistral-7B-v0.3-Instruct-NPU</summary>
+
+```bash
+lemonade-server pull Mistral-7B-v0.3-Instruct-NPU
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
+<tr><td>Recipe</td><td>oga-npu</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Phi-3.5-Mini-Instruct-NPU</summary>
+
+```bash
+lemonade-server pull Phi-3.5-Mini-Instruct-NPU
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
 <tr><td>Recipe</td><td>oga-npu</td></tr>
 </table>
 

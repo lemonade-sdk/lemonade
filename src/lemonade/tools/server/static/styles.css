@@ -416,6 +416,37 @@ body::before {
   color: #222;
 }
 
+.input-with-indicator {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-indicator input[type='text'] {
+  flex: 1;
+  padding: 0.5em;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  color: #222;
+  margin: 0;
+}
+
+#attachment-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #666;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid #ddd;
+}
+
 .chat-input-row button {
   padding: 0.5em 1.2em;
   background: #e6b800;
@@ -427,6 +458,29 @@ body::before {
   font-weight: 600;
 }
 
+#attachment-btn {
+    padding: 0.5em 0.8em;
+    background: #f0f0f0;
+    color: #222;
+    border: 1px solid #ddd;
+}
+
+#attachment-btn:hover {
+    background: #e0e0e0;
+}
+
+#clear-attachments-btn {
+    padding: 0.5em 0.6em;
+    background: #ff6b6b;
+    color: white;
+    border: 1px solid #ff5252;
+    margin-left: 0.2em;
+}
+
+#clear-attachments-btn:hover {
+    background: #ff5252;
+}
+
 .chat-input-row button:hover {
   background: #d4a500;
 }
@@ -435,6 +489,121 @@ body::before {
   background: #ccc;
   color: #666;
   cursor: not-allowed;
+}
+
+/* Image attachment preview styles */
+.attachments-preview-container {
+  padding: 0.5em 1em 0 1em;
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+  display: none;
+}
+
+.attachments-preview-container.has-attachments {
+  display: block;
+}
+
+.attachments-preview-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
+  font-size: 0.85em;
+  position: relative;
+}
+
+.attachment-preview:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background: #fafafa;
+}
+
+.attachment-thumbnail {
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  background: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.attachment-filename {
+  color: #666;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.attachment-remove-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  margin-left: 4px;
+  transition: color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.attachment-remove-btn:hover {
+  color: #ff6b6b;
+}
+
+.attachment-remove-btn:active {
+  transform: scale(0.9);
+}
+
+/* Fallback for non-image files or broken images */
+.attachment-preview.no-preview .attachment-thumbnail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px dashed #dee2e6;
+  color: #6c757d;
+  font-size: 12px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 600px) {
+  .attachments-preview-row {
+    gap: 6px;
+  }
+  
+  .attachment-preview {
+    padding: 3px 6px;
+    gap: 4px;
+  }
+  
+  .attachment-thumbnail {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .attachment-filename {
+    max-width: 100px;
+    font-size: 0.8em;
+  }
+  
+  .attachment-remove-btn {
+    font-size: 12px;
+  }
 }
 
 /* Model Management */

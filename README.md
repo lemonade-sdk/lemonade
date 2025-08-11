@@ -47,7 +47,9 @@
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 
-Lemonade makes it easy to run Large Language Models (LLMs) on your PC. Our focus is using the best tools, such as neural processing units (NPUs) and Vulkan GPU acceleration, to maximize LLM speed and responsiveness.
+Lemonade helps users run local LLMs with the highest performance by configuring state-of-the-art inference engines for their NPUs and GPUs.
+
+Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/), research teams like [Hazy Research at Stanford](https://www.amd.com/en/developer/resources/technical-articles/2025/minions--on-device-and-cloud-language-model-collaboration-on-ryz.html), and large companies like [AMD](https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html) use Lemonade to run LLMs.
 
 ## Getting Started
 
@@ -66,7 +68,7 @@ Lemonade makes it easy to run Large Language Models (LLMs) on your PC. Our focus
 </p>
 
 > [!TIP]
-> Want your app featured here? Let's do it! Shoot us a message on [Discord](https://discord.gg/5xXzkMu8Zk), [create an issue](https://github.com/lemonade-sdk/lemonade/issues), or email lemonade@amd.com.
+> Want your app featured here? Let's do it! Shoot us a message on [Discord](https://discord.gg/5xXzkMu8Zk), [create an issue](https://github.com/lemonade-sdk/lemonade/issues), or [email](lemonade@amd.com).
 
 ## Using the CLI
 
@@ -88,7 +90,10 @@ To check all models available, use the `list` command:
 lemonade-server list
 ```
 
-> Note: If you installed from source, use the `lemonade-server-dev` command instead.
+> **Note**:  If you installed from source, use the `lemonade-server-dev` command instead.
+
+> **Tip**: You can use `--llamacpp vulkan/rocm` to select a backend when running GGUF models.
+
 
 ## Model Library
 
@@ -130,7 +135,7 @@ Lemonade supports the following configurations, while also making it easy to swi
     <tr>
       <td><strong>🎮 GPU</strong></td>
       <td align="center">—</td>
-      <td align="center">Vulkan: All platforms<br><small>Focus:<br/>Ryzen™ AI 7000/8000/300<br/>Radeon™ 7000/9000</small></td>
+      <td align="center">Vulkan: All platforms<br>ROCm: Selected AMD platforms*</td>
       <td align="center">—</td>
       <td align="center">✅</td>
       <td align="center">✅</td>
@@ -146,6 +151,38 @@ Lemonade supports the following configurations, while also making it easy to swi
   </tbody>
 </table>
 
+<details>
+<summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Architecture</th>
+      <th>Platform Support</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>gfx1151</b> (STX Halo)</td>
+      <td>Windows, Ubuntu</td>
+      <td>Ryzen AI MAX+ Pro 395</td>
+    </tr>
+    <tr>
+      <td><b>gfx120X</b> (RDNA4)</td>
+      <td>Windows only</td>
+      <td>Radeon AI PRO R9700, RX 9070 XT/GRE/9070, RX 9060 XT</td>
+    </tr>
+    <tr>
+      <td><b>gfx110X</b> (RDNA3)</td>
+      <td>Windows, Ubuntu</td>
+      <td>Radeon PRO W7900/W7800/W7700/V710, RX 7900 XTX/XT/GRE, RX 7800 XT, RX 7700 XT</td>
+    </tr>
+  </tbody>
+</table>
+</details>
 
 ## Integrate Lemonade Server with Your Application
 

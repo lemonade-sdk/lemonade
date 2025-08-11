@@ -10,7 +10,9 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 
 from lemonade.api import from_pretrained
 
-model, tokenizer = from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", recipe="oga-cpu")
+model, tokenizer = from_pretrained(
+    "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx", recipe="oga-cpu"
+)
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids
 response = model.generate(input_ids, max_new_tokens=30)

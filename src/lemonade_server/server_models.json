@@ -114,6 +114,51 @@
         "recipe": "oga-npu",
         "suggested": true
     },
+    "DeepSeek-R1-Distill-Llama-8B-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": true
+    },
+    "DeepSeek-R1-Distill-Qwen-7B-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
+    "DeepSeek-R1-Distill-Qwen-1.5B-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
+    "Llama-3.2-3B-Instruct-NPU": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
+    "Llama-3.2-1B-Instruct-NPU": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
+    "Mistral-7B-v0.3-Instruct-NPU": {
+        "checkpoint": "amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": true
+    },
+    "Phi-3.5-Mini-Instruct-NPU": {
+        "checkpoint": "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": true
+    },
+    "ChatGLM-3-6b-Instruct-NPU": {
+        "checkpoint": "amd/chatglm3-6b-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
+    "AMD-OLMo-1B-Instruct-NPU": {
+        "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+        "recipe": "oga-npu",
+        "suggested": false
+    },
     "Llama-3.2-1B-Instruct-DirectML": {
         "checkpoint": "amd/Llama-3.2-1B-Instruct-dml-int4-awq-block-128-directml",
         "recipe": "oga-igpu",

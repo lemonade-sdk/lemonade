@@ -4,6 +4,11 @@
 
 Lemonade Server is available as a standalone tool with a [one-click Windows GUI installer](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe).
 
+No matter how the server is launched, you can configure its host, port, log
+level, Llama.cpp backend, and context size by setting the environment variables
+`LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, and
+`LEMONADE_CTX_SIZE`.
+
 Once you've installed, we recommend checking out these resources:
 
 | Documentation | Description |

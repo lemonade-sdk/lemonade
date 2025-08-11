@@ -8,6 +8,20 @@ Run transformer models using llama.cpp. This integration allows you to:
 Note: The tool will download and install the necessary platform llama.cpp
 executable files the first time the `llamacpp-load` tool is used. 
 
+## Installation
+
+By default, if no backend is pre-installed, the `llamacpp-load` tool will automatically download and install the appropriate backend when first used.
+
+You can pre-install llama.cpp binaries with a specific backend using the `lemonade-install` command:
+
+```bash
+# Install llama.cpp with ROCm backend
+lemonade-install --llamacpp rocm
+
+# Install llama.cpp with Vulkan backend (for broader GPU compatibility)
+lemonade-install --llamacpp vulkan
+```
+
 ## Get Models
 
 The `llamacpp-load` tool can download GGUF model checkpoints from Hugging Face.  Use
