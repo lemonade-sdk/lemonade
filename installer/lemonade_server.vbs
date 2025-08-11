@@ -1,4 +1,4 @@
-' This script detects wheter we are in headless mode and launches lemonade-server
+' This script detects whether we are in headless mode and launches lemonade-server
 ' either in headless mode or with a system tray icon.
 
 Set wshShell = CreateObject("WScript.Shell")
@@ -8,6 +8,8 @@ scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 
 ' Declare headless variable
 Dim HEADLESS
+Dim args
+args = " serve"
 
 ' Simple GUI detection: check if system tray is available
 On Error Resume Next
@@ -35,15 +37,16 @@ End If
 
 If HEADLESS = True Then
     ' Headless mode: open a terminal and run the server without the tray
-    wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve --no-tray", 1, True
+    wshShell.Run """" & scriptDir & "\lemonade-server.bat""" & args & " --no-tray", 1, True
 Else
     ' Check if we're in CI mode via environment variable
     ciMode = wshShell.ExpandEnvironmentStrings("%LEMONADE_CI_MODE%")
     If ciMode <> "%LEMONADE_CI_MODE%" And (LCase(ciMode) = "true" Or LCase(ciMode) = "1") Then
         ' CI mode: run without tray even in GUI environment
-        wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve --no-tray", 1, True
+        wshShell.Run """" & scriptDir & "\lemonade-server.bat""" & args & " --no-tray", 1, True
     Else
         ' GUI mode: Run the server on a hidden window with the tray
-        wshShell.Run """" & scriptDir & "\lemonade-server.bat"" serve", 0, False
+        wshShell.Run """" & scriptDir & "\lemonade-server.bat""" & args, 0, False
     End If
 End If
+

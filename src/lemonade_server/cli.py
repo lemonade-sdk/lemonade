@@ -47,7 +47,7 @@ class ModelLoadError(Exception):
 
 def serve(
     port: int = None,
-    host: str = "localhost",
+    host: str = None,
     log_level: str = None,
     tray: bool = False,
     use_thread: bool = False,
@@ -63,12 +63,14 @@ def serve(
     from lemonade.tools.server.serve import (
         Server,
         DEFAULT_PORT,
+        DEFAULT_HOST,
         DEFAULT_LOG_LEVEL,
         DEFAULT_LLAMACPP_BACKEND,
         DEFAULT_CTX_SIZE,
     )
 
     port = port if port is not None else DEFAULT_PORT
+    host = host if host is not None else DEFAULT_HOST
     log_level = log_level if log_level is not None else DEFAULT_LOG_LEVEL
     llamacpp_backend = (
         llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
@@ -274,8 +276,8 @@ def run(
     import time
 
     # Start the server if not running
-    _, port = get_server_info()
-    server_previously_running = port is not None
+    _, running_port = get_server_info()
+    server_previously_running = running_port is not None
     if not server_previously_running:
         port, server_thread = serve(
             port=port,
@@ -471,27 +473,48 @@ def developer_entrypoint():
 
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
-    parser.add_argument("--port", type=int, help="Port number to serve on")
+    from lemonade.tools.server.serve import (
+        DEFAULT_PORT,
+        DEFAULT_HOST,
+        DEFAULT_LOG_LEVEL,
+        DEFAULT_LLAMACPP_BACKEND,
+        DEFAULT_CTX_SIZE,
+    )
+
     parser.add_argument(
-        "--host", type=str, help="Address to bind for connections", default="localhost"
+        "--port",
+        type=int,
+        help="Port number to serve on",
+        default=DEFAULT_PORT,
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        help="Address to bind for connections",
+        default=DEFAULT_HOST,
     )
     parser.add_argument(
         "--log-level",
         type=str,
         help="Log level for the server",
         choices=["critical", "error", "warning", "info", "debug", "trace"],
-        default="info",
+        default=DEFAULT_LOG_LEVEL,
     )
     parser.add_argument(
         "--llamacpp",
         type=str,
-        help=f"LlamaCpp backend to use",
+        help="LlamaCpp backend to use",
         choices=["vulkan", "rocm"],
+        default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(
         "--ctx-size",
         type=int,
-        help="Context size for the model (default: 4096 for llamacpp, truncates prompts for other recipes)",
+        help=(
+            f"Context size for the model (default: {DEFAULT_CTX_SIZE} for llamacpp, "
+            "truncates prompts for other recipes)"
+        ),
+        default=DEFAULT_CTX_SIZE,
     )
 
 
