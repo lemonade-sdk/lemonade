@@ -37,20 +37,25 @@ from utils.server_base import (
 
 class LlamaCppTesting(ServerTestingBase):
     """Testing class for GGUF/LlamaCPP models that inherits shared functionality."""
-    
+
     # Default llamacpp backend - can be overridden by subclasses or environment variable
-    llamacpp_backend = None  # Set to None by default, can be 'vulkan', 'rocm', 'cpu', etc.
-    
+    llamacpp_backend = (
+        None  # Set to None by default, can be 'vulkan', 'rocm', 'cpu', etc.
+    )
+
     def __init__(self, *args, **kwargs):
         # Allow setting backend via environment variable for easy testing
         import os
-        if os.getenv('LLAMACPP_BACKEND'):
-            self.llamacpp_backend = os.getenv('LLAMACPP_BACKEND')
+
+        if os.getenv("LLAMACPP_BACKEND"):
+            self.llamacpp_backend = os.getenv("LLAMACPP_BACKEND")
         super().__init__(*args, **kwargs)
 
     def setUp(self):
         """Call parent setUp but with GGUF-specific messaging."""
-        backend_msg = f" with {self.llamacpp_backend} backend" if self.llamacpp_backend else ""
+        backend_msg = (
+            f" with {self.llamacpp_backend} backend" if self.llamacpp_backend else ""
+        )
         print(f"\n=== Starting new GGUF/LlamaCPP test{backend_msg} ===")
         super().setUp()
 
@@ -63,13 +68,19 @@ class LlamaCppTesting(ServerTestingBase):
         """ROCm-only: get_hip_devices should report zero devices in CI."""
         if self.llamacpp_backend != "rocm":
             return
-        
+
         from lemonade.tools.llamacpp.utils import get_hip_devices
 
-        expected_devices = [[0, 'AMD Radeon(TM) 8060S Graphics']] if sys.platform.startswith("win") else [[0, 'AMD Radeon Graphics']]
+        expected_devices = (
+            [[0, "AMD Radeon(TM) 8060S Graphics"]]
+            if sys.platform.startswith("win")
+            else [[0, "AMD Radeon Graphics"]]
+        )
         devices = get_hip_devices()
-        assert devices == expected_devices, f"Expected {expected_devices} devices, got {devices}"
-        
+        assert (
+            devices == expected_devices
+        ), f"Expected {expected_devices} devices, got {devices}"
+
     # Endpoint: /api/v1/chat/completions
     def test_001_test_llamacpp_chat_completion_streaming(self):
         client = OpenAI(
@@ -291,24 +302,64 @@ class LlamaCppTesting(ServerTestingBase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
+    def test_007_test_generation_parameters_with_llamacpp(self):
+        """Test generation parameters (repetition_penalty, top_k, top_p) with llamacpp models"""
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",
+        )
+
+        # Test completions with generation parameters
+        completion = client.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            prompt="Tell me about Python programming:",
+            max_tokens=15,
+            temperature=0.8,
+            repetition_penalty=1.1,
+            top_k=40,
+            top_p=0.9,
+        )
+
+        print(
+            "LlamaCpp completions with generation parameters:",
+            completion.choices[0].text,
+        )
+        assert len(completion.choices[0].text) > 5
+
+        # Test chat completions with generation parameters
+        completion = client.chat.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            messages=self.messages,
+            max_completion_tokens=15,
+            temperature=0.7,
+            repetition_penalty=1.2,
+            top_k=50,
+            top_p=0.95,
+        )
+
+        print(
+            "LlamaCpp chat completions with generation parameters:",
+            completion.choices[0].message.content,
+        )
+        assert len(completion.choices[0].message.content) > 5
+
 
 class LlamaCppVulkanTesting(LlamaCppTesting):
     """Testing class for GGUF/LlamaCPP models with Vulkan backend."""
+
     llamacpp_backend = "vulkan"
 
 
 class LlamaCppRocmTesting(LlamaCppTesting):
     """Testing class for GGUF/LlamaCPP models with ROCm backend."""
+
     llamacpp_backend = "rocm"
-
-
-
 
 
 if __name__ == "__main__":
     import sys
     import os
-    
+
     # Simple command line parsing without argparse
     if len(sys.argv) < 2:
         print("Usage: python server_llamacpp.py [backend] [--offline]")
@@ -317,10 +368,10 @@ if __name__ == "__main__":
         print("    python server_llamacpp.py vulkan")
         print("    python server_llamacpp.py rocm --offline")
         sys.exit(1)
-    
+
     backend = sys.argv[1].lower()
     offline_mode = "--offline" in sys.argv
-    
+
     # Select the appropriate test class based on backend
     if backend == "vulkan":
         test_class = LlamaCppVulkanTesting
@@ -329,16 +380,18 @@ if __name__ == "__main__":
         test_class = LlamaCppRocmTesting
         description = "GGUF/LLAMACPP ROCM SERVER TESTS"
     else:
-        print(f"Error: Unsupported backend '{backend}'. Supported backends: vulkan, rocm")
+        print(
+            f"Error: Unsupported backend '{backend}'. Supported backends: vulkan, rocm"
+        )
         sys.exit(1)
-    
+
     # Pass offline flag to test class if needed
     if offline_mode:
         # You can store this in a class variable or pass it to the test runner
         test_class.offline_mode = True
-    
+
     # Use the shared test runner with explicit offline parameter to avoid argparse
     run_server_tests_with_class(test_class, description, offline=offline_mode)
 
 # This file was originally licensed under Apache 2.0. It has been modified.
-# Modifications Copyright (c) 2025 AMD 
+# Modifications Copyright (c) 2025 AMD

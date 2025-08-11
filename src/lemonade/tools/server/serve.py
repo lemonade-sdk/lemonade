@@ -435,6 +435,21 @@ class Server:
 
         lc = self.initialize_load_config(completion_request)
 
+        # Log request parameters (excluding message content for brevity)
+        request_params = {
+            "model": completion_request.model,
+            "temperature": completion_request.temperature,
+            "repetition_penalty": completion_request.repetition_penalty,
+            "top_k": completion_request.top_k,
+            "top_p": completion_request.top_p,
+            "max_tokens": completion_request.max_tokens,
+            "stop": completion_request.stop,
+            "stream": completion_request.stream,
+            "echo": completion_request.echo,
+            "logprobs": completion_request.logprobs,
+        }
+        logging.debug(f"Completions request parameters: {request_params}")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -456,6 +471,9 @@ class Server:
             "message": text,
             "stop": completion_request.stop,
             "temperature": completion_request.temperature,
+            "repetition_penalty": completion_request.repetition_penalty,
+            "top_k": completion_request.top_k,
+            "top_p": completion_request.top_p,
             "max_new_tokens": completion_request.max_tokens,
         }
 
@@ -564,6 +582,27 @@ class Server:
 
         lc = self.initialize_load_config(chat_completion_request)
 
+        # Log request parameters (excluding message history for brevity)
+        request_params = {
+            "model": chat_completion_request.model,
+            "temperature": chat_completion_request.temperature,
+            "repetition_penalty": chat_completion_request.repetition_penalty,
+            "top_k": chat_completion_request.top_k,
+            "top_p": chat_completion_request.top_p,
+            "max_tokens": chat_completion_request.max_tokens,
+            "max_completion_tokens": chat_completion_request.max_completion_tokens,
+            "stop": chat_completion_request.stop,
+            "stream": chat_completion_request.stream,
+            "logprobs": chat_completion_request.logprobs,
+            "tools": (
+                len(chat_completion_request.tools)
+                if chat_completion_request.tools
+                else None
+            ),
+            "response_format": chat_completion_request.response_format,
+        }
+        logging.debug(f"Chat completions request parameters: {request_params}")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -608,6 +647,9 @@ class Server:
             "message": text,
             "stop": chat_completion_request.stop,
             "temperature": chat_completion_request.temperature,
+            "repetition_penalty": chat_completion_request.repetition_penalty,
+            "top_k": chat_completion_request.top_k,
+            "top_p": chat_completion_request.top_p,
             "max_new_tokens": max_new_tokens,
         }
 
@@ -856,6 +898,19 @@ class Server:
 
         lc = self.initialize_load_config(responses_request)
 
+        # Log request parameters (excluding message history for brevity)
+        request_params = {
+            "model": responses_request.model,
+            "temperature": responses_request.temperature,
+            "repetition_penalty": responses_request.repetition_penalty,
+            "top_k": responses_request.top_k,
+            "top_p": responses_request.top_p,
+            "max_output_tokens": responses_request.max_output_tokens,
+            "stream": responses_request.stream,
+            "input_type": type(responses_request.input).__name__,
+        }
+        logging.debug(f"Responses request parameters: {request_params}")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -877,6 +932,9 @@ class Server:
         generation_args = {
             "message": text,
             "temperature": responses_request.temperature,
+            "repetition_penalty": responses_request.repetition_penalty,
+            "top_k": responses_request.top_k,
+            "top_p": responses_request.top_p,
             "max_new_tokens": responses_request.max_output_tokens,
         }
 
@@ -1006,6 +1064,9 @@ class Server:
         stop: list[str] | str | None = None,
         max_new_tokens: int | None = None,
         temperature: float | None = None,
+        repetition_penalty: float | None = None,
+        top_k: int | None = None,
+        top_p: float | None = None,
     ):
         """
         Core streaming completion logic, separated from response handling.
@@ -1088,6 +1149,9 @@ class Server:
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
             "temperature": temperature,
+            "repetition_penalty": repetition_penalty,
+            "top_k": top_k,
+            "top_p": top_p,
         }
 
         # Initialize performance variables

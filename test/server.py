@@ -45,7 +45,7 @@ sample_tool = {
 
 class Testing(ServerTestingBase):
     """Main testing class that inherits shared functionality from ServerTestingBase."""
-    
+
     def test_000_endpoints_available(self):
         # List of endpoints to check
         valid_endpoints = [
@@ -660,6 +660,61 @@ class Testing(ServerTestingBase):
         packages = verbose_system_info["Python Packages"]
         assert isinstance(packages, list)
         assert len(packages) > 0
+
+    # Test generation parameters: repetition_penalty, top_k, top_p
+    def test_021_test_generation_parameters(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        # Test completions with new parameters
+        completion = client.completions.create(
+            model=MODEL_NAME,
+            prompt="Tell me about artificial intelligence",
+            max_tokens=15,
+            temperature=0.8,
+            repetition_penalty=1.1,
+            top_k=40,
+            top_p=0.9,
+        )
+
+        print("Completions with generation parameters:", completion.choices[0].text)
+        assert len(completion.choices[0].text) > 5
+
+        # Test chat completions with new parameters
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=self.messages,
+            max_completion_tokens=15,
+            temperature=0.7,
+            repetition_penalty=1.2,
+            top_k=50,
+            top_p=0.95,
+        )
+
+        print(
+            "Chat completions with generation parameters:",
+            completion.choices[0].message.content,
+        )
+        assert len(completion.choices[0].message.content) > 5
+
+        # Test responses with new parameters
+        response = client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=False,
+            temperature=0.6,
+            repetition_penalty=1.05,
+            top_k=30,
+            top_p=0.8,
+            max_output_tokens=15,
+        )
+
+        print(
+            "Responses with generation parameters:", response.output[0].content[0].text
+        )
+        assert len(response.output[0].content[0].text) > 5
 
 
 if __name__ == "__main__":
