@@ -12,6 +12,7 @@ from lemonade_server.pydantic_models import (
     DEFAULT_CTX_SIZE,
 )
 
+
 # Error codes for different CLI scenarios
 class ExitCodes:
     SUCCESS = 0
@@ -67,7 +68,6 @@ def serve(
     # Otherwise, start the server
     print("Starting Lemonade Server...")
     from lemonade.tools.server.serve import Server
-
 
     port = port if port is not None else DEFAULT_PORT
     host = host if host is not None else DEFAULT_HOST

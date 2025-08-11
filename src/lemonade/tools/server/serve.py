@@ -11,7 +11,6 @@ from typing import Optional, Union
 import json
 import subprocess
 from pathlib import Path
-import os
 
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
@@ -75,6 +74,7 @@ from lemonade_server.pydantic_models import (
 if platform.system() == "Windows":
     # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
+
 
 class ServerModel(Model):
     """

@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Union, List
 
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
 DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
 DEFAULT_LLAMACPP_BACKEND = os.getenv("LEMONADE_LLAMACPP", "vulkan")
 DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
+
 
 class LoadConfig(BaseModel):
     """
