@@ -258,6 +258,72 @@ class Server:
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
 
+    def _log_request_parameters(self, request, endpoint_name: str):
+        """
+        Log request parameters excluding content fields like messages, prompt, or input.
+
+        Args:
+            request: Any request object (CompletionRequest, ChatCompletionRequest, etc.)
+            endpoint_name: Name of the endpoint for logging context
+        """
+        if not logging.getLogger().isEnabledFor(logging.DEBUG):
+            return
+
+        # Fields to exclude from logging (content fields)
+        excluded_fields = {"messages", "prompt", "input"}
+
+        # Get all attributes from the request object
+        request_params = {}
+        if hasattr(request, "__dict__"):
+            # For pydantic models, get the dict representation
+            if hasattr(request, "model_dump"):
+                all_params = request.model_dump()
+            elif hasattr(request, "dict"):
+                all_params = request.dict()
+            else:
+                all_params = request.__dict__
+
+            # Filter out excluded fields and add special handling for certain fields
+            for key, value in all_params.items():
+                if key not in excluded_fields:
+                    # Special handling for tools field - show count instead of full content
+                    if key == "tools" and value is not None:
+                        request_params[key] = (
+                            f"{len(value)} tools" if isinstance(value, list) else value
+                        )
+                    # Special handling for input type in responses
+                    elif key == "input" and hasattr(request, "input"):
+                        request_params["input_type"] = type(value).__name__
+                    else:
+                        request_params[key] = value
+
+        logging.debug(f"{endpoint_name} request parameters: {request_params}")
+
+    def _get_repetition_penalty(self, request) -> float | None:
+        """
+        Get the repetition penalty value from request, handling both repetition_penalty and repeat_penalty.
+
+        Args:
+            request: Request object that may contain repetition_penalty or repeat_penalty
+
+        Returns:
+            The repetition penalty value, or None if neither is set
+
+        Note:
+            If both are provided, repetition_penalty takes precedence.
+            This supports compatibility between different frameworks:
+            - OGA uses repetition_penalty
+            - LlamaCPP uses repeat_penalty
+        """
+        if (
+            hasattr(request, "repetition_penalty")
+            and request.repetition_penalty is not None
+        ):
+            return request.repetition_penalty
+        elif hasattr(request, "repeat_penalty") and request.repeat_penalty is not None:
+            return request.repeat_penalty
+        return None
+
     def _setup_server_common(
         self,
         tray: bool = False,
@@ -436,19 +502,7 @@ class Server:
         lc = self.initialize_load_config(completion_request)
 
         # Log request parameters (excluding message content for brevity)
-        request_params = {
-            "model": completion_request.model,
-            "temperature": completion_request.temperature,
-            "repetition_penalty": completion_request.repetition_penalty,
-            "top_k": completion_request.top_k,
-            "top_p": completion_request.top_p,
-            "max_tokens": completion_request.max_tokens,
-            "stop": completion_request.stop,
-            "stream": completion_request.stream,
-            "echo": completion_request.echo,
-            "logprobs": completion_request.logprobs,
-        }
-        logging.debug(f"Completions request parameters: {request_params}")
+        self._log_request_parameters(completion_request, "Completions")
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
@@ -471,7 +525,7 @@ class Server:
             "message": text,
             "stop": completion_request.stop,
             "temperature": completion_request.temperature,
-            "repetition_penalty": completion_request.repetition_penalty,
+            "repetition_penalty": self._get_repetition_penalty(completion_request),
             "top_k": completion_request.top_k,
             "top_p": completion_request.top_p,
             "max_new_tokens": completion_request.max_tokens,
@@ -583,25 +637,7 @@ class Server:
         lc = self.initialize_load_config(chat_completion_request)
 
         # Log request parameters (excluding message history for brevity)
-        request_params = {
-            "model": chat_completion_request.model,
-            "temperature": chat_completion_request.temperature,
-            "repetition_penalty": chat_completion_request.repetition_penalty,
-            "top_k": chat_completion_request.top_k,
-            "top_p": chat_completion_request.top_p,
-            "max_tokens": chat_completion_request.max_tokens,
-            "max_completion_tokens": chat_completion_request.max_completion_tokens,
-            "stop": chat_completion_request.stop,
-            "stream": chat_completion_request.stream,
-            "logprobs": chat_completion_request.logprobs,
-            "tools": (
-                len(chat_completion_request.tools)
-                if chat_completion_request.tools
-                else None
-            ),
-            "response_format": chat_completion_request.response_format,
-        }
-        logging.debug(f"Chat completions request parameters: {request_params}")
+        self._log_request_parameters(chat_completion_request, "Chat completions")
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
@@ -647,7 +683,7 @@ class Server:
             "message": text,
             "stop": chat_completion_request.stop,
             "temperature": chat_completion_request.temperature,
-            "repetition_penalty": chat_completion_request.repetition_penalty,
+            "repetition_penalty": self._get_repetition_penalty(chat_completion_request),
             "top_k": chat_completion_request.top_k,
             "top_p": chat_completion_request.top_p,
             "max_new_tokens": max_new_tokens,
@@ -899,17 +935,7 @@ class Server:
         lc = self.initialize_load_config(responses_request)
 
         # Log request parameters (excluding message history for brevity)
-        request_params = {
-            "model": responses_request.model,
-            "temperature": responses_request.temperature,
-            "repetition_penalty": responses_request.repetition_penalty,
-            "top_k": responses_request.top_k,
-            "top_p": responses_request.top_p,
-            "max_output_tokens": responses_request.max_output_tokens,
-            "stream": responses_request.stream,
-            "input_type": type(responses_request.input).__name__,
-        }
-        logging.debug(f"Responses request parameters: {request_params}")
+        self._log_request_parameters(responses_request, "Responses")
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
@@ -932,7 +958,7 @@ class Server:
         generation_args = {
             "message": text,
             "temperature": responses_request.temperature,
-            "repetition_penalty": responses_request.repetition_penalty,
+            "repetition_penalty": self._get_repetition_penalty(responses_request),
             "top_k": responses_request.top_k,
             "top_p": responses_request.top_p,
             "max_new_tokens": responses_request.max_output_tokens,

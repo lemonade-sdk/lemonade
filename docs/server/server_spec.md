@@ -79,7 +79,8 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `stop` | No | Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. Also accepts `repeat_penalty` for compatibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repeat_penalty` | No | Alternative name for `repetition_penalty`. Both parameters are interchangeable for compatibility across different frameworks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tools`       | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -177,7 +178,8 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `echo` | No | Echo back the prompt in addition to the completion. Available on non-streaming mode. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `logprobs` | No | Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. Only available when `stream=False`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. Also accepts `repeat_penalty` for compatibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repeat_penalty` | No | Alternative name for `repetition_penalty`. Both parameters are interchangeable for compatibility across different frameworks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -243,7 +245,8 @@ Responses API. You provide an input and receive a response. This API will also l
 | `model` | Yes | The model to use for the response. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_output_tokens` | No | The maximum number of output tokens to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | What sampling temperature to use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repetition_penalty` | No | Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition. Also accepts `repeat_penalty` for compatibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `repeat_penalty` | No | Alternative name for `repetition_penalty`. Both parameters are interchangeable for compatibility across different frameworks. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Integer that controls the number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

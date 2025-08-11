@@ -104,6 +104,7 @@ class OrtGenaiModel(ModelAdapter):
         top_p=1.0,
         temperature=0.7,
         repetition_penalty=1.0,
+        repeat_penalty=None,  # Alternative name for repetition_penalty (used by llamacpp)
         streamer: OrtGenaiStreamer = None,
         pad_token_id=None,
         stopping_criteria=None,
@@ -111,6 +112,11 @@ class OrtGenaiModel(ModelAdapter):
         random_seed=1,
     ):
         params = og.GeneratorParams(self.model)
+
+        # Handle repetition penalty parameter mapping
+        # If repeat_penalty is provided, use it instead of repetition_penalty for compatibility
+        if repeat_penalty is not None:
+            repetition_penalty = repeat_penalty
 
         # OGA models return a list of tokens (older versions) or 1d numpy array (newer versions)
         prompt_length = len(input_ids)
