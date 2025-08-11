@@ -58,8 +58,6 @@ Continue.dev provides three interaction modes for different development tasks. S
 
 ## Examples
 
-*Note: Examples demonstrate Chat and Agent modes with local Lemonade models. Additional examples with alternative models will be added once testing hardware is available.*
-
 ### Example 1: Chat Mode - Building an Asteroids Game
 
 **Scenario**: You want to quickly prototype a game concept through conversation with the AI.
