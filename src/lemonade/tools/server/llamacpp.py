@@ -420,6 +420,7 @@ def chat_completion(
             return response
 
         except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error during chat completion: %s", str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Chat completion error: {str(e)}",
@@ -482,6 +483,7 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
             return response
 
         except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error during completion: %s", str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Completion error: {str(e)}",
