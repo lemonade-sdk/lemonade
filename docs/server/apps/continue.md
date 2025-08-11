@@ -131,7 +131,7 @@ Through this conversational approach, the model helps build and refine the game 
 
 ![Chat Mode Game Development](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_gen.png)
 
-After running the `pip install pygame` command to setup dependencies, and applying the chagnes to `main.py`, the game can be run using
+After running the `pip install pygame` command to setup dependencies, and applying the changes to `main.py`, the game can be run using
 
 `python .\main.py`
 
