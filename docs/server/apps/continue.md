@@ -113,7 +113,7 @@ Model: To create a yellow trail effect for the player's ship, you can maintain a
 
 Here's how you can modify the `Player` class and the main game loop to include this feature:
 
-# <model genearted>...
+# <model generated>...
 
 ### Explanation of Changes:
 1. **Player Class**:
