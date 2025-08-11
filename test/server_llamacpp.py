@@ -66,7 +66,7 @@ class LlamaCppTesting(ServerTestingBase):
         
         from lemonade.tools.llamacpp.utils import get_hip_devices
 
-        expected_devices = [[0, "AMD Radeon Graphics"]] if sys.platform.startswith("win") else [[0, "AMD Radeon Graphics"]]
+        expected_devices = [[0, 'AMD Radeon(TM) 8060S Graphics']] if sys.platform.startswith("win") else [[0, 'AMD Radeon Graphics']]
         devices = get_hip_devices()
         assert devices == expected_devices, f"Expected {expected_devices} devices, got {devices}"
         
