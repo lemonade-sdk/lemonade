@@ -5,6 +5,7 @@ import subprocess
 import re
 import threading
 import platform
+import json
 
 import requests
 from tabulate import tabulate
@@ -41,6 +42,48 @@ def llamacpp_address(port: int) -> str:
         The base URL for the llamacpp server
     """
     return f"http://127.0.0.1:{port}/v1"
+
+
+def _separate_openai_params(request_dict: dict, endpoint_type: str = "chat") -> dict:
+    """
+    Separate standard OpenAI parameters from custom llama.cpp parameters.
+    
+    Args:
+        request_dict: Dictionary of all request parameters
+        endpoint_type: Type of endpoint ("chat" or "completion")
+    
+    Returns:
+        Dictionary with parameters properly separated for OpenAI client
+    """
+    openai_client_params = {}
+    extra_params = {}
+    
+    # Standard OpenAI parameters by endpoint type
+    if endpoint_type == "chat":
+        openai_params = {
+            'messages', 'model', 'frequency_penalty', 'logit_bias', 'logprobs',
+            'top_logprobs', 'max_tokens', 'n', 'presence_penalty', 'response_format',
+            'seed', 'service_tier', 'stop', 'stream', 'stream_options', 'temperature',
+            'top_p', 'tools', 'tool_choice', 'parallel_tool_calls', 'user'
+        }
+    else:  # completion
+        openai_params = {
+            'model', 'prompt', 'best_of', 'echo', 'frequency_penalty', 'logit_bias',
+            'logprobs', 'max_tokens', 'n', 'presence_penalty', 'seed', 'stop',
+            'stream', 'suffix', 'temperature', 'top_p', 'user'
+        }
+    
+    for key, value in request_dict.items():
+        if key in openai_params:
+            openai_client_params[key] = value
+        else:
+            extra_params[key] = value
+    
+    # If there are custom parameters, use extra_body to pass them through
+    if extra_params:
+        openai_client_params['extra_body'] = extra_params
+    
+    return openai_client_params
 
 
 class LlamaTelemetry:
@@ -384,13 +427,16 @@ def chat_completion(
         exclude_unset=True, exclude_none=True
     )
 
+    # Separate standard OpenAI parameters from custom llama.cpp parameters
+    openai_client_params = _separate_openai_params(request_dict, "chat")
+
     # Check if streaming is requested
     if chat_completion_request.stream:
 
         def event_stream():
             try:
                 # Enable streaming
-                for chunk in client.chat.completions.create(**request_dict):
+                for chunk in client.chat.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -412,7 +458,7 @@ def chat_completion(
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
-            response = client.chat.completions.create(**request_dict)
+            response = client.chat.completions.create(**openai_client_params)
 
             # Show telemetry after completion
             telemetry.show_telemetry()
@@ -447,13 +493,16 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
     # Convert Pydantic model to dict and remove unset/null values
     request_dict = completion_request.model_dump(exclude_unset=True, exclude_none=True)
 
+    # Separate standard OpenAI parameters from custom llama.cpp parameters
+    openai_client_params = _separate_openai_params(request_dict, "completion")
+
     # Check if streaming is requested
     if completion_request.stream:
 
         def event_stream():
             try:
                 # Enable streaming
-                for chunk in client.completions.create(**request_dict):
+                for chunk in client.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -475,7 +524,7 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
-            response = client.completions.create(**request_dict)
+            response = client.completions.create(**openai_client_params)
 
             # Show telemetry after completion
             telemetry.show_telemetry()
