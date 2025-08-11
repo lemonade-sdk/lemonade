@@ -17,7 +17,7 @@ Continue.dev is an open-source AI code assistant for VS Code and JetBrains that 
 3. Search for "Continue" 
 4. Install the Continue extension
 
-![Continue Extension in VS Code Marketplace](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_vscode_marketplace.png)
+![Continue Extension in VS Code Marketplace](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_vscode_marketplace.png)
 
 ### Configuring with Continue Hub
 
@@ -26,12 +26,12 @@ Continue Hub provides pre-configured model setups that work immediately with Lem
 1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
 2. **Select Configuration**: Browse available Lemonade models and configurations
 
-![Continue Hub Lemonade Models](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_lemonade.png)
+![Continue Hub Lemonade Models](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_lemonade.png)
 
 3. **Add to Continue**: Click "Use" on your chosen configuration
 4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in
 
-![Configuration Added to Continue](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_assistant.png)
+![Configuration Added to Continue](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png)
 
 ### Adding Lemonade Models to your Assistant
 
@@ -43,7 +43,7 @@ To add Lemonade models to your existing Continue setup:
 
 For detailed configuration steps, see the [Continue configuration documentation](https://docs.continue.dev/reference/config).
 
-![Continue Configuration Settings](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_hub_assistant_configed.png)
+![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
 ## Working with Continue.dev
 
@@ -54,7 +54,7 @@ Continue.dev provides three interaction modes for different development tasks. S
 - **Chat**: Code explanations, debugging discussions, architecture planning
 - **Agent**: Multi-file refactoring, large-scale changes across projects
 
-![Continue Modes Interface](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_modes.png) -->
+![Continue Modes Interface](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_modes.png) -->
 
 ## Examples
 
@@ -129,7 +129,7 @@ This code will create a yellow trail effect behind the player's ship as it moves
 
 Through this conversational approach, the model helps build and refine the game iteratively, explaining decisions and accommodating new requirements as they arise.
 
-![Chat Mode Game Development](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_gen.png)
+![Chat Mode Game Development](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_gen.png)
 
 After running the `pip install pygame` command to setup dependencies, and applying the chagnes to `main.py`, the game can be run using
 
@@ -137,7 +137,7 @@ After running the `pip install pygame` command to setup dependencies, and applyi
 
 This results in the following:
 
-![Asteroids Game Result](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_asteroids_result.png)
+![Asteroids Game Result](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_result.png)
 
 ### Example 2: Agent Mode - Converting Callbacks to Async/Await
 
@@ -233,7 +233,7 @@ async function fetchUserData(userId) {
 
 The Agent intelligently handles nested callbacks, error propagation, and ensures all calling code is updated consistently.
 
-![Agent Mode Async/Await Conversion](https://github.com/lemonade-sdk/assets/tree/main/docs/guides/continue/continue_extension_async_result.png)
+![Agent Mode Async/Await Conversion](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_async_result.png)
 
 ## Best Practices
 
