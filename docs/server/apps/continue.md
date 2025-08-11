@@ -183,7 +183,6 @@ function fetchUserData(userId, callback) {
     }
   });
 }
-
 ```
 
 **After (async/await)**:
@@ -245,7 +244,7 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 - Clear chat history when switching tasks
 
 **Model Selection & Assistant Scoping**
-- Avoid adding too many models to an assistant—Continue may switch to a model it thinks is better, but hardware capabilities aren't always considered.
+- Avoid adding too many models with the same mode (i.e., Edit or Agent) to an assistant; Continue may switch to a model it thinks is better, and the chosen model may not fit well to hardware.
 - Building custom assistants tailored to specific languages or domains (e.g., a JavaScript/TypeScript assistant scoped to Node.js) leads to more relevant results.
 - Scope assistants for particular tasks, such as coding with MCP, using specific prompts, or working with targeted data. See [continue.dev customization](https://docs.continue.dev/customization/overview) for more on effective scoping.
 
