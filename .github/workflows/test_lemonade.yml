@@ -32,6 +32,10 @@ jobs:
           activate-environment: lemon
           python-version: "3.10"
           run-post: "false"
+      - name: Install PyTorch CPU
+        shell: bash -el {0}
+        run: |
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
       - name: Install dependencies
         shell: bash -el {0}
         run: |
