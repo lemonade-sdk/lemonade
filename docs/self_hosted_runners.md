@@ -45,7 +45,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
     - When running `./config.cmd` in step 2, make the following choices:
          - Name of the runner group = `stx`
          - For the runner name, call it `NAME-stx-NUMBER`, where NAME is your alias and NUMBER would tell you this is the Nth STX machine you've added.
-         - Apply the labels `stx-test` and `miniforge`, `windows`|`ubuntu`, as well as a label with your name to indicate that you are maintaining the runner.
+         - Apply the label `stx-test` as well as a label with your name to indicate that you are maintaining the runner.
          - Accept the default for the work folder
          - You want the runner to function as a service (respond Y)
          - User account to use for the service = `NT AUTHORITY\SYSTEM` (not the default of `NT AUTHORITY\NETWORK SERVICE`)

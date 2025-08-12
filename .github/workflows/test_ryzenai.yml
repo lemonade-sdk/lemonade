@@ -31,7 +31,7 @@ jobs:
   test-npu-and-hybrid:
     env:
         LEMONADE_CI_MODE: "True"
-    runs-on: ["${{ inputs.runson || 'stx' }}", 'miniforge', 'windows']
+    runs-on: ["${{ inputs.runson || 'stx' }}", 'Windows']
     steps:
       - uses: actions/checkout@v3
       
