@@ -247,7 +247,6 @@ def _launch_llama_subprocess(
             "The model cannot use tools. If needed, use the ROCm backend instead."
         )
 
-
     # Use legacy reasoning formatting, since not all apps support the new
     # reasoning_content field
     base_command.extend(["--reasoning-format", "none"])
