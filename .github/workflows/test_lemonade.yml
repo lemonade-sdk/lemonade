@@ -38,9 +38,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pylint
           python -m pip check
-          # Install AMD-specific package from AMD PyPI
-          pip install model-generate==1.5.0 --extra-index-url https://pypi.amd.com/simple
-          # Install main package without extra-index-url to avoid checking AMD PyPI for all deps
           pip install -e .[dev]
       - name: Lint with Black
         uses: psf/black@stable
