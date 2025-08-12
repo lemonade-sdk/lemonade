@@ -604,6 +604,22 @@ function createModelItem(modelId, modelData, container) {
 
 // Install model
 async function installModel(modelId) {
+    // Find the install button and show loading state
+    const modelItems = document.querySelectorAll('.model-item');
+    let installBtn = null;
+    
+    modelItems.forEach(item => {
+        const nameElement = item.querySelector('.model-item-name span');
+        if (nameElement && nameElement.textContent === modelId) {
+            installBtn = item.querySelector('.model-item-btn.install');
+        }
+    });
+    
+    if (installBtn) {
+        installBtn.disabled = true;
+        installBtn.textContent = 'Installing...';
+    }
+    
     try {
         const modelData = window.SERVER_MODELS[modelId];
         await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
@@ -623,11 +639,33 @@ async function installModel(modelId) {
     } catch (error) {
         console.error('Error installing model:', error);
         showErrorBanner('Failed to install model: ' + error.message);
+        
+        // Reset button state on error
+        if (installBtn) {
+            installBtn.disabled = false;
+            installBtn.textContent = 'Install';
+        }
     }
 }
 
 // Load model
 async function loadModel(modelId) {
+    // Find the load button and show loading state
+    const modelItems = document.querySelectorAll('.model-item');
+    let loadBtn = null;
+    
+    modelItems.forEach(item => {
+        const nameElement = item.querySelector('.model-item-name span');
+        if (nameElement && nameElement.textContent === modelId) {
+            loadBtn = item.querySelector('.model-item-btn.load');
+        }
+    });
+    
+    if (loadBtn) {
+        loadBtn.disabled = true;
+        loadBtn.textContent = 'Loading Model...';
+    }
+    
     try {
         await httpRequest(getServerBaseUrl() + '/api/v1/load', {
             method: 'POST',
@@ -642,6 +680,12 @@ async function loadModel(modelId) {
     } catch (error) {
         console.error('Error loading model:', error);
         showErrorBanner('Failed to load model: ' + error.message);
+        
+        // Reset button state on error
+        if (loadBtn) {
+            loadBtn.disabled = false;
+            loadBtn.textContent = 'Load';
+        }
     }
 }
 

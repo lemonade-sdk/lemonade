@@ -1995,7 +1995,7 @@ body::before {
 .model-item-btn.install {
   background: var(--accent-gold);
   border-color: var(--accent-gold);
-  color: #222;
+  color: white;
 }
 
 .model-item-btn.install:hover {
