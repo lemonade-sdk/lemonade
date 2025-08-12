@@ -459,6 +459,7 @@ def chat_completion(
         def event_stream():
             try:
                 # Enable streaming
+                # pylint: disable=missing-kwoa
                 for chunk in client.chat.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
@@ -481,6 +482,7 @@ def chat_completion(
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
+            # pylint: disable=missing-kwoa
             response = client.chat.completions.create(**openai_client_params)
 
             # Show telemetry after completion
@@ -525,6 +527,7 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
         def event_stream():
             try:
                 # Enable streaming
+                # pylint: disable=missing-kwoa
                 for chunk in client.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
@@ -547,6 +550,7 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
+            # pylint: disable=missing-kwoa
             response = client.completions.create(**openai_client_params)
 
             # Show telemetry after completion
