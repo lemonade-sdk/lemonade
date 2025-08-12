@@ -5,7 +5,6 @@ import subprocess
 import re
 import threading
 import platform
-import json
 
 import requests
 from tabulate import tabulate
