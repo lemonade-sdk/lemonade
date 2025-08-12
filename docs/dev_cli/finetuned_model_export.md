@@ -56,6 +56,12 @@ python quantize_quark.py --model_dir $MODEL_DIR \
 
 Lemonade handles export and device specialization automatically. It detects model type and target device, exporting optimally for AMD hardware.
 
+Install support in Lemonade with:
+
+```bash
+pip install lemonade-sdk[dev,oga-ryzenai,model-generate] --extra-index-url https://pypi.amd.com/simple
+```
+
 ### Usage
 
 ```bash

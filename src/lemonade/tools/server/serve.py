@@ -11,6 +11,7 @@ from typing import Optional, Union
 import json
 import subprocess
 from pathlib import Path
+import os
 
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
@@ -71,11 +72,11 @@ if platform.system() == "Windows":
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
 
 
-DEFAULT_PORT = 8000
-DEFAULT_HOST = "localhost"
-DEFAULT_LOG_LEVEL = "info"
-DEFAULT_LLAMACPP_BACKEND = "vulkan"
-DEFAULT_CTX_SIZE = 4096
+DEFAULT_PORT = int(os.getenv("LEMONADE_PORT", "8000"))
+DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
+DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
+DEFAULT_LLAMACPP_BACKEND = os.getenv("LEMONADE_LLAMACPP", "vulkan")
+DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
 
 
 class ServerModel(Model):
