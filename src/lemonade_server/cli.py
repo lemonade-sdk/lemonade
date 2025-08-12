@@ -4,6 +4,13 @@ import os
 from typing import Tuple, Optional
 import psutil
 from typing import List
+from lemonade_server.pydantic_models import (
+    DEFAULT_PORT,
+    DEFAULT_HOST,
+    DEFAULT_LOG_LEVEL,
+    DEFAULT_LLAMACPP_BACKEND,
+    DEFAULT_CTX_SIZE,
+)
 
 
 # Error codes for different CLI scenarios
@@ -60,14 +67,7 @@ def serve(
 
     # Otherwise, start the server
     print("Starting Lemonade Server...")
-    from lemonade.tools.server.serve import (
-        Server,
-        DEFAULT_PORT,
-        DEFAULT_HOST,
-        DEFAULT_LOG_LEVEL,
-        DEFAULT_LLAMACPP_BACKEND,
-        DEFAULT_CTX_SIZE,
-    )
+    from lemonade.tools.server.serve import Server
 
     port = port if port is not None else DEFAULT_PORT
     host = host if host is not None else DEFAULT_HOST
@@ -75,8 +75,6 @@ def serve(
     llamacpp_backend = (
         llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
     )
-
-    # Use ctx_size if provided, otherwise use default
     ctx_size = ctx_size if ctx_size is not None else DEFAULT_CTX_SIZE
 
     # Start the server
@@ -473,13 +471,6 @@ def developer_entrypoint():
 
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
-    from lemonade.tools.server.serve import (
-        DEFAULT_PORT,
-        DEFAULT_HOST,
-        DEFAULT_LOG_LEVEL,
-        DEFAULT_LLAMACPP_BACKEND,
-        DEFAULT_CTX_SIZE,
-    )
 
     parser.add_argument(
         "--port",
