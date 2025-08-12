@@ -3179,8 +3179,8 @@ body.install-options {
 
 /* === Enhanced Blog Components === */
 
-/* Hero Section */
-.hero-section {
+/* Hero Section (scoped to blog articles only) */
+.blog-article .hero-section {
   background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--primary-yellow) 100%);
   padding: 3rem 0;
   margin: 0 auto 3rem auto;
@@ -3191,7 +3191,7 @@ body.install-options {
   max-width: 100%;
 }
 
-.hero-section::before {
+.blog-article .hero-section::before {
   content: '';
   position: absolute;
   top: 0;
