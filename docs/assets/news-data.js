@@ -10,6 +10,15 @@ const newsData = [
     type: "blog"
     },
     {
+    title: "llamacpp+ROCm7 beta is now supported on Lemonade",
+    url: "https://www.reddit.com/r/LocalLLaMA/comments/1mjgj2x/llamacpprocm7_beta_is_now_supported_on_lemonade/",
+    date: "August 6, 2025",
+    description: "Unlock the power of ROCm7 on your STX Halo or Radeon GPU with Lemonade 8.1.1.",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/rocm_hero.png",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
+    type: "blog"
+    },
+    {
     title: "AMD, ISV Security Partners Collaborate to Protect the AI PC",
     url: "https://www.amd.com/en/blogs/2025/isv-security-experiences-with-Ryzen-PRO.html",
     date: "August 05, 2025",
