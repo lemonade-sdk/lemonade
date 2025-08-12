@@ -4,9 +4,12 @@ Continue.dev is an open-source AI code assistant for VS Code and JetBrains that 
 
 ## Prerequisites
 
+Before using Continue.dev with Lemonade Server, ensure you have:
+
 - Visual Studio Code (1.80+) or JetBrains IDE
-- Lemonade Server running on `http://localhost:8000`
-- At least one model loaded in Lemonade Server
+- **Lemonade Server**: Install and set up following the [Getting Started guide](https://lemonade-server.ai/docs/server/)
+- **Server running**: Ensure Lemonade Server is running on `http://localhost:8000`
+- **Models installed**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) downloaded locally; this should match the one you will pick below from [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
 
 ## Installation
 
@@ -21,16 +24,22 @@ Continue.dev is an open-source AI code assistant for VS Code and JetBrains that 
 
 ### Configuring with Continue Hub
 
-Continue Hub provides pre-configured model setups that work immediately with Lemonade Server.
+Continue Hub provides pre-configured model setups that work immediately with Lemonade Server. **Note**: The models shown on Continue Hub must be installed on your local machine to function properly.
 
-1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
-2. **Select Configuration**: Browse available Lemonade models and configurations
+1. **Install Models Locally**: First, ensure you have the desired models installed using the [lemonade-server CLI](https://lemonade-server.ai/docs/server/lemonade-server-cli/):
+   ```bash
+   lemonade-server pull <model-name>
+   ```
+   For example: `lemonade-server pull Qwen2.5-7B-Instruct-Hybrid`
+
+2. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
+3. **Select Configuration**: Browse available Lemonade models and configurations - all models listed are from the [supported models list](https://lemonade-server.ai/docs/server/server_models/)
 
 ![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
 
-3. **Add to Continue**: Click the plus icon `(+)` on your chosen configuration to add to your assistant - see the [Continue.dev assistants guide](https://docs.continue.dev/guides/understanding-assistants) for detailed setup instructions
-4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in via the extension in your chosen IDE.
+4. **Add to Continue**: Click the plus icon `(+)` on your chosen configuration to add to your assistant - see the [Continue.dev assistants guide](https://docs.continue.dev/guides/understanding-assistants) for detailed setup instructions
+5. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in via the extension in your chosen IDE.
 
 ![Configuration Added to Continue](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png)
 
@@ -222,6 +231,8 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 ## Best Practices
 
 ### Setup & Configuration
+- **Install Lemonade Server** following the [setup guide](https://lemonade-server.ai/docs/server/) before starting development
+- **Install models locally** using `lemonade-server pull <model-name>` - see the [supported models list](https://lemonade-server.ai/docs/server/server_models/) for available options
 - Pre-load models in Lemonade Server before coding sessions and keep the server running throughout development
 - For agent mode with GGUF models, use increased context size: `lemonade-server serve --ctx-size 8192`
 - Build custom assistants tailored to specific languages/domains (e.g., JavaScript/TypeScript for Node.js projects)  
@@ -240,7 +251,7 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 ## Common Issues
 
 **Issue**: Model not appearing in Continue  
-**Solution**: Verify Lemonade Server is running and model is loaded
+**Solution**: Verify Lemonade Server is running and model is loaded locally. Check the [supported models list](https://lemonade-server.ai/docs/server/server_models/) and install with `lemonade-server pull <model-name>`
 
 **Issue**: Slow response times  
 **Solution**: Ensure model is pre-loaded, check available RAM
@@ -253,6 +264,8 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 
 ## Resources
 
+- [Lemonade Server Setup Guide](https://lemonade-server.ai/docs/server/)
+- [Lemonade Server Supported Models](https://lemonade-server.ai/docs/server/server_models/)
 - [Continue.dev Documentation](https://docs.continue.dev)
 - [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
 - [Lemonade Discord](https://discord.gg/lemonade)
