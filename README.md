@@ -14,7 +14,7 @@
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" />
   </a>
   <a href="docs/README.md#installation" title="Check out our instructions">
-    <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.12-blue?logo=python&logoColor=white" alt="Made with Python" />
+    <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" />
   </a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" />
