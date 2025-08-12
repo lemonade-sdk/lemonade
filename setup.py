@@ -28,7 +28,7 @@ setup(
         # Minimal dependencies required for end-users who are running
         # apps deployed on Lemonade SDK
         "invoke>=2.0.0",
-        "onnx>=1.11.0,<1.18.0",
+        "onnx==1.18.0",
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
