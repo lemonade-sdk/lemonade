@@ -39,8 +39,7 @@ class CompletionRequest(BaseModel):
     logprobs: int | None = False
     stop: list[str] | str | None = None
     temperature: float | None = None
-    repetition_penalty: float | None = None
-    repeat_penalty: float | None = None  # Alternative name for repetition_penalty
+    repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
     max_tokens: int | None = None
@@ -60,8 +59,7 @@ class ChatCompletionRequest(BaseModel):
     logprobs: int | None = False
     stop: list[str] | str | None = None
     temperature: float | None = None
-    repetition_penalty: float | None = None
-    repeat_penalty: float | None = None  # Alternative name for repetition_penalty
+    repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
     tools: list[dict] | None = None
@@ -103,8 +101,7 @@ class ResponsesRequest(BaseModel):
     model: str
     max_output_tokens: int | None = None
     temperature: float | None = None
-    repetition_penalty: float | None = None
-    repeat_penalty: float | None = None  # Alternative name for repetition_penalty
+    repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
     stream: bool = False

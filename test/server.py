@@ -661,7 +661,7 @@ class Testing(ServerTestingBase):
         assert isinstance(packages, list)
         assert len(packages) > 0
 
-    # Test generation parameters: repetition_penalty, top_k, top_p
+    # Test generation parameters: repeat_penalty, top_k, top_p
     def test_021_test_generation_parameters(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -674,7 +674,7 @@ class Testing(ServerTestingBase):
             prompt="Tell me about artificial intelligence",
             max_tokens=15,
             temperature=0.8,
-            repetition_penalty=1.1,
+            repeat_penalty=1.1,
             top_k=40,
             top_p=0.9,
         )
@@ -688,7 +688,7 @@ class Testing(ServerTestingBase):
             messages=self.messages,
             max_completion_tokens=15,
             temperature=0.7,
-            repetition_penalty=1.2,
+            repeat_penalty=1.2,
             top_k=50,
             top_p=0.95,
         )
@@ -705,7 +705,7 @@ class Testing(ServerTestingBase):
             input=self.messages,
             stream=False,
             temperature=0.6,
-            repetition_penalty=1.05,
+            repeat_penalty=1.05,
             top_k=30,
             top_p=0.8,
             max_output_tokens=15,

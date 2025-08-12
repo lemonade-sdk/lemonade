@@ -303,7 +303,7 @@ class LlamaCppTesting(ServerTestingBase):
         assert len(complete_response) > 5
 
     def test_007_test_generation_parameters_with_llamacpp(self):
-        """Test generation parameters (repetition_penalty, top_k, top_p) with llamacpp models"""
+        """Test generation parameters (repeat_penalty, top_k, top_p) with llamacpp models"""
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",
@@ -315,7 +315,7 @@ class LlamaCppTesting(ServerTestingBase):
             prompt="Tell me about Python programming:",
             max_tokens=15,
             temperature=0.8,
-            repetition_penalty=1.1,
+            repeat_penalty=1.1,
             top_k=40,
             top_p=0.9,
         )
@@ -332,7 +332,7 @@ class LlamaCppTesting(ServerTestingBase):
             messages=self.messages,
             max_completion_tokens=15,
             temperature=0.7,
-            repetition_penalty=1.2,
+            repeat_penalty=1.2,
             top_k=50,
             top_p=0.95,
         )

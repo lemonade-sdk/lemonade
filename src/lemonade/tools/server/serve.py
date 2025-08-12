@@ -299,31 +299,6 @@ class Server:
 
         logging.debug(f"{endpoint_name} request parameters: {request_params}")
 
-    def _get_repetition_penalty(self, request) -> float | None:
-        """
-        Get the repetition penalty value from request, handling both repetition_penalty and repeat_penalty.
-
-        Args:
-            request: Request object that may contain repetition_penalty or repeat_penalty
-
-        Returns:
-            The repetition penalty value, or None if neither is set
-
-        Note:
-            If both are provided, repetition_penalty takes precedence.
-            This supports compatibility between different frameworks:
-            - OGA uses repetition_penalty
-            - LlamaCPP uses repeat_penalty
-        """
-        if (
-            hasattr(request, "repetition_penalty")
-            and request.repetition_penalty is not None
-        ):
-            return request.repetition_penalty
-        elif hasattr(request, "repeat_penalty") and request.repeat_penalty is not None:
-            return request.repeat_penalty
-        return None
-
     def _setup_server_common(
         self,
         tray: bool = False,
@@ -525,7 +500,7 @@ class Server:
             "message": text,
             "stop": completion_request.stop,
             "temperature": completion_request.temperature,
-            "repetition_penalty": self._get_repetition_penalty(completion_request),
+            "repeat_penalty": completion_request.repeat_penalty,
             "top_k": completion_request.top_k,
             "top_p": completion_request.top_p,
             "max_new_tokens": completion_request.max_tokens,
@@ -683,7 +658,7 @@ class Server:
             "message": text,
             "stop": chat_completion_request.stop,
             "temperature": chat_completion_request.temperature,
-            "repetition_penalty": self._get_repetition_penalty(chat_completion_request),
+            "repeat_penalty": chat_completion_request.repeat_penalty,
             "top_k": chat_completion_request.top_k,
             "top_p": chat_completion_request.top_p,
             "max_new_tokens": max_new_tokens,
@@ -958,7 +933,7 @@ class Server:
         generation_args = {
             "message": text,
             "temperature": responses_request.temperature,
-            "repetition_penalty": self._get_repetition_penalty(responses_request),
+            "repeat_penalty": responses_request.repeat_penalty,
             "top_k": responses_request.top_k,
             "top_p": responses_request.top_p,
             "max_new_tokens": responses_request.max_output_tokens,
@@ -1090,7 +1065,7 @@ class Server:
         stop: list[str] | str | None = None,
         max_new_tokens: int | None = None,
         temperature: float | None = None,
-        repetition_penalty: float | None = None,
+        repeat_penalty: float | None = None,
         top_k: int | None = None,
         top_p: float | None = None,
     ):
@@ -1175,7 +1150,7 @@ class Server:
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
             "temperature": temperature,
-            "repetition_penalty": repetition_penalty,
+            "repeat_penalty": repeat_penalty,
             "top_k": top_k,
             "top_p": top_p,
         }
