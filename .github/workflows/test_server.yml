@@ -18,7 +18,7 @@ jobs:
         LEMONADE_CI_MODE: "True"
     strategy:
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && fromJSON('["3.10", "3.11", "3.12", "3.13"]') || fromJSON('["3.12"]') }}
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     concurrency:
