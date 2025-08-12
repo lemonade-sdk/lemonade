@@ -74,11 +74,13 @@ setup(
             "datasets",
             "pandas>=1.5.3",
             "matplotlib",
-            "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
             "human-eval-windows==1.0.4",
             "lm-eval[api]",
+        ],
+        "model-generate": [
+            "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
         ],
         # Keep backwards compatibility for old extras names
         "oga-hybrid": ["lemonade-sdk[oga-ryzenai]"],

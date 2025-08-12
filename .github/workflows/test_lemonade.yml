@@ -20,6 +20,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
       - name: Set up Miniconda with 64-bit Python
@@ -35,7 +38,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pylint
           python -m pip check
-          pip install -e .[dev] --extra-index-url https://pypi.amd.com/simple
+          pip install -e .[dev]
       - name: Lint with Black
         uses: psf/black@stable
         with:
