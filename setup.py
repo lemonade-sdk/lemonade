@@ -69,7 +69,7 @@ setup(
         "dev": [
             # Minimal dependencies for developers to use all features of
             # Lemonade SDK, including building and optimizing models
-            "torch==2.7.2",
+            "torch==2.7.1",
             "accelerate",
             "datasets",
             "pandas>=1.5.3",
