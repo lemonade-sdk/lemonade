@@ -40,6 +40,7 @@
    **Step 1: Remove cached files**
    - Open File Explorer and navigate to `%USERPROFILE%\.cache`
    - Delete the `lemonade` folder if it exists
+   - [Optional] To remove downloaded models, delete the `huggingface` folder
 
    **Step 2: Remove from PATH environment variable**
    - Press `Win + I` to open Windows Settings
