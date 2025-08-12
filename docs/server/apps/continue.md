@@ -236,41 +236,34 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 
 ## Best Practices
 
-### Working with Local Models
+### Model Setup & Configuration
 
-**Context Management**
-- Start fresh conversations for new features
-- Include only relevant code in prompts
-- Clear chat history when switching tasks
-
-**Model Selection & Assistant Scoping**
-- Avoid adding too many models with the same mode (i.e., Edit or Agent) to an assistant; Continue may switch to a model it thinks is better, and the chosen model may not fit well to hardware.
-- Building custom assistants tailored to specific languages or domains (e.g., a JavaScript/TypeScript assistant scoped to Node.js) leads to more relevant results.
-- Scope assistants for particular tasks, such as coding with MCP, using specific prompts, or working with targeted data. See [continue.dev customization](https://docs.continue.dev/customization/overview) for more on effective scoping.
-
-**Model Loading**
-- Pre-load models in Lemonade Server before coding sessions
-- Keep server running throughout development
+**Server Configuration**
+- Pre-load models in Lemonade Server before coding sessions and keep the server running throughout development
+- For agent mode with GGUF models, start Lemonade Server with increased context size using `--ctx-size` flag (e.g., `lemonade-server serve --ctx-size 8192`) to handle larger multi-file operations
 - Use appropriate model sizes for different tasks
 
+**Assistant Configuration**
+- Build custom assistants tailored to specific languages or domains (e.g., JavaScript/TypeScript for Node.js projects)
+- Scope assistants for particular tasks like coding with MCP or working with targeted data
+- Avoid adding too many models with the same mode to prevent Continue from switching to suboptimal models for your hardware
+- See [continue.dev customization](https://docs.continue.dev/customization/overview) for effective scoping strategies
+
+### Development Workflow
+
+**Context Management**
+- Start fresh conversations for new features or when switching tasks
+- Include only relevant code in prompts to maintain focus
+- Clear chat history between different development contexts
+
+**Effective Prompting**
+- Structure prompts with: clear task description, specific requirements, technical constraints
+- Use `@` symbol to invoke agent mode for multi-file operations
+- Evolve from vague ("Create a game") to specific ("Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting")
+
 **Iterative Development**
-- Generate initial implementation
-- Test immediately
-- Refine with targeted prompts
-- No API costs allow unlimited iterations
-
-### Effective Prompts
-
-**Good Prompt Structure:**
-1. Clear task description
-2. Specific requirements
-3. Technical constraints
-4. Using `@` for agent mode
-
-**Example Evolution:**
-- Vague: "Create a game"
-- Better: "Create an Asteroids game in Python"
-- Best: "Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting"
+- Generate initial implementation, test immediately, then refine with targeted prompts
+- Take advantage of unlimited iterations with local models for continuous improvement
 
 ## Common Issues
 
