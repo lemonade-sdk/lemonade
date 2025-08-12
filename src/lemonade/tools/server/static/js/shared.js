@@ -100,21 +100,30 @@ async function httpJson(url, options = {}) {
 function showTab(tab, updateHash = true) { 
     document.getElementById('tab-chat').classList.remove('active'); 
     document.getElementById('tab-models').classList.remove('active'); 
+    document.getElementById('tab-model-settings').classList.remove('active');
     document.getElementById('content-chat').classList.remove('active'); 
     document.getElementById('content-models').classList.remove('active'); 
+    document.getElementById('content-settings').classList.remove('active');
+    
     if (tab === 'chat') { 
         document.getElementById('tab-chat').classList.add('active'); 
         document.getElementById('content-chat').classList.add('active');
         if (updateHash) {
             window.location.hash = 'llm-chat';
         }
-    } else { 
+    } else if (tab === 'models') { 
         document.getElementById('tab-models').classList.add('active'); 
         document.getElementById('content-models').classList.add('active');
         if (updateHash) {
             window.location.hash = 'model-management';
         }
-    } 
+    } else if (tab === 'settings') {
+        document.getElementById('tab-model-settings').classList.add('active');
+        document.getElementById('content-settings').classList.add('active');
+        if (updateHash) {
+            window.location.hash = 'model-settings';
+        }
+    }
 }
 
 // Handle hash changes for anchor navigation
@@ -124,6 +133,8 @@ function handleHashChange() {
         showTab('chat', false);
     } else if (hash === 'model-management') {
         showTab('models', false);
+    } else if (hash === 'model-settings') {
+        showTab('settings', false);
     }
 }
 
@@ -134,6 +145,8 @@ function initializeTabFromHash() {
         showTab('chat', false);
     } else if (hash === 'model-management') {
         showTab('models', false);
+    } else if (hash === 'model-settings') {
+        showTab('settings', false);
     }
     // If no hash or unrecognized hash, keep default (chat tab is already active)
 }
@@ -242,3 +255,462 @@ function createModelNameWithLabels(modelId, allModels) {
     
     return container;
 }
+
+// === Model Status Management ===
+let currentLoadedModel = null;
+let modelSettings = {
+    temperature: 0.7,
+    top_k: 40,
+    top_p: 0.9,
+    repeat_penalty: 1.1
+};
+
+// Check health endpoint to get current model status
+async function checkModelHealth() {
+    try {
+        const response = await httpJson(getServerBaseUrl() + '/api/v1/health');
+        return response;
+    } catch (error) {
+        console.error('Error checking model health:', error);
+        return null;
+    }
+}
+
+// Update model status indicator
+async function updateModelStatusIndicator() {
+    const indicator = document.getElementById('model-status-indicator');
+    const statusText = document.getElementById('model-status-text');
+    const unloadBtn = document.getElementById('model-unload-btn');
+    
+    const health = await checkModelHealth();
+    const allModels = window.SERVER_MODELS || {};
+    const hasInstalledModels = Object.keys(allModels).length > 0;
+    
+    if (health && health.model_loaded) {
+        // Model is loaded
+        currentLoadedModel = health.model_loaded;
+        indicator.className = 'model-status-indicator loaded';
+        statusText.textContent = health.model_loaded;
+        unloadBtn.style.display = 'block';
+        
+        indicator.onclick = () => showTab('models');
+    } else if (!hasInstalledModels) {
+        // No models installed
+        currentLoadedModel = null;
+        indicator.className = 'model-status-indicator no-models';
+        statusText.textContent = 'Install a Model';
+        unloadBtn.style.display = 'none';
+        
+        indicator.onclick = () => showTab('models');
+    } else {
+        // Models available but none loaded
+        currentLoadedModel = null;
+        indicator.className = 'model-status-indicator';
+        statusText.textContent = 'Load Model';
+        unloadBtn.style.display = 'none';
+        
+        indicator.onclick = () => showTab('models');
+    }
+}
+
+// Unload current model
+async function unloadModel() {
+    if (!currentLoadedModel) return;
+    
+    try {
+        await httpRequest(getServerBaseUrl() + '/api/v1/unload', {
+            method: 'POST'
+        });
+        await updateModelStatusIndicator();
+    } catch (error) {
+        console.error('Error unloading model:', error);
+        showErrorBanner('Failed to unload model: ' + error.message);
+    }
+}
+
+// === Model Browser Management ===
+let currentCategory = 'hot';
+let currentFilter = null;
+
+// Toggle category in model browser (only for Hot Models now)
+function toggleCategory(categoryName) {
+    const header = document.querySelector(`[data-category="${categoryName}"] .category-header`);
+    const content = document.getElementById(`category-${categoryName}`);
+    
+    if (categoryName === 'hot') {
+        // Check if hot models is already selected
+        const isCurrentlyActive = header.classList.contains('active');
+        
+        // Clear all other active states
+        document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
+        
+        if (!isCurrentlyActive) {
+            // Show hot models
+            header.classList.add('active');
+            content.classList.add('expanded');
+            currentCategory = categoryName;
+            currentFilter = null;
+            displayHotModels();
+            updateModelBrowserTitle();
+        }
+        // If already active, keep it active (don't toggle off)
+    }
+}
+
+// Show add model form in main area
+function showAddModelForm() {
+    // Clear all sidebar active states
+    document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
+    document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
+    document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
+    
+    // Highlight "Add a Model" as selected
+    const addModelHeader = document.querySelector('[data-category="add"] .category-header');
+    if (addModelHeader) {
+        addModelHeader.classList.add('active');
+    }
+    
+    // Hide model list and show form
+    document.getElementById('model-list').style.display = 'none';
+    document.getElementById('add-model-form-main').style.display = 'block';
+    
+    // Update title
+    document.getElementById('model-browser-title').textContent = 'Add a Model';
+    
+    // Set current state
+    currentCategory = 'add';
+    currentFilter = null;
+}
+
+// Select recipe filter
+function selectRecipe(recipe) {
+    // Clear hot models active state
+    document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
+    document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
+    
+    // Clear all subcategory selections
+    document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
+    
+    // Set this recipe as active
+    document.querySelector(`[data-recipe="${recipe}"]`).classList.add('active');
+    
+    currentCategory = 'recipes';
+    currentFilter = recipe;
+    displayModelsByRecipe(recipe);
+    updateModelBrowserTitle();
+}
+
+// Select label filter
+function selectLabel(label) {
+    // Clear hot models active state
+    document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
+    document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
+    
+    // Clear all subcategory selections
+    document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
+    
+    // Set this label as active
+    document.querySelector(`[data-label="${label}"]`).classList.add('active');
+    
+    currentCategory = 'labels';
+    currentFilter = label;
+    displayModelsByLabel(label);
+    updateModelBrowserTitle();
+}
+
+// Update model browser title
+function updateModelBrowserTitle() {
+    const title = document.getElementById('model-browser-title');
+    
+    if (currentCategory === 'hot') {
+        title.textContent = 'Hot Models';
+    } else if (currentCategory === 'recipes') {
+        title.textContent = `Recipe: ${currentFilter}`;
+    } else if (currentCategory === 'labels') {
+        title.textContent = `Category: ${currentFilter}`;
+    } else {
+        title.textContent = 'Models';
+    }
+}
+
+// Display suggested models (Qwen3-0.6B-GGUF as default)
+function displaySuggestedModels() {
+    const modelList = document.getElementById('model-list');
+    const allModels = window.SERVER_MODELS || {};
+    
+    modelList.innerHTML = '';
+    
+    // First show Qwen3-0.6B-GGUF as the default suggested model
+    if (allModels['Qwen3-0.6B-GGUF']) {
+        createModelItem('Qwen3-0.6B-GGUF', allModels['Qwen3-0.6B-GGUF'], modelList);
+    }
+    
+    // Then show other suggested models (excluding the one already shown)
+    Object.entries(allModels).forEach(([modelId, modelData]) => {
+        if (modelData.suggested && modelId !== 'Qwen3-0.6B-GGUF') {
+            createModelItem(modelId, modelData, modelList);
+        }
+    });
+    
+    if (modelList.innerHTML === '') {
+        modelList.innerHTML = '<p>No suggested models available</p>';
+    }
+}
+
+// Display hot models
+function displayHotModels() {
+    const modelList = document.getElementById('model-list');
+    const addModelForm = document.getElementById('add-model-form-main');
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Show model list, hide form
+    modelList.style.display = 'block';
+    addModelForm.style.display = 'none';
+    
+    modelList.innerHTML = '';
+    
+    Object.entries(allModels).forEach(([modelId, modelData]) => {
+        if (modelData.labels && modelData.labels.includes('hot')) {
+            createModelItem(modelId, modelData, modelList);
+        }
+    });
+}
+
+// Display models by recipe
+function displayModelsByRecipe(recipe) {
+    const modelList = document.getElementById('model-list');
+    const addModelForm = document.getElementById('add-model-form-main');
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Show model list, hide form
+    modelList.style.display = 'block';
+    addModelForm.style.display = 'none';
+    
+    modelList.innerHTML = '';
+    
+    Object.entries(allModels).forEach(([modelId, modelData]) => {
+        if (modelData.recipe === recipe) {
+            createModelItem(modelId, modelData, modelList);
+        }
+    });
+}
+
+// Display models by label
+function displayModelsByLabel(label) {
+    const modelList = document.getElementById('model-list');
+    const addModelForm = document.getElementById('add-model-form-main');
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Show model list, hide form
+    modelList.style.display = 'block';
+    addModelForm.style.display = 'none';
+    
+    modelList.innerHTML = '';
+    
+    Object.entries(allModels).forEach(([modelId, modelData]) => {
+        if (label === 'custom') {
+            // Show user-added models (those starting with 'user.')
+            if (modelId.startsWith('user.')) {
+                createModelItem(modelId, modelData, modelList);
+            }
+        } else if (modelData.labels && modelData.labels.includes(label)) {
+            createModelItem(modelId, modelData, modelList);
+        }
+    });
+}
+
+// Create model item element
+function createModelItem(modelId, modelData, container) {
+    const item = document.createElement('div');
+    item.className = 'model-item';
+    
+    const info = document.createElement('div');
+    info.className = 'model-item-info';
+    
+    const name = document.createElement('div');
+    name.className = 'model-item-name';
+    name.appendChild(createModelNameWithLabels(modelId, window.SERVER_MODELS || {}));
+    
+    const description = document.createElement('div');
+    description.className = 'model-item-description';
+    description.textContent = modelData.description || 'No description available';
+    
+    info.appendChild(name);
+    info.appendChild(description);
+    
+    const actions = document.createElement('div');
+    actions.className = 'model-item-actions';
+    
+    // Check if model is installed (this would need to be determined from server state)
+    const isInstalled = true; // Placeholder - would check against installed models
+    const isLoaded = currentLoadedModel === modelId;
+    
+    if (!isInstalled) {
+        const installBtn = document.createElement('button');
+        installBtn.className = 'model-item-btn install';
+        installBtn.textContent = 'Install';
+        installBtn.onclick = () => installModel(modelId);
+        actions.appendChild(installBtn);
+    } else {
+        if (isLoaded) {
+            const unloadBtn = document.createElement('button');
+            unloadBtn.className = 'model-item-btn unload';
+            unloadBtn.textContent = 'Unload';
+            unloadBtn.onclick = () => unloadModel();
+            actions.appendChild(unloadBtn);
+        } else {
+            const loadBtn = document.createElement('button');
+            loadBtn.className = 'model-item-btn load';
+            loadBtn.textContent = 'Load';
+            loadBtn.onclick = () => loadModel(modelId);
+            actions.appendChild(loadBtn);
+        }
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'model-item-btn delete';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => deleteModel(modelId);
+        actions.appendChild(deleteBtn);
+    }
+    
+    item.appendChild(info);
+    item.appendChild(actions);
+    container.appendChild(item);
+}
+
+// Install model
+async function installModel(modelId) {
+    try {
+        const modelData = window.SERVER_MODELS[modelId];
+        await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: modelId, ...modelData })
+        });
+        // Refresh model list
+        if (currentCategory === 'hot') displayHotModels();
+        else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
+        else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
+    } catch (error) {
+        console.error('Error installing model:', error);
+        showErrorBanner('Failed to install model: ' + error.message);
+    }
+}
+
+// Load model
+async function loadModel(modelId) {
+    try {
+        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: modelId })
+        });
+        await updateModelStatusIndicator();
+        // Refresh model list
+        if (currentCategory === 'hot') displayHotModels();
+        else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
+        else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
+    } catch (error) {
+        console.error('Error loading model:', error);
+        showErrorBanner('Failed to load model: ' + error.message);
+    }
+}
+
+// Delete model
+async function deleteModel(modelId) {
+    if (!confirm(`Are you sure you want to delete the model "${modelId}"?`)) {
+        return;
+    }
+    
+    try {
+        await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: modelId })
+        });
+        // Refresh model list
+        if (currentCategory === 'hot') displayHotModels();
+        else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
+        else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
+    } catch (error) {
+        console.error('Error deleting model:', error);
+        showErrorBanner('Failed to delete model: ' + error.message);
+    }
+}
+
+// === Model Settings Management ===
+
+// Load model settings from localStorage or defaults
+function loadModelSettings() {
+    const saved = localStorage.getItem('lemonade_model_settings');
+    if (saved) {
+        try {
+            modelSettings = { ...modelSettings, ...JSON.parse(saved) };
+        } catch (error) {
+            console.error('Error loading saved settings:', error);
+        }
+    }
+    
+    // Update UI
+    document.getElementById('setting-temperature').value = modelSettings.temperature;
+    document.getElementById('setting-top-k').value = modelSettings.top_k;
+    document.getElementById('setting-top-p').value = modelSettings.top_p;
+    document.getElementById('setting-repeat-penalty').value = modelSettings.repeat_penalty;
+}
+
+// Save model settings
+function saveModelSettings() {
+    modelSettings = {
+        temperature: parseFloat(document.getElementById('setting-temperature').value),
+        top_k: parseInt(document.getElementById('setting-top-k').value),
+        top_p: parseFloat(document.getElementById('setting-top-p').value),
+        repeat_penalty: parseFloat(document.getElementById('setting-repeat-penalty').value)
+    };
+    
+    localStorage.setItem('lemonade_model_settings', JSON.stringify(modelSettings));
+    alert('Settings saved successfully!');
+}
+
+// Reset model settings to defaults
+function resetModelSettings() {
+    modelSettings = {
+        temperature: 0.7,
+        top_k: 40,
+        top_p: 0.9,
+        repeat_penalty: 1.1
+    };
+    
+    loadModelSettings(); // This will update the UI
+    localStorage.removeItem('lemonade_model_settings');
+}
+
+// Get current model settings for API requests
+function getCurrentModelSettings() {
+    return { ...modelSettings };
+}
+
+// Initialize everything when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up model status indicator
+    updateModelStatusIndicator();
+    setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
+    
+    // Set up model status controls
+    document.getElementById('model-unload-btn').onclick = unloadModel;
+    
+    // Set up model settings controls
+    document.getElementById('save-settings-btn').onclick = saveModelSettings;
+    document.getElementById('reset-settings-btn').onclick = resetModelSettings;
+    
+    // Load initial model settings
+    loadModelSettings();
+    
+    // Initialize model browser with hot models
+    displayHotModels();
+});
+
+// Make functions globally available
+window.toggleCategory = toggleCategory;
+window.selectRecipe = selectRecipe;
+window.selectLabel = selectLabel;
+window.showAddModelForm = showAddModelForm;

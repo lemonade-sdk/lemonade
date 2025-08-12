@@ -3,7 +3,7 @@ let messages = [];
 let attachedFiles = [];
 
 // Get DOM elements
-let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
+let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -14,13 +14,13 @@ document.addEventListener('DOMContentLoaded', function() {
     fileAttachment = document.getElementById('file-attachment');
     attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
     attachmentsPreviewRow = document.getElementById('attachments-preview-row');
-    modelSelect = document.getElementById('model-select');
 
     // Set up event listeners
     setupChatEventListeners();
     
-    // Load models for the dropdown
-    loadModels();
+    // Update attachment button state periodically
+    updateAttachmentButtonState();
+    setInterval(updateAttachmentButtonState, 1000);
 });
 
 function setupChatEventListeners() {
@@ -29,9 +29,12 @@ function setupChatEventListeners() {
     
     // Attachment button click
     attachmentBtn.onclick = () => {
-        const currentModel = modelSelect.value;
-        if (!isVisionModel(currentModel)) {
-            alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities to attach images.`);
+        if (!currentLoadedModel) {
+            alert('Please load a model first before attaching images.');
+            return;
+        }
+        if (!isVisionModel(currentLoadedModel)) {
+            alert(`The current model "${currentLoadedModel}" does not support image inputs. Please load a model with "Vision" capabilities to attach images.`);
             return;
         }
         fileAttachment.click();
@@ -43,15 +46,18 @@ function setupChatEventListeners() {
     // Chat input events
     chatInput.addEventListener('keydown', handleChatInputKeydown);
     chatInput.addEventListener('paste', handleChatInputPaste);
-
-    // Model selection change
-    modelSelect.addEventListener('change', handleModelChange);
 }
 
 // Update attachment button state based on current model
 function updateAttachmentButtonState() {
-    const currentModel = modelSelect.value;
-    const isVision = isVisionModel(currentModel);
+    if (!currentLoadedModel) {
+        attachmentBtn.style.opacity = '0.5';
+        attachmentBtn.style.cursor = 'not-allowed';
+        attachmentBtn.title = 'Load a model first';
+        return;
+    }
+    
+    const isVision = isVisionModel(currentLoadedModel);
     
     if (isVision) {
         attachmentBtn.style.opacity = '1';
@@ -64,118 +70,27 @@ function updateAttachmentButtonState() {
     }
 }
 
-// Handle model selection change
-function handleModelChange() {
-    const currentModel = modelSelect.value;
-    updateAttachmentButtonState(); // Update button visual state
-    
-    if (attachedFiles.length > 0 && !isVisionModel(currentModel)) {
-        if (confirm(`The selected model "${currentModel}" does not support images. Would you like to remove the attached images?`)) {
+// Check if model supports vision and update attachment button
+function checkCurrentModel() {
+    if (attachedFiles.length > 0 && currentLoadedModel && !isVisionModel(currentLoadedModel)) {
+        if (confirm(`The current model "${currentLoadedModel}" does not support images. Would you like to remove the attached images?`)) {
             clearAttachments();
-        } else {
-            // Find a vision model to switch back to
-            const allModels = window.SERVER_MODELS || {};
-            const visionModels = Array.from(modelSelect.options).filter(option => 
-                isVisionModel(option.value)
-            );
-            
-            if (visionModels.length > 0) {
-                modelSelect.value = visionModels[0].value;
-                updateAttachmentButtonState(); // Update button state again
-                alert(`Switched back to "${visionModels[0].value}" which supports images.`);
-            } else {
-                alert('No vision models available. Images will be cleared.');
-                clearAttachments();
-            }
         }
     }
-}
-
-// Populate model dropdown from /api/v1/models endpoint
-async function loadModels() {
-    try {
-        const data = await httpJson(getServerBaseUrl() + '/api/v1/models');
-        const select = document.getElementById('model-select');
-        select.innerHTML = '';
-        if (!data.data || !Array.isArray(data.data)) {
-            select.innerHTML = '<option>No models found (malformed response)</option>';
-            return;
-        }
-        if (data.data.length === 0) {
-            select.innerHTML = '<option>No models available</option>';
-            return;
-        }
-        
-        // Filter out embedding models from chat interface
-        const allModels = window.SERVER_MODELS || {};
-        let filteredModels = [];
-        let defaultIndex = 0;
-        
-        // Check if model is specified in URL parameters
-        const urlModel = new URLSearchParams(window.location.search).get('model');
-        let urlModelIndex = -1;
-        
-        data.data.forEach(function(model, index) {
-            const modelId = model.id || model.name || model;
-            const modelInfo = allModels[modelId] || {};
-            const labels = modelInfo.labels || [];
-            
-            // Skip models with "embeddings" or "reranking" label
-            if (labels.includes('embeddings') || labels.includes('reranking')) {
-                return;
-            }
-            
-            filteredModels.push(modelId);
-            const opt = document.createElement('option');
-            opt.value = modelId;
-            opt.textContent = modelId;
-            
-            // Check if this model matches the URL parameter
-            if (urlModel && modelId === urlModel) {
-                urlModelIndex = filteredModels.length - 1;
-            }
-            
-            // Default fallback for backwards compatibility
-            if (modelId === 'Llama-3.2-1B-Instruct-Hybrid') {
-                defaultIndex = filteredModels.length - 1;
-            }
-            
-            select.appendChild(opt);
-        });
-        
-        if (filteredModels.length === 0) {
-            select.innerHTML = '<option>No chat models available</option>';
-            return;
-        }
-        
-        // Select the URL-specified model if found, otherwise use default
-        if (urlModelIndex !== -1) {
-            select.selectedIndex = urlModelIndex;
-            console.log(`Selected model from URL parameter: ${urlModel}`);
-        } else {
-            select.selectedIndex = defaultIndex;
-            if (urlModel) {
-                console.warn(`Model '${urlModel}' specified in URL not found in available models`);
-            }
-        }
-        
-        // Update attachment button state after model is loaded
-        updateAttachmentButtonState();
-    } catch (e) {
-        const select = document.getElementById('model-select');
-        select.innerHTML = `<option>Error loading models: ${e.message}</option>`;
-        console.error('Error loading models:', e);
-        showErrorBanner(`Error loading models: ${e.message}`);
-    }
+    updateAttachmentButtonState();
 }
 
 // Handle file selection
 function handleFileSelection() {
     if (fileAttachment.files.length > 0) {
         // Check if current model supports vision
-        const currentModel = modelSelect.value;
-        if (!isVisionModel(currentModel)) {
-            alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities or choose a different model.`);
+        if (!currentLoadedModel) {
+            alert('Please load a model first before attaching images.');
+            fileAttachment.value = ''; // Clear the input
+            return;
+        }
+        if (!isVisionModel(currentLoadedModel)) {
+            alert(`The current model "${currentLoadedModel}" does not support image inputs. Please load a model with "Vision" capabilities.`);
             fileAttachment.value = ''; // Clear the input
             return;
         }
@@ -469,11 +384,49 @@ async function sendMessage() {
     const text = chatInput.value.trim();
     if (!text && attachedFiles.length === 0) return;
     
+    // Check if a model is loaded, if not, automatically load the default model
+    if (!currentLoadedModel) {
+        const allModels = window.SERVER_MODELS || {};
+        const defaultModel = 'Qwen3-0.6B-GGUF'; // Default suggested model
+        
+        if (allModels[defaultModel]) {
+            try {
+                // Show loading message
+                const loadingBubble = appendMessage('system', 'Loading default model, please wait...');
+                
+                // Load the default model
+                await httpRequest(getServerBaseUrl() + '/api/v1/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: defaultModel })
+                });
+                
+                // Update model status
+                await updateModelStatusIndicator();
+                
+                // Remove loading message
+                loadingBubble.parentElement.remove();
+                
+                // Show success message briefly
+                const successBubble = appendMessage('system', `Loaded ${defaultModel} successfully!`);
+                setTimeout(() => {
+                    successBubble.parentElement.remove();
+                }, 2000);
+                
+            } catch (error) {
+                alert('Please load a model first before sending messages.');
+                return;
+            }
+        } else {
+            alert('Please load a model first before sending messages.');
+            return;
+        }
+    }
+    
     // Check if trying to send images to non-vision model
     if (attachedFiles.length > 0) {
-        const currentModel = modelSelect.value;
-        if (!isVisionModel(currentModel)) {
-            alert(`Cannot send images to model "${currentModel}" as it does not support vision. Please select a model with "Vision" capabilities or remove the attached images.`);
+        if (!isVisionModel(currentLoadedModel)) {
+            alert(`Cannot send images to model "${currentLoadedModel}" as it does not support vision. Please load a model with "Vision" capabilities or remove the attached images.`);
             return;
         }
     }
@@ -539,11 +492,12 @@ async function sendMessage() {
     let llmText = '';
     const llmBubble = appendMessage('llm', '...');
     try {
-        // Use the correct endpoint for chat completions
+        // Use the correct endpoint for chat completions with model settings
         const payload = {
-            model: modelSelect.value,
+            model: currentLoadedModel,
             messages: messages,
-            stream: true
+            stream: true,
+            ...getCurrentModelSettings() // Apply current model settings
         };
         const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
             method: 'POST',
