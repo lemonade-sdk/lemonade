@@ -305,7 +305,7 @@
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,  
-        "labels": ["reasoning", "coding"]
+        "labels": ["coding"]
     },
     "gpt-oss-120b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
