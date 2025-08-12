@@ -21,6 +21,9 @@ jobs:
         python-version: ["3.10", "3.12"]
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}-py${{ matrix['python-version'] }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
       - name: Set up Miniconda with 64-bit Python
