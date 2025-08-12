@@ -28,7 +28,7 @@ setup(
         # Minimal dependencies required for end-users who are running
         # apps deployed on Lemonade SDK
         "invoke>=2.0.0",
-        "onnx>=1.11.0,<1.18.0",
+        "onnx==1.18.0",
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
@@ -74,11 +74,13 @@ setup(
             "datasets",
             "pandas>=1.5.3",
             "matplotlib",
-            "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
             "human-eval-windows==1.0.4",
             "lm-eval[api]",
+        ],
+        "model-generate": [
+            "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
         ],
         # Keep backwards compatibility for old extras names
         "oga-hybrid": ["lemonade-sdk[oga-ryzenai]"],
@@ -128,7 +130,7 @@ setup(
             "lsdev=lemonade_server.cli:developer_entrypoint",
         ]
     },
-    python_requires=">=3.10, <3.13",
+    python_requires=">=3.10, <3.14",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     include_package_data=True,
