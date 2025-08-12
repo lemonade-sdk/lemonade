@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "AMD, ISV Security Partners Collaborate to Protect the AI PC",
+    url: "https://www.amd.com/en/blogs/2025/isv-security-experiences-with-Ryzen-PRO.html",
+    date: "August 05, 2025",
+    description: "Lemonade Server and Ryzen™ AI NPUs bring real-time, on-device protection against phishing, deepfakes, and prompt attacks. No cloud lag, just smarter security where it counts.",
+    image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/isv-commercial-security-experiences-blog/security-shield-key-art.jpg",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
+    type: "blog"
+    },
+    {
     title: "Lemonade Server & Open WebUI",
     url: "https://www.youtube.com/watch?v=yZs-Yzl736E",
     date: "July 31, 2025",
@@ -37,7 +46,7 @@ const newsData = [
     type: "blog"
     },
     {
-    title: "Minions: On-Device and Cloud Language Model Collaboration on AMD Ryzen AI",
+    title: "Minions: On-Device and Cloud Language Model Collaboration on AMD Ryzen™ AI",
     url: "https://www.amd.com/en/developer/resources/technical-articles/2025/minions--on-device-and-cloud-language-model-collaboration-on-ryz.html",
     date: "July 08, 2025",
     description: "Minions, a new framework from Stanford’s Hazy Research Group, lets cloud models collaborate with lighter ones on-device—and now runs on Ryzen AI via AMD’s Lemonade Server.",
@@ -46,19 +55,19 @@ const newsData = [
     type: "blog"
     },
     {
-    title: "Local Tiny Agents: MCP Agents on Ryzen AI with Lemonade Server",
+    title: "Local Tiny Agents: MCP Agents on Ryzen™ AI with Lemonade Server",
     url: "https://www.amd.com/en/developer/resources/technical-articles/2025/local-tiny-agents--mcp-agents-on-ryzen-ai-with-lemonade-server.html",
     date: "June 10, 2025",
-    description: "Model Context Protocol (MCP) is now available on AMD Ryzen AI™ PCs and can be used by installing AMD Lemonade Server and connecting it to projects like Hugging Face's Tiny Agents via streaming tool calls.",
+    description: "Model Context Protocol (MCP) is now available on AMD Ryzen™ AI PCs and can be used by installing AMD Lemonade Server and connecting it to projects like Hugging Face's Tiny Agents via streaming tool calls.",
     image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/technical-blogs/local-tiny-agents--mcp-agents-on-ryzen-ai-with-lemonade-server/lemonade.png",
     imageStyle: "width: 90%; height: 95%; object-fit: cover; object-position: center; transform: scale(1.2);",
     type: "blog"
     },
     {
-    title: "Unlocking a Wave of LLM Apps on Ryzen AI through Lemonade Server",
+    title: "Unlocking a Wave of LLM Apps on Ryzen™ AI through Lemonade Server",
     url: "https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html",
     date: "April 17, 2025",
-    description: "Lemonade Server enables LLM acceleration on Windows and Linux without code changes—using hybrid NPU+iGPU execution on Ryzen AI 300-series PCs and GPU acceleration on Linux.",
+    description: "Lemonade Server enables LLM acceleration on Windows and Linux without code changes—using hybrid NPU+iGPU execution on Ryzen™ AI 300-series PCs and GPU acceleration on Linux.",
     image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/technical-blogs/3328050-lemonade-server/3328050-lemonade-server-blog.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "blog"
@@ -67,7 +76,7 @@ const newsData = [
     title: "LLMs on AMD Ryzen™ AI PCs",
     url: "https://www.youtube.com/watch/qMdMJF89c8g",
     date: "March 31, 2025",
-    description: "The video explains how Ryzen AI 300-series PCs use NPUs and integrated GPUs to accelerate LLMs through hybrid task partitioning, and introduces the Ryzen AI Software Stack.",
+    description: "The video explains how Ryzen™ AI 300-series PCs use NPUs and integrated GPUs to accelerate LLMs through hybrid task partitioning, and introduces the Ryzen AI Software Stack.",
     image: "https://img.youtube.com/vi/qMdMJF89c8g/maxresdefault.jpg",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center;",
     type: "video"
@@ -76,7 +85,7 @@ const newsData = [
     title: "Running LLMs on AMD Ryzen™ AI PCs using Lemonade SDK",
     url: "https://www.youtube.com/watch/Ys7n5OouwtI",
     date: "March 31, 2025",
-    description: "Watch how the Lemonade SDK lets you experiment with LLMs on Ryzen AI 300-series PCs using high-level APIs, including setup and prompting via its CLI.",
+    description: "Watch how the Lemonade SDK lets you experiment with LLMs on Ryzen™ AI 300-series PCs using high-level APIs, including setup and prompting via its CLI.",
     image: "https://img.youtube.com/vi/Ys7n5OouwtI/maxresdefault.jpg",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center;",
     type: "video"
@@ -94,7 +103,7 @@ const newsData = [
     title: "Integrating Lemonade into your Python App",
     url: "https://www.youtube.com/watch/aeHRGzxxYRQ",
     date: "March 31, 2025",
-    description: "This video shows how to use the Lemonade SDK to integrate LLMs into an app, enhancing a basic search tool and running it locally on Ryzen AI 300-series PCs.",
+    description: "This video shows how to use the Lemonade SDK to integrate LLMs into an app, enhancing a basic search tool and running it locally on Ryzen™ AI 300-series PCs.",
     image: "https://img.youtube.com/vi/aeHRGzxxYRQ/maxresdefault.jpg",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center;",
     type: "video"
@@ -157,7 +166,7 @@ const newsData = [
     title: "GAIA: An Open-Source Project from AMD for Running Local LLMs on Ryzen™ AI",
     url: "https://www.amd.com/en/developer/resources/technical-articles/gaia-an-open-source-project-from-amd-for-running-local-llms-on-ryzen-ai.html",
     date: "March 20, 2025",
-    description: "GAIA is an application with multiple agents that runs local LLMs on Ryzen AI using Lemonade Server.",
+    description: "GAIA is an application with multiple agents that runs local LLMs on Ryzen™ AI using Lemonade Server.",
     image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/technical-blogs/3328050-lemonade-server/3328050-lemonade-server-blog.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "blog"
@@ -166,7 +175,7 @@ const newsData = [
     title: "Lemonade Server v8.1.0 Release",
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.1.0",
     date: "July 30, 2025",
-    description: "Support for Ryzen AI Software v1.5.0 and NPU-only execution.",
+    description: "Support for Ryzen™ AI Software v1.5.0 and NPU-only execution.",
     image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
     imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.1);",
     type: "release"
