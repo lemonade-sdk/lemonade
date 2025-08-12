@@ -44,6 +44,8 @@ lemonade-server run MODEL_NAME [options]
 | `--llamacpp [vulkan\|rocm]`    | Specify the LlamaCpp backend to use | vulkan |
 | `--ctx-size [size]`            | Set the context size for the model. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. | 4096 |
 
+These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, and `LEMONADE_CTX_SIZE`.
+
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
 
 <!--Copyright (c) 2025 AMD-->

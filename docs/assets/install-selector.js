@@ -248,7 +248,7 @@ window.lmnRender = function() {
     if (lmnState.dev === 'npu' || lmnState.method === 'gui') {
       pythonVersions = '3.10';
     } else {
-      pythonVersions = '3.10%20%7C%203.12';
+      pythonVersions = '3.10--3.13';
     }
     badges += '<img src="https://img.shields.io/badge/Python-' + pythonVersions + '-blue" alt="Python versions" style="margin-right: 0.5em;">';
     

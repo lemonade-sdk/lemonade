@@ -1,10 +1,13 @@
+import os
 from typing import Optional, Union, List
 
 from pydantic import BaseModel
 
-# Set to a high number to allow for interesting experiences in real apps
-# Tests should use the max_new_tokens argument to set a lower value
-DEFAULT_MAX_NEW_TOKENS = 1500
+DEFAULT_PORT = int(os.getenv("LEMONADE_PORT", "8000"))
+DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
+DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
+DEFAULT_LLAMACPP_BACKEND = os.getenv("LEMONADE_LLAMACPP", "vulkan")
+DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
 
 
 class LoadConfig(BaseModel):
