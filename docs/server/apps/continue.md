@@ -26,24 +26,13 @@ Continue Hub provides pre-configured model setups that work immediately with Lem
 1. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
 2. **Select Configuration**: Browse available Lemonade models and configurations
 
-![Continue Hub Lemonade Models](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_lemonade.png)
+![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
-3. **Add to Continue**: Click "Use" on your chosen configuration
-4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in
+
+3. **Add to Continue**: Click the plus icon `(+)` on your chosen configuration to add to your assistant - see the [Continue.dev assistants guide](https://docs.continue.dev/guides/understanding-assistants) for detailed setup instructions
+4. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in via the extension in your chosen IDE.
 
 ![Configuration Added to Continue](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png)
-
-### Adding Lemonade Models to your Assistant
-
-To add Lemonade models to your existing Continue setup:
-
-1. Open the Continue sidebar in VS Code
-2. Access the model configuration settings
-3. Add your Lemonade Server endpoint and model details
-
-For detailed configuration steps, see the [Continue configuration documentation](https://docs.continue.dev/reference/config).
-
-![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
 ## Working with Continue.dev
 
@@ -63,9 +52,10 @@ Continue.dev provides three interaction modes for different development tasks. S
 **Scenario**: You want to quickly prototype a game concept through conversation with the AI.
 
 **Chat Conversation**:
-```
-User: I want to create an asteroids game using PyGame. What guidelines should I follow in the code to do so?
 
+> **User**: I want to create an asteroids game using PyGame. What guidelines should I follow in the code to do so?
+
+```
 Model: Creating an Asteroids game using PyGame is a fun and educational project! Below are some guidelines you should follow to structure your code effectively:
 
 ### 1. Initialize PyGame
@@ -105,10 +95,11 @@ Here's a simple structure to get you started:
 5. **Game Loop**: Processes input, updates game state, and renders the screen.
 
 This code provides a basic framework for an Asteroids game. You can expand on it by adding more features like collision detection, scoring, and different levels of difficulty.
+```
 
+> **User**: what change could we make to ensure that the ship is unchanged, but has a yellow trail effect when it moves?
 
-User: what change could we make to ensure that the ship is unchanged, but has a yellow trail effect when it moves?
-
+```
 Model: To create a yellow trail effect for the player's ship, you can maintain a list of the ship's previous positions and draw small circles or short lines at these positions. This will give the appearance of a trailing effect as the ship moves.
 
 Here's how you can modify the `Player` class and the main game loop to include this feature:
@@ -131,11 +122,7 @@ Through this conversational approach, the model helps build and refine the game 
 
 ![Chat Mode Game Development](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_gen.png)
 
-After running the `pip install pygame` command to setup dependencies, and applying the changes to `main.py`, the game can be run using
-
-`python .\main.py`
-
-This results in the following:
+After running the `pip install pygame` command to setup dependencies, and applying the changes to `main.py`, the game can be run using `python .\main.py`. This results should resemble the following:
 
 ![Asteroids Game Result](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_result.png)
 
@@ -144,15 +131,15 @@ This results in the following:
 **Scenario**: You have older code using callback patterns that needs to be modernized to async/await for better readability and error handling.
 
 **Agent Task**:
-```
-Convert all callback-based functions in @run.js use async/await:
-- Convert callback patterns to async/await
-- Add proper try/catch error handling
-- Update all calling code to use await
-- Maintain the same functionality
-```
 
-**Example Conversion**:
+> Convert all callback-based functions in `@run.js` use async/await:
+> - Convert callback patterns to async/await
+> - Add proper try/catch error handling
+> - Update all calling code to use await
+> - Maintain the same functionality
+
+
+#### Example Conversion
 
 **Before (callback pattern)**:
 ```javascript
@@ -219,8 +206,6 @@ async function fetchUserData(userId) {
     throw err;
   }
 }
-
-
 ```
 
 **Agent Actions**:
@@ -236,32 +221,19 @@ The Agent intelligently handles nested callbacks, error propagation, and ensures
 
 ## Best Practices
 
-### Model Setup & Configuration
-
-**Server Configuration**
+### Setup & Configuration
 - Pre-load models in Lemonade Server before coding sessions and keep the server running throughout development
-- For agent mode with GGUF models, start Lemonade Server with increased context size using `--ctx-size` flag (e.g., `lemonade-server serve --ctx-size 8192`) to handle larger multi-file operations
-- Use appropriate model sizes for different tasks
-
-**Assistant Configuration**
-- Build custom assistants tailored to specific languages or domains (e.g., JavaScript/TypeScript for Node.js projects)
-- Scope assistants for particular tasks like coding with MCP or working with targeted data
-- Avoid adding too many models with the same mode to prevent Continue from switching to suboptimal models for your hardware
+- For agent mode with GGUF models, use increased context size: `lemonade-server serve --ctx-size 8192`
+- Build custom assistants tailored to specific languages/domains (e.g., JavaScript/TypeScript for Node.js projects)  
+- Avoid adding too many models with the same mode to prevent suboptimal model switching
 - See [continue.dev customization](https://docs.continue.dev/customization/overview) for effective scoping strategies
 
 ### Development Workflow
-
-**Context Management**
-- Start fresh conversations for new features or when switching tasks
+- Start fresh conversations for new features; clear chat history when switching tasks
 - Include only relevant code in prompts to maintain focus
-- Clear chat history between different development contexts
-
-**Effective Prompting**
-- Structure prompts with: clear task description, specific requirements, technical constraints
+- Structure prompts with clear task descriptions, specific requirements, and technical constraints
 - Use `@` symbol to invoke agent mode for multi-file operations
-- Evolve from vague ("Create a game") to specific ("Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting")
-
-**Iterative Development**
+- Evolve prompts from vague ("Create a game") to specific ("Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting")
 - Generate initial implementation, test immediately, then refine with targeted prompts
 - Take advantage of unlimited iterations with local models for continuous improvement
 
