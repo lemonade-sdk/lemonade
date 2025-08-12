@@ -674,9 +674,11 @@ class Testing(ServerTestingBase):
             prompt="Tell me about artificial intelligence",
             max_tokens=15,
             temperature=0.8,
-            repeat_penalty=1.1,
-            top_k=40,
-            top_p=0.9,
+            extra_body={
+                "repeat_penalty": 1.1,
+                "top_k": 40,
+                "top_p": 0.9,
+            },
         )
 
         print("Completions with generation parameters:", completion.choices[0].text)
@@ -688,9 +690,11 @@ class Testing(ServerTestingBase):
             messages=self.messages,
             max_completion_tokens=15,
             temperature=0.7,
-            repeat_penalty=1.2,
-            top_k=50,
-            top_p=0.95,
+            extra_body={
+                "repeat_penalty": 1.2,
+                "top_k": 50,
+                "top_p": 0.95,
+            },
         )
 
         print(
@@ -705,10 +709,12 @@ class Testing(ServerTestingBase):
             input=self.messages,
             stream=False,
             temperature=0.6,
-            repeat_penalty=1.05,
-            top_k=30,
-            top_p=0.8,
             max_output_tokens=15,
+            extra_body={
+                "repeat_penalty": 1.05,
+                "top_k": 30,
+                "top_p": 0.8,
+            },
         )
 
         print(
