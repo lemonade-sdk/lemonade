@@ -235,7 +235,7 @@ SectionEnd
 
 Section "Hybrid Execution Mode" HybridSec
   SectionIn 1
-  AddSize 0
+  AddSize 132188
   StrCpy $HYBRID_SELECTED "true"
 SectionEnd
 
