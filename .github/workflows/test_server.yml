@@ -38,7 +38,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip check
-          pip install -e .[dev,oga-cpu] --extra-index-url https://pypi.amd.com/simple
+          pip install -e .[dev,oga-cpu]
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
       - name: Run server tests (unit tests)
         shell: bash -el {0}

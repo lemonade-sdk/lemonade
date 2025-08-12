@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           conda install pylint
           python -m pip check
-          pip install -e .[dev,oga-cpu] --extra-index-url https://pypi.amd.com/simple
+          pip install -e .[dev,oga-cpu]
       - name: Lint with Black
         uses: psf/black@stable
         with:
