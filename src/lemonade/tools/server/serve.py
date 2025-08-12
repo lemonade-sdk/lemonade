@@ -54,7 +54,11 @@ from lemonade.tools.server.utils.port import lifespan
 
 from lemonade_server.model_manager import ModelManager
 from lemonade_server.pydantic_models import (
-    DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_PORT,
+    DEFAULT_HOST,
+    DEFAULT_LOG_LEVEL,
+    DEFAULT_LLAMACPP_BACKEND,
+    DEFAULT_CTX_SIZE,
     LoadConfig,
     CompletionRequest,
     ChatCompletionRequest,
@@ -65,17 +69,14 @@ from lemonade_server.pydantic_models import (
     DeleteConfig,
 )
 
+# Set to a high number to allow for interesting experiences in real apps
+# Tests should use the max_new_tokens argument to set a lower value
+DEFAULT_MAX_NEW_TOKENS = 1500
+
 # Only import tray on Windows
 if platform.system() == "Windows":
     # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
-
-
-DEFAULT_PORT = 8000
-DEFAULT_HOST = "localhost"
-DEFAULT_LOG_LEVEL = "info"
-DEFAULT_LLAMACPP_BACKEND = "vulkan"
-DEFAULT_CTX_SIZE = 4096
 
 
 class ServerModel(Model):
