@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run OpenAI's gpt-oss locally with Lemonade - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    // Define the article description once to avoid repetition
+    const ARTICLE_DESCRIPTION = "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware!";
+  </script>
+  <meta name="description" content="">
+  <meta property="og:title" content="Run OpenAI's gpt-oss locally with Lemonade">
+  <meta property="og:description" content="">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2025-08-05">
+  <meta property="article:author" content="Daniel Holanda, Jeremy Fowers, Krishna Sivakumar, Victoria Godsoe">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar-brand">
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
+    </div>
+    <div class="navbar-links">
+      <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
+      <a href="../docs/">Docs</a>
+      <a href="../docs/server/server_models/">Models</a>
+      <a href="../docs/server/apps/">Featured Apps</a>
+      <a href="index.html">News</a>
+    </div>
+  </nav>
+
+  <!-- Article Content -->
+  <main class="main">
+    <article class="blog-article">
+      <!-- Hero Section -->
+      <div class="hero-section">
+        <div class="hero-content">
+          <div class="hero-badge">🚀 New Models</div>
+          <h1 class="hero-title">Run OpenAI's gpt-oss locally with Lemonade</h1>
+          <div class="hero-subtitle" id="article-subtitle">
+            <!-- Content will be populated by JavaScript -->
+          </div>
+          <div class="hero-meta">
+            <div class="meta-item">
+              <span>📅</span>
+              <span>August 12, 2025</span>
+            </div>
+            <div class="meta-item">
+              <span>✍️</span>
+              <span>Daniel Holanda, Jeremy Fowers, Krishna Sivakumar, Victoria Godsoe</span>
+            </div>
+            <div class="meta-item">
+              <span>📖</span>
+              <span>Blog Post</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="article-content">
+        <div class="section-card">
+          <h2 class="section-title">What is Lemonade?</h2>
+          <p>Whether you're looking for efficient local inference or want to experiment with OpenAI's latest open-source technology, Lemonade makes it incredibly easy to get started with gpt-oss models right out of the box.</p>
+
+          <p>Lemonade is a local LLM serving platform that focuses on maximizing performance using the best available hardware acceleration - from neural processing units (NPUs) to GPU acceleration. With Lemonade, you can run large language models entirely on your PC while maintaining full privacy and control over your data.</p>
+
+          <div class="feature-grid">
+            <div class="feature-item">
+              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                <span class="feature-icon">🧠</span>
+                <strong>Multi-hardware support</strong>
+              </div>
+              <p style="margin: 0; color: #666;">CPU, GPU, and NPU acceleration</p>
+            </div>
+            <div class="feature-item">
+              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                <span class="feature-icon">🔌</span>
+                <strong>OpenAI-compatible API</strong>
+              </div>
+              <p style="margin: 0; color: #666;">Drop-in replacement for OpenAI's API</p>
+            </div>
+            <div class="feature-item">
+              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                <span class="feature-icon">🎯</span>
+                <strong>Easy model management</strong>
+              </div>
+              <p style="margin: 0; color: #666;">Built-in model library with one-command installation</p>
+            </div>
+            <div class="feature-item">
+              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                <span class="feature-icon">🖥️</span>
+                <strong>Cross-platform</strong>
+              </div>
+              <p style="margin: 0; color: #666;">Windows and Linux support</p>
+            </div>
+            <div class="feature-item">
+              <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                <span class="feature-icon">🔒</span>
+                <strong>Privacy-first</strong>
+              </div>
+              <p style="margin: 0; color: #666;">Everything runs locally on your machine</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h2 class="section-title">Available gpt-oss Models</h2>
+          <p style="margin-bottom: 2rem;">Lemonade supports both gpt-oss model sizes, each optimized for different use cases:</p>
+
+          <div class="model-showcase">
+            <div class="model-card-enhanced">
+              <div class="model-title">
+                gpt-oss-20b
+                <span class="model-badge">Optimized</span>
+              </div>
+              <p style="font-size: 1rem; color: #666; margin-bottom: 1rem;">Optimized for lower latency and local use cases</p>
+              <div style="background: rgba(255, 224, 102, 0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                  <span style="font-weight: 600;">Total Parameters:</span>
+                  <span>21B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="font-weight: 600;">Active Parameters:</span>
+                  <span>3.6B</span>
+                </div>
+              </div>
+              <p style="font-size: 0.9rem; color: #888; margin: 0;">Perfect for everyday tasks and quick responses</p>
+            </div>
+            <div class="model-card-enhanced">
+              <div class="model-title">
+                gpt-oss-120b
+                <span class="model-badge">Production</span>
+              </div>
+              <p style="font-size: 1rem; color: #666; margin-bottom: 1rem;">Production-ready model for high reasoning tasks</p>
+              <div style="background: rgba(255, 224, 102, 0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                  <span style="font-weight: 600;">Total Parameters:</span>
+                  <span>117B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span style="font-weight: 600;">Active Parameters:</span>
+                  <span>5.1B</span>
+                </div>
+              </div>
+              <p style="font-size: 0.9rem; color: #888; margin: 0;">Ideal for complex reasoning and advanced applications</p>
+            </div>
+          </div>
+
+          <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; margin-top: 2rem; border-left: 4px solid #ffe066;">
+            <h4 style="margin: 0 0 1rem 0; color: #333; display: flex; align-items: center; gap: 0.5rem;">
+              <span>✨</span>
+              Advanced Features
+            </h4>
+            <p style="margin: 0; color: #555;">Both models feature OpenAI's innovative sliding window attention and attention sink mechanisms, allowing them to handle extremely long conversations and contexts efficiently while maintaining response quality.</p>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h2 class="section-title">Getting Started</h2>
+
+          <h3 style="color: #333; margin: 2rem 0 1rem 0; font-size: 1.3rem;">Installation</h3>
+          <p>Install Lemonade using pip:</p>
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Terminal / Command Prompt</span>
+              <div class="code-dots">
+                <div class="code-dot red"></div>
+                <div class="code-dot yellow"></div>
+                <div class="code-dot green"></div>
+              </div>
+            </div>
+            <pre><code>conda create -n lemon python=3.10
+conda activate lemon
+pip install lemonade-sdk</code></pre>
+          </div>
+
+          <p>Or download our <a href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe" target="_blank" rel="noopener" style="color: #e6b800; font-weight: 600;">GUI installer</a> for Windows.</p>
+
+          <h3 style="color: #333; margin: 2rem 0 1rem 0; font-size: 1.3rem;">Running gpt-oss Models</h3>
+          <p>To run the smaller gpt-oss model:</p>
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Run gpt-oss-20b</span>
+              <div class="code-dots">
+                <div class="code-dot red"></div>
+                <div class="code-dot yellow"></div>
+                <div class="code-dot green"></div>
+              </div>
+            </div>
+            <pre><code>lemonade-server run gpt-oss-20b-GGUF</code></pre>
+          </div>
+
+          <p>For the larger model:</p>
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Run gpt-oss-120b</span>
+              <div class="code-dots">
+                <div class="code-dot red"></div>
+                <div class="code-dot yellow"></div>
+                <div class="code-dot green"></div>
+              </div>
+            </div>
+            <pre><code>lemonade-server run gpt-oss-120b-GGUF</code></pre>
+          </div>
+
+          <p>You can also install models ahead of time:</p>
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Pre-install Models</span>
+              <div class="code-dots">
+                <div class="code-dot red"></div>
+                <div class="code-dot yellow"></div>
+                <div class="code-dot green"></div>
+              </div>
+            </div>
+            <pre><code>lemonade-server pull gpt-oss-20b-GGUF
+lemonade-server pull gpt-oss-120b-GGUF</code></pre>
+          </div>
+        </div>
+
+          <h3 style="color: #333; margin: 2rem 0 1rem 0; font-size: 1.3rem;">System Requirements</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 1.5rem 0;">
+            <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 224, 102, 0.3);">
+              <h4 style="margin: 0 0 1rem 0; color: #e6b800; display: flex; align-items: center; gap: 0.5rem;">
+                <span>💾</span>
+                gpt-oss-20b-GGUF
+              </h4>
+              <p style="margin: 0; color: #666;">~13GB RAM recommended for optimal performance</p>
+            </div>
+            <div style="background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 224, 102, 0.3);">
+              <h4 style="margin: 0 0 1rem 0; color: #e6b800; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🚀</span>
+                gpt-oss-120b-GGUF
+              </h4>
+              <p style="margin: 0; color: #666;">Significantly more memory required for optimal performance</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Call to Action Section -->
+        <div class="cta-section">
+          <div class="cta-content">
+            <h2 class="cta-title">Ready to Get Started?</h2>
+            <p style="font-size: 1.1rem; margin: 0 0 2rem 0; color: #333;">Join thousands of developers running OpenAI's gpt-oss models locally with Lemonade!</p>
+            
+            <div class="cta-links">
+              <a href="https://lemonade-server.ai" class="cta-link" target="_blank" rel="noopener">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                  <span>📥</span>
+                  <span>Download Lemonade</span>
+                </div>
+              </a>
+              <a href="https://lemonade-server.ai/docs/" class="cta-link" target="_blank" rel="noopener">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                  <span>📚</span>
+                  <span>Read Documentation</span>
+                </div>
+              </a>
+              <a href="https://discord.gg/5xXzkMu8Zk" class="cta-link" target="_blank" rel="noopener">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                  <span>💬</span>
+                  <span>Join Discord</span>
+                </div>
+              </a>
+              <a href="https://github.com/lemonade-sdk/lemonade/issues" class="cta-link" target="_blank" rel="noopener">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                  <span>🐛</span>
+                  <span>Report Issues</span>
+                </div>
+              </a>
+            </div>
+            
+            <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.8); border-radius: 12px; backdrop-filter: blur(10px);">
+              <p style="margin: 0; font-size: 1.1rem; font-weight: 600; color: #333;">
+                🍋 Experience the power of OpenAI's latest models running entirely on your local hardware!
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Back to News Button -->
+      <div class="article-navigation">
+        <a href="index.html" class="back-to-news-btn">← Back to News</a>
+      </div>
+    </article>
+  </main>
+
+  <!-- Footer will be inserted here by footer.js -->
+  <div class="footer-placeholder"></div>
+  
+  <script src="../assets/footer.js"></script>
+  <script>
+    // Initialize footer with star count (uses ../ basePath)
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeFooter('../');
+      
+      // Populate meta tags and subtitle with the description
+      document.querySelector('meta[name="description"]').setAttribute('content', ARTICLE_DESCRIPTION);
+      document.querySelector('meta[property="og:description"]').setAttribute('content', ARTICLE_DESCRIPTION);
+      document.getElementById('article-subtitle').textContent = `We're excited to announce that ${ARTICLE_DESCRIPTION} 🎉`;
+    });
+  </script>
+</body>
+</html>
