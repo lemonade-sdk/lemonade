@@ -258,12 +258,7 @@ function createModelNameWithLabels(modelId, allModels) {
 
 // === Model Status Management ===
 let currentLoadedModel = null;
-let modelSettings = {
-    temperature: 0.7,
-    top_k: 40,
-    top_p: 0.9,
-    repeat_penalty: 1.1
-};
+let modelSettings = {};
 
 // Check health endpoint to get current model status
 async function checkModelHealth() {
@@ -531,12 +526,15 @@ function createModelItem(modelId, modelData, container) {
     name.className = 'model-item-name';
     name.appendChild(createModelNameWithLabels(modelId, window.SERVER_MODELS || {}));
     
-    const description = document.createElement('div');
-    description.className = 'model-item-description';
-    description.textContent = modelData.description || 'No description available';
-    
     info.appendChild(name);
-    info.appendChild(description);
+    
+    // Only add description if it exists and is not empty
+    if (modelData.description && modelData.description.trim()) {
+        const description = document.createElement('div');
+        description.className = 'model-item-description';
+        description.textContent = modelData.description;
+        info.appendChild(description);
+    }
     
     const actions = document.createElement('div');
     actions.className = 'model-item-actions';
@@ -640,53 +638,117 @@ async function deleteModel(modelId) {
 
 // === Model Settings Management ===
 
-// Load model settings from localStorage or defaults
+// Load model settings from localStorage or set to empty for defaults
 function loadModelSettings() {
     const saved = localStorage.getItem('lemonade_model_settings');
     if (saved) {
         try {
-            modelSettings = { ...modelSettings, ...JSON.parse(saved) };
+            const savedSettings = JSON.parse(saved);
+            modelSettings = { ...modelSettings, ...savedSettings };
         } catch (error) {
             console.error('Error loading saved settings:', error);
         }
     }
     
-    // Update UI
-    document.getElementById('setting-temperature').value = modelSettings.temperature;
-    document.getElementById('setting-top-k').value = modelSettings.top_k;
-    document.getElementById('setting-top-p').value = modelSettings.top_p;
-    document.getElementById('setting-repeat-penalty').value = modelSettings.repeat_penalty;
+    // Update UI - set values only if they exist, otherwise leave placeholder
+    const tempInput = document.getElementById('setting-temperature');
+    const topKInput = document.getElementById('setting-top-k');
+    const topPInput = document.getElementById('setting-top-p');
+    const repeatInput = document.getElementById('setting-repeat-penalty');
+    
+    // Load saved values or leave as placeholder "default"
+    if (modelSettings.temperature !== undefined) {
+        tempInput.value = modelSettings.temperature;
+    }
+    if (modelSettings.top_k !== undefined) {
+        topKInput.value = modelSettings.top_k;
+    }
+    if (modelSettings.top_p !== undefined) {
+        topPInput.value = modelSettings.top_p;
+    }
+    if (modelSettings.repeat_penalty !== undefined) {
+        repeatInput.value = modelSettings.repeat_penalty;
+    }
 }
 
-// Save model settings
-function saveModelSettings() {
-    modelSettings = {
-        temperature: parseFloat(document.getElementById('setting-temperature').value),
-        top_k: parseInt(document.getElementById('setting-top-k').value),
-        top_p: parseFloat(document.getElementById('setting-top-p').value),
-        repeat_penalty: parseFloat(document.getElementById('setting-repeat-penalty').value)
-    };
+// Auto-save model settings whenever inputs change
+function setupAutoSaveSettings() {
+    const inputs = ['setting-temperature', 'setting-top-k', 'setting-top-p', 'setting-repeat-penalty'];
     
+    inputs.forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('input', function() {
+                updateModelSettings();
+            });
+            input.addEventListener('blur', function() {
+                updateModelSettings();
+            });
+        }
+    });
+}
+
+// Update model settings from current input values
+function updateModelSettings() {
+    const tempInput = document.getElementById('setting-temperature');
+    const topKInput = document.getElementById('setting-top-k');
+    const topPInput = document.getElementById('setting-top-p');
+    const repeatInput = document.getElementById('setting-repeat-penalty');
+    
+    // Only set values if user has entered something, otherwise use undefined (default)
+    modelSettings = {};
+    
+    if (tempInput.value && tempInput.value.trim() !== '') {
+        modelSettings.temperature = parseFloat(tempInput.value);
+    }
+    if (topKInput.value && topKInput.value.trim() !== '') {
+        modelSettings.top_k = parseInt(topKInput.value);
+    }
+    if (topPInput.value && topPInput.value.trim() !== '') {
+        modelSettings.top_p = parseFloat(topPInput.value);
+    }
+    if (repeatInput.value && repeatInput.value.trim() !== '') {
+        modelSettings.repeat_penalty = parseFloat(repeatInput.value);
+    }
+    
+    // Save to localStorage
     localStorage.setItem('lemonade_model_settings', JSON.stringify(modelSettings));
-    alert('Settings saved successfully!');
 }
 
-// Reset model settings to defaults
+// Reset model settings to defaults (clear all inputs)
 function resetModelSettings() {
-    modelSettings = {
-        temperature: 0.7,
-        top_k: 40,
-        top_p: 0.9,
-        repeat_penalty: 1.1
-    };
+    modelSettings = {};
     
-    loadModelSettings(); // This will update the UI
+    // Clear all input values to show placeholders
+    document.getElementById('setting-temperature').value = '';
+    document.getElementById('setting-top-k').value = '';
+    document.getElementById('setting-top-p').value = '';
+    document.getElementById('setting-repeat-penalty').value = '';
+    
     localStorage.removeItem('lemonade_model_settings');
 }
 
-// Get current model settings for API requests
+// Get current model settings for API requests (only include non-default values)
 function getCurrentModelSettings() {
-    return { ...modelSettings };
+    // Update settings from current form state before returning
+    updateModelSettings();
+    
+    // Return only the settings that have actual values (not defaults)
+    const currentSettings = {};
+    if (modelSettings.temperature !== undefined) {
+        currentSettings.temperature = modelSettings.temperature;
+    }
+    if (modelSettings.top_k !== undefined) {
+        currentSettings.top_k = modelSettings.top_k;
+    }
+    if (modelSettings.top_p !== undefined) {
+        currentSettings.top_p = modelSettings.top_p;
+    }
+    if (modelSettings.repeat_penalty !== undefined) {
+        currentSettings.repeat_penalty = modelSettings.repeat_penalty;
+    }
+    
+    return currentSettings;
 }
 
 // Initialize everything when DOM is loaded
@@ -698,12 +760,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up model status controls
     document.getElementById('model-unload-btn').onclick = unloadModel;
     
-    // Set up model settings controls
-    document.getElementById('save-settings-btn').onclick = saveModelSettings;
+    // Set up model settings controls (only reset button now)
     document.getElementById('reset-settings-btn').onclick = resetModelSettings;
     
     // Load initial model settings
     loadModelSettings();
+    
+    // Set up auto-save for settings
+    setupAutoSaveSettings();
     
     // Initialize model browser with hot models
     displayHotModels();
