@@ -258,6 +258,7 @@ function createModelNameWithLabels(modelId, allModels) {
 
 // === Model Status Management ===
 let currentLoadedModel = null;
+let installedModels = new Set(); // Track which models are actually installed
 let modelSettings = {};
 
 // Check health endpoint to get current model status
@@ -271,15 +272,40 @@ async function checkModelHealth() {
     }
 }
 
+// Fetch installed models from the server
+async function fetchInstalledModels() {
+    try {
+        const response = await httpJson(getServerBaseUrl() + '/api/v1/models');
+        installedModels.clear();
+        if (response && response.data) {
+            response.data.forEach(model => {
+                installedModels.add(model.id);
+            });
+        }
+    } catch (error) {
+        console.error('Error fetching installed models:', error);
+        // If we can't fetch, assume all are installed to maintain current functionality
+        const allModels = window.SERVER_MODELS || {};
+        Object.keys(allModels).forEach(modelId => {
+            installedModels.add(modelId);
+        });
+    }
+}
+
 // Update model status indicator
 async function updateModelStatusIndicator() {
     const indicator = document.getElementById('model-status-indicator');
     const statusText = document.getElementById('model-status-text');
     const unloadBtn = document.getElementById('model-unload-btn');
     
-    const health = await checkModelHealth();
+    // Fetch both health and installed models
+    const [health] = await Promise.all([
+        checkModelHealth(),
+        fetchInstalledModels()
+    ]);
+    
     const allModels = window.SERVER_MODELS || {};
-    const hasInstalledModels = Object.keys(allModels).length > 0;
+    const hasInstalledModels = installedModels.size > 0;
     
     if (health && health.model_loaded) {
         // Model is loaded
@@ -539,8 +565,8 @@ function createModelItem(modelId, modelData, container) {
     const actions = document.createElement('div');
     actions.className = 'model-item-actions';
     
-    // Check if model is installed (this would need to be determined from server state)
-    const isInstalled = true; // Placeholder - would check against installed models
+    // Check if model is actually installed by looking at the installedModels set
+    const isInstalled = installedModels.has(modelId);
     const isLoaded = currentLoadedModel === modelId;
     
     if (!isInstalled) {
@@ -585,6 +611,11 @@ async function installModel(modelId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_name: modelId, ...modelData })
         });
+        
+        // Refresh installed models and model status
+        await fetchInstalledModels();
+        await updateModelStatusIndicator();
+        
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -626,6 +657,11 @@ async function deleteModel(modelId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_name: modelId })
         });
+        
+        // Refresh installed models and model status
+        await fetchInstalledModels();
+        await updateModelStatusIndicator();
+        
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -753,7 +789,7 @@ function getCurrentModelSettings() {
 
 // Initialize everything when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Set up model status indicator
+    // Set up model status indicator and fetch initial data
     updateModelStatusIndicator();
     setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
     
