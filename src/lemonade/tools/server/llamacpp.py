@@ -47,42 +47,66 @@ def llamacpp_address(port: int) -> str:
 def _separate_openai_params(request_dict: dict, endpoint_type: str = "chat") -> dict:
     """
     Separate standard OpenAI parameters from custom llama.cpp parameters.
-    
+
     Args:
         request_dict: Dictionary of all request parameters
         endpoint_type: Type of endpoint ("chat" or "completion")
-    
+
     Returns:
         Dictionary with parameters properly separated for OpenAI client
     """
     openai_client_params = {}
     extra_params = {}
-    
+
+    # Common OpenAI parameters for both endpoint types
+    common_params = {
+        "model",
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "n",
+        "presence_penalty",
+        "seed",
+        "stop",
+        "stream",
+        "temperature",
+        "top_p",
+        "user",
+    }
+
     # Standard OpenAI parameters by endpoint type
     if endpoint_type == "chat":
-        openai_params = {
-            'messages', 'model', 'frequency_penalty', 'logit_bias', 'logprobs',
-            'top_logprobs', 'max_tokens', 'n', 'presence_penalty', 'response_format',
-            'seed', 'service_tier', 'stop', 'stream', 'stream_options', 'temperature',
-            'top_p', 'tools', 'tool_choice', 'parallel_tool_calls', 'user'
+        chat_specific_params = {
+            "messages",
+            "top_logprobs",
+            "response_format",
+            "service_tier",
+            "stream_options",
+            "tools",
+            "tool_choice",
+            "parallel_tool_calls",
         }
+        openai_params = common_params | chat_specific_params
     else:  # completion
-        openai_params = {
-            'model', 'prompt', 'best_of', 'echo', 'frequency_penalty', 'logit_bias',
-            'logprobs', 'max_tokens', 'n', 'presence_penalty', 'seed', 'stop',
-            'stream', 'suffix', 'temperature', 'top_p', 'user'
+        completion_specific_params = {
+            "prompt",
+            "best_of",
+            "echo",
+            "suffix",
         }
-    
+        openai_params = common_params | completion_specific_params
+
     for key, value in request_dict.items():
         if key in openai_params:
             openai_client_params[key] = value
         else:
             extra_params[key] = value
-    
+
     # If there are custom parameters, use extra_body to pass them through
     if extra_params:
-        openai_client_params['extra_body'] = extra_params
-    
+        openai_client_params["extra_body"] = extra_params
+
     return openai_client_params
 
 
