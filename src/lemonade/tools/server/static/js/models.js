@@ -322,27 +322,31 @@ function createModelItem(modelId, modelData, container) {
     if (!isInstalled) {
         const installBtn = document.createElement('button');
         installBtn.className = 'model-item-btn install';
-        installBtn.textContent = 'Install';
+        installBtn.textContent = '📥';
+        installBtn.title = 'Install';
         installBtn.onclick = () => installModel(modelId);
         actions.appendChild(installBtn);
     } else {
         if (isLoaded) {
             const unloadBtn = document.createElement('button');
             unloadBtn.className = 'model-item-btn unload';
-            unloadBtn.textContent = 'Unload';
+            unloadBtn.textContent = '⏏️';
+            unloadBtn.title = 'Unload';
             unloadBtn.onclick = () => unloadModel();
             actions.appendChild(unloadBtn);
         } else {
             const loadBtn = document.createElement('button');
             loadBtn.className = 'model-item-btn load';
-            loadBtn.textContent = 'Load';
+            loadBtn.textContent = '🚀';
+            loadBtn.title = 'Load';
             loadBtn.onclick = () => loadModel(modelId);
             actions.appendChild(loadBtn);
         }
         
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'model-item-btn delete';
-        deleteBtn.textContent = 'Delete';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.title = 'Delete';
         deleteBtn.onclick = () => deleteModel(modelId);
         actions.appendChild(deleteBtn);
     }
@@ -367,7 +371,7 @@ async function installModel(modelId) {
     
     if (installBtn) {
         installBtn.disabled = true;
-        installBtn.textContent = 'Installing...';
+        installBtn.textContent = '⏳';
     }
     
     try {
@@ -413,7 +417,7 @@ async function loadModel(modelId) {
     
     if (loadBtn) {
         loadBtn.disabled = true;
-        loadBtn.textContent = 'Loading Model...';
+        loadBtn.textContent = '⌛';
     }
     
     // Update status indicator to show loading state

@@ -793,13 +793,24 @@ body::before {
 }
 
 .installing-btn {
-  background: var(--neutral-light) !important;
+  font-size: 0.75em !important;
+  padding: 0.5em 0.8em !important;
+  width: auto !important;
+  min-width: 90px !important;
+  height: 40px !important;
+  background: linear-gradient(145deg, rgba(107, 114, 128, 0.15), rgba(107, 114, 128, 0.08)) !important;
   color: var(--neutral-primary) !important;
+  border: 1px solid rgba(107, 114, 128, 0.3) !important;
+  cursor: wait !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 
+    0 2px 8px rgba(107, 114, 128, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
   font-weight: 500;
   opacity: 1 !important;
-  border: 1px solid var(--neutral-primary);
-  cursor: wait;
-  box-shadow: none !important;
+  white-space: nowrap !important;
+  animation: gentle-pulse 2s ease-in-out infinite !important;
 }
 
 /* Model label styles */
@@ -2006,83 +2017,138 @@ body::before {
   gap: 0.5rem;
 }
 
+/* Modern emoji button styling with clean glass effect */
 .model-item-btn {
-  padding: 0.5rem 1rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fff;
+  position: relative;
+  border: none;
+  border-radius: 12px;
+  padding: 0.75em;
   cursor: pointer;
-  font-size: 0.9rem;
   font-weight: 500;
-  transition: all var(--transition-fast);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 1.3em;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  color: #555;
+  text-align: center;
+  overflow: hidden;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Android Emoji", "EmojiSymbols", sans-serif;
 }
 
-.model-item-btn.install {
-  background: var(--accent-gold);
-  border-color: var(--accent-gold);
-  color: white;
+/* Elegant hover animation with subtle scaling */
+.model-item-btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 
+    0 8px 25px rgba(0, 0, 0, 0.15),
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.8));
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
+/* Satisfying active state */
+.model-item-btn:active {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 
+    0 3px 12px rgba(0, 0, 0, 0.12),
+    0 1px 5px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Disabled state with reduced opacity */
+.model-item-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  background: linear-gradient(145deg, rgba(248, 248, 248, 0.8), rgba(240, 240, 240, 0.6)) !important;
+}
+
+/* Special styling for loading/installing state with enhanced design */
+.model-item-btn.loading,
+.model-item-btn.installing {
+  font-size: 0.75em;
+  padding: 0.5em 0.8em;
+  width: auto;
+  min-width: 90px;
+  height: 40px;
+  background: linear-gradient(145deg, rgba(107, 114, 128, 0.15), rgba(107, 114, 128, 0.08));
+  color: var(--neutral-primary);
+  border: 1px solid rgba(107, 114, 128, 0.3);
+  cursor: wait;
+  backdrop-filter: blur(8px);
+  box-shadow: 
+    0 2px 8px rgba(107, 114, 128, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Pulsing animation for loading states */
+.model-item-btn.loading,
+.model-item-btn.installing {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes gentle-pulse {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+/* Color-coded hover effects for different action types */
 .model-item-btn.install:hover {
-  background: var(--accent-gold-dark);
-}
-
-.model-item-btn.load {
-  background: var(--success-primary);
-  border-color: var(--success-primary);
-  color: white;
-  box-shadow: 0 2px 4px rgba(45, 127, 71, 0.15);
+  background: linear-gradient(145deg, rgba(230, 184, 0, 0.2), rgba(230, 184, 0, 0.1));
+  border-color: rgba(230, 184, 0, 0.4);
+  box-shadow: 
+    0 8px 25px rgba(230, 184, 0, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .model-item-btn.load:hover {
-  background: var(--success-hover);
-  border-color: var(--success-hover);
-  box-shadow: 0 3px 6px rgba(45, 127, 71, 0.25);
-  transform: translateY(-1px);
-}
-
-.model-item-btn.unload {
-  background: var(--neutral-primary);
-  border-color: var(--neutral-primary);
-  color: white;
-  box-shadow: 0 2px 4px rgba(107, 114, 128, 0.15);
+  background: linear-gradient(145deg, rgba(45, 127, 71, 0.2), rgba(45, 127, 71, 0.1));
+  border-color: rgba(45, 127, 71, 0.4);
+  box-shadow: 
+    0 8px 25px rgba(45, 127, 71, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .model-item-btn.unload:hover {
-  background: var(--neutral-hover);
-  border-color: var(--neutral-hover);
-  box-shadow: 0 3px 6px rgba(107, 114, 128, 0.25);
-  transform: translateY(-1px);
-}
-
-.model-item-btn.delete {
-  background: var(--danger-primary);
-  border-color: var(--danger-primary);
-  color: white;
-  box-shadow: 0 2px 4px rgba(200, 88, 108, 0.15);
+  background: linear-gradient(145deg, rgba(107, 114, 128, 0.2), rgba(107, 114, 128, 0.1));
+  border-color: rgba(107, 114, 128, 0.4);
+  box-shadow: 
+    0 8px 25px rgba(107, 114, 128, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .model-item-btn.delete:hover {
-  background: var(--danger-hover);
-  border-color: var(--danger-hover);
-  box-shadow: 0 3px 6px rgba(200, 88, 108, 0.25);
-  transform: translateY(-1px);
-}
-
-.model-item-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* Enhanced button base styling */
-.model-item-btn {
-  border: none;
-  border-radius: 6px;
-  padding: 0.4em 1em;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all var(--transition-fast);
-  font-size: 0.9em;
+  background: linear-gradient(145deg, rgba(200, 88, 108, 0.2), rgba(200, 88, 108, 0.1));
+  border-color: rgba(200, 88, 108, 0.4);
+  box-shadow: 
+    0 8px 25px rgba(200, 88, 108, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
