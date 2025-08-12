@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "AMD, ISV Security Partners Collaborate to Protect the AI PC",
+    url: "https://www.amd.com/en/blogs/2025/isv-security-experiences-with-Ryzen-PRO.html",
+    date: "August 05, 2025",
+    description: "Lemonade Server and Ryzen AI NPUs bring real-time, on-device protection against phishing, deepfakes, and prompt attacks. No cloud lag, just smarter security where it counts.",
+    image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/isv-commercial-security-experiences-blog/security-shield-key-art.jpg",
+    imageStyle: "width: 100%; height: 100%; object-fit: cover; object-position: center top;",
+    type: "blog"
+    },
+    {
     title: "Lemonade Server & Open WebUI",
     url: "https://www.youtube.com/watch?v=yZs-Yzl736E",
     date: "July 31, 2025",
