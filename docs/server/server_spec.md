@@ -463,6 +463,7 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+<a id="get-apiv1load"></a>
 ### `GET /api/v1/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.

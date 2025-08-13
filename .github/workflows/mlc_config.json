@@ -1,0 +1,10 @@
+{
+    "ignorePatterns": [
+        { "pattern": "@amd.com" },
+        { "pattern": "localhost" },
+        {"pattern":"^https?://"}
+    ],
+    "timeout": "10s",
+    "retryOn429": true,
+    "retryCount": 3
+}
