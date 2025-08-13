@@ -32,9 +32,7 @@ setup(
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
-        # Necessary until upstream packages account for the breaking
-        # change to numpy
-        "numpy<2.0.0",
+        "numpy",
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
