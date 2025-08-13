@@ -8,10 +8,9 @@ Topics:
  - [Maintenance and Troubleshooting](#maintenance-and-troubleshooting)
     - [Check your runner's status](#check-your-runners-status)
     - [Actions are failing unexpectedly](#actions-are-failing-unexpectedly)
-    - [Take a laptop off NIMBYS](#take-a-laptop-off-nimbys)
+    - [Take a laptop offline](#take-a-laptop-offline)
 - [Creating Workflows](#creating-workflows)
     - [Capabilities and Limitations](#capabilities-and-limitations)
-    - [Workflow Examples](#workflow-examples)
 
 ## What are Self-Hosted Runners?
 
@@ -135,7 +134,6 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#npu-runner-setup) section to see which software is already expected on the system.
-        - ⚠️ NOTE: GAIA tests do install some software, see [Workflow Examples](#workflow-examples) for an example of why these specific cases are ok.
 - Always create new conda environments in the CWD, for example `conda create -p .\my-env`.
     - This way, the conda environment is located in `C:\actions-runner\_work\REPO`, which is wiped between tests.
     - Do NOT create conda environments by name, for example `conda create -n dont-you-dare` since that will end up in the conda install location and will persist across tests.
@@ -158,7 +156,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 
 # License
 
-[MIT License](../LICENSE.md)
+[Apache 2.0 License](../LICENSE)
 
 Copyright(C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
 SPDX-License-Identifier: MIT
