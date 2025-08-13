@@ -28,13 +28,11 @@ setup(
         # Minimal dependencies required for end-users who are running
         # apps deployed on Lemonade SDK
         "invoke>=2.0.0",
-        "onnx>=1.11.0,<1.18.0",
+        "onnx==1.18.0",
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
-        # Necessary until upstream packages account for the breaking
-        # change to numpy
-        "numpy<2.0.0",
+        "numpy",
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
