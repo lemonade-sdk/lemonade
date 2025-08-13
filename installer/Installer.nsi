@@ -239,7 +239,18 @@ Section "Hybrid Execution Mode" HybridSec
   StrCpy $HYBRID_SELECTED "true"
 SectionEnd
 
+SubSection /e "Selected Models" ModelsSec
+  Section "Qwen2.5-0.5B-Instruct-CPU" Qwen05Sec
+    SectionIn RO ; Read only, always installed
+    AddSize 833871  ;
+  SectionEnd
 
+  Section "-Download Models" DownloadModels
+    ; Always download the Qwen2.5-0.5B model
+    nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
+  SectionEnd
+
+SubSectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
@@ -334,11 +345,15 @@ LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
 LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU (includes Python)."
 LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode. Only available on Ryzen AI 300-series processors."
+LangString DESC_ModelsSec ${LANG_ENGLISH} "Default model for Lemonade Server"
+LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Qwen2.5-0.5B-Instruct model (GGUF format). This lightweight model is perfect for getting started with Lemonade Server."
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC01} $(DESC_SEC01)
   !insertmacro MUI_DESCRIPTION_TEXT ${HybridSec} $(DESC_HybridSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${ModelsSec} $(DESC_ModelsSec)
+  !insertmacro MUI_DESCRIPTION_TEXT ${Qwen05Sec} $(DESC_Qwen05Sec)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function .onInit
@@ -346,8 +361,6 @@ Function .onInit
   StrCpy $HYBRID_SELECTED "true"
   StrCpy $NO_DESKTOP_SHORTCUT "false"
   StrCpy $ADD_TO_STARTUP "false"
-  
-
 
   ; Set the install directory, allowing /D override from CLI install
   ${If} $InstDir != ""
