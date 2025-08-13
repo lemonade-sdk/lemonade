@@ -104,6 +104,8 @@ extra:
       link: https://www.youtube.com/@AMDDevCentral
     - icon: simple/github
       link: https://github.com/lemonade-sdk/lemonade
+    - icon: simple/discord
+      link: https://discord.gg/5xXzkMu8Zk
 
 copyright: Copyright &copy; 2025 AMD. All rights reserved.
 
