@@ -56,9 +56,12 @@ function setupChatEventListeners() {
     
     // Send button click
     sendBtn.addEventListener('click', function() {
-        // Only send if model is selected and not loading
+        // Check if we have a loaded model
         if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
             sendMessage();
+        } else if (!currentLoadedModel) {
+            // Auto-load default model and send
+            autoLoadDefaultModelAndSend();
         }
     });
 }
@@ -200,6 +203,59 @@ function updateAttachmentButtonState() {
 // Make updateAttachmentButtonState accessible globally
 window.updateAttachmentButtonState = updateAttachmentButtonState;
 
+// Auto-load default model and send message
+async function autoLoadDefaultModelAndSend() {
+    const defaultModel = 'Qwen3-0.6B-GGUF';
+    
+    // Check if default model is available and installed
+    if (!window.SERVER_MODELS || !window.SERVER_MODELS[defaultModel]) {
+        showErrorBanner('No models available. Please install a model first.');
+        return;
+    }
+    
+    if (!window.installedModels || !window.installedModels.has(defaultModel)) {
+        showErrorBanner('Default model is not installed. Please install it from the Model Management tab.');
+        return;
+    }
+    
+    try {
+        // Store the message to send after loading
+        const messageToSend = chatInput.value.trim();
+        if (!messageToSend && attachments.length === 0) {
+            return; // Nothing to send
+        }
+        
+        // Update UI to show loading state
+        modelSelect.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Loading model...';
+        
+        // Load the default model
+        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: defaultModel })
+        });
+        
+        // Update model status
+        await updateModelStatusIndicator();
+        updateModelSelectValue();
+        updateAttachmentButtonState();
+        
+        // Now send the message
+        sendMessage(messageToSend);
+        
+    } catch (error) {
+        console.error('Error auto-loading default model:', error);
+        showErrorBanner('Failed to load default model: ' + error.message);
+        
+        // Reset UI state
+        modelSelect.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+    }
+}
+
 // Check if model supports vision and update attachment button
 function checkCurrentModel() {
     if (attachedFiles.length > 0 && currentLoadedModel && !isVisionModel(currentLoadedModel)) {
@@ -257,9 +313,12 @@ function handleChatInputKeydown(e) {
         e.preventDefault();
         clearAttachments();
     } else if (e.key === 'Enter') {
-        // Only send if model is selected and not loading
+        // Check if we have a loaded model
         if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
             sendMessage();
+        } else if (!currentLoadedModel) {
+            // Auto-load default model and send
+            autoLoadDefaultModelAndSend();
         }
     }
 }
