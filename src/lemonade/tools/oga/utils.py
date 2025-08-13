@@ -100,9 +100,10 @@ class OrtGenaiModel(ModelAdapter):
         max_new_tokens=512,
         min_new_tokens=0,
         do_sample=True,
-        top_k=50,
-        top_p=1.0,
-        temperature=0.7,
+        top_k=None,
+        top_p=None,
+        temperature=None,
+        repeat_penalty=None,
         streamer: OrtGenaiStreamer = None,
         pad_token_id=None,
         stopping_criteria=None,
@@ -154,38 +155,58 @@ class OrtGenaiModel(ModelAdapter):
         if random_seed is None:
             random_seed = -1  # In og.Generator, -1 = seed with random device
 
+        # Get search config if available, otherwise use empty dict
+        # Thanks to the empty dict, if the model doesn't have a built-in search
+        #   config, the .get() calls will all just use the default values
+        search_config = {}
         if self.config and "search" in self.config:
             search_config = self.config["search"]
-            params.set_search_options(
-                do_sample=search_config.get("do_sample", do_sample),
-                top_k=search_config.get("top_k", top_k),
-                top_p=search_config.get("top_p", top_p),
-                temperature=search_config.get("temperature", temperature),
-                max_length=max_length_to_use,
-                min_length=min_length,
-                early_stopping=search_config.get("early_stopping", False),
-                length_penalty=search_config.get("length_penalty", 1.0),
-                num_beams=search_config.get("num_beams", 1),
-                num_return_sequences=search_config.get("num_return_sequences", 1),
-                repetition_penalty=search_config.get("repetition_penalty", 1.0),
-                past_present_share_buffer=search_config.get(
-                    "past_present_share_buffer", True
-                ),
-                random_seed=random_seed,
-                # Not currently supported by OGA
-                # diversity_penalty=search_config.get('diversity_penalty', 0.0),
-                # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),
-            )
-        else:
-            params.set_search_options(
-                do_sample=do_sample,
-                top_k=top_k,
-                top_p=top_p,
-                temperature=temperature,
-                max_length=max_length_to_use,
-                min_length=min_length,
-                random_seed=random_seed,
-            )
+
+        # Apply parameter hierarchy: user provided > search config > defaults
+        default_top_k = 50
+        default_top_p = 1.0
+        default_temperature = 0.7
+        default_repetition_penalty = 1.0
+
+        top_k_to_use = (
+            top_k if top_k is not None else search_config.get("top_k", default_top_k)
+        )
+        top_p_to_use = (
+            top_p if top_p is not None else search_config.get("top_p", default_top_p)
+        )
+        temperature_to_use = (
+            temperature
+            if temperature is not None
+            else search_config.get("temperature", default_temperature)
+        )
+        # Map the llamacpp name, `repeat_penalty`, to the OGA name, `repetition_penalty`
+        repetition_penalty_to_use = (
+            repeat_penalty
+            if repeat_penalty is not None
+            else search_config.get("repetition_penalty", default_repetition_penalty)
+        )
+
+        # Set search options once with all parameters
+        params.set_search_options(
+            do_sample=search_config.get("do_sample", do_sample),
+            top_k=top_k_to_use,
+            top_p=top_p_to_use,
+            temperature=temperature_to_use,
+            repetition_penalty=repetition_penalty_to_use,
+            max_length=max_length_to_use,
+            min_length=min_length,
+            early_stopping=search_config.get("early_stopping", False),
+            length_penalty=search_config.get("length_penalty", 1.0),
+            num_beams=search_config.get("num_beams", 1),
+            num_return_sequences=search_config.get("num_return_sequences", 1),
+            past_present_share_buffer=search_config.get(
+                "past_present_share_buffer", True
+            ),
+            random_seed=random_seed,
+            # Not currently supported by OGA
+            # diversity_penalty=search_config.get('diversity_penalty', 0.0),
+            # no_repeat_ngram_size=search_config.get('no_repeat_ngram_size', 0),
+        )
         params.try_graph_capture_with_max_batch_size(1)
 
         generator = og.Generator(self.model, params)
