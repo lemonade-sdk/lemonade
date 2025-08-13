@@ -318,5 +318,11 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": ["hot", "reasoning"]
+    },
+    "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
+        "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["reasoning","hot"]
     }
 }
