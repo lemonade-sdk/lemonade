@@ -315,10 +315,10 @@ class LlamaCppTesting(ServerTestingBase):
             prompt="Tell me about Python programming:",
             max_tokens=15,
             temperature=0.8,
+            top_p=0.9,
             extra_body={
                 "repeat_penalty": 1.1,
                 "top_k": 40,
-                "top_p": 0.9,
             },
         )
 
@@ -334,10 +334,10 @@ class LlamaCppTesting(ServerTestingBase):
             messages=self.messages,
             max_completion_tokens=15,
             temperature=0.7,
+            top_p=0.95,
             extra_body={
                 "repeat_penalty": 1.2,
                 "top_k": 50,
-                "top_p": 0.95,
             },
         )
 
