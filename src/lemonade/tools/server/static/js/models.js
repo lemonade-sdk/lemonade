@@ -408,12 +408,35 @@ async function loadModel(modelId) {
     
     // Update status indicator to show loading state
     const statusText = document.getElementById('model-status-text');
+    const statusLight = document.getElementById('status-light');
     const indicator = document.getElementById('model-status-indicator');
     const originalStatusText = statusText ? statusText.textContent : '';
     const originalClassName = indicator ? indicator.className : '';
-    if (statusText && indicator) {
-        statusText.textContent = 'Loading model...';
+    if (statusText && statusLight && indicator) {
+        statusText.textContent = `Loading ${modelId}...`;
+        statusLight.className = 'status-light loading';
         indicator.className = 'model-status-indicator online'; // Keep online status while loading
+    }
+    
+    // Update chat dropdown and send button to show loading state
+    const modelSelect = document.getElementById('model-select');
+    const sendBtn = document.getElementById('send-btn');
+    if (modelSelect && sendBtn) {
+        // Ensure the model exists in the dropdown options
+        let modelOption = modelSelect.querySelector(`option[value="${modelId}"]`);
+        if (!modelOption) {
+            // Add the model to the dropdown if it doesn't exist
+            modelOption = document.createElement('option');
+            modelOption.value = modelId;
+            modelOption.textContent = modelId;
+            modelSelect.appendChild(modelOption);
+        }
+        
+        // Set the dropdown to the new model and disable it
+        modelSelect.value = modelId;
+        modelSelect.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Loading...';
     }
     
     try {
@@ -423,6 +446,24 @@ async function loadModel(modelId) {
             body: JSON.stringify({ model_name: modelId })
         });
         await updateModelStatusIndicator();
+        
+        // Re-enable and update chat controls after successful loading
+        const modelSelect = document.getElementById('model-select');
+        const sendBtn = document.getElementById('send-btn');
+        if (modelSelect && sendBtn) {
+            modelSelect.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+        }
+        
+        // Update chat dropdown to reflect the loaded model
+        if (window.updateModelSelectValue) {
+            window.updateModelSelectValue();
+        }
+        if (window.updateAttachmentButtonState) {
+            window.updateAttachmentButtonState();
+        }
+        
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -441,6 +482,18 @@ async function loadModel(modelId) {
         if (statusText && indicator) {
             statusText.textContent = originalStatusText;
             indicator.className = originalClassName;
+        }
+        
+        // Reset chat controls on error
+        const modelSelect = document.getElementById('model-select');
+        const sendBtn = document.getElementById('send-btn');
+        if (modelSelect && sendBtn) {
+            modelSelect.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+            if (window.updateModelSelectValue) {
+                window.updateModelSelectValue();
+            }
         }
     }
 }

@@ -97,6 +97,9 @@ function updateModelSelectValue() {
     }
 }
 
+// Make updateModelSelectValue accessible globally
+window.updateModelSelectValue = updateModelSelectValue;
+
 // Handle model selection change
 async function handleModelSelectChange() {
     const selectedModel = modelSelect.value;
@@ -118,6 +121,14 @@ async function handleModelSelectChange() {
         const loadingOption = modelSelect.querySelector('option[value=""]');
         if (loadingOption) {
             loadingOption.textContent = `Loading ${selectedModel}...`;
+        }
+        
+        // Update status indicator to show loading state
+        const statusText = document.getElementById('model-status-text');
+        const statusLight = document.getElementById('status-light');
+        if (statusText && statusLight) {
+            statusText.textContent = `Loading ${selectedModel}...`;
+            statusLight.className = 'status-light loading';
         }
         
         // Load the selected model
@@ -185,6 +196,9 @@ function updateAttachmentButtonState() {
         attachmentBtn.title = 'Image attachments not supported by this model';
     }
 }
+
+// Make updateAttachmentButtonState accessible globally
+window.updateAttachmentButtonState = updateAttachmentButtonState;
 
 // Check if model supports vision and update attachment button
 function checkCurrentModel() {
