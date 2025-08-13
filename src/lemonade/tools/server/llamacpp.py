@@ -43,6 +43,72 @@ def llamacpp_address(port: int) -> str:
     return f"http://127.0.0.1:{port}/v1"
 
 
+def _separate_openai_params(request_dict: dict, endpoint_type: str = "chat") -> dict:
+    """
+    Separate standard OpenAI parameters from custom llama.cpp parameters.
+
+    Args:
+        request_dict: Dictionary of all request parameters
+        endpoint_type: Type of endpoint ("chat" or "completion")
+
+    Returns:
+        Dictionary with parameters properly separated for OpenAI client
+    """
+    openai_client_params = {}
+    extra_params = {}
+
+    # Common OpenAI parameters for both endpoint types
+    common_params = {
+        "model",
+        "frequency_penalty",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "n",
+        "presence_penalty",
+        "seed",
+        "stop",
+        "stream",
+        "temperature",
+        "top_p",
+        "user",
+    }
+
+    # Standard OpenAI parameters by endpoint type
+    if endpoint_type == "chat":
+        chat_specific_params = {
+            "messages",
+            "top_logprobs",
+            "response_format",
+            "service_tier",
+            "stream_options",
+            "tools",
+            "tool_choice",
+            "parallel_tool_calls",
+        }
+        openai_params = common_params | chat_specific_params
+    else:  # completion
+        completion_specific_params = {
+            "prompt",
+            "best_of",
+            "echo",
+            "suffix",
+        }
+        openai_params = common_params | completion_specific_params
+
+    for key, value in request_dict.items():
+        if key in openai_params:
+            openai_client_params[key] = value
+        else:
+            extra_params[key] = value
+
+    # If there are custom parameters, use extra_body to pass them through
+    if extra_params:
+        openai_client_params["extra_body"] = extra_params
+
+    return openai_client_params
+
+
 class LlamaTelemetry:
     """
     Manages telemetry data collection and display for llama server.
@@ -226,6 +292,11 @@ def _launch_llama_subprocess(
         "--ctx-size",
         str(ctx_size),
     ]
+
+    # Lock random seed for deterministic behavior in CI
+    if os.environ.get("LEMONADE_CI_MODE"):
+        base_command.extend(["--seed", "42"])
+
     if "mmproj" in snapshot_files:
         base_command.extend(["--mmproj", snapshot_files["mmproj"]])
         if not use_gpu:
@@ -393,13 +464,17 @@ def chat_completion(
         exclude_unset=True, exclude_none=True
     )
 
+    # Separate standard OpenAI parameters from custom llama.cpp parameters
+    openai_client_params = _separate_openai_params(request_dict, "chat")
+
     # Check if streaming is requested
     if chat_completion_request.stream:
 
         def event_stream():
             try:
                 # Enable streaming
-                for chunk in client.chat.completions.create(**request_dict):
+                # pylint: disable=missing-kwoa
+                for chunk in client.chat.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -421,7 +496,8 @@ def chat_completion(
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
-            response = client.chat.completions.create(**request_dict)
+            # pylint: disable=missing-kwoa
+            response = client.chat.completions.create(**openai_client_params)
 
             # Show telemetry after completion
             telemetry.show_telemetry()
@@ -429,6 +505,7 @@ def chat_completion(
             return response
 
         except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error during chat completion: %s", str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Chat completion error: {str(e)}",
@@ -455,13 +532,17 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
     # Convert Pydantic model to dict and remove unset/null values
     request_dict = completion_request.model_dump(exclude_unset=True, exclude_none=True)
 
+    # Separate standard OpenAI parameters from custom llama.cpp parameters
+    openai_client_params = _separate_openai_params(request_dict, "completion")
+
     # Check if streaming is requested
     if completion_request.stream:
 
         def event_stream():
             try:
                 # Enable streaming
-                for chunk in client.completions.create(**request_dict):
+                # pylint: disable=missing-kwoa
+                for chunk in client.completions.create(**openai_client_params):
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -483,7 +564,8 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
         # Non-streaming response
         try:
             # Disable streaming for non-streaming requests
-            response = client.completions.create(**request_dict)
+            # pylint: disable=missing-kwoa
+            response = client.completions.create(**openai_client_params)
 
             # Show telemetry after completion
             telemetry.show_telemetry()
@@ -491,6 +573,7 @@ def completion(completion_request: CompletionRequest, telemetry: LlamaTelemetry)
             return response
 
         except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error during completion: %s", str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Completion error: {str(e)}",
