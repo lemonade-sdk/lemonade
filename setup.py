@@ -32,7 +32,7 @@ setup(
         "pyyaml>=5.4",
         "typeguard>=2.3.13",
         "packaging>=20.9",
-        "numpy,
+        "numpy",
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
