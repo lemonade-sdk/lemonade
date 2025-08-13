@@ -51,33 +51,27 @@ async function updateModelStatusIndicator() {
         fetchInstalledModels()
     ]);
     
-    const allModels = window.SERVER_MODELS || {};
-    const hasInstalledModels = installedModels.size > 0;
+    // Remove any click handlers
+    indicator.onclick = null;
     
     if (health && health.model_loaded) {
-        // Model is loaded
+        // Model is loaded - show model name with online status
         currentLoadedModel = health.model_loaded;
         indicator.className = 'model-status-indicator loaded';
         statusText.textContent = health.model_loaded;
         unloadBtn.style.display = 'block';
-        
-        indicator.onclick = () => showTab('models');
-    } else if (!hasInstalledModels) {
-        // No models installed
+    } else if (health) {
+        // Server is online but no model loaded
         currentLoadedModel = null;
-        indicator.className = 'model-status-indicator no-models';
-        statusText.textContent = 'Install a Model';
+        indicator.className = 'model-status-indicator online';
+        statusText.textContent = 'Server Online';
         unloadBtn.style.display = 'none';
-        
-        indicator.onclick = () => showTab('models');
     } else {
-        // Models available but none loaded
+        // Server is offline
         currentLoadedModel = null;
-        indicator.className = 'model-status-indicator';
-        statusText.textContent = 'Load Model';
+        indicator.className = 'model-status-indicator offline';
+        statusText.textContent = 'Server Offline';
         unloadBtn.style.display = 'none';
-        
-        indicator.onclick = () => showTab('models');
     }
 }
 
@@ -401,9 +395,12 @@ async function loadModel(modelId) {
     
     // Update status indicator to show loading state
     const statusText = document.getElementById('model-status-text');
+    const indicator = document.getElementById('model-status-indicator');
     const originalStatusText = statusText ? statusText.textContent : '';
-    if (statusText) {
+    const originalClassName = indicator ? indicator.className : '';
+    if (statusText && indicator) {
         statusText.textContent = 'Loading model...';
+        indicator.className = 'model-status-indicator online'; // Keep online status while loading
     }
     
     try {
@@ -428,8 +425,9 @@ async function loadModel(modelId) {
         }
         
         // Reset status indicator on error
-        if (statusText) {
+        if (statusText && indicator) {
             statusText.textContent = originalStatusText;
+            indicator.className = originalClassName;
         }
     }
 }

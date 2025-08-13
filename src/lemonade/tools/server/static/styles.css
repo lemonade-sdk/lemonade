@@ -200,101 +200,116 @@ body::before {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1.2rem;
-  background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
-  border: 2px solid #3498db;
+  background: transparent;
+  border: none;
   border-radius: 8px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
   min-height: 38px;
   font-size: 0.9rem;
-  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
   position: relative;
-  overflow: hidden;
 }
 
-.model-status-indicator::before {
+.status-light {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.status-light::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  transition: left 0.5s;
+  top: -2px;
+  left: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  opacity: 0.3;
+  animation: pulse-glow 2s infinite;
 }
 
-.model-status-indicator:hover {
-  background: linear-gradient(135deg, #e6f3ff 0%, #cce7ff 100%);
-  border-color: #2980b9;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+/* Online status (green) */
+.model-status-indicator.online .status-light {
+  background: #28a745;
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
 }
 
-.model-status-indicator:hover::before {
-  left: 100%;
+.model-status-indicator.online .status-light::before {
+  background: #28a745;
 }
 
-.model-status-indicator.loaded {
-  background: linear-gradient(135deg, var(--success-light) 0%, #d1e7d1 100%);
-  border-color: var(--success-primary);
-  color: #1e4129;
-  box-shadow: 0 2px 8px rgba(45, 127, 71, 0.2);
+.model-status-indicator.online .model-status-text {
+  color: #28a745;
+  font-weight: 600;
 }
 
-.model-status-indicator.loaded:hover {
-  background: linear-gradient(135deg, #c3e6cb 0%, #a9d4b8 100%);
-  border-color: #218838;
-  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+/* Offline status (red) */
+.model-status-indicator.offline .status-light {
+  background: #dc3545;
+  box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
 }
 
-.model-status-indicator.no-models {
-  background: linear-gradient(135deg, #fff3cd 0%, #fce4a1 100%);
-  border-color: #ffc107;
-  color: #856404;
-  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
-  animation: pulse 2s infinite;
+.model-status-indicator.offline .status-light::before {
+  background: #dc3545;
 }
 
-.model-status-indicator.no-models:hover {
-  background: linear-gradient(135deg, #fce4a1 0%, #f8d573 100%);
-  border-color: #e0a800;
-  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+.model-status-indicator.offline .model-status-text {
+  color: #dc3545;
+  font-weight: 600;
 }
 
-@keyframes pulse {
+/* Model loaded status (same as online but with model name) */
+.model-status-indicator.loaded .status-light {
+  background: #28a745;
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+}
+
+.model-status-indicator.loaded .status-light::before {
+  background: #28a745;
+}
+
+.model-status-indicator.loaded .model-status-text {
+  color: #28a745;
+  font-weight: 600;
+}
+
+@keyframes pulse-glow {
   0%, 100% { 
     transform: scale(1);
-    box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
+    opacity: 0.3;
   }
   50% { 
-    transform: scale(1.02);
-    box-shadow: 0 4px 16px rgba(255, 193, 7, 0.4);
+    transform: scale(1.4);
+    opacity: 0.1;
   }
 }
 
 .model-status-text {
   font-weight: 600;
   font-size: 0.9rem;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .model-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
   transition: all var(--transition-fast);
   font-size: 0.9rem;
+  color: #666;
+  margin-left: 0.2rem;
 }
 
 .model-action-btn:hover {
-  background: rgba(255, 255, 255, 1);
-  border-color: var(--accent-gold);
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
 }
 
 .tab-content {
