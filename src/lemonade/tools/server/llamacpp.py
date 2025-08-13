@@ -292,6 +292,11 @@ def _launch_llama_subprocess(
         "--ctx-size",
         str(ctx_size),
     ]
+
+    # Lock random seed for deterministic behavior in CI
+    if os.environ.get("LEMONADE_CI_MODE"):
+        base_command.extend(["--seed", "42"])
+
     if "mmproj" in snapshot_files:
         base_command.extend(["--mmproj", snapshot_files["mmproj"]])
         if not use_gpu:
