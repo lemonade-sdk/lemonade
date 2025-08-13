@@ -3,6 +3,9 @@
 // State variables for model management
 let currentLoadedModel = null;
 let installedModels = new Set(); // Track which models are actually installed
+
+// Make installedModels accessible globally for the chat dropdown
+window.installedModels = installedModels;
 let currentCategory = 'hot';
 let currentFilter = null;
 
@@ -50,6 +53,11 @@ async function updateModelStatusIndicator() {
         checkModelHealth(),
         fetchInstalledModels()
     ]);
+    
+    // Refresh model dropdown in chat after fetching installed models
+    if (window.initializeModelDropdown) {
+        window.initializeModelDropdown();
+    }
     
     // Remove any click handlers
     indicator.onclick = null;
@@ -359,6 +367,11 @@ async function installModel(modelId) {
         await fetchInstalledModels();
         await updateModelStatusIndicator();
         
+        // Refresh model dropdown in chat
+        if (window.initializeModelDropdown) {
+            window.initializeModelDropdown();
+        }
+        
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -448,6 +461,11 @@ async function deleteModel(modelId) {
         // Refresh installed models and model status
         await fetchInstalledModels();
         await updateModelStatusIndicator();
+        
+        // Refresh model dropdown in chat
+        if (window.initializeModelDropdown) {
+            window.initializeModelDropdown();
+        }
         
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();

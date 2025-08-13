@@ -3,7 +3,7 @@ let messages = [];
 let attachedFiles = [];
 
 // Get DOM elements
-let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow;
+let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -14,9 +14,13 @@ document.addEventListener('DOMContentLoaded', function() {
     fileAttachment = document.getElementById('file-attachment');
     attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
     attachmentsPreviewRow = document.getElementById('attachments-preview-row');
+    modelSelect = document.getElementById('model-select');
 
     // Set up event listeners
     setupChatEventListeners();
+    
+    // Initialize model dropdown (will be populated when models.js calls updateModelStatusIndicator)
+    initializeModelDropdown();
     
     // Update attachment button state periodically
     updateAttachmentButtonState();
@@ -46,10 +50,122 @@ function setupChatEventListeners() {
     // Chat input events
     chatInput.addEventListener('keydown', handleChatInputKeydown);
     chatInput.addEventListener('paste', handleChatInputPaste);
+    
+    // Model select change
+    modelSelect.addEventListener('change', handleModelSelectChange);
+    
+    // Send button click
+    sendBtn.addEventListener('click', function() {
+        // Only send if model is selected and not loading
+        if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
+            sendMessage();
+        }
+    });
+}
+
+// Initialize model dropdown with available models
+function initializeModelDropdown() {
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Clear existing options except the first one
+    modelSelect.innerHTML = '<option value="">Pick a model</option>';
+    
+    // Add only installed models to dropdown
+    Object.keys(allModels).forEach(modelId => {
+        // Only add if the model is installed
+        if (window.installedModels && window.installedModels.has(modelId)) {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = modelId;
+            modelSelect.appendChild(option);
+        }
+    });
+    
+    // Set current selection based on loaded model
+    updateModelSelectValue();
+}
+
+// Make dropdown initialization accessible globally so models.js can refresh it
+window.initializeModelDropdown = initializeModelDropdown;
+
+// Update model select value to match currently loaded model
+function updateModelSelectValue() {
+    if (currentLoadedModel) {
+        modelSelect.value = currentLoadedModel;
+    } else {
+        modelSelect.value = '';
+    }
+}
+
+// Handle model selection change
+async function handleModelSelectChange() {
+    const selectedModel = modelSelect.value;
+    
+    if (!selectedModel) {
+        return; // "Pick a model" selected
+    }
+    
+    if (selectedModel === currentLoadedModel) {
+        return; // Same model already loaded
+    }
+    
+    try {
+        // Disable the dropdown and send button while loading
+        modelSelect.disabled = true;
+        sendBtn.disabled = true;
+        
+        // Update dropdown to show loading state with model name
+        const loadingOption = modelSelect.querySelector('option[value=""]');
+        if (loadingOption) {
+            loadingOption.textContent = `Loading ${selectedModel}...`;
+        }
+        
+        // Load the selected model
+        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: selectedModel })
+        });
+        
+        // Update model status indicator
+        await updateModelStatusIndicator();
+        
+        // Update attachment button state for new model
+        updateAttachmentButtonState();
+        
+    } catch (error) {
+        console.error('Error loading model:', error);
+        showErrorBanner('Failed to load model: ' + error.message);
+        
+        // Reset dropdown to previous value on error
+        updateModelSelectValue();
+    } finally {
+        // Re-enable the dropdown and send button
+        modelSelect.disabled = false;
+        sendBtn.disabled = false;
+        
+        // Reset the default option text
+        const defaultOption = modelSelect.querySelector('option[value=""]');
+        if (defaultOption) {
+            defaultOption.textContent = 'Pick a model';
+        }
+    }
 }
 
 // Update attachment button state based on current model
 function updateAttachmentButtonState() {
+    // Update model dropdown selection
+    updateModelSelectValue();
+    
+    // Update send button state based on model loading
+    if (modelSelect.disabled) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Loading...';
+    } else {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+    }
+    
     if (!currentLoadedModel) {
         attachmentBtn.style.opacity = '0.5';
         attachmentBtn.style.cursor = 'not-allowed';
@@ -127,7 +243,10 @@ function handleChatInputKeydown(e) {
         e.preventDefault();
         clearAttachments();
     } else if (e.key === 'Enter') {
-        sendMessage();
+        // Only send if model is selected and not loading
+        if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
+            sendMessage();
+        }
     }
 }
 

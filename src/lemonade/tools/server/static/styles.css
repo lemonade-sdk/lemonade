@@ -2167,3 +2167,42 @@ body::before {
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+
+/* Model select dropdown in chat */
+.model-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9rem;
+  min-width: 180px;
+  margin-right: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
+}
+
+.model-select:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.model-select option {
+  padding: 0.5rem;
+}
+
+.chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.input-with-indicator {
+  flex: 1;
+}
