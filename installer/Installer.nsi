@@ -346,7 +346,7 @@ LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license 
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU (includes Python)."
 LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI SW with NPU and Hybrid Support. Only available on Ryzen AI 300-series processors."
 LangString DESC_ModelsSec ${LANG_ENGLISH} "Default model for Lemonade Server"
-LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Qwen2.5-0.5B-Instruct model (GGUF format). This lightweight model is perfect for getting started with Lemonade Server."
+LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Qwen2.5-0.5B-Instruct-CPU model (ONNX format). This lightweight model helps you quickly get started with Lemonade Server."
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
