@@ -27,7 +27,7 @@
 
    👉 [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations)
 
-   For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid--npu-specific-questions).
+   For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid-and-npu-questions).
 
 ### 3. **Is Linux supported?**
 
@@ -114,7 +114,7 @@
 
    Lemonade supports llama.cpp as a backend, so performance is similar when using the same model and quantization.
 
-## Hybrid & NPU-Specific Questions
+## Hybrid and NPU Questions
 
 ### 1. **Does hybrid inference with the NPU only work on Windows?**
 
