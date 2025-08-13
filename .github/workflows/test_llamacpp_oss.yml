@@ -1,0 +1,142 @@
+name: Test Lemonade with Llamacpp 🌩️
+
+# Note: STX Halo / ROCm / Ubuntu jobs are disabled until we can
+# add the required runners
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+
+permissions:
+  contents: read
+
+jobs:
+  test-server-llamacpp-windows:
+    env:
+      LEMONADE_CI_MODE: "True"
+      CONDA_ENV_PATH: ./lemon-ci-env
+      LEMONADE_CACHE_DIR: ./ci-cache
+
+    strategy:
+      matrix:
+        include:
+          - backend: vulkan
+            runner: [stx, Windows]
+          # - backend: rocm
+          #   runner: [stx-halo, Windows]
+
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: powershell
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Cleanup Python
+        shell: PowerShell
+        run: |
+          # Make sure the system-level python is clean
+          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force
+
+      - name: Set up Conda environment
+        run: |
+          conda create -p $CONDA_ENV_PATH python=3.10 -y
+          conda init
+
+      - name: Install dependencies
+        run: |
+          conda activate $CONDA_ENV_PATH
+          python -m pip install --upgrade pip
+          conda install -y pylint
+          pip install -e .[llm] --extra-index-url https://pypi.amd.com/simple
+          pip check
+
+          echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+
+      - name: Run lemonade Llamacpp CLI tests
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          conda activate $CONDA_ENV_PATH
+
+          if ("${{ matrix.backend }}" -ne "rocm") {
+            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Run lemonade Llamacpp API tests
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          conda activate $CONDA_ENV_PATH
+
+          python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
+          python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
+
+  # test-server-llamacpp-ubuntu:
+  #   env:
+  #     LEMONADE_CI_MODE: "True"
+  #     CONDA_ENV_PATH: ./lemon-ci-env
+  #     LEMONADE_CACHE_DIR: ./ci-cache
+
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - backend: rocm
+  #           runner: [stx-halo, Linux]
+
+  #   runs-on: ${{ matrix.runner }}
+  #   defaults:
+  #     run:
+  #       shell: bash
+
+  #   steps:
+  #     - uses: actions/checkout@v3
+
+  #     - name: Set up Conda environment
+  #       run: |
+  #         conda create -p $CONDA_ENV_PATH python=3.10 -y
+  #         conda init
+
+  #     - name: Install dependencies
+  #       run: |
+  #         source ~/miniforge3/etc/profile.d/conda.sh
+  #         conda activate $CONDA_ENV_PATH
+  #         python -m pip install --upgrade pip
+  #         conda install -y pylint
+  #         pip install -e .[llm]
+  #         pip check
+
+  #         echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+
+  #     - name: Run lemonade Llamacpp CLI tests
+  #       env:
+  #         HF_HOME: "${{ env.HF_HOME }}"
+  #       run: |
+  #         source ~/miniforge3/etc/profile.d/conda.sh
+  #         conda activate $CONDA_ENV_PATH
+
+  #         if [ "${{ matrix.backend }}" != "rocm" ]; then
+  #           lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+  #         fi
+
+  #         lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+  #         lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2 || exit 1
+
+  #     - name: Run lemonade Llamacpp API tests
+  #       env:
+  #         HF_HOME: "${{ env.HF_HOME }}"
+  #       run: |
+  #         source ~/miniforge3/etc/profile.d/conda.sh
+  #         conda activate $CONDA_ENV_PATH
+
+  #         python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
+  #         python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1

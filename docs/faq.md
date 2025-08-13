@@ -27,7 +27,7 @@
 
    👉 [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations)
 
-   For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid--npu-specific-questions).
+   For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid-and-npu-questions).
 
 ### 3. **Is Linux supported?**
 
@@ -82,7 +82,7 @@
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
-   👉 [Model Preparation Guide]([https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/finetuned_model_export.md))
+   👉 [Model Preparation Guide](https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html)
 
 ### 5. **What's the difference between GGUF and ONNX models?**
 
@@ -114,7 +114,7 @@
 
    Lemonade supports llama.cpp as a backend, so performance is similar when using the same model and quantization.
 
-## Hybrid & NPU-Specific Questions
+## Hybrid and NPU Questions
 
 ### 1. **Does hybrid inference with the NPU only work on Windows?**
 

@@ -45,7 +45,7 @@ sample_tool = {
 
 class Testing(ServerTestingBase):
     """Main testing class that inherits shared functionality from ServerTestingBase."""
-    
+
     def test_000_endpoints_available(self):
         # List of endpoints to check
         valid_endpoints = [
@@ -660,6 +660,108 @@ class Testing(ServerTestingBase):
         packages = verbose_system_info["Python Packages"]
         assert isinstance(packages, list)
         assert len(packages) > 0
+
+    # Test generation parameters across all endpoints: temperature, repeat_penalty, top_k, top_p
+    def test_021_test_generation_parameters(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
+
+        # Test configuration constants
+        TEST_PROMPT = "The weather is sunny and"
+        TEST_MESSAGES = [{"role": "user", "content": TEST_PROMPT}]
+        MAX_TOKENS = 15
+
+        # Base parameter values
+        BASE_PARAMS = {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1,
+            "top_k": 40,
+        }
+
+        # Alternative parameter values for testing differences
+        PARAM_VARIANTS = {
+            "temperature": 0.1,
+            "top_p": 0.1,
+            "repeat_penalty": 2.0,
+            "top_k": 1,
+        }
+
+        def make_request(endpoint_type, **params):
+            """Helper function to make requests to different endpoints with given parameters."""
+            extra_body = {
+                "repeat_penalty": params.get(
+                    "repeat_penalty", BASE_PARAMS["repeat_penalty"]
+                ),
+                "top_k": params.get("top_k", BASE_PARAMS["top_k"]),
+            }
+
+            if endpoint_type == "completions":
+                response = client.completions.create(
+                    model=MODEL_NAME,
+                    prompt=TEST_PROMPT,
+                    max_tokens=MAX_TOKENS,
+                    temperature=params.get("temperature", BASE_PARAMS["temperature"]),
+                    top_p=params.get("top_p", BASE_PARAMS["top_p"]),
+                    extra_body=extra_body,
+                )
+                return response.choices[0].text
+
+            elif endpoint_type == "chat_completions":
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=TEST_MESSAGES,
+                    max_completion_tokens=MAX_TOKENS,
+                    temperature=params.get("temperature", BASE_PARAMS["temperature"]),
+                    top_p=params.get("top_p", BASE_PARAMS["top_p"]),
+                    extra_body=extra_body,
+                )
+                return response.choices[0].message.content
+
+            elif endpoint_type == "responses":
+                response = client.responses.create(
+                    model=MODEL_NAME,
+                    input=TEST_MESSAGES,
+                    stream=False,
+                    temperature=params.get("temperature", BASE_PARAMS["temperature"]),
+                    top_p=params.get("top_p", BASE_PARAMS["top_p"]),
+                    max_output_tokens=MAX_TOKENS,
+                    extra_body=extra_body,
+                )
+                return response.output[0].content[0].text
+
+        # Test endpoints
+        endpoints = ["completions", "chat_completions", "responses"]
+
+        for endpoint in endpoints:
+            print(f"\n--- Testing {endpoint} endpoint ---")
+
+            # Test 1: Identical parameters should produce identical outputs
+            response1 = make_request(endpoint, **BASE_PARAMS)
+            response2 = make_request(endpoint, **BASE_PARAMS)
+
+            print(f"Identical params 1: {response1}")
+            print(f"Identical params 2: {response2}")
+
+            assert (
+                response1 == response2
+            ), f"{endpoint}: Identical parameters should produce identical outputs with locked seed"
+
+            # Test 2: Each parameter should affect output when changed
+            for param_name, variant_value in PARAM_VARIANTS.items():
+                # Create modified parameters
+                modified_params = BASE_PARAMS.copy()
+                modified_params[param_name] = variant_value
+
+                response_modified = make_request(endpoint, **modified_params)
+
+                print(f"Modified {param_name}: {response_modified}")
+
+                assert (
+                    response_modified != response1
+                ), f"{endpoint}: Different {param_name} should produce different outputs"
 
 
 if __name__ == "__main__":

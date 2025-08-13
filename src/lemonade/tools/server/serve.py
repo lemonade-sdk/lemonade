@@ -259,6 +259,47 @@ class Server:
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
 
+    def _log_request_parameters(self, request, endpoint_name: str):
+        """
+        Log request parameters excluding content fields like messages, prompt, or input.
+
+        Args:
+            request: Any request object (CompletionRequest, ChatCompletionRequest, etc.)
+            endpoint_name: Name of the endpoint for logging context
+        """
+        if not logging.getLogger().isEnabledFor(logging.DEBUG):
+            return
+
+        # Fields to exclude from logging (content fields)
+        excluded_fields = {"messages", "prompt", "input"}
+
+        # Get all attributes from the request object
+        request_params = {}
+        if hasattr(request, "__dict__"):
+            # For pydantic models, get the dict representation
+            if hasattr(request, "model_dump"):
+                all_params = request.model_dump()
+            elif hasattr(request, "dict"):
+                all_params = request.dict()
+            else:
+                all_params = request.__dict__
+
+            # Filter out excluded fields and add special handling for certain fields
+            for key, value in all_params.items():
+                if key not in excluded_fields:
+                    # Special handling for tools field - show count instead of full content
+                    if key == "tools" and value is not None:
+                        request_params[key] = (
+                            f"{len(value)} tools" if isinstance(value, list) else value
+                        )
+                    # Special handling for input type in responses
+                    elif key == "input" and hasattr(request, "input"):
+                        request_params["input_type"] = type(value).__name__
+                    else:
+                        request_params[key] = value
+
+        logging.debug(f"{endpoint_name} request parameters: {request_params}")
+
     def _setup_server_common(
         self,
         tray: bool = False,
@@ -436,6 +477,9 @@ class Server:
 
         lc = self.initialize_load_config(completion_request)
 
+        # Log request parameters (excluding message content for brevity)
+        self._log_request_parameters(completion_request, "Completions")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -457,6 +501,9 @@ class Server:
             "message": text,
             "stop": completion_request.stop,
             "temperature": completion_request.temperature,
+            "repeat_penalty": completion_request.repeat_penalty,
+            "top_k": completion_request.top_k,
+            "top_p": completion_request.top_p,
             "max_new_tokens": completion_request.max_tokens,
         }
 
@@ -565,6 +612,9 @@ class Server:
 
         lc = self.initialize_load_config(chat_completion_request)
 
+        # Log request parameters (excluding message history for brevity)
+        self._log_request_parameters(chat_completion_request, "Chat completions")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -609,6 +659,9 @@ class Server:
             "message": text,
             "stop": chat_completion_request.stop,
             "temperature": chat_completion_request.temperature,
+            "repeat_penalty": chat_completion_request.repeat_penalty,
+            "top_k": chat_completion_request.top_k,
+            "top_p": chat_completion_request.top_p,
             "max_new_tokens": max_new_tokens,
         }
 
@@ -857,6 +910,9 @@ class Server:
 
         lc = self.initialize_load_config(responses_request)
 
+        # Log request parameters (excluding message history for brevity)
+        self._log_request_parameters(responses_request, "Responses")
+
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
@@ -878,6 +934,9 @@ class Server:
         generation_args = {
             "message": text,
             "temperature": responses_request.temperature,
+            "repeat_penalty": responses_request.repeat_penalty,
+            "top_k": responses_request.top_k,
+            "top_p": responses_request.top_p,
             "max_new_tokens": responses_request.max_output_tokens,
         }
 
@@ -1007,6 +1066,9 @@ class Server:
         stop: list[str] | str | None = None,
         max_new_tokens: int | None = None,
         temperature: float | None = None,
+        repeat_penalty: float | None = None,
+        top_k: int | None = None,
+        top_p: float | None = None,
     ):
         """
         Core streaming completion logic, separated from response handling.
@@ -1089,6 +1151,9 @@ class Server:
             "pad_token_id": tokenizer.eos_token_id,
             "stopping_criteria": stopping_criteria,
             "temperature": temperature,
+            "repeat_penalty": repeat_penalty,
+            "top_k": top_k,
+            "top_p": top_p,
         }
 
         # Initialize performance variables
