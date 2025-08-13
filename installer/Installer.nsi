@@ -233,7 +233,7 @@ SectionIn RO ; Read only, always installed
     end:
 SectionEnd
 
-Section "Hybrid Execution Mode" HybridSec
+Section "Ryzen AI SW: NPU and Hybrid support" HybridSec
   SectionIn 1
   AddSize 132188
   StrCpy $HYBRID_SELECTED "true"
@@ -342,9 +342,9 @@ LangString MUI_TEXT_ABORT_TITLE "${LANG_ENGLISH}" "Installation Aborted"
 LangString MUI_TEXT_ABORT_SUBTITLE "${LANG_ENGLISH}" "Installation has been aborted."
 LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
-LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
+LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI SW with NPU and Hybrid Support."
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU (includes Python)."
-LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode. Only available on Ryzen AI 300-series processors."
+LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI SW with NPU and Hybrid Support. Only available on Ryzen AI 300-series processors."
 LangString DESC_ModelsSec ${LANG_ENGLISH} "Default model for Lemonade Server"
 LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Qwen2.5-0.5B-Instruct model (GGUF format). This lightweight model is perfect for getting started with Lemonade Server."
 
