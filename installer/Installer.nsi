@@ -233,68 +233,21 @@ SectionIn RO ; Read only, always installed
     end:
 SectionEnd
 
-Section "Hybrid Execution Mode" HybridSec
+Section "Ryzen AI SW: NPU and Hybrid support" HybridSec
   SectionIn 1
-  AddSize 0
+  AddSize 132188
   StrCpy $HYBRID_SELECTED "true"
 SectionEnd
 
 SubSection /e "Selected Models" ModelsSec
-  Section /o "Qwen2.5-0.5B-Instruct-CPU" Qwen05Sec
-    SectionIn 1
+  Section "Qwen2.5-0.5B-Instruct-CPU" Qwen05Sec
+    SectionIn RO ; Read only, always installed
     AddSize 833871  ;
-    StrCpy $9 "$9Qwen2.5-0.5B-Instruct-CPU "
-  SectionEnd
-
-  Section "Llama-3.2-1B-Instruct-Hybrid" Llama1BSec
-    SectionIn 1
-    AddSize 1884397  ;
-    StrCpy $9 "$9Llama-3.2-1B-Instruct-Hybrid "
-  SectionEnd
-
-  Section "Llama-3.2-3B-Instruct-Hybrid" Llama3BSec
-    SectionIn 1
-    AddSize 4268402  ;
-    StrCpy $9 "$9Llama-3.2-3B-Instruct-Hybrid "
-  SectionEnd
-
-  Section /o "Phi-3-Mini-Instruct-Hybrid" PhiSec
-    SectionIn 1
-    AddSize 4185551  ;
-    StrCpy $9 "$9Phi-3-Mini-Instruct-Hybrid "
-  SectionEnd
-
-  Section /o "Qwen-1.5-7B-Chat-Hybrid" Qwen7BSec
-    SectionIn 1
-    AddSize 8835894  ;
-    StrCpy $9 "$9Qwen-1.5-7B-Chat-Hybrid "
-  SectionEnd
-
-  Section /o "DeepSeek-R1-Distill-Llama-8B-Hybrid" DeepSeekLlama8BSec
-    SectionIn 1
-    AddSize 9084315  ;
-    StrCpy $9 "$9DeepSeek-R1-Distill-Llama-8B-Hybrid "
-  SectionEnd
-
-  Section /o "DeepSeek-R1-Distill-Qwen-7B-Hybrid" DeepSeekQwen7BSec
-    SectionIn 1
-    AddSize 9502412  ;
-    StrCpy $9 "$9DeepSeek-R1-Distill-Qwen-7B-Hybrid "
   SectionEnd
 
   Section "-Download Models" DownloadModels
-    ${If} ${Silent}
-        ${GetParameters} $CMDLINE
-        ${GetOptions} $CMDLINE "/Models=" $R0
-        ${If} $R0 != ""
-            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull $R0'
-        ${Else}
-            ; Otherwise, only the default CPU model will be installed
-            nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
-        ${EndIf}
-    ${Else}
-        nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull $9'
-    ${EndIf}
+    ; Always download the Qwen2.5-0.5B model
+    nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
   SectionEnd
 
 SubSectionEnd
@@ -341,80 +294,10 @@ Function .onSelChange
     IntOp $0 $0 & ${SF_SELECTED}
     StrCmp $0 ${SF_SELECTED} 0 hybrid_disabled
     StrCpy $HYBRID_SELECTED "true"
-    
-    ; If hybrid is enabled, check if at least one hybrid model is selected
-    SectionGetFlags ${Llama1BSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    SectionGetFlags ${Llama3BSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    SectionGetFlags ${PhiSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    SectionGetFlags ${Qwen7BSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    SectionGetFlags ${DeepSeekLlama8BSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    SectionGetFlags ${DeepSeekQwen7BSec} $1
-    IntOp $1 $1 & ${SF_SELECTED}
-    ${If} $1 == ${SF_SELECTED}
-        Goto end
-    ${EndIf}
-    
-    ; If no hybrid model is selected, select Llama-1B by default
-    SectionGetFlags ${Llama1BSec} $1
-    IntOp $1 $1 | ${SF_SELECTED}
-    SectionSetFlags ${Llama1BSec} $1
-    MessageBox MB_OK "At least one hybrid model must be selected when hybrid execution is enabled. Llama-3.2-1B-Instruct-Hybrid has been automatically selected."
     Goto end
     
 hybrid_disabled:
-    ; When hybrid is disabled, select Qwen2.5-0.5B-Instruct-CPU and disable all other hybrid model selections
-    SectionGetFlags ${Qwen05Sec} $1
-    IntOp $1 $1 | ${SF_SELECTED}
-    SectionSetFlags ${Qwen05Sec} $1
-
-    SectionGetFlags ${Llama1BSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${Llama1BSec} $1
-    
-    SectionGetFlags ${Llama3BSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${Llama3BSec} $1
-    
-    SectionGetFlags ${PhiSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${PhiSec} $1
-    
-    SectionGetFlags ${Qwen7BSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${Qwen7BSec} $1
-    
-    SectionGetFlags ${DeepSeekLlama8BSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${DeepSeekLlama8BSec} $1
-    
-    SectionGetFlags ${DeepSeekQwen7BSec} $1
-    IntOp $1 $1 & ${SECTION_OFF}
-    SectionSetFlags ${DeepSeekQwen7BSec} $1
+    StrCpy $HYBRID_SELECTED "false"
 
 end:
 FunctionEnd
@@ -459,17 +342,11 @@ LangString MUI_TEXT_ABORT_TITLE "${LANG_ENGLISH}" "Installation Aborted"
 LangString MUI_TEXT_ABORT_SUBTITLE "${LANG_ENGLISH}" "Installation has been aborted."
 LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 LangString MUI_TEXT_LICENSE_TITLE ${LANG_ENGLISH} "AMD License Agreement"
-LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI Hybrid Execution Mode."
+LangString MUI_TEXT_LICENSE_SUBTITLE ${LANG_ENGLISH} "Please review the license terms before installing AMD Ryzen AI SW with NPU and Hybrid Support."
 LangString DESC_SEC01 ${LANG_ENGLISH} "The minimum set of dependencies for a lemonade server that runs LLMs on CPU (includes Python)."
-LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI hybrid execution mode. Only available on Ryzen AI 300-series processors."
-LangString DESC_ModelsSec ${LANG_ENGLISH} "Select which models to install"
-LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Small CPU-only Qwen model"
-LangString DESC_Llama1BSec ${LANG_ENGLISH} "1B parameter Llama model with hybrid execution"
-LangString DESC_Llama3BSec ${LANG_ENGLISH} "3B parameter Llama model with hybrid execution"
-LangString DESC_PhiSec ${LANG_ENGLISH} "Phi-3 Mini model with hybrid execution"
-LangString DESC_Qwen7BSec ${LANG_ENGLISH} "7B parameter Qwen model with hybrid execution"
-LangString DESC_DeepSeekLlama8BSec ${LANG_ENGLISH} "8B parameter DeepSeek Llama model with hybrid execution"
-LangString DESC_DeepSeekQwen7BSec ${LANG_ENGLISH} "7B parameter DeepSeek Qwen model with hybrid execution"
+LangString DESC_HybridSec ${LANG_ENGLISH} "Add support for running LLMs on Ryzen AI SW with NPU and Hybrid Support. Only available on Ryzen AI 300-series processors."
+LangString DESC_ModelsSec ${LANG_ENGLISH} "Default model for Lemonade Server"
+LangString DESC_Qwen05Sec ${LANG_ENGLISH} "Qwen2.5-0.5B-Instruct-CPU model (ONNX format). This lightweight model helps you quickly get started with Lemonade Server."
 
 ; Insert the description macros
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
@@ -477,12 +354,6 @@ LangString DESC_DeepSeekQwen7BSec ${LANG_ENGLISH} "7B parameter DeepSeek Qwen mo
   !insertmacro MUI_DESCRIPTION_TEXT ${HybridSec} $(DESC_HybridSec)
   !insertmacro MUI_DESCRIPTION_TEXT ${ModelsSec} $(DESC_ModelsSec)
   !insertmacro MUI_DESCRIPTION_TEXT ${Qwen05Sec} $(DESC_Qwen05Sec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${Llama1BSec} $(DESC_Llama1BSec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${Llama3BSec} $(DESC_Llama3BSec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${PhiSec} $(DESC_PhiSec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${Qwen7BSec} $(DESC_Qwen7BSec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${DeepSeekLlama8BSec} $(DESC_DeepSeekLlama8BSec)
-  !insertmacro MUI_DESCRIPTION_TEXT ${DeepSeekQwen7BSec} $(DESC_DeepSeekQwen7BSec)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function .onInit
@@ -490,9 +361,6 @@ Function .onInit
   StrCpy $HYBRID_SELECTED "true"
   StrCpy $NO_DESKTOP_SHORTCUT "false"
   StrCpy $ADD_TO_STARTUP "false"
-  
-  ; Create a variable to store selected models
-  StrCpy $9 ""  ; $9 will hold our list of selected models
 
   ; Set the install directory, allowing /D override from CLI install
   ${If} $InstDir != ""
@@ -597,7 +465,7 @@ Function .onInit
     ${EndIf}
   ${EndIf}
 
-  ; Call onSelChange to ensure initial model selection state is correct
+  ; Call onSelChange to ensure initial hybrid selection state is correct
   Call .onSelChange
 
 FunctionEnd
