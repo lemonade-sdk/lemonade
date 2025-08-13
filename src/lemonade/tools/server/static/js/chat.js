@@ -493,12 +493,16 @@ async function sendMessage() {
     const llmBubble = appendMessage('llm', '...');
     try {
         // Use the correct endpoint for chat completions with model settings
+        const modelSettings = getCurrentModelSettings ? getCurrentModelSettings() : {};
+        console.log('Applying model settings to API request:', modelSettings);
+        
         const payload = {
             model: currentLoadedModel,
             messages: messages,
             stream: true,
-            ...getCurrentModelSettings() // Apply current model settings
+            ...modelSettings // Apply current model settings
         };
+        
         const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

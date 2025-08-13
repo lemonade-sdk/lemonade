@@ -5,8 +5,8 @@ let modelSettings = {};
 
 // === Model Settings Management ===
 
-// Load model settings from localStorage or set to empty for defaults
-function loadModelSettings() {
+// Load model settings from localStorage (without DOM access)
+function loadModelSettingsFromStorage() {
     const saved = localStorage.getItem('lemonade_model_settings');
     if (saved) {
         try {
@@ -16,12 +16,23 @@ function loadModelSettings() {
             console.error('Error loading saved settings:', error);
         }
     }
+}
+
+// Load model settings from localStorage and update UI
+function loadModelSettings() {
+    // First load from storage
+    loadModelSettingsFromStorage();
     
     // Update UI - set values only if they exist, otherwise leave placeholder
     const tempInput = document.getElementById('setting-temperature');
     const topKInput = document.getElementById('setting-top-k');
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
+    
+    // Check if DOM elements exist
+    if (!tempInput || !topKInput || !topPInput || !repeatInput) {
+        return;
+    }
     
     // Load saved values or leave as placeholder "default"
     if (modelSettings.temperature !== undefined) {
@@ -62,6 +73,11 @@ function updateModelSettings() {
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
     
+    // Check if DOM elements exist (might not be available if DOM isn't ready)
+    if (!tempInput || !topKInput || !topPInput || !repeatInput) {
+        return;
+    }
+    
     // Only set values if user has entered something, otherwise use undefined (default)
     modelSettings = {};
     
@@ -97,8 +113,13 @@ function resetModelSettings() {
 
 // Get current model settings for API requests (only include non-default values)
 function getCurrentModelSettings() {
-    // Update settings from current form state before returning
-    updateModelSettings();
+    // Only update from DOM if the settings elements are available and visible
+    // Otherwise, use the settings loaded from localStorage
+    const tempInput = document.getElementById('setting-temperature');
+    if (tempInput) {
+        // DOM elements are available, update from current form state
+        updateModelSettings();
+    }
     
     // Return only the settings that have actual values (not defaults)
     const currentSettings = {};
@@ -115,8 +136,15 @@ function getCurrentModelSettings() {
         currentSettings.repeat_penalty = modelSettings.repeat_penalty;
     }
     
+    console.log('getCurrentModelSettings returning:', currentSettings);
     return currentSettings;
 }
+
+// Make functions globally available for external access (like chat.js)
+window.getCurrentModelSettings = getCurrentModelSettings;
+
+// Load initial settings from localStorage immediately (without requiring DOM)
+loadModelSettingsFromStorage();
 
 // Initialize model settings when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -132,6 +160,3 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up auto-save for settings
     setupAutoSaveSettings();
 });
-
-// Make functions globally available for external access (like chat.js)
-window.getCurrentModelSettings = getCurrentModelSettings;
