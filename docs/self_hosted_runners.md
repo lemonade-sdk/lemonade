@@ -134,7 +134,6 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#npu-runner-setup) section to see which software is already expected on the system.
-        - ⚠️ NOTE: GAIA tests do install some software, see [Workflow Examples](#workflow-examples) for an example of why these specific cases are ok.
 - Always create new conda environments in the CWD, for example `conda create -p .\my-env`.
     - This way, the conda environment is located in `C:\actions-runner\_work\REPO`, which is wiped between tests.
     - Do NOT create conda environments by name, for example `conda create -n dont-you-dare` since that will end up in the conda install location and will persist across tests.

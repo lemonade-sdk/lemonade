@@ -29,8 +29,11 @@ jobs:
       - name: Check Markdown links
         shell: bash
         run: |
+          # To run this manually on Windows, run:
+          #   npm install -g markdown-link-check
+          #   Get-ChildItem -Recurse -Filter *.md | ForEach-Object { markdown-link-check $_.FullName -c .\.github\workflows\mlc_config.json }
           set -euo pipefail
-          find . -type f -name "*.md" -not -path "./node_modules/*" -print0 \
-            | xargs -0 -n 1 -I {} markdown-link-check -q -v -c .github/workflows/mlc_config.json {}
+          find . -type f -name "*.md" -not -path "./node_modules/*" \
+            -exec markdown-link-check -c .github/workflows/mlc_config.json {} \;
 
 
