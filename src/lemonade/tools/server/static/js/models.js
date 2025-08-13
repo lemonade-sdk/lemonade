@@ -122,7 +122,6 @@ function toggleCategory(categoryName) {
             currentCategory = categoryName;
             currentFilter = null;
             displayHotModels();
-            updateModelBrowserTitle();
         }
         // If already active, keep it active (don't toggle off)
     }
@@ -145,9 +144,6 @@ function showAddModelForm() {
     document.getElementById('model-list').style.display = 'none';
     document.getElementById('add-model-form-main').style.display = 'block';
     
-    // Update title
-    document.getElementById('model-browser-title').textContent = 'Add a Model';
-    
     // Set current state
     currentCategory = 'add';
     currentFilter = null;
@@ -168,7 +164,6 @@ function selectRecipe(recipe) {
     currentCategory = 'recipes';
     currentFilter = recipe;
     displayModelsByRecipe(recipe);
-    updateModelBrowserTitle();
 }
 
 // Select label filter
@@ -186,22 +181,6 @@ function selectLabel(label) {
     currentCategory = 'labels';
     currentFilter = label;
     displayModelsByLabel(label);
-    updateModelBrowserTitle();
-}
-
-// Update model browser title
-function updateModelBrowserTitle() {
-    const title = document.getElementById('model-browser-title');
-    
-    if (currentCategory === 'hot') {
-        title.textContent = 'Hot Models';
-    } else if (currentCategory === 'recipes') {
-        title.textContent = `Recipe: ${currentFilter}`;
-    } else if (currentCategory === 'labels') {
-        title.textContent = `Category: ${currentFilter}`;
-    } else {
-        title.textContent = 'Models';
-    }
 }
 
 // Display suggested models (Qwen3-0.6B-GGUF as default)
