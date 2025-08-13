@@ -82,7 +82,7 @@
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
-   👉 [Model Preparation Guide]([https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/finetuned_model_export.md))
+   👉 [Model Preparation Guide](https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html)
 
 ### 5. **What's the difference between GGUF and ONNX models?**
 

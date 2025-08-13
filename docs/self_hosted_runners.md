@@ -8,10 +8,9 @@ Topics:
  - [Maintenance and Troubleshooting](#maintenance-and-troubleshooting)
     - [Check your runner's status](#check-your-runners-status)
     - [Actions are failing unexpectedly](#actions-are-failing-unexpectedly)
-    - [Take a laptop off NIMBYS](#take-a-laptop-off-nimbys)
+    - [Take a laptop off NIMBYS](#take-a-laptop-offline)
 - [Creating Workflows](#creating-workflows)
     - [Capabilities and Limitations](#capabilities-and-limitations)
-    - [Workflow Examples](#workflow-examples)
 
 ## What are Self-Hosted Runners?
 
@@ -158,7 +157,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 
 # License
 
-[MIT License](../LICENSE.md)
+[MIT License](../LICENSE)
 
 Copyright(C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
 SPDX-License-Identifier: MIT
