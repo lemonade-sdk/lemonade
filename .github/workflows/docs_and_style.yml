@@ -20,13 +20,17 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
-      - name: Run markdown-link-check
-        uses: gaurav-nelson/github-action-markdown-link-check@v1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          use-quiet-mode: "no"
-          use-verbose-mode: "yes"
-          folder-path: "."
-          max-depth: -1
-          config-file: ".github/workflows/mlc_config.json"
+          node-version: '20'
+      - name: Install markdown-link-check
+        run: npm install -g markdown-link-check
+      - name: Check Markdown links
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name "*.md" -not -path "./node_modules/*" -print0 \
+            | xargs -0 -n 1 -I {} markdown-link-check -q -v -c .github/workflows/mlc_config.json {}
 
 
