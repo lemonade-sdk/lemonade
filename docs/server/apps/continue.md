@@ -9,7 +9,7 @@ Before using Continue.dev with Lemonade Server, ensure you have:
 - **IDE**: [Visual Studio Code (1.80+)](https://code.visualstudio.com/) or [JetBrains IDE](https://www.jetbrains.com/ides/)
 - **Lemonade Server**: Install and set up following the [Getting Started guide](https://lemonade-server.ai/docs/server/)
 - **Server running**: Ensure Lemonade Server is running on `http://localhost:8000`
-- **Models installed**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) downloaded locally; this should match the one you will pick below from [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
+- **Models installed**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) downloaded locally; this should match the one you will pick below from [Continue Hub](https://hub.continue.dev/lemonade)
 
 ## Installation
 
@@ -32,7 +32,7 @@ Continue Hub provides pre-configured model setups that work immediately with Lem
    ```
    For example: `lemonade-server pull Qwen2.5-7B-Instruct-Hybrid`
 
-2. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade)
+2. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/lemonade)
 3. **Select Configuration**: Browse available Lemonade models and configurations - all models listed are from the [supported models list](https://lemonade-server.ai/docs/server/server_models/)
 
 ![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
