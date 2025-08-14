@@ -59,26 +59,30 @@ async function updateModelStatusIndicator() {
         window.initializeModelDropdown();
     }
     
+    // Refresh model management UI if we're on the models tab
+    const modelsTab = document.getElementById('content-models');
+    if (modelsTab && modelsTab.classList.contains('active')) {
+        // Only refresh the UI rendering, not fetch data again since we just did
+        refreshModelMgmtUIDisplay();
+    }
+    
     // Remove any click handlers
     indicator.onclick = null;
     
     if (health && health.model_loaded) {
         // Model is loaded - show model name with online status
         currentLoadedModel = health.model_loaded;
-        indicator.className = 'model-status-indicator loaded';
-        statusText.textContent = health.model_loaded;
+        updateStatusIndicator(health.model_loaded, 'loaded');
         unloadBtn.style.display = 'block';
     } else if (health) {
         // Server is online but no model loaded
         currentLoadedModel = null;
-        indicator.className = 'model-status-indicator online';
-        statusText.textContent = 'Server Online';
+        updateStatusIndicator('Server Online', 'online');
         unloadBtn.style.display = 'none';
     } else {
         // Server is offline
         currentLoadedModel = null;
-        indicator.className = 'model-status-indicator offline';
-        statusText.textContent = 'Server Offline';
+        updateStatusIndicator('Server Offline', 'offline');
         unloadBtn.style.display = 'none';
     }
 }
@@ -401,101 +405,20 @@ async function loadModel(modelId) {
         }
     });
     
-    if (loadBtn) {
-        loadBtn.disabled = true;
-        loadBtn.textContent = '⌛';
-    }
-    
-    // Update status indicator to show loading state
-    const statusText = document.getElementById('model-status-text');
-    const statusLight = document.getElementById('status-light');
-    const indicator = document.getElementById('model-status-indicator');
-    const originalStatusText = statusText ? statusText.textContent : '';
-    const originalClassName = indicator ? indicator.className : '';
-    if (statusText && statusLight && indicator) {
-        statusText.textContent = `Loading ${modelId}...`;
-        statusLight.className = 'status-light loading';
-        indicator.className = 'model-status-indicator online'; // Keep online status while loading
-    }
-    
-    // Update chat dropdown and send button to show loading state
-    const modelSelect = document.getElementById('model-select');
-    const sendBtn = document.getElementById('send-btn');
-    if (modelSelect && sendBtn) {
-        // Ensure the model exists in the dropdown options
-        let modelOption = modelSelect.querySelector(`option[value="${modelId}"]`);
-        if (!modelOption) {
-            // Add the model to the dropdown if it doesn't exist
-            modelOption = document.createElement('option');
-            modelOption.value = modelId;
-            modelOption.textContent = modelId;
-            modelSelect.appendChild(modelOption);
+    // Use the standardized load function
+    const success = await loadModelStandardized(modelId, {
+        loadButton: loadBtn,
+        onSuccess: (loadedModelId) => {
+            console.log(`Model ${loadedModelId} loaded successfully`);
+            // Refresh model list after successful load
+            if (currentCategory === 'hot') displayHotModels();
+            else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
+            else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
+        },
+        onError: (error, failedModelId) => {
+            console.error(`Failed to load model ${failedModelId}:`, error);
         }
-        
-        // Set the dropdown to the new model and disable it
-        modelSelect.value = modelId;
-        modelSelect.disabled = true;
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Loading...';
-    }
-    
-    try {
-        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: modelId })
-        });
-        await updateModelStatusIndicator();
-        
-        // Re-enable and update chat controls after successful loading
-        const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
-        if (modelSelect && sendBtn) {
-            modelSelect.disabled = false;
-            sendBtn.disabled = false;
-            sendBtn.textContent = 'Send';
-        }
-        
-        // Update chat dropdown to reflect the loaded model
-        if (window.updateModelSelectValue) {
-            window.updateModelSelectValue();
-        }
-        if (window.updateAttachmentButtonState) {
-            window.updateAttachmentButtonState();
-        }
-        
-        // Refresh model list
-        if (currentCategory === 'hot') displayHotModels();
-        else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
-        else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
-    } catch (error) {
-        console.error('Error loading model:', error);
-        showErrorBanner('Failed to load model: ' + error.message);
-        
-        // Reset button state on error
-        if (loadBtn) {
-            loadBtn.disabled = false;
-            loadBtn.textContent = 'Load';
-        }
-        
-        // Reset status indicator on error
-        if (statusText && indicator) {
-            statusText.textContent = originalStatusText;
-            indicator.className = originalClassName;
-        }
-        
-        // Reset chat controls on error
-        const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
-        if (modelSelect && sendBtn) {
-            modelSelect.disabled = false;
-            sendBtn.disabled = false;
-            sendBtn.textContent = 'Send';
-            if (window.updateModelSelectValue) {
-                window.updateModelSelectValue();
-            }
-        }
-    }
+    });
 }
 
 // Delete model
@@ -683,6 +606,12 @@ async function refreshModelMgmtUI() {
         showErrorBanner(`Error loading models: ${e.message}`);
     }
     
+    // Update the global installedModels set
+    installedModels.clear();
+    installed.forEach(modelId => {
+        installedModels.add(modelId);
+    });
+    
     // All models from server_models.json (window.SERVER_MODELS)
     const allModels = window.SERVER_MODELS || {};
     
@@ -765,6 +694,102 @@ async function refreshModelMgmtUI() {
     }
     if (suggestedTbody) {
         renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
+    }
+    
+    // Refresh model dropdown in chat after updating installed models
+    if (window.initializeModelDropdown) {
+        window.initializeModelDropdown();
+    }
+}
+
+// Make refreshModelMgmtUI globally accessible
+window.refreshModelMgmtUI = refreshModelMgmtUI;
+
+// Display-only version that uses already-fetched installedModels data
+function refreshModelMgmtUIDisplay() {
+    // Use the already-populated installedModels set
+    const installed = Array.from(installedModels);
+    
+    // All models from server_models.json (window.SERVER_MODELS)
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Separate hot models and regular suggested models not installed
+    const hotModels = [];
+    const regularSuggested = [];
+    
+    Object.keys(allModels).forEach(k => {
+        if (allModels[k].suggested && !installed.includes(k)) {
+            if (allModels[k].labels && allModels[k].labels.some(label => label.toLowerCase() === 'hot')) {
+                hotModels.push(k);
+            } else {
+                regularSuggested.push(k);
+            }
+        }
+    });
+    
+    // Render installed models as a table (two columns, second is invisible)
+    const installedTbody = document.getElementById('installed-models-tbody');
+    if (installedTbody) {
+        installedTbody.innerHTML = '';
+        installed.forEach(function(mid) {
+            var tr = document.createElement('tr');
+            var tdName = document.createElement('td');
+            
+            tdName.appendChild(createModelNameWithLabels(mid, allModels));
+            tdName.style.paddingRight = '1em';
+            tdName.style.verticalAlign = 'middle';
+            
+            var tdBtn = document.createElement('td');
+            tdBtn.style.width = '1%';
+            tdBtn.style.verticalAlign = 'middle';
+            const btn = document.createElement('button');
+            btn.textContent = '−';
+            btn.className = 'btn-remove-model';
+            btn.style.minWidth = '24px';
+            btn.style.padding = '2px 8px';
+            btn.style.fontSize = '16px';
+            btn.style.lineHeight = '1';
+            btn.style.border = '1px solid #ddd';
+            btn.style.backgroundColor = '#f8f9fa';
+            btn.style.cursor = 'pointer';
+            btn.style.borderRadius = '4px';
+            btn.title = 'Remove this model';
+            btn.onclick = async function() {
+                if (confirm(`Are you sure you want to remove the model "${mid}"?`)) {
+                    try {
+                        await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ model_name: mid })
+                        });
+                        await refreshModelMgmtUI();
+                    } catch (error) {
+                        console.error('Error removing model:', error);
+                        showErrorBanner('Failed to remove model: ' + error.message);
+                    }
+                }
+            };
+            tdBtn.appendChild(btn);
+            tr.appendChild(tdName);
+            tr.appendChild(tdBtn);
+            installedTbody.appendChild(tr);
+        });
+    }
+    
+    // Render hot models and suggested models using the helper function
+    const hotTbody = document.getElementById('hot-models-tbody');
+    const suggestedTbody = document.getElementById('suggested-models-tbody');
+    
+    if (hotTbody) {
+        renderModelTable(hotTbody, hotModels, allModels, "Nice, you've already installed all these models!");
+    }
+    if (suggestedTbody) {
+        renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
+    }
+    
+    // Refresh model dropdown in chat after updating installed models
+    if (window.initializeModelDropdown) {
+        window.initializeModelDropdown();
     }
 }
 

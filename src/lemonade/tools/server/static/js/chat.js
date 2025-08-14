@@ -2,6 +2,9 @@
 let messages = [];
 let attachedFiles = [];
 
+// Default model configuration
+const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
+
 // Get DOM elements
 let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
 
@@ -115,55 +118,31 @@ async function handleModelSelectChange() {
         return; // Same model already loaded
     }
     
-    try {
-        // Disable the dropdown and send button while loading
-        modelSelect.disabled = true;
-        sendBtn.disabled = true;
-        
-        // Update dropdown to show loading state with model name
-        const loadingOption = modelSelect.querySelector('option[value=""]');
-        if (loadingOption) {
-            loadingOption.textContent = `Loading ${selectedModel}...`;
+    // Use the standardized load function
+    await loadModelStandardized(selectedModel, {
+        onLoadingStart: (modelId) => {
+            // Update dropdown to show loading state with model name
+            const loadingOption = modelSelect.querySelector('option[value=""]');
+            if (loadingOption) {
+                loadingOption.textContent = `Loading ${modelId}...`;
+            }
+        },
+        onLoadingEnd: (modelId, success) => {
+            // Reset the default option text
+            const defaultOption = modelSelect.querySelector('option[value=""]');
+            if (defaultOption) {
+                defaultOption.textContent = 'Pick a model';
+            }
+        },
+        onSuccess: (loadedModelId) => {
+            // Update attachment button state for new model
+            updateAttachmentButtonState();
+        },
+        onError: (error, failedModelId) => {
+            // Reset dropdown to previous value on error
+            updateModelSelectValue();
         }
-        
-        // Update status indicator to show loading state
-        const statusText = document.getElementById('model-status-text');
-        const statusLight = document.getElementById('status-light');
-        if (statusText && statusLight) {
-            statusText.textContent = `Loading ${selectedModel}...`;
-            statusLight.className = 'status-light loading';
-        }
-        
-        // Load the selected model
-        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: selectedModel })
-        });
-        
-        // Update model status indicator
-        await updateModelStatusIndicator();
-        
-        // Update attachment button state for new model
-        updateAttachmentButtonState();
-        
-    } catch (error) {
-        console.error('Error loading model:', error);
-        showErrorBanner('Failed to load model: ' + error.message);
-        
-        // Reset dropdown to previous value on error
-        updateModelSelectValue();
-    } finally {
-        // Re-enable the dropdown and send button
-        modelSelect.disabled = false;
-        sendBtn.disabled = false;
-        
-        // Reset the default option text
-        const defaultOption = modelSelect.querySelector('option[value=""]');
-        if (defaultOption) {
-            defaultOption.textContent = 'Pick a model';
-        }
-    }
+    });
 }
 
 // Update attachment button state based on current model
@@ -205,55 +184,41 @@ window.updateAttachmentButtonState = updateAttachmentButtonState;
 
 // Auto-load default model and send message
 async function autoLoadDefaultModelAndSend() {
-    const defaultModel = 'Qwen3-0.6B-GGUF';
-    
     // Check if default model is available and installed
-    if (!window.SERVER_MODELS || !window.SERVER_MODELS[defaultModel]) {
+    if (!window.SERVER_MODELS || !window.SERVER_MODELS[DEFAULT_MODEL]) {
         showErrorBanner('No models available. Please install a model first.');
         return;
     }
     
-    if (!window.installedModels || !window.installedModels.has(defaultModel)) {
+    if (!window.installedModels || !window.installedModels.has(DEFAULT_MODEL)) {
         showErrorBanner('Default model is not installed. Please install it from the Model Management tab.');
         return;
     }
     
-    try {
-        // Store the message to send after loading
-        const messageToSend = chatInput.value.trim();
-        if (!messageToSend && attachments.length === 0) {
-            return; // Nothing to send
-        }
-        
-        // Update UI to show loading state
-        modelSelect.disabled = true;
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Loading model...';
-        
-        // Load the default model
-        await httpRequest(getServerBaseUrl() + '/api/v1/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: defaultModel })
-        });
-        
-        // Update model status
-        await updateModelStatusIndicator();
-        updateModelSelectValue();
-        updateAttachmentButtonState();
-        
-        // Now send the message
-        sendMessage(messageToSend);
-        
-    } catch (error) {
-        console.error('Error auto-loading default model:', error);
-        showErrorBanner('Failed to load default model: ' + error.message);
-        
-        // Reset UI state
-        modelSelect.disabled = false;
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
+    // Store the message to send after loading
+    const messageToSend = chatInput.value.trim();
+    if (!messageToSend && attachedFiles.length === 0) {
+        return; // Nothing to send
     }
+    
+    // Use the standardized load function
+    const success = await loadModelStandardized(DEFAULT_MODEL, {
+        onLoadingStart: (modelId) => {
+            // Custom UI updates for auto-loading
+            sendBtn.textContent = 'Loading model...';
+        },
+        onLoadingEnd: (modelId, loadSuccess) => {
+            // Reset send button text
+            sendBtn.textContent = 'Send';
+        },
+        onSuccess: (loadedModelId) => {
+            // Send the message after successful load
+            sendMessage(messageToSend);
+        },
+        onError: (error, failedModelId) => {
+            console.error('Error auto-loading default model:', error);
+        }
+    });
 }
 
 // Check if model supports vision and update attachment button
@@ -579,9 +544,8 @@ async function sendMessage() {
     // Check if a model is loaded, if not, automatically load the default model
     if (!currentLoadedModel) {
         const allModels = window.SERVER_MODELS || {};
-        const defaultModel = 'Qwen3-0.6B-GGUF'; // Default suggested model
         
-        if (allModels[defaultModel]) {
+        if (allModels[DEFAULT_MODEL]) {
             try {
                 // Show loading message
                 const loadingBubble = appendMessage('system', 'Loading default model, please wait...');
@@ -590,7 +554,7 @@ async function sendMessage() {
                 await httpRequest(getServerBaseUrl() + '/api/v1/load', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model_name: defaultModel })
+                    body: JSON.stringify({ model_name: DEFAULT_MODEL })
                 });
                 
                 // Update model status
@@ -600,7 +564,7 @@ async function sendMessage() {
                 loadingBubble.parentElement.remove();
                 
                 // Show success message briefly
-                const successBubble = appendMessage('system', `Loaded ${defaultModel} successfully!`);
+                const successBubble = appendMessage('system', `Loaded ${DEFAULT_MODEL} successfully!`);
                 setTimeout(() => {
                     successBubble.parentElement.remove();
                 }, 2000);
