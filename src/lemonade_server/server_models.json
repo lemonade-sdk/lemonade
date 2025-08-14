@@ -268,8 +268,8 @@
         "checkpoint": "unsloth/cogito-v2-preview-llama-109B-MoE-GGUF:Q4_K_M",
         "mmproj": "mmproj-F16.gguf",
         "recipe": "llamacpp",
-        "suggested": true,
-        "labels": ["vision","hot"]
+        "suggested": false,
+        "labels": ["vision"]
     },
     "nomic-embed-text-v1-GGUF": {
         "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
