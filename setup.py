@@ -134,7 +134,7 @@ setup(
     include_package_data=True,
     package_data={
         "lemonade_server": ["server_models.json"],
-        "lemonade": ["tools/server/static/*"],
+        "lemonade": ["tools/server/static/**/*"],
     },
 )
 

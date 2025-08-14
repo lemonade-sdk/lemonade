@@ -31,14 +31,26 @@
     <main class="main">
         <div class="tab-container"> 
             <div class="tabs"> 
-                <button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button> 
-                <button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button> 
+                <div class="tab-group">
+                    <button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button> 
+                    <button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
+                    <button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button> 
+                </div>
+                
+                <!-- Model Status Indicator integrated into tab bar -->
+                <div class="model-status-indicator" id="model-status-indicator">
+                    <div class="status-light" id="status-light"></div>
+                    <span class="model-status-text" id="model-status-text">Loading...</span>
+                    <button class="model-action-btn" id="model-unload-btn" style="display: none;" title="Unload model">⏏</button>
+                </div>
             </div> 
             <div class="tab-content active" id="content-chat"> 
                 <div class="chat-container"> 
                     <div class="chat-history" id="chat-history"></div> 
                     <div class="chat-input-row"> 
-                        <select id="model-select"></select> 
+                        <select id="model-select" class="model-select">
+                            <option value="">Pick a model</option>
+                        </select>
                         <div class="input-with-indicator">
                             <input type="text" id="chat-input" placeholder="Type your message..." /> 
                         </div>
@@ -91,76 +103,136 @@
                     </div>
                 </div>
             </div> 
-            <div class="tab-content" id="content-models">                <div class="model-mgmt-register-form collapsed">                    <h3 class="model-mgmt-form-title" onclick="toggleAddModelForm()">
-                        Add a Model
-                        <span class="tooltip-icon" data-tooltip="Lemonade Server has a built-in set of suggested models, however you can use this form to add any compatible GGUF or ONNX model you like from Hugging Face.">ⓘ</span>
-                    </h3>
-                    <form id="register-model-form" autocomplete="off" class="form-content">
-                        <div class="register-form-row">
-                        <label class="register-label">
-                            Model Name
-                            <span class="tooltip-icon" data-tooltip="Enter a unique short name for your model. This is how the model will be referenced by Lemonade Server and connected apps. It will be prefixed with 'user.' to distinguish it from the built-in models.">ⓘ</span>
-                        </label>
-                        <div class="register-model-name-group">
-                            <span class="register-model-prefix styled-prefix">user.</span>
-                            <input type="text" id="register-model-name" name="model_name" placeholder="Gemma-3-12b-it-GGUF" required autocomplete="off">
+            <div class="tab-content" id="content-settings">
+                <div class="model-settings-container">
+                    <div class="settings-form">
+                        <div class="setting-row">
+                            <label for="setting-temperature">Temperature:</label>
+                            <input type="number" id="setting-temperature" min="0" max="2" step="0.1" placeholder="default" />
+                            <span class="setting-description">Controls randomness in responses (0 = deterministic, 2 = very random)</span>
                         </div>
+                        <div class="setting-row">
+                            <label for="setting-top-k">Top K:</label>
+                            <input type="number" id="setting-top-k" min="1" max="100" step="1" placeholder="default" />
+                            <span class="setting-description">Limits token selection to top K most likely tokens</span>
                         </div>
-                        <div class="register-form-row">
-                        <label class="register-label">
-                            Checkpoint
-                            <span class="tooltip-icon" data-tooltip="Specify the model checkpoint path from Hugging Face (e.g., org-name/model-name:variant).">ⓘ</span>
-                        </label>
-                        <input type="text" id="register-checkpoint" name="checkpoint" placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0" class="register-textbox" autocomplete="off">
+                        <div class="setting-row">
+                            <label for="setting-top-p">Top P:</label>
+                            <input type="number" id="setting-top-p" min="0" max="1" step="0.01" placeholder="default" />
+                            <span class="setting-description">Nucleus sampling - considers tokens with cumulative probability up to P</span>
                         </div>
-                        <div class="register-form-row">
-                        <label class="register-label">
-                            Recipe
-                            <span class="tooltip-icon" data-tooltip="Select the Lemonade recipe corresponding to the inference engine and device Lemonade Server should use for the model. Use llamacpp for GGUF models. For OGA/ONNX models, click the More Info button to learn about the oga-* recipes.">ⓘ</span>
-                        </label>
-                        <select id="register-recipe" name="recipe" required>
-                            <option value="llamacpp">llamacpp</option>
-                            <option value="oga-npu">oga-npu</option>
-                            <option value="oga-hybrid">oga-hybrid</option>
-                            <option value="oga-cpu">oga-cpu</option>
-                        </select>
-                        <a href="https://lemonade-server.ai/docs/lemonade_api/" target="_blank" class="register-doc-link">More info</a>
+                        <div class="setting-row">
+                            <label for="setting-repeat-penalty">Repeat Penalty:</label>
+                            <input type="number" id="setting-repeat-penalty" min="0.5" max="2" step="0.05" placeholder="default" />
+                            <span class="setting-description">Penalty for repeating tokens (1 = no penalty, >1 = less repetition)</span>
                         </div>
-                        <div class="register-form-row register-form-row-tight">
-                        <label class="register-label">
-                            mmproj file
-                            <span class="tooltip-icon" data-tooltip="Specify an mmproj file from the same Hugging Face checkpoint as the model. This is used for multimodal models, such as VLMs. Leave empty if not needed.">ⓘ</span>
-                        </label>
-                        <input type="text" id="register-mmproj" name="mmproj" placeholder="(Optional) mmproj-F16.gguf" autocomplete="off">
-                        <label class="register-label reasoning-inline">
-                            <input type="checkbox" id="register-reasoning" name="reasoning">
-                            Reasoning
-                            <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has reasoning capabilities that will use thinking tokens.">ⓘ</span>
-                        </label>
+                        <div class="setting-actions">
+                            <button id="reset-settings-btn" class="reset-btn">Reset to Defaults</button>
                         </div>
-                        <div class="register-form-row register-form-row-tight">
-                        <button type="submit" id="register-submit">Install</button>
-                        <span id="register-model-status" class="register-status"></span>                        </div>
-                    </form>
-                </div>
-                <div class="model-mgmt-container">
-                    <div class="model-mgmt-pane">
-                        <h3>Installed Models</h3>
-                        <table class="model-table" id="installed-models-table">
-                            <colgroup><col style="width:100%"></colgroup>
-                            <tbody id="installed-models-tbody"></tbody>
-                        </table>
                     </div>
-                    <div class="model-mgmt-pane">
-                        <h3>🔥 Hot Models</h3>
-                        <table class="model-table" id="hot-models-table">
-                            <tbody id="hot-models-tbody"></tbody>
-                        </table>
+                </div>
+            </div>
+            <div class="tab-content" id="content-models">
+                <div class="model-browser-container">
+                    <div class="model-browser-sidebar">
+                        <div class="model-category" data-category="hot">
+                            <div class="category-header active" onclick="toggleCategory('hot')">
+                                <span class="category-icon">🔥</span>
+                                <span class="category-name">Hot Models</span>
+                            </div>
+                            <div class="category-content expanded" id="category-hot"></div>
+                        </div>
                         
-                        <h3 style="margin-top: 2em;">Suggested Models</h3>
-                        <table class="model-table" id="suggested-models-table">
-                            <tbody id="suggested-models-tbody"></tbody>
-                        </table>
+                        <div class="model-category-section">
+                            <div class="section-header">
+                                <span class="section-icon">🔧</span>
+                                <span class="section-name">By Recipe</span>
+                            </div>
+                            <div class="section-content">
+                                <div class="subcategory" data-recipe="llamacpp" onclick="selectRecipe('llamacpp')">llama.cpp</div>
+                                <div class="subcategory" data-recipe="oga-hybrid" onclick="selectRecipe('oga-hybrid')">OGA Hybrid</div>
+                                <div class="subcategory" data-recipe="oga-npu" onclick="selectRecipe('oga-npu')">OGA NPU</div>
+                                <div class="subcategory" data-recipe="oga-cpu" onclick="selectRecipe('oga-cpu')">OGA CPU</div>
+                            </div>
+                        </div>
+                        
+                        <div class="model-category-section">
+                            <div class="section-header">
+                                <span class="section-icon">🏷️</span>
+                                <span class="section-name">By Category</span>
+                            </div>
+                            <div class="section-content">
+                                <div class="subcategory" data-label="coding" onclick="selectLabel('coding')">Coding</div>
+                                <div class="subcategory" data-label="vision" onclick="selectLabel('vision')">Vision</div>
+                                <div class="subcategory" data-label="reasoning" onclick="selectLabel('reasoning')">Reasoning</div>
+                                <div class="subcategory" data-label="reranking" onclick="selectLabel('reranking')">Reranking</div>
+                                <div class="subcategory" data-label="embeddings" onclick="selectLabel('embeddings')">Embeddings</div>
+                                <div class="subcategory" data-label="custom" onclick="selectLabel('custom')">Custom</div>
+                            </div>
+                        </div>
+                        
+                        <div class="model-category" data-category="add">
+                            <div class="category-header" onclick="showAddModelForm()">
+                                <span class="category-icon">➕</span>
+                                <span class="category-name">Add a Model</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="model-browser-main">
+                        <div class="model-list" id="model-list"></div>
+                        
+                        <!-- Add Model Form (hidden by default) -->
+                        <div class="add-model-form-main" id="add-model-form-main" style="display: none;">
+                            <form id="register-model-form" autocomplete="off" class="form-content">
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Model Name
+                                        <span class="tooltip-icon" data-tooltip="Enter a unique short name for your model. This is how the model will be referenced by Lemonade Server and connected apps. It will be prefixed with 'user.' to distinguish it from the built-in models.">ⓘ</span>
+                                    </label>
+                                    <div class="register-model-name-group">
+                                        <span class="register-model-prefix styled-prefix">user.</span>
+                                        <input type="text" id="register-model-name" name="model_name" placeholder="Gemma-3-12b-it-GGUF" required autocomplete="off">
+                                    </div>
+                                </div>
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Checkpoint
+                                        <span class="tooltip-icon" data-tooltip="Specify the model checkpoint path from Hugging Face (e.g., org-name/model-name:variant).">ⓘ</span>
+                                    </label>
+                                    <input type="text" id="register-checkpoint" name="checkpoint" placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0" class="register-textbox" autocomplete="off">
+                                </div>
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Recipe
+                                        <span class="tooltip-icon" data-tooltip="Select the Lemonade recipe corresponding to the inference engine and device Lemonade Server should use for the model. Use llamacpp for GGUF models. For OGA/ONNX models, click the More Info button to learn about the oga-* recipes.">ⓘ</span>
+                                    </label>
+                                    <select id="register-recipe" name="recipe" required>
+                                        <option value="llamacpp">llamacpp</option>
+                                        <option value="oga-npu">oga-npu</option>
+                                        <option value="oga-hybrid">oga-hybrid</option>
+                                        <option value="oga-cpu">oga-cpu</option>
+                                    </select>
+                                    <a href="https://lemonade-server.ai/docs/lemonade_api/" target="_blank" class="register-doc-link">More info</a>
+                                </div>
+                                <div class="register-form-row register-form-row-tight">
+                                    <label class="register-label">
+                                        mmproj file
+                                        <span class="tooltip-icon" data-tooltip="Specify an mmproj file from the same Hugging Face checkpoint as the model. This is used for multimodal models, such as VLMs. Leave empty if not needed.">ⓘ</span>
+                                    </label>
+                                    <input type="text" id="register-mmproj" name="mmproj" placeholder="(Optional) mmproj-F16.gguf" autocomplete="off">
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-reasoning" name="reasoning">
+                                        Reasoning
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has reasoning capabilities that will use thinking tokens.">ⓘ</span>
+                                    </label>
+                                </div>
+                                <div class="register-form-row register-form-row-tight">
+                                    <button type="submit" id="register-submit">Install</button>
+                                    <span id="register-model-status" class="register-status"></span>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div> 
@@ -174,12 +246,12 @@
     <!-- External libraries -->
     <script src="https://cdn.jsdelivr.net/npm/openai@4.21.0/dist/openai.min.js"></script> 
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.0/marked.min.js"></script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     
     <!-- Application JavaScript -->
     <script src="/static/js/shared.js"></script>
-    <script src="/static/js/chat.js"></script>
     <script src="/static/js/models.js"></script>
+    <script src="/static/js/model-settings.js"></script>
+    <script src="/static/js/chat.js"></script>
 </body>
 </html>
