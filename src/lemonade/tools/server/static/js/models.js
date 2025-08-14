@@ -62,7 +62,7 @@ async function updateModelStatusIndicator() {
     // Refresh model management UI if we're on the models tab
     const modelsTab = document.getElementById('content-models');
     if (modelsTab && modelsTab.classList.contains('active')) {
-        // Only refresh the UI rendering, not fetch data again since we just did
+        // Use the display-only version to avoid re-fetching data we just fetched
         refreshModelMgmtUIDisplay();
     }
     
@@ -501,25 +501,24 @@ function createModelNameWithLabels(modelId, serverModels) {
 // === Model Management Table (for models tab) ===
 
 // Initialize model management functionality when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Set up model status indicator and fetch initial data
-    updateModelStatusIndicator();
-    setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
-    
+document.addEventListener('DOMContentLoaded', async function() {
     // Set up model status controls
     const unloadBtn = document.getElementById('model-unload-btn');
     if (unloadBtn) {
         unloadBtn.onclick = unloadModel;
     }
     
+    // Initial fetch of model data - this will populate installedModels
+    await updateModelStatusIndicator();
+    
+    // Set up periodic refresh of model status
+    setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
+    
     // Initialize model browser with hot models
     displayHotModels();
-});
-
-// Initialize model management when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Initial load of model management UI
-    refreshModelMgmtUI();
+    
+    // Initial load of model management UI - this will use the populated installedModels
+    await refreshModelMgmtUI();
     
     // Refresh when switching to the models tab
     const modelsTab = document.getElementById('tab-models');

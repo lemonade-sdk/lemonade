@@ -338,7 +338,13 @@ function showTab(tab, updateHash = true) {
         if (updateHash) {
             window.location.hash = 'model-management';
         }
-        // The model management UI will be automatically refreshed by updateModelStatusIndicator
+        // Ensure model management UI is refreshed with latest data when tab is shown
+        // Use setTimeout to ensure this runs after any pending initialization
+        setTimeout(() => {
+            if (window.refreshModelMgmtUI) {
+                window.refreshModelMgmtUI();
+            }
+        }, 0);
     } else if (tab === 'settings') {
         document.getElementById('tab-model-settings').classList.add('active');
         document.getElementById('content-settings').classList.add('active');
