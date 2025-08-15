@@ -286,7 +286,9 @@ class LemonadeTray(SystemTray):
         Check if the user is using the NSIS installer by checking for embeddable python
         """
         py_home = Path(sys.executable).parent
-        pth_file = py_home / f"python{sys.version_info.major}{sys.version_info.minor}._pth"
+        pth_file = (
+            py_home / f"python{sys.version_info.major}{sys.version_info.minor}._pth"
+        )
         return pth_file.exists()
 
     def upgrade_to_latest(self, _, __):
@@ -297,9 +299,7 @@ class LemonadeTray(SystemTray):
 
         # If the user installed from source, simple open their browser to the release page
         if not self._using_installer():
-            webbrowser.open(
-                "https://github.com/lemonade-sdk/lemonade/releases/latest"
-            )
+            webbrowser.open("https://github.com/lemonade-sdk/lemonade/releases/latest")
             return
 
         # Show notification that download is starting
