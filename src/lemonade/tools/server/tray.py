@@ -285,7 +285,7 @@ class LemonadeTray(SystemTray):
         """
         Check if the user is using the NSIS installer by checking for embeddable python
         """
-        py_home = pathlib.Path(sys.executable).parent
+        py_home = Path(sys.executable).parent
         pth_file = py_home / f"python{sys.version_info.major}{sys.version_info.minor}._pth"
         return pth_file.exists()
 
