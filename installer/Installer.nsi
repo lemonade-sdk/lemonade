@@ -177,7 +177,7 @@ SectionIn RO ; Read only, always installed
       ; If hybrid mode is selected, upgrade to hybrid
       ${If} $HYBRID_SELECTED == "true"
         DetailPrint "- Upgrading to hybrid mode..."
-                 ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
+                 ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://xcoartifactory.xilinx.com/artifactory/api/pypi/ryzen-ai-llm-pip-dev-local/simple --no-warn-script-location' $8
         DetailPrint "- Hybrid upgrade return code: $8"
         
         ; Check if hybrid upgrade was successful
