@@ -1836,7 +1836,7 @@ body::before {
   background: #fff;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .model-browser-sidebar {
@@ -1974,7 +1974,7 @@ body::before {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .model-browser-header {
