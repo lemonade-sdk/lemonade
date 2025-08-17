@@ -1,0 +1,65 @@
+FROM docker.io/library/ubuntu:rolling
+
+ARG COMMIT=main
+
+ADD --chmod=755 entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["lemonade-server-dev"]
+EXPOSE 8000
+
+RUN <<EOF
+ln -sf /usr/share/zoneinfo/Europe/London /etc/localtime
+apt-get update
+apt-get install -y \
+git \
+mesa-vulkan-drivers \
+pciutils \
+python3 \
+python3-certifi \
+python3-charset-normalizer \
+python3-cpuinfo \
+python3-distro \
+python3-dotenv \
+python3-fastapi \
+python3-fasteners \
+python3-filelock \
+python3-fsspec \
+python3-git \
+python3-h11 \
+python3-httpcore \
+python3-httpx \
+python3-invoke \
+python3-jinja2 \
+python3-numpy \
+python3-packaging \
+python3-pip \
+python3-pytz \
+python3-regex \
+python3-requests \
+python3-sentencepiece \
+python3-tabulate \
+python3-tqdm \
+python3-typeguard \
+python3-urllib3 \
+python3-uvicorn \
+python3-venv \
+python3-watchfiles \
+python3-websockets \
+python3-yaml \
+python3-zstandard
+python3 -m venv --system-site-packages /opt/venv
+. /opt/venv/bin/activate
+mkdir -p /root/lemonade
+git clone https://github.com/lemonade-sdk/lemonade.git /root/lemonade/src
+cd /root/lemonade/src
+git checkout $COMMIT
+pip3 install ./
+apt-get autoremove --purge -y git python3-pip python3-venv
+apt-get clean
+apt-get distclean
+rm -rf /root/*
+rm -rf /root/.cache
+mkdir /srv/lemonade
+EOF
+
+VOLUME /srv/lemonade
