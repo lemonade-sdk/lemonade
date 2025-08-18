@@ -4,7 +4,8 @@
 
 There are a few things to note on this integration:
 * This integration is in its early stages. Please do test it out and report issues back to us to make the Lemonade OpenHands functionality the best that it can be.
-* Due to the complexity of the scaffolding of agentic software agents, the compute requirements for this application is very high. For a low latency experience, we recommend using this flow with a Strix Halo laptop or a discrete Radeon GPU. 
+* Due to the complexity of the scaffolding of agentic software agents, the compute requirements for this application is very high. For a low latency experience, we recommend using this flow with a discrete GPU with at least 16 GB VRAM, or a Strix Halo PC with at least 64 GB RAM. 
+
 
 ## Prerequisites
 
