@@ -333,7 +333,7 @@ class LemonadeTray(SystemTray):
         try:
             new_level = "debug" if not self.debug_logs_enabled else "info"
             response = requests.post(
-                f"http://localhost:{self.port}/api/v1/log-level",
+                f"http://127.0.0.1:{self.port}/api/v1/log-level",
                 json={"level": new_level},
             )
             response.raise_for_status()
@@ -422,18 +422,23 @@ class LemonadeTray(SystemTray):
 
         port_submenu = Menu(*port_menu_items)
 
-        if status_successfully_checked:
-            items.append(MenuItem("Load Model", None, submenu=load_submenu))
-        items.append(MenuItem("Port", None, submenu=port_submenu))
-        items.append(Menu.SEPARATOR)
-
-        # Add debug log toggle
+        # Create the Logs submenu
         debug_log_text = (
             "Disable Debug Logs" if self.debug_logs_enabled else "Enable Debug Logs"
         )
         debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
         debug_log_item.checked = self.debug_logs_enabled
-        items.append(debug_log_item)
+        
+        logs_submenu = Menu(
+            MenuItem("Show Logs", self.show_logs),
+            Menu.SEPARATOR,
+            debug_log_item,
+        )
+
+        if status_successfully_checked:
+            items.append(MenuItem("Load Model", None, submenu=load_submenu))
+        items.append(MenuItem("Port", None, submenu=port_submenu))
+        items.append(Menu.SEPARATOR)
 
         # Only show upgrade option if newer version is available
         if parse_version(self.latest_version) > parse_version(self.current_version):
@@ -446,7 +451,7 @@ class LemonadeTray(SystemTray):
         items.append(MenuItem("Documentation", self.open_documentation))
         items.append(MenuItem("LLM Chat", self.open_llm_chat))
         items.append(MenuItem("Model Manager", self.open_model_manager))
-        items.append(MenuItem("Show Logs", self.show_logs))
+        items.append(MenuItem("Logs", None, submenu=logs_submenu))
         items.append(Menu.SEPARATOR)
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)
