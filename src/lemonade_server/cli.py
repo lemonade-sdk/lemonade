@@ -472,7 +472,7 @@ def developer_entrypoint():
 
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
-    
+
     # Load the persisted log level to use as a default
     persisted_log_level = load_setting("log_level", DEFAULT_LOG_LEVEL)
 

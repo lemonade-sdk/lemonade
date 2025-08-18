@@ -444,7 +444,7 @@ class LemonadeTray(SystemTray):
         )
         debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
         debug_log_item.checked = self.debug_logs_enabled
-        
+
         logs_submenu = Menu(
             MenuItem("Show Logs", self.show_logs),
             Menu.SEPARATOR,
