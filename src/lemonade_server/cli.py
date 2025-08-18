@@ -188,7 +188,7 @@ def pull(
     if server_running:
         import requests
 
-        base_url = f"http://127.0.0.1:{port}/api/v1"
+        base_url = f"http://localhost:{port}/api/v1"
 
         for model_name in model_names:
             payload = {"model_name": model_name}
@@ -239,7 +239,7 @@ def delete(model_names: List[str]):
     if server_running:
         import requests
 
-        base_url = f"http://127.0.0.1:{port}/api/v1"
+        base_url = f"http://localhost:{port}/api/v1"
 
         for model_name in model_names:
             # Delete the model
@@ -262,7 +262,7 @@ def delete(model_names: List[str]):
 def run(
     model_name: str,
     port: int = None,
-    host: str = "127.0.0.1",
+    host: str = "localhost",
     log_level: str = None,
     tray: bool = False,
     llamacpp_backend: str = None,
@@ -313,7 +313,7 @@ def load(model_name: str, port: int):
     """
     import requests
 
-    base_url = f"http://127.0.0.1:{port}/api/v1"
+    base_url = f"http://localhost:{port}/api/v1"
 
     # Load the model
     load_response = requests.post(f"{base_url}/load", json={"model_name": model_name})
@@ -394,7 +394,7 @@ def get_server_info() -> Tuple[int | None, int | None]:
             if (
                 conn.status == "LISTEN"
                 and conn.laddr
-                and conn.laddr.ip in ["127.0.0.1"]
+                and conn.laddr.ip in ["localhost"]
                 and conn.pid is not None
             ):
                 if is_lemonade_server(conn.pid):
