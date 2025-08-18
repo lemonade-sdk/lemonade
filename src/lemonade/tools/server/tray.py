@@ -58,6 +58,7 @@ class LemonadeTray(SystemTray):
         self.log_file = log_file
         self.port = port
         self.server_factory = server_factory
+        self.debug_logs_enabled = False
 
         # Get current and latest version
         self.current_version = __version__
@@ -325,6 +326,26 @@ class LemonadeTray(SystemTray):
 
         # No need to quit the application, the installer will handle it
 
+    def toggle_debug_logs(self, _, __):
+        """
+        Toggle debug logs on and off.
+        """
+        try:
+            new_level = "debug" if not self.debug_logs_enabled else "info"
+            response = requests.post(
+                f"http://localhost:{self.port}/api/v1/log-level",
+                json={"level": new_level},
+            )
+            response.raise_for_status()
+            self.debug_logs_enabled = not self.debug_logs_enabled
+            self.show_balloon_notification(
+                "Debug Logs",
+                f"Debug logs {'enabled' if self.debug_logs_enabled else 'disabled'}",
+            )
+        except Exception as e:
+            self.logger.error(f"Error toggling debug logs: {str(e)}")
+            self.show_balloon_notification("Error", "Failed to toggle debug logs.")
+
     def create_menu(self):
         """
         Create the Lemonade-specific context menu.
@@ -405,6 +426,14 @@ class LemonadeTray(SystemTray):
             items.append(MenuItem("Load Model", None, submenu=load_submenu))
         items.append(MenuItem("Port", None, submenu=port_submenu))
         items.append(Menu.SEPARATOR)
+
+        # Add debug log toggle
+        debug_log_text = (
+            "Disable Debug Logs" if self.debug_logs_enabled else "Enable Debug Logs"
+        )
+        debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
+        debug_log_item.checked = self.debug_logs_enabled
+        items.append(debug_log_item)
 
         # Only show upgrade option if newer version is available
         if parse_version(self.latest_version) > parse_version(self.current_version):
