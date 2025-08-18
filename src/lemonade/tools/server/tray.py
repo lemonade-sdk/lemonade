@@ -142,7 +142,7 @@ class LemonadeTray(SystemTray):
         while not self.stop_model_update.wait(poll_interval):
             try:
                 response = requests.get(
-                    f"http://127.0.0.1:{self.port}/api/v0/models",
+                    f"http://localhost:{self.port}/api/v0/models",
                     timeout=0.1,  # Add timeout
                 )
                 response.raise_for_status()
@@ -167,7 +167,7 @@ class LemonadeTray(SystemTray):
         """
         Unload the currently loaded LLM.
         """
-        requests.post(f"http://127.0.0.1:{self.port}/api/v0/unload")
+        requests.post(f"http://localhost:{self.port}/api/v0/unload")
 
     def load_llm(self, _, __, model_name):
         """Load an LLM model."""
@@ -178,7 +178,7 @@ class LemonadeTray(SystemTray):
         # Use the executor to make the request asynchronously
         self.executor.submit(
             lambda: requests.post(
-                f"http://127.0.0.1:{self.port}/api/v0/load", json=config
+                f"http://localhost:{self.port}/api/v0/load", json=config
             )
         )
 
@@ -209,13 +209,13 @@ class LemonadeTray(SystemTray):
         """
         Open the LLM chat in the default web browser.
         """
-        webbrowser.open(f"http://127.0.0.1:{self.port}/#llm-chat")
+        webbrowser.open(f"http://localhost:{self.port}/#llm-chat")
 
     def open_model_manager(self, _, __):
         """
         Open the model manager in the default web browser.
         """
-        webbrowser.open(f"http://127.0.0.1:{self.port}/#model-management")
+        webbrowser.open(f"http://localhost:{self.port}/#model-management")
 
     def check_server_state(self):
         """
@@ -223,7 +223,7 @@ class LemonadeTray(SystemTray):
         """
         try:
             response = requests.get(
-                f"http://127.0.0.1:{self.port}/api/v0/health",
+                f"http://localhost:{self.port}/api/v0/health",
                 timeout=0.1,  # Add timeout
             )
             response.raise_for_status()
@@ -333,7 +333,7 @@ class LemonadeTray(SystemTray):
         try:
             new_level = "debug" if not self.debug_logs_enabled else "info"
             response = requests.post(
-                f"http://127.0.0.1:{self.port}/api/v1/log-level",
+                f"http://localhost:{self.port}/api/v1/log-level",
                 json={"level": new_level},
             )
             response.raise_for_status()
