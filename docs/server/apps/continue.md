@@ -11,7 +11,7 @@ Before you start, make sure you have the following:
 - **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
 - **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
 - **Lemonade Server Running**: The server should be running at `http://localhost:8000`.
-- **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) must be installed locally. This should match the model you plan to use in [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade).
+- **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) must be installed locally. This should match the model you plan to use in [Continue Hub](https://hub.continue.dev/lemonade).
 
 ## Setup
 
@@ -28,7 +28,7 @@ Before you start, make sure you have the following:
       lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
       ```
 
-2. **Open Continue Hub**: Go to [hub.continue.dev](https://hub.continue.dev/?type=models&q=lemonade). Sign up if you are a new user.
+2. **Open Continue Hub**: Go to [hub.continue.dev](https://hub.continue.dev/lemonade). Sign up if you are a new user.
 
 3. **Add an Assistant**: In the Assistants section, click the `+` next to any available assistant (e.g., `llama.cpp`).
 

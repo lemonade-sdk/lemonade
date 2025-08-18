@@ -14,7 +14,7 @@ This allows the same application to leverage local LLMs instead of relying on Op
 
 <div id="yt-carousel" data-videos='[
   {"id": "mcf7dDybUco", "title": "Getting Started with Lemonade Server"},
-  {"id": "PXNTDZREJ_A", "title": "Open WebUI Demo"},
+  {"id": "yZs-Yzl736E", "title": "Open WebUI Demo"},
   {"id": "JecpotOZ6qo", "title": "Microsoft AI Toolkit Demo"},
   {"id": "bP_MZnDpbUc", "title": "Continue Coding Assistant"},
   {"id": "_PORHv_-atI", "title": "GAIA"}
@@ -28,7 +28,7 @@ Links to the video tutorials available are provided in the third column of the f
 
 | App                 | Guide                                                                                               | Video                                                                                     |
 |---------------------|-----------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| [Open WebUI](https://github.com/open-webui/open-webui)         | [How to chat with Lemonade LLMs in Open WebUI](./open-webui.md)   | [Watch Demo](https://www.youtube.com/watch?v=PXNTDZREJ_A)                                 |
+| [Open WebUI](https://github.com/open-webui/open-webui)         | [How to chat with Lemonade LLMs in Open WebUI](./open-webui.md)   | [Watch Demo](https://www.youtube.com/watch?v=yZs-Yzl736E)                                 |
 | [Continue.dev](https://www.continue.dev/)   | [How to use Lemonade LLMs as a coding assistant in Continue](./continue.md)                                          | [Watch Demo](https://youtu.be/bP_MZnDpbUc?si=hRhLbLEV6V_OGlUt)                            |
 | [Microsoft AI Toolkit](https://learn.microsoft.com/en-us/windows/ai/toolkit/)   | [Experimenting with Lemonade LLMs in VS Code using Microsoft's AI Toolkit](./ai-toolkit.md)                                          | [Watch Demo](https://youtu.be/JecpotOZ6qo?si=WxWVQhUBCJQgE6vX)                            |
 | [GAIA](https://github.com/amd/gaia)   | [An application for running LLMs locally, includes a ChatBot, YouTube Agent, and more](https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide) | [Watch Demo](https://youtu.be/_PORHv_-atI?si=EYQjmrRQ6Zy2H0ek)                            |

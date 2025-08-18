@@ -54,24 +54,6 @@ lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
 </details>
 
 <details>
-<summary>Cogito-v2-llama-109B-MoE-GGUF</summary>
-
-```bash
-lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
-```
-
-<table>
-<tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/cogito-v2-preview-llama-109B-MoE-GGUF">unsloth/cogito-v2-preview-llama-109B-MoE-GGUF</a></td></tr>
-<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
-<tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
-<tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Labels</td><td>vision, hot</td></tr>
-</table>
-
-</details>
-
-<details>
 <summary>gpt-oss-120b-GGUF</summary>
 
 ```bash
@@ -101,6 +83,23 @@ lemonade-server pull gpt-oss-20b-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>GLM-4.5-Air-UD-Q4K-XL-GGUF</summary>
+
+```bash
+lemonade-server pull GLM-4.5-Air-UD-Q4K-XL-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/GLM-4.5-Air-GGUF">unsloth/GLM-4.5-Air-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>UD-Q4_K_XL</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>reasoning, hot</td></tr>
 </table>
 
 </details>
@@ -316,24 +315,6 @@ lemonade-server pull Llama-4-Scout-17B-16E-Instruct-GGUF
 </details>
 
 <details>
-<summary>Cogito-v2-llama-109B-MoE-GGUF</summary>
-
-```bash
-lemonade-server pull Cogito-v2-llama-109B-MoE-GGUF
-```
-
-<table>
-<tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/cogito-v2-preview-llama-109B-MoE-GGUF">unsloth/cogito-v2-preview-llama-109B-MoE-GGUF</a></td></tr>
-<tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
-<tr><td>Mmproj</td><td>mmproj-F16.gguf</td></tr>
-<tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Labels</td><td>vision, hot</td></tr>
-</table>
-
-</details>
-
-<details>
 <summary>nomic-embed-text-v1-GGUF</summary>
 
 ```bash
@@ -412,7 +393,7 @@ lemonade-server pull Qwen2.5-Coder-32B-Instruct-GGUF
 <tr><td>Checkpoint</td><td><a href="https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF">Qwen/Qwen2.5-Coder-32B-Instruct-GGUF</a></td></tr>
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
-<tr><td>Labels</td><td>reasoning, coding</td></tr>
+<tr><td>Labels</td><td>coding</td></tr>
 </table>
 
 </details>
@@ -447,6 +428,23 @@ lemonade-server pull gpt-oss-20b-GGUF
 <tr><td>GGUF Variant</td><td>Q4_K_M</td></tr>
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>hot, reasoning</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>GLM-4.5-Air-UD-Q4K-XL-GGUF</summary>
+
+```bash
+lemonade-server pull GLM-4.5-Air-UD-Q4K-XL-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/GLM-4.5-Air-GGUF">unsloth/GLM-4.5-Air-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>UD-Q4_K_XL</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>reasoning, hot</td></tr>
 </table>
 
 </details>
