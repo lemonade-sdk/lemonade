@@ -281,10 +281,26 @@ class LemonadeTray(SystemTray):
             self.logger.error(f"Error changing port: {str(e)}")
             self.show_balloon_notification("Error", f"Failed to change port: {str(e)}")
 
+    def _using_installer(self):
+        """
+        Check if the user is using the NSIS installer by checking for embeddable python
+        """
+        py_home = Path(sys.executable).parent
+        pth_file = (
+            py_home / f"python{sys.version_info.major}{sys.version_info.minor}._pth"
+        )
+        return pth_file.exists()
+
     def upgrade_to_latest(self, _, __):
         """
-        Download and launch the Lemonade Server installer
+        Download and launch the Lemonade Server installer if the user is using the NSIS installer
+        Otherwise, simply open the browser to the release page
         """
+
+        # If the user installed from source, simple open their browser to the release page
+        if not self._using_installer():
+            webbrowser.open("https://github.com/lemonade-sdk/lemonade/releases/latest")
+            return
 
         # Show notification that download is starting
         self.show_balloon_notification(
