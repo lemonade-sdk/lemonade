@@ -1,272 +1,181 @@
-# Continue.dev
+# Continue Coding Assistant
 
-Continue.dev is an open-source AI code assistant for VS Code and JetBrains that enables developers to leverage local AI models through Lemonade Server for code generation, editing, and chat capabilities.
+[Continue](https://www.continue.dev/) provides open-source Integrated Development Environment (IDE) extensions, such as for [Visual Studio Code](https://code.visualstudio.com/) and [JetBrains](https://www.jetbrains.com/ides/), and an open-source CLI that lets developers leverage custom AI coding agents.
+
+This guide walks through how to use Lemonade Server with Continue Hub and the VS Code extension for code generation, editing, and chat capabilities, all running locally on your AMD PC.
 
 ## Prerequisites
 
-Before using Continue.dev with Lemonade Server, ensure you have:
+Before you start, make sure you have the following:
 
-- **IDE**: [Visual Studio Code (1.80+)](https://code.visualstudio.com/) or [JetBrains IDE](https://www.jetbrains.com/ides/)
-- **Lemonade Server**: Install and set up following the [Getting Started guide](https://lemonade-server.ai/docs/server/)
-- **Server running**: Ensure Lemonade Server is running on `http://localhost:8000`
-- **Models installed**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) downloaded locally; this should match the one you will pick below from [Continue Hub](https://hub.continue.dev/lemonade)
+### Software Requirements
 
-## Installation
+- **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
+- **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
+- **Lemonade Server Running**: The server should be running at `http://localhost:8000`.
+- **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) must be installed locally. This should match the model you plan to use in [Continue Hub](https://hub.continue.dev/lemonade).
 
-### Installing Continue Extension
+### Hardware Requirements
 
-1. Open VS Code
-2. Navigate to the Extensions marketplace
-3. Search for "Continue" 
-4. Install the Continue extension
+For best results, a code-tuned model with at least 20B parameters is required. To run such a model:
 
-![Continue Extension in VS Code Marketplace](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_vscode_marketplace.png)
+* **Minimum spec**: PC with an integrated GPU (Ryzen™ AI 7000-series or newer) and 64 GB system RAM.
+* **Recommended specs**:
+    * PC with a discrete GPU that has 16 GB VRAM or greater (Radeon™ 7800 XT or newer).
+    * Strix Halo PC with 64 GB System RAM or greater.
+
+## Setup
 
 ### Configuring with Continue Hub
 
-Continue Hub provides pre-configured model setups that work immediately with Lemonade Server. **Note**: The models shown on Continue Hub must be installed on your local machine to function properly.
+1. **Install Models Locally**
+    - Use the Model Manager or [lemonade-server CLI](https://lemonade-server.ai/docs/server/lemonade-server-cli/) to download your desired model, for example:
 
-1. **Install Models Locally**: First, ensure you have the desired models installed using the [lemonade-server CLI](https://lemonade-server.ai/docs/server/lemonade-server-cli/):
-   ```bash
-   lemonade-server pull <model-name>
-   ```
-   For example: `lemonade-server pull Qwen2.5-7B-Instruct-Hybrid`
+      ```bash
+      lemonade-server pull <model-name>
+      ```
+      _Example downloading Qwen3-Coder:_
+      ```bash
+      lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
+      ```
 
-2. **Access Lemonade Models**: Visit [hub.continue.dev](https://hub.continue.dev/lemonade)
-3. **Select Configuration**: Browse available Lemonade models and configurations - all models listed are from the [supported models list](https://lemonade-server.ai/docs/server/server_models/)
+2. **Open Continue Hub**: Go to [hub.continue.dev](https://hub.continue.dev/lemonade). Sign up if you are a new user.
 
-![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
+3. **Add an Assistant**: In the Assistants section, click the `+` next to any available assistant (e.g., `llama.cpp`).
 
+4. **Add Models to Your Assistant**
+    - Browse the list of supported models and click the `+` next to the model name to add it to your assistant.
+    - All models shown must be installed locally using the command provided in Step 1. See the [supported models list](https://lemonade-server.ai/docs/server/server_models/).
+    - When you sign in to the Continue extension in your IDE, your configuration will automatically sync.
 
-4. **Add to Continue**: Click the plus icon `(+)` on your chosen configuration to add to your assistant - see the [Continue.dev assistants guide](https://docs.continue.dev/guides/understanding-assistants) for detailed setup instructions
-5. **Automatic Setup**: The configuration is automatically added to your Continue extension upon signing in via the extension in your chosen IDE.
+  _Example configuration screen:_
+  ![Continue Configuration Settings](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png)
 
-![Configuration Added to Continue](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png)
+  For more details, see the [Continue Assistants Guide](https://docs.continue.dev/guides/understanding-assistants).
+
+### Setting Up Continue Extension in VS Code
+
+1. **Go to Extensions Marketplace**: In VS Code, click the Extensions icon in the Activity bar (default is on the left).
+2. **Add "Continue"**: Type "Continue" in the search box. Click "Install" on the Continue extension entry.
+
+    _Example marketplace screen:_
+    ![Continue Extension in VS Code Marketplace](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_vscode_marketplace.png)
+
+3. **Open Continue in VS Code**: After installation completes, the Continue logo appears in the Activity bar. Click it to open the extension.
+4. **Sign In to Continue**: Click the gear icon, then the `Sign In` button. A browser window will open for you to log in.
+5. **Select Your Assistant**: Once signed in, use the drop-down menu to select the assistant you added earlier (e.g., `llama.cpp`).
+
+    _Example extension screen:_
+    ![Configuration Added to Continue](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png)
 
 ## Working with Continue.dev
 
-Continue.dev provides three interaction modes for different development tasks. See the [Continue documentation](https://docs.continue.dev) for detailed mode descriptions.
+Continue provides three interaction modes for different development tasks:
 
-### Mode Selection Guide
-
-- **Chat**: Code explanations, debugging discussions, architecture planning
-- **Agent**: Multi-file refactoring, large-scale changes across projects
+1. **Chat**: Code explanations, debugging discussions, architecture planning
+2. **Plan**: Provides a safe environment with read-only tools for exploring code and planning changes
+3. **Agent**: Multi-file refactoring, large-scale changes across projects
 
 ![Continue Modes Interface](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_modes.png)
+
+See the [Continue Documentation](https://docs.continue.dev/getting-started/overview) for detailed descriptions.
 
 ## Examples
 
 ### Example 1: Chat Mode - Building an Asteroids Game
 
-**Scenario**: You want to quickly prototype a game concept through conversation with the AI.
+In this example, we'll use `Qwen3-Coder-30B-A3B-Instruct-GGUF` model to build a Python game.
 
-**Chat Conversation**:
+**Input**: I want to create an asteroids game using PyGame. What guidelines should I follow in the code to do so?
 
-> **User**: I want to create an asteroids game using PyGame. What guidelines should I follow in the code to do so?
+![Continue Chat Asteroids](https://github.com/lemonade-sdk/assets/blob/main/docs/guides/continue/continue_chat_asteroids01.png?raw=true)
 
-```
-Model: Creating an Asteroids game using PyGame is a fun and educational project! Below are some guidelines you should follow to structure your code effectively:
+The model provides a basic framework for an Asteroids game. You can then prompt it to provide you some sample code to get started.
 
-### 1. Initialize PyGame
-- Always start by initializing PyGame and setting up the display.
+**Input**: Provide me a basic implementation to get started.
 
-### 2. Define Game Constants
-- Define constants for screen dimensions, colors, speeds, and other game settings.
+![Continue Chat Asteroids Example Code](https://github.com/lemonade-sdk/assets/blob/main/docs/guides/continue/continue_chat_asteroids02.png?raw=true)
 
-### 3. Create Classes for Game Objects
-- Define classes for different game objects like the Player, Asteroids, Bullets, etc.
-- Each class should handle its own rendering and movement.
+In the top-right corner, you can click the "Create file" to move the code from the chat window to a Python file and save it. To run, install `pygame` and execute the code with `python main.py`.
 
-### 4. Implement Game Loop
-- The main game loop should handle updating the game state and rendering the screen.
+### Example 2: Plan Mode - Analysis of the Game
 
-### 5. Handle User Input
-- Implement a way to handle keyboard and mouse inputs to control the player's ship.
+In this example, we'll use Plan mode to have the LLM analyze your code and provide feedback. Plan mode reviews your code and suggests improvements, but does not modify your files.
 
-### 6. Collision Detection
-- Implement collision detection between bullets and asteroids, and between the player ship and asteroids.
+**To use Plan mode with large files, increase Lemonade Server's context size:**
 
-### 7. Game Logic
-- Implement game logic for spawning asteroids, shooting bullets, and updating the game state.
+1. **Stop Lemonade Server**: Use the tray icon to "Quit Lemonade" or close any running Lemonade Server processes.
+2. **Restart with higher context size**: Open a terminal and run:
 
-### 8. Score and Game Over Conditions
-- Keep track of the player's score and implement conditions for game over (e.g., when the player's ship collides with an asteroid).
+    ```bash
+    lemonade-server serve --ctx-size 8192
+    ```
 
-Here's a simple structure to get you started:
+3. **Use Plan mode in VS Code**: Select the "Plan" option in Continue, enter your prompt and press Alt+Enter to include the currently active file as context.
 
-# <model generated code here>...
+**Input**: What improvements could be made to this game?
 
-### Explanation of the Code:
-1. **Initialize PyGame**: Set up the display and define constants.
-2. **Player Class**: Handles the player's movement and drawing.
-3. **Asteroid Class**: Handles the asteroid's movement and drawing.
-4. **Bullet Class**: Handles the bullet's movement and drawing.
-5. **Game Loop**: Processes input, updates game state, and renders the screen.
+![Continue Plan Asteroids](https://github.com/lemonade-sdk/assets/blob/main/docs/guides/continue/continue_plan_asteroids.png?raw=true)
 
-This code provides a basic framework for an Asteroids game. You can expand on it by adding more features like collision detection, scoring, and different levels of difficulty.
-```
+### Example 3: Agent Mode - Improving the Game
 
-> **User**: what change could we make to ensure that the ship is unchanged, but has a yellow trail effect when it moves?
+Lastly, we'll use Agent Mode to take action to change the code to implement improvements.
 
-```
-Model: To create a yellow trail effect for the player's ship, you can maintain a list of the ship's previous positions and draw small circles or short lines at these positions. This will give the appearance of a trailing effect as the ship moves.
+![Continue Agent Asteroids](https://github.com/lemonade-sdk/assets/blob/main/docs/guides/continue/continue_agent_asteroids.png?raw=true)
 
-Here's how you can modify the `Player` class and the main game loop to include this feature:
-
-# <model generated>...
-
-### Explanation of Changes:
-1. **Player Class**:
-   - Added a `trail` list to store the previous positions of the ship.
-   - Updated the `move` method to append the current position to the `trail` list and remove the oldest position if the trail exceeds the specified length (`TRAIL_LENGTH`).
-   - Updated the `draw` method to draw small yellow circles at each position in the `trail` list.
-
-2. **Game Loop**:
-   - No changes were needed in the main game loop as the trail effect is handled within the `Player` class.
-
-This code will create a yellow trail effect behind the player's ship as it moves across the screen. You can adjust the `TRAIL_LENGTH` constant to make the trail longer or shorter.
-```
-
-Through this conversational approach, the model helps build and refine the game iteratively, explaining decisions and accommodating new requirements as they arise.
-
-![Chat Mode Game Development](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_gen.png)
-
-After running the `pip install pygame` command to setup dependencies, and applying the changes to `main.py`, the game can be run using `python .\main.py`. This results should resemble the following:
-
-![Asteroids Game Result](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_asteroids_result.png)
-
-### Example 2: Agent Mode - Converting Callbacks to Async/Await
-
-**Scenario**: You have older code using callback patterns that needs to be modernized to async/await for better readability and error handling.
-
-**Agent Task**:
-
-> Convert all callback-based functions in `@run.js` use async/await:
-> - Convert callback patterns to async/await
-> - Add proper try/catch error handling
-> - Update all calling code to use await
-> - Maintain the same functionality
-
-
-#### Example Conversion
-
-**Before (callback pattern)**:
-```javascript
-const db = require('./db');
-
-function processUser(user, callback) {
-  setTimeout(() => {
-    if (!user || !user.id) {
-      callback(new Error('Invalid user'), null);
-    } else {
-      callback(null, { ...user, processed: true });
-    }
-  }, 100);
-}
-
-function fetchUserData(userId, callback) {
-  db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
-    if (err) {
-      callback(err, null);
-    } else {
-      processUser(result, (processErr, processed) => {
-        if (processErr) {
-          callback(processErr, null);
-        } else {
-          callback(null, processed);
-        }
-      });
-    }
-  });
-}
-```
-
-**After (async/await)**:
-```javascript
-const db = require('./db');
-
-async function processUser(user) {
-  return new Promise((resolve, reject) => {
-  setTimeout(() => {
-    if (!user || !user.id) {
-        reject(new Error('Invalid user'));
-    } else {
-        resolve({ ...user, processed: true });
-    }
-  }, 100);
-  });
-}
-
-async function fetchUserData(userId) {
-  try {
-    const result = await new Promise((resolve, reject) => {
-  db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
-    if (err) {
-          reject(err);
-    } else {
-          resolve(result);
-        }
-      });
-    });
-
-    const processedUser = await processUser(result);
-    return processedUser;
-  } catch (err) {
-    throw err;
-  }
-}
-```
-
-**Agent Actions**:
-1. Identifies all callback-based functions in service files
-2. Converts each to async/await syntax
-3. Updates error handling to use try/catch blocks
-4. Updates all calling code to use await
-5. Ensures promise chains are properly handled
-
-The Agent intelligently handles nested callbacks, error propagation, and ensures all calling code is updated consistently.
-
-![Agent Mode Async/Await Conversion](https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_async_result.png)
+Here, we can see that the agent edited the code in `main.py` to improve the gameplay and add colors.
 
 ## Best Practices
 
 ### Setup & Configuration
-- **Install Lemonade Server** following the [setup guide](https://lemonade-server.ai/docs/server/) before starting development
-- **Install models locally** using `lemonade-server pull <model-name>` - see the [supported models list](https://lemonade-server.ai/docs/server/server_models/) for available options
-- Pre-load models in Lemonade Server before coding sessions and keep the server running throughout development
-- For agent mode with GGUF models, use increased context size: `lemonade-server serve --ctx-size 8192`
-- Build custom assistants tailored to specific languages/domains (e.g., JavaScript/TypeScript for Node.js projects)  
-- Avoid adding too many models with the same mode to prevent suboptimal model switching
-- See [continue.dev customization](https://docs.continue.dev/customization/overview) for effective scoping strategies
+
+- **Install Lemonade Server**: Follow the [setup guide](https://lemonade-server.ai/docs/server/) to install and configure Lemonade Server before you begin development.
+- **Download Models Locally**: Use `lemonade-server pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/docs/server/server_models/) for available options.
+- **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
+- **Increase Context Size for Agent Mode**: For large code changes with GGUF models, start Lemonade Server with a higher context size:
+    ```bash
+    lemonade-server serve --ctx-size 8192
+    ```
+- **Create Custom Assistants**: Build assistants tailored to specific languages or domains (e.g., JavaScript/TypeScript for Node.js projects) for more relevant results.
+- **Customize Scoping**: See [Continue Customization](https://docs.continue.dev/customization/overview) for tips on effective assistant and model scoping.
 
 ### Development Workflow
-- Start fresh conversations for new features; clear chat history when switching tasks
-- Include only relevant code in prompts to maintain focus
-- Structure prompts with clear task descriptions, specific requirements, and technical constraints
-- Use `@` symbol to invoke agent mode for multi-file operations
-- Evolve prompts from vague ("Create a game") to specific ("Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting")
-- Generate initial implementation, test immediately, then refine with targeted prompts
-- Take advantage of unlimited iterations with local models for continuous improvement
+
+- **Start New Conversations for Each Feature**: Begin a fresh chat for every new feature or task. Clear chat history when switching topics to keep interactions focused.
+- **Keep Prompts Focused**: Only include the code and context relevant to your current task. This helps the model provide accurate and useful responses.
+- **Write Clear, Detailed Prompts**: Structure your requests with a clear task description, specific requirements, and any technical constraints.
+- **Use Agent Mode for Multi-File Changes**: Invoke agent mode with the `@` symbol to perform refactoring or changes across multiple files.
+- **Be Specific in Your Requests**: Move from broad prompts ("Create a game") to detailed ones ("Create an Asteroids game in Python using Pygame, under 300 lines, with ship controls and asteroid splitting").
+- **Iterate and Test Frequently**: Generate an initial implementation, test it right away, and refine with targeted follow-up prompts.
+- **Leverage Unlimited Iterations**: With local models, you can iterate as many times as needed for continuous improvement.
 
 ## Common Issues
 
-**Issue**: Model not appearing in Continue  
-**Solution**: Verify Lemonade Server is running and model is loaded locally. Check the [supported models list](https://lemonade-server.ai/docs/server/server_models/) and install with `lemonade-server pull <model-name>`
+**Model not appearing in Continue**
 
-**Issue**: Slow response times  
-**Solution**: Ensure model is pre-loaded, check available RAM
+  - Make sure Lemonade Server is running and the model is loaded locally.
+  - Double-check the [supported models list](https://lemonade-server.ai/docs/server/server_models/) and install any missing models with:
+      ```bash
+      lemonade-server pull <model-name>
+      ```
 
-**Issue**: Missing error handling in generated code  
-**Solution**: Explicitly request "with comprehensive error handling"
+**Slow response times**
 
-**Issue**: Inconsistent code style  
-**Solution**: Provide example of desired style in prompt
+  - Pre-load your model before starting coding sessions.
+  - Check your system's available RAM and close unused applications to free up resources.
+
+**Missing error handling in generated code**
+
+  - In your prompt, explicitly request: "with comprehensive error handling" to ensure the model adds proper error checks.
+
+**Inconsistent code style**
+
+  - Provide a sample or example of your desired code style in your prompt. The model will use this as a reference for formatting.
 
 ## Resources
 
 - [Lemonade Server Setup Guide](https://lemonade-server.ai/docs/server/)
 - [Lemonade Server Supported Models](https://lemonade-server.ai/docs/server/server_models/)
-- [Continue.dev Documentation](https://docs.continue.dev)
-- [Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
-- [Lemonade Discord](https://discord.gg/lemonade)
-- [Example Projects](https://github.com/lemonade-sdk/examples)
+- [Lemonade Applications](https://lemonade-server.ai/docs/server/apps/)
+- [Continue Documentation](https://docs.continue.dev)
+- [Lemonade on Continue Hub](https://hub.continue.dev/lemonade)

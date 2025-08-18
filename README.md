@@ -208,9 +208,19 @@ New contributors can find beginner-friendly issues tagged with "Good First Issue
 
 This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
 
-## License
+## License and Attribution
 
-This project is licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE). Portions of the project are licensed as described in [NOTICE.md](./NOTICE.md).
+This project is:
+- [Built with Python](https://www.amd.com/en/developer/resources/technical-articles/2025/rethinking-local-ai-lemonade-servers-python-advantage.html) with ❤️ for the open source community,
+- Standing on the shoulders of great tools from:
+  - [ggml/llama.cpp](https://github.com/ggml-org/llama.cpp)
+  - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
+  - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
+  - [OpenAI API](https://github.com/openai/openai-python)
+  - and more...
+- Accelerated by mentorship from the OCV Catalyst program.
+- Licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE).
+  - Portions of the project are licensed as described in [NOTICE.md](./NOTICE.md).
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
