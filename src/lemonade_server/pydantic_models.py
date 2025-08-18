@@ -122,3 +122,9 @@ class DeleteConfig(BaseModel):
     """
 
     model_name: str
+
+class LogLevelConfig(BaseModel):
+    """
+    Configuration for leg-level setting.
+    """
+    level: str
