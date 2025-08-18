@@ -439,9 +439,7 @@ class LemonadeTray(SystemTray):
         port_submenu = Menu(*port_menu_items)
 
         # Create the Logs submenu
-        debug_log_text = (
-            "Disable Debug Logs" if self.debug_logs_enabled else "Enable Debug Logs"
-        )
+        debug_log_text = "Enable Debug Logs"
         debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
         debug_log_item.checked = self.debug_logs_enabled
 
