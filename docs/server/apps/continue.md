@@ -8,10 +8,21 @@ This guide walks through how to use Lemonade Server with Continue Hub and the VS
 
 Before you start, make sure you have the following:
 
+### Software Requirements
+
 - **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
 - **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
 - **Lemonade Server Running**: The server should be running at `http://localhost:8000`.
 - **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) must be installed locally. This should match the model you plan to use in [Continue Hub](https://hub.continue.dev/lemonade).
+
+### Hardware Requirements
+
+For best results, a code-tuned model with at least 20B parameters is required. To run such a model:
+
+* **Minimum spec**: PC with an integrated GPU (Ryzen™ AI 7000-series or newer) and 64 GB system RAM.
+* **Recommended specs**:
+    * PC with a discrete GPU that has 16 GB VRAM or greater (Radeon™ 7800 XT or newer).
+    * Strix Halo PC with 64 GB System RAM or greater.
 
 ## Setup
 
@@ -117,6 +128,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 ## Best Practices
 
 ### Setup & Configuration
+
 - **Install Lemonade Server**: Follow the [setup guide](https://lemonade-server.ai/docs/server/) to install and configure Lemonade Server before you begin development.
 - **Download Models Locally**: Use `lemonade-server pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/docs/server/server_models/) for available options.
 - **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
@@ -125,10 +137,10 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
     lemonade-server serve --ctx-size 8192
     ```
 - **Create Custom Assistants**: Build assistants tailored to specific languages or domains (e.g., JavaScript/TypeScript for Node.js projects) for more relevant results.
-- **Limit Model Overlap**: Avoid adding too many models with the same mode to prevent unnecessary switching and degraded performance.
 - **Customize Scoping**: See [Continue Customization](https://docs.continue.dev/customization/overview) for tips on effective assistant and model scoping.
 
 ### Development Workflow
+
 - **Start New Conversations for Each Feature**: Begin a fresh chat for every new feature or task. Clear chat history when switching topics to keep interactions focused.
 - **Keep Prompts Focused**: Only include the code and context relevant to your current task. This helps the model provide accurate and useful responses.
 - **Write Clear, Detailed Prompts**: Structure your requests with a clear task description, specific requirements, and any technical constraints.
