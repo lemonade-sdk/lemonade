@@ -188,7 +188,7 @@ def pull(
     if server_running:
         import requests
 
-        base_url = f"http://localhost:{port}/api/v1"
+        base_url = f"http://127.0.0.1:{port}/api/v1"
 
         for model_name in model_names:
             payload = {"model_name": model_name}
@@ -239,7 +239,7 @@ def delete(model_names: List[str]):
     if server_running:
         import requests
 
-        base_url = f"http://localhost:{port}/api/v1"
+        base_url = f"http://127.0.0.1:{port}/api/v1"
 
         for model_name in model_names:
             # Delete the model
@@ -262,7 +262,7 @@ def delete(model_names: List[str]):
 def run(
     model_name: str,
     port: int = None,
-    host: str = "localhost",
+    host: str = "127.0.0.1",
     log_level: str = None,
     tray: bool = False,
     llamacpp_backend: str = None,
@@ -313,7 +313,7 @@ def load(model_name: str, port: int):
     """
     import requests
 
-    base_url = f"http://localhost:{port}/api/v1"
+    base_url = f"http://127.0.0.1:{port}/api/v1"
 
     # Load the model
     load_response = requests.post(f"{base_url}/load", json={"model_name": model_name})
@@ -475,7 +475,7 @@ def _add_server_arguments(parser):
     
     # Load the persisted log level to use as a default
     persisted_log_level = load_setting("log_level", DEFAULT_LOG_LEVEL)
-    
+
     parser.add_argument(
         "--port",
         type=int,
@@ -493,7 +493,7 @@ def _add_server_arguments(parser):
         type=str,
         help="Log level for the server",
         choices=["critical", "error", "warning", "info", "debug", "trace"],
-        default=DEFAULT_LOG_LEVEL,
+        default=persisted_log_level,
     )
     parser.add_argument(
         "--llamacpp",
