@@ -67,6 +67,7 @@ from lemonade_server.pydantic_models import (
     ResponsesRequest,
     PullConfig,
     DeleteConfig,
+    LogLevelConfig,
 )
 
 # Set to a high number to allow for interesting experiences in real apps
@@ -249,6 +250,7 @@ class Server:
             self.app.get(f"{prefix}/system-info")(self.get_system_info)
             self.app.post(f"{prefix}/completions")(self.completions)
             self.app.post(f"{prefix}/responses")(self.responses)
+            self.app.post(f"{prefix}/log-level")(self.set_log_level)
 
             # OpenAI-compatible routes
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
@@ -258,6 +260,27 @@ class Server:
             # JinaAI routes (jina.ai/reranker/)
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
+
+    async def set_log_level(self, config: LogLevelConfig):
+        """
+        Set the logging level of the server.
+        """
+        try:
+            log_level_upper = config.level.upper()
+            numeric_level = getattr(logging, log_level_upper, None)
+            if not isinstance(numeric_level, int):
+                raise ValueError(f"Invalid log level: {config.level}")
+
+            logging.getLogger().setLevel(numeric_level)
+            logging.getLogger("uvicorn.error").setLevel(numeric_level)
+            self.debug_logging_enabled = numeric_level <= logging.DEBUG
+
+            return {"status": "success", "message": f"Log level set to {config.level}"}
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to set log level: {str(e)}",
+            )
 
     def _log_request_parameters(self, request, endpoint_name: str):
         """
