@@ -166,4 +166,4 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 - [Lemonade Server Supported Models](https://lemonade-server.ai/docs/server/server_models/)
 - [Lemonade Applications](https://lemonade-server.ai/docs/server/apps/)
 - [Continue Documentation](https://docs.continue.dev)
-- [Lemonade on Continue Hub](https://hub.continue.dev/?type=models&q=lemonade)
+- [Lemonade on Continue Hub](https://hub.continue.dev/lemonade)
