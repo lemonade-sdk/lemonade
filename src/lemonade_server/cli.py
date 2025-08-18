@@ -11,6 +11,7 @@ from lemonade_server.pydantic_models import (
     DEFAULT_LLAMACPP_BACKEND,
     DEFAULT_CTX_SIZE,
 )
+from lemonade_server.settings import load_setting
 
 
 # Error codes for different CLI scenarios
@@ -471,7 +472,10 @@ def developer_entrypoint():
 
 def _add_server_arguments(parser):
     """Add common server arguments to a parser"""
-
+    
+    # Load the persisted log level to use as a default
+    persisted_log_level = load_setting("log_level", DEFAULT_LOG_LEVEL)
+    
     parser.add_argument(
         "--port",
         type=int,
