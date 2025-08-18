@@ -69,6 +69,7 @@ from lemonade_server.pydantic_models import (
     DeleteConfig,
     LogLevelConfig,
 )
+from lemonade_server.settings import save_setting
 
 # Set to a high number to allow for interesting experiences in real apps
 # Tests should use the max_new_tokens argument to set a lower value
@@ -271,10 +272,21 @@ class Server:
             if not isinstance(numeric_level, int):
                 raise ValueError(f"Invalid log level: {config.level}")
 
-            logging.getLogger().setLevel(numeric_level)
+            # Get the root logger
+            logger = logging.getLogger()
+            logger.setLevel(numeric_level)
+
+            # Update all handlers
+            for handler in logger.handlers:
+                handler.setLevel(numeric_level)
+
             logging.getLogger("uvicorn.error").setLevel(numeric_level)
             self.debug_logging_enabled = numeric_level <= logging.DEBUG
 
+            # Save the setting
+            save_setting("log_level", config.level)
+
+            logging.info(f"Log level changed to: {config.level}")
             return {"status": "success", "message": f"Log level set to {config.level}"}
         except Exception as e:
             raise HTTPException(
@@ -390,7 +402,9 @@ class Server:
 
             # Open lemonade server in tray mode
             # lambda function used for deferred instantiation and thread safety
-            LemonadeTray(self.log_file, self.port, lambda: self).run()
+            LemonadeTray(
+                self.log_file, self.port, lambda: self, log_level=self.log_level
+            ).run()
             sys.exit(0)
 
         if self.debug_logging_enabled:
