@@ -12,10 +12,13 @@ Bring your own finetuned model into the Ryzen™ AI ecosystem and run it locally
 
 ### 1.1 Install Quark
 
-- Follow the [Quark installation guide](https://quark.docs.amd.com/latest/install.html) to download and set up Quark.
+Install Quark directly from PyPI:
+
+```bash
+pip install quark
+```
 - It is highly recommended to use GPU acceleration for quantizing LLMs, as CPU-based quantization can be time-consuming. Refer to the [PyTorch GPU support section](https://quark.docs.amd.com/latest/install.html#install-pytorch-with-gpu-support) for setup instructions.
 
-- Quark provides a pre-prepared examples folder to simplify the quantization process. Download the latest zip file matching your Quark version from the [previous versions section](https://quark.docs.amd.com/latest/install.html#previous-versions-of-amd-quark). After extracting the folder, navigate to `examples/torch/language_modeling/llm_ptq` to find `quantize_quark.py`.
 
 - For detailed instructions on using PTQ (Post-Training Quantization) with Quark, refer to the [Quark PyTorch LLM PTQ example](https://quark.docs.amd.com/latest/pytorch/example_quark_torch_llm_ptq.html).
 
@@ -37,7 +40,7 @@ For LLMs targeting Ryzen AI, the recommended quantization strategy is:
 ### 1.4 Example Quantization Commands
 
 ```bash
-python quantize_quark.py --model_dir $MODEL_DIR \
+ quark-quantize --model_dir $MODEL_DIR \
     --output_dir <path/to/output/model> \
     --quant_scheme w_uint4_per_group_asym \
     --num_calib_data 128 \
@@ -95,5 +98,3 @@ Here, we have quantized the `Llama3.2-1B-Instruct` model using AWQ with a uint4 
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
-
-
