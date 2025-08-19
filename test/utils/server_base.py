@@ -37,6 +37,11 @@ except ImportError:
 
 
 MODEL_NAME = "Qwen2.5-0.5B-Instruct-CPU"
+# This list must include all models that could be accessed in offline testing
+MODELS_UNDER_TEST = [
+    MODEL_NAME,
+    "Llama-3.2-1B-Instruct-CPU",  # used in test_001_test_simultaneous_load_requests
+]
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
@@ -129,13 +134,14 @@ def ensure_model_is_cached():
     """
     try:
         # Call lemonade-server-dev pull to download the model
-        subprocess.run(
-            ["lemonade-server-dev", "pull", MODEL_NAME],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        print(f"Model {MODEL_NAME} successfully pulled and available in cache")
+        for model_name in MODELS_UNDER_TEST:
+            subprocess.run(
+                ["lemonade-server-dev", "pull", model_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+            print(f"Model {model_name} successfully pulled and available in cache")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Failed to download model: {e}")
@@ -166,12 +172,12 @@ def kill_process_on_port(port):
 
 class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
     """Base class containing only shared setup/cleanup functionality, no test methods."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Allow subclasses to set the llamacpp backend
-        self.llamacpp_backend = getattr(self, 'llamacpp_backend', None)
-    
+        self.llamacpp_backend = getattr(self, "llamacpp_backend", None)
+
     def setUp(self):
         """
         Start lemonade server process
@@ -190,11 +196,11 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
 
         # Build the command to start the server
         cmd = ["lemonade-server-dev", "serve"]
-        
+
         # Add --no-tray option on Windows
         if os.name == "nt":
             cmd.append("--no-tray")
-            
+
         # Add llamacpp backend option if specified
         if self.llamacpp_backend:
             cmd.extend(["--llamacpp", self.llamacpp_backend])

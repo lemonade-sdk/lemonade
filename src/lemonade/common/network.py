@@ -2,6 +2,7 @@ import os
 from typing import Optional
 import socket
 from huggingface_hub import model_info, snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 
 def is_offline():
@@ -50,10 +51,11 @@ def get_base_model(checkpoint: str) -> Optional[str]:
     return None
 
 
-def custom_snapshot_download(repo_id, **kwargs):
+def _symlink_safe_snapshot_download(repo_id, **kwargs):
     """
     Custom snapshot download with retry logic for Windows symlink privilege errors.
     """
+
     for attempt in range(2):
         try:
             return snapshot_download(repo_id=repo_id, **kwargs)
@@ -65,3 +67,27 @@ def custom_snapshot_download(repo_id, **kwargs):
             ):
                 continue
             raise
+
+
+def custom_snapshot_download(repo_id, do_not_upgrade=False, **kwargs):
+    """
+    Custom snapshot download with:
+        1) retry logic for Windows symlink privilege errors.
+        2) do_not_upgrade allows the caller to prioritize a local copy
+            of the model over an upgraded remote copy.
+    """
+
+    if do_not_upgrade:
+        try:
+            # Prioritize the local model, if available
+            return _symlink_safe_snapshot_download(
+                repo_id, local_files_only=True, **kwargs
+            )
+        except LocalEntryNotFoundError:
+            # LocalEntryNotFoundError means there was no local model, at this point
+            # we'll accept a remote model
+            return _symlink_safe_snapshot_download(
+                repo_id, local_files_only=False, **kwargs
+            )
+    else:
+        return _symlink_safe_snapshot_download(repo_id, **kwargs)

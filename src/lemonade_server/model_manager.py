@@ -103,9 +103,13 @@ class ModelManager:
         recipe: Optional[str] = None,
         reasoning: bool = False,
         mmproj: str = "",
+        do_not_upgrade: bool = False,
     ):
         """
         Downloads the specified models from Hugging Face.
+
+        do_not_upgrade: prioritize any local copy of the model over any updated copy
+            from the Hugging Face Hub.
         """
         for model in models:
             if model not in self.supported_models:
@@ -174,9 +178,15 @@ class ModelManager:
             print(f"Downloading {model} ({checkpoint_to_download})")
 
             if "gguf" in checkpoint_to_download.lower():
-                download_gguf(gguf_model_config.checkpoint, gguf_model_config.mmproj)
+                download_gguf(
+                    gguf_model_config.checkpoint,
+                    gguf_model_config.mmproj,
+                    do_not_upgrade=do_not_upgrade,
+                )
             else:
-                custom_snapshot_download(checkpoint_to_download)
+                custom_snapshot_download(
+                    checkpoint_to_download, do_not_upgrade=do_not_upgrade
+                )
 
             # Register the model in user_models.json, creating that file if needed
             # We do this registration after the download so that we don't register
