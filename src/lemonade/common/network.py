@@ -1,7 +1,8 @@
 import os
 from typing import Optional
 import socket
-from huggingface_hub import model_info, snapshot_download, LocalEntryNotFoundError
+from huggingface_hub import model_info, snapshot_download
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 
 def is_offline():
