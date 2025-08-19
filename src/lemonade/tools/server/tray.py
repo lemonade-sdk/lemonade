@@ -358,7 +358,7 @@ class LemonadeTray(SystemTray):
                 "Debug Logs",
                 f"Debug logs {'enabled' if self.debug_logs_enabled else 'disabled'}",
             )
-        except Exception as e:
+        except (FileNotFoundError, ValueError) as e:
             self.logger.error(f"Error toggling debug logs: {str(e)}")
             self.show_balloon_notification("Error", "Failed to toggle debug logs.")
 
