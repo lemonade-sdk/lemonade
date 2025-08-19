@@ -43,7 +43,7 @@ class LemonadeTray(SystemTray):
     Lemonade-specific system tray implementation.
     """
 
-    def __init__(self, log_file, port, server_factory):
+    def __init__(self, log_file, port, server_factory, log_level="info"):
         # Find the icon path
         icon_path = Path(__file__).resolve().parents[0] / "static" / "favicon.ico"
 
@@ -58,6 +58,7 @@ class LemonadeTray(SystemTray):
         self.log_file = log_file
         self.port = port
         self.server_factory = server_factory
+        self.debug_logs_enabled = log_level == "debug"
 
         # Get current and latest version
         self.current_version = __version__
@@ -341,6 +342,26 @@ class LemonadeTray(SystemTray):
 
         # No need to quit the application, the installer will handle it
 
+    def toggle_debug_logs(self, _, __):
+        """
+        Toggle debug logs on and off.
+        """
+        try:
+            new_level = "debug" if not self.debug_logs_enabled else "info"
+            response = requests.post(
+                f"http://localhost:{self.port}/api/v1/log-level",
+                json={"level": new_level},
+            )
+            response.raise_for_status()
+            self.debug_logs_enabled = not self.debug_logs_enabled
+            self.show_balloon_notification(
+                "Debug Logs",
+                f"Debug logs {'enabled' if self.debug_logs_enabled else 'disabled'}",
+            )
+        except (FileNotFoundError, ValueError) as e:
+            self.logger.error(f"Error toggling debug logs: {str(e)}")
+            self.show_balloon_notification("Error", "Failed to toggle debug logs.")
+
     def create_menu(self):
         """
         Create the Lemonade-specific context menu.
@@ -417,6 +438,17 @@ class LemonadeTray(SystemTray):
 
         port_submenu = Menu(*port_menu_items)
 
+        # Create the Logs submenu
+        debug_log_text = "Enable Debug Logs"
+        debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
+        debug_log_item.checked = self.debug_logs_enabled
+
+        logs_submenu = Menu(
+            MenuItem("Show Logs", self.show_logs),
+            Menu.SEPARATOR,
+            debug_log_item,
+        )
+
         if status_successfully_checked:
             items.append(MenuItem("Load Model", None, submenu=load_submenu))
         items.append(MenuItem("Port", None, submenu=port_submenu))
@@ -433,7 +465,7 @@ class LemonadeTray(SystemTray):
         items.append(MenuItem("Documentation", self.open_documentation))
         items.append(MenuItem("LLM Chat", self.open_llm_chat))
         items.append(MenuItem("Model Manager", self.open_model_manager))
-        items.append(MenuItem("Show Logs", self.show_logs))
+        items.append(MenuItem("Logs", None, submenu=logs_submenu))
         items.append(Menu.SEPARATOR)
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)

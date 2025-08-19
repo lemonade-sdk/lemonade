@@ -122,3 +122,11 @@ class DeleteConfig(BaseModel):
     """
 
     model_name: str
+
+
+class LogLevelConfig(BaseModel):
+    """
+    Configuration for log-level setting.
+    """
+
+    level: str
