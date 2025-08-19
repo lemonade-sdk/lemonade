@@ -36,6 +36,7 @@ def _make_state(recipe, checkpoint) -> Dict:
 def from_pretrained(
     checkpoint: str,
     recipe: str = "hf-cpu",
+    do_not_upgrade: bool = True,
 ) -> Tuple[ModelAdapter, TokenizerAdapter]:
     """
     Load an LLM and the corresponding tokenizer using a lemonade recipe.
@@ -43,6 +44,9 @@ def from_pretrained(
     Args:
         - checkpoint: huggingface checkpoint that defines the LLM
         - recipe: defines the implementation and hardware used for the LLM
+        - do_not_upgrade: prioritize the local copy of the model, if available,
+            even if an upgraded copy is available on the server (note: only applies
+            for oga-* recipes)
 
     Recipe choices:
         - hf-cpu: Huggingface Transformers implementation for CPU with max-perf settings
@@ -118,6 +122,7 @@ def from_pretrained(
             input=checkpoint,
             device=user_backend,
             dtype=backend_to_dtype[user_backend],
+            do_not_upgrade=do_not_upgrade,
         )
 
         return state.model, state.tokenizer

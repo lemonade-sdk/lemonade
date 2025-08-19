@@ -378,7 +378,11 @@ def _launch_llama_subprocess(
 
 
 def server_load(
-    model_config: PullConfig, telemetry: LlamaTelemetry, backend: str, ctx_size: int
+    model_config: PullConfig,
+    telemetry: LlamaTelemetry,
+    backend: str,
+    ctx_size: int,
+    do_not_upgrade: bool = False,
 ):
     # Install and/or update llama.cpp if needed
     try:
@@ -389,7 +393,9 @@ def server_load(
         )
 
     # Download the gguf to the hugging face cache
-    snapshot_files = download_gguf(model_config.checkpoint, model_config.mmproj)
+    snapshot_files = download_gguf(
+        model_config.checkpoint, model_config.mmproj, do_not_upgrade=do_not_upgrade
+    )
     logging.debug(f"GGUF file paths: {snapshot_files}")
 
     # Check if model supports embeddings
