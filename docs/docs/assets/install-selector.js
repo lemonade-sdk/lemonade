@@ -307,12 +307,12 @@ window.lmnRender = function() {
     if (lmnState.fw === 'oga') {
       if (lmnState.dev === 'npu' || lmnState.dev === 'cpu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
-        link = 'https://github.com/aigdat/genai/releases/latest/download/lemonade_server_installer.exe';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
       }
     } else if (lmnState.fw === 'llama') {
       if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
-        link = 'https://github.com/aigdat/genai/releases/latest/download/lemonade_server_installer.exe';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
       }
     }
   } else if (lmnState.method === 'pypi' || lmnState.method === 'src') {

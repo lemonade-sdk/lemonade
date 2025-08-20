@@ -307,12 +307,12 @@ window.lmnRender = function() {
     if (lmnState.fw === 'oga') {
       if (lmnState.dev === 'npu' || lmnState.dev === 'cpu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
-        link = 'https://github.com/aigdat/genai/releases/latest/download/lemonade_server_installer.exe';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
       }
     } else if (lmnState.fw === 'llama') {
       if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
-        link = 'https://github.com/aigdat/genai/releases/latest/download/lemonade_server_installer.exe';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
       }
     }
   } else if (lmnState.method === 'pypi' || lmnState.method === 'src') {
@@ -536,7 +536,7 @@ window.lmnInit = function() {
         <div id="lmn-badges" class="lmn-badges"></div>
         <div id="lmn-install-content">
           <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
-            <a id="lmn-link" href="https://github.com/aigdat/genai/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">Download Lemonade Server Installer (.exe)</a>
           </div>
           <div id="lmn-command" class="lmn-command"></div>
         </div>
