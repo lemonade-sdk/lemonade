@@ -654,6 +654,7 @@ class OgaLoad(FirstTool):
         download_only: bool = False,
         trust_remote_code=False,
         subfolder: str = None,
+        do_not_upgrade: bool = False,
     ) -> State:
         from lemonade.common.network import (
             custom_snapshot_download,
@@ -744,7 +745,7 @@ class OgaLoad(FirstTool):
                 input_model_path = custom_snapshot_download(
                     checkpoint,
                     ignore_patterns=["*.md", "*.txt"],
-                    local_files_only=offline,
+                    local_files_only=offline or do_not_upgrade,
                 )
                 # Check if model is ONNX or safetensors
                 is_onnx_model = any(

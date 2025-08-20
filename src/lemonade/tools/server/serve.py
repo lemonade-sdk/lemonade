@@ -1388,6 +1388,9 @@ class Server:
             recipe=config.recipe,
             reasoning=config.reasoning,
             mmproj=config.mmproj,
+            # The pull endpoint will download an upgraded model if available, even
+            # if we already have a local copy of the model
+            do_not_upgrade=False,
         )
 
         # Refresh the list of downloaded models, to ensure it
@@ -1486,6 +1489,8 @@ class Server:
                         telemetry=self.llama_telemetry,
                         backend=self.llamacpp_backend,
                         ctx_size=self.ctx_size,
+                        # Models should only upgrade when using the pull endpoint
+                        do_not_upgrade=True,
                     )
 
                 else:

@@ -391,12 +391,7 @@ def get_server_info() -> Tuple[int | None, int | None]:
         connections = psutil.net_connections(kind="tcp4")
 
         for conn in connections:
-            if (
-                conn.status == "LISTEN"
-                and conn.laddr
-                and conn.laddr.ip in ["localhost"]
-                and conn.pid is not None
-            ):
+            if conn.status == "LISTEN" and conn.laddr and conn.pid is not None:
                 if is_lemonade_server(conn.pid):
                     return conn.pid, conn.laddr.port
 

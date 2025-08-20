@@ -267,29 +267,32 @@ window.lmnRender = function() {
   // Generate explore commands
   function generateExploreCommands() {
     var commands = [];
-    
+    var prefix = (lmnState.type === 'server')
+      ? (lmnState.method === 'gui' ? 'lemonade-server' : 'lemonade-server-dev')
+      : 'lemonade-server-dev';
+
     if (lmnState.type === 'full') {
       commands.push('lemonade -h');
+      commands.push('lemonade-server-dev -h');
+    } else {
+      commands.push(prefix + ' -h');
     }
-    
-    if (lmnState.type === 'server') {
-      if (lmnState.method === 'gui') {
-        commands.push('lemonade-server -h');
-        commands.push('lemonade-server run Gemma-3-4b-it-GGUF');
+
+    if (lmnState.fw === 'oga') {
+      if (lmnState.dev === 'npu') {
+        commands.push(prefix + ' run Llama-3.2-1B-Instruct-NPU');
+        commands.push(prefix + ' run Llama-3.2-1B-Instruct-Hybrid');
       } else {
-        commands.push('lemonade-server-dev -h');
-        commands.push('lemonade-server-dev run Gemma-3-4b-it-GGUF');
+        commands.push(prefix + ' run Llama-3.2-1B-Instruct-CPU');
       }
-    } else { // full
-      if (lmnState.method === 'gui') {
-        commands.push('lemonade-server -h');
-        commands.push('lemonade-server run Gemma-3-4b-it-GGUF');
-      } else {
-        commands.push('lemonade-server-dev -h');
-        commands.push('lemonade-server-dev run Gemma-3-4b-it-GGUF');
-      }
+    } else if (lmnState.fw === 'llama') {
+      commands.push(prefix + ' run Gemma-3-4b-it-GGUF');
+    } else if (lmnState.fw === 'torch') {
+      // No command for PyTorch, refer user to dev_cli documentation; leave blank
+    } else {
+      commands.push(prefix + ' run Gemma-3-4b-it-GGUF');
     }
-    
+
     return commands;
   }
   
@@ -437,7 +440,12 @@ window.lmnRender = function() {
       if (lmnState.fw === 'llama' && lmnState.dev === 'gpu') {
         exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';
       }
-      
+
+      // Add Pytorch and CPU tip to point to guide
+      if (lmnState.fw === 'torch' && lmnState.dev === 'cpu') {
+        exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> For CPU usage, refer to the <a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/dev_cli" target="_blank" style="color:#666; text-decoration:underline;">Developer CLI Guide</a>.</div>';
+      }
+
       setTimeout(function() {
         var explorePre = document.getElementById('lmn-explore-pre-block');
         if (explorePre) {

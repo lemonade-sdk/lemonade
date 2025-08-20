@@ -585,7 +585,7 @@ def identify_gguf_models(
     return core_files, sharded_files
 
 
-def download_gguf(config_checkpoint, config_mmproj=None) -> dict:
+def download_gguf(config_checkpoint, config_mmproj=None, do_not_upgrade=False) -> dict:
     """
     Downloads the GGUF file for the given model configuration.
 
@@ -605,6 +605,7 @@ def download_gguf(config_checkpoint, config_mmproj=None) -> dict:
     snapshot_folder = custom_snapshot_download(
         checkpoint,
         allow_patterns=list(core_files.values()) + sharded_files,
+        do_not_upgrade=do_not_upgrade,
     )
 
     # Ensure we downloaded all expected files
