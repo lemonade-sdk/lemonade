@@ -18,8 +18,9 @@ from threading import Thread
 import sys
 import io
 import httpx
-from server import kill_process_on_port, PORT
 from lemonade import __version__ as version_number
+
+from utils.server_base import kill_process_on_port, PORT
 
 try:
     from openai import OpenAI, AsyncOpenAI
