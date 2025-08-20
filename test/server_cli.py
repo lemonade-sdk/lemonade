@@ -64,7 +64,13 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         # Now, start the server
         NON_DEFAULT_PORT = PORT + 1
         process = subprocess.Popen(
-            ["lemonade-server-dev", "serve", "--port", str(NON_DEFAULT_PORT)],
+            [
+                "lemonade-server-dev",
+                "serve",
+                "--port",
+                str(NON_DEFAULT_PORT),
+                "--no-tray",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
