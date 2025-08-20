@@ -42,10 +42,39 @@ A maintainer will apply one of these labels to indicate the status:
 Submit a PR to contribute code. Maintainers:
 - @danielholanda
 - @jeremyfowers
-- @ramkrishna
+- @ramkrishna2910
 - @vgodsoe
 
 Discuss major changes via an Issue first.
+
+## Code Formatting
+
+We require that all Python files in this repo adhere to black formatting. This is enforced with a black check in CI workflows.
+
+### Setting up Black in VSCode
+
+The easiest way to ensure proper formatting is to enable the black formatter in VSCode with format-on-save:
+
+1. **Install the Python extension**: Install the Python extension for VSCode if you haven't already.
+
+2. **Set black as the default formatter**: 
+   - Open VSCode settings (Ctrl/Cmd + ,)
+   - Search for "Formatter"
+   - Set the Python default formatter to "black"
+
+3. **Enable format-on-save**:
+   - In VSCode settings, search for "format on save"
+   - Check the "Format On Save" option
+
+This will automatically format your code according to black standards whenever you save a file.
+
+### Alternative Setup
+
+You can also install black directly and run it manually:
+```bash
+pip install black
+black your_file.py
+```
 
 ## Testing
 
