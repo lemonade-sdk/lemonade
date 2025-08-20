@@ -101,7 +101,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             capture_output=True,
             text=True,
         )
-        assert result.stdout == "Lemonade Server stopped successfully.\n"
+        assert result.stdout == "Lemonade Server stopped successfully.\n", result.stdout
 
         # Ensure the server is not running
         result = subprocess.run(
@@ -109,7 +109,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             capture_output=True,
             text=True,
         )
-        assert result.stdout == "Server is not running\n"
+        assert result.stdout == "Server is not running\n", result.stdout
 
     def test_003_system_info_command(self):
         """
