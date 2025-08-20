@@ -58,6 +58,9 @@ jobs:
           # Test low-level APIs
           python test/llm_api.py
 
+          # Test server CLI
+          # python test/server_cli.py
+
           # Test high-level APIs
           python examples/api_basic.py
           python examples/api_streaming.py
