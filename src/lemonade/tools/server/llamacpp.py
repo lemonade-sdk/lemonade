@@ -89,7 +89,7 @@ class LlamaServer(WrappedServer):
         """
         Download a model for the wrapper server
         """
-        download_gguf(
+        return download_gguf(
             config_checkpoint=config_checkpoint,
             config_mmproj=config_mmproj,
             do_not_upgrade=do_not_upgrade,
@@ -195,7 +195,7 @@ class LlamaServer(WrappedServer):
             logging.debug(f"Set LD_LIBRARY_PATH to {env['LD_LIBRARY_PATH']}")
 
         # Start subprocess with output capture
-        process = subprocess.Popen(
+        self.process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -210,11 +210,9 @@ class LlamaServer(WrappedServer):
         device_type = "GPU" if use_gpu else "CPU"
         threading.Thread(
             target=self._log_subprocess_output,
-            args=(process, f"LLAMA SERVER {device_type}", self.telemetry),
+            args=(f"LLAMA SERVER {device_type}",),
             daemon=True,
         ).start()
-
-        return process
 
     def _launch_server_subprocess(
         self,
@@ -226,7 +224,7 @@ class LlamaServer(WrappedServer):
     ):
 
         # Attempt loading on GPU first
-        self.process = self._launch_device_backend_subprocess(
+        self._launch_device_backend_subprocess(
             snapshot_files,
             use_gpu=True,
             ctx_size=ctx_size,
@@ -247,7 +245,7 @@ class LlamaServer(WrappedServer):
                 # Used for testing, when the test should fail if GPU didn't work
                 raise Exception("llamacpp GPU loading failed")
 
-            self.process = self._launch_device_backend_subprocess(
+            self._launch_device_backend_subprocess(
                 snapshot_files,
                 use_gpu=False,
                 ctx_size=ctx_size,

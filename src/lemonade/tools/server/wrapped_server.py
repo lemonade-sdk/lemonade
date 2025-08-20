@@ -203,7 +203,7 @@ class WrappedServer(ABC):
     def _wait_for_load(self):
         status_code = None
         while not self.process.poll() and status_code != 200:
-            health_url = f"http://localhost:{self.telemetry.port}/health"
+            health_url = f"http://localhost:{self.port}/health"
             try:
                 health_response = requests.get(health_url)
             except requests.exceptions.ConnectionError:
@@ -279,7 +279,7 @@ class WrappedServer(ABC):
         supports_embeddings = "embeddings" in model_info.get("labels", [])
         supports_reranking = "reranking" in model_info.get("labels", [])
 
-        self.process = self._launch_server_subprocess(
+        self._launch_server_subprocess(
             model_config=model_config,
             snapshot_files=snapshot_files,
             ctx_size=ctx_size,
