@@ -69,26 +69,13 @@ class Testing(unittest.IsolatedAsyncioTestCase):
                 "serve",
                 "--port",
                 str(NON_DEFAULT_PORT),
-                "--no-tray",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
 
-        # Wait for the server to start by checking the port
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > 60:
-                raise TimeoutError("Server failed to start within 60 seconds")
-            try:
-                conn = socket.create_connection(("localhost", NON_DEFAULT_PORT))
-                conn.close()
-                break
-            except socket.error:
-                time.sleep(1)
-
-        # Wait a few other seconds after the port is available
+        # Wait a few seconds after the port is available
         time.sleep(20)
 
         # Now, ensure we can correctly detect that the server is running

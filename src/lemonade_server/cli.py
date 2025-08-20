@@ -144,8 +144,12 @@ def stop():
                 except psutil.NoSuchProcess:
                     pass  # Child already terminated
 
-        # Wait for main process
-        process.wait(timeout=10)
+        # Wait for main process to terminate gracefully
+        # kill if it doesn't terminate gracefully
+        try:
+            process.wait(timeout=5)
+        except psutil.TimeoutExpired:
+            process.kill()
 
         # Kill llama-server child process if it didn't terminate gracefully
         for child in children:
