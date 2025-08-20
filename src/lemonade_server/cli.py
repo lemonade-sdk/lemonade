@@ -615,7 +615,6 @@ def main():
         args.no_tray = True
     else:
         args.no_tray = False
-    
     if args.version:
         version()
     elif args.command == "serve":
