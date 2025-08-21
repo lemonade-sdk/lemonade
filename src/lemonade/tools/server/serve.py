@@ -9,7 +9,6 @@ import tempfile
 import traceback
 from typing import Optional, Union
 import json
-import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status, Request
@@ -47,7 +46,8 @@ from openai.types.responses import (
 )
 
 import lemonade.api as lemonade_api
-import lemonade.tools.server.llamacpp as llamacpp
+from lemonade.tools.server.wrapped_server import WrappedServer
+from lemonade.tools.server.llamacpp import LlamaServer
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.server.webapp import get_webapp_html
 from lemonade.tools.server.utils.port import lifespan
@@ -232,11 +232,8 @@ class Server:
         # Add lock for load/unload operations
         self._load_lock = asyncio.Lock()
 
-        # Subprocess handle for llama_server.exe
-        self.llama_server_process: subprocess.Popen = None
-
-        # Telemetry instance for llama server
-        self.llama_telemetry = llamacpp.LlamaTelemetry()
+        # Subprocess handle for wrapped instance of llama_server.exe, etc.
+        self.wrapped_server: WrappedServer = None
 
     def setup_routes(self, api_prefixes: list[str]):
         for prefix in api_prefixes:
@@ -521,7 +518,7 @@ class Server:
         await self.load_llm(lc)
 
         if self.llm_loaded.recipe == "llamacpp":
-            return llamacpp.completion(completion_request, self.llama_telemetry)
+            return self.wrapped_server.completion(completion_request)
 
         # Check if the model supports reasoning
         reasoning_first_token = self.llm_loaded.reasoning
@@ -656,9 +653,7 @@ class Server:
         await self.load_llm(lc)
 
         if self.llm_loaded.recipe == "llamacpp":
-            return llamacpp.chat_completion(
-                chat_completion_request, self.llama_telemetry
-            )
+            return self.wrapped_server.chat_completion(chat_completion_request)
 
         # Convert chat messages to text using the model's chat template
         text = self.apply_chat_template(
@@ -861,7 +856,7 @@ class Server:
 
         if self.llm_loaded.recipe == "llamacpp":
             try:
-                return llamacpp.embeddings(embeddings_request, self.llama_telemetry)
+                return self.wrapped_server.embeddings(embeddings_request)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 # Check if model has embeddings label
                 model_info = ModelManager().supported_models.get(
@@ -884,7 +879,7 @@ class Server:
 
     async def reranking(self, reranking_request: RerankingRequest):
         """
-        Rerank documents based on their relevance to a query using the llamacpp server.
+        Rerank documents based on their relevance to a query.
         """
         # Initialize load config from reranking request
         lc = LoadConfig(model_name=reranking_request.model)
@@ -894,7 +889,7 @@ class Server:
 
         if self.llm_loaded.recipe == "llamacpp":
             try:
-                return llamacpp.reranking(reranking_request, self.llama_telemetry)
+                return self.wrapped_server.reranking(reranking_request)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 # Check if model has reranking label
                 model_info = ModelManager().supported_models.get(
@@ -1287,7 +1282,7 @@ class Server:
         """
         # If using llama server, get telemetry from the telemetry instance
         if self.llm_loaded and self.llm_loaded.recipe == "llamacpp":
-            return self.llama_telemetry.get_telemetry_data()
+            return self.wrapped_server.telemetry.get_telemetry_data()
 
         # For built-in server, use the existing telemetry
         return {
@@ -1466,9 +1461,9 @@ class Server:
             ):
                 if (
                     self.llm_loaded.recipe == "llamacpp"
-                    and self.llama_server_process.poll()
+                    and self.wrapped_server.process.poll()
                 ):
-                    # llama-server process has gone away for some reason, so we should
+                    # wrapped server process has gone away for some reason, so we should
                     # proceed with loading to get it back
                     pass
                 else:
@@ -1484,12 +1479,10 @@ class Server:
             logging.info(f"Loading llm: {config.model_name}")
             try:
                 if config_to_use.recipe == "llamacpp":
-                    self.llama_server_process = llamacpp.server_load(
+                    self.wrapped_server = LlamaServer(self.llamacpp_backend)
+                    self.wrapped_server.load(
                         model_config=config_to_use,
-                        telemetry=self.llama_telemetry,
-                        backend=self.llamacpp_backend,
                         ctx_size=self.ctx_size,
-                        # Models should only upgrade when using the pull endpoint
                         do_not_upgrade=True,
                     )
 
@@ -1530,7 +1523,7 @@ class Server:
                     await self._generate_semaphore.acquire()
 
             if self.llm_loaded.recipe == "llamacpp":
-                self.llama_server_process.terminate()
+                self.wrapped_server.process.terminate()
 
             self.llm_loaded = None
             self.tokenizer = None
