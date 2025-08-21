@@ -47,11 +47,11 @@ Submit a PR to contribute code. Maintainers:
 
 Discuss major changes via an Issue first.
 
-### Code Formatting
+## Code Formatting
 
 We require that all Python files in this repo adhere to black formatting. This is enforced with a black check in CI workflows.
 
-### Setting up Black in VSCode
+### Running Black formatting
 
 The easiest way to ensure proper formatting is to enable the black formatter in VSCode with format-on-save:
 
@@ -68,13 +68,33 @@ The easiest way to ensure proper formatting is to enable the black formatter in 
 
 This will automatically format your code according to black standards whenever you save a file.
 
-### Alternative Setup
+#### Alternative Setup
 
 You can also install black directly and run it manually:
 ```bash
+# Install black (if not already installed)
 pip install black
+
+# Run black formatter on your file
 black your_file.py
 ```
+
+### Linting
+
+We use linting tools to maintain code quality and catch potential issues. The project uses standard Python linting tools that are automatically run in CI.
+
+#### Running Linters Locally
+
+To run linting checks locally before submitting a PR:
+
+```bash
+# Install linting dependencies (if not already installed)
+pip install pylint
+
+# Run pylint from the root of the repo
+pylint src/lemonade --rcfile .pylintrc --disable E0401
+```
+This will show linting warnings and errors in your terminal.
 
 ## Testing
 
