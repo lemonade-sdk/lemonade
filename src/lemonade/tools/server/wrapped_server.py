@@ -98,7 +98,6 @@ class WrappedServer(ABC):
                 detail=msg,
             )
 
-    @property
     def address(self) -> str:
         """
         Generate the base URL for the server.
@@ -295,7 +294,7 @@ class WrappedServer(ABC):
 
     def chat_completion(self, chat_completion_request: ChatCompletionRequest):
         client = OpenAI(
-            base_url=self.address,
+            base_url=self.address(),
             api_key="lemonade",
         )
 
@@ -364,7 +363,7 @@ class WrappedServer(ABC):
         """
 
         client = OpenAI(
-            base_url=self.address,
+            base_url=self.address(),
             api_key="lemonade",
         )
 
@@ -432,7 +431,7 @@ class WrappedServer(ABC):
             Embeddings response from the wrapped server
         """
         client = OpenAI(
-            base_url=self.address,
+            base_url=self.address(),
             api_key="lemonade",
         )
 
@@ -472,7 +471,7 @@ class WrappedServer(ABC):
 
             # Call the reranking endpoint directly since it's not supported by the OpenAI API
             response = requests.post(
-                f"{self.address}/rerank",
+                f"{self.address()}/rerank",
                 json=request_dict,
             )
             response.raise_for_status()
