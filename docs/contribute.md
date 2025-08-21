@@ -47,7 +47,7 @@ Submit a PR to contribute code. Maintainers:
 
 Discuss major changes via an Issue first.
 
-## Code Formatting
+### Code Formatting
 
 We require that all Python files in this repo adhere to black formatting. This is enforced with a black check in CI workflows.
 
