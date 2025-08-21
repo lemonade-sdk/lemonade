@@ -226,7 +226,7 @@ class WrappedServer(ABC):
         ctx_size: int,
         supports_embeddings: bool = False,
         supports_reranking: bool = False,
-    ) -> subprocess.Popen:
+    ):
         """
         Launch wrapped server subprocess with appropriate configuration.
 
@@ -234,9 +234,6 @@ class WrappedServer(ABC):
             snapshot_files: Dictionary of model files to load
             supports_embeddings: Whether the model supports embeddings
             supports_reranking: Whether the model supports reranking
-
-        Returns:
-            Subprocess handle for the wrapped server
         """
 
     @abstractmethod
