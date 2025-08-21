@@ -346,7 +346,11 @@ def install_llamacpp(backend):
 
         # Identify and set HIP ID
         if backend == "rocm":
-            hip_id = identify_hip_id()
+            try:
+                hip_id = identify_hip_id()
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                hip_id = 0
+                logging.warning(f"Error identifying HIP ID: {e}. Falling back to 0.")
             env_file_path = os.path.join(llama_server_exe_dir, ".env")
             set_key(env_file_path, "HIP_VISIBLE_DEVICES", str(hip_id))
 
