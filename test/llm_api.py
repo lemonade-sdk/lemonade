@@ -42,6 +42,9 @@ corpus_dir = None
 
 def download_llamacpp_binary(backend: str = "vulkan"):
     """Download the appropriate llama.cpp binary for the current platform"""
+    # Get the system type
+    system = platform.system().lower()
+    
     # Install llamacpp binary using the official function
     install_llamacpp(backend)
 
@@ -54,7 +57,6 @@ def download_llamacpp_binary(backend: str = "vulkan"):
 
     # Find shared libraries directory for Linux
     lib_dir = None
-    system = platform.system().lower()
     if system != "windows":
         # Get the binary directory
         binary_dir = get_llama_folder_path(backend)
@@ -83,7 +85,7 @@ class TestLlamaCpp(unittest.TestCase):
         except Exception as e:
             error_msg = f"Failed to download llama.cpp binary: {str(e)}"
             logger.error(error_msg)
-            raise unittest.SkipTest(error_msg)
+            raise Exception(error_msg)
 
         # Use a small GGUF model for testing
         cls.model_name = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
@@ -109,7 +111,7 @@ class TestLlamaCpp(unittest.TestCase):
         except Exception as e:
             error_msg = f"Failed to download test model: {str(e)}"
             logger.error(error_msg)
-            raise unittest.SkipTest(error_msg)
+            raise Exception(error_msg)
 
     def setUp(self):
         self.state = State(
