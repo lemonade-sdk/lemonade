@@ -27,8 +27,8 @@ jobs:
         include:
           - backend: vulkan
             runner: [stx, Windows]
-          # - backend: rocm
-          #   runner: [stx-halo, Windows]
+          - backend: rocm
+            runner: [stx-halo, Windows]
 
     runs-on: ${{ matrix.runner }}
     defaults:
@@ -81,62 +81,64 @@ jobs:
           python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
           python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 
-  # test-server-llamacpp-ubuntu:
-  #   env:
-  #     LEMONADE_CI_MODE: "True"
-  #     CONDA_ENV_PATH: ./lemon-ci-env
-  #     LEMONADE_CACHE_DIR: ./ci-cache
+  test-server-llamacpp-ubuntu:
+    env:
+      LEMONADE_CI_MODE: "True"
+      CONDA_ENV_PATH: ./lemon-ci-env
+      LEMONADE_CACHE_DIR: ./ci-cache
 
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - backend: rocm
-  #           runner: [stx-halo, Linux]
+    strategy:
+      matrix:
+        include:
+          - backend: rocm
+            runner: [stx-halo, Linux]
+          - backend: vulkan
+            runner: [stx, Linux]
 
-  #   runs-on: ${{ matrix.runner }}
-  #   defaults:
-  #     run:
-  #       shell: bash
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
 
-  #   steps:
-  #     - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v3
 
-  #     - name: Set up Conda environment
-  #       run: |
-  #         conda create -p $CONDA_ENV_PATH python=3.10 -y
-  #         conda init
+      - name: Set up Conda environment
+        run: |
+          conda create -p $CONDA_ENV_PATH python=3.10 -y
+          conda init
 
-  #     - name: Install dependencies
-  #       run: |
-  #         source ~/miniforge3/etc/profile.d/conda.sh
-  #         conda activate $CONDA_ENV_PATH
-  #         python -m pip install --upgrade pip
-  #         conda install -y pylint
-  #         pip install -e .[llm]
-  #         pip check
+      - name: Install dependencies
+        run: |
+          source ~/miniforge3/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
+          python -m pip install --upgrade pip
+          conda install -y pylint
+          pip install -e .[llm]
+          pip check
 
-  #         echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
-  #     - name: Run lemonade Llamacpp CLI tests
-  #       env:
-  #         HF_HOME: "${{ env.HF_HOME }}"
-  #       run: |
-  #         source ~/miniforge3/etc/profile.d/conda.sh
-  #         conda activate $CONDA_ENV_PATH
+      - name: Run lemonade Llamacpp CLI tests
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          source ~/miniforge3/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
 
-  #         if [ "${{ matrix.backend }}" != "rocm" ]; then
-  #           lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-  #         fi
+          if [ "${{ matrix.backend }}" != "rocm" ]; then
+            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+          fi
 
-  #         lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-  #         lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2 || exit 1
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2 || exit 1
 
-  #     - name: Run lemonade Llamacpp API tests
-  #       env:
-  #         HF_HOME: "${{ env.HF_HOME }}"
-  #       run: |
-  #         source ~/miniforge3/etc/profile.d/conda.sh
-  #         conda activate $CONDA_ENV_PATH
+      - name: Run lemonade Llamacpp API tests
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          source ~/miniforge3/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
 
-  #         python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
-  #         python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
+          python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
+          python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
