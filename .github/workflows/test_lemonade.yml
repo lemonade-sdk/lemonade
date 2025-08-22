@@ -38,7 +38,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pylint
           python -m pip check
-          pip install -e .[dev]
+          pip install -e .[dev,oga-cpu]
+          lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
       - name: Lint with Black
         uses: psf/black@stable
         with:
