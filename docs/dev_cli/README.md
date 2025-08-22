@@ -2,6 +2,7 @@
 
 Contents:
 
+- [NPU and Hybrid Installation Requirements](#npu-and-hybrid-installation-requirements)
 - [Prompting](#prompting)
 - [Accuracy](#accuracy)
 - [Benchmarking](#benchmarking)
@@ -27,6 +28,19 @@ Can be read like this:
 
 The `lemonade -h` command will show you which options and Tools are available, and `lemonade TOOL -h` will tell you more about that specific Tool.
 
+### NPU and Hybrid Installation Requirements
+
+Before we jump in to the tools, to use **NPU** or **Hybrid** acceleration, you need specific hardware and software:
+
+### Requirements
+- **Processor**: AMD Ryzen™ AI 300-series processors (e.g., Strix Point, Krackan Point)
+- **Operating System**: Windows 11
+- **NPU Driver**: Download and install the [NPU Driver](https://ryzenai.docs.amd.com/en/latest/inst.html#install-npu-drivers) before proceeding
+- **Installation**: Use `pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple` to install with NPU and Hybrid support
+
+For detailed installation instructions and additional options, visit the [Installation Options](https://lemonade-server.ai/install_options.html) page.
+
+> **What is Hybrid?** Hybrid mode leverages both the Neural Processing Unit (NPU) and integrated GPU (iGPU) to optimize LLM performance. See the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) table for hardware compatibility.
 
 ### Prompting
 
@@ -36,7 +50,10 @@ OGA Hybrid:
 ```bash
     lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
 ```
-
+OGA NPU:
+```bash
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix oga-load --device npu --dtype int4 llm-prompt -p "Hello, my thoughts are" -t
+```
 Hugging Face:
 ```bash
     lemonade -i facebook/opt-125m huggingface-load llm-prompt -p "Hello, my thoughts are" -t
@@ -61,7 +78,10 @@ OGA Hybrid:
 ```bash
     lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 accuracy-mmlu --tests management
 ```
-
+OGA NPU:
+```bash
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix oga-load --device npu --dtype int4 accuracy-mmlu --tests management
+```
 Hugging Face:
 ```bash
     lemonade -i facebook/opt-125m huggingface-load accuracy-mmlu --tests management
@@ -79,7 +99,10 @@ OGA Hybrid:
 ```bash
     lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 oga-bench
 ```
-
+OGA Hybrid:
+```bash
+    lemonade -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix oga-load --device npu --dtype int4 oga-bench
+```
 Hugging Face:
 ```bash
     lemonade -i facebook/opt-125m huggingface-load huggingface-bench
