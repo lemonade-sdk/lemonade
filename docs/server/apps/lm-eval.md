@@ -5,7 +5,7 @@ Refer to [Lemonade Server](../server_spec.md) to learn more about the server int
 
 ## What is LM-Evaluation-Harness?
 
-[LM-Evaluation-Harness](https://github.com/EleutherAI/lm-evaluation-harness) (often called `lm-eval`) is an open-source framework for evaluating language models across a wide variety of tasks and benchmarks. Developed by EleutherAI, it has become a standard tool in the AI research community for consistent evaluation of language model capabilities.
+[LM-Evaluation-Harness](https://www.eleuther.ai/projects/large-language-model-evaluation) (often called `lm-eval`) is an open-source framework for evaluating language models across a wide variety of tasks and benchmarks. Developed by EleutherAI, it has become a standard tool in the AI research community for consistent evaluation of language model capabilities.
 
 The framework supports evaluating models on more than 200 tasks and benchmarks, including popular ones such as:
 

@@ -17,7 +17,7 @@ Lemonade SDK is provided as a package on PyPI, the Python Package Index, as [lem
 1. Make sure all of the changes you want to release have been merged to `main`.
 1. Go to the [Lemonade SDK GitHub front page](https://github.com/lemonade-sdk/lemonade) and click "Releases" in the side bar.
 1. At the top of the page, click "Draft a new release".
-1. Click "Choose a tag" (near the top of the page) and write `v` (lowercase), followed by the contents of the string in [version.py](https://github.com/onnx/lemonade-sdk/lemonade/main/src/lemonade/version.py).
+1. Click "Choose a tag" (near the top of the page) and write `v` (lowercase), followed by the contents of the string in [version.py](https://github.com/lemonade-sdk/lemonade/blob/main/src/lemonade/version.py).
   - For example, if `version.py` contains `__version__ = "4.0.5"`, the string is `4.0.5` and you should write `v4.0.5` into the text box.
   - Note: This is not optional because the release action only runs if the tag name starts with `v`.
 1. Click the "+Create new tag:... on publish" button that appears under the next box.
