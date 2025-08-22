@@ -11,7 +11,13 @@ import requests
 from packaging.version import parse as parse_version
 
 from lemonade.version import __version__
-from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
+import platform
+
+# Import the appropriate tray implementation based on platform
+if platform.system() == "Darwin":  # macOS
+    from lemonade.tools.server.utils.macos_tray import MacOSSystemTray as SystemTray, Menu, MenuItem
+else:  # Windows/Linux
+    from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
 
 
 class OutputDuplicator:
@@ -187,15 +193,25 @@ class LemonadeTray(SystemTray):
         Show the log file in a new window.
         """
         try:
-            subprocess.Popen(
-                [
+            system = platform.system().lower()
+            if system == "darwin":  # macOS
+                # Use Terminal.app to show logs
+                subprocess.Popen([
+                    "osascript", "-e",
+                    f'tell application "Terminal" to do script "tail -f {self.log_file}"'
+                ])
+            elif system == "windows":
+                # Use PowerShell on Windows
+                subprocess.Popen([
                     "powershell",
                     "Start-Process",
                     "powershell",
                     "-ArgumentList",
                     f'"-NoExit", "Get-Content -Wait {self.log_file}"',
-                ]
-            )
+                ])
+            else:
+                # This should never happen since tray is only supported on Windows and macOS
+                self.logger.error(f"Unsupported platform for show_logs: {system}")
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error opening logs: {str(e)}")
 
@@ -224,7 +240,7 @@ class LemonadeTray(SystemTray):
         try:
             response = requests.get(
                 f"http://localhost:{self.port}/api/v0/health",
-                timeout=0.1,  # Add timeout
+                timeout=2.0,
             )
             response.raise_for_status()
             response_data = response.json()
@@ -470,6 +486,26 @@ class LemonadeTray(SystemTray):
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)
 
+
+
+    def show_balloon_notification(self, title, message, timeout=5000):
+        """
+        Show a notification (platform-aware).
+        """
+        system = platform.system().lower()
+        if system == "darwin":  # macOS
+            try:
+                # Use AppleScript to show notification
+                script = f'''
+                display notification "{message}" with title "{title}" subtitle "{self.app_name}"
+                '''
+                subprocess.run(["osascript", "-e", script], check=True)
+            except Exception as e:
+                self.logger.error(f"Failed to show notification: {e}")
+        else:
+            # Use the Windows implementation
+            super().show_balloon_notification(title, message, timeout)
+
     def start_server(self):
         """
         Start the uvicorn server.
@@ -482,17 +518,7 @@ class LemonadeTray(SystemTray):
         """
         Run the Lemonade tray application.
         """
-
-        # Register window class and create window
-        self.register_window_class()
-        self.create_window()
-
-        # Set up Windows console control handler for CTRL+C
-        self.console_handler = self.setup_console_control_handler(self.logger)
-
-        # Add tray icon
-        self.add_tray_icon()
-
+        
         # Start the background model mapping update thread
         self.model_update_thread = threading.Thread(
             target=self.update_downloaded_models_background, daemon=True
@@ -518,8 +544,8 @@ class LemonadeTray(SystemTray):
             ),
         )
 
-        # Run the message loop in the main thread
-        self.message_loop()
+        # Call the parent run method which handles platform-specific initialization
+        super().run()
 
     def exit_app(self, icon, item):
         """
@@ -534,8 +560,15 @@ class LemonadeTray(SystemTray):
         if self.version_check_thread and self.version_check_thread.is_alive():
             self.version_check_thread.join(timeout=1)
 
-        # Call parent exit method
-        super().exit_app(icon, item)
+        # Platform-specific exit handling
+        system = platform.system().lower()
+        if system == "darwin":  # macOS
+            # For macOS, quit the rumps application
+            import rumps
+            rumps.quit_application()
+        else:
+            # Call parent exit method for Windows
+            super().exit_app(icon, item)
 
         # Stop the server using the CLI stop command to ensure a rigorous cleanup
         # This must be a subprocess to ensure the cleanup doesnt kill itself

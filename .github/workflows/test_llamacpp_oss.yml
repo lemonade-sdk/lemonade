@@ -142,3 +142,61 @@ jobs:
 
           python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
           python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
+
+  test-server-llamacpp-macos:
+    env:
+      LEMONADE_CI_MODE: "True"
+      CONDA_ENV_PATH: ./lemon-ci-env
+      LEMONADE_CACHE_DIR: ./ci-cache
+
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+        backend: ['metal']
+
+    runs-on: macos-latest  # Apple Silicon (M1) runners
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install rumps for macOS tray support
+          pip install rumps
+          # Install lemonade with dev dependencies
+          pip install -e .[dev]
+          pip check
+
+          echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+
+      - name: Test macOS Apple Silicon support
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          python test/server_llamacpp.py metal
+
+      - name: Run lemonade Llamacpp CLI tests (Metal)
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          # Test Metal backend with CPU (should work)
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend metal --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+          
+          # Test Metal benchmark
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend metal llamacpp-bench -w 0 -i 2 || exit 1
+
+      - name: Run lemonade Llamacpp API tests (Metal)
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          python test/server_llamacpp.py metal || exit 1
+          python test/server_llamacpp.py metal --offline || exit 1

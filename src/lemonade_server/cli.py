@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 from typing import Tuple, Optional
 import psutil
 from typing import List
@@ -498,7 +499,7 @@ def _add_server_arguments(parser):
         "--llamacpp",
         type=str,
         help="LlamaCpp backend to use",
-        choices=["vulkan", "rocm"],
+        choices=["vulkan", "rocm", "metal"],
         default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(
@@ -531,7 +532,7 @@ def main():
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
     _add_server_arguments(serve_parser)
-    if os.name == "nt":
+    if os.name == "nt" or platform.system() == "Darwin":
         serve_parser.add_argument(
             "--no-tray",
             action="store_true",
@@ -607,10 +608,18 @@ def main():
         help="Lemonade Server model name to run",
     )
     _add_server_arguments(run_parser)
+    # Add --no-tray option for platforms that support tray (Windows and macOS)
+    if os.name == "nt" or platform.system() == "Darwin":
+        run_parser.add_argument(
+            "--no-tray",
+            action="store_true",
+            help="Do not show a tray icon when the server is running",
+        )
 
     args = parser.parse_args()
 
-    if os.name != "nt":
+    # Disable tray on unsupported platforms (only Windows and macOS are supported)
+    if os.name != "nt" and platform.system() != "Darwin":
         args.no_tray = True
 
     if args.version:
