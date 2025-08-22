@@ -7,11 +7,12 @@ import webbrowser
 from pathlib import Path
 import logging
 import tempfile
+import platform
+
 import requests
 from packaging.version import parse as parse_version
 
 from lemonade.version import __version__
-import platform
 
 # Import the appropriate tray implementation based on platform
 if platform.system() == "Darwin":  # macOS
@@ -507,7 +508,7 @@ class LemonadeTray(SystemTray):
                 display notification "{message}" with title "{title}" subtitle "{self.app_name}"
                 """
                 subprocess.run(["osascript", "-e", script], check=True)
-            except Exception as e:
+            except (subprocess.CalledProcessError, OSError, FileNotFoundError) as e:
                 self.logger.error(f"Failed to show notification: {e}")
         else:
             # Use the Windows implementation
