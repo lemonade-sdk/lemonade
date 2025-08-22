@@ -516,7 +516,8 @@ def _add_server_arguments(parser):
         default=DEFAULT_CTX_SIZE,
     )
 
-    if os.name == "nt":
+    # Add --no-tray option for platforms that support tray (Windows and macOS)
+    if os.name == "nt" or platform.system() == "Darwin":
         parser.add_argument(
             "--no-tray",
             action="store_true",
@@ -543,13 +544,6 @@ def main():
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
     _add_server_arguments(serve_parser)
-
-    if os.name == "nt" or platform.system() == "Darwin":
-        serve_parser.add_argument(
-            "--no-tray",
-            action="store_true",
-            help="Do not show a tray icon when the server is running",
-        )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Check if server is running")
@@ -620,13 +614,6 @@ def main():
         help="Lemonade Server model name to run",
     )
     _add_server_arguments(run_parser)
-    # Add --no-tray option for platforms that support tray (Windows and macOS)
-    if os.name == "nt" or platform.system() == "Darwin":
-        run_parser.add_argument(
-            "--no-tray",
-            action="store_true",
-            help="Do not show a tray icon when the server is running",
-        )
 
     args = parser.parse_args()
 
