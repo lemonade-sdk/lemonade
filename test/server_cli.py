@@ -14,13 +14,14 @@ import asyncio
 import socket
 import time
 import json
+import os
 from threading import Thread
 import sys
 import io
 import httpx
 from lemonade import __version__ as version_number
 
-from utils.server_base import kill_process_on_port, PORT
+from utils.server_base import kill_process_on_port, PORT, MODEL_NAME
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -104,11 +105,76 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         )
         assert result.stdout == "Server is not running\n", result.stdout
 
-    def test_003_system_info_command(self):
+    def test_003_run_command(self):
+        """
+        Test the run command functionality.
+        """
+
+        # Close the server (if it's still running)
+        result = subprocess.run(
+            ["lemonade-server-dev", "stop"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Run the server with the specified model and port
+        cmd = ["lemonade-server-dev", "run", MODEL_NAME, "--port", str(PORT)]
+        if os.name == "nt":
+            cmd.append("--no-tray")
+        server_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={"LEMONADE_DISABLE_BROWSER": "1", **os.environ},
+        )
+
+        # Wait for server to start
+        start_time = time.time()
+        while True:
+            result = subprocess.run(
+                ["lemonade-server-dev", "status"],
+                capture_output=True,
+                text=True,
+            )
+            print(result.stdout)
+            if result.stdout == f"Server is running on port {PORT}\n":
+                break
+            if time.time() - start_time > 60:
+                raise TimeoutError("Server failed to start within 60 seconds")
+            time.sleep(1)
+
+        # Use the health endpoint to verify the model is loaded
+        async def check_health():
+            async with httpx.AsyncClient(
+                base_url=f"http://localhost:{PORT}/api/v1", timeout=180.0
+            ) as client:
+                health_response = await client.get("/health")
+                health_data = health_response.json()
+                return health_data["model_loaded"]
+
+        # Run the async health check
+        start_time = time.time()
+        while True:
+            # Keep track of the stdout and stderr of the server process
+            print(server_process.stdout.readline())
+            print(server_process.stderr.readline())
+
+            # Keep checking the status until the model is loaded or the timeout is reached
+            if time.time() - start_time > 180:
+                raise TimeoutError("Model failed to load")
+            try:
+                model_loaded = asyncio.run(check_health())
+            except httpx.ConnectError as e:  # pylint: disable=broad-exception-caught
+                print(f"Health check failed: {e}... trying again")
+            if model_loaded == MODEL_NAME:
+                break
+            time.sleep(1)
+
+    def test_004_system_info_command(self):
         """
         Test the system-info CLI command with both default and verbose modes.
         """
-
         # Test default (non-verbose) table output
         result = subprocess.run(
             ["lemonade", "system-info"], capture_output=True, text=True, timeout=60

@@ -183,7 +183,7 @@ Results are provided in a structured format at the end of evaluation, with both 
 ## References
 
 - [LM-Evaluation-Harness GitHub Repository](https://github.com/EleutherAI/lm-evaluation-harness)
-- [EleutherAI Documentation](https://www.eleuther.ai/projects/lm-evaluation-harness) 
+- [EleutherAI Documentation](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md) 
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
