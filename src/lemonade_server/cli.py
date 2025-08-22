@@ -567,17 +567,14 @@ def main():
         "model",
         help="Lemonade Server model name",
         nargs="+",
-        required=True,
     )
     pull_parser.add_argument(
         "--checkpoint",
         help="For registering a new model: Hugging Face checkpoint to source the model from",
-        required=True,
     )
     pull_parser.add_argument(
         "--recipe",
         help="For registering a new model: lemonade.api recipe to use with the model",
-        required=True,
     )
     pull_parser.add_argument(
         "--reasoning",
