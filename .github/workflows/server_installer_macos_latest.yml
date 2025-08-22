@@ -43,10 +43,6 @@ jobs:
             echo "Running on Apple Silicon"
           fi
 
-      - name: Test macOS Apple Silicon support
-        run: |
-          python test/server_llamacpp.py metal
-
       - name: Create macOS installer package
         run: |
           # Create installer directory structure

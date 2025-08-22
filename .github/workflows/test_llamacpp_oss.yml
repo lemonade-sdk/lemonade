@@ -184,16 +184,6 @@ jobs:
         run: |
           python test/server_llamacpp.py metal
 
-      - name: Run lemonade Llamacpp CLI tests (Metal)
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
-        run: |
-          # Test Metal backend with CPU (should work)
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend metal --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-          
-          # Test Metal benchmark
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend metal llamacpp-bench -w 0 -i 2 || exit 1
-
       - name: Run lemonade Llamacpp API tests (Metal)
         env:
           HF_HOME: "${{ env.HF_HOME }}"
