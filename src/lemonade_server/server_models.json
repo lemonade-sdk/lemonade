@@ -31,7 +31,7 @@
         "labels": ["reasoning"]
     },
     "DeepSeek-R1-Distill-Qwen-7B-CPU": {
-        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-7B-awq-asym-uint4-g128-lmhead-onnx-cpu",
         "recipe": "oga-cpu",
         "suggested": true,
         "labels": ["reasoning"]
@@ -189,8 +189,14 @@
         "recipe": "oga-igpu",
         "suggested": false
     },
-    "Qwen3-0.6B-GGUF": {
+    "Qwen3-0.6B-GGUF-Q4_0": {
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["reasoning"]
+    },
+    "Qwen3-0.6B-GGUF-Q4_1": {
+        "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_1",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": ["reasoning"]
