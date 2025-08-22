@@ -21,6 +21,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
     strategy:
       matrix:
