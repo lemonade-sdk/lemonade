@@ -171,7 +171,6 @@ class Testing(unittest.IsolatedAsyncioTestCase):
                 break
             time.sleep(1)
 
-
     def test_004_system_info_command(self):
         """
         Test the system-info CLI command with both default and verbose modes.
