@@ -130,7 +130,9 @@ def get_llama_version(backend: str) -> str:
     elif backend == "metal":
         return LLAMA_VERSION_METAL
     else:
-        raise ValueError(f"Unsupported backend: {backend}. Supported: vulkan, rocm, metal")
+        raise ValueError(
+            f"Unsupported backend: {backend}. Supported: vulkan, rocm, metal"
+        )
 
 
 def get_llama_folder_path(backend: str):
@@ -146,7 +148,7 @@ def get_llama_exe_path(exe_name: str, backend: str):
     """
     base_dir = get_llama_folder_path(backend)
     system = platform.system().lower()
-    
+
     if system == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
     elif system == "darwin":  # macOS
@@ -371,23 +373,30 @@ def install_llamacpp(backend):
         if filename.endswith(".zip"):
             with zipfile.ZipFile(llama_archive_path, "r") as zip_ref:
                 zip_ref.extractall(llama_server_exe_dir)
-            
+
             # On Unix-like systems (macOS/Linux), make executables executable
             import platform
+
             if platform.system().lower() in ["darwin", "linux"]:
                 import stat
+
                 # Find and make executable files executable
                 for root, dirs, files in os.walk(llama_server_exe_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
                         # Make files in bin/ directories executable
-                        if "bin" in root.split(os.sep) or file in ["llama-server", "llama-simple"]:
+                        if "bin" in root.split(os.sep) or file in [
+                            "llama-server",
+                            "llama-simple",
+                        ]:
                             try:
                                 current_permissions = os.stat(file_path).st_mode
                                 os.chmod(file_path, current_permissions | stat.S_IEXEC)
                                 logging.debug(f"Made {file_path} executable")
                             except Exception as e:
-                                logging.warning(f"Could not make {file_path} executable: {e}")
+                                logging.warning(
+                                    f"Could not make {file_path} executable: {e}"
+                                )
         else:
             raise NotImplementedError(f"Unsupported archive format: {filename}")
 
@@ -892,7 +901,9 @@ def get_hip_devices():
     try:
         libhip = ctypes.CDLL(matching_files[0])
     except OSError:
-        raise RuntimeError(f"Could not load HIP runtime library from {matching_files[0]}")
+        raise RuntimeError(
+            f"Could not load HIP runtime library from {matching_files[0]}"
+        )
 
     # Setup function signatures
     hipError_t = c_int

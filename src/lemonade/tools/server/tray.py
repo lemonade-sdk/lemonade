@@ -15,7 +15,11 @@ import platform
 
 # Import the appropriate tray implementation based on platform
 if platform.system() == "Darwin":  # macOS
-    from lemonade.tools.server.utils.macos_tray import MacOSSystemTray as SystemTray, Menu, MenuItem
+    from lemonade.tools.server.utils.macos_tray import (
+        MacOSSystemTray as SystemTray,
+        Menu,
+        MenuItem,
+    )
 else:  # Windows/Linux
     from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
 
@@ -196,19 +200,24 @@ class LemonadeTray(SystemTray):
             system = platform.system().lower()
             if system == "darwin":  # macOS
                 # Use Terminal.app to show logs
-                subprocess.Popen([
-                    "osascript", "-e",
-                    f'tell application "Terminal" to do script "tail -f {self.log_file}"'
-                ])
+                subprocess.Popen(
+                    [
+                        "osascript",
+                        "-e",
+                        f'tell application "Terminal" to do script "tail -f {self.log_file}"',
+                    ]
+                )
             elif system == "windows":
                 # Use PowerShell on Windows
-                subprocess.Popen([
-                    "powershell",
-                    "Start-Process",
-                    "powershell",
-                    "-ArgumentList",
-                    f'"-NoExit", "Get-Content -Wait {self.log_file}"',
-                ])
+                subprocess.Popen(
+                    [
+                        "powershell",
+                        "Start-Process",
+                        "powershell",
+                        "-ArgumentList",
+                        f'"-NoExit", "Get-Content -Wait {self.log_file}"',
+                    ]
+                )
             else:
                 # This should never happen since tray is only supported on Windows and macOS
                 self.logger.error(f"Unsupported platform for show_logs: {system}")
@@ -486,8 +495,6 @@ class LemonadeTray(SystemTray):
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)
 
-
-
     def show_balloon_notification(self, title, message, timeout=5000):
         """
         Show a notification (platform-aware).
@@ -496,9 +503,9 @@ class LemonadeTray(SystemTray):
         if system == "darwin":  # macOS
             try:
                 # Use AppleScript to show notification
-                script = f'''
+                script = f"""
                 display notification "{message}" with title "{title}" subtitle "{self.app_name}"
-                '''
+                """
                 subprocess.run(["osascript", "-e", script], check=True)
             except Exception as e:
                 self.logger.error(f"Failed to show notification: {e}")
@@ -518,7 +525,7 @@ class LemonadeTray(SystemTray):
         """
         Run the Lemonade tray application.
         """
-        
+
         # Start the background model mapping update thread
         self.model_update_thread = threading.Thread(
             target=self.update_downloaded_models_background, daemon=True
@@ -565,6 +572,7 @@ class LemonadeTray(SystemTray):
         if system == "darwin":  # macOS
             # For macOS, quit the rumps application
             import rumps
+
             rumps.quit_application()
         else:
             # Call parent exit method for Windows

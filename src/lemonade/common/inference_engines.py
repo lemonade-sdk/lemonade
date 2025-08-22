@@ -237,8 +237,12 @@ class LlamaCppDetector(BaseEngineDetector):
                     return None
                 # Check if we're on macOS
                 import platform
+
                 if platform.system().lower() != "darwin":
-                    return {"available": False, "error": "Metal backend only available on macOS"}
+                    return {
+                        "available": False,
+                        "error": "Metal backend only available on macOS",
+                    }
                 device_supported = True
             else:
                 # Vulkan and ROCm backends

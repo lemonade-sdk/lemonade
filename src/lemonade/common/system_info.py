@@ -791,21 +791,30 @@ class MacOSSystemInfo(SystemInfo):
             cpu_name = subprocess.check_output(
                 ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
             ).strip()
-            
+
             # Get core counts
-            physical_cores = int(subprocess.check_output(
-                ["sysctl", "-n", "hw.physicalcpu"], text=True
-            ).strip())
-            
-            logical_cores = int(subprocess.check_output(
-                ["sysctl", "-n", "hw.logicalcpu"], text=True
-            ).strip())
-            
+            physical_cores = int(
+                subprocess.check_output(
+                    ["sysctl", "-n", "hw.physicalcpu"], text=True
+                ).strip()
+            )
+
+            logical_cores = int(
+                subprocess.check_output(
+                    ["sysctl", "-n", "hw.logicalcpu"], text=True
+                ).strip()
+            )
+
             # Get CPU frequency (if available)
             try:
-                max_freq = int(subprocess.check_output(
-                    ["sysctl", "-n", "hw.cpufrequency_max"], text=True
-                ).strip()) // 1_000_000  # Convert to MHz
+                max_freq = (
+                    int(
+                        subprocess.check_output(
+                            ["sysctl", "-n", "hw.cpufrequency_max"], text=True
+                        ).strip()
+                    )
+                    // 1_000_000
+                )  # Convert to MHz
             except (subprocess.CalledProcessError, ValueError):
                 max_freq = None
 
@@ -815,7 +824,7 @@ class MacOSSystemInfo(SystemInfo):
                 "threads": logical_cores,
                 "available": True,
             }
-            
+
             if max_freq:
                 cpu_info["max_clock_speed_mhz"] = max_freq
 
@@ -836,7 +845,10 @@ class MacOSSystemInfo(SystemInfo):
         Returns:
             dict: AMD iGPU device information.
         """
-        return {"available": False, "error": "AMD GPUs not available on Apple Silicon Macs"}
+        return {
+            "available": False,
+            "error": "AMD GPUs not available on Apple Silicon Macs",
+        }
 
     def get_amd_dgpu_devices(self, include_inference_engines: bool = False) -> list:
         """
@@ -846,7 +858,12 @@ class MacOSSystemInfo(SystemInfo):
         Returns:
             list: List of AMD dGPU device information.
         """
-        return [{"available": False, "error": "AMD GPUs not available on Apple Silicon Macs"}]
+        return [
+            {
+                "available": False,
+                "error": "AMD GPUs not available on Apple Silicon Macs",
+            }
+        ]
 
     def get_apple_gpu_device(self, include_inference_engines: bool = False) -> dict:
         """
@@ -860,23 +877,29 @@ class MacOSSystemInfo(SystemInfo):
             gpu_output = subprocess.check_output(
                 ["system_profiler", "SPDisplaysDataType", "-json"], text=True
             )
-            
+
             import json
+
             gpu_data = json.loads(gpu_output)
-            
+
             displays = gpu_data.get("SPDisplaysDataType", [])
             for display in displays:
                 if "sppci_model" in display:
                     gpu_name = display["sppci_model"]
-                    if "Apple" in gpu_name or "M1" in gpu_name or "M2" in gpu_name or "M3" in gpu_name:
+                    if (
+                        "Apple" in gpu_name
+                        or "M1" in gpu_name
+                        or "M2" in gpu_name
+                        or "M3" in gpu_name
+                    ):
                         gpu_info = {
                             "name": gpu_name,
                             "available": True,
                         }
-                        
+
                         if include_inference_engines:
-                            gpu_info["inference_engines"] = self._detect_inference_engines(
-                                "apple_gpu", gpu_name
+                            gpu_info["inference_engines"] = (
+                                self._detect_inference_engines("apple_gpu", gpu_name)
                             )
                         return gpu_info
 
@@ -893,7 +916,10 @@ class MacOSSystemInfo(SystemInfo):
         Returns:
             dict: NPU device information.
         """
-        return {"available": False, "error": "Traditional NPUs not available on Apple Silicon Macs"}
+        return {
+            "available": False,
+            "error": "Traditional NPUs not available on Apple Silicon Macs",
+        }
 
     def get_device_dict(self):
         """
@@ -924,15 +950,15 @@ class MacOSSystemInfo(SystemInfo):
             cpu_name = subprocess.check_output(
                 ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
             ).strip()
-            
+
             physical_cores = subprocess.check_output(
                 ["sysctl", "-n", "hw.physicalcpu"], text=True
             ).strip()
-            
+
             logical_cores = subprocess.check_output(
                 ["sysctl", "-n", "hw.logicalcpu"], text=True
             ).strip()
-            
+
             return f"{cpu_name} ({physical_cores} cores, {logical_cores} logical processors)"
         except Exception as e:  # pylint: disable=broad-except
             return f"ERROR - {e}"
@@ -964,14 +990,15 @@ class MacOSSystemInfo(SystemInfo):
             model_output = subprocess.check_output(
                 ["system_profiler", "SPHardwareDataType", "-json"], text=True
             )
-            
+
             import json
+
             hardware_data = json.loads(model_output)
-            
+
             hardware = hardware_data.get("SPHardwareDataType", [])
             if hardware:
                 return hardware[0].get("machine_model", "Unknown Mac Model")
-            
+
             return "Unknown Mac Model"
         except Exception as e:  # pylint: disable=broad-except
             return f"ERROR - {e}"
@@ -986,12 +1013,14 @@ class MacOSSystemInfo(SystemInfo):
         """
         try:
             # Get memory in bytes
-            memory_bytes = int(subprocess.check_output(
-                ["sysctl", "-n", "hw.memsize"], text=True
-            ).strip())
-            
+            memory_bytes = int(
+                subprocess.check_output(
+                    ["sysctl", "-n", "hw.memsize"], text=True
+                ).strip()
+            )
+
             # Convert to GB
-            memory_gb = memory_bytes / (1024 ** 3)
+            memory_gb = memory_bytes / (1024**3)
             return f"{memory_gb:.1f} GB"
         except Exception as e:  # pylint: disable=broad-except
             return f"ERROR - {e}"
@@ -1006,17 +1035,17 @@ class MacOSSystemInfo(SystemInfo):
         """
         try:
             version_output = subprocess.check_output(["sw_vers"], text=True)
-            lines = version_output.strip().split('\n')
+            lines = version_output.strip().split("\n")
             version_info = {}
             for line in lines:
-                if ':' in line:
-                    key, value = line.split(':', 1)
+                if ":" in line:
+                    key, value = line.split(":", 1)
                     version_info[key.strip()] = value.strip()
-            
+
             product_name = version_info.get("ProductName", "macOS")
             product_version = version_info.get("ProductVersion", "Unknown")
             build_version = version_info.get("BuildVersion", "")
-            
+
             if build_version:
                 return f"{product_name} {product_version} ({build_version})"
             else:

@@ -43,138 +43,67 @@ jobs:
             echo "Running on Apple Silicon"
           fi
 
-      - name: Create macOS installer package
+      - name: Create macOS app bundle and DMG installer
         run: |
           # Create installer directory structure
           mkdir -p installer/macos
           
-          # Create installation script
-          cat > installer/macos/install.sh << 'EOF'
-          #!/bin/bash
-          set -e
+          # Install the package in development mode first
+          pip install -e .
           
-          echo "Installing Lemonade Server for macOS Apple Silicon..."
+          # Run our app bundle creator
+          python installer/macos/create_app_bundle.py installer/macos ${{ matrix.python-version }}
           
-          # Check if we're on Apple Silicon
-          if [[ $(uname -m) != "arm64" ]]; then
-              echo "Error: This installer is for Apple Silicon Macs only"
-              echo "   Detected architecture: $(uname -m)"
-              exit 1
-          fi
+          # Rename the DMG to include Python version
+          mv "installer/macos/Lemonade-Server.dmg" "lemonade-server-macos-arm64-py${{ matrix.python-version }}.dmg"
           
-          # Check if Python 3.10+ is available
-          if ! command -v python3 &> /dev/null; then
-              echo "Error: Python 3 is required but not installed"
-              echo "   Please install Python 3.10+ from https://www.python.org/"
-              exit 1
-          fi
-          
-          # Check Python version
-          PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-          echo "Detected Python version: $PYTHON_VERSION"
-          
-          # Verify minimum version (3.10)
-          if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"; then
-              echo "Error: Python 3.10+ is required"
-              echo "   Detected: Python $PYTHON_VERSION"
-              echo "   Please upgrade Python from https://www.python.org/"
-              exit 1
-          fi
-          
-          # Install Lemonade Server with CPU support (Metal backend will be used automatically)
-          echo "Installing Lemonade Server..."
-          pip3 install lemonade-sdk[oga-cpu] --upgrade
-          
-          # Install macOS tray support
-          echo "Installing macOS tray support..."
-          pip3 install rumps
-          
-          echo ""
-          echo "Lemonade Server installation complete!"
-          echo ""
-          echo "To start the server:"
-          echo "   lemonade-server-dev serve"
-          echo ""
-          echo "To chat with a model:"
-          echo "   lemonade-server-dev run Qwen2.5-0.5B-Instruct-CPU"
-          echo ""
-          echo "Documentation: https://lemonade-server.ai/docs/"
-          EOF
-          
-          chmod +x installer/macos/install.sh
-          
-          # Create README for the installer
-          cat > installer/macos/README.md << 'EOF'
-          # Lemonade Server for macOS Apple Silicon
-          
-          ## Requirements
-          - macOS with Apple Silicon (M1, M2, M3, etc.)
-          - Python 3.10 or later
-          
-          ## Installation
-          
-          Run the installation script:
-          ```bash
-          ./install.sh
-          ```
-          
-          ## Features
-          - **Metal Backend**: Automatically uses Apple's Metal framework for GPU acceleration
-          - **Native Tray**: Menu bar integration with native macOS notifications
-          - **Apple Silicon Optimized**: Built specifically for Apple Silicon processors
-          
-          ## Usage
-          
-          Start the server:
-          ```bash
-          lemonade-server-dev serve
-          ```
-          
-          The tray icon will appear in your menu bar with options to:
-          - Load and manage models
-          - Change server settings
-          - View logs and documentation
-          - Access chat interface
-          
-          ## Supported Models
-          All models that support the Metal backend, including:
-          - Qwen2.5 series
-          - Llama 3.2 series  
-          - Phi-3 series
-          - And many more!
-          EOF
-          
-          # Create the distribution archive
-          cd installer/macos
-          tar -czf ../../lemonade-server-macos-arm64-py${{ matrix.python-version }}.tar.gz install.sh README.md
-          cd ../..
-          
-          echo "macOS installer package created: lemonade-server-macos-arm64-py${{ matrix.python-version }}.tar.gz"
+          echo "macOS installer DMG created: lemonade-server-macos-arm64-py${{ matrix.python-version }}.dmg"
 
-      - name: Test the installer package
+      - name: Test the DMG installer package
         run: |
-          # Extract and verify the installer
-          mkdir -p test_install
-          cd test_install
-          tar -xzf ../lemonade-server-macos-arm64-py${{ matrix.python-version }}.tar.gz
-          
-          # Verify files exist
-          if [[ -f install.sh && -f README.md ]]; then
-              echo "Installer package contents verified"
+          # Verify the DMG file exists
+          DMG_FILE="lemonade-server-macos-arm64-py${{ matrix.python-version }}.dmg"
+          if [[ -f "$DMG_FILE" ]]; then
+              echo "DMG installer found: $DMG_FILE"
           else
-              echo "Installer package missing files"
+              echo "DMG installer not found: $DMG_FILE"
               exit 1
           fi
           
-          # Test that the install script is executable
-          if [[ -x install.sh ]]; then
-              echo "Install script is executable"
+          # Mount the DMG to verify contents
+          echo "Mounting DMG..."
+          hdiutil attach "$DMG_FILE" -mountpoint /tmp/lemonade_test
+          
+          # Verify the app bundle exists
+          if [[ -d "/tmp/lemonade_test/Lemonade Server.app" ]]; then
+              echo "App bundle found in DMG"
           else
-              echo "Install script is not executable"
+              echo "App bundle not found in DMG"
+              hdiutil detach /tmp/lemonade_test
               exit 1
           fi
           
-          cd ..
+          # Verify the executable exists and is executable
+          if [[ -x "/tmp/lemonade_test/Lemonade Server.app/Contents/MacOS/lemonade-server" ]]; then
+              echo "Main executable found and is executable"
+          else
+              echo "Main executable not found or not executable"
+              hdiutil detach /tmp/lemonade_test
+              exit 1
+          fi
+          
+          # Verify Info.plist exists
+          if [[ -f "/tmp/lemonade_test/Lemonade Server.app/Contents/Info.plist" ]]; then
+              echo "Info.plist found"
+          else
+              echo "Info.plist not found"
+              hdiutil detach /tmp/lemonade_test
+              exit 1
+          fi
+          
+          # Unmount the DMG
+          hdiutil detach /tmp/lemonade_test
+          echo "DMG installer verification complete"
 
       - name: Test Lemonade Server functionality
         run: |
@@ -264,10 +193,10 @@ jobs:
         with:
           name: LemonadeServerMacOSInstaller-py${{ matrix.python-version }}
           path: |
-            lemonade-server-macos-arm64-py${{ matrix.python-version }}.tar.gz
+            lemonade-server-macos-arm64-py${{ matrix.python-version }}.dmg
 
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          files: lemonade-server-macos-arm64-py${{ matrix.python-version }}.tar.gz
+          files: lemonade-server-macos-arm64-py${{ matrix.python-version }}.dmg

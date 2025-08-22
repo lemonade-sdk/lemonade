@@ -8,6 +8,7 @@ DEFAULT_PORT = int(os.getenv("LEMONADE_PORT", "8000"))
 DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
 DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
 
+
 # Platform-aware default backend selection
 def _get_default_llamacpp_backend():
     """Get the default llamacpp backend based on the current platform."""
@@ -15,7 +16,7 @@ def _get_default_llamacpp_backend():
     env_backend = os.getenv("LEMONADE_LLAMACPP")
     if env_backend:
         return env_backend
-    
+
     # Platform-specific defaults
     system = platform.system().lower()
     if system == "darwin":  # macOS
@@ -28,6 +29,7 @@ def _get_default_llamacpp_backend():
     else:
         # Windows/Linux default
         return "vulkan"
+
 
 DEFAULT_LLAMACPP_BACKEND = _get_default_llamacpp_backend()
 DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
