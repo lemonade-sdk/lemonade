@@ -354,6 +354,71 @@ class TestModelManagerIntegration(unittest.TestCase):
         """Clean up integration test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    @patch.object(ModelManager, 'supported_models', new_callable=PropertyMock)
+    @patch.object(ModelManager, 'downloaded_hf_checkpoints', new_callable=PropertyMock)
+    @patch('lemonade.common.network.custom_snapshot_download')
+    @patch('lemonade.tools.llamacpp.utils.identify_gguf_models')
+    @patch('os.path.exists')
+    def test_downloaded_models_with_gguf_variants(self, mock_exists, mock_identify_gguf, 
+                                                 mock_snapshot_download, mock_downloaded_checkpoints, 
+                                                 mock_supported_models):
+        """Test that downloaded_models only shows variants that actually exist locally."""
+        
+        # Set up mock models - two variants of the same base model
+        mock_supported_models.return_value = {
+            "Qwen3-0.6B-GGUF-Q4_0": {
+                "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+                "recipe": "llamacpp",
+                "model_name": "Qwen3-0.6B-GGUF-Q4_0"
+            },
+            "Qwen3-0.6B-GGUF-Q4_1": {
+                "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_1", 
+                "recipe": "llamacpp",
+                "model_name": "Qwen3-0.6B-GGUF-Q4_1"
+            }
+        }
+        
+        # Mock that the base repository is downloaded
+        mock_downloaded_checkpoints.return_value = ["unsloth/Qwen3-0.6B-GGUF"]
+        
+        # Mock snapshot download to return a fake path
+        fake_snapshot_path = "/fake/cache/path"
+        mock_snapshot_download.return_value = fake_snapshot_path
+        
+        # Mock identify_gguf_models to return different files for each variant
+        def mock_identify_side_effect(checkpoint, variant, mmproj):
+            if variant == "Q4_0":
+                return ({"variant": "qwen3-0.6b-q4_0.gguf"}, [])
+            elif variant == "Q4_1":
+                return ({"variant": "qwen3-0.6b-q4_1.gguf"}, [])
+            return ({}, [])
+        
+        mock_identify_gguf.side_effect = mock_identify_side_effect
+        
+        # Mock os.path.exists to simulate only Q4_0 variant being downloaded
+        def mock_exists_side_effect(path):
+            if "qwen3-0.6b-q4_0.gguf" in path:
+                return True  # Q4_0 variant exists
+            elif "qwen3-0.6b-q4_1.gguf" in path:
+                return False  # Q4_1 variant does not exist
+            return False
+        
+        mock_exists.side_effect = mock_exists_side_effect
+        
+        # Test the downloaded_models property
+        downloaded_models = self.model_manager.downloaded_models
+        
+        # Only Q4_0 should be in downloaded models since Q4_1 files don't exist
+        self.assertIn("Qwen3-0.6B-GGUF-Q4_0", downloaded_models, 
+                     "Q4_0 variant should be available since its files exist")
+        self.assertNotIn("Qwen3-0.6B-GGUF-Q4_1", downloaded_models,
+                        "Q4_1 variant should not be available since its files don't exist")
+        
+        # Verify the functions were called correctly
+        self.assertEqual(mock_identify_gguf.call_count, 2)
+        mock_identify_gguf.assert_any_call("unsloth/Qwen3-0.6B-GGUF", "Q4_0", "")
+        mock_identify_gguf.assert_any_call("unsloth/Qwen3-0.6B-GGUF", "Q4_1", "")
+
     def test_parse_checkpoint_integration(self):
         """Test that parse_checkpoint is used correctly in our fixes."""
         from lemonade.tools.llamacpp.utils import parse_checkpoint
