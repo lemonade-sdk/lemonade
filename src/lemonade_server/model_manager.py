@@ -201,6 +201,53 @@ class ModelManager:
                     reasoning=reasoning,
                 )
             else:
+                # Model is already registered - check if trying to register with different parameters
+                existing_model = self.supported_models[model]
+                existing_checkpoint = existing_model.get("checkpoint")
+                existing_recipe = existing_model.get("recipe")
+                existing_reasoning = "reasoning" in existing_model.get("labels", [])
+                existing_mmproj = existing_model.get("mmproj", "")
+
+                # Compare parameters (handle None/empty string equivalence for mmproj)
+                checkpoint_differs = checkpoint and checkpoint != existing_checkpoint
+                recipe_differs = recipe and recipe != existing_recipe
+                reasoning_differs = reasoning != existing_reasoning
+                mmproj_differs = mmproj != existing_mmproj and not (
+                    not mmproj and not existing_mmproj
+                )
+
+                if (
+                    checkpoint_differs
+                    or recipe_differs
+                    or reasoning_differs
+                    or mmproj_differs
+                ):
+                    conflicts = []
+                    if checkpoint_differs:
+                        conflicts.append(
+                            f"checkpoint (existing: '{existing_checkpoint}', new: '{checkpoint}')"
+                        )
+                    if recipe_differs:
+                        conflicts.append(
+                            f"recipe (existing: '{existing_recipe}', new: '{recipe}')"
+                        )
+                    if reasoning_differs:
+                        conflicts.append(
+                            f"reasoning (existing: {existing_reasoning}, new: {reasoning})"
+                        )
+                    if mmproj_differs:
+                        conflicts.append(
+                            f"mmproj (existing: '{existing_mmproj}', new: '{mmproj}')"
+                        )
+
+                    conflict_details = ", ".join(conflicts)
+                    raise ValueError(
+                        f"Model {model} is already registered with different configuration. "
+                        f"Conflicting parameters: {conflict_details}. "
+                        f"Please use a different model name or delete the existing model first using "
+                        f"`lemonade-server delete {model}`."
+                    )
+
                 new_registration_model_config = None
 
             # Download the model
