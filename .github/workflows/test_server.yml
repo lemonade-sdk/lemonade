@@ -47,6 +47,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           python test/server_unit.py
+      - name: Run Model Manager Tests
+        shell: bash -el {0}
+        run: |
+          python test/model_manager.py
       - name: Run server tests (network online mode)
         shell: bash -el {0}
         run: |
