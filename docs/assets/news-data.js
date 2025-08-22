@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+    title: "Introducing Lemonade Arcade",
+    url: "lemonade-arcade.html",
+    date: "August 22, 2025",
+    description: "We're excited to announce Lemonade Arcade, a new application that transforms your GPU into a creative engine for generating retro-style games using AI.",
+    image: "https://github.com/lemonade-sdk/lemonade-arcade/blob/main/img/banner.png?raw=true",
+    imageStyle: "width: 120%; height: 90%; object-position: center; transform: scale(1.1);",
+    type: "blog"
+    },
+    {
     title: "Run OpenAI's gpt-oss locally with Lemonade",
     url: "gpt-oss.html",
     date: "August 12, 2025",
