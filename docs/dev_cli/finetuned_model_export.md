@@ -12,13 +12,9 @@ Bring your own finetuned model into the Ryzen™ AI ecosystem and run it locally
 
 ### 1.1 Install Quark
 
-Install Quark directly from PyPI:
+Follow the [Quark installation guide](https://quark.docs.amd.com/latest/install.html) to install Quark from PyPI. The guide includes all necessary prerequisites and setup instructions for your system.
 
-```bash
-pip install quark
-```
 - It is highly recommended to use GPU acceleration for quantizing LLMs, as CPU-based quantization can be time-consuming. Refer to the [PyTorch GPU support section](https://quark.docs.amd.com/latest/install.html#install-pytorch-with-gpu-support) for setup instructions.
-
 
 - For detailed instructions on using PTQ (Post-Training Quantization) with Quark, refer to the [Quark PyTorch LLM PTQ example](https://quark.docs.amd.com/latest/pytorch/example_quark_torch_llm_ptq.html).
 
@@ -40,7 +36,7 @@ For LLMs targeting Ryzen AI, the recommended quantization strategy is:
 ### 1.4 Example Quantization Commands
 
 ```bash
- quark-quantize --model_dir $MODEL_DIR \
+python quantize_quark.py --model_dir $MODEL_DIR \
     --output_dir <path/to/output/model> \
     --quant_scheme w_uint4_per_group_asym \
     --num_calib_data 128 \
