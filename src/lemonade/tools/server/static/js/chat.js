@@ -277,7 +277,8 @@ function handleChatInputKeydown(e) {
     if (e.key === 'Escape' && attachedFiles.length > 0) {
         e.preventDefault();
         clearAttachments();
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // Prevent default new line behavior for Enter
         // Check if we have a loaded model
         if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
             sendMessage();
@@ -438,7 +439,8 @@ function appendMessage(role, text, isMarkdown = false) {
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble ' + role;
     
-    if (role === 'llm' && isMarkdown) {
+    // Check if isMarkdown is true, regardless of role
+    if (isMarkdown) {
         bubble.innerHTML = renderMarkdownWithThinkTokens(text);
     } else {
         bubble.textContent = text;
@@ -624,7 +626,7 @@ async function sendMessage() {
         displayText = displayText ? `${displayText}\n[Images: ${fileNames}]` : `[Images: ${fileNames}]`;
     }
     
-    appendMessage('user', displayText);
+    appendMessage('user', displayText, true);
     
     // Add to messages array
     const userMessage = {

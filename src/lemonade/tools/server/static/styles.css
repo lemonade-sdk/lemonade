@@ -158,7 +158,7 @@ body::before {
   border-radius: 8px;
   border: 1px solid #e0e0e0;
   min-width: 320px;
-  width: calc(100% - 2rem); /* Responsive width with margin */
+  width: 100%;
   margin-left: 1rem;
   margin-right: 1rem;
 }
@@ -570,7 +570,7 @@ body::before {
   align-items: center;
 }
 
-.input-with-indicator input[type='text'] {
+#chat-input {
   flex: 1;
   padding: 0.5em;
   border: 1px solid #ddd;
@@ -578,6 +578,16 @@ body::before {
   background: #fff;
   color: #222;
   margin: 0;
+  resize: vertical;
+  min-height: 40px;
+  font-family: inherit;
+}
+
+/* Update placeholder style */
+#chat-input::placeholder {
+  color: #aaa;
+  opacity: 1;
+  font-style: italic;
 }
 
 #attachment-indicator {
@@ -1897,7 +1907,6 @@ body::before {
 
 .category-content {
   display: none;
-  padding: 0;
 }
 
 .category-content.expanded {
