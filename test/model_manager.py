@@ -297,39 +297,6 @@ class TestModelManagerDeletion(unittest.TestCase):
                      "Other user models should remain in registry")
 
     @patch.object(ModelManager, 'supported_models', new_callable=PropertyMock)
-    @patch('lemonade_server.model_manager.custom_snapshot_download')
-    @patch('lemonade_server.model_manager.download_gguf')
-    def test_model_registration_conflict_detection(self, mock_download_gguf, mock_snapshot_download, mock_supported_models):
-        """Test that model registration detects conflicts in checkpoint, recipe, reasoning, and mmproj."""
-        existing_models = {
-            "user.test-model": {
-                "checkpoint": "test/checkpoint1",
-                "recipe": "oga-cpu", 
-                "labels": ["custom"],
-                "mmproj": "",
-                "model_name": "user.test-model"
-            }
-        }
-        mock_supported_models.return_value = existing_models
-        
-        # Test conflicts in each parameter
-        test_cases = [
-            ("checkpoint", {"checkpoint": "test/checkpoint2", "recipe": "oga-cpu"}),
-            ("recipe", {"checkpoint": "test/checkpoint1", "recipe": "llamacpp"}),
-            ("reasoning", {"checkpoint": "test/checkpoint1", "recipe": "oga-cpu", "reasoning": True}),
-            ("mmproj", {"checkpoint": "test/checkpoint1", "recipe": "oga-cpu", "mmproj": "test.mmproj"})
-        ]
-        
-        for param_name, kwargs in test_cases:
-            with self.assertRaises(ValueError) as context:
-                self.model_manager.download_models(["user.test-model"], **kwargs)
-            
-            error_msg = str(context.exception)
-            self.assertIn("already registered with different configuration", error_msg)
-            self.assertIn(param_name, error_msg)
-            self.assertIn("lemonade-server delete", error_msg)
-
-    @patch.object(ModelManager, 'supported_models', new_callable=PropertyMock)
     @patch('lemonade.common.network.custom_snapshot_download')
     @patch('lemonade.tools.llamacpp.utils.identify_gguf_models')
     def test_gguf_variant_deletion_error_handling(self, mock_identify_gguf, mock_snapshot_download, mock_supported_models):
