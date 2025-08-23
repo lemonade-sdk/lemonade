@@ -31,6 +31,9 @@ jobs:
             runner: [stx-halo, Windows]
 
     runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.backend }}-${{ matrix.runner }}
+      cancel-in-progress: true
     defaults:
       run:
         shell: powershell
