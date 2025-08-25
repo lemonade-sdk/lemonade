@@ -6,6 +6,8 @@ os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 from lemonade.version import __version__ as version_number
 from lemonade.tools import FirstTool, NiceHelpFormatter
 from lemonade.profilers.memory_tracker import MemoryTracker
+from lemonade.profilers.hwinfo_power import HWINFOPowerProfiler
+from lemonade.profilers.agt_power import AGTPowerProfiler
 import lemonade.common.filesystem as fs
 import lemonade.common.cli_helpers as cli
 from lemonade.sequence import Sequence
@@ -55,7 +57,11 @@ def main():
     ]
 
     # List the available profilers
-    profilers = [MemoryTracker]
+    profilers = [
+        MemoryTracker,
+        HWINFOPowerProfiler,
+        AGTPowerProfiler,
+    ]
 
     # Define the argument parser
     parser = cli.CustomArgumentParser(
