@@ -11,7 +11,7 @@ import time
 from typing import List, Optional
 
 
-FLM_MINIMUM_VERSION = "0.9.4"
+FLM_MINIMUM_VERSION = "0.9.5"
 
 
 def check_flm_version() -> Optional[str]:
