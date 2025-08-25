@@ -27,14 +27,6 @@ Since OpenHands runs inside Docker containers, the containers must be able to ac
 ```bash
 lemonade-server --host 0.0.0.0 --ctx-size 32768
 
-### Pull the desired models with Lemonade
-
-Ensure that the models that are to be integrated with OpenHands are within the Lemonade server. Run the following command to pull the desired models into Lemonade: 
-
-```bash
-lemonade-server pull <model-name>
-```
-
 ### Installing OpenHands
 
 Follow the instruction on the [OpenHands github](https://github.com/All-Hands-AI/OpenHands/) on how to install OpenHands locally. This can be done through the `uvx` tool or through `docker`. No special installation instructions are necessary to integrate with Lemonade. In the next section we will show how to configure OpenHands to talk to a local model running via Lemonade Server. 
@@ -84,4 +76,5 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
