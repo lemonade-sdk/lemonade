@@ -16,7 +16,7 @@ from dotenv import set_key, load_dotenv
 
 LLAMA_VERSION_VULKAN = "b6097"
 LLAMA_VERSION_ROCM = "b1021"
-LLAMA_VERSION_METAL = "b6240"
+LLAMA_VERSION_METAL = "b6097"
 
 
 def identify_rocm_arch_from_name(device_name: str) -> str | None:

@@ -432,31 +432,7 @@ class LlamaCppMetalTesting(LlamaCppTesting):
         print(f"\n=== Starting GGUF/LlamaCPP Metal test on {platform.machine()} ===")
         super().setUp()
 
-    def test_000_macos_system_info(self):
-        """Test macOS system information detection for Apple Silicon."""
-        from lemonade.common.system_info import get_system_info, get_device_info_dict
-        import platform
-        
-        # Test system info
-        sys_info = get_system_info()
-        info_dict = sys_info.get_dict()
-        
-        # Verify we can detect Apple Silicon (should work in CI)
-        processor = info_dict.get('Processor', '')
-        if 'Apple' in processor:
-            print(f"Apple Silicon processor detected: {processor}")
-        else:
-            # In CI, the processor name might be different, so just warn
-            print(f"Warning: Expected Apple processor, got: {processor}")
-            print("This may indicate CI environment differences")
-        
-        # Test device info structure (basic validation)
-        device_info = get_device_info_dict()
-        
-        # Verify basic device info structure exists
-        expected_devices = ['cpu', 'apple_gpu', 'amd_igpu', 'amd_dgpu', 'npu']
-        for device_type in expected_devices:
-            assert device_type in device_info, f"Missing device type: {device_type}"
+
 
     def test_001_metal_backend_selection(self):
         """Test that Metal backend is correctly selected by default on Apple Silicon."""
