@@ -80,7 +80,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 ## Resources
 
-* [OpenHands github](https://github.com/All-Hands-AI/OpenHands/)
+* [OpenHands GitHub](https://github.com/All-Hands-AI/OpenHands/)
+
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
 
