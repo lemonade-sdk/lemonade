@@ -75,8 +75,7 @@ from lemonade_server.settings import save_setting
 # Tests should use the max_new_tokens argument to set a lower value
 DEFAULT_MAX_NEW_TOKENS = 1500
 
-# Only import tray on Windows
-if platform.system() == "Windows":
+if platform.system() in ["Windows", "Darwin"]:
     # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
 
