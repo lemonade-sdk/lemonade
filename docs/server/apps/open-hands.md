@@ -3,7 +3,8 @@
 [OpenHands](https://github.com/All-Hands-AI/OpenHands) is an open-source AI coding agent. This document explains how to configure OpenHands to target local AI models using Lemonade Server, enabling code generation, editing, and chat capabilities. Much of this guide uses the fantastic [guide from OpenHands](https://docs.all-hands.dev/usage/llms/local-llms) on running local models, with added details on integrating with Lemonade Server.
 
 There are a few things to note on this integration:
-* This integration is in its early stages. Please do test it out and report issues back to us to make the Lemonade OpenHands functionality the best that it can be.
+* This integration is in its early stages. We encourage you to test it and share any issues you encounter—your feedback will help us make the Lemonade–OpenHands functionality as robust as possible.
+
 * Due to the complexity of the scaffolding of agentic software agents, the compute requirements for this application is very high. For a low latency experience, we recommend using this flow with a discrete GPU with at least 16 GB VRAM, or a Strix Halo PC with at least 64 GB RAM. 
 
 
