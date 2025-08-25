@@ -66,7 +66,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 <img width="947" height="503" alt="first-prompt" src="https://github.com/user-attachments/assets/78e7d87f-effa-4a7a-a7ee-1ec3b01917d1" />
 
-6. As a user, you can interact with the environment that the software agent is to track progress and view artifacts. Below is an example of using the Web Browser functionality to view the website that the agent created.
+6. As a user, you can interact with the environment where the software agent operates to monitor progress and view generated artifacts. Below is an example using the Web Browser feature to preview the website created by the agent.
+
 
 <img width="947" height="497" alt="completed-prompt" src="https://github.com/user-attachments/assets/5dd394bc-0f7f-4263-8019-02fd99534b2d" />
 
