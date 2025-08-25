@@ -77,15 +77,50 @@ class ModelManager:
     def downloaded_models(self) -> dict:
         """
         Returns a dictionary of locally available models.
+        For GGUF models with variants, checks if the specific variant files exist.
         """
         downloaded_models = {}
         downloaded_checkpoints = self.downloaded_hf_checkpoints
         for model in self.supported_models:
-            base_checkpoint = parse_checkpoint(
-                self.supported_models[model]["checkpoint"]
-            )[0]
+            model_info = self.supported_models[model]
+            checkpoint = model_info["checkpoint"]
+            base_checkpoint, variant = parse_checkpoint(checkpoint)
+
             if base_checkpoint in downloaded_checkpoints:
-                downloaded_models[model] = self.supported_models[model]
+                # For GGUF models with variants, verify the specific variant files exist
+                if variant and model_info.get("recipe") == "llamacpp":
+                    try:
+                        from lemonade.tools.llamacpp.utils import identify_gguf_models
+                        from lemonade.common.network import custom_snapshot_download
+
+                        # Get the local snapshot path
+                        snapshot_path = custom_snapshot_download(
+                            base_checkpoint, local_files_only=True
+                        )
+
+                        # Check if the specific variant files exist
+                        core_files, sharded_files = identify_gguf_models(
+                            base_checkpoint, variant, model_info.get("mmproj", "")
+                        )
+                        all_variant_files = list(core_files.values()) + sharded_files
+
+                        # Verify all required files exist locally
+                        all_files_exist = True
+                        for file_path in all_variant_files:
+                            full_file_path = os.path.join(snapshot_path, file_path)
+                            if not os.path.exists(full_file_path):
+                                all_files_exist = False
+                                break
+
+                        if all_files_exist:
+                            downloaded_models[model] = model_info
+
+                    except Exception:
+                        # If we can't verify the variant, don't include it
+                        pass
+                else:
+                    # For non-GGUF models or GGUF without variants, use the original logic
+                    downloaded_models[model] = model_info
         return downloaded_models
 
     @property
