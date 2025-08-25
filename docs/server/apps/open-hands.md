@@ -34,19 +34,16 @@ Follow the [OpenHands documentation](https://docs.all-hands.dev/usage/local-setu
 
 ## Launching OpenHands
 
-Launch OpenHands in the browser and go to `localhost:3000`. When first launching the application, it will prompt to configure the model. 
+To launch OpenHands, open a browser and navigate to `localhost:3000`. When first launching the application, the "AI Provider Configuration" window will appear. Click on `see advanced settings` as shown in the image below:
+<img width="1221" height="740" alt="annotated-ai-provider-configuration" src="https://github.com/user-attachments/assets/1e8b65cd-2409-4e94-92c6-f96adaede491" />
 
-1. When prompted, click on `see advanced settings`. 
+1. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
 
-2. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
-
-
-3. Set the following values in the configuration:
+2. Set the following values in the configuration:
 
 <img width="953" height="502" alt="advanced-configuration" src="https://github.com/user-attachments/assets/4c710fdd-489f-4b55-8efc-faf6096a068a" />
     
-4. Click `Save Settings`. 
-
+3. Click `Save Settings`. 
 
 ## Using OpenHands
 
@@ -81,6 +78,7 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
