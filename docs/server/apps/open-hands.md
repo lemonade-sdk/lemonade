@@ -61,7 +61,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 3. Input the prompt "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops.".
 
-4. After some time to process the intial prompt, the agents actions will start to appear on the left and files that are created should start appearing on the right.
+4. After processing the initial prompt, the agent’s actions will begin appearing on the left side of the screen. Any files it creates will show up on the right.
+
 
 <img width="947" height="503" alt="first-prompt" src="https://github.com/user-attachments/assets/78e7d87f-effa-4a7a-a7ee-1ec3b01917d1" />
 
