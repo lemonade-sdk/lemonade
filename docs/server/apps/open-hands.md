@@ -15,7 +15,8 @@ There are a few things to note on this integration:
 - **Lemonade Server**: Install Lemonade Server using the [Getting Started Guide](https://lemonade-server.ai/docs/server/).
 
 - **Server running**: Ensure Lemonade Server is running on `http://localhost:8000`
-- **Models installed**: At least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) downloaded locally; For OpenHands functionality, we highly recommend models denoted with the `coding` label, which can be found in your Lemonade installation's `Model Manager` or in the labels of the [models list](https://lemonade-server.ai/docs/server/server_models/). 
+- **Models installed**: Ensure at least one model from the [supported models list](https://lemonade-server.ai/docs/server/server_models/) is downloaded locally. For OpenHands functionality, we recommend models denoted with the `coding` label, which can be found in your Lemonade installation's `Model Manager` or in the labels of the [models list](https://lemonade-server.ai/docs/server/server_models/). 
+
 
 ## Installation
 
