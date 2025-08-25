@@ -2,7 +2,7 @@
 const newsData = [
     {
     title: "Introducing Lemonade Arcade",
-    url: "lemonade-arcade.html",
+    url: "https://lemonade-server.ai/news/lemonade-arcade.html",
     date: "August 22, 2025",
     description: "We're excited to announce Lemonade Arcade, a new application that transforms your GPU into a creative engine for generating retro-style games using AI.",
     image: "https://github.com/lemonade-sdk/lemonade-arcade/blob/main/img/banner.png?raw=true",
@@ -11,7 +11,7 @@ const newsData = [
     },
     {
     title: "Run OpenAI's gpt-oss locally with Lemonade",
-    url: "gpt-oss.html",
+    url: "https://lemonade-server.ai/news/gpt-oss.html",
     date: "August 12, 2025",
     description: "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware! 🎉",
     image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
