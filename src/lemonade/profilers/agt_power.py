@@ -19,7 +19,7 @@ import numpy as np
 import lemonade.common.printing as printing
 from lemonade.profilers import Profiler
 from lemonade.tools.report.table import LemonadePerfTable, DictListStat
-from lemonade.nda_profilers.hwinfo_power import (
+from lemonade.profilers.hwinfo_power import (
     is_user_admin,
     is_process_running,
     read_data_from_csv,
@@ -67,8 +67,13 @@ class AGTPowerProfiler(Profiler):
         "cpu_package_power": "CPU0 Power Correlation SOCKET Power ",
         "npu_clock": "CPU0 Frequencies Actual Frequency NPUHCLK",
         "gpu_clock": "CPU0 GFX GFX Freq Eff",
+        # for processors with classic and dense cores
         "classic_cpu_usage": "CPU0 DPM Activity Monitors Busy Value CLASSIC_C0",
         "dense_cpu_usage": "CPU0 DPM Activity Monitors Busy Value DENSE_C0",
+        # for multi CCD processors
+        "classic_cpu_usage_0": "CPU0 DPM Activity Monitors Busy Value CCD0_C0",
+        "classic_cpu_usage_1": "CPU0 DPM Activity Monitors Busy Value CCD1_C0",
+        #
         "apu_stapm_value": "CPU0 INFRASTRUCTURE1 Value STAPM",
         "apu_stapm_limit": "CPU0 INFRASTRUCTURE1 Limit STAPM",
         "cpu_tdc_value": "CPU0 INFRASTRUCTURE1 Value TDC VDD",
@@ -355,18 +360,34 @@ class AGTPowerProfiler(Profiler):
         # Add second y-axis for percentage metrics
         # Manually set colors to be different from first axis
         ax2_twin = ax2.twinx()
-        ax2_twin.plot(
-            df["time"],
-            df["classic_cpu_usage"],
-            label=self.columns_dict["classic_cpu_usage"],
-            c="g",
-        )
-        ax2_twin.plot(
-            df["time"],
-            df["dense_cpu_usage"],
-            label=self.columns_dict["dense_cpu_usage"],
-            c="r",
-        )
+        if "classic_cpu_usage" in df.columns:
+            ax2_twin.plot(
+                df["time"],
+                df["classic_cpu_usage"],
+                label=self.columns_dict["classic_cpu_usage"],
+                c="g",
+            )
+        if "dense_cpu_usage" in df.columns:
+            ax2_twin.plot(
+                df["time"],
+                df["dense_cpu_usage"],
+                label=self.columns_dict["dense_cpu_usage"],
+                c="r",
+            )
+        if "classic_cpu_usage_0" in df.columns:
+            ax2_twin.plot(
+                df["time"],
+                df["classic_cpu_usage_0"],
+                label=self.columns_dict["classic_cpu_usage_0"],
+                c="g",
+            )
+        if "classic_cpu_usage_1" in df.columns:
+            ax2_twin.plot(
+                df["time"],
+                df["classic_cpu_usage_1"],
+                label=self.columns_dict["classic_cpu_usage_1"],
+                c="r",
+            )
         ax2_twin.set_ylim([0, 100])
         vals = ax2_twin.get_yticks()
         ax2_twin.set_yticks(vals)
