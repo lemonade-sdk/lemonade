@@ -41,7 +41,15 @@ To launch OpenHands, open a browser and navigate to `localhost:3000`. When first
 
 2. Set the following values in the configuration:
 
+
+* **Custom Model**: `openai/Qwen3-Coder-30B-A3B-Instruct-GGUF`
+* **Base URL**: `https://host.docker.internal:8000/api/v1/`
+* **API Key**: Use a dash or any character.
+
+The setup should look as follows::
+
 <img width="953" height="502" alt="advanced-configuration" src="https://github.com/user-attachments/assets/4c710fdd-489f-4b55-8efc-faf6096a068a" />
+
     
 3. Click `Save Settings`. 
 
