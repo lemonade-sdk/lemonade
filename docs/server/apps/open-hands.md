@@ -26,10 +26,11 @@ Since OpenHands runs inside Docker containers, the containers must be able to ac
 
 ```bash
 lemonade-server --host 0.0.0.0 --ctx-size 32768
+```
 
 ### Installing OpenHands
 
-Follow the instruction on the [OpenHands github](https://github.com/All-Hands-AI/OpenHands/) on how to install OpenHands locally. This can be done through the `uvx` tool or through `docker`. No special installation instructions are necessary to integrate with Lemonade. In the next section we will show how to configure OpenHands to talk to a local model running via Lemonade Server. 
+Follow the [OpenHands documentation](https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama) on how to install OpenHands locally. This can be done via the `uvx` tool or through `docker`. No special installation instructions are necessary to integrate with Lemonade. In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server. 
 
 ## Launching OpenHands
 
@@ -76,5 +77,6 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
