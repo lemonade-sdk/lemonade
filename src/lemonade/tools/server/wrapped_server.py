@@ -221,7 +221,6 @@ class WrappedServer(ABC):
             time.sleep(1)
 
         if self.log_thread_exception:
-            # Check if the
             e = self.log_thread_exception
             self.log_thread_exception = None
             raise e
