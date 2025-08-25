@@ -160,6 +160,11 @@ Hugging Face:
 This generates a PNG file that is stored in the current folder and the build folder.  This file
 contains a figure plotting the memory usage over the Lemonade tool sequence.  Learn more by running `lemonade -h`.
 
+### Power Profiling
+
+Power profiling is enabled through external tools.  Refer to [Power Profiling](power_profiling.md).
+
+
 ### System Information
 
 To view system information and available devices, use the `system-info` tool:
