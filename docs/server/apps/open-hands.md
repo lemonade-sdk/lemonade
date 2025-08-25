@@ -45,7 +45,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 <img width="953" height="502" alt="advanced-configuration" src="https://github.com/user-attachments/assets/4c710fdd-489f-4b55-8efc-faf6096a068a" />
     
-4. Click `Save Settings` to save the configuration. 
+4. Click `Save Settings`. 
+
 
 ## Examples
 
