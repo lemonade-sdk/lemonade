@@ -425,66 +425,81 @@ class LlamaCppMetalTesting(LlamaCppTesting):
     def setUp(self):
         """Call parent setUp but verify we're on macOS Apple Silicon."""
         import platform
-        
+
         if platform.system() != "Darwin":
             self.skipTest("Metal backend tests require macOS")
-        
+
         if platform.machine().lower() not in ["arm64", "aarch64"]:
             self.skipTest("Metal backend tests require Apple Silicon (ARM64)")
-        
+
         print(f"\n=== Starting GGUF/LlamaCPP Metal test on {platform.machine()} ===")
         super().setUp()
 
-
-
     def test_001_metal_backend_selection(self):
         """Test that Metal backend is correctly selected by default on Apple Silicon."""
-        from lemonade_server.pydantic_models import DEFAULT_LLAMACPP_BACKEND, _get_default_llamacpp_backend
-        from lemonade.tools.llamacpp.utils import validate_platform_support, get_binary_url_and_filename
+        from lemonade_server.pydantic_models import (
+            DEFAULT_LLAMACPP_BACKEND,
+            _get_default_llamacpp_backend,
+        )
+        from lemonade.tools.llamacpp.utils import (
+            validate_platform_support,
+            get_binary_url_and_filename,
+        )
         import platform
-        
+
         # Test platform validation
-        validate_platform_support()  # Should not raise exception
-        
+        validate_platform_support()
+
         # Test backend selection
         default_backend = _get_default_llamacpp_backend()
-        assert default_backend == "metal", f"Expected Metal backend, got: {default_backend}"
-        assert DEFAULT_LLAMACPP_BACKEND == "metal", f"Expected Metal default, got: {DEFAULT_LLAMACPP_BACKEND}"
-        
+        assert (
+            default_backend == "metal"
+        ), f"Expected Metal backend, got: {default_backend}"
+        assert (
+            DEFAULT_LLAMACPP_BACKEND == "metal"
+        ), f"Expected Metal default, got: {DEFAULT_LLAMACPP_BACKEND}"
+
         # Test Metal binary URL generation
-        url, filename = get_binary_url_and_filename('metal')
-        assert 'macos-arm64' in filename, f"Expected macOS ARM64 binary, got: {filename}"
-        assert 'github.com/ggml-org/llama.cpp' in url, f"Expected llama.cpp URL, got: {url}"
+        url, filename = get_binary_url_and_filename("metal")
+        assert (
+            "macos-arm64" in filename
+        ), f"Expected macOS ARM64 binary, got: {filename}"
+        assert (
+            "github.com/ggml-org/llama.cpp" in url
+        ), f"Expected llama.cpp URL, got: {url}"
 
     def test_002_macos_tray_functionality(self):
         """Test macOS tray functionality and imports."""
         import platform
-        
+
         # Test rumps availability
         try:
             import rumps
         except ImportError:
-            self.skipTest("rumps library not available - install with: pip install rumps")
-        
+            self.skipTest(
+                "rumps library not available - install with: pip install rumps"
+            )
+
         # Test tray imports
-        from lemonade.tools.server.utils.macos_tray import MacOSSystemTray, Menu, MenuItem
         from lemonade.tools.server.tray import LemonadeTray
-        
+
         # Test tray creation
-        tray = LemonadeTray('/tmp/test.log', 8000, lambda: None, log_level="debug")
-        
+        tray = LemonadeTray("/tmp/test.log", 8000, lambda: None, log_level="debug")
+
         # Verify expected attributes
-        expected_attrs = ['app_name', 'icon_path', 'port', 'server_factory']
+        expected_attrs = ["app_name", "icon_path", "port", "server_factory"]
         for attr in expected_attrs:
             assert hasattr(tray, attr), f"Tray missing {attr} attribute"
-        
+
         # Test menu creation
         menu = tray.create_menu()
         assert len(menu.items) > 0, "Menu should have items"
-        
+
         # Verify menu has expected items
-        menu_texts = [item.text for item in menu.items if hasattr(item, 'text')]
-        assert 'Quit Lemonade' in menu_texts, f"Menu missing 'Quit Lemonade': {menu_texts}"
+        menu_texts = [item.text for item in menu.items if hasattr(item, "text")]
+        assert (
+            "Quit Lemonade" in menu_texts
+        ), f"Menu missing 'Quit Lemonade': {menu_texts}"
 
 
 if __name__ == "__main__":

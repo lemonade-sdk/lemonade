@@ -18,7 +18,9 @@ else:
 
 
 class MenuItem:
-    """Cross-platform menu item representation."""
+    """
+    Cross-platform menu item representation.
+    """
 
     def __init__(
         self,
@@ -36,7 +38,9 @@ class MenuItem:
 
 
 class Menu:
-    """Cross-platform menu representation."""
+    """
+    Cross-platform menu representation.
+    """
 
     SEPARATOR = "SEPARATOR"
 
@@ -56,7 +60,7 @@ class MacOSSystemTray:
         self.app_name = app_name
         self.icon_path = icon_path
         self.app = None
-        self.menu_callbacks = {}  # Store callbacks by menu item title
+        self.menu_callbacks = {}
 
     def create_menu(self):
         """

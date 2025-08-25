@@ -11,24 +11,21 @@ DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
 
 # Platform-aware default backend selection
 def _get_default_llamacpp_backend():
-    """Get the default llamacpp backend based on the current platform."""
+    """
+    Get the default llamacpp backend based on the current platform.
+    """
     # Allow environment variable override
     env_backend = os.getenv("LEMONADE_LLAMACPP")
     if env_backend:
         return env_backend
 
-    # Platform-specific defaults
-    system = platform.system().lower()
-    if system == "darwin":  # macOS
-        # Check if we're on Apple Silicon
-        if platform.machine().lower() in ["arm64", "aarch64"]:
-            return "metal"
-        else:
-            # Intel Mac - use vulkan as fallback
-            return "vulkan"
-    else:
-        # Windows/Linux default
-        return "vulkan"
+    # Platform-specific defaults: use metal for Apple Silicon, vulkan for everything else
+    if platform.system() == "Darwin" and platform.machine().lower() in [
+        "arm64",
+        "aarch64",
+    ]:
+        return "metal"
+    return "vulkan"
 
 
 DEFAULT_LLAMACPP_BACKEND = _get_default_llamacpp_backend()

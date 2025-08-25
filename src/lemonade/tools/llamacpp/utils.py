@@ -151,8 +151,7 @@ def get_llama_exe_path(exe_name: str, backend: str):
 
     if system == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
-    elif system == "darwin":  # macOS
-        # macOS binaries follow the same structure as Linux: build/bin/
+    elif system == "darwin":
         build_bin_path = os.path.join(base_dir, "build", "bin", exe_name)
         if os.path.exists(build_bin_path):
             return build_bin_path
@@ -244,7 +243,6 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
         repo = "ggml-org/llama.cpp"
         version = LLAMA_VERSION_METAL
         if system == "darwin":
-            # Check if we're on Apple Silicon
             if platform.machine().lower() in ["arm64", "aarch64"]:
                 filename = f"llama-{version}-bin-macos-arm64.zip"
             else:

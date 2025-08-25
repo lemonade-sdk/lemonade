@@ -157,7 +157,7 @@ jobs:
         python-version: ['3.10', '3.12']
         backend: ['metal']
 
-    runs-on: macos-latest  # Apple Silicon (M1) runners
+    runs-on: macos-latest
     defaults:
       run:
         shell: bash

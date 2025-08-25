@@ -210,8 +210,8 @@ class LlamaServer(WrappedServer):
             else:
                 env["LD_LIBRARY_PATH"] = lib_dir
             logging.debug(f"Set LD_LIBRARY_PATH to {env['LD_LIBRARY_PATH']}")
-        elif system == "darwin":  # macOS
-            lib_dir = os.path.dirname(exe_path)  # Same directory as the executable
+        elif system == "darwin":
+            lib_dir = os.path.dirname(exe_path)
             current_dyld_path = env.get("DYLD_LIBRARY_PATH", "")
             if current_dyld_path:
                 env["DYLD_LIBRARY_PATH"] = f"{lib_dir}:{current_dyld_path}"

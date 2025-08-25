@@ -199,7 +199,7 @@ class LemonadeTray(SystemTray):
         """
         try:
             system = platform.system().lower()
-            if system == "darwin":  # macOS
+            if system == "darwin":
                 # Use Terminal.app to show logs
                 subprocess.Popen(
                     [
@@ -220,7 +220,6 @@ class LemonadeTray(SystemTray):
                     ]
                 )
             else:
-                # This should never happen since tray is only supported on Windows and macOS
                 self.logger.error(f"Unsupported platform for show_logs: {system}")
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error opening logs: {str(e)}")
@@ -501,7 +500,7 @@ class LemonadeTray(SystemTray):
         Show a notification (platform-aware).
         """
         system = platform.system().lower()
-        if system == "darwin":  # macOS
+        if system == "darwin":
             try:
                 # Use AppleScript to show notification
                 script = f"""
