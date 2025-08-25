@@ -417,6 +417,7 @@ async function loadModel(modelId) {
         },
         onError: (error, failedModelId) => {
             console.error(`Failed to load model ${failedModelId}:`, error);
+            showErrorBanner('Failed to load model: ' + error.message);
         }
     });
 }

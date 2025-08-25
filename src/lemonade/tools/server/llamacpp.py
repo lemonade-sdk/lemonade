@@ -6,6 +6,7 @@ import threading
 import platform
 
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
 
 from lemonade_server.pydantic_models import (
     PullConfig,
@@ -27,6 +28,20 @@ class LlamaTelemetry(WrappedServerTelemetry):
         """
         Parse telemetry data from llama server output lines.
         """
+
+        if "vk::PhysicalDevice::createDevice: ErrorExtensionNotPresent" in line:
+            msg = (
+                "Your AMD GPU driver version is not compatible with this software.\n"
+                "Please update and try again: "
+                "https://www.amd.com/en/support/download/drivers.html"
+            )
+            logging.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=msg,
+            )
+        elif "error" in line.lower():
+            logging.error(line)
 
         # Parse Vulkan device detection
         vulkan_match = re.search(r"ggml_vulkan: Found (\d+) Vulkan devices?:", line)

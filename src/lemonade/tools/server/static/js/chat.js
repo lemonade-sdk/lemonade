@@ -217,6 +217,7 @@ async function autoLoadDefaultModelAndSend() {
         },
         onError: (error, failedModelId) => {
             console.error('Error auto-loading default model:', error);
+            showErrorBanner('Failed to load model: ' + error.message);
         }
     });
 }
