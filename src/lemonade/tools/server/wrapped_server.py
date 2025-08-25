@@ -183,8 +183,6 @@ class WrappedServer(ABC):
         """
 
         if self.process.stdout:
-            from fastapi import HTTPException, status
-
             try:
                 for line in iter(self.process.stdout.readline, ""):
                     if line:
