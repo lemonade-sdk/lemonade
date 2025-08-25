@@ -50,13 +50,6 @@ class InferenceEngineDetector:
         if llamacpp_info:
             engines["llamacpp-rocm"] = llamacpp_info
 
-        # Detect llama.cpp metal availability (macOS only)
-        llamacpp_info = self.llamacpp_detector.detect_for_device(
-            device_type, device_name, "metal"
-        )
-        if llamacpp_info:
-            engines["llamacpp-metal"] = llamacpp_info
-
         # Detect Transformers availability
         transformers_info = self.transformers_detector.detect_for_device(device_type)
         if transformers_info:
@@ -230,38 +223,17 @@ class LlamaCppDetector(BaseEngineDetector):
         """
         try:
 
-            # Check device type compatibility with backends
-            if backend == "metal":
-                # Metal backend only supports macOS with Apple Silicon GPUs
-                if device_type not in ["cpu", "apple_gpu"]:
-                    return None
-                # Check if we're on macOS
-                import platform
+            if device_type not in ["cpu", "amd_igpu", "amd_dgpu"]:
+                return None
 
-                if platform.system().lower() != "darwin":
-                    return {
-                        "available": False,
-                        "error": "Metal backend only available on macOS",
-                    }
+            # Check if the device is supported by the backend
+            if device_type == "cpu":
                 device_supported = True
-            else:
-                # Vulkan and ROCm backends
-                if device_type not in ["cpu", "amd_igpu", "amd_dgpu"]:
-                    return None
-
-                # Check if the device is supported by the backend
-                if device_type == "cpu":
-                    device_supported = True
-                elif device_type == "amd_igpu" or device_type == "amd_dgpu":
-                    if backend == "vulkan":
-                        device_supported = self._check_vulkan_support()
-                    elif backend == "rocm":
-                        device_supported = self._check_rocm_support(device_name.lower())
-                    else:
-                        device_supported = False
-                else:
-                    device_supported = False
-
+            elif device_type == "amd_igpu" or device_type == "amd_dgpu":
+                if backend == "vulkan":
+                    device_supported = self._check_vulkan_support()
+                elif backend == "rocm":
+                    device_supported = self._check_rocm_support(device_name.lower())
             if not device_supported:
                 return {"available": False, "error": f"{backend} not available"}
 
