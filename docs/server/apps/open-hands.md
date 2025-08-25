@@ -51,7 +51,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 ## Using OpenHands
 
 
-1. After hitting `Save Configuration` hit the `+` on the top left and hit `Launch from Scratch` to launch a new project. 
+1. To launch a new project, click the `+` on the top left and hit `Launch from Scratch`. 
+
 
 2. Wait for the runtime to start. This will take 1-2 minutes and you can track the progress on the bottom left. 
 
