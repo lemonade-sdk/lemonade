@@ -61,6 +61,7 @@ class MacOSSystemTray:
         self.icon_path = icon_path
         self.app = None
         self.menu_callbacks = {}
+        self._menu_update_timer = None
 
     def create_menu(self):
         """
@@ -147,32 +148,54 @@ class MacOSSystemTray:
         # Create the rumps app
         self.app = rumps.App(self.app_name, icon=self.icon_path, quit_button=None)
 
-        # Build the menu
-        menu = self.create_menu()
-        menu_items = self.build_rumps_menu(menu.items)
+        # Build the initial menu
+        self.refresh_menu()
 
-        # Add menu items to the app
-        for item in menu_items:
-            self.app.menu.add(item)
+        # Set up a timer to refresh menu periodically (every 3 seconds)
+        # This provides a good balance between responsiveness and performance
+        self._setup_menu_refresh_timer()
 
         # Start the app
         self.app.run()
+
+    def refresh_menu(self):
+        """
+        Refresh the menu by rebuilding it with current state.
+        """
+        if not self.app:
+            return
+
+        # Clear existing menu
+        self.app.menu.clear()
+
+        # Build fresh menu with current state
+        menu = self.create_menu()
+        menu_items = self.build_rumps_menu(menu.items)
+
+        # Add updated menu items
+        for item in menu_items:
+            self.app.menu.add(item)
+
+    def _setup_menu_refresh_timer(self):
+        """
+        Set up a timer to periodically refresh the menu.
+        """
+        if not self.app:
+            return
+
+        # Create a timer that refreshes the menu every 3 seconds
+        @rumps.timer(3)
+        def refresh_menu_timer(sender):
+            self.refresh_menu()
+
+        # Store reference to prevent garbage collection
+        self._menu_update_timer = refresh_menu_timer
 
     def update_menu(self):
         """
         Update the menu by rebuilding it.
         """
-        if self.app:
-            # Clear existing menu
-            self.app.menu.clear()
-
-            # Rebuild menu
-            menu = self.create_menu()
-            menu_items = self.build_rumps_menu(menu.items)
-
-            # Add updated menu items
-            for item in menu_items:
-                self.app.menu.add(item)
+        self.refresh_menu()
 
 
 # Create a factory function to get the appropriate tray class
