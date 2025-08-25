@@ -54,6 +54,14 @@ function renderMarkdown(text) {
 
 // Display an error message in the banner
 function showErrorBanner(msg) {
+    // If DOM isn't ready, wait for it
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            showErrorBanner(msg);
+        });
+        return;
+    }
+    
     const banner = document.getElementById('error-banner');
     if (!banner) return;
     const msgEl = document.getElementById('error-banner-msg');
@@ -303,12 +311,12 @@ async function loadModelStandardized(modelId, options = {}) {
             onLoadingEnd(modelId, false);
         }
         
-        // Call error callback or show default error
+        // Call error callback and always show default error banner as fallback
         if (onError) {
             onError(error, modelId);
-        } else {
-            showErrorBanner('Failed to load model: ' + error.message);
         }
+        // Always show error banner to ensure user sees the error
+        showErrorBanner('Failed to load model: ' + error.message);
         
         return false;
     }
