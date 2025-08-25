@@ -54,7 +54,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 1. To launch a new project, click the `+` on the top left and hit `Launch from Scratch`. 
 
 
-2. Wait for the runtime to start. This will take 1-2 minutes and you can track the progress on the bottom left. 
+2. Wait for the runtime to start. This process typically takes 1–2 minutes. You can monitor progress in the bottom-left corner of the screen. The runtime is ready when you see the message: “Agent is awaiting user input…”
+
 
 3. Input the prompt "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops.".
 
