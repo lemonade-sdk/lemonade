@@ -28,6 +28,9 @@ class LlamaTelemetry(WrappedServerTelemetry):
         Parse telemetry data from llama server output lines.
         """
 
+        if "error" in line.lower():
+            logging.error(line)
+
         # Parse Vulkan device detection
         vulkan_match = re.search(r"ggml_vulkan: Found (\d+) Vulkan devices?:", line)
         if vulkan_match:
