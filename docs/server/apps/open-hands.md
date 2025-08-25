@@ -48,7 +48,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 4. Click `Save Settings`. 
 
 
-## Examples
+## Using OpenHands
+
 
 1. After hitting `Save Configuration` hit the `+` on the top left and hit `Launch from Scratch` to launch a new project. 
 
