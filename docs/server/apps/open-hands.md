@@ -45,7 +45,8 @@ Launch OpenHands in the browser and go to `localhost:3000`. When first launching
 
 1. When prompted, click on `see advanced settings`. 
 
-2. Click the `Advanced` switch to see all of the configurations 
+2. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
+
 
 3. Set the following values in the configuration:
 
