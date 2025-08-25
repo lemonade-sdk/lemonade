@@ -55,30 +55,29 @@ The setup should look as follows::
 
 ## Using OpenHands
 
+1. To launch a new project, click the `+` on the top left.
 
-1. To launch a new project, click the `+` on the top left and hit `Launch from Scratch`. 
+2. To launch a new project, simply enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
+<img width="1911" height="1071" alt="prompt-image" src="https://github.com/user-attachments/assets/29348e0b-c741-44aa-a734-e91bb06e28a7" />
 
+3. Hit `Enter` to start off the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
+<img width="1905" height="1058" alt="running-commands" src="https://github.com/user-attachments/assets/069ff16c-11d4-46ea-93e0-9cf8571c2044" />
 
-2. Wait for the runtime to start. This process typically takes 1–2 minutes. You can monitor progress in the bottom-left corner of the screen. The runtime is ready when you see the message: “Agent is awaiting user input…”
+4. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. Note that in the `Terminal` at the bottom the software agent has already started the web server hosting the website we requested it to develop at port number `51317`.  
+<img width="1906" height="1072" alt="actual-finished-workspace" src="https://github.com/user-attachments/assets/123c496d-a158-423d-8d0d-713416c9326b" />
 
+5. Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:
+<img width="1897" height="1068" alt="web-app" src="https://github.com/user-attachments/assets/cbaaf7bd-bc01-4c24-aa33-84ee509ca09a" />
 
-3. Input the prompt "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops.".
+6. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
 
-4. After processing the initial prompt, the agent’s actions will begin appearing on the left side of the screen. Any files it creates will show up on the right.
-
-
-<img width="947" height="503" alt="first-prompt" src="https://github.com/user-attachments/assets/78e7d87f-effa-4a7a-a7ee-1ec3b01917d1" />
-
-6. As a user, you can interact with the environment where the software agent operates to monitor progress and view generated artifacts. Below is an example using the Web Browser feature to preview the website created by the agent.
-
-
-<img width="947" height="497" alt="completed-prompt" src="https://github.com/user-attachments/assets/5dd394bc-0f7f-4263-8019-02fd99534b2d" />
-
-7. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
+**Suggestions on what to try after:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game." OpenHands with Lemonade Server was able to generate the following pong game which included user-controls, a computer controlled oponent, and score-keeping:
+<img width="1910" height="1070" alt="pong-game" src="https://github.com/user-attachments/assets/e1b84777-72b7-49c3-afa0-5f78379842be" />
 
 ## Common Issues
 
-* Certain small models can struggle with tool calling which can cause them to run in infinite loops. This can be seen by the agent continously running the same command that is resulting in an error. When this occurs, we recommend stopping the agent and providing a prompt to get the agent out of the loop or using a model that is better at using the tools provided by OpenHands.  
+* Certain small models can struggle with tool calling. This can be seen by the agent continously running the same command that is resulting in an error. For example, we have found that it is common for certain models to initially struggle with the tool required to create files. In our experience after multiple attempts, the model is able to figure out that it is not using the tool correctly and tries another method to use the tool. An example of this can be seen below. If this issue persists we recommend trying another model or prompt.    
+<img width="1528" height="849" alt="tool-calling-struggles" src="https://github.com/user-attachments/assets/2e4cc756-4c0b-42ec-bdf8-dde541f30cf6" />
 
 ## Resources
 
@@ -86,6 +85,7 @@ The setup should look as follows::
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
