@@ -17,7 +17,6 @@ setup(
         "lemonade.tools.huggingface",
         "lemonade.tools.oga",
         "lemonade.tools.llamacpp",
-        "lemonade.tools.quark",
         "lemonade.tools.report",
         "lemonade.tools.server.utils",
         "lemonade.tools.server",
