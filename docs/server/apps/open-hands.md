@@ -72,7 +72,7 @@ The setup should look as follows::
 
 6. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
 
-**Suggestions on what to try after:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game." OpenHands with Lemonade Server was able to generate the following pong game which included user-controls, a computer controlled oponent, and score-keeping:
+**Suggestions on what to try next:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game." OpenHands with Lemonade Server was able to generate the following pong game which included user-controls, a computer-controlled opponent, and scorekeeping:
 <img width="1910" height="1070" alt="pong-game" src="https://github.com/user-attachments/assets/e1b84777-72b7-49c3-afa0-5f78379842be" />
 
 ## Common Issues
