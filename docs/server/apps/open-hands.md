@@ -58,7 +58,7 @@ The setup should look as follows::
 
 1. To launch a new project, click the `+` on the top left.
 
-2. To launch a new project, simply enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
+2. Simply enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
 <img width="1911" height="1071" alt="prompt-image" src="https://github.com/user-attachments/assets/29348e0b-c741-44aa-a734-e91bb06e28a7" />
 
 3. Hit `Enter` to start off the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
