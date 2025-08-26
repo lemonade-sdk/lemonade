@@ -554,7 +554,7 @@ class LemonadeTray(SystemTray):
                 "Lemonade Server is running! "
                 "Right-click the tray icon below to access options."
             )
-        
+
         self.show_balloon_notification("Woohoo!", message)
 
         # Call the parent run method which handles platform-specific initialization
