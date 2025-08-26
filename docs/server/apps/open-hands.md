@@ -25,7 +25,7 @@ There are a few things to note on this integration:
 Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by running the Lemonade Server on IP address `0.0.0.0`, which is accessible from within Docker. Additionally, OpenHands [recommends](https://docs.all-hands.dev/usage/llms/local-llms) using a context length of at least 32,768 tokens. To configure Lemonade with a non-default context size, include the `--ctx-size` parameter set to `32768`. **Note:** This large context size is currently supported only by the llamacpp backend.
 
 ```bash
-lemonade-server --host 0.0.0.0 --ctx-size 32768
+lemonade-server serve --host 0.0.0.0 --ctx-size 32768
 ```
 
 ### Installing OpenHands
