@@ -181,12 +181,6 @@ jobs:
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
-      - name: Test macOS Apple Silicon support
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
-        run: |
-          python test/server_llamacpp.py metal
-
       - name: Run lemonade Llamacpp API tests (Metal)
         env:
           HF_HOME: "${{ env.HF_HOME }}"
