@@ -34,7 +34,8 @@ Follow the [OpenHands documentation](https://docs.all-hands.dev/usage/local-setu
 
 ## Launching OpenHands
 
-To launch OpenHands, open a browser and navigate to `localhost:3000`. When first launching the application, the "AI Provider Configuration" window will appear. Click on `see advanced settings` as shown in the image below:
+To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Click on `see advanced settings` as shown in the image below:
+
 <img width="1221" height="740" alt="annotated-ai-provider-configuration" src="https://github.com/user-attachments/assets/1e8b65cd-2409-4e94-92c6-f96adaede491" />
 
 1. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
