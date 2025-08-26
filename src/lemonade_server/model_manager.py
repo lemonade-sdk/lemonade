@@ -244,21 +244,35 @@ class ModelManager:
     def filter_models_by_backend(self, models: dict) -> dict:
         """
         Returns a filtered dict of models that are enabled by the
-        current environment.
+        current environment and platform.
         """
+        import platform
+        
         installed_packages = {dist.metadata["Name"].lower() for dist in distributions()}
 
         hybrid_installed = (
             "onnxruntime-vitisai" in installed_packages
             and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
+        
+        # On macOS, only llamacpp (GGUF) models are supported
+        is_macos = platform.system() == "Darwin"
+        
         filtered = {}
         for model, value in models.items():
-            if value.get("recipe") == "oga-hybrid":
-                if hybrid_installed:
-                    filtered[model] = value
-            else:
-                filtered[model] = value
+            recipe = value.get("recipe")
+            
+            # Filter OGA hybrid models based on package availability
+            if recipe == "oga-hybrid":
+                if not hybrid_installed:
+                    continue
+            
+            # On macOS, only show llamacpp models (GGUF format)
+            if is_macos and recipe != "llamacpp":
+                continue
+                
+            filtered[model] = value
+            
         return filtered
 
     def delete_model(self, model_name: str):

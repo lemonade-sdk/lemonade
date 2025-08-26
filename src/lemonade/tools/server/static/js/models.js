@@ -503,6 +503,24 @@ function createModelNameWithLabels(modelId, serverModels) {
 
 // Initialize model management functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
+    // Hide non-GGUF recipe categories on macOS (only llamacpp is supported)
+    if (window.PLATFORM === 'Darwin') {
+        const nonGgufRecipes = ['oga-hybrid', 'oga-npu', 'oga-cpu'];
+        nonGgufRecipes.forEach(recipe => {
+            // Hide sidebar recipe categories
+            const element = document.querySelector(`[data-recipe="${recipe}"]`);
+            if (element) {
+                element.style.display = 'none';
+            }
+            
+            // Hide recipe options in the "Add a Model" form
+            const selectOption = document.querySelector(`#register-recipe option[value="${recipe}"]`);
+            if (selectOption) {
+                selectOption.style.display = 'none';
+            }
+        });
+    }
+    
     // Set up model status controls
     const unloadBtn = document.getElementById('model-unload-btn');
     if (unloadBtn) {
