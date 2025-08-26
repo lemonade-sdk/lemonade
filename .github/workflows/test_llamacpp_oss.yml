@@ -57,7 +57,7 @@ jobs:
           conda activate $CONDA_ENV_PATH
           python -m pip install --upgrade pip
           conda install -y pylint
-          pip install -e .[llm] --extra-index-url https://pypi.amd.com/simple
+          pip install -e .[dev]
           pip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
@@ -117,7 +117,7 @@ jobs:
           conda activate $CONDA_ENV_PATH
           python -m pip install --upgrade pip
           conda install -y pylint
-          pip install -e .[llm]
+          pip install -e .[dev]
           pip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
