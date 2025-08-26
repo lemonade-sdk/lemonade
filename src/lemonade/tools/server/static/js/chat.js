@@ -1,7 +1,7 @@
 // Chat logic and functionality
 let messages = [];
 let attachedFiles = [];
-let systemMessageElement = null; // Track the current system message element
+let systemMessageElement = null;
 
 // Default model configuration
 const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
@@ -493,7 +493,7 @@ function displaySystemMessage() {
     if (messageText) {
         const div = document.createElement('div');
         div.className = 'chat-message system';
-        div.setAttribute('data-system-message', 'true'); // Mark as system message
+        div.setAttribute('data-system-message', 'true');
         
         const bubble = document.createElement('div');
         bubble.className = 'chat-bubble system';
