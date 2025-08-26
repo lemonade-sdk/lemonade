@@ -542,14 +542,20 @@ class LemonadeTray(SystemTray):
         self.server_thread = threading.Thread(target=self.start_server, daemon=True)
         self.server_thread.start()
 
-        # Show initial notification
-        self.show_balloon_notification(
-            "Woohoo!",
-            (
+        # Show initial notification with platform-specific message
+        system = platform.system().lower()
+        if system == "darwin":
+            message = (
+                "Lemonade Server is running! "
+                "Click the tray icon above to access options."
+            )
+        else:  # Windows/Linux
+            message = (
                 "Lemonade Server is running! "
                 "Right-click the tray icon below to access options."
-            ),
-        )
+            )
+        
+        self.show_balloon_notification("Woohoo!", message)
 
         # Call the parent run method which handles platform-specific initialization
         super().run()
