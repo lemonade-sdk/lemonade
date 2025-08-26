@@ -19,9 +19,7 @@ def get_webapp_html(port=8000):
     server_models_js = (
         f"<script>window.SERVER_MODELS = {json.dumps(filtered_models)};</script>"
     )
-    platform_js = (
-        f"<script>window.PLATFORM = '{platform.system()}';</script>"
-    )
+    platform_js = f"<script>window.PLATFORM = '{platform.system()}';</script>"
 
     # Load HTML template
     template_path = Path(__file__).parent / "static" / "webapp.html"
