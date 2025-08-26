@@ -59,6 +59,11 @@ async function updateModelStatusIndicator() {
         window.initializeModelDropdown();
     }
     
+    // Update system message when model status changes
+    if (window.displaySystemMessage) {
+        window.displaySystemMessage();
+    }
+    
     // Refresh model management UI if we're on the models tab
     const modelsTab = document.getElementById('content-models');
     if (modelsTab && modelsTab.classList.contains('active')) {
@@ -699,6 +704,11 @@ async function refreshModelMgmtUI() {
     // Refresh model dropdown in chat after updating installed models
     if (window.initializeModelDropdown) {
         window.initializeModelDropdown();
+    }
+    
+    // Update system message when installed models change
+    if (window.displaySystemMessage) {
+        window.displaySystemMessage();
     }
 }
 
