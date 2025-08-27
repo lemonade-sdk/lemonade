@@ -165,6 +165,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-variant: Miniforge3
+          miniforge-version: latest
+
       - name: Set up Conda environment
         run: |
           conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
@@ -172,7 +178,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
+          source $CONDA/etc/profile.d/conda.sh
           conda activate $CONDA_ENV_PATH
           pip install -e .[dev]
           pip check
@@ -183,7 +189,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
+          source $CONDA/etc/profile.d/conda.sh
           conda activate $CONDA_ENV_PATH
 
           python test/server_llamacpp.py metal || exit 1

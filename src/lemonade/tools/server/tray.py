@@ -499,19 +499,7 @@ class LemonadeTray(SystemTray):
         """
         Show a notification (platform-aware).
         """
-        system = platform.system().lower()
-        if system == "darwin":
-            try:
-                # Use AppleScript to show notification
-                script = f"""
-                display notification "{message}" with title "{title}" subtitle "{self.app_name}"
-                """
-                subprocess.run(["osascript", "-e", script], check=True)
-            except (subprocess.CalledProcessError, OSError, FileNotFoundError) as e:
-                self.logger.error(f"Failed to show notification: {e}")
-        else:
-            # Use the Windows implementation
-            super().show_balloon_notification(title, message, timeout)
+        super().show_balloon_notification(title, message, timeout)
 
     def start_server(self):
         """
