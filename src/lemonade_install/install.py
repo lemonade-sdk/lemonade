@@ -177,7 +177,7 @@ def _get_ryzenai_version_info(device=None):
             f"{e}\n Please install lemonade-sdk with "
             "one of the oga extras, for example:\n"
             "pip install lemonade-sdk[dev,oga-cpu]\n"
-            "See https://lemonade_server.ai/install_options.html for details"
+            "See https://lemonade-server.ai/install_options.html for details"
         ) from e
 
 
