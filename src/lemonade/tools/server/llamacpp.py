@@ -197,7 +197,7 @@ class LlamaServer(WrappedServer):
         exe_dir = os.path.dirname(exe_path)
         env_file_path = os.path.join(exe_dir, ".env")
         if os.path.exists(env_file_path):
-            load_dotenv(env_file_path, override=True)
+            load_dotenv(env_file_path, override=False)
             env.update(os.environ)
             logging.debug(f"Loaded environment variables from {env_file_path}")
 
