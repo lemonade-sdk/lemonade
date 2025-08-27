@@ -146,7 +146,7 @@ class ModelManager:
         do_not_upgrade: prioritize any local copy of the model over any updated copy
             from the Hugging Face Hub.
         """
-        for model in models:        
+        for model in models:
             if model not in self.supported_models:
                 # Register the model as a user model if the model name
                 # is not already registered
