@@ -208,7 +208,7 @@ class ModelManager:
                 existing_reasoning = "reasoning" in existing_model.get("labels", [])
                 existing_mmproj = existing_model.get("mmproj", "")
 
-                # Compare parameters (handle None/empty string equivalence for mmproj)
+                # Compare parameters
                 checkpoint_differs = checkpoint and checkpoint != existing_checkpoint
                 recipe_differs = recipe and recipe != existing_recipe
                 reasoning_differs = reasoning and reasoning != existing_reasoning
