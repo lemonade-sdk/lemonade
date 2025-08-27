@@ -31,6 +31,9 @@ jobs:
             runner: [stx-halo, Windows]
 
     runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.backend }}-${{ matrix.runner }}
+      cancel-in-progress: true
     defaults:
       run:
         shell: powershell
@@ -54,7 +57,7 @@ jobs:
           conda activate $CONDA_ENV_PATH
           python -m pip install --upgrade pip
           conda install -y pylint
-          pip install -e .[llm] --extra-index-url https://pypi.amd.com/simple
+          pip install -e .[dev]
           pip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
@@ -114,7 +117,7 @@ jobs:
           conda activate $CONDA_ENV_PATH
           python -m pip install --upgrade pip
           conda install -y pylint
-          pip install -e .[llm]
+          pip install -e .[dev]
           pip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV

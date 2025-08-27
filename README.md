@@ -135,7 +135,7 @@ Lemonade supports the following configurations, while also making it easy to swi
     </tr>
     <tr>
       <td><b>gfx120X</b> (RDNA4)</td>
-      <td>Windows only</td>
+      <td>Windows, Ubuntu</td>
       <td>Radeon AI PRO R9700, RX 9070 XT/GRE/9070, RX 9060 XT</td>
     </tr>
     <tr>

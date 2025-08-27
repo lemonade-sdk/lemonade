@@ -1,6 +1,7 @@
 // Chat logic and functionality
 let messages = [];
 let attachedFiles = [];
+let systemMessageElement = null;
 
 // Default model configuration
 const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
@@ -28,6 +29,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update attachment button state periodically
     updateAttachmentButtonState();
     setInterval(updateAttachmentButtonState, 1000);
+    
+    // Display initial system message
+    displaySystemMessage();
 });
 
 function setupChatEventListeners() {
@@ -163,24 +167,29 @@ function updateAttachmentButtonState() {
         attachmentBtn.style.opacity = '0.5';
         attachmentBtn.style.cursor = 'not-allowed';
         attachmentBtn.title = 'Load a model first';
-        return;
-    }
-    
-    const isVision = isVisionModel(currentLoadedModel);
-    
-    if (isVision) {
-        attachmentBtn.style.opacity = '1';
-        attachmentBtn.style.cursor = 'pointer';
-        attachmentBtn.title = 'Attach images';
     } else {
-        attachmentBtn.style.opacity = '0.5';
-        attachmentBtn.style.cursor = 'not-allowed';
-        attachmentBtn.title = 'Image attachments not supported by this model';
+        const isVision = isVisionModel(currentLoadedModel);
+        
+        if (isVision) {
+            attachmentBtn.style.opacity = '1';
+            attachmentBtn.style.cursor = 'pointer';
+            attachmentBtn.title = 'Attach images';
+        } else {
+            attachmentBtn.style.opacity = '0.5';
+            attachmentBtn.style.cursor = 'not-allowed';
+            attachmentBtn.title = 'Image attachments not supported by this model';
+        }
     }
+    
+    // Update system message when model state changes
+    displaySystemMessage();
 }
 
 // Make updateAttachmentButtonState accessible globally
 window.updateAttachmentButtonState = updateAttachmentButtonState;
+
+// Make displaySystemMessage accessible globally
+window.displaySystemMessage = displaySystemMessage;
 
 // Auto-load default model and send message
 async function autoLoadDefaultModelAndSend() {
@@ -451,6 +460,53 @@ function appendMessage(role, text, isMarkdown = false) {
     return bubble; // Return the bubble element for streaming updates
 }
 
+// Display system message based on current state
+function displaySystemMessage() {
+    // Remove existing system message if it exists
+    if (systemMessageElement) {
+        systemMessageElement.remove();
+        systemMessageElement = null;
+    }
+    
+    // Don't show system message if there are already user/LLM messages
+    if (messages.length > 0) {
+        return;
+    }
+    
+    let messageText = '';
+    
+    // Check if any models are installed
+    const hasInstalledModels = window.installedModels && window.installedModels.size > 0;
+    
+    if (!hasInstalledModels) {
+        // No models installed - show first message
+        messageText = `Welcome to Lemonade! To get started:
+1. Head over to the Model Management tab.
+2. Use the 📥Download button to download a model.
+3. Use the 🚀Load button to load the model.
+4. Come back to this tab, and you are ready to chat with the model.`;
+    } else if (!currentLoadedModel) {
+        // Models available but none loaded - show second message
+        messageText = 'Welcome to Lemonade! Choose a model from the dropdown menu below to load it and start chatting.';
+    }
+    
+    if (messageText) {
+        const div = document.createElement('div');
+        div.className = 'chat-message system';
+        div.setAttribute('data-system-message', 'true');
+        
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble system';
+        bubble.textContent = messageText;
+        
+        div.appendChild(bubble);
+        chatHistory.appendChild(div);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        
+        systemMessageElement = div;
+    }
+}
+
 function updateMessageContent(bubbleElement, text, isMarkdown = false) {
     if (isMarkdown) {
         bubbleElement.innerHTML = renderMarkdownWithThinkTokens(text);
@@ -541,6 +597,12 @@ function toggleThinkTokens(header) {
 async function sendMessage() {
     const text = chatInput.value.trim();
     if (!text && attachedFiles.length === 0) return;
+    
+    // Remove system message when user starts chatting
+    if (systemMessageElement) {
+        systemMessageElement.remove();
+        systemMessageElement = null;
+    }
     
     // Check if a model is loaded, if not, automatically load the default model
     if (!currentLoadedModel) {

@@ -388,6 +388,21 @@ body::before {
   align-self: flex-start;
 }
 
+.chat-message.system {
+  align-items: flex-start;
+}
+
+.chat-bubble.system {
+  background: linear-gradient(135deg, #f0f8f0 0%, #e8f5e8 100%);
+  color: #2d7f47;
+  border-bottom-left-radius: 4px;
+  align-self: flex-start;
+  border: 1px solid #c8e6c9;
+  font-style: normal;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(45, 127, 71, 0.1);
+}
+
 /* Markdown styling within chat bubbles */
 .chat-bubble h1,
 .chat-bubble h2,
