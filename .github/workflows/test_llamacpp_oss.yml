@@ -165,17 +165,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Set up Conda environment
+        run: |
+          conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
+          conda init
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          # Install rumps for macOS tray support
-          pip install rumps
-          # Install lemonade with dev dependencies
+          source ~/miniforge3/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
           pip install -e .[dev]
           pip check
 
@@ -185,5 +183,8 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
+          source ~/miniforge3/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
+
           python test/server_llamacpp.py metal || exit 1
           python test/server_llamacpp.py metal --offline || exit 1

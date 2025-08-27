@@ -503,22 +503,28 @@ function createModelNameWithLabels(modelId, serverModels) {
 
 // Initialize model management functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
-    // Hide non-GGUF recipe categories on macOS (only llamacpp is supported)
-    if (window.PLATFORM === 'Darwin') {
-        const nonGgufRecipes = ['oga-hybrid', 'oga-npu', 'oga-cpu'];
-        nonGgufRecipes.forEach(recipe => {
-            // Hide sidebar recipe categories
-            const element = document.querySelector(`[data-recipe="${recipe}"]`);
-            if (element) {
-                element.style.display = 'none';
-            }
-            
-            // Hide recipe options in the "Add a Model" form
-            const selectOption = document.querySelector(`#register-recipe option[value="${recipe}"]`);
-            if (selectOption) {
-                selectOption.style.display = 'none';
-            }
-        });
+    // Check for Intel Mac error (unsupported platform)
+    const serverModels = window.SERVER_MODELS || {};
+    if (serverModels._unsupported_platform_error  ) {
+        const error = serverModels._unsupported_platform_error;
+        const modelsTab = document.getElementById('content-models');
+        if (modelsTab) {
+            modelsTab.innerHTML = `
+                <div style="text-align: center; padding: 40px; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #d32f2f; margin-bottom: 20px;">⚠️ ${error.error}</h2>
+                    <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">${error.message}</p>
+                    <div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <strong>Your Platform:</strong> ${error.platform}<br>
+                        <strong>Supported:</strong> ${error.supported}
+                    </div>
+                    <p style="color: #666;">
+                        For Windows/Linux support, visit 
+                        <a href="https://lemonade-server.ai/docs/" target="_blank">lemonade-server.ai/docs</a>
+                    </p>
+                </div>
+            `;
+        }
+        return;
     }
     
     // Set up model status controls

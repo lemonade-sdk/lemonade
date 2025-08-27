@@ -255,8 +255,24 @@ class ModelManager:
             and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
 
-        # On macOS, only llamacpp (GGUF) models are supported
+        # On macOS, only llamacpp (GGUF) models are supported, and only on Apple Silicon
         is_macos = platform.system() == "Darwin"
+        if is_macos:
+            machine = platform.machine().lower()
+            if machine == "x86_64":
+                # Intel Macs are not supported - return empty model list with error info
+                return {
+                    "_unsupported_platform_error": {
+                        "error": "Intel Mac Not Supported",
+                        "message": (
+                            "Lemonade Server requires Apple Silicon processors on macOS. "
+                            "Intel Macs are not currently supported. "
+                            "Please use a Mac with Apple Silicon or try Lemonade on Windows/Linux."
+                        ),
+                        "platform": f"macOS {machine}",
+                        "supported": "macOS with Apple Silicon (arm64/aarch64)",
+                    }
+                }
 
         filtered = {}
         for model, value in models.items():
