@@ -591,7 +591,7 @@ class LemonadePerfTable(Table):
                     _wrap("Total Generated Tokens", 9),
                     Keys.RESPONSE_TOKENS,
                     "d",
-                    stat_fn=sum,
+                    stat_fn=lambda x: sum(_to_list(x)),
                 ),
                 SimpleStat(
                     _wrap("Memory Used (GB)", 8), Keys.MAX_MEMORY_USED_GBYTE, ".3f"
