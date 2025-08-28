@@ -80,12 +80,15 @@ The setup should look as follows::
 * Certain small models can struggle with tool calling. This can be seen by the agent continously running the same command that is resulting in an error. For example, we have found that it is common for certain models to initially struggle with the tool required to create files. In our experience after multiple attempts, the model is able to figure out that it is not using the tool correctly and tries another method to use the tool. An example of this can be seen below. If this issue persists we recommend trying another model or prompt.    
 <img width="1528" height="849" alt="tool-calling-struggles" src="https://github.com/user-attachments/assets/2e4cc756-4c0b-42ec-bdf8-dde541f30cf6" />
 
+* If on OpenHands you get an error with the message `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:8000/api/v1/`. 
+
 ## Resources
 
 * [OpenHands GitHub](https://github.com/All-Hands-AI/OpenHands/)
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
