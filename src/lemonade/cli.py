@@ -25,8 +25,6 @@ from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.perplexity import AccuracyPerplexity
 from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
-from lemonade.tools.quark.quark_load import QuarkLoad
-from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.report.llm_report import LemonadeReport
 
 
@@ -45,8 +43,6 @@ def main():
         HuggingfaceBench,
         OgaLoad,
         OgaBench,
-        QuarkQuantize,
-        QuarkLoad,
         LemonadeReport,
         # Inherited from lemonade
         Cache,
