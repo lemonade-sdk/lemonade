@@ -44,7 +44,7 @@ To launch OpenHands, open a browser and navigate to http://localhost:3000. When 
 
 
 * **Custom Model**: `openai/Qwen3-Coder-30B-A3B-Instruct-GGUF`
-* **Base URL**: `https://host.docker.internal:8000/api/v1/`
+* **Base URL**: `http://host.docker.internal:8000/api/v1/`
 * **API Key**: Use a dash or any character.
 
 The setup should look as follows::
@@ -86,6 +86,7 @@ The setup should look as follows::
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
