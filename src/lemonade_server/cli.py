@@ -197,15 +197,15 @@ def pull(
         for model_name in model_names:
             payload = {"model_name": model_name}
 
-            if checkpoint and recipe:
-                # Add the parameters for registering a new model
-                payload["checkpoint"] = checkpoint
-                payload["recipe"] = recipe
-
-                if reasoning:
-                    payload["reasoning"] = reasoning
-                if mmproj:
-                    payload["mmproj"] = mmproj
+            # Add the parameters to the payload
+            for key, value in [
+                ("checkpoint", checkpoint),
+                ("recipe", recipe),
+                ("reasoning", reasoning),
+                ("mmproj", mmproj),
+            ]:
+                if value:
+                    payload[key] = value
 
             # Install the model
             pull_response = requests.post(f"{base_url}/pull", json=payload)
@@ -225,6 +225,9 @@ def pull(
             recipe=recipe,
             reasoning=reasoning,
             mmproj=mmproj,
+            # The pull command will download an upgraded model if available, even
+            # if we already have a local copy of the model
+            do_not_upgrade=False,
         )
 
 
