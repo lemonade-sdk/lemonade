@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 from typing import Tuple, Optional
 import psutil
 from typing import List
@@ -364,19 +365,45 @@ def is_lemonade_server(pid):
     """
     Check whether or not a given PID corresponds to a Lemonade server
     """
+    # Self-exclusion: Don't detect the current process or its children
+    current_pid = os.getpid()
+    if pid == current_pid:
+        return False
+
+    # Exclude children of current process to avoid detecting status commands
+    try:
+        current_process = psutil.Process(current_pid)
+        child_pids = [child.pid for child in current_process.children(recursive=True)]
+        if pid in child_pids:
+            return False
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+
     try:
         process = psutil.Process(pid)
 
         while True:
             process_name = process.name()
-            if process_name in [  # Windows
-                "lemonade-server-dev.exe",
-                "lemonade-server.exe",
-            ] or process_name in [  # Linux
-                "lemonade-server-dev",
-                "lemonade-server",
-            ]:
+
+            # Windows: check process name
+            if process_name in ["lemonade-server-dev.exe", "lemonade-server.exe"]:
                 return True
+            # Linux: check process name
+            elif process_name in ["lemonade-server-dev", "lemonade-server"]:
+                return True
+            # macOS: Python scripts appear as "python3.x", check command line
+            elif process_name.startswith("python") and platform.system() == "Darwin":
+                try:
+                    cmdline = process.cmdline()
+                    if len(cmdline) >= 2:
+                        script_path = cmdline[1]
+                        if (
+                            "lemonade-server-dev" in script_path
+                            or "lemonade-server" in script_path
+                        ):
+                            return True
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    pass
             elif "llama-server" in process_name:
                 return False
             if not process.parent():
@@ -402,10 +429,34 @@ def get_server_info() -> Tuple[int | None, int | None]:
             if conn.status == "LISTEN" and conn.laddr and conn.pid is not None:
                 if is_lemonade_server(conn.pid):
                     return conn.pid, conn.laddr.port
+    except (psutil.AccessDenied, PermissionError):
+        # On macOS, psutil.net_connections() requires elevated permissions
+        # Fallback: scan processes and extract port from command line
+        try:
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                try:
+                    pid = proc.info["pid"]
+                    if is_lemonade_server(pid):
+                        # Found a lemonade server, try to extract port from command line
+                        cmdline = proc.info.get("cmdline", [])
+                        port = DEFAULT_PORT  # default port when none specified
 
-    except Exception:
+                        # Look for --port argument
+                        for i, arg in enumerate(cmdline):
+                            if arg == "--port" and i + 1 < len(cmdline):
+                                try:
+                                    port = int(cmdline[i + 1])
+                                    break
+                                except (ValueError, IndexError):
+                                    pass
+
+                        return pid, port
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+    except Exception:  # pylint: disable=broad-exception-caught
         pass
-
     return None, None
 
 
@@ -418,14 +469,26 @@ def list_models():
 
     model_manager = ModelManager()
 
-    # Get all supported models and downloaded models
+    # Get all supported models and filter by backend/platform
     supported_models = model_manager.supported_models
+    filtered_models = model_manager.filter_models_by_backend(supported_models)
+
+    # Check for Intel Mac error
+    if "_unsupported_platform_error" in filtered_models:
+        error = filtered_models["_unsupported_platform_error"]
+        print(f"\n{error['error']}")
+        print(f"\n{error['message']}")
+        print(f"\nYour Platform: {error['platform']}")
+        print(f"Supported: {error['supported']}")
+        print(f"\nFor Windows/Linux support, visit https://lemonade-server.ai/docs/")
+        return
+
     downloaded_models = model_manager.downloaded_models
 
     # Filter to only show recommended models
     recommended_models = {
         model_name: model_info
-        for model_name, model_info in supported_models.items()
+        for model_name, model_info in filtered_models.items()
         if model_info.get("suggested", False)
     }
 
@@ -502,7 +565,7 @@ def _add_server_arguments(parser):
         "--llamacpp",
         type=str,
         help="LlamaCpp backend to use",
-        choices=["vulkan", "rocm"],
+        choices=["vulkan", "rocm", "metal"],
         default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(
@@ -515,7 +578,8 @@ def _add_server_arguments(parser):
         default=DEFAULT_CTX_SIZE,
     )
 
-    if os.name == "nt":
+    # Add --no-tray option for platforms that support tray (Windows and macOS)
+    if os.name == "nt" or platform.system() == "Darwin":
         parser.add_argument(
             "--no-tray",
             action="store_true",
@@ -615,7 +679,8 @@ def main():
 
     args = parser.parse_args()
 
-    if os.name != "nt":
+    # Disable tray on unsupported platforms (only Windows and macOS are supported)
+    if os.name != "nt" and platform.system() != "Darwin":
         args.no_tray = True
 
     if args.version:
