@@ -1146,20 +1146,52 @@ class Server:
             self.input_tokens = len(input_ids[0])
 
         # For non-llamacpp recipes, truncate inputs to ctx_size if needed
-        if self.llm_loaded.recipe != "llamacpp" and self.input_tokens > self.ctx_size:
-            # Truncate input ids
-            truncate_amount = self.input_tokens - self.ctx_size
-            input_ids = input_ids[: self.ctx_size]
+# Set up the generation parameters
+if "oga-" in self.llm_loaded.recipe:
+    from lemonade.tools.oga.utils import OrtGenaiStreamer
+    streamer = OrtGenaiStreamer(tokenizer)
+    self.input_tokens = len(input_ids)
+else:
+    streamer = TextIteratorStreamer(
+        tokenizer,
+        skip_prompt=True,
+    )
+    self.input_tokens = len(input_ids[0])
 
-            # Update token count
+    # Determine the appropriate context size limit
+    max_prompt_length = self.ctx_size  # Default fallback
+    
+    # For OGA models, try to read the actual max prompt length from config
+    if "oga-" in self.llm_loaded.recipe:
+        try:
+            from lemonade.tools.oga.utils import load_config
+            # Get the model path from the loaded model config
+            model_path = getattr(self.llm_loaded, 'checkpoint', None)
+            if model_path:
+                config = load_config(self, model_path)
+                if config and config.get('max_prompt_length'):
+                    max_prompt_length = config['max_prompt_length']
+                    logging.debug(f"Using OGA model max_prompt_length: {max_prompt_length}")
+        except Exception as e:
+            logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
+    
+    # Apply truncation if input exceeds the limit
+    if self.input_tokens > max_prompt_length:
+        # Truncate input ids
+        truncate_amount = self.input_tokens - max_prompt_length
+        input_ids = input_ids[:max_prompt_length]
+        
+        # Update token count
+        if "oga-" in self.llm_loaded.recipe:
             self.input_tokens = len(input_ids)
-
-            # Show warning message
-            truncation_message = (
-                f"Input exceeded {self.ctx_size} tokens. "
-                f"Truncated {truncate_amount} tokens from the beginning."
-            )
-            logging.warning(truncation_message)
+        else:
+            self.input_tokens = len(input_ids[0])
+        
+        # Log warning message instead of raising exception
+        truncation_message = (f"Input exceeded {max_prompt_length} tokens. "
+            f"Truncated {truncate_amount} tokens from the beginning."
+        )
+        logging.warning(truncation_message)
 
         # Log the input tokens early to avoid this not showing due to potential crashes
         logging.debug(f"Input Tokens: {self.input_tokens}")
