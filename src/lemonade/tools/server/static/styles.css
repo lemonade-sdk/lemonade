@@ -294,8 +294,8 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 1.1em;
+  height: 1.1em;
   background: transparent;
   border: none;
   border-radius: 50%;
@@ -303,9 +303,8 @@ body::before {
   transition: all var(--transition-fast);
   font-size: 1.5rem;
   color: #666;
-  margin-left: 0.2rem;
+  margin-left: 0.1rem;
   margin-right: 0.2rem;
-  height: 1.1em;
   line-height: 1;
 }
 
