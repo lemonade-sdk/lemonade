@@ -301,9 +301,12 @@ body::before {
   border-radius: 50%;
   cursor: pointer;
   transition: all var(--transition-fast);
-  font-size: 0.9rem;
+  font-size: 1.5rem;
   color: #666;
   margin-left: 0.2rem;
+  margin-right: 0.2rem;
+  height: 1.5em;
+  line-height: 1;
 }
 
 .model-action-btn:hover {
@@ -2200,7 +2203,6 @@ body::before {
   background: white;
   font-size: 0.9rem;
   min-width: 180px;
-  margin-right: 0.75rem;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
