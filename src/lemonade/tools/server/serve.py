@@ -1165,7 +1165,6 @@ class Server:
             # Truncate input ids
             truncate_amount = self.input_tokens - max_prompt_length
             input_ids = input_ids[:max_prompt_length]
-            
             # Update token count
             if "oga-" in self.llm_loaded.recipe:
                 self.input_tokens = len(input_ids)
