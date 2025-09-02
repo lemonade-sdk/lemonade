@@ -89,7 +89,8 @@ The setup should look as follows::
 
 * If on OpenHands you get an error with the message `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:8000/api/v1/`.
 
-* We have ran into some issues where despite the source code for a requested website being generated correctly, it cannot be accessed through the browser. When this happens, you can still copy the generated source into your own environment and run the provided commands to serve the generated website. 
+* We have run into some issues where despite the source code for a requested website being generated correctly, it cannot be accessed through the browser. When this happens, you can still copy the generated source into your own environment and run the provided commands to serve the generated website. 
+
 
 ## Resources
 
