@@ -1149,14 +1149,11 @@ class Server:
         # For OGA models, try to read the actual max prompt length from config
         if "oga-" in self.llm_loaded.recipe:
             try:
-                from lemonade.tools.oga.utils import load_config
-                # Get the model path from the loaded model config
-                model_path = getattr(self.llm_loaded, 'checkpoint', None)
-                if model_path:
-                    config = load_config(self, model_path)
-                    if config and config.get('max_prompt_length'):
-                        max_prompt_length = config['max_prompt_length']
-                        logging.debug(f"Using OGA model max_prompt_length: {max_prompt_length}")
+                if model.config and model.config.get("max_prompt_length"):
+                    max_prompt_length = model.config["max_prompt_length"]
+                    logging.debug(
+                        f"Using OGA model max_prompt_length: {max_prompt_length}"
+                    )
             except Exception as e:
                 logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
         
