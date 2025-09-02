@@ -65,7 +65,8 @@ The setup should look as follows::
 2. Wait for the status on the bottom right to say `Awaiting user input.` and enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
 <img width="952" height="502" alt="initial-prompt-lemonade-website" src="https://github.com/user-attachments/assets/6908631f-d9f3-4c4f-95b2-51e052859b39" />
 
-3. Hit `Enter` to start off the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
+3. Hit `Enter` to start the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
+
 <img width="950" height="502" alt="lemonade-website-in-progress" src="https://github.com/user-attachments/assets/2eb4b0fd-b24d-447f-888b-5e739d559716" />
 
 4. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. In the `Terminal` at the bottom, we can see that the software agent has launched the web server hosting the newly developed website at port number `52877`.  
