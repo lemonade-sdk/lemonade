@@ -37,8 +37,7 @@ In the next section, we will show how to configure OpenHands to talk to a local 
 ## Launching OpenHands
 
 To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Click on `see advanced settings` as shown in the image below:
-
-
+<img width="567" height="342" alt="configuration" src="https://github.com/user-attachments/assets/6e8d5028-580d-484b-85e0-214f821dd911" />
 
 1. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
 
@@ -102,6 +101,7 @@ The setup should look as follows::
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
