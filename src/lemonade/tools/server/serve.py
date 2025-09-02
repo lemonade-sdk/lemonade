@@ -1172,7 +1172,8 @@ class Server:
                 self.input_tokens = len(input_ids[0])
             
             # Log warning message instead of raising exception
-            truncation_message = (f"Input exceeded {max_prompt_length} tokens. "
+            truncation_message = (
+                f"Input exceeded {max_prompt_length} tokens. "
                 f"Truncated {truncate_amount} tokens from the beginning."
             )
             logging.warning(truncation_message)
