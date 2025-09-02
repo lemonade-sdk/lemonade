@@ -1144,6 +1144,7 @@ class Server:
                 skip_prompt=True,
             )
             self.input_tokens = len(input_ids[0])
+
         max_prompt_length = self.ctx_size  # Default fallback
         # For OGA models, try to read the actual max prompt length from config
         if "oga-" in self.llm_loaded.recipe:
@@ -1155,6 +1156,7 @@ class Server:
                     )
             except Exception as e:
                 logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
+
         # Apply truncation if input exceeds the limit
         if self.input_tokens > max_prompt_length:
             # Truncate input ids
@@ -1165,6 +1167,7 @@ class Server:
                 self.input_tokens = len(input_ids)
             else:
                 self.input_tokens = len(input_ids[0])
+
             # Log warning message instead of raising exception
             truncation_message = (
                 f"Input exceeded {max_prompt_length} tokens. "
