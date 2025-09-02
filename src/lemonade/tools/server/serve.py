@@ -1154,6 +1154,7 @@ class Server:
                     logging.debug(
                         f"Using OGA model max_prompt_length: {max_prompt_length}"
                     )
+            # pylint: disable=broad-exception-caught
             except Exception as e:
                 logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
 
