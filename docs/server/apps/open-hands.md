@@ -30,13 +30,15 @@ lemonade-server serve --host 0.0.0.0 --ctx-size 32768
 
 ### Installing OpenHands
 
-Follow the [OpenHands documentation](https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama) on how to install OpenHands locally. This can be done via the `uvx` tool or through `docker`. No special installation instructions are necessary to integrate with Lemonade. In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server. 
+Follow the [OpenHands documentation](https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama) on how to install OpenHands locally. This can be done via the `uvx` tool or through `docker`. No special installation instructions are necessary to integrate with Lemonade. The only thing that we suggest is that when using models that are able to use tools, such as `Qwen3-Coder-30B-A3B-Instruct-GGUF`, that native tool use is enabled. This can be done by launching OpenHands via docker and adding  `-e LLM_NATIVE_TOOL_CALLING=true` to the `docker run...` command in the OpenHands documentation. 
+
+In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server. 
 
 ## Launching OpenHands
 
 To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Click on `see advanced settings` as shown in the image below:
 
-<img width="1221" height="740" alt="annotated-ai-provider-configuration" src="https://github.com/user-attachments/assets/1e8b65cd-2409-4e94-92c6-f96adaede491" />
+
 
 1. Once in the Settings menu, toggle the `Advanced` switch to see all configuration options.
 
@@ -56,31 +58,38 @@ The setup should look as follows::
 
 ## Using OpenHands
 
-1. To launch a new project, click the `+` on the top left.
+1. To launch a new project, click `Launch from Scratch`. If you do not see this screen, click the `+` on the top left.
+<img width="955" height="507" alt="intro-screen" src="https://github.com/user-attachments/assets/707652ed-a51a-4f01-a615-87e6fdef1767" />
 
-2. Simply enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
-<img width="1911" height="1071" alt="prompt-image" src="https://github.com/user-attachments/assets/29348e0b-c741-44aa-a734-e91bb06e28a7" />
+
+2. Wait for the status on the bottom right to say `Awaiting user input.` and enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
+<img width="952" height="502" alt="initial-prompt-lemonade-website" src="https://github.com/user-attachments/assets/6908631f-d9f3-4c4f-95b2-51e052859b39" />
 
 3. Hit `Enter` to start off the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
-<img width="1905" height="1058" alt="running-commands" src="https://github.com/user-attachments/assets/069ff16c-11d4-46ea-93e0-9cf8571c2044" />
+<img width="950" height="502" alt="lemonade-website-in-progress" src="https://github.com/user-attachments/assets/2eb4b0fd-b24d-447f-888b-5e739d559716" />
 
-4. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. Note that in the `Terminal` at the bottom the software agent has already started the web server hosting the website we requested it to develop at port number `51317`.  
-<img width="1906" height="1072" alt="actual-finished-workspace" src="https://github.com/user-attachments/assets/123c496d-a158-423d-8d0d-713416c9326b" />
+4. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. Note that in the `Terminal` at the bottom the software agent has already started the web server hosting the website we requested it to develop at port number `52877`.  
+<img width="956" height="509" alt="finished-prompt-lemonade-website" src="https://github.com/user-attachments/assets/554b06cf-4593-4a1f-af67-f9b61dca6adb" />
+
 
 5. Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:
-<img width="1897" height="1068" alt="web-app" src="https://github.com/user-attachments/assets/cbaaf7bd-bc01-4c24-aa33-84ee509ca09a" />
+<img width="941" height="500" alt="lemonade-website" src="https://github.com/user-attachments/assets/485b33ad-773a-49d3-8740-255a3bb42bd6" />
+
 
 6. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
 
-**Suggestions on what to try next:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game." OpenHands with Lemonade Server was able to generate the following pong game which included user-controls, a computer-controlled opponent, and scorekeeping:
-<img width="1910" height="1070" alt="pong-game" src="https://github.com/user-attachments/assets/e1b84777-72b7-49c3-afa0-5f78379842be" />
+**Suggestions on what to try next:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game. Make the game lemon and laptop themed." OpenHands with Lemonade Server was able to generate the following pong game which included user-controls, a computer-controlled opponent, and scorekeeping:
+<img width="668" height="499" alt="pong-game-new" src="https://github.com/user-attachments/assets/5c7568b9-2697-4c3f-9e66-f5a4bdc8b394" />
+
 
 ## Common Issues
 
-* Certain small models can struggle with tool calling. This can be seen by the agent continously running the same command that is resulting in an error. For example, we have found that it is common for certain models to initially struggle with the tool required to create files. In our experience after multiple attempts, the model is able to figure out that it is not using the tool correctly and tries another method to use the tool. An example of this can be seen below. If this issue persists we recommend trying another model or prompt.    
+* Certain small models can struggle with tool calling. This can be seen by the agent continously running the same command that is resulting in an error. For example, we have found that it is common for certain models to initially struggle with the tool required to create files. In our experience after multiple attempts, the model is able to figure out that it is not using the tool correctly and tries another method to use the tool. An example of this can be seen below. If this issue persists we recommend enabling native tool in OpenHands. This can be done by launching OpenHands via docker and adding  `-e LLM_NATIVE_TOOL_CALLING=true` to the `docker run...` command in the OpenHands documentation. 
 <img width="1528" height="849" alt="tool-calling-struggles" src="https://github.com/user-attachments/assets/2e4cc756-4c0b-42ec-bdf8-dde541f30cf6" />
 
-* If on OpenHands you get an error with the message `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:8000/api/v1/`. 
+* If on OpenHands you get an error with the message `The request failed with an internal server error` and in the Lemonade log you see many `WARNING: Invalid HTTP request received` this is most likely because the base URL set in the settings is using `https` instead of `http`. If this occurs, update the base URL in the settings to `http://host.docker.internal:8000/api/v1/`.
+
+* We have ran into some issues where despite the source code for a requested website being generated correctly, it cannot be accessed through the browser. When this happens, you can still copy the generated source into your own environment and run the provided commands to serve the generated website. 
 
 ## Resources
 
@@ -88,6 +97,7 @@ The setup should look as follows::
 
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
