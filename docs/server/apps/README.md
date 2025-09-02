@@ -39,6 +39,8 @@ Links to the video tutorials available are provided in the third column of the f
 | [AnythingLLM](https://anythingllm.com/) | [Running agents locally with Lemonade and AnythingLLM](./anythingLLM.md) | _coming soon_                                                                             |
 | [lm-eval](https://github.com/EleutherAI/lm-evaluation-harness)   | [A unified framework to test generative language models on a large number of different evaluation tasks.](./lm-eval.md)              | _coming soon_                                                                             |
 | [PEEL](https://github.com/lemonade-apps/peel)     | [Using Local LLMs in Windows PowerShell](https://github.com/lemonade-apps/peel?tab=readme-ov-file#installation)                   | _coming soon_                                                                             |
+| [OpenHands](https://github.com/All-Hands-AI/OpenHands)   | [How to use Lemonade LLMs as a coding assistant in OpenHands](./open-hands.md)                                          | _coming soon_                             |
+
 
 ## 📦 Looking for Installation Help?
 
