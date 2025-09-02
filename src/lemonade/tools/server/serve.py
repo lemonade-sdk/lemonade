@@ -1160,18 +1160,33 @@ class Server:
             )
             self.input_tokens = len(input_ids[0])
 
-        # For non-llamacpp recipes, truncate inputs to ctx_size if needed
-        if self.llm_loaded.recipe != "llamacpp" and self.input_tokens > self.ctx_size:
+        max_prompt_length = self.ctx_size  # Default fallback
+        # For OGA models, try to read the actual max prompt length from config
+        if "oga-" in self.llm_loaded.recipe:
+            try:
+                if model.config and model.config.get("max_prompt_length"):
+                    max_prompt_length = model.config["max_prompt_length"]
+                    logging.debug(
+                        f"Using OGA model max_prompt_length: {max_prompt_length}"
+                    )
+            # pylint: disable=broad-exception-caught
+            except Exception as e:
+                logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
+
+        # Apply truncation if input exceeds the limit
+        if self.input_tokens > max_prompt_length:
             # Truncate input ids
-            truncate_amount = self.input_tokens - self.ctx_size
-            input_ids = input_ids[: self.ctx_size]
-
+            truncate_amount = self.input_tokens - max_prompt_length
+            input_ids = input_ids[:max_prompt_length]
             # Update token count
-            self.input_tokens = len(input_ids)
+            if "oga-" in self.llm_loaded.recipe:
+                self.input_tokens = len(input_ids)
+            else:
+                self.input_tokens = len(input_ids[0])
 
-            # Show warning message
+            # Log warning message instead of raising exception
             truncation_message = (
-                f"Input exceeded {self.ctx_size} tokens. "
+                f"Input exceeded {max_prompt_length} tokens. "
                 f"Truncated {truncate_amount} tokens from the beginning."
             )
             logging.warning(truncation_message)
