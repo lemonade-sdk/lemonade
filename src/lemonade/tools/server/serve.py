@@ -133,6 +133,21 @@ class StopOnEvent:
         return self.stop_event.is_set()
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Custom StaticFiles class with no-cache headers"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        # Add no-cache headers for all static files
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 class Server:
     """
     Open a web server that apps can use to communicate with the LLM.
@@ -198,7 +213,7 @@ class Server:
         # as the Web App
         static_dir = Path(__file__).parent / "static"
         self.app.mount(
-            "/static", StaticFiles(directory=static_dir), name="static_assets"
+            "/static", NoCacheStaticFiles(directory=static_dir), name="static_assets"
         )
 
         # Performance stats that are set during /ws and can be
