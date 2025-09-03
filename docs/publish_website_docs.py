@@ -1,4 +1,4 @@
-# In conda environment of choice, run the following from genai/ folder:
+# In conda environment of choice, run the following from lemonade repo root:
 # pip install -r docs/assets/mkdocs_requirements.txt
 
 # Then run this script to publish the documentation to docs/docs/
