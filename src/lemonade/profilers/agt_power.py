@@ -1,5 +1,5 @@
 #
-# This power profiler uses the AMD internal AGT tool.
+# This power profiler uses a tool that is not publicly available yet.
 # Please see the power profiling documentation for download and install instructions.
 #
 # The power profiling functionality is currently not part of our continuous integration
