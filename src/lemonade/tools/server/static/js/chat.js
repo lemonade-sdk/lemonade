@@ -102,9 +102,11 @@ window.initializeModelDropdown = initializeModelDropdown;
 function updateModelSelectValue() {
     if (currentLoadedModel) {
         modelSelect.value = currentLoadedModel;
-    } else {
+    } else if (modelsSelect.value = 'server-offline') {
+		modelSelect.value = 'server-offline';
+	} else {
         modelSelect.value = '';
-    }
+    } 
 }
 
 // Make updateModelSelectValue accessible globally
