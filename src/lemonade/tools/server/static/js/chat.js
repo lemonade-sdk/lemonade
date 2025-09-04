@@ -128,9 +128,15 @@ async function handleModelSelectChange() {
     await loadModelStandardized(selectedModel, {
         onLoadingStart: (modelId) => {
             // Update dropdown to show loading state with model name
-            const loadingOption = modelSelect.querySelector('option[value=""]');
+            const loadingOption = document.createElement('option');
+            const select = document.getElementById('model-select');
+            select.innerHTML = '';
+ 
             if (loadingOption) {
+            	loadingOption.value = 'loading-model';
                 loadingOption.textContent = `Loading ${modelId}...`;
+            	loadingOption.hidden = true;
+            	select.appendChild(loadingOption);
             }
         },
         onLoadingEnd: (modelId, success) => {
