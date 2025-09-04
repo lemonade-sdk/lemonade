@@ -48,10 +48,6 @@ NPU_DRIVER_DOWNLOAD_URL = (
 REQUIRED_NPU_DRIVER_VERSION = "32.0.203.280"
 
 lemonade_install_dir = Path(__file__).parent.parent.parent
-DEFAULT_QUARK_VERSION = "quark-0.6.0"
-DEFAULT_QUARK_DIR = os.path.join(
-    lemonade_install_dir, "install", "quark", DEFAULT_QUARK_VERSION
-)
 
 # List of supported Ryzen AI processor series (can be extended in the future)
 SUPPORTED_RYZEN_AI_SERIES = ["300"]
@@ -177,7 +173,7 @@ def _get_ryzenai_version_info(device=None):
             f"{e}\n Please install lemonade-sdk with "
             "one of the oga extras, for example:\n"
             "pip install lemonade-sdk[dev,oga-cpu]\n"
-            "See https://lemonade_server.ai/install_options.html for details"
+            "See https://lemonade-server.ai/install_options.html for details"
         ) from e
 
 
@@ -446,15 +442,15 @@ class Install:
         )
 
         parser.add_argument(
-            "--quark",
-            help="Install Quark Quantization tool for LLMs",
-            choices=["0.6.0"],
-        )
-
-        parser.add_argument(
             "--llamacpp",
             help="Install llama.cpp binaries with specified backend",
             choices=["rocm", "vulkan"],
+        )
+
+        parser.add_argument(
+            "--override",
+            action="store_true",
+            help="Override the deprecation error to use legacy tools.",
         )
 
         return parser
@@ -637,7 +633,7 @@ class Install:
         return file
 
     @staticmethod
-    def _install_ryzenai(ryzenai, build_model, yes, token):
+    def _install_ryzenai(ryzenai, build_model, yes, token, override=False):
         # Check if the processor is supported before proceeding
         check_ryzen_ai_processor()
 
@@ -654,6 +650,9 @@ class Install:
             + "=" * 80
             + "\n"
         )
+        if not override:
+            raise ValueError(warning_msg)
+
         print(warning_msg)
 
         # Delete any previous Ryzen AI installation in this environment
@@ -716,36 +715,6 @@ class Install:
             print(f"An error occurred while writing {version_info_path}: {e}")
 
     @staticmethod
-    def _install_quark(quark):
-        quark_install_dir = os.path.join(lemonade_install_dir, "install", "quark")
-        os.makedirs(quark_install_dir, exist_ok=True)
-
-        # Install Quark utilities
-        quark_url = (
-            f"https://www.xilinx.com/bin/public/openDownload?filename=quark-{quark}.zip"
-        )
-        quark_path = download_and_extract_package(
-            url=quark_url,
-            version=quark,
-            install_dir=quark_install_dir,
-            package_name="quark",
-        )
-        # Install Quark wheel
-        wheel_url = (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            f"filename=quark-{quark}-py3-none-any.whl"
-        )
-        wheel_path = os.path.join(quark_install_dir, f"quark-{quark}-py3-none-any.whl")
-        print(f"\nInstalling Quark wheel from {wheel_url}")
-        download_file(wheel_url, wheel_path, "wheel file")
-
-        install_cmd = f"{sys.executable} -m pip install --no-deps {wheel_path}"
-        subprocess.run(install_cmd, check=True, shell=True)
-        os.remove(wheel_path)
-
-        print(f"\nQuark installed successfully at: {quark_path}")
-
-    @staticmethod
     def _install_llamacpp(backend):
         """
         Install llama.cpp binaries with the specified backend.
@@ -762,22 +731,19 @@ class Install:
         self,
         ryzenai: Optional[str] = None,
         build_model: Optional[str] = None,
-        quark: Optional[str] = None,
         llamacpp: Optional[str] = None,
         yes: bool = False,
         token: Optional[str] = None,
+        override: bool = False,
     ):
-        if ryzenai is None and quark is None and llamacpp is None:
+        if ryzenai is None and llamacpp is None:
             raise ValueError(
                 "You must select something to install, "
-                "for example `--ryzenai`, `--quark`, or `--llamacpp`"
+                "for example `--ryzenai` or `--llamacpp`"
             )
 
         if ryzenai is not None:
-            self._install_ryzenai(ryzenai, build_model, yes, token)
-
-        if quark is not None:
-            self._install_quark(quark)
+            self._install_ryzenai(ryzenai, build_model, yes, token, override)
 
         if llamacpp is not None:
             self._install_llamacpp(llamacpp)
