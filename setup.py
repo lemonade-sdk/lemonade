@@ -35,7 +35,7 @@ setup(
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
-        "wmi",
+        "wmi; platform_system == 'Windows'",
         "py-cpuinfo",
         "pytz",
         "zstandard",
@@ -73,7 +73,7 @@ setup(
             "matplotlib",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
-            "human-eval-windows==1.0.4",
+            "human-eval-windows==1.0.4; platform_system == 'Windows'",
             "lm-eval[api]",
         ],
         "model-generate": [
