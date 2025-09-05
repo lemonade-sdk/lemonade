@@ -176,7 +176,7 @@ class LlamaServer(WrappedServer):
 
         # Use legacy reasoning formatting, since not all apps support the new
         # reasoning_content field
-        base_command.extend(["--reasoning-format", "none"])
+        base_command.extend(["--reasoning-format", "auto"])
 
         # Add embeddings support if the model supports it
         if supports_embeddings:
