@@ -78,7 +78,7 @@ function initializeModelDropdown() {
     const allModels = window.SERVER_MODELS || {};
     
     // Clear existing options except the first one
-    modelSelect.innerHTML = '<option value="">Pick a model</option>';
+    modelSelect.innerHTML = '<option value="">Click to select a model ˅</option>';
     
     // Add only installed models to dropdown
     Object.keys(allModels).forEach(modelId => {
