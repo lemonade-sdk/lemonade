@@ -73,7 +73,7 @@ setup(
             "matplotlib",
             # Install human-eval from a forked repo with Windows support until the
             # PR (https://github.com/openai/human-eval/pull/53) is merged
-            "human-eval-windows==1.0.4; platform_system == 'Windows'",
+            "human-eval-windows==1.0.4",
             "lm-eval[api]",
         ],
         "model-generate": [
