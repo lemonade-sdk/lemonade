@@ -51,7 +51,7 @@ function populateModelDropdown() {
     // Add the default option
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
-    defaultOption.textContent = 'Pick a model';
+    defaultOption.textContent = 'Click to select a model ˅';
     select.appendChild(defaultOption);
 
 	// Add the hidden 'Server Offline' option
@@ -110,12 +110,12 @@ async function updateModelStatusIndicator() {
         indicator.classList.add('loaded');
         select.value = currentLoadedModel;
         select.disabled = false;
-    } else if (health) {
+    } else if (health !== null) {
         // Server is online but no model loaded
 		indicator.classList.remove('loaded', 'offline', 'loading');
         currentLoadedModel = null;
         indicator.classList.add('online');
-        select.value = ''; // Set to the "Pick a model" option
+        select.value = ''; // Set to the "Click to select a model ˅" option
         select.disabled = false;
     } else {
         // Server is offline

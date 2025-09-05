@@ -100,10 +100,13 @@ window.initializeModelDropdown = initializeModelDropdown;
 
 // Update model select value to match currently loaded model
 function updateModelSelectValue() {
+    const indicator = document.getElementById('model-status-indicator');
     if (currentLoadedModel) {
         modelSelect.value = currentLoadedModel;
-    } else if (modelsSelect.value = 'server-offline') {
+    } else if (indicator.classList.contains('offline') && modelSelect.value === 'server-offline') {
 		modelSelect.value = 'server-offline';
+    } else if (indicator.classList.contains('loading')) {
+		return;
 	} else {
         modelSelect.value = '';
     } 
@@ -117,7 +120,7 @@ async function handleModelSelectChange() {
     const selectedModel = modelSelect.value;
     
     if (!selectedModel) {
-        return; // "Pick a model" selected
+        return; // "Click to select a model ˅" selected
     }
     
     if (selectedModel === currentLoadedModel) {
@@ -141,9 +144,9 @@ async function handleModelSelectChange() {
         },
         onLoadingEnd: (modelId, success) => {
             // Reset the default option text
-            const defaultOption = modelSelect.querySelector('option[value=""]');
+            const defaultOption = modelSelect.querySelector('option[value=""]');           
             if (defaultOption) {
-                defaultOption.textContent = 'Pick a model';
+                defaultOption.textContent = 'Click to select a model ˅';
             }
         },
         onSuccess: (loadedModelId) => {
