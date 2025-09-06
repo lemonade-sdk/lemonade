@@ -96,14 +96,7 @@ async function updateModelStatusIndicator() {
         refreshModelMgmtUIDisplay();
     }
 	
-    if (health && health.model_loading) {
-		// Model is being loaded
-		indicator.classList.remove('loaded', 'online', 'offline'); 
-		currentLoadedModel = null;
-        indicator.classList.add('loading');
-        select.disabled = true;
-        select.value = health.model_loading;
-    } else if (health && health.model_loaded) {
+	if (health && health.model_loaded) {
         // Model is loaded - show model name with online status
 		indicator.classList.remove('online', 'offline', 'loading'); 
         currentLoadedModel = health.model_loaded;

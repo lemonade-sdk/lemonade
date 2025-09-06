@@ -101,13 +101,16 @@ window.initializeModelDropdown = initializeModelDropdown;
 // Update model select value to match currently loaded model
 function updateModelSelectValue() {
     const indicator = document.getElementById('model-status-indicator');
-    if (currentLoadedModel) {
+    if (currentLoadedModel && indicator.classList.contains('loading')) {
+        modelSelect.value = 'loading-model';
+    }
+    else if (currentLoadedModel) {
         modelSelect.value = currentLoadedModel;
     } else if (indicator.classList.contains('offline') && modelSelect.value === 'server-offline') {
 		modelSelect.value = 'server-offline';
-    } else if (indicator.classList.contains('loading')) {
 		return;
 	} else {
+    } else {
         modelSelect.value = '';
     } 
 }
