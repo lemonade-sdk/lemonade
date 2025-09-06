@@ -61,8 +61,6 @@ function populateModelDropdown() {
 	hiddenOption.hidden = true;
 	select.appendChild(hiddenOption);
 	
-	//if (indicator.classList.contains('offline') == true) return;
-	
     // Get all installed models from the global set
     const sortedModels = Array.from(installedModels).sort();
     
@@ -96,7 +94,7 @@ async function updateModelStatusIndicator() {
         refreshModelMgmtUIDisplay();
     }
 	
-	if (health && health.model_loaded) {
+    if (health && health.model_loaded) {
         // Model is loaded - show model name with online status
 		indicator.classList.remove('online', 'offline', 'loading'); 
         currentLoadedModel = health.model_loaded;
@@ -114,6 +112,12 @@ async function updateModelStatusIndicator() {
         // Server is offline
 		indicator.classList.remove('loaded', 'online', 'loading');
         currentLoadedModel = null;
+		// Add the hidden 'Server Offline' option
+		const hiddenOption = document.createElement('option');
+		hiddenOption.value = 'server-offline';
+		hiddenOption.textContent = 'Server Offline';
+		hiddenOption.hidden = true;
+		select.appendChild(hiddenOption);
         indicator.classList.add('offline');
         select.value = 'server-offline';
         select.disabled = true;
@@ -365,10 +369,14 @@ function createModelItem(modelId, modelData, container) {
             actions.appendChild(unloadBtn);
         } else {
             const loadBtn = document.createElement('button');
+			const modelSelect = document.getElementById('model-select');
             loadBtn.className = 'model-item-btn load';
             loadBtn.textContent = '🚀';
             loadBtn.title = 'Load';
-            loadBtn.onclick = () => loadModel(modelId);
+            loadBtn.onclick = () => {
+				modelSelect.value = modelId;
+				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+				};
             actions.appendChild(loadBtn);
         }
         
@@ -442,6 +450,7 @@ async function loadModel(modelId) {
     const select = document.getElementById('model-select');
     
     // Set loading state for indicator
+	modelSelect.value = 'loading-model';
     indicator.classList.remove('loaded', 'online', 'offline');
     indicator.classList.add('loading');
     select.disabled = true;
