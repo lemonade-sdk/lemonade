@@ -308,7 +308,40 @@ class LlamaCppTesting(ServerTestingBase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    def test_007_test_generation_parameters_with_llamacpp(self):
+    def test_007_test_prefill_progress_in_streaming(self):
+        """Test that prefill progress updates are received during streaming"""
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",
+        )
+
+        # Use a longer prompt to potentially trigger prefill progress
+        long_prompt = "Please provide a detailed analysis of the following topic: " + "artificial intelligence " * 50
+        
+        stream = client.chat.completions.create(
+            model="Qwen3-0.6B-GGUF",
+            messages=[{"role": "user", "content": long_prompt}],
+            stream=True,
+            max_completion_tokens=10,
+        )
+
+        has_progress_updates = False
+        
+        for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                
+                # Only check for progress updates (tool calls)
+                if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                    has_progress_updates = True
+                    print("[Progress update detected]")
+                    break  # We found what we're looking for, can exit early
+
+        # Only test that we received a progress update
+        assert has_progress_updates, "Should have received at least one progress update"
+        print("✓ Prefill progress update received")
+
+    def test_008_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
         if self.llamacpp_backend == "rocm":
             self.skipTest("Skipping test when backend is set to rocm")

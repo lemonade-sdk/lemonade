@@ -4,6 +4,7 @@ import subprocess
 import re
 import threading
 import platform
+import time
 
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
@@ -24,10 +25,58 @@ class LlamaTelemetry(WrappedServerTelemetry):
     Manages telemetry data collection and display for llama server.
     """
 
+    def __init__(self):
+        super().__init__()
+        # Prefill progress tracking
+        self.prefill_progress = 0.0  # Current progress (0.0 to 1.0)
+        self.last_reported_progress = 0.0  # Track last reported to avoid spam
+        self.prefill_total_tokens = 0  # Total tokens to process
+        self.prefill_processed_tokens = 0  # Tokens processed so far
+        self.last_progress_time = 0.0  # Track last update time for throttling
+        self.prefill_complete = False  # Flag to indicate prefill completion
+
+    def reset_prefill_progress(self):
+        """Reset prefill progress tracking for a new request."""
+        self.prefill_progress = 0.0
+        self.last_reported_progress = 0.0
+        self.prefill_total_tokens = 0
+        self.prefill_processed_tokens = 0
+        self.last_progress_time = 0.0
+        self.prefill_complete = False
+
+    def should_report_progress(self) -> bool:
+        """Check if progress should be reported based on throttling rules."""
+        current_time = time.time()
+        time_since_last = current_time - self.last_progress_time
+        progress_change = abs(self.prefill_progress - self.last_reported_progress)
+
+        # Report if: significant progress change (>10%) OR enough time passed (>100ms)
+        if progress_change >= 0.1 or time_since_last >= 0.1:
+            self.last_progress_time = current_time
+            self.last_reported_progress = self.prefill_progress
+            return True
+        return False
+
     def parse_telemetry_line(self, line: str):
         """
         Parse telemetry data from llama server output lines.
         """
+
+        # Parse prefill progress from llama.cpp server output
+        # Look for "prompt processing progress" with progress value
+        progress_match = re.search(
+            r"prompt processing progress.*progress\s*=\s*([\d.]+)", line
+        )
+        if progress_match:
+            new_progress = float(progress_match.group(1))
+            self.prefill_progress = min(new_progress, 1.0)
+            return
+
+        # Also check for "prompt done" to mark completion
+        if "prompt done" in line:
+            self.prefill_complete = True
+            self.prefill_progress = 1.0
+            return
 
         if "vk::PhysicalDevice::createDevice: ErrorExtensionNotPresent" in line:
             msg = (
@@ -54,7 +103,7 @@ class LlamaTelemetry(WrappedServerTelemetry):
                 )
             return
 
-        # Parse prompt evaluation line
+        # Parse prompt evaluation line (marks end of prefill)
         prompt_match = re.search(
             r"prompt eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?"
             r"([\d.]+)\s*tokens per second",
@@ -67,6 +116,10 @@ class LlamaTelemetry(WrappedServerTelemetry):
             self.prompt_eval_time = prompt_time_ms / 1000.0
             self.input_tokens = input_tokens
             self.time_to_first_token = prompt_time_ms / 1000.0
+
+            # Mark prefill as complete
+            self.prefill_complete = True
+            self.prefill_progress = 1.0
             return
 
         # Parse generation evaluation line

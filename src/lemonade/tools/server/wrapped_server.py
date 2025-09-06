@@ -1,6 +1,8 @@
 import logging
 import time
 import subprocess
+import json
+import asyncio
 from abc import ABC, abstractmethod
 
 import requests
@@ -8,7 +10,14 @@ from tabulate import tabulate
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI, OpenAIError
+from openai.types.chat import ChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import (
+    Choice,
+    ChoiceDelta,
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
+)
 
 from lemonade_server.pydantic_models import (
     ChatCompletionRequest,
@@ -19,6 +28,38 @@ from lemonade_server.pydantic_models import (
 )
 from lemonade_server.model_manager import ModelManager
 from lemonade.tools.server.utils.port import find_free_port
+
+
+def create_progress_tool_call_chunk(progress: float) -> ChatCompletionChunk:
+    """
+    Create an OpenAI-compatible ChatCompletionChunk for progress updates.
+
+    Args:
+        progress: Progress value between 0.0 and 1.0
+
+    Returns:
+        ChatCompletionChunk object containing the progress tool call
+    """
+    tool_call = ChoiceDeltaToolCall(
+        index=0,
+        id="progress_update",
+        type="function",
+        function=ChoiceDeltaToolCallFunction(
+            name="update_progress", arguments=json.dumps({"progress": progress})
+        ),
+    )
+
+    return ChatCompletionChunk(
+        id="progress",
+        object="chat.completion.chunk",
+        created=int(time.time()),
+        model="progress",
+        choices=[
+            Choice(
+                index=0, delta=ChoiceDelta(tool_calls=[tool_call]), finish_reason=None
+            )
+        ],
+    )
 
 
 class WrappedServerTelemetry(ABC):
@@ -300,6 +341,141 @@ class WrappedServer(ABC):
                 detail=f"Failed to load {model_config.model_name} with {self.server_name}",
             )
 
+    def _supports_prefill_progress(self) -> bool:
+        """Check if telemetry supports prefill progress tracking."""
+        return (
+            hasattr(self.telemetry, "should_report_progress")
+            and hasattr(self.telemetry, "prefill_progress")
+            and hasattr(self.telemetry, "prefill_complete")
+        )
+
+    def _get_current_progress(self) -> float:
+        """Get current prefill progress from telemetry."""
+        if hasattr(self.telemetry, "prefill_progress"):
+            return self.telemetry.prefill_progress
+        return 0.0
+
+    def _is_prefill_complete(self) -> bool:
+        """Check if prefill phase is complete."""
+        return (
+            hasattr(self.telemetry, "prefill_complete")
+            and self.telemetry.prefill_complete
+        )
+
+    async def _monitor_prefill_progress_async(self):
+        """
+        Async generator that yields prefill progress updates from telemetry.
+        Used to report progress during the prefill phase before chunks arrive.
+        """
+        if not self._supports_prefill_progress():
+            return
+
+        timeout = 30  # Maximum seconds to wait
+        start_time = time.time()
+
+        last_yielded_progress = -1.0  # Track what we've actually yielded
+
+        while time.time() - start_time < timeout:
+            # Check if we should report progress
+            current_progress = self._get_current_progress()
+
+            # Check if prefill is complete and we haven't reported 1.0 yet
+            if (
+                self._is_prefill_complete()
+                and current_progress >= 1.0
+                and last_yielded_progress < 1.0
+            ):
+                progress_chunk = create_progress_tool_call_chunk(1.0)
+                yield f"data: {progress_chunk.model_dump_json()}\n\n"
+                break
+
+            # Call should_report_progress() only once to avoid side effects
+            should_report = self.telemetry.should_report_progress()
+            if should_report and current_progress != last_yielded_progress:
+                progress_chunk = create_progress_tool_call_chunk(current_progress)
+                yield f"data: {progress_chunk.model_dump_json()}\n\n"
+                last_yielded_progress = current_progress
+
+                # If we just yielded 1.0 (complete), we can stop monitoring
+                if current_progress >= 1.0:
+                    break
+
+            # Small async sleep to avoid busy waiting
+            await asyncio.sleep(0.01)
+
+    async def _stream_with_progress(self, openai_client_params: dict):
+        """
+        Stream chat completion with optional prefill progress monitoring.
+
+        Args:
+            openai_client_params: Parameters for OpenAI API call
+
+        Yields:
+            SSE formatted strings containing either progress updates or completion chunks
+        """
+        # Reset prefill progress for new request
+        if hasattr(self.telemetry, "reset_prefill_progress"):
+            self.telemetry.reset_prefill_progress()
+
+        # Create async OpenAI client for streaming
+        async_client = AsyncOpenAI(
+            base_url=self.address(),
+            api_key="lemonade",
+        )
+
+        # Use asyncio.Queue to merge streams
+        queue = asyncio.Queue()
+
+        async def fetch_stream():
+            """Fetch the actual completion stream from llama.cpp"""
+            try:
+                stream = await async_client.chat.completions.create(
+                    **openai_client_params
+                )
+                async for chunk in stream:
+                    await queue.put(("chunk", chunk))
+            except OpenAIError as e:
+                await queue.put(("error", e))
+            finally:
+                await queue.put(("done", None))
+
+        async def monitor_progress():
+            """Monitor prefill progress from telemetry"""
+            async for progress_update in self._monitor_prefill_progress_async():
+                await queue.put(("progress", progress_update))
+
+        # Start both tasks concurrently
+        fetch_task = asyncio.create_task(fetch_stream())
+        monitor_task = asyncio.create_task(monitor_progress())
+
+        # Process items from queue
+        first_chunk_received = False
+        while True:
+            try:
+                # Use wait_for to allow checking both sources
+                msg_type, data = await asyncio.wait_for(queue.get(), timeout=0.1)
+
+                if msg_type == "done":
+                    break
+                elif msg_type == "error":
+                    yield f'data: {{"error": "{str(data)}"}}\n\n'
+                    break
+                elif msg_type == "progress" and not first_chunk_received:
+                    # Only yield progress before first real chunk
+                    yield data
+                elif msg_type == "chunk":
+                    if not first_chunk_received:
+                        first_chunk_received = True
+                        monitor_task.cancel()  # Stop monitoring once real chunks arrive
+                    yield f"data: {data.model_dump_json()}\n\n"
+            except asyncio.TimeoutError:
+                # Check if tasks are still running
+                if fetch_task.done() and monitor_task.done():
+                    break
+                continue
+
+        yield "data: [DONE]\n\n"
+
     def chat_completion(self, chat_completion_request: ChatCompletionRequest):
         client = OpenAI(
             base_url=self.address(),
@@ -317,13 +493,11 @@ class WrappedServer(ABC):
         # Check if streaming is requested
         if chat_completion_request.stream:
 
-            def event_stream():
+            async def event_stream():
                 try:
-                    # Enable streaming
-                    # pylint: disable=missing-kwoa
-                    for chunk in client.chat.completions.create(**openai_client_params):
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                    yield "data: [DONE]\n\n"
+                    # Stream with progress monitoring
+                    async for data in self._stream_with_progress(openai_client_params):
+                        yield data
 
                     # Show telemetry after completion
                     self.telemetry.show_telemetry()
