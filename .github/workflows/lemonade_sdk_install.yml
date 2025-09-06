@@ -1,0 +1,124 @@
+name: Report lemonade-sdk install size
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-report:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            scenario: plain
+          - os: ubuntu-latest
+            scenario: llama-vulkan
+          - os: ubuntu-latest
+            scenario: llama-rocm
+          - os: ubuntu-latest
+            scenario: oga-cpu
+          - os: windows-latest
+            scenario: plain
+          - os: windows-latest
+            scenario: llama-vulkan
+          - os: windows-latest
+            scenario: llama-rocm
+          - os: windows-latest
+            scenario: oga-cpu
+          - os: windows-latest
+            scenario: oga-ryzenai
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        if: runner.os != 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Prepare environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            PY_URL="https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip"
+            mkdir python
+            curl -fsSLo python/python.zip "$PY_URL"
+            unzip -q python/python.zip -d python
+            curl -fsSLo get-pip.py https://bootstrap.pypa.io/get-pip.py
+            ./python/python.exe get-pip.py --no-warn-script-location
+            printf '\nLib\nLib/site-packages\nLib/site-packages/win32\nLib/site-packages/win32/lib\nLib/site-packages/Pythonwin\n' >> python/python310._pth
+            echo "PYTHON=./python/python.exe" >> "$GITHUB_ENV"
+          else
+            python -m venv venv
+            echo "PYTHON=./venv/bin/python" >> "$GITHUB_ENV"
+          fi
+      - name: Measure installation stats
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+          LEMONADE_ROCM_OVERRIDE: gfx1151
+        run: |
+          set -euo pipefail
+          $PYTHON -m pip install --upgrade pip tabulate
+          START=$(date +%s)
+          case "${{ matrix.scenario }}" in
+            plain)
+              $PYTHON -m pip install lemonade-sdk
+              ;;
+            llama-vulkan)
+              $PYTHON -m pip install lemonade-sdk
+              $PYTHON -m lemonade_install.install --llamacpp vulkan
+              ;;
+            llama-rocm)
+              $PYTHON -m pip install lemonade-sdk
+              export LEMONADE_ROCM_OVERRIDE=gfx1151 && $PYTHON -m lemonade_install.install --llamacpp rocm
+              ;;
+            oga-cpu)
+              $PYTHON -m pip install 'lemonade-sdk[oga-cpu]'
+              ;;
+            oga-ryzenai)
+              $PYTHON -m pip install -e .
+              $PYTHON -m pip install -e .[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
+              ;;
+          esac
+          END=$(date +%s)
+          INSTALL_TIME=$((END-START))
+          echo "Total install time: ${INSTALL_TIME} seconds" | tee -a "$GITHUB_STEP_SUMMARY"
+          ENV_DIR=$(dirname "$PYTHON")
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            ENV_DIR=$(dirname "$ENV_DIR")
+          fi
+          $PYTHON .github/workflows/install_report.py --stats stats.json --install-time "$INSTALL_TIME" --zip-env "$ENV_DIR" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload stats
+        uses: actions/upload-artifact@v4
+        with:
+          name: stats-${{ matrix.os }}-${{ matrix.scenario }}
+          path: stats.json
+      - name: Upload environment
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: env-${{ matrix.os }}-${{ matrix.scenario }}
+          path: python.zip
+
+  summary:
+    needs: install-report
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p artifacts
+      - uses: actions/download-artifact@v4
+        if: ${{ always() }}
+        with:
+          path: artifacts
+        continue-on-error: true
+      - run: python -m pip install tabulate
+      - name: Generate summary
+        run: |
+          echo '## Installation Summary' | tee -a "$GITHUB_STEP_SUMMARY"
+          python .github/workflows/aggregate_stats.py | tee -a "$GITHUB_STEP_SUMMARY"

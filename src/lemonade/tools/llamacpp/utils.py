@@ -62,6 +62,12 @@ def identify_rocm_arch() -> str:
     Identify the appropriate ROCm target architecture based on the device info
     Returns tuple of (architecture, gpu_type) where gpu_type is 'igpu' or 'dgpu'
     """
+    override = os.environ.get("LEMONADE_ROCM_OVERRIDE")
+    if override:
+        logging.info(
+            "LEMONADE_ROCM_OVERRIDE set to %s; skipping device detection", override
+        )
+        return override
 
     # Check for integrated and discrete AMD GPUs
     system_info = get_system_info()
