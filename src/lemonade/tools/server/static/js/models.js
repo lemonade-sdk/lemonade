@@ -494,6 +494,8 @@ function createModelNameWithLabels(modelId, serverModels) {
                 labelClass = 'reranking';
             } else if (labelLower === 'coding') {
                 labelClass = 'coding';
+            } else if (labelLower === 'tool-calling') {
+                labelClass = 'tool-calling';
             }
             labelSpan.className = `model-label ${labelClass}`;
             labelSpan.textContent = label;
