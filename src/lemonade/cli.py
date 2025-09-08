@@ -129,7 +129,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
 
     # If profilers are requested, get the full list with warnings for missing ones
     if requested_profilers:
-        profilers_with_warnings = get_available_profilers(warn_missing=True)
+        get_available_profilers(warn_missing=True)
 
     profiler_instances = [
         profiler(global_args[profiler.unique_name.replace("-", "_")])
