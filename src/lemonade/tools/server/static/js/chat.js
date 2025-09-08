@@ -397,7 +397,7 @@ function updateMessageContent(bubbleElement, text, isMarkdown = false) {
 
     // Update label & chevron (don’t override user-expanded state)
     headerChevron.textContent = expanded ? '▼' : '▶';
-    headerLabel.textContent = (expanded && isThinking) ? 'Thinking...' : 'Thought Process';
+    headerLabel.textContent = isThinking ? 'Thinking...' : 'Thought Process';
 
     // Update reasoning content (can re-run markdown safely)
     thoughtContent.innerHTML = renderMarkdown(thought);
