@@ -326,6 +326,98 @@ function fileToBase64(file) {
     });
 }
 
+/**
+ * Incrementally (re)renders reasoning + answer without blowing away the header so user
+ * collapsing/expanding persists while tokens stream.
+ */
+function updateMessageContent(bubbleElement, text, isMarkdown = false) {
+    if (!isMarkdown) {
+        bubbleElement.textContent = text;
+        return;
+    }
+
+    const { main, thought, isThinking } = parseReasoningBlocks(text);
+
+    // Pure normal markdown (no reasoning)
+    if (!thought.trim()) {
+        // If structure existed before, replace fully (safe—no toggle needed)
+        bubbleElement.innerHTML = renderMarkdown(main);
+        delete bubbleElement.dataset.thinkExpanded;
+        return;
+    }
+
+    // Determine current expanded state (user preference) or default
+    let expanded;
+    if (bubbleElement.dataset.thinkExpanded === 'true') expanded = true;
+    else if (bubbleElement.dataset.thinkExpanded === 'false') expanded = false;
+    else expanded = !!isThinking; // default: open while still streaming until user intervenes
+
+    // Create structure once
+    let container = bubbleElement.querySelector('.think-tokens-container');
+    let thoughtContent, headerChevron, headerLabel, mainDiv;
+
+    if (!container) {
+        bubbleElement.innerHTML = ''; // first time constructing reasoning UI
+
+        container = document.createElement('div');
+        container.className = 'think-tokens-container' + (expanded ? '' : ' collapsed');
+
+        const header = document.createElement('div');
+        header.className = 'think-tokens-header';
+        header.onclick = function () { toggleThinkTokens(header); };
+
+        headerChevron = document.createElement('span');
+        headerChevron.className = 'think-tokens-chevron';
+        headerChevron.textContent = expanded ? '▼' : '▶';
+
+        headerLabel = document.createElement('span');
+        headerLabel.className = 'think-tokens-label';
+        header.appendChild(headerChevron);
+        header.appendChild(headerLabel);
+
+        thoughtContent = document.createElement('div');
+        thoughtContent.className = 'think-tokens-content';
+        thoughtContent.style.display = expanded ? 'block' : 'none';
+
+        container.appendChild(header);
+        container.appendChild(thoughtContent);
+        bubbleElement.appendChild(container);
+
+        if (main.trim()) {
+            mainDiv = document.createElement('div');
+            mainDiv.className = 'main-response';
+            bubbleElement.appendChild(mainDiv);
+        }
+    } else {
+        thoughtContent = container.querySelector('.think-tokens-content');
+        headerChevron = container.querySelector('.think-tokens-chevron');
+        headerLabel = container.querySelector('.think-tokens-label');
+        mainDiv = bubbleElement.querySelector('.main-response');
+    }
+
+    // Update label & chevron (don’t override user-expanded state)
+    headerChevron.textContent = expanded ? '▼' : '▶';
+    headerLabel.textContent = (expanded && isThinking) ? 'Thinking...' : 'Thought Process';
+
+    // Update reasoning content (can re-run markdown safely)
+    thoughtContent.innerHTML = renderMarkdown(thought);
+
+    // Update main answer section
+    if (main.trim()) {
+        if (!mainDiv) {
+            mainDiv = document.createElement('div');
+            mainDiv.className = 'main-response';
+            bubbleElement.appendChild(mainDiv);
+        }
+        mainDiv.innerHTML = renderMarkdown(main);
+    } else if (mainDiv) {
+        mainDiv.remove();
+    }
+
+    // Persist preference
+    bubbleElement.dataset.thinkExpanded = expanded ? 'true' : 'false';
+}
+
 function appendMessage(role, text, isMarkdown = false) {
     const div = document.createElement('div');
     div.className = 'chat-message ' + role;
@@ -333,7 +425,8 @@ function appendMessage(role, text, isMarkdown = false) {
     bubble.className = 'chat-bubble ' + role;
 
     if (isMarkdown) {
-        bubble.innerHTML = renderMarkdownWithThinkTokens(text);
+        // Build structure via incremental updater (ensures later token updates won’t wipe user toggle)
+        updateMessageContent(bubble, text, true);
     } else {
         bubble.textContent = text;
     }
@@ -344,47 +437,25 @@ function appendMessage(role, text, isMarkdown = false) {
     return bubble;
 }
 
-function displaySystemMessage() {
-    if (systemMessageElement) {
-        systemMessageElement.remove();
-        systemMessageElement = null;
-    }
-    if (messages.length > 0) return;
+function toggleThinkTokens(header) {
+    const container = header.parentElement;
+    const content = container.querySelector('.think-tokens-content');
+    const chevron = header.querySelector('.think-tokens-chevron');
+    const bubble = header.closest('.chat-bubble');
 
-    let messageText = '';
-    const hasInstalledModels = window.installedModels && window.installedModels.size > 0;
-
-    if (!hasInstalledModels) {
-        messageText = `Welcome to Lemonade! To get started:
-1. Head over to the Model Management tab.
-2. Use the 📥Download button to download a model.
-3. Use the 🚀Load button to load the model.
-4. Come back to this tab, and you are ready to chat with the model.`;
-    } else if (!currentLoadedModel) {
-        messageText = 'Welcome to Lemonade! Choose a model from the dropdown menu below to load it and start chatting.';
-    }
-
-    if (messageText) {
-        const div = document.createElement('div');
-        div.className = 'chat-message system';
-        div.setAttribute('data-system-message', 'true');
-
-        const bubble = document.createElement('div');
-        bubble.className = 'chat-bubble system';
-        bubble.textContent = messageText;
-
-        div.appendChild(bubble);
-        chatHistory.appendChild(div);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-        systemMessageElement = div;
-    }
-}
-
-function updateMessageContent(bubbleElement, text, isMarkdown = false) {
-    if (isMarkdown) {
-        bubbleElement.innerHTML = renderMarkdownWithThinkTokens(text);
+    const nowCollapsed = !container.classList.contains('collapsed'); // current (before toggle) expanded?
+    if (nowCollapsed) {
+        // Collapse
+        content.style.display = 'none';
+        chevron.textContent = '▶';
+        container.classList.add('collapsed');
+        if (bubble) bubble.dataset.thinkExpanded = 'false';
     } else {
-        bubbleElement.textContent = text;
+        // Expand
+        content.style.display = 'block';
+        chevron.textContent = '▼';
+        container.classList.remove('collapsed');
+        if (bubble) bubble.dataset.thinkExpanded = 'true';
     }
 }
 
@@ -439,16 +510,21 @@ function parseReasoningBlocks(raw) {
     return { main, thought, isThinking };
 }
 
-function renderMarkdownWithThinkTokens(text) {
+function renderMarkdownWithThinkTokens(text, preservedExpanded) {
     const { main, thought, isThinking } = parseReasoningBlocks(text);
 
     if (!thought.trim()) {
         return renderMarkdown(main);
     }
 
-    const expanded = isThinking; // open while streaming
+    // If we have a preserved user preference, honor it. Otherwise default:
+    // open while streaming (original behavior) else collapsed = false.
+    let expanded = (typeof preservedExpanded === 'boolean')
+        ? preservedExpanded
+        : !!isThinking;
+
     const chevron = expanded ? '▼' : '▶';
-    const label = expanded ? 'Thinking...' : 'Thought Process';
+    const label = expanded && isThinking ? 'Thinking...' : (expanded ? 'Thought Process' : 'Thought Process');
 
     let html = `
         <div class="think-tokens-container${expanded ? '' : ' collapsed'}">
@@ -480,15 +556,21 @@ function toggleThinkTokens(header) {
     const container = header.parentElement;
     const content = container.querySelector('.think-tokens-content');
     const chevron = header.querySelector('.think-tokens-chevron');
+    const bubble = header.closest('.chat-bubble');
 
-    if (content.style.display === 'none') {
-        content.style.display = 'block';
-        chevron.textContent = '▼';
-        container.classList.remove('collapsed');
-    } else {
+    const nowCollapsed = !container.classList.contains('collapsed'); // current (before toggle) expanded?
+    if (nowCollapsed) {
+        // Collapse
         content.style.display = 'none';
         chevron.textContent = '▶';
         container.classList.add('collapsed');
+        if (bubble) bubble.dataset.thinkExpanded = 'false';
+    } else {
+        // Expand
+        content.style.display = 'block';
+        chevron.textContent = '▼';
+        container.classList.remove('collapsed');
+        if (bubble) bubble.dataset.thinkExpanded = 'true';
     }
 }
 
