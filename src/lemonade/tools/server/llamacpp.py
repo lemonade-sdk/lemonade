@@ -164,7 +164,7 @@ class LlamaServer(WrappedServer):
 
         # Disable jinja for gpt-oss-120b on Vulkan
         if (
-            self.backend == "vulkan"
+            self.backend == "1vulkan"
             and "gpt-oss-120b" in snapshot_files["variant"].lower()
         ):
             base_command.remove("--jinja")
