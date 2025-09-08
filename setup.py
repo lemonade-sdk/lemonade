@@ -35,7 +35,7 @@ setup(
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
-        "wmi",
+        "wmi; platform_system == 'Windows'",
         "py-cpuinfo",
         "pytz",
         "zstandard",
