@@ -458,6 +458,42 @@ function appendMessage(role, text, isMarkdown = false) {
     return bubble;
 }
 
+function displaySystemMessage() {
+    if (systemMessageElement) {
+        systemMessageElement.remove();
+        systemMessageElement = null;
+    }
+    if (messages.length > 0) return;
+
+    let messageText = '';
+    const hasInstalledModels = window.installedModels && window.installedModels.size > 0;
+
+    if (!hasInstalledModels) {
+        messageText = `Welcome to Lemonade! To get started:
+1. Head over to the Model Management tab.
+2. Use the 📥Download button to download a model.
+3. Use the 🚀Load button to load the model.
+4. Come back to this tab, and you are ready to chat with the model.`;
+    } else if (!currentLoadedModel) {
+        messageText = 'Welcome to Lemonade! Choose a model from the dropdown menu below to load it and start chatting.';
+    }
+
+    if (messageText) {
+        const div = document.createElement('div');
+        div.className = 'chat-message system';
+        div.setAttribute('data-system-message', 'true');
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble system';
+        bubble.textContent = messageText;
+
+        div.appendChild(bubble);
+        chatHistory.appendChild(div);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        systemMessageElement = div;
+    }
+}
+
 function toggleThinkTokens(header) {
     const container = header.parentElement;
     const content = container.querySelector('.think-tokens-content');
