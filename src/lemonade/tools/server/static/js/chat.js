@@ -80,7 +80,7 @@ function initializeModelDropdown() {
     // Clear existing options except the first one
     const indicator = document.getElementById('model-status-indicator');
     if (indicator.classList.contains('offline') || modelSelect.value === 'server-offline') {
-		modelSelect.innerHTML = '<option value="server-offline" hidden>Server Offline</option>';
+        modelSelect.value = 'server-offline';
     } else {
         modelSelect.innerHTML = '<option value="">Click to select a model ˅</option>';
     }

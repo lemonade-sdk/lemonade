@@ -77,6 +77,7 @@ function populateModelDropdown() {
 async function updateModelStatusIndicator() {
     const indicator = document.getElementById('model-status-indicator');
     const select = document.getElementById('model-select');
+	const buttonIcons = document.querySelectorAll('button');
       
     // Fetch both health and installed models
     const [health] = await Promise.all([
@@ -101,6 +102,7 @@ async function updateModelStatusIndicator() {
         indicator.classList.add('loaded');
         select.value = currentLoadedModel;
         select.disabled = false;
+		buttonIcons.forEach(btn => btn.disabled = false);
     } else if (health !== null) {
         // Server is online but no model loaded
 		indicator.classList.remove('loaded', 'offline', 'loading');
@@ -108,6 +110,7 @@ async function updateModelStatusIndicator() {
         indicator.classList.add('online');
         select.value = ''; // Set to the "Click to select a model ˅" option
         select.disabled = false;
+		buttonIcons.forEach(btn => btn.disabled = false);
     } else {
         // Server is offline
 		indicator.classList.remove('loaded', 'online', 'loading');
@@ -121,6 +124,7 @@ async function updateModelStatusIndicator() {
         indicator.classList.add('offline');
         select.value = 'server-offline';
         select.disabled = true;
+		buttonIcons.forEach(btn => btn.disabled = true);
 		return;
     }
 }
@@ -590,7 +594,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     await updateModelStatusIndicator();
     
     // Set up periodic refresh of model status
-    setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
+    setInterval(updateModelStatusIndicator, 1000); // Check every 1 seconds
     
     // Initialize model browser with hot models
     displayHotModels();
