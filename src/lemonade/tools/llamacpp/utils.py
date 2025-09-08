@@ -14,7 +14,7 @@ from lemonade.common.system_info import get_system_info
 
 from dotenv import set_key, load_dotenv
 
-LLAMA_VERSION_VULKAN = "b6097"
+LLAMA_VERSION_VULKAN = "b6392"
 LLAMA_VERSION_ROCM = "b1021"
 
 
