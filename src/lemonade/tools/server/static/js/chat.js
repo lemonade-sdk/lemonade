@@ -6,6 +6,13 @@ let systemMessageElement = null;
 // Default model configuration
 const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
 
+const THINKING_ANIM_INTERVAL_MS = 550;
+// Toggle this to false if you prefer plain dots only.
+const THINKING_USE_LEMON = true;
+const THINKING_FRAMES = THINKING_USE_LEMON
+    ? ['Thinking.','Thinking..','Thinking...','Thinking 🍋']
+    : ['Thinking.','Thinking..','Thinking...'];
+
 // Get DOM elements
 let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
 
@@ -397,7 +404,21 @@ function updateMessageContent(bubbleElement, text, isMarkdown = false) {
 
     // Update label & chevron (don’t override user-expanded state)
     headerChevron.textContent = expanded ? '▼' : '▶';
-    headerLabel.textContent = isThinking ? 'Thinking...' : 'Thought Process';
+    // Animation-aware label handling
+    if (isThinking) {
+        // If not already animating, seed an initial frame then start animation
+        if (bubbleElement.dataset.thinkAnimActive !== '1') {
+            headerLabel.textContent = THINKING_FRAMES[0];
+            startThinkingAnimation(container);
+        }
+    } else {
+        // Stop any animation and set final label
+        if (bubbleElement.dataset.thinkAnimActive === '1') {
+            stopThinkingAnimation(container);
+        } else {
+            headerLabel.textContent = 'Thought Process';
+        }
+    }
 
     // Update reasoning content (can re-run markdown safely)
     thoughtContent.innerHTML = renderMarkdown(thought);
@@ -572,6 +593,36 @@ function toggleThinkTokens(header) {
         container.classList.remove('collapsed');
         if (bubble) bubble.dataset.thinkExpanded = 'true';
     }
+}
+
+function startThinkingAnimation(container) {
+    const bubble = container.closest('.chat-bubble');
+    if (!bubble || bubble.dataset.thinkAnimActive === '1') return;
+    const labelEl = container.querySelector('.think-tokens-label');
+    if (!labelEl) return;
+    bubble.dataset.thinkAnimActive = '1';
+    let i = 0;
+    const update = () => {
+        // If streaming ended mid-cycle, stop.
+        if (bubble.dataset.thinkAnimActive !== '1') return;
+        labelEl.textContent = THINKING_FRAMES[i % THINKING_FRAMES.length];
+        i++;
+        bubble.dataset.thinkAnimId = String(setTimeout(update, THINKING_ANIM_INTERVAL_MS));
+    };
+    update();
+}
+
+function stopThinkingAnimation(container, finalLabel = 'Thought Process') {
+    const bubble = container.closest('.chat-bubble');
+    if (!bubble) return;
+    bubble.dataset.thinkAnimActive = '0';
+    const id = bubble.dataset.thinkAnimId;
+    if (id) {
+        clearTimeout(Number(id));
+        delete bubble.dataset.thinkAnimId;
+    }
+    const labelEl = container.querySelector('.think-tokens-label');
+    if (labelEl) labelEl.textContent = finalLabel;
 }
 
 async function sendMessage(existingTextIfAny) {
@@ -803,4 +854,6 @@ async function sendMessage(existingTextIfAny) {
         showErrorBanner(`Chat error: ${detail}`);
     }
     sendBtn.disabled = false;
+    // Force a final render to trigger stop animation if needed
+    updateMessageContent(llmBubble, llmText, true);
 }
