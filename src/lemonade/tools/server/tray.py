@@ -485,8 +485,8 @@ class LemonadeTray(SystemTray):
 
         for ctx_label, ctx_value in ctx_size_options:
              # Create a function that returns the lambda to properly capture the ctx_size variable
-            def create_ctx_handler(ctx_size):  # ← CORRECT NAME
-               return lambda: self.change_context_size(new_ctx_size=ctx_size)
+            def create_ctx_handler(ctx_size):
+               return lambda icon, item: self.change_context_size(icon, item, ctx_size)
             
             ctx_item = MenuItem(
                 f"Context size {ctx_label}", create_ctx_handler(ctx_value) 
