@@ -82,7 +82,7 @@ function initializeModelDropdown() {
     if (indicator.classList.contains('offline') || modelSelect.value === 'server-offline') {
         modelSelect.value = 'server-offline';
     } else {
-        modelSelect.innerHTML = '<option value="">Click to select a model ˅</option>';
+        modelSelect.innerHTML = '<option value="">Click to select a model ▼</option>';
     }
     // Add only installed models to dropdown
     Object.keys(allModels).forEach(modelId => {
@@ -124,7 +124,7 @@ async function handleModelSelectChange() {
     const selectedModel = modelSelect.value;
 
     if (!selectedModel) {
-        return; // "Click to select a model ˅" selected
+        return; // "Click to select a model ▼" selected
     }
 
     if (selectedModel === currentLoadedModel) {
@@ -150,7 +150,7 @@ async function handleModelSelectChange() {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');           
             if (defaultOption) {
-                defaultOption.textContent = 'Click to select a model ˅';
+                defaultOption.textContent = 'Click to select a model ▼';
             }
         },
         onSuccess: (loadedModelId) => {
