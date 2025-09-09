@@ -229,7 +229,7 @@
         "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot","reasoning"]
+        "labels": ["hot"]
     },
     "Qwen3-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
