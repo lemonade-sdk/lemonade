@@ -162,21 +162,9 @@ class LlamaServer(WrappedServer):
         # Add port and jinja to enable tool use
         base_command.extend(["--port", str(self.port), "--jinja"])
 
-        # Disable jinja for gpt-oss-120b on Vulkan
-        if (
-            self.backend == "vulkan"
-            and "gpt-oss-120b" in snapshot_files["variant"].lower()
-        ):
-            base_command.remove("--jinja")
-            logging.warning(
-                "Jinja is disabled for gpt-oss-120b on Vulkan due to a llama.cpp bug "
-                "(see https://github.com/ggml-org/llama.cpp/issues/15274). "
-                "The model cannot use tools. If needed, use the ROCm backend instead."
-            )
-
         # Use legacy reasoning formatting, since not all apps support the new
         # reasoning_content field
-        base_command.extend(["--reasoning-format", "none"])
+        base_command.extend(["--reasoning-format", "auto"])
 
         # Add embeddings support if the model supports it
         if supports_embeddings:
