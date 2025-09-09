@@ -288,6 +288,7 @@ function handleChatInputKeydown(e) {
         e.preventDefault();
         clearAttachments();
     } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         // Check if we have a loaded model
         if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
             sendMessage();
