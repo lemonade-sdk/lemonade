@@ -104,7 +104,7 @@ class LlamaCppTesting(ServerTestingBase):
         complete_response = ""
         chunk_count = 0
         for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
+            if chunk.choices and chunk.choices[0].delta.content is not None:
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
