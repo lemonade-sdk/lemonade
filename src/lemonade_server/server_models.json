@@ -241,7 +241,7 @@
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","hot"]
+        "labels": ["coding","hot","tool-calling"]
     },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
@@ -299,7 +299,7 @@
         "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding"]
+        "labels": ["coding","tool-calling"]
     },
     "Qwen2.5-Coder-32B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
@@ -311,7 +311,7 @@
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot", "reasoning"]
+        "labels": ["hot", "reasoning", "tool-calling"]
     },
     "gpt-oss-20b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
