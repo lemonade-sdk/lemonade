@@ -874,6 +874,10 @@ body::before {
   background-color: var(--info-primary);
 }
 
+.model-label.tool-calling {
+  background-color: #FFB74D;
+}
+
 .model-label.other {
   background-color: var(--success-primary);
 }
