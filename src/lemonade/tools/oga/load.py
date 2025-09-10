@@ -78,28 +78,11 @@ def _compare_driver_versions(current_version, required_version):
     """
     Compare two driver version strings.
     Returns True if current_version >= required_version, False otherwise.
-    Assumes version format like "32.0.203.280"
+    Uses packaging.version for proper semantic version comparison.
     """
-    try:
-        current_parts = [int(x) for x in current_version.split(".")]
-        required_parts = [int(x) for x in required_version.split(".")]
+    from packaging.version import Version
+    return Version(current_version) >= Version(required_version)
 
-        # Pad shorter version with zeros
-        max_len = max(len(current_parts), len(required_parts))
-        current_parts.extend([0] * (max_len - len(current_parts)))
-        required_parts.extend([0] * (max_len - len(required_parts)))
-
-        # Compare each part
-        for current, required in zip(current_parts, required_parts):
-            if current > required:
-                return True
-            elif current < required:
-                return False
-        # All parts equal
-        return True
-    except (ValueError, AttributeError):
-        # If we can't parse the versions, fall back to string comparison
-        return current_version >= required_version
 
 
 def import_error_heler(e: Exception):
