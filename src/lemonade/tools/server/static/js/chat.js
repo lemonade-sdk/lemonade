@@ -1063,6 +1063,5 @@ async function sendMessage(existingTextIfAny) {
     if (sendBtn) sendBtn.disabled = false;
     if (stopBtn) stopBtn.disabled = true;
     abortController = null;
-    // Force a final render to trigger stop animation if needed
     updateMessageContent(llmBubble, llmText, true);
 }
