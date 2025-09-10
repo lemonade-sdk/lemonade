@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import webbrowser
@@ -22,7 +23,7 @@ if platform.system() == "Darwin":  # macOS
         MenuItem,
     )
 else:  # Windows/Linux
-    from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
+    from lemonade.tools.server.utils.windows_tray import SystemTray, Menu, MenuItem
 
 
 class OutputDuplicator:
@@ -313,30 +314,54 @@ class LemonadeTray(SystemTray):
         """
         Change the server port and restart the server.
         """
+        old_port = self.port
         try:
+            self.logger.info(f"Changing server port from {old_port} to {new_port}")
+
             # Stop the current server
             if self.server_thread and self.server_thread.is_alive():
+                self.logger.info("Stopping current server...")
                 # Set should_exit flag on the uvicorn server instance
                 if (
                     hasattr(self.server, "uvicorn_server")
                     and self.server.uvicorn_server
                 ):
                     self.server.uvicorn_server.should_exit = True
-                self.server_thread.join(timeout=2)
+                self.server_thread.join(timeout=5)  # Give more time for shutdown
 
-            # Update the port in both the tray and the server instance
+                if self.server_thread.is_alive():
+                    self.logger.warning("Server thread did not shut down cleanly")
+                else:
+                    self.logger.info("Server stopped successfully")
+
+            # Update the port
             self.port = new_port
-            if self.server:
-                self.server.port = new_port
 
-            # Restart the server
+            # Clear the old server instance to ensure a fresh start
+            # This prevents middleware conflicts when restarting
+            self.server = None
+
+            # Restart the server with a fresh instance
+            self.logger.info(f"Starting server on new port {new_port}")
             self.server_thread = threading.Thread(target=self.start_server, daemon=True)
             self.server_thread.start()
 
-            # Show notification
-            self.show_balloon_notification(
-                "Port Changed", f"Lemonade Server is now running on port {self.port}"
-            )
+            # Wait a bit for the server to start and then verify it's running
+            time.sleep(2)
+
+            # Check if server started successfully
+            if self.check_server_state():
+                self.logger.info(f"Server successfully restarted on port {new_port}")
+                self.show_balloon_notification(
+                    "Port Changed",
+                    f"Lemonade Server is now running on port {self.port}",
+                )
+            else:
+                self.logger.error(f"Server failed to start on port {new_port}")
+                self.show_balloon_notification(
+                    "Error",
+                    f"Server failed to start on port {new_port}. Check logs for details.",
+                )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error changing port: {str(e)}")
@@ -541,6 +566,11 @@ class LemonadeTray(SystemTray):
         Start the uvicorn server.
         """
         self.server = self.server_factory()
+
+        # Ensure the server uses the current port from the tray
+        # This is important when changing ports
+        self.server.port = self.port
+
         self.server.uvicorn_server = self.server.run_in_thread(self.server.host)
         self.server.uvicorn_server.run()
 

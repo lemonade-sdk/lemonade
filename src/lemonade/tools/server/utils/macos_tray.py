@@ -118,7 +118,9 @@ class MacOSSystemTray:
 
         return wrapper
 
-    def show_balloon_notification(self, title, message, timeout=5000):  # pylint: disable=unused-argument
+    def show_balloon_notification(
+        self, title, message, timeout=5000
+    ):  # pylint: disable=unused-argument
         """
         Show a notification on macOS using the Notification Center.
         Falls back to console output if AppleScript fails.
@@ -240,7 +242,7 @@ def get_system_tray_class():
         return MacOSSystemTray
     elif system == "Windows":
         try:
-            from .system_tray import SystemTray
+            from .windows_tray import SystemTray
 
             return SystemTray
         except ImportError as e:

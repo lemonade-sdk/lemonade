@@ -202,6 +202,12 @@ class Server:
             allow_headers=["*"],  # Allows all headers
         )
 
+        # Set up debug middleware if debug logging is enabled
+        # This must be done during app initialization, not at runtime
+        self.debug_logging_enabled = log_level == "debug"
+        if self.debug_logging_enabled:
+            self.setup_middleware_timer()
+
         # Set up custom routes
         self.setup_routes(["/api/v0", "/api/v1"])
 
@@ -418,9 +424,8 @@ class Server:
             ).run()
             sys.exit(0)
 
-        if self.debug_logging_enabled:
-            # Print the elapsed time for each request
-            self.setup_middleware_timer()
+        # Debug middleware is now set up during app initialization
+        # to prevent "Cannot add middleware after an application has started" errors
 
         # Let the app know what port it's running on, so
         # that the lifespan can access it
