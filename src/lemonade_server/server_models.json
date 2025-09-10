@@ -320,7 +320,7 @@
         "labels": ["reasoning", "tool-calling"]
     },
     "gpt-oss-120b-mxfp-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-120b-GGUF",
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": ["hot", "reasoning", "tool-calling"]

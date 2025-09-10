@@ -500,7 +500,7 @@ def get_local_checkpoint_path(base_checkpoint, variant):
 
 
 def identify_gguf_models(
-    checkpoint: str, variant: str, mmproj: str
+    checkpoint: str, variant: Optional[str], mmproj: str
 ) -> tuple[dict, list[str]]:
     """
     Identifies the GGUF model files in the repository that match the variant.
@@ -510,12 +510,14 @@ def identify_gguf_models(
     The CHECKPOINT:VARIANT scheme is used to specify model files in Hugging Face repositories.
 
     The VARIANT format can be one of several types:
+    0. wildcard (*): download all files in the repo
     1. Full filename: exact file to download
     2. None/empty: gets the first .gguf file in the repository (excludes mmproj files)
     3. Quantization variant: find a single file ending with the variant name (case insensitive)
     4. Folder name: downloads all .gguf files in the folder that matches the variant name (case insensitive)
 
     Examples:
+    - "ggml-org/gpt-oss-120b-GGUF:*" -> downloads all files in repo
     - "unsloth/Qwen3-8B-GGUF:qwen3.gguf" -> downloads "qwen3.gguf"
     - "unsloth/Qwen3-30B-A3B-GGUF" -> downloads "Qwen3-30B-A3B-GGUF.gguf"
     - "unsloth/Qwen3-8B-GGUF:Q4_1" -> downloads "Qwen3-8B-GGUF-Q4_1.gguf"
@@ -527,8 +529,17 @@ def identify_gguf_models(
     repo_files = list_repo_files(checkpoint)
     sharded_files = []
 
+    # (case 0) Wildcard, download everything
+    if variant and variant == "*":
+        sharded_files = repo_files
+
+        # Sort to ensure consistent ordering
+        sharded_files.sort()
+
+        # Use first file as primary (this is how llamacpp handles it)
+        variant_name = sharded_files[0]
     # (case 1) If variant ends in .gguf, use it directly
-    if variant and variant.endswith(".gguf"):
+    elif variant and variant.endswith(".gguf"):
         variant_name = variant
         if variant_name not in repo_files:
             raise ValueError(
