@@ -1600,7 +1600,7 @@ class Server:
         # Check if the model exists in our local_models
         if model_id not in self.local_models:
             raise NotFoundError(f"Model {model_id} has not been found")
-        
+
         # Return the specific model
         model_info = self.local_models[model_id]
         model = ServerModel(
@@ -1611,7 +1611,7 @@ class Server:
             checkpoint=model_info["checkpoint"],
             recipe=model_info["recipe"],
         )
-        
+
         return model
 
     def setup_middleware_timer(self):
