@@ -152,7 +152,7 @@ async function handleModelSelectChange() {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) defaultOption.textContent = 'Click to select a model ▼';
-
+		},
         onSuccess: () => {
             updateAttachmentButtonState();
         },
