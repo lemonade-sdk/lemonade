@@ -104,7 +104,7 @@ class LlamaCppTesting(ServerTestingBase):
         complete_response = ""
         chunk_count = 0
         for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
+            if chunk.choices and chunk.choices[0].delta.content is not None:
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
@@ -311,8 +311,10 @@ class LlamaCppTesting(ServerTestingBase):
     def test_007_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
         # Refer to https://github.com/lemonade-sdk/lemonade/issues/274 for more details
-        if self.llamacpp_backend == "rocm":
-            self.skipTest("Skipping test when backend is set to rocm")
+        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan":
+            self.skipTest(
+                "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
+            )
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping test when backend is set to metal")
         client = OpenAI(

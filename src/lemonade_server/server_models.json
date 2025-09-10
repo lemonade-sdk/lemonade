@@ -225,6 +225,12 @@
         "suggested": true,
         "labels": ["reasoning"]
     },
+    "Qwen3-4B-Instruct-2507-GGUF": {
+        "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot"]
+    },
     "Qwen3-30B-A3B-GGUF": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
         "recipe": "llamacpp",
@@ -241,14 +247,14 @@
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","hot"]
+        "labels": ["coding","tool-calling"]
     },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-model-f16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["vision"]
+        "labels": ["hot","vision"]
     },
     "Qwen2.5-VL-7B-Instruct-GGUF": {
         "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
@@ -299,7 +305,7 @@
         "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding"]
+        "labels": ["coding","tool-calling"]
     },
     "Qwen2.5-Coder-32B-Instruct-GGUF": {
         "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
@@ -310,14 +316,26 @@
     "gpt-oss-120b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
-        "suggested": true,
-        "labels": ["hot", "reasoning"]
+        "suggested": false,
+        "labels": ["reasoning", "tool-calling"]
     },
     "gpt-oss-20b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
+        "suggested": false,
+        "labels": ["reasoning", "tool-calling"]
+    },
+    "gpt-oss-120b-mxfp-GGUF": {
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+        "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot", "reasoning"]
+        "labels": ["hot", "reasoning", "tool-calling"]
+    },
+    "gpt-oss-20b-mxfp4-GGUF": {
+        "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot", "reasoning", "tool-calling"]
     },
     "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
         "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",

@@ -258,7 +258,7 @@ async function loadModelStandardized(modelId, options = {}) {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) {
-                defaultOption.textContent = 'Pick a model';
+                defaultOption.textContent = 'Click to select a model ▼';
             }
         }
         
@@ -302,7 +302,7 @@ async function loadModelStandardized(modelId, options = {}) {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) {
-                defaultOption.textContent = 'Pick a model';
+                defaultOption.textContent = 'Click to select a model ▼';
             }
         }
         
@@ -482,6 +482,8 @@ function createModelNameWithLabels(modelId, allModels) {
                 labelClass = 'reranking';
             } else if (labelLower === 'coding') {
                 labelClass = 'coding';
+            } else if (labelLower === 'tool-calling') {
+                labelClass = 'tool-calling';
             }
             labelSpan.className = `model-label ${labelClass}`;
             labelSpan.textContent = label;
