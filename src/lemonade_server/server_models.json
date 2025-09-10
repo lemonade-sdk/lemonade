@@ -316,14 +316,26 @@
     "gpt-oss-120b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
-        "suggested": true,
-        "labels": ["hot", "reasoning", "tool-calling"]
+        "suggested": false,
+        "labels": ["reasoning", "tool-calling"]
     },
     "gpt-oss-20b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
         "recipe": "llamacpp",
+        "suggested": false,
+        "labels": ["reasoning", "tool-calling"]
+    },
+    "gpt-oss-120b-mxfp-GGUF": {
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+        "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot", "reasoning"]
+        "labels": ["hot", "reasoning", "tool-calling"]
+    },
+    "gpt-oss-20b-mxfp4-GGUF": {
+        "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot", "reasoning", "tool-calling"]
     },
     "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
         "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
