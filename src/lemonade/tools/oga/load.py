@@ -81,8 +81,8 @@ def _compare_driver_versions(current_version, required_version):
     Uses packaging.version for proper semantic version comparison.
     """
     from packaging.version import Version
-    return Version(current_version) >= Version(required_version)
 
+    return Version(current_version) >= Version(required_version)
 
 
 def import_error_heler(e: Exception):
