@@ -517,7 +517,7 @@ def identify_gguf_models(
     4. Folder name: downloads all .gguf files in the folder that matches the variant name (case insensitive)
 
     Examples:
-    - "ggml-org/gpt-oss-120b-GGUF:*" -> downloads all files in repo
+    - "ggml-org/gpt-oss-120b-GGUF:*" -> downloads all .gguf files in repo
     - "unsloth/Qwen3-8B-GGUF:qwen3.gguf" -> downloads "qwen3.gguf"
     - "unsloth/Qwen3-30B-A3B-GGUF" -> downloads "Qwen3-30B-A3B-GGUF.gguf"
     - "unsloth/Qwen3-8B-GGUF:Q4_1" -> downloads "Qwen3-8B-GGUF-Q4_1.gguf"
