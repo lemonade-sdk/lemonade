@@ -1038,6 +1038,7 @@ async function sendMessage(existingTextIfAny) {
             showErrorBanner(`Chat error: ${detail}`);
         }
     }
+    }
     // Reset UI state after streaming finishes
     if (sendBtn) sendBtn.disabled = false;
     if (stopBtn) stopBtn.disabled = true;
