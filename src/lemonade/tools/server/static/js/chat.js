@@ -624,27 +624,6 @@ function abortCurrentRequest() {
     }
 }
 
-function toggleThinkTokens(header) {
-    const container = header.parentElement;
-    const content = container.querySelector('.think-tokens-content');
-    const chevron = header.querySelector('.think-tokens-chevron');
-    const bubble = header.closest('.chat-bubble');
-
-    const nowCollapsed = !container.classList.contains('collapsed'); // current (before toggle) expanded?
-    if (nowCollapsed) {
-        // Collapse
-        content.style.display = 'none';
-        chevron.textContent = '▶';
-        container.classList.add('collapsed');
-        if (bubble) bubble.dataset.thinkExpanded = 'false';
-    } else {
-        // Expand
-        content.style.display = 'block';
-        chevron.textContent = '▼';
-        container.classList.remove('collapsed');
-        if (bubble) bubble.dataset.thinkExpanded = 'true';
-    }
-}
 
 // ---------- Reasoning Parsing (Harmony + <think>) ----------
 
