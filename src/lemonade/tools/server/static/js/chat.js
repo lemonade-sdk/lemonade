@@ -2,6 +2,7 @@
 let messages = [];
 let attachedFiles = [];
 let systemMessageElement = null;
+let abortController = null;
 
 // Default model configuration
 const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
@@ -14,7 +15,7 @@ const THINKING_FRAMES = THINKING_USE_LEMON
     : ['Thinking.','Thinking..','Thinking...'];
 
 // Get DOM elements
-let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
+let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, stopBtn;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
     attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
     attachmentsPreviewRow = document.getElementById('attachments-preview-row');
     modelSelect = document.getElementById('model-select');
+    stopBtn = document.getElementById('stop-btn');
 
     // Set up event listeners
     setupChatEventListeners();
@@ -44,6 +46,8 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupChatEventListeners() {
     // Send button click
     sendBtn.onclick = sendMessage;
+    // Stop button click – abort in‑flight request
+    if (stopBtn) stopBtn.onclick = abortCurrentRequest;
 
     // Attachment button click
     attachmentBtn.onclick = () => {
@@ -610,6 +614,16 @@ function displaySystemMessage() {
     }
 }
 
+function abortCurrentRequest() {
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
+        if (sendBtn) sendBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = true;
+        console.log('Streaming request aborted by user.');
+    }
+}
+
 function toggleThinkTokens(header) {
     const container = header.parentElement;
     const content = container.querySelector('.think-tokens-content');
@@ -779,6 +793,12 @@ function stopThinkingAnimation(container, finalLabel = 'Thought Process') {
 
 async function sendMessage(existingTextIfAny) {
     const text = (existingTextIfAny !== undefined ? existingTextIfAny : chatInput.value.trim());
+
+    // Prepare abort controller for this request
+    abortController = new AbortController();
+    // UI state: disable Send, enable Stop
+    if (sendBtn) sendBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
     if (!text && attachedFiles.length === 0) return;
 
     // Remove system message when user starts chatting
@@ -898,7 +918,8 @@ async function sendMessage(existingTextIfAny) {
         const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: abortController ? abortController.signal : undefined
         });
         if (!resp.body) throw new Error('No stream');
         const reader = resp.body.getReader();
@@ -1019,7 +1040,11 @@ async function sendMessage(existingTextIfAny) {
         messages.push({ role: 'assistant', ...assistantMsg });
 
     } catch (e) {
-        let detail = e.message;
+        // If the request was aborted by the user, just clean up UI without error banner
+        if (e.name === 'AbortError') {
+            console.log('Chat request aborted by user.');
+        } else {
+            let detail = e.message;
         try {
             const errPayload = { model: currentLoadedModel, messages: messages, stream: false };
             const errResp = await httpJson(getServerBaseUrl() + '/api/v1/chat/completions', {
@@ -1029,10 +1054,15 @@ async function sendMessage(existingTextIfAny) {
             });
             if (errResp && errResp.detail) detail = errResp.detail;
         } catch (_) {}
-        llmBubble.textContent = '[Error: ' + detail + ']';
-        showErrorBanner(`Chat error: ${detail}`);
+        if (e && e.name !== 'AbortError') {
+            llmBubble.textContent = '[Error: ' + detail + ']';
+            showErrorBanner(`Chat error: ${detail}`);
+        }
     }
-    sendBtn.disabled = false;
+    // Reset UI state after streaming finishes
+    if (sendBtn) sendBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+    abortController = null;
     // Force a final render to trigger stop animation if needed
     updateMessageContent(llmBubble, llmText, true);
 }
