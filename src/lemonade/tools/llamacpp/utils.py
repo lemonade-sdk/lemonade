@@ -510,7 +510,7 @@ def identify_gguf_models(
     The CHECKPOINT:VARIANT scheme is used to specify model files in Hugging Face repositories.
 
     The VARIANT format can be one of several types:
-    0. wildcard (*): download all files in the repo
+    0. wildcard (*): download all .gguf files in the repo
     1. Full filename: exact file to download
     2. None/empty: gets the first .gguf file in the repository (excludes mmproj files)
     3. Quantization variant: find a single file ending with the variant name (case insensitive)
