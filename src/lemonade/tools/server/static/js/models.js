@@ -42,53 +42,90 @@ async function checkModelHealth() {
     }
 }
 
+// Populate the model dropdown with all installed models
+function populateModelDropdown() {
+	const indicator = document.getElementById('model-status-indicator');
+    const select = document.getElementById('model-select');
+    select.innerHTML = '';
+    
+    // Add the default option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Click to select a model ▼';
+    select.appendChild(defaultOption);
+
+	// Add the hidden 'Server Offline' option
+	const hiddenOption = document.createElement('option');
+	hiddenOption.value = 'server-offline';
+	hiddenOption.textContent = 'Server Offline';
+	hiddenOption.hidden = true;
+	select.appendChild(hiddenOption);
+	
+    // Get all installed models from the global set
+    const sortedModels = Array.from(installedModels).sort();
+    
+    // Add options for each installed model
+    sortedModels.forEach(modelId => {
+        const option = document.createElement('option');
+        option.value = modelId;
+        option.textContent = modelId;
+        select.appendChild(option);
+    });
+}
+
 // Update model status indicator
 async function updateModelStatusIndicator() {
     const indicator = document.getElementById('model-status-indicator');
-    const statusText = document.getElementById('model-status-text');
-    const unloadBtn = document.getElementById('model-unload-btn');
-    
+    const select = document.getElementById('model-select');
+	const buttonIcons = document.querySelectorAll('button');
+      
     // Fetch both health and installed models
     const [health] = await Promise.all([
         checkModelHealth(),
         fetchInstalledModels()
     ]);
-    
-    // Refresh model dropdown in chat after fetching installed models
-    if (window.initializeModelDropdown) {
-        window.initializeModelDropdown();
-    }
-    
-    // Update system message when model status changes
-    if (window.displaySystemMessage) {
-        window.displaySystemMessage();
-    }
-    
+	
+	// Populate the dropdown with the newly fetched installed models
+    populateModelDropdown();
+
     // Refresh model management UI if we're on the models tab
     const modelsTab = document.getElementById('content-models');
     if (modelsTab && modelsTab.classList.contains('active')) {
         // Use the display-only version to avoid re-fetching data we just fetched
         refreshModelMgmtUIDisplay();
     }
-    
-    // Remove any click handlers
-    indicator.onclick = null;
-    
+	
     if (health && health.model_loaded) {
         // Model is loaded - show model name with online status
+		indicator.classList.remove('online', 'offline', 'loading'); 
         currentLoadedModel = health.model_loaded;
-        updateStatusIndicator(health.model_loaded, 'loaded');
-        unloadBtn.style.display = 'block';
-    } else if (health) {
+        indicator.classList.add('loaded');
+        select.value = currentLoadedModel;
+        select.disabled = false;
+		buttonIcons.forEach(btn => btn.disabled = false);
+    } else if (health !== null) {
         // Server is online but no model loaded
+		indicator.classList.remove('loaded', 'offline', 'loading');
         currentLoadedModel = null;
-        updateStatusIndicator('Server Online', 'online');
-        unloadBtn.style.display = 'none';
+        indicator.classList.add('online');
+        select.value = ''; // Set to the "Click to select a model ▼" option
+        select.disabled = false;
+		buttonIcons.forEach(btn => btn.disabled = false);
     } else {
         // Server is offline
+		indicator.classList.remove('loaded', 'online', 'loading');
         currentLoadedModel = null;
-        updateStatusIndicator('Server Offline', 'offline');
-        unloadBtn.style.display = 'none';
+		// Add the hidden 'Server Offline' option
+		const hiddenOption = document.createElement('option');
+		hiddenOption.value = 'server-offline';
+		hiddenOption.textContent = 'Server Offline';
+		hiddenOption.hidden = true;
+		select.appendChild(hiddenOption);
+        indicator.classList.add('offline');
+        select.value = 'server-offline';
+        select.disabled = true;
+		buttonIcons.forEach(btn => btn.disabled = true);
+		return;
     }
 }
 
@@ -97,9 +134,18 @@ async function unloadModel() {
     if (!currentLoadedModel) return;
     
     try {
+        // Set loading state
+        const indicator = document.getElementById('model-status-indicator');
+        const select = document.getElementById('model-select');
+        indicator.classList.remove('loaded', 'online', 'offline');
+        indicator.classList.add('loading');
+        select.disabled = true;
+        select.value = currentLoadedModel; // Keep the selected model visible during unload
+
         await httpRequest(getServerBaseUrl() + '/api/v1/unload', {
             method: 'POST'
         });
+        
         await updateModelStatusIndicator();
         
         // Refresh model list to show updated button states
@@ -109,6 +155,7 @@ async function unloadModel() {
     } catch (error) {
         console.error('Error unloading model:', error);
         showErrorBanner('Failed to unload model: ' + error.message);
+        await updateModelStatusIndicator(); // Revert state on error
     }
 }
 
@@ -326,10 +373,14 @@ function createModelItem(modelId, modelData, container) {
             actions.appendChild(unloadBtn);
         } else {
             const loadBtn = document.createElement('button');
+			const modelSelect = document.getElementById('model-select');
             loadBtn.className = 'model-item-btn load';
             loadBtn.textContent = '🚀';
             loadBtn.title = 'Load';
-            loadBtn.onclick = () => loadModel(modelId);
+            loadBtn.onclick = () => {
+				modelSelect.value = modelId;
+				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+				};
             actions.appendChild(loadBtn);
         }
         
@@ -399,6 +450,15 @@ async function installModel(modelId) {
 
 // Load model
 async function loadModel(modelId) {
+    const indicator = document.getElementById('model-status-indicator');
+    const select = document.getElementById('model-select');
+    
+    // Set loading state for indicator
+	modelSelect.value = 'loading-model';
+    indicator.classList.remove('loaded', 'online', 'offline');
+    indicator.classList.add('loading');
+    select.disabled = true;
+
     // Find the load button and show loading state
     const modelItems = document.querySelectorAll('.model-item');
     let loadBtn = null;
@@ -409,6 +469,12 @@ async function loadModel(modelId) {
             loadBtn = item.querySelector('.model-item-btn.load');
         }
     });
+
+    if (loadBtn) {
+        loadBtn.disabled = true;
+        loadBtn.textContent = '⏳';
+        loadBtn.classList.add('loading');
+    }
     
     // Use the standardized load function
     const success = await loadModelStandardized(modelId, {
@@ -516,11 +582,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         unloadBtn.onclick = unloadModel;
     }
     
+    const modelSelect = document.getElementById('model-select');
+    if (modelSelect) {
+        modelSelect.addEventListener('change', async function() {
+            const modelId = this.value;
+            if (modelId) {
+                await loadModel(modelId);
+            }
+        });
+    }
+    
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
     
     // Set up periodic refresh of model status
-    setInterval(updateModelStatusIndicator, 5000); // Check every 5 seconds
+    setInterval(updateModelStatusIndicator, 1000); // Check every 1 seconds
     
     // Initialize model browser with hot models
     displayHotModels();
@@ -685,7 +761,6 @@ async function refreshModelMgmtUI() {
                 }
             };
             tdBtn.appendChild(btn);
-            
             tr.appendChild(tdName);
             tr.appendChild(tdBtn);
             installedTbody.appendChild(tr);

@@ -32,25 +32,23 @@
         <div class="tab-container"> 
             <div class="tabs"> 
                 <div class="tab-group">
-                    <button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button> 
-                    <button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
-                    <button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button> 
-                </div>
-                
-                <!-- Model Status Indicator integrated into tab bar -->
-                <div class="model-status-indicator" id="model-status-indicator">
-                    <div class="status-light" id="status-light"></div>
-                    <span class="model-status-text" id="model-status-text">Loading...</span>
-                    <button class="model-action-btn" id="model-unload-btn" style="display: none;" title="Unload model">⏏</button>
-                </div>
-            </div> 
-            <div class="tab-content active" id="content-chat"> 
-                <div class="chat-container"> 
-                    <div class="chat-history" id="chat-history"></div> 
-                    <div class="chat-input-row"> 
-                        <select id="model-select" class="model-select">
-                            <option value="">Pick a model</option>
-                        </select>
+					<button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button>
+					<button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
+					<button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button>
+				</div>
+
+				<div class="model-status-indicator" id="model-status-indicator">
+					<div class="status-light" id="status-light"></div>
+					<select id="model-select" class="model-select">
+						<option value="">Pick a model</option>
+					</select>
+					<button class="model-action-btn" id="model-unload-btn" title="Unload model" style="display: flex;">⏏</button>
+				</div>
+			</div>
+            <div class="tab-content active" id="content-chat">
+                <div class="chat-container">
+                    <div class="chat-history" id="chat-history"></div>
+                    <div class="chat-input-row">
                         <div class="input-with-indicator">
                             <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea> 
                         </div>
@@ -142,7 +140,6 @@
                             </div>
                             <div class="category-content expanded" id="category-hot"></div>
                         </div>
-                        
                         <div class="model-category-section">
                             <div class="section-header">
                                 <span class="section-icon">🔧</span>
@@ -155,7 +152,6 @@
                                 <div class="subcategory" data-recipe="oga-cpu" onclick="selectRecipe('oga-cpu')">OGA CPU</div>
                             </div>
                         </div>
-                        
                         <div class="model-category-section">
                             <div class="section-header">
                                 <span class="section-icon">🏷️</span>
@@ -171,7 +167,6 @@
                                 <div class="subcategory" data-label="custom" onclick="selectLabel('custom')">Custom</div>
                             </div>
                         </div>
-                        
                         <div class="model-category" data-category="add">
                             <div class="category-header" onclick="showAddModelForm()">
                                 <span class="category-icon">➕</span>
@@ -179,7 +174,6 @@
                             </div>
                         </div>
                     </div>
-                    
                     <div class="model-browser-main">
                         <div class="model-list" id="model-list"></div>
                         
@@ -255,4 +249,5 @@
     <script src="/static/js/model-settings.js"></script>
     <script src="/static/js/chat.js"></script>
 </body>
+</html>
 </html>
