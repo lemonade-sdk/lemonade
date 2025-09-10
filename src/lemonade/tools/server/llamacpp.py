@@ -162,6 +162,9 @@ class LlamaServer(WrappedServer):
         # Add port and jinja to enable tool use
         base_command.extend(["--port", str(self.port), "--jinja"])
 
+        # Enable context shift and avoid attention sink issues by preserving the initial tokens
+        base_command.extend(["--context-shift", "--keep", "16"])
+
         # Use legacy reasoning formatting, since not all apps support the new
         # reasoning_content field
         base_command.extend(["--reasoning-format", "auto"])
