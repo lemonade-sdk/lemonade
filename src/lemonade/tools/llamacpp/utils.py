@@ -531,13 +531,14 @@ def identify_gguf_models(
 
     # (case 0) Wildcard, download everything
     if variant and variant == "*":
-        sharded_files = repo_files
+        sharded_files = [f for f in repo_files if f.endswith(".gguf")]
 
         # Sort to ensure consistent ordering
         sharded_files.sort()
 
         # Use first file as primary (this is how llamacpp handles it)
         variant_name = sharded_files[0]
+
     # (case 1) If variant ends in .gguf, use it directly
     elif variant and variant.endswith(".gguf"):
         variant_name = variant
