@@ -1,8 +1,6 @@
-import os
-import sys
 import platform
 import subprocess
-from typing import Dict, Set, Callable, List, Optional, Tuple, Any
+from typing import Callable, Optional
 
 # Check if we're on macOS and import accordingly
 if platform.system() == "Darwin":
@@ -114,24 +112,42 @@ class MacOSSystemTray:
     def _create_callback_wrapper(self, item):
         """Create a callback wrapper that matches our interface."""
 
-        def wrapper(sender):
+        def wrapper(sender):  # pylint: disable=unused-argument
             if item.callback:
                 item.callback(None, item)
 
         return wrapper
 
-    def show_balloon_notification(self, title, message, timeout=5000):
+    def show_balloon_notification(self, title, message, timeout=5000):  # pylint: disable=unused-argument
         """
         Show a notification on macOS using the Notification Center.
+        Falls back to console output if AppleScript fails.
         """
         try:
+            # Escape quotes in message and title for AppleScript
+            escaped_title = title.replace('"', '\\"')
+            escaped_message = message.replace('"', '\\"')
+            escaped_app_name = self.app_name.replace('"', '\\"')
+
             # Use AppleScript to show notification
-            script = f"""
-            display notification "{message}" with title "{title}" subtitle "{self.app_name}"
-            """
-            subprocess.run(["osascript", "-e", script], check=True)
-        except Exception as e:
-            print(f"Failed to show notification: {e}")
+            script = (
+                f'display notification "{escaped_message}" '
+                f'with title "{escaped_title}" subtitle "{escaped_app_name}"'
+            )
+            subprocess.run(
+                ["osascript", "-e", script], check=True, capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            # osascript not available, fallback to console
+            print(f"[{self.app_name}] {title}: {message}")
+        except subprocess.CalledProcessError as e:
+            # AppleScript failed, fallback to console
+            print(f"[{self.app_name}] {title}: {message}")
+            print(f"Warning: Failed to show notification via AppleScript: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Any other error, fallback to console
+            print(f"[{self.app_name}] {title}: {message}")
+            print(f"Warning: Failed to show notification: {e}")
 
     def exit_app(self, _, __):
         """Exit the application."""
@@ -143,20 +159,30 @@ class MacOSSystemTray:
         Run the tray application.
         """
         if not RUMPS_AVAILABLE:
-            raise RuntimeError("rumps is not available")
+            raise RuntimeError(
+                "rumps library is not available. Install with: pip install 'lemonade-sdk[dev]' "
+                "or 'pip install rumps' for macOS tray support"
+            )
 
-        # Create the rumps app
-        self.app = rumps.App(self.app_name, icon=self.icon_path, quit_button=None)
+        try:
+            # Create the rumps app
+            self.app = rumps.App(self.app_name, icon=self.icon_path, quit_button=None)
 
-        # Build the initial menu
-        self.refresh_menu()
+            # Build the initial menu
+            self.refresh_menu()
 
-        # Set up a timer to refresh menu periodically (every 3 seconds)
-        # This provides a good balance between responsiveness and performance
-        self._setup_menu_refresh_timer()
+            # Set up a timer to refresh menu periodically (every 3 seconds)
+            # This provides a good balance between responsiveness and performance
+            self._setup_menu_refresh_timer()
 
-        # Start the app
-        self.app.run()
+            # Call the on_ready hook if available (for compatibility with tray.py)
+            if hasattr(self, "on_ready") and callable(getattr(self, "on_ready", None)):
+                getattr(self, "on_ready")()
+
+            # Start the app
+            self.app.run()
+        except Exception as e:
+            raise RuntimeError(f"Failed to start macOS tray application: {e}") from e
 
     def refresh_menu(self):
         """
@@ -185,7 +211,7 @@ class MacOSSystemTray:
 
         # Create a timer that refreshes the menu every 3 seconds
         @rumps.timer(3)
-        def refresh_menu_timer(sender):
+        def refresh_menu_timer(sender):  # pylint: disable=unused-argument
             self.refresh_menu()
 
         # Store reference to prevent garbage collection
@@ -206,10 +232,21 @@ def get_system_tray_class():
     system = platform.system()
 
     if system == "Darwin":  # macOS
+        if not RUMPS_AVAILABLE:
+            raise ImportError(
+                "rumps library is required for macOS tray support. "
+                "Install with: pip install 'lemonade-sdk[dev]' or 'pip install rumps'"
+            )
         return MacOSSystemTray
     elif system == "Windows":
-        from .system_tray import SystemTray
+        try:
+            from .system_tray import SystemTray
 
-        return SystemTray
+            return SystemTray
+        except ImportError as e:
+            raise ImportError(f"Windows tray dependencies not available: {e}") from e
     else:
-        raise NotImplementedError(f"System tray not implemented for {system}")
+        raise NotImplementedError(
+            f"System tray not implemented for {system}. "
+            f"Supported platforms: Windows, macOS (Darwin)"
+        )

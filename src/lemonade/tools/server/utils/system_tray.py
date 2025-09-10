@@ -25,12 +25,14 @@ class MenuItem:
         enabled: bool = True,
         submenu=None,
         bitmap_path: Optional[str] = None,
+        checked: bool = False,
     ):
         self.text = text
         self.callback = callback
         self.enabled = enabled
         self.submenu = submenu
         self.bitmap_path = bitmap_path
+        self.checked = checked
         self.id = None  # Will be set when menu is created
         self.bitmap_handle = None
 
@@ -360,6 +362,14 @@ class SystemTray:
 
         # Add tray icon
         self.add_tray_icon()
+
+        # Notify subclasses that the tray is ready (hwnd and icon created)
+        # Allows showing initial notifications after initialization
+        try:
+            if hasattr(self, "on_ready") and callable(getattr(self, "on_ready")):
+                self.on_ready()
+        except Exception:
+            pass
 
         # Run the message loop in the main thread
         self.message_loop()

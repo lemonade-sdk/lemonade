@@ -200,14 +200,24 @@ class LemonadeTray(SystemTray):
         try:
             system = platform.system().lower()
             if system == "darwin":
-                # Use Terminal.app to show logs
-                subprocess.Popen(
-                    [
-                        "osascript",
-                        "-e",
-                        f'tell application "Terminal" to do script "tail -f {self.log_file}"',
-                    ]
-                )
+                # Try multiple approaches for macOS
+                try:
+                    # Primary: Use Terminal.app to show logs
+                    subprocess.Popen(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "Terminal" to do script "tail -f {self.log_file}"',
+                        ],
+                        check=True,
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    # Fallback: Use default terminal application
+                    try:
+                        subprocess.Popen(["open", "-a", "Terminal", self.log_file])
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        # Final fallback: Open in default text editor
+                        subprocess.Popen(["open", self.log_file])
             elif system == "windows":
                 # Use PowerShell on Windows
                 subprocess.Popen(
@@ -220,9 +230,34 @@ class LemonadeTray(SystemTray):
                     ]
                 )
             else:
-                self.logger.error(f"Unsupported platform for show_logs: {system}")
+                # Linux or other Unix-like systems
+                try:
+                    # Try common terminal emulators
+                    for terminal in [
+                        "gnome-terminal",
+                        "konsole",
+                        "xterm",
+                        "x-terminal-emulator",
+                    ]:
+                        try:
+                            subprocess.Popen(
+                                [terminal, "--", "tail", "-f", self.log_file]
+                            )
+                            break
+                        except FileNotFoundError:
+                            continue
+                    else:
+                        # Fallback: open in default editor
+                        subprocess.Popen(["xdg-open", self.log_file])
+                except Exception:
+                    self.logger.error(f"No suitable terminal found for {system}")
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error opening logs: {str(e)}")
+            # Show notification with error
+            self.show_balloon_notification(
+                "Error", f"Failed to open logs. Log file location: {self.log_file}"
+            )
 
     def open_documentation(self, _, __):
         """
@@ -530,20 +565,24 @@ class LemonadeTray(SystemTray):
         self.server_thread = threading.Thread(target=self.start_server, daemon=True)
         self.server_thread.start()
 
-        # Show initial notification with platform-specific message
-        system = platform.system().lower()
-        if system == "darwin":
-            message = (
-                "Lemonade Server is running! "
-                "Click the tray icon above to access options."
-            )
-        else:  # Windows/Linux
-            message = (
-                "Lemonade Server is running! "
-                "Right-click the tray icon below to access options."
-            )
+        # Provide an on_ready hook that Windows base tray will call after
+        # the HWND/icon are created. macOS will call it immediately after run.
+        def _on_ready():
+            system = platform.system().lower()
+            if system == "darwin":
+                message = (
+                    "Lemonade Server is running! "
+                    "Click the tray icon above to access options."
+                )
+            else:  # Windows/Linux
+                message = (
+                    "Lemonade Server is running! "
+                    "Right-click the tray icon below to access options."
+                )
+            self.show_balloon_notification("Woohoo!", message)
 
-        self.show_balloon_notification("Woohoo!", message)
+        # Attach hook for both implementations to invoke after init
+        self.on_ready = _on_ready
 
         # Call the parent run method which handles platform-specific initialization
         super().run()
