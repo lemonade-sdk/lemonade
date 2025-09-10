@@ -21,6 +21,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `api/v1/responses` - Chat Completions (prompt|messages -> event)
 - GET `/api/v1/models` - List models available locally
+- GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
 ### Additional Endpoints
 
@@ -353,6 +354,48 @@ curl http://localhost:8000/api/v1/models
       "recipe": "oga-hybrid"
     },
   ]
+}
+```
+
+### `GET /api/v1/models/{model_id}` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Retrieve a specific model by its ID in an OpenAI-compatible format. Returns detailed information about a single model including the `checkpoint` and `recipe` fields.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](./server_models.md). |
+
+#### Example request
+
+```bash
+curl http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
+```
+
+#### Response format
+
+```json
+{
+  "id": "Llama-3.2-1B-Instruct-Hybrid",
+  "created": 1744173590,
+  "object": "model",
+  "owned_by": "lemonade",
+  "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+  "recipe": "oga-hybrid"
+}
+```
+
+#### Error responses
+
+If the model is not found, the endpoint returns a 404 error:
+
+```json
+{
+  "error": {
+    "message": "Model Llama-3.2-1B-Instruct-Hybrid has not been found",
+    "type": "not_found"
+  }
 }
 ```
 
