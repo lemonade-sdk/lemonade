@@ -11,7 +11,7 @@ import requests
 from packaging.version import parse as parse_version
 
 from lemonade.version import __version__
-from lemonade.tools.server.serve import DEFAULT_CTX_SIZE
+from lemonade_server.pydantic_models import DEFAULT_CTX_SIZE
 from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
 
 
