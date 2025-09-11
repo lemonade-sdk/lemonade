@@ -20,7 +20,6 @@ from uvicorn.config import Config
 from uvicorn.server import Server as UvicornServer
 from tabulate import tabulate
 
-from openai import NotFoundError
 from openai.types.completion import Completion, CompletionChoice
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.chat import ChatCompletionMessage
@@ -1597,9 +1596,18 @@ class Server:
         """
         Retrieve a specific model by ID in OpenAI-compatible format.
         """
-        # Check if the model exists in our local_models
+        # Raise an error if the model does not exist
         if model_id not in self.local_models:
-            raise NotFoundError(f"Model {model_id} has not been found")
+            # Mimic the error format of the OpenAI API
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "message": f"model {model_id} not found",
+                    "type": "api_error",
+                    "param": None,
+                    "code": None,
+                },
+            )
 
         # Return the specific model
         model_info = self.local_models[model_id]

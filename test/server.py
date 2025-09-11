@@ -183,6 +183,7 @@ class Testing(ServerTestingBase):
         assert model.recipe == test_model.recipe
 
         # Check that the individual model endpoint returns a NotFoundError for a non-existent model
+        # Do not modify this test as this exact error type might be checked by different ISVs
         with pytest.raises(NotFoundError):
             client.models.retrieve("non-existent-model")
 
