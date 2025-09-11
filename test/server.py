@@ -15,7 +15,6 @@ If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions
 import asyncio
 import numpy as np
 import requests
-import pytest
 from openai import NotFoundError
 
 # Import all shared functionality from utils/server_base.py
@@ -184,7 +183,7 @@ class Testing(ServerTestingBase):
 
         # Check that the individual model endpoint returns a NotFoundError for a non-existent model
         # Do not modify this test as this exact error type might be checked by different ISVs
-        with pytest.raises(NotFoundError):
+        with self.assertRaises(NotFoundError):
             client.models.retrieve("non-existent-model")
 
     # Endpoint: /api/v1/completions
