@@ -215,7 +215,8 @@ class WindowsSystemInfo(SystemInfo):
 
             for i, controller in enumerate(video_controllers):
                 logging.debug(
-                    f"Controller {i}: Name='{controller.Name}', PNPDeviceID='{getattr(controller, 'PNPDeviceID', 'N/A')}'"
+                    f"Controller {i}: Name='{controller.Name}', "
+                    f"PNPDeviceID='{getattr(controller, 'PNPDeviceID', 'N/A')}'"
                 )
 
                 if (
@@ -303,7 +304,8 @@ class WindowsSystemInfo(SystemInfo):
             return [{"available": False, "error": error_msg}]
 
         logging.debug(
-            f"AMD GPU detection completed. Found {len(gpu_devices)} {gpu_type} GPUs: {[gpu.get('name', 'Unknown') for gpu in gpu_devices]}"
+            f"AMD GPU detection completed. Found {len(gpu_devices)} {gpu_type} GPUs: "
+            f"{[gpu.get('name', 'Unknown') for gpu in gpu_devices]}"
         )
         return gpu_devices
 
@@ -599,10 +601,10 @@ class WindowsSystemInfo(SystemInfo):
             finally:
                 try:
                     os.unlink(temp_path)
-                except:
+                except Exception:  # pylint: disable=broad-except
                     pass
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             pass
 
         return 0.0
@@ -648,7 +650,7 @@ class WindowsSystemInfo(SystemInfo):
                 ):
                     if driver.DriverVersion:
                         return driver.DriverVersion
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             pass
 
         return ""
@@ -1096,9 +1098,10 @@ class LinuxSystemInfo(SystemInfo):
 
         # Fallback: Try /proc/driver/nvidia/version
         try:
-            with open("/proc/driver/nvidia/version", "r") as f:
+            with open("/proc/driver/nvidia/version", "r", encoding="utf-8") as f:
                 content = f.read()
-                # Look for version pattern like "NVRM version: NVIDIA UNIX x86_64 Kernel Module  470.82.00"
+                # Look for version pattern like "NVRM version:
+                #   NVIDIA UNIX x86_64 Kernel Module  470.82.00"
                 match = re.search(r"Kernel Module\s+(\d+\.\d+(?:\.\d+)?)", content)
                 if match:
                     return match.group(1)
@@ -1309,7 +1312,7 @@ class LinuxSystemInfo(SystemInfo):
                             return vram_gb
                 except (FileNotFoundError, ValueError, PermissionError):
                     continue
-        except Exception:
+        except Exception:  # pylint: disable=broad-except
             pass
         return 0.0
 
