@@ -19,6 +19,28 @@ AMD_DISCRETE_GPU_KEYWORDS = [
     "fury",
 ]
 
+# NVIDIA GPU classification keywords - shared across all OS implementations
+# NVIDIA GPUs are typically discrete by default, but we include keywords for clarity
+NVIDIA_DISCRETE_GPU_KEYWORDS = [
+    "geforce",
+    "rtx",
+    "gtx",
+    "quadro",
+    "tesla",
+    "titan",
+    "a100",
+    "a40",
+    "a30",
+    "a10",
+    "a6000",
+    "a5000",
+    "a4000",
+    "a2000",
+    "t1000",
+    "t600",
+    "t400",
+]
+
 
 class SystemInfo(ABC):
     """
@@ -51,6 +73,7 @@ class SystemInfo(ABC):
             "cpu": self.get_cpu_device(),
             "amd_igpu": self.get_amd_igpu_device(include_inference_engines=True),
             "amd_dgpu": self.get_amd_dgpu_devices(include_inference_engines=True),
+            "nvidia_dgpu": self.get_nvidia_dgpu_devices(include_inference_engines=True),
             "npu": self.get_npu_device(),
         }
         return device_dict
@@ -80,6 +103,15 @@ class SystemInfo(ABC):
 
         Returns:
             list: List of AMD dGPU device information.
+        """
+
+    @abstractmethod
+    def get_nvidia_dgpu_devices(self, include_inference_engines: bool = False) -> list:
+        """
+        Retrieves NVIDIA discrete GPU device information.
+
+        Returns:
+            list: List of NVIDIA dGPU device information.
         """
 
     @abstractmethod
@@ -253,6 +285,63 @@ class WindowsSystemInfo(SystemInfo):
             dgpu_devices
             if dgpu_devices
             else [{"available": False, "error": "No AMD discrete GPU found"}]
+        )
+
+    def get_nvidia_dgpu_devices(self, include_inference_engines: bool = False) -> list:
+        """
+        Retrieves NVIDIA discrete GPU device information using WMI.
+
+        Returns:
+            list: List of NVIDIA dGPU device information.
+        """
+        gpu_devices = []
+        try:
+            video_controllers = self.connection.Win32_VideoController()
+            for controller in video_controllers:
+                if controller.Name and "NVIDIA" in controller.Name.upper():
+                    name_lower = controller.Name.lower()
+
+                    # Most NVIDIA GPUs are discrete, but we can check keywords for confirmation
+                    is_discrete = (
+                        any(kw in name_lower for kw in NVIDIA_DISCRETE_GPU_KEYWORDS)
+                        or "nvidia" in name_lower
+                    )  # Default to discrete for NVIDIA
+
+                    if is_discrete:
+                        gpu_info = {
+                            "name": controller.Name,
+                            "available": True,
+                        }
+
+                        # Try to get NVIDIA driver version
+                        driver_version = self.get_driver_version(
+                            "NVIDIA Graphics Driver"
+                        )
+                        if not driver_version:
+                            # Alternative driver name patterns
+                            driver_version = self.get_driver_version(
+                                "NVIDIA Display Driver"
+                            )
+                        gpu_info["driver_version"] = (
+                            driver_version if driver_version else "Unknown"
+                        )
+
+                        if include_inference_engines:
+                            gpu_info["inference_engines"] = (
+                                self._detect_inference_engines(
+                                    "nvidia_dgpu", controller.Name
+                                )
+                            )
+                        gpu_devices.append(gpu_info)
+
+        except Exception as e:  # pylint: disable=broad-except
+            error_msg = f"NVIDIA discrete GPU detection failed: {e}"
+            return [{"available": False, "error": error_msg}]
+
+        return (
+            gpu_devices
+            if gpu_devices
+            else [{"available": False, "error": "No NVIDIA discrete GPU found"}]
         )
 
     def get_npu_device(self) -> dict:
@@ -490,6 +579,14 @@ class WSLSystemInfo(SystemInfo):
         """
         return []
 
+    def get_nvidia_dgpu_devices(self, include_inference_engines: bool = False) -> list:
+        """
+        Retrieves NVIDIA discrete GPU device information in WSL environment.
+        """
+        return [
+            {"available": False, "error": "NVIDIA GPU detection not supported in WSL"}
+        ]
+
     def get_npu_device(self) -> dict:
         """
         Retrieves NPU device information in WSL environment.
@@ -669,6 +766,74 @@ class LinuxSystemInfo(SystemInfo):
             else [{"available": False, "error": "No AMD discrete GPU found"}]
         )
 
+    def get_nvidia_dgpu_devices(self, include_inference_engines: bool = False) -> list:
+        """
+        Retrieves NVIDIA discrete GPU device information using lspci.
+
+        Returns:
+            list: List of NVIDIA dGPU device information.
+        """
+        gpu_devices = []
+        try:
+            lspci_output = subprocess.check_output(
+                "lspci | grep -i 'vga\\|3d\\|display'", shell=True
+            ).decode()
+
+            for line in lspci_output.split("\n"):
+                if line.strip() and "NVIDIA" in line.upper():
+                    name_lower = line.lower()
+
+                    # Most NVIDIA GPUs are discrete, check keywords for confirmation
+                    is_discrete = (
+                        any(kw in name_lower for kw in NVIDIA_DISCRETE_GPU_KEYWORDS)
+                        or "nvidia" in name_lower
+                    )  # Default to discrete for NVIDIA
+
+                    if is_discrete:
+                        device_name = line.split(": ")[1] if ": " in line else line
+
+                        gpu_info = {
+                            "name": device_name,
+                            "available": True,
+                        }
+
+                        # Try to get NVIDIA driver version using nvidia-smi
+                        try:
+                            nvidia_smi_output = (
+                                subprocess.check_output(
+                                    "nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits",
+                                    shell=True,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                                .decode()
+                                .strip()
+                            )
+                            gpu_info["driver_version"] = (
+                                nvidia_smi_output.split("\n")[0]
+                                if nvidia_smi_output
+                                else "Unknown"
+                            )
+                        except (subprocess.CalledProcessError, FileNotFoundError):
+                            gpu_info["driver_version"] = "Unknown"
+
+                        if include_inference_engines:
+                            gpu_info["inference_engines"] = (
+                                self._detect_inference_engines(
+                                    "nvidia_dgpu", device_name
+                                )
+                            )
+                        gpu_devices.append(gpu_info)
+
+        except Exception as e:  # pylint: disable=broad-except
+            error_msg = f"NVIDIA discrete GPU detection failed: {e}"
+            return [{"available": False, "error": error_msg}]
+
+        return (
+            gpu_devices
+            if gpu_devices
+            else [{"available": False, "error": "No NVIDIA discrete GPU found"}]
+        )
+
     def get_npu_device(self) -> dict:
         """
         Retrieves NPU device information (limited support on Linux).
@@ -802,6 +967,17 @@ class UnsupportedOSSystemInfo(SystemInfo):
         Retrieves AMD discrete GPU device information for unsupported OS.
         """
         return []
+
+    def get_nvidia_dgpu_devices(self, include_inference_engines: bool = False) -> list:
+        """
+        Retrieves NVIDIA discrete GPU device information for unsupported OS.
+        """
+        return [
+            {
+                "available": False,
+                "error": "Device detection not supported on this operating system",
+            }
+        ]
 
     def get_npu_device(self) -> dict:
         """
