@@ -95,6 +95,9 @@ class LemonadeTray(SystemTray):
         self.version_check_thread = None
         self.stop_version_check = threading.Event()
 
+        # Hook function for platform-specific initialization callback
+        self.on_ready = None
+
     def get_latest_version(self):
         """
         Update the latest version information.
@@ -209,8 +212,7 @@ class LemonadeTray(SystemTray):
                             "osascript",
                             "-e",
                             f'tell application "Terminal" to do script "tail -f {self.log_file}"',
-                        ],
-                        check=True,
+                        ]
                     )
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     # Fallback: Use default terminal application
@@ -250,7 +252,7 @@ class LemonadeTray(SystemTray):
                     else:
                         # Fallback: open in default editor
                         subprocess.Popen(["xdg-open", self.log_file])
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     self.logger.error(f"No suitable terminal found for {system}")
 
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -554,12 +556,6 @@ class LemonadeTray(SystemTray):
         items.append(Menu.SEPARATOR)
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)
-
-    def show_balloon_notification(self, title, message, timeout=5000):
-        """
-        Show a notification (platform-aware).
-        """
-        super().show_balloon_notification(title, message, timeout)
 
     def start_server(self):
         """
