@@ -326,15 +326,8 @@ class WindowsSystemInfo(SystemInfo):
                             "available": True,
                         }
 
-                        # Try to get NVIDIA driver version
-                        driver_version = self.get_driver_version(
-                            "NVIDIA Graphics Driver"
-                        )
-                        if not driver_version:
-                            # Alternative driver name patterns
-                            driver_version = self.get_driver_version(
-                                "NVIDIA Display Driver"
-                            )
+                        # Try to get NVIDIA driver version using multiple methods
+                        driver_version = self._get_nvidia_driver_version_windows()
                         gpu_info["driver_version"] = (
                             driver_version if driver_version else "Unknown"
                         )
@@ -506,6 +499,52 @@ class WindowsSystemInfo(SystemInfo):
         except (ValueError, AttributeError):
             pass
         return 0.0
+
+    def _get_nvidia_driver_version_windows(self) -> str:
+        """
+        Get NVIDIA driver version on Windows using nvidia-smi and WMI fallback.
+
+        Returns:
+            str: Driver version, or empty string if detection fails
+        """
+        # Primary: Try nvidia-smi command
+        try:
+            output = (
+                subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=driver_version",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+            if output and output != "N/A":
+                return output.split("\n")[0]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        # Fallback: Try WMI Win32_PnPSignedDriver with NVIDIA patterns
+        try:
+            nvidia_patterns = [
+                "NVIDIA GeForce",
+                "NVIDIA RTX",
+                "NVIDIA GTX",
+                "NVIDIA Quadro",
+            ]
+            all_drivers = self.connection.Win32_PnPSignedDriver()
+            for driver in all_drivers:
+                if driver.DeviceName and any(
+                    pattern in driver.DeviceName for pattern in nvidia_patterns
+                ):
+                    if driver.DriverVersion:
+                        return driver.DriverVersion
+        except Exception:
+            pass
+
+        return ""
 
     def _get_nvidia_vram_smi(self) -> float:
         """
@@ -919,31 +958,16 @@ class LinuxSystemInfo(SystemInfo):
                             "available": True,
                         }
 
-                        # Try to get NVIDIA driver version using nvidia-smi
-                        try:
-                            nvidia_smi_output = (
-                                subprocess.check_output(
-                                    "nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits",
-                                    shell=True,
-                                    stderr=subprocess.DEVNULL,
-                                )
-                                .decode()
-                                .strip()
-                            )
-                            gpu_info["driver_version"] = (
-                                nvidia_smi_output.split("\n")[0]
-                                if nvidia_smi_output
-                                else "Unknown"
-                            )
-                        except (subprocess.CalledProcessError, FileNotFoundError):
-                            gpu_info["driver_version"] = "Unknown"
+                        # Try to get NVIDIA driver version using multiple methods
+                        driver_version = self._get_nvidia_driver_version_linux()
+                        gpu_info["driver_version"] = (
+                            driver_version if driver_version else "Unknown"
+                        )
 
                         # Get VRAM information
                         vram_gb = self._get_nvidia_vram_smi_linux()
                         if vram_gb > 0.0:
                             gpu_info["vram_gb"] = vram_gb
-                        else:
-                            gpu_info["vram_gb"] = "Unknown"
 
                         if include_inference_engines:
                             gpu_info["inference_engines"] = (
@@ -974,6 +998,68 @@ class LinuxSystemInfo(SystemInfo):
             "available": False,
             "error": "NPU detection not yet implemented for Linux",
         }
+
+    def _get_nvidia_driver_version_linux(self) -> str:
+        """
+        Get NVIDIA driver version on Linux using nvidia-smi and proc fallback.
+
+        Returns:
+            str: Driver version, or empty string if detection fails
+        """
+        # Primary: Try nvidia-smi command
+        try:
+            output = (
+                subprocess.check_output(
+                    "nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits",
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+            if output and output != "N/A":
+                return output.split("\n")[0]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        # Fallback: Try /proc/driver/nvidia/version
+        try:
+            with open("/proc/driver/nvidia/version", "r") as f:
+                content = f.read()
+                # Look for version pattern like "NVRM version: NVIDIA UNIX x86_64 Kernel Module  470.82.00"
+                match = re.search(r"Kernel Module\s+(\d+\.\d+(?:\.\d+)?)", content)
+                if match:
+                    return match.group(1)
+        except (FileNotFoundError, IOError):
+            pass
+
+        return ""
+
+    def _get_nvidia_vram_smi_linux(self) -> float:
+        """
+        Get NVIDIA GPU VRAM on Linux using nvidia-smi command.
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            output = (
+                subprocess.check_output(
+                    "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits",
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+
+            # nvidia-smi returns memory in MB
+            vram_mb = int(output.split("\n")[0])
+            vram_gb = round(vram_mb / 1024, 1)
+            return vram_gb
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
 
     @staticmethod
     def get_processor_name() -> str:
