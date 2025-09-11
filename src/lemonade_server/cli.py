@@ -400,10 +400,13 @@ def is_lemonade_server(pid):
                     cmdline = process.cmdline()
                     if len(cmdline) >= 2:
                         script_path = cmdline[1]
-                        if (
-                            "lemonade-server-dev" in script_path
-                            or "lemonade-server" in script_path
-                        ):
+                        # Check for various lemonade server command patterns
+                        lemonade_patterns = [
+                            "lemonade-server-dev",
+                            "lemonade-server",
+                            "lsdev",  # Short alias for lemonade-server-dev
+                        ]
+                        if any(pattern in script_path for pattern in lemonade_patterns):
                             return True
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     pass
@@ -424,32 +427,40 @@ def get_server_info() -> Tuple[int | None, int | None]:
     2. The port that Lemonade Server is running on
     """
 
-    # Get all network connections and filter for localhost IPv4 listening ports
+    # Try the global approach first (works on Windows/Linux without permissions)
     try:
         connections = psutil.net_connections(kind="tcp4")
-
         for conn in connections:
             if conn.status == "LISTEN" and conn.laddr and conn.pid is not None:
                 if is_lemonade_server(conn.pid):
                     return conn.pid, conn.laddr.port
     except (psutil.AccessDenied, PermissionError):
-        # On macOS, psutil.net_connections() requires elevated permissions
-        # Fallback: if we find any lemonade server process, consider server as running
-        # This matches Windows behavior where any detected lemonade process indicates a running server
-        try:
-            for proc in psutil.process_iter(["pid", "cmdline"]):
-                try:
-                    pid = proc.info["pid"]
-                    if is_lemonade_server(pid):
-                        # Found a lemonade server - assume it's running on default port
-                        # This is the same conservative approach as Windows when port detection fails
-                        return pid, DEFAULT_PORT
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        # Global approach needs elevated permissions on macOS, fall back to per-process approach
+        pass
     except Exception:  # pylint: disable=broad-exception-caught
         pass
+
+    # Per-process approach (works on all platforms without elevated permissions)
+    try:
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pid = proc.info["pid"]
+                if is_lemonade_server(pid):
+                    # Found a lemonade server, check its listening ports
+                    connections = proc.net_connections(kind="inet")
+                    for conn in connections:
+                        if conn.status == "LISTEN" and conn.laddr:
+                            return pid, conn.laddr.port
+
+                    # If no listening connections found, return with default port
+                    # This handles servers that might be starting up
+                    return pid, DEFAULT_PORT
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # Some processes may be inaccessible, continue to next
+                continue
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
     return None, None
 
 
