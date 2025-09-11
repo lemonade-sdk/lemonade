@@ -375,9 +375,11 @@ def is_lemonade_server(pid):
             if process_name in [  # Windows
                 "lemonade-server-dev.exe",
                 "lemonade-server.exe",
+                "lsdev.exe",
             ] or process_name in [  # Linux
                 "lemonade-server-dev",
                 "lemonade-server",
+                "lsdev",
             ]:
                 return True
             elif "llama-server" in process_name:
