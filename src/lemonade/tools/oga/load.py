@@ -74,6 +74,34 @@ def _get_npu_driver_version():
         return None
 
 
+def _compare_driver_versions(current_version, required_version):
+    """
+    Compare two driver version strings.
+    Returns True if current_version >= required_version, False otherwise.
+    Assumes version format like "32.0.203.280"
+    """
+    try:
+        current_parts = [int(x) for x in current_version.split(".")]
+        required_parts = [int(x) for x in required_version.split(".")]
+
+        # Pad shorter version with zeros
+        max_len = max(len(current_parts), len(required_parts))
+        current_parts.extend([0] * (max_len - len(current_parts)))
+        required_parts.extend([0] * (max_len - len(required_parts)))
+
+        # Compare each part
+        for current, required in zip(current_parts, required_parts):
+            if current > required:
+                return True
+            elif current < required:
+                return False
+        # All parts equal
+        return True
+    except (ValueError, AttributeError):
+        # If we can't parse the versions, fall back to string comparison
+        return current_version >= required_version
+
+
 def import_error_heler(e: Exception):
     """
     Print a helpful message in the event of an import error
@@ -343,11 +371,13 @@ class OgaLoad(FirstTool):
                     )
                     _open_driver_install_page()
 
-                elif current_driver_version != required_driver_version:
+                elif not _compare_driver_versions(
+                    current_driver_version, required_driver_version
+                ):
                     printing.log_warning(
                         f"Incorrect NPU driver version detected: {current_driver_version}\n"
                         f"{device.upper()} inference with RyzenAI 1.5.0 requires driver "
-                        f"version {required_driver_version}.\n"
+                        f"version {required_driver_version} or higher.\n"
                         "Please download and install the correct NPU Driver from:\n"
                         f"{NPU_DRIVER_DOWNLOAD_URL}\n"
                         "NPU functionality may not work properly."
