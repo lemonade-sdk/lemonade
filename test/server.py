@@ -15,6 +15,7 @@ If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions
 import asyncio
 import numpy as np
 import requests
+from openai import NotFoundError
 
 # Import all shared functionality from utils/server_base.py
 from utils.server_base import (
@@ -152,7 +153,7 @@ class Testing(ServerTestingBase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v1/models
+    # Endpoints: /api/v1/models and /api/v1/models/{model_id}
     def test_004_test_models(self):
         client = OpenAI(
             base_url=self.base_url,
@@ -172,6 +173,18 @@ class Testing(ServerTestingBase):
             and model.recipe == "oga-cpu"
             for model in l.data
         )
+
+        # Check the individual model endpoint
+        test_model = l.data[0]
+        model = client.models.retrieve(test_model.id)
+        assert model.id == test_model.id
+        assert model.checkpoint == test_model.checkpoint
+        assert model.recipe == test_model.recipe
+
+        # Check that the individual model endpoint returns a NotFoundError for a non-existent model
+        # Do not modify this test as this exact error type might be checked by different ISVs
+        with self.assertRaises(NotFoundError):
+            client.models.retrieve("non-existent-model")
 
     # Endpoint: /api/v1/completions
     def test_005_test_completions(self):

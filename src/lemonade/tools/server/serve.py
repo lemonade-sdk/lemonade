@@ -164,6 +164,7 @@ class Server:
     - /api/v1/chat/completions: chat completion responses using HTTP chunked transfer encoding.
     - /api/v1/responses: responses API using HTTP chunked transfer encoding.
     - /api/v1/models: list all available models.
+    - /api/v1/models/{model_id}: retrieve a specific model by ID.
     """
 
     def __init__(
@@ -269,6 +270,7 @@ class Server:
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
             self.app.post(f"{prefix}/embeddings")(self.embeddings)
             self.app.get(f"{prefix}/models")(self.models)
+            self.app.get(f"{prefix}/models/{{model_id}}")(self.retrieve_model)
 
             # JinaAI routes (jina.ai/reranker/)
             self.app.post(f"{prefix}/reranking")(self.reranking)
@@ -1589,6 +1591,36 @@ class Server:
             models_list.append(m)
 
         return {"object": "list", "data": models_list}
+
+    async def retrieve_model(self, model_id: str):
+        """
+        Retrieve a specific model by ID in OpenAI-compatible format.
+        """
+        # Raise an error if the model does not exist
+        if model_id not in self.local_models:
+            # Mimic the error format of the OpenAI API
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "message": f"model {model_id} not found",
+                    "type": "api_error",
+                    "param": None,
+                    "code": None,
+                },
+            )
+
+        # Return the specific model
+        model_info = self.local_models[model_id]
+        model = ServerModel(
+            id=model_id,
+            owned_by="lemonade",
+            object="model",
+            created=int(time.time()),
+            checkpoint=model_info["checkpoint"],
+            recipe=model_info["recipe"],
+        )
+
+        return model
 
     def setup_middleware_timer(self):
         logging.info("Middleware set up")
