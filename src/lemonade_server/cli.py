@@ -368,39 +368,28 @@ def is_lemonade_server(pid):
     """
     Check whether or not a given PID corresponds to a Lemonade server
     """
-    # Self-exclusion: Don't detect the current process or its children
-    current_pid = os.getpid()
-    if pid == current_pid:
-        return False
-
-    # Exclude children of current process to avoid detecting status commands
-    try:
-        current_process = psutil.Process(current_pid)
-        child_pids = [child.pid for child in current_process.children(recursive=True)]
-        if pid in child_pids:
-            return False
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
-
     try:
         process = psutil.Process(pid)
 
         while True:
             process_name = process.name()
-
-            # Windows: check process name
-            if process_name in ["lemonade-server-dev.exe", "lemonade-server.exe"]:
+            if process_name in [  # Windows
+                "lemonade-server-dev.exe",
+                "lemonade-server.exe",
+                "lsdev.exe",
+            ] or process_name in [  # Linux
+                "lemonade-server-dev",
+                "lemonade-server",
+                "lsdev",
+            ]:
                 return True
-            # Linux: check process name
-            elif process_name in ["lemonade-server-dev", "lemonade-server"]:
-                return True
-            # macOS: Python scripts appear as "python3.x", check command line
+            # macOS only: Python scripts appear as "python3.x", check command line
             elif process_name.startswith("python") and platform.system() == "Darwin":
                 try:
                     cmdline = process.cmdline()
                     if len(cmdline) >= 2:
                         script_path = cmdline[1]
-                        # Check for various lemonade server command patterns
+                        # Check for various lemonade server command patterns (macOS only)
                         lemonade_patterns = [
                             "lemonade-server-dev",
                             "lemonade-server",
