@@ -4,6 +4,7 @@ import platform
 import re
 import subprocess
 import ctypes
+import glob
 from .inference_engines import detect_inference_engines
 
 # AMD GPU classification keywords - shared across all OS implementations
@@ -241,6 +242,18 @@ class WindowsSystemInfo(SystemInfo):
                             driver_version if driver_version else "Unknown"
                         )
 
+                        # Get VRAM information for discrete GPUs
+                        if not is_integrated:  # Only add VRAM for discrete GPUs
+                            vram_gb = self._get_gpu_vram_wmi(controller)
+                            if vram_gb == 0.0:
+                                # Fallback to rocm-smi
+                                vram_gb = self._get_amd_vram_rocm_smi()
+
+                            if vram_gb > 0.0:
+                                gpu_info["vram_gb"] = vram_gb
+                            else:
+                                gpu_info["vram_gb"] = "Unknown"
+
                         if include_inference_engines:
                             gpu_info["inference_engines"] = (
                                 self._detect_inference_engines(
@@ -325,6 +338,17 @@ class WindowsSystemInfo(SystemInfo):
                         gpu_info["driver_version"] = (
                             driver_version if driver_version else "Unknown"
                         )
+
+                        # Get VRAM information
+                        vram_gb = self._get_gpu_vram_wmi(controller)
+                        if vram_gb == 0.0:
+                            # Fallback to nvidia-smi
+                            vram_gb = self._get_nvidia_vram_smi()
+
+                        if vram_gb > 0.0:
+                            gpu_info["vram_gb"] = vram_gb
+                        else:
+                            gpu_info["vram_gb"] = "Unknown"
 
                         if include_inference_engines:
                             gpu_info["inference_engines"] = (
@@ -462,6 +486,90 @@ class WindowsSystemInfo(SystemInfo):
         if drivers:
             return drivers[0].DriverVersion
         return ""
+
+    def _get_gpu_vram_wmi(self, controller) -> float:
+        """
+        Get GPU VRAM from WMI VideoController.
+
+        Args:
+            controller: WMI Win32_VideoController object
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            if hasattr(controller, "AdapterRAM") and controller.AdapterRAM:
+                # AdapterRAM is in bytes, convert to GB
+                vram_bytes = int(controller.AdapterRAM)
+                vram_gb = round(vram_bytes / (1024**3), 1)
+                return vram_gb
+        except (ValueError, AttributeError):
+            pass
+        return 0.0
+
+    def _get_nvidia_vram_smi(self) -> float:
+        """
+        Get NVIDIA GPU VRAM using nvidia-smi command.
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            output = (
+                subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+
+            # nvidia-smi returns memory in MB
+            vram_mb = int(output.split("\n")[0])
+            vram_gb = round(vram_mb / 1024, 1)
+            return vram_gb
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
+
+    def _get_amd_vram_rocm_smi(self) -> float:
+        """
+        Get AMD GPU VRAM using rocm-smi command.
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            output = (
+                subprocess.check_output(
+                    ["rocm-smi", "--showmeminfo", "vram", "--csv"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+
+            # Parse CSV output to extract VRAM
+            lines = output.split("\n")
+            for line in lines:
+                if "Total VRAM" in line or "vram" in line.lower():
+                    # Extract numeric value (assuming it's in MB or GB)
+                    numbers = re.findall(r"\d+", line)
+                    if numbers:
+                        vram_value = int(numbers[0])
+                        # Assume MB if value is large, GB if small
+                        if vram_value > 100:  # Likely MB
+                            vram_gb = round(vram_value / 1024, 1)
+                        else:  # Likely GB
+                            vram_gb = float(vram_value)
+                        return vram_gb
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
 
     @staticmethod
     def get_npu_power_mode() -> str:
@@ -722,6 +830,20 @@ class LinuxSystemInfo(SystemInfo):
                             "name": device_name,
                             "available": True,
                         }
+
+                        # Get VRAM information for discrete GPUs
+                        if not is_integrated:  # Only add VRAM for discrete GPUs
+                            vram_gb = self._get_amd_vram_rocm_smi_linux()
+                            if vram_gb == 0.0:
+                                # Fallback to sysfs - extract PCI ID from lspci line
+                                pci_id = line.split()[0] if line else ""
+                                vram_gb = self._get_amd_vram_sysfs(pci_id)
+
+                            if vram_gb > 0.0:
+                                gpu_info["vram_gb"] = vram_gb
+                            else:
+                                gpu_info["vram_gb"] = "Unknown"
+
                         if include_inference_engines:
                             gpu_info["inference_engines"] = (
                                 self._detect_inference_engines(device_type, device_name)
@@ -815,6 +937,13 @@ class LinuxSystemInfo(SystemInfo):
                             )
                         except (subprocess.CalledProcessError, FileNotFoundError):
                             gpu_info["driver_version"] = "Unknown"
+
+                        # Get VRAM information
+                        vram_gb = self._get_nvidia_vram_smi_linux()
+                        if vram_gb > 0.0:
+                            gpu_info["vram_gb"] = vram_gb
+                        else:
+                            gpu_info["vram_gb"] = "Unknown"
 
                         if include_inference_engines:
                             gpu_info["inference_engines"] = (
@@ -922,6 +1051,109 @@ class LinuxSystemInfo(SystemInfo):
         info_dict["OEM System"] = self.get_system_model()
         info_dict["Physical Memory"] = self.get_physical_memory()
         return info_dict
+
+    def _get_nvidia_vram_smi_linux(self) -> float:
+        """
+        Get NVIDIA GPU VRAM using nvidia-smi command on Linux.
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            output = (
+                subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+
+            # nvidia-smi returns memory in MB
+            vram_mb = int(output.split("\n")[0])
+            vram_gb = round(vram_mb / 1024, 1)
+            return vram_gb
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
+
+    def _get_amd_vram_rocm_smi_linux(self) -> float:
+        """
+        Get AMD GPU VRAM using rocm-smi command on Linux.
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            output = (
+                subprocess.check_output(
+                    ["rocm-smi", "--showmeminfo", "vram", "--csv"],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
+
+            # Parse CSV output to extract VRAM
+            lines = output.split("\n")
+            for line in lines:
+                if "Total VRAM" in line or "vram" in line.lower():
+                    # Extract numeric value (assuming it's in MB or GB)
+                    numbers = re.findall(r"\d+", line)
+                    if numbers:
+                        vram_value = int(numbers[0])
+                        # Assume MB if value is large, GB if small
+                        if vram_value > 100:  # Likely MB
+                            vram_gb = round(vram_value / 1024, 1)
+                        else:  # Likely GB
+                            vram_gb = float(vram_value)
+                        return vram_gb
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
+
+    def _get_amd_vram_sysfs(self, pci_id: str) -> float:
+        """
+        Get AMD GPU VRAM using sysfs on Linux.
+
+        Args:
+            pci_id: PCI ID of the GPU (e.g., "0000:01:00.0")
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            # Try different sysfs paths for VRAM information
+            sysfs_paths = [
+                f"/sys/bus/pci/devices/{pci_id}/mem_info_vram_total",
+                "/sys/class/drm/card*/device/mem_info_vram_total",
+            ]
+
+            for path in sysfs_paths:
+                try:
+                    if "*" in path:
+                        # Handle wildcard paths
+                        matching_paths = glob.glob(path)
+                        for match_path in matching_paths:
+                            with open(match_path, "r", encoding="utf-8") as f:
+                                vram_bytes = int(f.read().strip())
+                                vram_gb = round(vram_bytes / (1024**3), 1)
+                                if vram_gb > 0:
+                                    return vram_gb
+                    else:
+                        with open(path, "r", encoding="utf-8") as f:
+                            vram_bytes = int(f.read().strip())
+                            vram_gb = round(vram_bytes / (1024**3), 1)
+                            return vram_gb
+                except (FileNotFoundError, ValueError, PermissionError):
+                    continue
+        except Exception:
+            pass
+        return 0.0
 
     def _detect_inference_engines(self, device_type: str, device_name: str) -> dict:
         """
