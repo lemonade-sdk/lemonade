@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import importlib.metadata
+import logging
 import platform
 import re
 import subprocess
@@ -206,34 +207,55 @@ class WindowsSystemInfo(SystemInfo):
         Returns:
             list: List of detected GPU info dictionaries
         """
+        logging.debug(f"Starting AMD GPU detection for type: {gpu_type}")
         gpu_devices = []
         try:
             video_controllers = self.connection.Win32_VideoController()
-            for controller in video_controllers:
+            logging.debug(f"Found {len(video_controllers)} video controllers")
+
+            for i, controller in enumerate(video_controllers):
+                logging.debug(
+                    f"Controller {i}: Name='{controller.Name}', PNPDeviceID='{getattr(controller, 'PNPDeviceID', 'N/A')}'"
+                )
+
                 if (
                     controller.Name
                     and "AMD" in controller.Name
                     and "Radeon" in controller.Name
                 ):
+                    logging.debug(f"Found AMD Radeon GPU: {controller.Name}")
 
                     name_lower = controller.Name.lower()
+                    logging.debug(f"GPU name (lowercase): {name_lower}")
 
                     # Keyword-based classification - simple and reliable
+                    matching_keywords = [
+                        kw for kw in AMD_DISCRETE_GPU_KEYWORDS if kw in name_lower
+                    ]
                     is_discrete_by_name = any(
                         kw in name_lower for kw in AMD_DISCRETE_GPU_KEYWORDS
                     )
                     is_integrated = not is_discrete_by_name
 
+                    logging.debug(f"Matching discrete keywords: {matching_keywords}")
+                    logging.debug(
+                        f"Classified as discrete: {not is_integrated}, integrated: {is_integrated}"
+                    )
+
                     # Filter based on requested type
                     if (gpu_type == "integrated" and is_integrated) or (
                         gpu_type == "discrete" and not is_integrated
                     ):
+                        logging.debug(
+                            f"GPU matches requested type '{gpu_type}', processing..."
+                        )
 
                         device_type = "amd_igpu" if is_integrated else "amd_dgpu"
                         gpu_info = {
                             "name": controller.Name,
                             "available": True,
                         }
+                        logging.debug(f"Created GPU info for {device_type}: {gpu_info}")
 
                         driver_version = self.get_driver_version(
                             "AMD-OpenCL User Mode Driver"
@@ -241,13 +263,16 @@ class WindowsSystemInfo(SystemInfo):
                         gpu_info["driver_version"] = (
                             driver_version if driver_version else "Unknown"
                         )
+                        logging.debug(f"Driver version: {gpu_info['driver_version']}")
 
                         # Get VRAM information for discrete GPUs
                         if not is_integrated:  # Only add VRAM for discrete GPUs
-                            vram_gb = self._get_gpu_vram_wmi(controller)
+                            # Try dxdiag first (most reliable for dedicated memory)
+                            vram_gb = self._get_gpu_vram_dxdiag_simple(controller.Name)
+
+                            # Fallback to WMI if dxdiag fails
                             if vram_gb == 0.0:
-                                # Fallback to rocm-smi
-                                vram_gb = self._get_amd_vram_rocm_smi()
+                                vram_gb = self._get_gpu_vram_wmi(controller)
 
                             if vram_gb > 0.0:
                                 gpu_info["vram_gb"] = vram_gb
@@ -261,11 +286,25 @@ class WindowsSystemInfo(SystemInfo):
                                 )
                             )
                         gpu_devices.append(gpu_info)
+                        logging.debug(f"Added GPU to devices list: {gpu_info}")
+                    else:
+                        logging.debug(
+                            f"GPU does not match requested type '{gpu_type}', skipping"
+                        )
+                        continue
+                else:
+                    logging.debug(
+                        f"Skipping non-AMD/non-Radeon controller: {controller.Name}"
+                    )
 
         except Exception as e:  # pylint: disable=broad-except
             error_msg = f"AMD {gpu_type} GPU detection failed: {e}"
+            logging.debug(f"Exception in AMD GPU detection: {e}")
             return [{"available": False, "error": error_msg}]
 
+        logging.debug(
+            f"AMD GPU detection completed. Found {len(gpu_devices)} {gpu_type} GPUs: {[gpu.get('name', 'Unknown') for gpu in gpu_devices]}"
+        )
         return gpu_devices
 
     def get_amd_igpu_device(self, include_inference_engines: bool = False) -> dict:
@@ -491,13 +530,81 @@ class WindowsSystemInfo(SystemInfo):
             float: VRAM in GB, or 0.0 if detection fails
         """
         try:
-            if hasattr(controller, "AdapterRAM") and controller.AdapterRAM:
-                # AdapterRAM is in bytes, convert to GB
-                vram_bytes = int(controller.AdapterRAM)
-                vram_gb = round(vram_bytes / (1024**3), 1)
-                return vram_gb
+            if hasattr(controller, "AdapterRAM"):
+                adapter_ram = controller.AdapterRAM
+                if adapter_ram and adapter_ram > 0:
+                    # AdapterRAM is in bytes, convert to GB
+                    vram_bytes = int(adapter_ram)
+                    vram_gb = round(vram_bytes / (1024**3), 1)
+                    return vram_gb
         except (ValueError, AttributeError):
             pass
+        return 0.0
+
+    def _get_gpu_vram_dxdiag_simple(self, gpu_name: str) -> float:
+        """
+        Get GPU VRAM using dxdiag, looking specifically for dedicated memory.
+
+        Args:
+            gpu_name: Name of the GPU to look for
+
+        Returns:
+            float: VRAM in GB, or 0.0 if detection fails
+        """
+        try:
+            import tempfile
+            import os
+
+            with tempfile.NamedTemporaryFile(
+                mode="w+", suffix=".txt", delete=False
+            ) as temp_file:
+                temp_path = temp_file.name
+
+            try:
+                subprocess.run(
+                    ["dxdiag", "/t", temp_path],
+                    check=True,
+                    timeout=30,
+                    capture_output=True,
+                )
+
+                with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
+                    dxdiag_output = f.read()
+
+                lines = dxdiag_output.split("\n")
+                found_gpu = False
+
+                for line in lines:
+                    line = line.strip()
+
+                    # Check if this is our GPU
+                    if "Card name:" in line and gpu_name.lower() in line.lower():
+                        found_gpu = True
+                        continue
+
+                    # Look for dedicated memory line
+                    if found_gpu and "Dedicated Memory:" in line:
+                        memory_match = re.search(
+                            r"(\d+(?:\.\d+)?)\s*MB", line, re.IGNORECASE
+                        )
+                        if memory_match:
+                            vram_mb = float(memory_match.group(1))
+                            vram_gb = round(vram_mb / 1024, 1)
+                            return vram_gb
+
+                    # Reset if we hit another display device
+                    if "Card name:" in line and gpu_name.lower() not in line.lower():
+                        found_gpu = False
+
+            finally:
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+
+        except Exception:
+            pass
+
         return 0.0
 
     def _get_nvidia_driver_version_windows(self) -> str:
@@ -571,41 +678,6 @@ class WindowsSystemInfo(SystemInfo):
             vram_mb = int(output.split("\n")[0])
             vram_gb = round(vram_mb / 1024, 1)
             return vram_gb
-        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            pass
-        return 0.0
-
-    def _get_amd_vram_rocm_smi(self) -> float:
-        """
-        Get AMD GPU VRAM using rocm-smi command.
-
-        Returns:
-            float: VRAM in GB, or 0.0 if detection fails
-        """
-        try:
-            output = (
-                subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram", "--csv"],
-                    stderr=subprocess.DEVNULL,
-                )
-                .decode()
-                .strip()
-            )
-
-            # Parse CSV output to extract VRAM
-            lines = output.split("\n")
-            for line in lines:
-                if "Total VRAM" in line or "vram" in line.lower():
-                    # Extract numeric value (assuming it's in MB or GB)
-                    numbers = re.findall(r"\d+", line)
-                    if numbers:
-                        vram_value = int(numbers[0])
-                        # Assume MB if value is large, GB if small
-                        if vram_value > 100:  # Likely MB
-                            vram_gb = round(vram_value / 1024, 1)
-                        else:  # Likely GB
-                            vram_gb = float(vram_value)
-                        return vram_gb
         except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
             pass
         return 0.0
