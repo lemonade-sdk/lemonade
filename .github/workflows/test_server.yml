@@ -40,6 +40,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip check
           pip install -e .[dev,oga-cpu]
+          python -m pip install pytest
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
       - name: Run server tests (unit tests)
         shell: bash -el {0}
