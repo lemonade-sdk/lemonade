@@ -19,7 +19,6 @@ LLAMA_VERSION_ROCM = "b1057"
 LLAMA_VERSION_METAL = "b6097"
 
 
-
 def identify_rocm_arch_from_name(device_name: str) -> str | None:
     """
     Identify the appropriate ROCm target architecture based on the device name

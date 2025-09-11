@@ -434,26 +434,16 @@ def get_server_info() -> Tuple[int | None, int | None]:
                     return conn.pid, conn.laddr.port
     except (psutil.AccessDenied, PermissionError):
         # On macOS, psutil.net_connections() requires elevated permissions
-        # Fallback: scan processes and extract port from command line
+        # Fallback: if we find any lemonade server process, consider server as running
+        # This matches Windows behavior where any detected lemonade process indicates a running server
         try:
             for proc in psutil.process_iter(["pid", "cmdline"]):
                 try:
                     pid = proc.info["pid"]
                     if is_lemonade_server(pid):
-                        # Found a lemonade server, try to extract port from command line
-                        cmdline = proc.info.get("cmdline", [])
-                        port = DEFAULT_PORT  # default port when none specified
-
-                        # Look for --port argument
-                        for i, arg in enumerate(cmdline):
-                            if arg == "--port" and i + 1 < len(cmdline):
-                                try:
-                                    port = int(cmdline[i + 1])
-                                    break
-                                except (ValueError, IndexError):
-                                    pass
-
-                        return pid, port
+                        # Found a lemonade server - assume it's running on default port
+                        # This is the same conservative approach as Windows when port detection fails
+                        return pid, DEFAULT_PORT
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
         except Exception:  # pylint: disable=broad-exception-caught
