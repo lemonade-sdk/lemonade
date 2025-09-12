@@ -141,11 +141,11 @@ function updateAttachmentButtonState() {
 
     // Update send button state based on model loading
     if (modelSelect.disabled) {
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Loading...';
+        toggleBtn.disabled = true;
+        toggleBtn.textContent = 'Loading...';
     } else {
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = 'Start';
     }
     
     if (!currentLoadedModel) {
