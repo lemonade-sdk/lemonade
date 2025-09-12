@@ -377,7 +377,9 @@ def is_lemonade_server(pid):
         # Exclude children of current process to avoid detecting status commands
         try:
             current_process = psutil.Process(current_pid)
-            child_pids = [child.pid for child in current_process.children(recursive=True)]
+            child_pids = [
+                child.pid for child in current_process.children(recursive=True)
+            ]
             if pid in child_pids:
                 return False
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -444,6 +446,29 @@ def get_server_info() -> Tuple[int | None, int | None]:
     except Exception:  # pylint: disable=broad-exception-caught
         pass
 
+    # Per-process approach (macOS only - needs this due to permission requirements)
+    if platform.system() == "Darwin":
+        try:
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    pid = proc.info["pid"]
+                    if is_lemonade_server(pid):
+                        # Found a lemonade server, check its listening ports
+                        connections = proc.net_connections(kind="inet")
+                        for conn in connections:
+                            if conn.status == "LISTEN" and conn.laddr:
+                                return pid, conn.laddr.port
+                        # If no listening connections found, this process is not actually serving
+                        # Continue looking for other processes
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
+                    # Some processes may be inaccessible, continue to next
+                    continue
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     return None, None
 
