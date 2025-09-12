@@ -16,6 +16,8 @@ const THINKING_FRAMES = THINKING_USE_LEMON
 
 // Get DOM elements
 let chatHistory, chatInput, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, toggleBtn;
+// Track if a stream is currently active (separate from abortController existing briefly before validation)
+let isStreaming = false;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -145,8 +147,13 @@ function updateAttachmentButtonState() {
         toggleBtn.disabled = true;
         toggleBtn.textContent = 'Loading...';
     } else {
+        // Keep button showing correct state while streaming
         toggleBtn.disabled = false;
-        toggleBtn.textContent = 'Start';
+        if (isStreaming) {
+            toggleBtn.textContent = 'Stop';
+        } else {
+            toggleBtn.textContent = 'Start';
+        }
     }
     
     if (!currentLoadedModel) {
@@ -197,9 +204,9 @@ async function autoLoadDefaultModelAndSend() {
     // Use the standardized load function
     const success = await loadModelStandardized(DEFAULT_MODEL, {
         // Custom UI updates for auto-loading
-        onLoadingStart: () => { sendBtn.textContent = 'Loading model...'; },
+        onLoadingStart: () => { if (toggleBtn) { toggleBtn.textContent = 'Loading model...'; } },
         // Reset send button text
-        onLoadingEnd: () => { sendBtn.textContent = 'Send'; },
+        onLoadingEnd: () => { if (toggleBtn) { toggleBtn.textContent = 'Start'; } },
         // Send the message after successful load
         onSuccess: () => { sendMessage(messageToSend); },
         onError: (error) => {
@@ -591,6 +598,7 @@ function abortCurrentRequest() {
             toggleBtn.disabled = false;
             toggleBtn.textContent = 'Start';
         }
+        isStreaming = false;
         console.log('Streaming request aborted by user.');
     }
 }
@@ -751,7 +759,16 @@ async function sendMessage(existingTextIfAny) {
         toggleBtn.disabled = false;
         toggleBtn.textContent = 'Stop';
     }
-    if (!text && attachedFiles.length === 0) return;
+    if (!text && attachedFiles.length === 0) {
+        // Nothing to send; revert button state and clear abort handle
+        abortController = null;
+        if (toggleBtn) {
+            toggleBtn.textContent = 'Start';
+        }
+        return;
+    }
+
+    isStreaming = true;
 
     // Remove system message when user starts chatting
     if (systemMessageElement) {
@@ -850,7 +867,7 @@ async function sendMessage(existingTextIfAny) {
     updateInputPlaceholder(); // Reset placeholder
     updateAttachmentPreviewVisibility(); // Hide preview container
     updateAttachmentPreviews(); // Clear previews
-    toggleBtn.disabled = true;
+    // Keep the Start/Stop button enabled during streaming so user can abort.
 
     // Streaming OpenAI completions (placeholder, adapt as needed)
     let llmText = '';
@@ -1018,5 +1035,6 @@ async function sendMessage(existingTextIfAny) {
         toggleBtn.textContent = 'Start';
     }
     abortController = null;
+    isStreaming = false;
     updateMessageContent(llmBubble, llmText, true);
 }
