@@ -24,7 +24,7 @@ class InferenceEngineDetector:
         Detect all available inference engines for a specific device type.
 
         Args:
-            device_type: "cpu", "amd_igpu", "amd_dgpu", or "npu"
+            device_type: "cpu", "amd_igpu", "amd_dgpu", "nvidia_dgpu", or "npu"
 
         Returns:
             dict: Engine availability information
@@ -223,17 +223,26 @@ class LlamaCppDetector(BaseEngineDetector):
         """
         try:
 
-            if device_type not in ["cpu", "amd_igpu", "amd_dgpu"]:
+            if device_type not in ["cpu", "amd_igpu", "amd_dgpu", "nvidia_dgpu"]:
                 return None
 
             # Check if the device is supported by the backend
             if device_type == "cpu":
                 device_supported = True
-            elif device_type == "amd_igpu" or device_type == "amd_dgpu":
+            elif device_type in ["amd_igpu", "amd_dgpu"]:
                 if backend == "vulkan":
                     device_supported = self._check_vulkan_support()
                 elif backend == "rocm":
                     device_supported = self._check_rocm_support(device_name.lower())
+                else:
+                    device_supported = False
+            elif device_type == "nvidia_dgpu":
+                if backend == "vulkan":
+                    device_supported = self._check_vulkan_support()
+                else:
+                    device_supported = False
+            else:
+                device_supported = False
             if not device_supported:
                 return {"available": False, "error": f"{backend} not available"}
 
@@ -390,7 +399,7 @@ def detect_inference_engines(device_type: str, device_name: str) -> Dict[str, Di
     Helper function to detect inference engines for a device type.
 
     Args:
-        device_type: "cpu", "amd_igpu", "amd_dgpu", or "npu"
+        device_type: "cpu", "amd_igpu", "amd_dgpu", "nvidia_dgpu", or "npu"
         device_name: device name
 
     Returns:
