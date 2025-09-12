@@ -485,7 +485,6 @@ def list_models():
     # Get all supported models and downloaded models
     supported_models = model_manager.supported_models
     filtered_models = model_manager.filter_models_by_backend(supported_models)
-
     downloaded_models = model_manager.downloaded_models
 
     # Filter to only show recommended models

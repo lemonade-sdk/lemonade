@@ -309,7 +309,7 @@ class LemonadeTray(SystemTray):
                     and self.server.uvicorn_server
                 ):
                     self.server.uvicorn_server.should_exit = True
-                self.server_thread.join(timeout=5)  # Give more time for shutdown
+                self.server_thread.join(timeout=5)
 
             # Update the port in both the tray and the server instance
             self.port = new_port
