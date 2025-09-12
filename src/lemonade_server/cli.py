@@ -10,6 +10,7 @@ from lemonade_server.pydantic_models import (
     DEFAULT_LOG_LEVEL,
     DEFAULT_LLAMACPP_BACKEND,
     DEFAULT_CTX_SIZE,
+    DEFAULT_PREFILL_PROGRESS,
 )
 from lemonade_server.settings import load_setting
 
@@ -61,6 +62,7 @@ def serve(
     use_thread: bool = False,
     llamacpp_backend: str = None,
     ctx_size: int = None,
+    prefill_progress: bool = None,
 ):
     """
     Execute the serve command
@@ -77,6 +79,7 @@ def serve(
         llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
     )
     ctx_size = ctx_size if ctx_size is not None else DEFAULT_CTX_SIZE
+    prefill_progress = prefill_progress if prefill_progress is not None else DEFAULT_PREFILL_PROGRESS
 
     # Start the server
     server = Server(
@@ -86,6 +89,7 @@ def serve(
         ctx_size=ctx_size,
         tray=tray,
         llamacpp_backend=llamacpp_backend,
+        prefill_progress=prefill_progress,
     )
     if not use_thread:
         server.run()
@@ -274,6 +278,7 @@ def run(
     tray: bool = False,
     llamacpp_backend: str = None,
     ctx_size: int = None,
+    prefill_progress: bool = None,
 ):
     """
     Start the server if not running and open the webapp with the specified model
@@ -294,6 +299,7 @@ def run(
             use_thread=True,
             llamacpp_backend=llamacpp_backend,
             ctx_size=ctx_size,
+            prefill_progress=prefill_progress,
         )
     else:
         port = running_port
@@ -519,6 +525,12 @@ def _add_server_arguments(parser):
         ),
         default=DEFAULT_CTX_SIZE,
     )
+    parser.add_argument(
+        "--prefill-progress",
+        action="store_true",
+        help="Enable prefill progress tracking",
+        default=DEFAULT_PREFILL_PROGRESS,
+    )
 
     if os.name == "nt":
         parser.add_argument(
@@ -642,6 +654,7 @@ def main():
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
+            prefill_progress=args.prefill_progress,
         )
     elif args.command == "status":
         status()
@@ -668,6 +681,7 @@ def main():
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
+            prefill_progress=args.prefill_progress,
         )
     elif args.command == "help" or not args.command:
         parser.print_help()

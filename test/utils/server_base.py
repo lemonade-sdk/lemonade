@@ -46,6 +46,18 @@ MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
 
+def with_debug_logging(func):
+    """Decorator to enable debug logging for a specific test."""
+    func.debug_logging = True
+    return func
+
+
+def with_prefill_progress(func):
+    """Decorator to enable prefill progress tracking for a specific test."""
+    func.prefill_progress = True
+    return func
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Test lemonade server")
@@ -193,9 +205,20 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
 
         # Ensure we kill anything using port 8000
         kill_process_on_port(PORT)
+        
+        # Check if the current test method has debug logging or prefill progress enabled
+        test_method = getattr(self, self._testMethodName)
+        enable_debug = getattr(test_method, "debug_logging", False)
+        enable_prefill_progress = getattr(test_method, "prefill_progress", False)
 
         # Build the command to start the server
         cmd = ["lemonade-server-dev", "serve"]
+        if enable_debug:
+            cmd.extend(["--log-level", "debug"])
+            print(f"Debug logging enabled for test: {self._testMethodName}")
+        if enable_prefill_progress:
+            cmd.append("--prefill-progress")
+            print(f"Prefill progress enabled for test: {self._testMethodName}")
 
         # Add --no-tray option on Windows
         if os.name == "nt":
@@ -205,29 +228,22 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         if self.llamacpp_backend:
             cmd.extend(["--llamacpp", self.llamacpp_backend])
 
-        # Start the lemonade server
+        # Create temporary files for capturing output
+        import tempfile
+        self.stdout_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='_stdout.log')
+        self.stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='_stderr.log')
+        
+        # Start the lemonade server with output redirected to files
         lemonade_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=self.stdout_file,
+            stderr=self.stderr_file,
             text=True,
-            bufsize=1,
         )
 
-        # Print stdout and stderr in real-time
-        def print_output():
-            while True:
-                stdout = lemonade_process.stdout.readline()
-                stderr = lemonade_process.stderr.readline()
-                if stdout:
-                    print(f"[stdout] {stdout.strip()}")
-                if stderr:
-                    print(f"[stderr] {stderr.strip()}")
-                if not stdout and not stderr and lemonade_process.poll() is not None:
-                    break
-
-        output_thread = Thread(target=print_output, daemon=True)
-        output_thread.start()
+        # Print output files for debugging if needed
+        print(f"Server stdout being written to: {self.stdout_file.name}")
+        print(f"Server stderr being written to: {self.stderr_file.name}")
 
         # Wait for the server to start by checking port 8000
         start_time = time.time()
@@ -272,6 +288,22 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         server_subprocess.kill()
 
         kill_process_on_port(PORT)
+        
+        # Clean up temporary log files
+        import os
+        if hasattr(self, 'stdout_file'):
+            self.stdout_file.close()
+            try:
+                os.unlink(self.stdout_file.name)
+            except:
+                pass
+        
+        if hasattr(self, 'stderr_file'):
+            self.stderr_file.close()
+            try:
+                os.unlink(self.stderr_file.name)
+            except:
+                pass
 
 
 def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):

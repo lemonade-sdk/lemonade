@@ -59,6 +59,7 @@ from lemonade_server.pydantic_models import (
     DEFAULT_LOG_LEVEL,
     DEFAULT_LLAMACPP_BACKEND,
     DEFAULT_CTX_SIZE,
+    DEFAULT_PREFILL_PROGRESS,
     LoadConfig,
     CompletionRequest,
     ChatCompletionRequest,
@@ -176,6 +177,7 @@ class Server:
         tray: bool = False,
         log_file: str = None,
         llamacpp_backend: str = DEFAULT_LLAMACPP_BACKEND,
+        prefill_progress: bool = DEFAULT_PREFILL_PROGRESS,
     ):
         super().__init__()
 
@@ -187,6 +189,7 @@ class Server:
         self.tray = tray
         self.log_file = log_file
         self.llamacpp_backend = llamacpp_backend
+        self.prefill_progress = prefill_progress
 
         # Initialize FastAPI app
         self.app = FastAPI(lifespan=lifespan)
@@ -1511,7 +1514,10 @@ class Server:
             logging.info(f"Loading llm: {config.model_name}")
             try:
                 if config_to_use.recipe == "llamacpp":
-                    self.wrapped_server = LlamaServer(self.llamacpp_backend)
+                    self.wrapped_server = LlamaServer(
+                        llamacpp_backend=self.llamacpp_backend,
+                        prefill_progress=self.prefill_progress
+                    )
                     self.wrapped_server.load(
                         model_config=config_to_use,
                         ctx_size=self.ctx_size,
