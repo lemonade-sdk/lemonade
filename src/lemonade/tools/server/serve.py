@@ -424,9 +424,6 @@ class Server:
             ).run()
             sys.exit(0)
 
-        # Debug middleware is now set up during app initialization
-        # to prevent "Cannot add middleware after an application has started" errors
-
         # Let the app know what port it's running on, so
         # that the lifespan can access it
         self.app.port = self.port

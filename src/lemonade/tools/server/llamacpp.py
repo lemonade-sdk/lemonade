@@ -168,7 +168,6 @@ class LlamaServer(WrappedServer):
         context_shift_supported_backends = ["vulkan", "rocm"]
         if self.backend in context_shift_supported_backends:
             base_command.extend(["--context-shift", "--keep", "16"])
-            logging.debug(f"Added --context-shift for backend: {self.backend}")
         else:
             # For backends that don't support context-shift (e.g., Metal), just use keep
             base_command.extend(["--keep", "16"])

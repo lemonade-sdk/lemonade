@@ -16,7 +16,7 @@ from dotenv import set_key, load_dotenv
 
 LLAMA_VERSION_VULKAN = "b6431"
 LLAMA_VERSION_ROCM = "b1057"
-LLAMA_VERSION_METAL = "b6097"
+LLAMA_VERSION_METAL = "b6431"
 
 
 def identify_rocm_arch_from_name(device_name: str) -> str | None:
@@ -151,15 +151,8 @@ def get_llama_exe_path(exe_name: str, backend: str):
 
     if system == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
-    elif system == "darwin":
-        build_bin_path = os.path.join(base_dir, "build", "bin", exe_name)
-        if os.path.exists(build_bin_path):
-            return build_bin_path
-        else:
-            # Fallback to root directory
-            return os.path.join(base_dir, exe_name)
-    else:  # Linux/Ubuntu
-        # Check if executable exists in build/bin subdirectory (Current Ubuntu structure)
+    else:  # Darwin/Linux/Ubuntu
+        # Check if executable exists in build/bin subdirectory
         build_bin_path = os.path.join(base_dir, "build", "bin", exe_name)
         if os.path.exists(build_bin_path):
             return build_bin_path
