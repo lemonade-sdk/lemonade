@@ -51,6 +51,7 @@ function setupChatEventListeners() {
             sendMessage();
         }
     };
+}
 
 // Initialize model dropdown with available models
 function initializeModelDropdown() {
