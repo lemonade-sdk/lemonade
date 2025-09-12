@@ -17,7 +17,8 @@ This allows the same application to leverage local LLMs instead of relying on Op
   {"id": "yZs-Yzl736E", "title": "Open WebUI Demo"},
   {"id": "JecpotOZ6qo", "title": "Microsoft AI Toolkit Demo"},
   {"id": "bP_MZnDpbUc", "title": "Continue Coding Assistant"},
-  {"id": "_PORHv_-atI", "title": "GAIA"}
+  {"id": "_PORHv_-atI", "title": "GAIA"},
+  {"id": "A-8QYktB0Io", "title": "PEEL"}
 ]'></div>
 
 <div class="hide-in-mkdocs">
@@ -38,7 +39,9 @@ Links to the video tutorials available are provided in the third column of the f
 | [wut](https://github.com/shobrook/wut)   | [Terminal assistant that uses Lemonade LLMs to explain errors](./wut.md)                                          | _coming soon_                                                                             |
 | [AnythingLLM](https://anythingllm.com/) | [Running agents locally with Lemonade and AnythingLLM](./anythingLLM.md) | _coming soon_                                                                             |
 | [lm-eval](https://github.com/EleutherAI/lm-evaluation-harness)   | [A unified framework to test generative language models on a large number of different evaluation tasks.](./lm-eval.md)              | _coming soon_                                                                             |
-| [PEEL](https://github.com/lemonade-apps/peel)     | [Using Local LLMs in Windows PowerShell](https://github.com/lemonade-apps/peel?tab=readme-ov-file#installation)                   | _coming soon_                                                                             |
+| [PEEL](https://github.com/lemonade-apps/peel)     | [Using Local LLMs in Windows PowerShell](https://github.com/lemonade-apps/peel?tab=readme-ov-file#installation)                   |[Watch Demo](https://youtu.be/A-8QYktB0Io?si=5LiD3fZDlmaTecpV)                            |
+| [OpenHands](https://github.com/All-Hands-AI/OpenHands)   | [How to use Lemonade LLMs as a coding assistant in OpenHands](./open-hands.md)                                          | _coming soon_                             |
+
 
 ## 📦 Looking for Installation Help?
 

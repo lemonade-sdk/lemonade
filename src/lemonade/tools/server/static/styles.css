@@ -35,6 +35,12 @@
   --purple-hover: #744f7e;
   --purple-light: #f5f1f6;
   
+  /* Status Colors */
+  --status-green: #28a745;
+  --status-red: #dc3545;
+  --status-yellow: #ffc107;
+  --status-gray: #6c757d;
+
   /* Transitions */
   --transition-fast: 0.2s ease;
   --transition-medium: 0.3s ease;
@@ -157,9 +163,8 @@ body::before {
   margin-bottom: 2em;
   border-radius: 8px;
   border: 1px solid #e0e0e0;
-  max-width: 1000px;
   min-width: 320px;
-  width: calc(100% - 2rem); /* Responsive width with margin */
+  width: 100%;
   margin-left: 1rem;
   margin-right: 1rem;
 }
@@ -230,49 +235,44 @@ body::before {
   animation: pulse-glow 2s infinite;
 }
 
-/* Online status (green) */
+/* Online model unloaded status (yellow) */
 .model-status-indicator.online .status-light {
-  background: #28a745;
+  background:  var(--status-yellow);
   box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
 }
 
 .model-status-indicator.online .status-light::before {
-  background: #28a745;
+  background:  var(--status-yellow);
 }
 
-.model-status-indicator.online .model-status-text {
-  color: #28a745;
-  font-weight: 600;
+/* Online model loading status (yellow) */
+.model-status-indicator.loading .status-light {
+  background:  var(--status-yellow);
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+}
+
+.model-status-indicator.loading .status-light::before {
+  background:  var(--status-yellow);
 }
 
 /* Offline status (red) */
 .model-status-indicator.offline .status-light {
-  background: #dc3545;
+  background: var(--status-red);
   box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
 }
 
 .model-status-indicator.offline .status-light::before {
-  background: #dc3545;
+  background: var(--status-red);
 }
 
-.model-status-indicator.offline .model-status-text {
-  color: #dc3545;
-  font-weight: 600;
-}
-
-/* Model loaded status (same as online but with model name) */
+/* Online model loaded status (with model name) */
 .model-status-indicator.loaded .status-light {
-  background: #28a745;
+  background: var(--status-green);
   box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
 }
 
 .model-status-indicator.loaded .status-light::before {
-  background: #28a745;
-}
-
-.model-status-indicator.loaded .model-status-text {
-  color: #28a745;
-  font-weight: 600;
+  background: var(--status-green);
 }
 
 @keyframes pulse-glow {
@@ -286,30 +286,109 @@ body::before {
   }
 }
 
-.model-status-text {
-  font-weight: 600;
+/* Base styles for the select element */
+.model-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fafafa;
   font-size: 0.9rem;
+  min-width: 180px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align-last: center;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
+}
+
+/* Existing styles for selective coloring based on status */
+.model-status-indicator.loaded .model-select {
+  color: var(--status-green); /* Green for loaded model */
+  font-weight: bold;
+}
+
+.model-status-indicator.loading .model-select {
+  color: var(--status-gray); /* Gray for loading */
+  font-style: italic;
+  cursor: wait;
+}
+
+.model-status-indicator.online .model-select {
+  color: var(--status-yellow); /* Yellow when online but no model loaded */
+  font-weight: bold;
+}
+
+.model-status-indicator.offline .model-select {
+  color: var(--status-red); /* Red when offline */
+  font-weight: bold;
+}
+
+/* Ensure options in the list are not affected by the select's styling */
+.model-select option {
+  color: var(--text-primary); 
+  font-weight: normal;
+  font-style: normal;
+  background-color: white; 
+  padding: 0.5rem;
+}
+
+/* Highlight the selected option ONLY in the open list (if desired) */
+.model-select option:checked {
+  background-color: #f0f0f0; 
+  color: var(--text-primary);
+}
+
+.model-select option:checked.server-offline {
+  background-color: #f0f0f0; 
+  color: var(--status-red);
+}
+
+.model-select:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+/* When server is offline all buttons are disabled and appear muted */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: #cccccc;
+  color: #666666;
 }
 
 .model-action-btn {
-  display: flex;
+  display: none; /* Hide by default */
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 1.1em;
+  height: 1.1em;
   background: transparent;
   border: none;
   border-radius: 50%;
   cursor: pointer;
   transition: all var(--transition-fast);
-  font-size: 0.9rem;
+  font-size: 1.5rem;
   color: #666;
-  margin-left: 0.2rem;
+  margin-left: 0.1rem;
+  margin-right: 0.2rem;
+  line-height: 1;
 }
 
 .model-action-btn:hover {
   background: rgba(0, 0, 0, 0.1);
   color: #333;
+}
+
+/* Unload button is only visible when a model is loaded */
+.model-status-indicator.loaded .model-action-btn {
+  display: flex;
 }
 
 .tab-content {
@@ -327,15 +406,16 @@ body::before {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 650px); /* Subtract space for navbar, title, wall of logos, etc */
   min-height: 300px;
-  max-height: 1200px;
-  max-width: 800px;
+  min-width: 300px;
+  max-width: 100%;
   width: 100%;
   margin: 0 auto;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #fff;
+  resize: both;
+  overflow: auto;
 }
 
 .chat-history {
@@ -386,6 +466,21 @@ body::before {
   color: #222;
   border-bottom-left-radius: 4px;
   align-self: flex-start;
+}
+
+.chat-message.system {
+  align-items: flex-start;
+}
+
+.chat-bubble.system {
+  background: linear-gradient(135deg, #f0f8f0 0%, #e8f5e8 100%);
+  color: #2d7f47;
+  border-bottom-left-radius: 4px;
+  align-self: flex-start;
+  border: 1px solid #c8e6c9;
+  font-style: normal;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(45, 127, 71, 0.1);
 }
 
 /* Markdown styling within chat bubbles */
@@ -570,7 +665,7 @@ body::before {
   align-items: center;
 }
 
-.input-with-indicator input[type='text'] {
+#chat-input {
   flex: 1;
   padding: 0.5em;
   border: 1px solid #ddd;
@@ -578,6 +673,16 @@ body::before {
   background: #fff;
   color: #222;
   margin: 0;
+  resize: vertical;
+  min-height: 40px;
+  font-family: inherit;
+}
+
+/* Update placeholder style */
+#chat-input::placeholder {
+  color: #aaa;
+  opacity: 1;
+  font-style: italic;
 }
 
 #attachment-indicator {
@@ -849,6 +954,10 @@ body::before {
   background-color: var(--info-primary);
 }
 
+.model-label.tool-calling {
+  background-color: #FFB74D;
+}
+
 .model-label.other {
   background-color: var(--success-primary);
 }
@@ -1081,6 +1190,7 @@ body::before {
 
 #register-model-name:focus {
   border-color: #e6b800;
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
 }
 
 .form-input-wrapper {
@@ -1897,7 +2007,6 @@ body::before {
 
 .category-content {
   display: none;
-  padding: 0;
 }
 
 .category-content.expanded {
@@ -2166,43 +2275,4 @@ body::before {
     0 8px 25px rgba(200, 88, 108, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-/* Model select dropdown in chat */
-.model-select {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
-  font-size: 0.9rem;
-  min-width: 180px;
-  margin-right: 0.75rem;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.model-select:focus {
-  outline: none;
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
-}
-
-.model-select:disabled {
-  background: #f5f5f5;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.model-select option {
-  padding: 0.5rem;
-}
-
-.chat-input-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.input-with-indicator {
-  flex: 1;
 }

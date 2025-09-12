@@ -133,6 +133,21 @@ class StopOnEvent:
         return self.stop_event.is_set()
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Custom StaticFiles class with no-cache headers"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        # Add no-cache headers for all static files
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 class Server:
     """
     Open a web server that apps can use to communicate with the LLM.
@@ -149,6 +164,7 @@ class Server:
     - /api/v1/chat/completions: chat completion responses using HTTP chunked transfer encoding.
     - /api/v1/responses: responses API using HTTP chunked transfer encoding.
     - /api/v1/models: list all available models.
+    - /api/v1/models/{model_id}: retrieve a specific model by ID.
     """
 
     def __init__(
@@ -198,7 +214,7 @@ class Server:
         # as the Web App
         static_dir = Path(__file__).parent / "static"
         self.app.mount(
-            "/static", StaticFiles(directory=static_dir), name="static_assets"
+            "/static", NoCacheStaticFiles(directory=static_dir), name="static_assets"
         )
 
         # Performance stats that are set during /ws and can be
@@ -254,6 +270,7 @@ class Server:
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
             self.app.post(f"{prefix}/embeddings")(self.embeddings)
             self.app.get(f"{prefix}/models")(self.models)
+            self.app.get(f"{prefix}/models/{{model_id}}")(self.retrieve_model)
 
             # JinaAI routes (jina.ai/reranker/)
             self.app.post(f"{prefix}/reranking")(self.reranking)
@@ -1145,18 +1162,33 @@ class Server:
             )
             self.input_tokens = len(input_ids[0])
 
-        # For non-llamacpp recipes, truncate inputs to ctx_size if needed
-        if self.llm_loaded.recipe != "llamacpp" and self.input_tokens > self.ctx_size:
+        max_prompt_length = self.ctx_size  # Default fallback
+        # For OGA models, try to read the actual max prompt length from config
+        if "oga-" in self.llm_loaded.recipe:
+            try:
+                if model.config and model.config.get("max_prompt_length"):
+                    max_prompt_length = model.config["max_prompt_length"]
+                    logging.debug(
+                        f"Using OGA model max_prompt_length: {max_prompt_length}"
+                    )
+            # pylint: disable=broad-exception-caught
+            except Exception as e:
+                logging.debug(f"Could not read OGA model config, using ctx_size: {e}")
+
+        # Apply truncation if input exceeds the limit
+        if self.input_tokens > max_prompt_length:
             # Truncate input ids
-            truncate_amount = self.input_tokens - self.ctx_size
-            input_ids = input_ids[: self.ctx_size]
-
+            truncate_amount = self.input_tokens - max_prompt_length
+            input_ids = input_ids[:max_prompt_length]
             # Update token count
-            self.input_tokens = len(input_ids)
+            if "oga-" in self.llm_loaded.recipe:
+                self.input_tokens = len(input_ids)
+            else:
+                self.input_tokens = len(input_ids[0])
 
-            # Show warning message
+            # Log warning message instead of raising exception
             truncation_message = (
-                f"Input exceeded {self.ctx_size} tokens. "
+                f"Input exceeded {max_prompt_length} tokens. "
                 f"Truncated {truncate_amount} tokens from the beginning."
             )
             logging.warning(truncation_message)
@@ -1559,6 +1591,36 @@ class Server:
             models_list.append(m)
 
         return {"object": "list", "data": models_list}
+
+    async def retrieve_model(self, model_id: str):
+        """
+        Retrieve a specific model by ID in OpenAI-compatible format.
+        """
+        # Raise an error if the model does not exist
+        if model_id not in self.local_models:
+            # Mimic the error format of the OpenAI API
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "message": f"model {model_id} not found",
+                    "type": "api_error",
+                    "param": None,
+                    "code": None,
+                },
+            )
+
+        # Return the specific model
+        model_info = self.local_models[model_id]
+        model = ServerModel(
+            id=model_id,
+            owned_by="lemonade",
+            object="model",
+            created=int(time.time()),
+            checkpoint=model_info["checkpoint"],
+            recipe=model_info["recipe"],
+        )
+
+        return model
 
     def setup_middleware_timer(self):
         logging.info("Middleware set up")
