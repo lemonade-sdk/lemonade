@@ -11,7 +11,7 @@ from lemonade.tools.llamacpp.utils import parse_checkpoint, identify_gguf_models
 
 # Only import system tray related modules on Windows
 if platform.system() == "Windows":
-    from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
+    from lemonade.tools.server.utils.windows_tray import SystemTray, Menu, MenuItem
     from lemonade.tools.server.tray import LemonadeTray
 
 
