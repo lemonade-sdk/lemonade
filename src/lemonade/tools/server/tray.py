@@ -7,12 +7,13 @@ import webbrowser
 from pathlib import Path
 import logging
 import tempfile
+
 import requests
 from packaging.version import parse as parse_version
 
+from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
 from lemonade.version import __version__
 from lemonade_server.pydantic_models import DEFAULT_CTX_SIZE
-from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
 
 
 class OutputDuplicator:
@@ -313,7 +314,7 @@ class LemonadeTray(SystemTray):
                 "Context Size Changed",
                 f"Lemonade Server context size is now {ctx_size_label}",
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error changing context size: {str(e)}")
             self.show_balloon_notification(
                 "Error", f"Failed to change context size: {str(e)}"
