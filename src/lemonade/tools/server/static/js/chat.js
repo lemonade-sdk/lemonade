@@ -51,53 +51,6 @@ function setupChatEventListeners() {
             sendMessage();
         }
     };
-```
-
-src\lemonade\tools\server\static\js\chat.js
-```javascript
-<<<<<<< SEARCH
-    if (modelSelect.disabled) {
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Loading...';
-    } else {
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
-    }
-
-    // Attachment button click
-    attachmentBtn.onclick = () => {
-        if (!currentLoadedModel) {
-            alert('Please load a model first before attaching images.');
-            return;
-        }
-        if (!isVisionModel(currentLoadedModel)) {
-            alert(`The current model "${currentLoadedModel}" does not support image inputs. Please load a model with "Vision" capabilities to attach images.`);
-            return;
-        }
-        fileAttachment.click();
-    };
-
-    // File input change
-    fileAttachment.addEventListener('change', handleFileSelection);
-
-    // Chat input events
-    chatInput.addEventListener('keydown', handleChatInputKeydown);
-    chatInput.addEventListener('paste', handleChatInputPaste);
-
-    // Model select change
-    modelSelect.addEventListener('change', handleModelSelectChange);
-
-    // Send button click
-    sendBtn.addEventListener('click', function() {
-        // Check if we have a loaded model
-        if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
-            sendMessage();
-        } else if (!currentLoadedModel) {
-            // Auto-load default model and send
-            autoLoadDefaultModelAndSend();
-        }
-    });
-}
 
 // Initialize model dropdown with available models
 function initializeModelDropdown() {
