@@ -8,6 +8,7 @@ from pathlib import Path
 import logging
 import tempfile
 
+import requests
 from packaging.version import parse as parse_version
 
 from lemonade_server.pydantic_models import DEFAULT_CTX_SIZE
