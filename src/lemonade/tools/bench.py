@@ -251,7 +251,7 @@ class Bench(Tool, ABC):
             self.get_item_or_list(self.prefill_tokens_per_second_list),
         )
         if not all(
-                element is None for element in self.std_dev_prefill_tokens_per_second_list
+            element is None for element in self.std_dev_prefill_tokens_per_second_list
         ):
             state.save_stat(
                 Keys.STD_DEV_PREFILL_TOKENS_PER_SECOND,
@@ -262,8 +262,8 @@ class Bench(Tool, ABC):
             self.get_item_or_list(self.token_generation_tokens_per_second_list),
         )
         if not all(
-                element is None
-                for element in self.std_dev_token_generation_tokens_per_second_list
+            element is None
+            for element in self.std_dev_token_generation_tokens_per_second_list
         ):
             state.save_stat(
                 Keys.STD_DEV_TOKENS_PER_SECOND,

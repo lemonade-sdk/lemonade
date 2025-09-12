@@ -185,14 +185,14 @@ class LlamaCppBench(Bench):
         return state
 
     def run(
-            self,
-            state: State,
-            prompts: list[str] = None,
-            iterations: int = default_iterations,
-            warmup_iterations: int = default_warmup_runs,
-            output_tokens: int = default_output_tokens,
-            cli: bool = False,
-            **kwargs,
+        self,
+        state: State,
+        prompts: list[str] = None,
+        iterations: int = default_iterations,
+        warmup_iterations: int = default_warmup_runs,
+        output_tokens: int = default_output_tokens,
+        cli: bool = False,
+        **kwargs,
     ) -> State:
         """
         Args:
@@ -218,6 +218,7 @@ class LlamaCppBench(Bench):
             state = self.run_llama_bench_exe(state, prompts, iterations, output_tokens)
 
         return state
+
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD

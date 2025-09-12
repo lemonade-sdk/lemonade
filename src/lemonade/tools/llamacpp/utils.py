@@ -721,11 +721,11 @@ class LlamaCppAdapter(ModelAdapter):
             self.executable,
             "-m",
             self.model,
-            "--ctx-size",   # size of the prompt context, 0 = loaded from model
+            "--ctx-size",  # size of the prompt context, 0 = loaded from model
             str(self.context_size),
-            "-n",   # number of tokens to predict, -1 = infinity, =2 - until context filled
+            "-n",  # number of tokens to predict, -1 = infinity, =2 - until context filled
             str(n_predict),
-            "-t",   # number of threads to use during generation
+            "-t",  # number of threads to use during generation
             str(self.threads),
             "-p",
             prompt,
