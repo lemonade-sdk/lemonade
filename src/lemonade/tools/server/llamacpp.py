@@ -6,6 +6,7 @@ import threading
 import platform
 
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
 
 from lemonade_server.pydantic_models import (
     PullConfig,
@@ -27,6 +28,20 @@ class LlamaTelemetry(WrappedServerTelemetry):
         """
         Parse telemetry data from llama server output lines.
         """
+
+        if "vk::PhysicalDevice::createDevice: ErrorExtensionNotPresent" in line:
+            msg = (
+                "Your AMD GPU driver version is not compatible with this software.\n"
+                "Please update and try again: "
+                "https://www.amd.com/en/support/download/drivers.html"
+            )
+            logging.error(msg)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=msg,
+            )
+        elif "error" in line.lower():
+            logging.error(line)
 
         # Parse Vulkan device detection
         vulkan_match = re.search(r"ggml_vulkan: Found (\d+) Vulkan devices?:", line)
@@ -147,21 +162,12 @@ class LlamaServer(WrappedServer):
         # Add port and jinja to enable tool use
         base_command.extend(["--port", str(self.port), "--jinja"])
 
-        # Disable jinja for gpt-oss-120b on Vulkan
-        if (
-            self.backend == "vulkan"
-            and "gpt-oss-120b" in snapshot_files["variant"].lower()
-        ):
-            base_command.remove("--jinja")
-            logging.warning(
-                "Jinja is disabled for gpt-oss-120b on Vulkan due to a llama.cpp bug "
-                "(see https://github.com/ggml-org/llama.cpp/issues/15274). "
-                "The model cannot use tools. If needed, use the ROCm backend instead."
-            )
+        # Enable context shift and avoid attention sink issues by preserving the initial tokens
+        base_command.extend(["--context-shift", "--keep", "16"])
 
         # Use legacy reasoning formatting, since not all apps support the new
         # reasoning_content field
-        base_command.extend(["--reasoning-format", "none"])
+        base_command.extend(["--reasoning-format", "auto"])
 
         # Add embeddings support if the model supports it
         if supports_embeddings:
@@ -182,7 +188,7 @@ class LlamaServer(WrappedServer):
         exe_dir = os.path.dirname(exe_path)
         env_file_path = os.path.join(exe_dir, ".env")
         if os.path.exists(env_file_path):
-            load_dotenv(env_file_path, override=True)
+            load_dotenv(env_file_path, override=False)
             env.update(os.environ)
             logging.debug(f"Loaded environment variables from {env_file_path}")
 

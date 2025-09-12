@@ -197,15 +197,15 @@ def pull(
         for model_name in model_names:
             payload = {"model_name": model_name}
 
-            if checkpoint and recipe:
-                # Add the parameters for registering a new model
-                payload["checkpoint"] = checkpoint
-                payload["recipe"] = recipe
-
-                if reasoning:
-                    payload["reasoning"] = reasoning
-                if mmproj:
-                    payload["mmproj"] = mmproj
+            # Add the parameters to the payload
+            for key, value in [
+                ("checkpoint", checkpoint),
+                ("recipe", recipe),
+                ("reasoning", reasoning),
+                ("mmproj", mmproj),
+            ]:
+                if value:
+                    payload[key] = value
 
             # Install the model
             pull_response = requests.post(f"{base_url}/pull", json=payload)
@@ -225,6 +225,9 @@ def pull(
             recipe=recipe,
             reasoning=reasoning,
             mmproj=mmproj,
+            # The pull command will download an upgraded model if available, even
+            # if we already have a local copy of the model
+            do_not_upgrade=False,
         )
 
 
@@ -277,6 +280,7 @@ def run(
     """
     import webbrowser
     import time
+    import os
 
     # Start the server if not running
     _, running_port = get_server_info()
@@ -303,7 +307,10 @@ def run(
     # Open the webapp with the specified model
     url = f"http://{host}:{port}/?model={model_name}#llm-chat"
     print(f"You can now chat with {model_name} at {url}")
-    webbrowser.open(url)
+
+    # Only open browser if not disabled via environment variable
+    if not os.environ.get("LEMONADE_DISABLE_BROWSER"):
+        webbrowser.open(url)
 
     # Keep the server running if we started it
     if not server_previously_running:
@@ -368,9 +375,11 @@ def is_lemonade_server(pid):
             if process_name in [  # Windows
                 "lemonade-server-dev.exe",
                 "lemonade-server.exe",
+                "lsdev.exe",
             ] or process_name in [  # Linux
                 "lemonade-server-dev",
                 "lemonade-server",
+                "lsdev",
             ]:
                 return True
             elif "llama-server" in process_name:
@@ -511,6 +520,13 @@ def _add_server_arguments(parser):
         default=DEFAULT_CTX_SIZE,
     )
 
+    if os.name == "nt":
+        parser.add_argument(
+            "--no-tray",
+            action="store_true",
+            help="Do not show a tray icon when the server is running",
+        )
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -531,12 +547,6 @@ def main():
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start server")
     _add_server_arguments(serve_parser)
-    if os.name == "nt":
-        serve_parser.add_argument(
-            "--no-tray",
-            action="store_true",
-            help="Do not show a tray icon when the server is running",
-        )
 
     # Status command
     status_parser = subparsers.add_parser("status", help="Check if server is running")

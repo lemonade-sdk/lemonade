@@ -12,6 +12,41 @@ from lemonade.sequence import Sequence
 from lemonade.tools.management_tools import Cache, Version, SystemInfo
 from lemonade.state import State
 
+
+def get_available_profilers(warn_missing=False):
+    """Get list of available profilers, with conditional imports for optional dependencies.
+
+    Args:
+        warn_missing: If True, print warnings for missing profilers. If False, fail silently.
+    """
+    profilers = [MemoryTracker]
+
+    try:
+        from lemonade.profilers.hwinfo_power import HWINFOPowerProfiler
+
+        profilers.append(HWINFOPowerProfiler)
+    except ImportError:
+        if warn_missing:
+            print(
+                "Warning: HWINFOPowerProfiler not available. "
+                "Install lemonade with dev extras: "
+                "pip install lemonade-sdk[dev]"
+            )
+    try:
+        from lemonade.profilers.agt_power import AGTPowerProfiler
+
+        profilers.append(AGTPowerProfiler)
+    except ImportError:
+        if warn_missing:
+            print(
+                "Warning: AGTPowerProfiler not available. "
+                "Install lemonade with dev extras: "
+                "pip install lemonade-sdk[dev]"
+            )
+
+    return profilers
+
+
 from lemonade.tools.huggingface.load import HuggingfaceLoad
 from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.oga.load import OgaLoad
@@ -25,8 +60,6 @@ from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.perplexity import AccuracyPerplexity
 from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
-from lemonade.tools.quark.quark_load import QuarkLoad
-from lemonade.tools.quark.quark_quantize import QuarkQuantize
 from lemonade.tools.report.llm_report import LemonadeReport
 
 
@@ -45,8 +78,6 @@ def main():
         HuggingfaceBench,
         OgaLoad,
         OgaBench,
-        QuarkQuantize,
-        QuarkLoad,
         LemonadeReport,
         # Inherited from lemonade
         Cache,
@@ -55,7 +86,7 @@ def main():
     ]
 
     # List the available profilers
-    profilers = [MemoryTracker]
+    profilers = get_available_profilers()
 
     # Define the argument parser
     parser = cli.CustomArgumentParser(
@@ -88,6 +119,17 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
     global_args, tool_instances, evaluation_tools = cli.parse_tools(
         parser, tools, cli_name="lemonade"
     )
+
+    # Check if any profilers are being requested
+    requested_profilers = [
+        profiler.unique_name.replace("-", "_")
+        for profiler in profilers
+        if global_args.get(profiler.unique_name.replace("-", "_"), None) is not None
+    ]
+
+    # If profilers are requested, get the full list with warnings for missing ones
+    if requested_profilers:
+        get_available_profilers(warn_missing=True)
 
     profiler_instances = [
         profiler(global_args[profiler.unique_name.replace("-", "_")])
