@@ -73,7 +73,7 @@ for model_name, details in models.items():
         # Check for hot models first (these can appear in multiple sections)
         if "labels" in details and "hot" in details["labels"]:
             hot_models.append((model_name, details))
-        
+
         if model_name.endswith("-Hybrid"):
             hybrid_models.append((model_name, details))
         elif model_name.endswith("-NPU"):
