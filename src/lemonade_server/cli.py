@@ -176,6 +176,7 @@ def pull(
     checkpoint: Optional[str] = None,
     recipe: Optional[str] = None,
     reasoning: bool = False,
+    vision: bool = False,
     mmproj: str = "",
 ):
     """
@@ -202,6 +203,7 @@ def pull(
                 ("checkpoint", checkpoint),
                 ("recipe", recipe),
                 ("reasoning", reasoning),
+                ("vision", vision),
                 ("mmproj", mmproj),
             ]:
                 if value:
@@ -224,6 +226,7 @@ def pull(
             checkpoint=checkpoint,
             recipe=recipe,
             reasoning=reasoning,
+            vision=vision,
             mmproj=mmproj,
             # The pull command will download an upgraded model if available, even
             # if we already have a local copy of the model

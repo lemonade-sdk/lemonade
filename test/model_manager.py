@@ -323,6 +323,7 @@ class TestModelManagerDeletion(unittest.TestCase):
             ("checkpoint", {"checkpoint": "test/checkpoint2", "recipe": "oga-cpu"}),
             ("recipe", {"checkpoint": "test/checkpoint1", "recipe": "llamacpp"}),
             ("reasoning", {"checkpoint": "test/checkpoint1", "recipe": "oga-cpu", "reasoning": True}),
+            ("vision", {"checkpoint": "test/checkpoint1", "recipe": "oga-cpu", "vision": True}),
             ("mmproj", {"checkpoint": "test/checkpoint1", "recipe": "oga-cpu", "mmproj": "test.mmproj"})
         ]
         for param_name, kwargs in test_cases:
