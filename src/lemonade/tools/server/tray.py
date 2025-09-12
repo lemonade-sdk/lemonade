@@ -10,7 +10,6 @@ import logging
 import tempfile
 import platform
 
-
 import requests
 from packaging.version import parse as parse_version
 
@@ -26,7 +25,11 @@ if platform.system() == "Darwin":  # macOS
         MenuItem,
     )
 else:  # Windows/Linux
-    from lemonade.tools.server.utils.windows_tray import SystemTray, Menu, MenuItem
+    from lemonade.tools.server.utils.windows_tray import (
+        SystemTray,
+        Menu,
+        MenuItem,
+    )
 
 
 class OutputDuplicator:
@@ -208,9 +211,8 @@ class LemonadeTray(SystemTray):
         try:
             system = platform.system().lower()
             if system == "darwin":
-                # Try multiple approaches for macOS
+                # Use Terminal.app to show live logs on macOS
                 try:
-                    # Primary: Use Terminal.app to show logs
                     subprocess.Popen(
                         [
                             "osascript",
@@ -218,13 +220,12 @@ class LemonadeTray(SystemTray):
                             f'tell application "Terminal" to do script "tail -f {self.log_file}"',
                         ]
                     )
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    # Fallback: Use default terminal application
-                    try:
-                        subprocess.Popen(["open", "-a", "Terminal", self.log_file])
-                    except (subprocess.CalledProcessError, FileNotFoundError):
-                        # Final fallback: Open in default text editor
-                        subprocess.Popen(["open", self.log_file])
+                except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                    self.logger.error(f"Failed to open Terminal for logs: {e}")
+                    self.show_balloon_notification(
+                        "Error",
+                        f"Failed to open logs in Terminal. Log file: {self.log_file}",
+                    )
             elif system == "windows":
                 # Use PowerShell on Windows
                 subprocess.Popen(
@@ -237,34 +238,11 @@ class LemonadeTray(SystemTray):
                     ]
                 )
             else:
-                # Linux or other Unix-like systems
-                try:
-                    # Try common terminal emulators
-                    for terminal in [
-                        "gnome-terminal",
-                        "konsole",
-                        "xterm",
-                        "x-terminal-emulator",
-                    ]:
-                        try:
-                            subprocess.Popen(
-                                [terminal, "--", "tail", "-f", self.log_file]
-                            )
-                            break
-                        except FileNotFoundError:
-                            continue
-                    else:
-                        # Fallback: open in default editor
-                        subprocess.Popen(["xdg-open", self.log_file])
-                except Exception:  # pylint: disable=broad-exception-caught
-                    self.logger.error(f"No suitable terminal found for {system}")
+                # Unsupported platform
+                self.logger.error(f"Log viewing not supported on platform: {system}")
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error opening logs: {str(e)}")
-            # Show notification with error
-            self.show_balloon_notification(
-                "Error", f"Failed to open logs. Log file location: {self.log_file}"
-            )
 
     def open_documentation(self, _, __):
         """
@@ -320,13 +298,11 @@ class LemonadeTray(SystemTray):
         """
         Change the server port and restart the server.
         """
-        old_port = self.port
+
         try:
-            self.logger.info(f"Changing server port from {old_port} to {new_port}")
 
             # Stop the current server
             if self.server_thread and self.server_thread.is_alive():
-                self.logger.info("Stopping current server...")
                 # Set should_exit flag on the uvicorn server instance
                 if (
                     hasattr(self.server, "uvicorn_server")
@@ -335,39 +311,20 @@ class LemonadeTray(SystemTray):
                     self.server.uvicorn_server.should_exit = True
                 self.server_thread.join(timeout=5)  # Give more time for shutdown
 
-                if self.server_thread.is_alive():
-                    self.logger.warning("Server thread did not shut down cleanly")
-                else:
-                    self.logger.info("Server stopped successfully")
-
-            # Update the port
+            # Update the port in both the tray and the server instance
             self.port = new_port
 
             # Clear the old server instance to ensure a fresh start
             # This prevents middleware conflicts when restarting
             self.server = None
 
-            # Restart the server with a fresh instance
-            self.logger.info(f"Starting server on new port {new_port}")
             self.server_thread = threading.Thread(target=self.start_server, daemon=True)
             self.server_thread.start()
 
-            # Wait a bit for the server to start and then verify it's running
-            time.sleep(2)
-
-            # Check if server started successfully
-            if self.check_server_state():
-                self.logger.info(f"Server successfully restarted on port {new_port}")
-                self.show_balloon_notification(
-                    "Port Changed",
-                    f"Lemonade Server is now running on port {self.port}",
-                )
-            else:
-                self.logger.error(f"Server failed to start on port {new_port}")
-                self.show_balloon_notification(
-                    "Error",
-                    f"Server failed to start on port {new_port}. Check logs for details.",
-                )
+            self.show_balloon_notification(
+                "Port Changed",
+                f"Lemonade Server is now running on port {self.port}",
+            )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error changing port: {str(e)}")

@@ -482,19 +482,9 @@ def list_models():
 
     model_manager = ModelManager()
 
-    # Get all supported models and filter by backend/platform
+    # Get all supported models and downloaded models
     supported_models = model_manager.supported_models
     filtered_models = model_manager.filter_models_by_backend(supported_models)
-
-    # Check for Intel Mac error
-    if "_unsupported_platform_error" in filtered_models:
-        error = filtered_models["_unsupported_platform_error"]
-        print(f"\n{error['error']}")
-        print(f"\n{error['message']}")
-        print(f"\nYour Platform: {error['platform']}")
-        print(f"Supported: {error['supported']}")
-        print(f"\nFor Windows/Linux support, visit https://lemonade-server.ai/docs/")
-        return
 
     downloaded_models = model_manager.downloaded_models
 
@@ -591,7 +581,6 @@ def _add_server_arguments(parser):
         default=DEFAULT_CTX_SIZE,
     )
 
-    # Add --no-tray option for platforms that support tray (Windows and macOS)
     if os.name == "nt" or platform.system() == "Darwin":
         parser.add_argument(
             "--no-tray",
@@ -692,7 +681,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Disable tray on unsupported platforms (only Windows and macOS are supported)
     if os.name != "nt" and platform.system() != "Darwin":
         args.no_tray = True
 
