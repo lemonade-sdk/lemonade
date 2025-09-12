@@ -15,19 +15,18 @@ const THINKING_FRAMES = THINKING_USE_LEMON
     : ['Thinking.','Thinking..','Thinking...'];
 
 // Get DOM elements
-let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, stopBtn;
+let chatHistory, chatInput, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, toggleBtn;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     chatHistory = document.getElementById('chat-history');
     chatInput = document.getElementById('chat-input');
-    sendBtn = document.getElementById('send-btn');
+    toggleBtn = document.getElementById('toggle-btn');
     attachmentBtn = document.getElementById('attachment-btn');
     fileAttachment = document.getElementById('file-attachment');
     attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
     attachmentsPreviewRow = document.getElementById('attachments-preview-row');
     modelSelect = document.getElementById('model-select');
-    stopBtn = document.getElementById('stop-btn');
 
     // Set up event listeners
     setupChatEventListeners();
@@ -44,10 +43,26 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function setupChatEventListeners() {
-    // Send button click
-    sendBtn.onclick = sendMessage;
-    // Stop button click – abort in‑flight request
-    if (stopBtn) stopBtn.onclick = abortCurrentRequest;
+    // Toggle button click – start or stop streaming
+    toggleBtn.onclick = function () {
+        if (abortController) {
+            abortCurrentRequest();
+        } else {
+            sendMessage();
+        }
+    };
+```
+
+src\lemonade\tools\server\static\js\chat.js
+```javascript
+<<<<<<< SEARCH
+    if (modelSelect.disabled) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Loading...';
+    } else {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+    }
 
     // Attachment button click
     attachmentBtn.onclick = () => {
@@ -618,8 +633,10 @@ function abortCurrentRequest() {
     if (abortController) {
         abortController.abort();
         abortController = null;
-        if (sendBtn) sendBtn.disabled = false;
-        if (stopBtn) stopBtn.disabled = true;
+        if (toggleBtn) {
+            toggleBtn.disabled = false;
+            toggleBtn.textContent = 'Start';
+        }
         console.log('Streaming request aborted by user.');
     }
 }
@@ -775,9 +792,11 @@ async function sendMessage(existingTextIfAny) {
 
     // Prepare abort controller for this request
     abortController = new AbortController();
-    // UI state: disable Send, enable Stop
-    if (sendBtn) sendBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = false;
+    // UI state: set button to Stop
+    if (toggleBtn) {
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = 'Stop';
+    }
     if (!text && attachedFiles.length === 0) return;
 
     // Remove system message when user starts chatting
@@ -877,7 +896,7 @@ async function sendMessage(existingTextIfAny) {
     updateInputPlaceholder(); // Reset placeholder
     updateAttachmentPreviewVisibility(); // Hide preview container
     updateAttachmentPreviews(); // Clear previews
-    sendBtn.disabled = true;
+    toggleBtn.disabled = true;
 
     // Streaming OpenAI completions (placeholder, adapt as needed)
     let llmText = '';
@@ -1040,8 +1059,10 @@ async function sendMessage(existingTextIfAny) {
     }
     }
     // Reset UI state after streaming finishes
-    if (sendBtn) sendBtn.disabled = false;
-    if (stopBtn) stopBtn.disabled = true;
+    if (toggleBtn) {
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = 'Start';
+    }
     abortController = null;
     updateMessageContent(llmBubble, llmText, true);
 }
