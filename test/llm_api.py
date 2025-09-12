@@ -44,7 +44,7 @@ def download_llamacpp_binary(backend: str = "vulkan"):
     """Download the appropriate llama.cpp binary for the current platform"""
     # Get the system type
     system = platform.system().lower()
-    
+
     # Install llamacpp binary using the official function
     install_llamacpp(backend)
 

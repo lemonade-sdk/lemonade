@@ -7,8 +7,11 @@ import webbrowser
 from pathlib import Path
 import logging
 import tempfile
+
 import requests
 from packaging.version import parse as parse_version
+
+from lemonade_server.pydantic_models import DEFAULT_CTX_SIZE
 
 from lemonade.version import __version__
 from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
@@ -57,6 +60,7 @@ class LemonadeTray(SystemTray):
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.log_file = log_file
         self.port = port
+        self.ctx_size = DEFAULT_CTX_SIZE
         self.server_factory = server_factory
         self.debug_logs_enabled = log_level == "debug"
 
@@ -282,6 +286,41 @@ class LemonadeTray(SystemTray):
             self.logger.error(f"Error changing port: {str(e)}")
             self.show_balloon_notification("Error", f"Failed to change port: {str(e)}")
 
+    def change_context_size(self, _, __, new_ctx_size):
+        """
+        Change the server context size and restart the server.
+        """
+        try:
+            # Stop the current server
+            if self.server_thread and self.server_thread.is_alive():
+                # Set should_exit flag on the uvicorn server instance
+                if (
+                    hasattr(self.server, "uvicorn_server")
+                    and self.server.uvicorn_server
+                ):
+                    self.server.uvicorn_server.should_exit = True
+                self.server_thread.join(timeout=2)
+            # Update the context size in both the tray and the server instance
+            self.ctx_size = new_ctx_size
+            if self.server:
+                self.server.ctx_size = new_ctx_size
+            # Restart the server
+            self.server_thread = threading.Thread(target=self.start_server, daemon=True)
+            self.server_thread.start()
+            # Show notification
+            ctx_size_label = (
+                f"{new_ctx_size//1024}K" if new_ctx_size >= 1024 else str(new_ctx_size)
+            )
+            self.show_balloon_notification(
+                "Context Size Changed",
+                f"Lemonade Server context size is now {ctx_size_label}",
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error(f"Error changing context size: {str(e)}")
+            self.show_balloon_notification(
+                "Error", f"Failed to change context size: {str(e)}"
+            )
+
     def _using_installer(self):
         """
         Check if the user is using the NSIS installer by checking for embeddable python
@@ -438,6 +477,30 @@ class LemonadeTray(SystemTray):
 
         port_submenu = Menu(*port_menu_items)
 
+        # Create context size selection submenu with 6 options
+        ctx_size_menu_items = []
+        ctx_size_options = [
+            ("4K", 4096),
+            ("8K", 8192),
+            ("16K", 16384),
+            ("32K", 32768),
+            ("64K", 65536),
+            ("128K", 131072),
+        ]
+
+        for ctx_label, ctx_value in ctx_size_options:
+            # Create a function that returns the lambda to properly capture the ctx_size variable
+            def create_ctx_handler(ctx_size):
+                return lambda icon, item: self.change_context_size(icon, item, ctx_size)
+
+            ctx_item = MenuItem(
+                f"Context size {ctx_label}", create_ctx_handler(ctx_value)
+            )
+            ctx_item.checked = ctx_value == self.ctx_size
+            ctx_size_menu_items.append(ctx_item)
+
+        ctx_size_submenu = Menu(*ctx_size_menu_items)
+
         # Create the Logs submenu
         debug_log_text = "Enable Debug Logs"
         debug_log_item = MenuItem(debug_log_text, self.toggle_debug_logs)
@@ -452,6 +515,7 @@ class LemonadeTray(SystemTray):
         if status_successfully_checked:
             items.append(MenuItem("Load Model", None, submenu=load_submenu))
         items.append(MenuItem("Port", None, submenu=port_submenu))
+        items.append(MenuItem("Context Size", None, submenu=ctx_size_submenu))
         items.append(Menu.SEPARATOR)
 
         # Only show upgrade option if newer version is available
