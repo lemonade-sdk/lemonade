@@ -1,7 +1,6 @@
 import os
 import sys
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import webbrowser
