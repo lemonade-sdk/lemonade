@@ -39,6 +39,7 @@ class ModelManager:
 
             # Backwards compatibility for user models that were created before version 8.0.4
             # "reasoning" was a boolean, but as of 8.0.4 it became a label
+            # "vision" follows the same pattern for consistency
             for _, model_info in user_models.items():
                 if "reasoning" in model_info:
                     model_info["labels"] = (
@@ -47,6 +48,14 @@ class ModelManager:
                         else model_info["labels"] + ["reasoning"]
                     )
                     del model_info["reasoning"]
+                
+                if "vision" in model_info:
+                    model_info["labels"] = (
+                        ["vision"]
+                        if not model_info.get("labels", None)
+                        else model_info["labels"] + ["vision"]
+                    )
+                    del model_info["vision"]
 
             models.update(user_models)
 
@@ -137,6 +146,7 @@ class ModelManager:
         checkpoint: Optional[str] = None,
         recipe: Optional[str] = None,
         reasoning: bool = False,
+        vision: bool = False,
         mmproj: str = "",
         do_not_upgrade: bool = False,
     ):
@@ -172,11 +182,17 @@ class ModelManager:
                     )
 
                 # JSON content that will be used for registration if the download succeeds
+                labels = ["custom"]
+                if reasoning:
+                    labels.append("reasoning")
+                if vision:
+                    labels.append("vision")
+                
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
                     "suggested": True,
-                    "labels": ["custom"] + (["reasoning"] if reasoning else []),
+                    "labels": labels,
                 }
 
                 if mmproj:
@@ -199,6 +215,7 @@ class ModelManager:
                     checkpoint=checkpoint,
                     recipe=recipe,
                     reasoning=reasoning,
+                    vision=vision,
                 )
             else:
                 # Model is already registered - check if trying to register with different parameters
