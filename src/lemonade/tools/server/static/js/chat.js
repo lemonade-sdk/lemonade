@@ -53,6 +53,26 @@ function setupChatEventListeners() {
             sendMessage();
         }
     };
+
+    // Send on Enter, clear attachments on Escape
+    if (chatInput) {
+        chatInput.addEventListener('keydown', handleChatInputKeydown);
+        chatInput.addEventListener('paste', handleChatInputPaste);
+    }
+
+    // Open file picker and handle image selection
+    if (attachmentBtn && fileAttachment) {
+        attachmentBtn.addEventListener('click', function () {
+            // Let the selection handler validate vision capability, etc.
+            fileAttachment.click();
+        });
+        fileAttachment.addEventListener('change', handleFileSelection);
+    }
+
+    // React to model selection changes
+    if (modelSelect) {
+        modelSelect.addEventListener('change', handleModelSelectChange);
+    }
 }
 
 // Initialize model dropdown with available models
