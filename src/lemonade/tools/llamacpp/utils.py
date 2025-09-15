@@ -196,7 +196,7 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
         backend: Backend to use (auto-detected as Metal on macOS)
     """
     system = platform.system().lower()
-    
+
     # Auto-detect Metal backend on macOS regardless of user's choice
     if system == "darwin":
         backend = "metal"
