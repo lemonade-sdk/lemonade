@@ -329,7 +329,9 @@ class WrappedServer(ABC):
                 ) as response:
                     try:
                         for line in response.iter_lines():
-                            if not line:
+                            # Preserve SSE event boundaries: blank line separates events
+                            if line == b"" or line == "":
+                                yield "\n"
                                 continue
                             if isinstance(line, bytes):
                                 try:
@@ -421,7 +423,9 @@ class WrappedServer(ABC):
                 ) as response:
                     try:
                         for line in response.iter_lines():
-                            if not line:
+                            # Preserve SSE event boundaries: blank line separates events
+                            if line == b"" or line == "":
+                                yield "\n"
                                 continue
                             if isinstance(line, bytes):
                                 try:
