@@ -48,14 +48,6 @@ class ModelManager:
                         else model_info["labels"] + ["reasoning"]
                     )
                     del model_info["reasoning"]
-                
-                if "vision" in model_info:
-                    model_info["labels"] = (
-                        ["vision"]
-                        if not model_info.get("labels", None)
-                        else model_info["labels"] + ["vision"]
-                    )
-                    del model_info["vision"]
 
             models.update(user_models)
 
