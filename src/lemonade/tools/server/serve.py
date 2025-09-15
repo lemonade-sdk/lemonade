@@ -768,7 +768,7 @@ class Server:
                                 tool_call_pattern,
                             )
 
-                            # If there are tool calls, reset the full response for the next tool call
+                            # If there are tool calls, reset the full response for the next call
                             if tool_calls:
                                 openai_tool_calls = []
                                 full_response = ""
