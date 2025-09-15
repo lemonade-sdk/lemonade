@@ -521,7 +521,9 @@ class Server:
 
         return lc
 
-    async def completions(self, completion_request: CompletionRequest, request: Request):
+    async def completions(
+        self, completion_request: CompletionRequest, request: Request
+    ):
         """
         Stream completion responses using HTTP chunked transfer encoding.
         """
@@ -581,7 +583,9 @@ class Server:
                             break
 
                         choice = CompletionChoice(
-                            text=("<think>" + token if reasoning_first_token else token),
+                            text=(
+                                "<think>" + token if reasoning_first_token else token
+                            ),
                             index=0,
                             finish_reason="stop",
                             logprobs=None,
@@ -597,7 +601,9 @@ class Server:
 
                         # Format as SSE
                         reasoning_first_token = False
-                        yield f"data: {completion.model_dump_json()}\n\n".encode("utf-8")
+                        yield f"data: {completion.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
 
                     # Send the [DONE] marker only if still connected
                     if not await request.is_disconnected():
@@ -663,7 +669,9 @@ class Server:
                 created=int(time.time()),
             )
 
-    async def chat_completions(self, chat_completion_request: ChatCompletionRequest, request: Request):
+    async def chat_completions(
+        self, chat_completion_request: ChatCompletionRequest, request: Request
+    ):
         """
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
@@ -770,7 +778,9 @@ class Server:
                                         index=0,
                                         id="-",
                                         function=ChoiceDeltaToolCallFunction(
-                                            arguments=json.dumps(tool_call["arguments"]),
+                                            arguments=json.dumps(
+                                                tool_call["arguments"]
+                                            ),
                                             name=tool_call["name"],
                                         ),
                                         type="function",
@@ -1047,7 +1057,9 @@ class Server:
                         # Create an event
                         delta_event = ResponseTextDeltaEvent(
                             content_index=0,
-                            delta=("<think>" + token if reasoning_first_token else token),
+                            delta=(
+                                "<think>" + token if reasoning_first_token else token
+                            ),
                             item_id="0 ",
                             output_index=0,
                             type="response.output_text.delta",
@@ -1057,7 +1069,9 @@ class Server:
 
                         # Format as SSE
                         reasoning_first_token = False
-                        yield f"data: {delta_event.model_dump_json()}\n\n".encode("utf-8")
+                        yield f"data: {delta_event.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
 
                     # Send the completed event (only if still connected)
                     if not await request.is_disconnected():
@@ -1089,7 +1103,9 @@ class Server:
                             type="response.completed",
                             sequence_number=0,
                         )
-                        yield f"data: {completed_event.model_dump_json()}\n\n".encode("utf-8")
+                        yield f"data: {completed_event.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
 
                         # Send the [DONE] marker
                         yield b"data: [DONE]\n\n"
