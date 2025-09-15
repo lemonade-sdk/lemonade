@@ -612,7 +612,14 @@ function displaySystemMessage() {
 
 function abortCurrentRequest() {
     if (abortController) {
+        // Abort the in-flight fetch stream immediately
         abortController.abort();
+
+        // Also signal the server to halt generation promptly (helps slow CPU backends)
+        try {
+            // Fire-and-forget; no await to avoid blocking UI
+            fetch(getServerBaseUrl() + '/api/v1/halt', { method: 'GET', keepalive: true }).catch(() => {});
+        } catch (_) {}
         abortController = null;
         if (toggleBtn) {
             toggleBtn.disabled = false;
