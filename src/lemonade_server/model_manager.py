@@ -39,7 +39,6 @@ class ModelManager:
 
             # Backwards compatibility for user models that were created before version 8.0.4
             # "reasoning" was a boolean, but as of 8.0.4 it became a label
-            # "vision" follows the same pattern for consistency
             for _, model_info in user_models.items():
                 if "reasoning" in model_info:
                     model_info["labels"] = (
