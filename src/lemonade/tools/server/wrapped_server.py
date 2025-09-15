@@ -336,9 +336,8 @@ class WrappedServer(ABC):
                             if isinstance(line, bytes):
                                 try:
                                     line = line.decode("utf-8", errors="ignore")
-                                except (
-                                    Exception
-                                ):  # pylint: disable=broad-exception-caught
+                                except (UnicodeDecodeError, LookupError):
+                                    # Skip lines that fail decoding due to encoding issues
                                     continue
                             # Forward SSE lines as-is
                             if not line.endswith("\n"):
@@ -432,9 +431,8 @@ class WrappedServer(ABC):
                             if isinstance(line, bytes):
                                 try:
                                     line = line.decode("utf-8", errors="ignore")
-                                except (
-                                    Exception
-                                ):  # pylint: disable=broad-exception-caught
+                                except (UnicodeDecodeError, LookupError):
+                                    # Skip lines that fail decoding due to encoding issues
                                     continue
                             # Forward SSE lines as-is
                             if not line.endswith("\n"):
