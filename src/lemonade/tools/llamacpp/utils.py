@@ -144,7 +144,7 @@ def get_llama_exe_path(exe_name: str, backend: str):
     base_dir = get_llama_folder_path(backend)
     if platform.system().lower() == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
-    else:  # Linux/Ubuntu
+    else:  # Linux/Ubuntu/macOS
         # Check if executable exists in build/bin subdirectory (Current Ubuntu structure)
         build_bin_path = os.path.join(base_dir, "build", "bin", exe_name)
         if os.path.exists(build_bin_path):
@@ -193,9 +193,13 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
     Get the appropriate binary URL and filename based on platform and backend
 
     Args:
-        backend: Backend to use
+        backend: Backend to use (auto-detected as Metal on macOS)
     """
     system = platform.system().lower()
+    
+    # Auto-detect Metal backend on macOS regardless of user's choice
+    if system == "darwin":
+        backend = "metal"
 
     if backend == "rocm":
 
@@ -223,8 +227,23 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
             raise NotImplementedError(
                 f"Platform {system} not supported for Vulkan llamacpp. Supported: Windows, Ubuntu Linux"
             )
+    elif backend == "metal":
+        # Metal support for macOS from ggml-org/llama.cpp
+        repo = "ggml-org/llama.cpp"
+        version = LLAMA_VERSION_VULKAN
+        if system == "darwin":
+            # For macOS, use the arm64 binary on Apple Silicon, x64 on Intel (though Intel Macs aren't officially supported)
+            arch = platform.machine().lower()
+            if arch in ["arm64", "aarch64"]:
+                filename = f"llama-{version}-bin-macos-arm64.zip"
+            else:
+                filename = f"llama-{version}-bin-macos-x64.zip"
+        else:
+            raise NotImplementedError(
+                f"Platform {system} not supported for Metal llamacpp. Metal backend is macOS-only."
+            )
     else:
-        supported_backends = ["vulkan", "rocm"]
+        supported_backends = ["vulkan", "rocm", "metal"]
         raise NotImplementedError(
             f"Unsupported backend: {backend}. Supported backends: {supported_backends}"
         )
@@ -239,10 +258,10 @@ def validate_platform_support():
     """
     system = platform.system().lower()
 
-    if system not in ["windows", "linux"]:
+    if system not in ["windows", "linux", "darwin"]:
         raise NotImplementedError(
             f"Platform {system} not supported for llamacpp. "
-            "Supported: Windows, Ubuntu Linux"
+            "Supported: Windows, Ubuntu Linux, macOS"
         )
 
     if system == "linux":
