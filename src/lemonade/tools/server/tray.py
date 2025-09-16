@@ -268,7 +268,7 @@ class LemonadeTray(SystemTray):
         try:
             response = requests.get(
                 f"http://localhost:{self.port}/api/v0/health",
-                timeout=2.0,
+                timeout=0.1,
             )
             response.raise_for_status()
             response_data = response.json()
@@ -308,7 +308,7 @@ class LemonadeTray(SystemTray):
                     and self.server.uvicorn_server
                 ):
                     self.server.uvicorn_server.should_exit = True
-                self.server_thread.join(timeout=5)
+                self.server_thread.join(timeout=2)
 
             # Update the port in both the tray and the server instance
             self.port = new_port

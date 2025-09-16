@@ -385,8 +385,9 @@ def install_llamacpp(backend):
                                 os.chmod(file_path, current_permissions | stat.S_IEXEC)
                                 logging.debug(f"Made {file_path} executable")
                             except Exception as e:
-                                logging.warning(
-                                    f"Could not make {file_path} executable: {e}"
+                                raise RuntimeError(
+                                    f"Failed to make {file_path} executable. This will prevent "
+                                    f"llama-server from starting. Error: {e}"
                                 )
         else:
             raise NotImplementedError(f"Unsupported archive format: {filename}")

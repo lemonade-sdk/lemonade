@@ -305,6 +305,10 @@ def run(
     import time
     import os
 
+    # Disable tray on macOS for run command due to threading issues
+    if platform.system() == "Darwin":
+        tray = False
+
     # Start the server if not running
     _, running_port = get_server_info()
     server_previously_running = running_port is not None
