@@ -5,6 +5,7 @@ import shutil
 import huggingface_hub
 from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
+from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 from lemonade.common.network import custom_snapshot_download
@@ -137,6 +138,7 @@ class ModelManager:
         checkpoint: Optional[str] = None,
         recipe: Optional[str] = None,
         reasoning: bool = False,
+        vision: bool = False,
         mmproj: str = "",
         do_not_upgrade: bool = False,
     ):
@@ -172,11 +174,17 @@ class ModelManager:
                     )
 
                 # JSON content that will be used for registration if the download succeeds
+                labels = ["custom"]
+                if reasoning:
+                    labels.append("reasoning")
+                if vision:
+                    labels.append("vision")
+
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
                     "suggested": True,
-                    "labels": ["custom"] + (["reasoning"] if reasoning else []),
+                    "labels": labels,
                 }
 
                 if mmproj:
@@ -199,6 +207,7 @@ class ModelManager:
                     checkpoint=checkpoint,
                     recipe=recipe,
                     reasoning=reasoning,
+                    vision=vision,
                 )
             else:
                 # Model is already registered - check if trying to register with different parameters
@@ -207,18 +216,21 @@ class ModelManager:
                 existing_recipe = existing_model.get("recipe")
                 existing_reasoning = "reasoning" in existing_model.get("labels", [])
                 existing_mmproj = existing_model.get("mmproj", "")
+                existing_vision = "vision" in existing_model.get("labels", [])
 
                 # Compare parameters
                 checkpoint_differs = checkpoint and checkpoint != existing_checkpoint
                 recipe_differs = recipe and recipe != existing_recipe
                 reasoning_differs = reasoning and reasoning != existing_reasoning
                 mmproj_differs = mmproj and mmproj != existing_mmproj
+                vision_differs = vision and vision != existing_vision
 
                 if (
                     checkpoint_differs
                     or recipe_differs
                     or reasoning_differs
                     or mmproj_differs
+                    or vision_differs
                 ):
                     conflicts = []
                     if checkpoint_differs:
@@ -236,6 +248,10 @@ class ModelManager:
                     if mmproj_differs:
                         conflicts.append(
                             f"mmproj (existing: '{existing_mmproj}', new: '{mmproj}')"
+                        )
+                    if vision_differs:
+                        conflicts.append(
+                            f"vision (existing: {existing_vision}, new: {vision})"
                         )
 
                     conflict_details = ", ".join(conflicts)

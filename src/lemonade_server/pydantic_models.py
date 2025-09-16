@@ -23,6 +23,8 @@ class LoadConfig(BaseModel):
     recipe: Optional[str] = None
     # Indicates whether the model is a reasoning model, like DeepSeek
     reasoning: Optional[bool] = False
+    # Indicates whether the model is a vision model with image processing capabilities
+    vision: Optional[bool] = False
     # Indicates which Multimodal Projector (mmproj) file to use
     mmproj: Optional[str] = None
 
