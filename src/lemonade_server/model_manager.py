@@ -48,7 +48,7 @@ class ModelManager:
                         else model_info["labels"] + ["reasoning"]
                     )
                     del model_info["reasoning"]
-                
+
                 if "vision" in model_info:
                     model_info["labels"] = (
                         ["vision"]
@@ -187,7 +187,7 @@ class ModelManager:
                     labels.append("reasoning")
                 if vision:
                     labels.append("vision")
-                
+
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
