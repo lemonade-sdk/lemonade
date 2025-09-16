@@ -790,7 +790,7 @@ async function sendMessage(existingTextIfAny) {
         // Nothing to send; revert button state and clear abort handle
         abortController = null;
         if (toggleBtn) {
-            toggleBtn.textContent = 'Start';
+            toggleBtn.textContent = 'Send';
         }
         return;
     }
