@@ -226,7 +226,7 @@ async function autoLoadDefaultModelAndSend() {
         // Custom UI updates for auto-loading
         onLoadingStart: () => { if (toggleBtn) { toggleBtn.textContent = 'Loading model...'; } },
         // Reset send button text
-        onLoadingEnd: () => { if (toggleBtn) { toggleBtn.textContent = 'Start'; } },
+        onLoadingEnd: () => { if (toggleBtn) { toggleBtn.textContent = 'Send'; } },
         // Send the message after successful load
         onSuccess: () => { sendMessage(messageToSend); },
         onError: (error) => {
