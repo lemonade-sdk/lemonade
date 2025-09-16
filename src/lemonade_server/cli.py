@@ -105,12 +105,34 @@ def serve(
         max_wait_time = 30
         wait_interval = 0.5
         waited = 0
-        while waited < max_wait_time:
-            time.sleep(wait_interval)
-            _, running_port = get_server_info()
-            if running_port is not None:
-                break
-            waited += wait_interval
+
+        if platform.system() == "Darwin":
+            # On macOS, use direct HTTP health check instead of process scanning for better
+            # performance
+            import requests
+
+            while waited < max_wait_time:
+                time.sleep(wait_interval)
+                try:
+                    response = requests.get(
+                        f"http://{host}:{port}/api/v1/health", timeout=1
+                    )
+                    if response.status_code == 200:
+                        break
+                except (
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                ):
+                    pass  # Server not ready yet
+                waited += wait_interval
+        else:
+            # On other platforms, use the existing approach
+            while waited < max_wait_time:
+                time.sleep(wait_interval)
+                _, running_port = get_server_info()
+                if running_port is not None:
+                    break
+                waited += wait_interval
 
         return port, server_thread
 
