@@ -446,7 +446,7 @@ window.lmnRender = function() {
       exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
       
       // Add llama.cpp tip below Quick Start commands
-      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu') {
+      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu' && lmnState.os !== 'macos') {
         exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';
       }
 

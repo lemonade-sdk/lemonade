@@ -748,11 +748,12 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 
 ## Platform Support Matrix
 
-| Platform | Vulkan GPU | x64 CPU      |
-|----------|------------|--------------|
-| Windows  | ✅         | ✅           |
-| Ubuntu   | ✅         | ✅           |
-| Other Linux | ⚠️*     | ⚠️*          |
+| Platform | GPU Acceleration | CPU Architecture |
+|----------|------------------|------------------|
+| Windows  | ✅ Vulkan        | ✅ x64           |
+| Ubuntu   | ✅ Vulkan        | ✅ x64           |
+| macOS    | ✅ Metal         | ✅ Apple Silicon |
+| Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.
 
