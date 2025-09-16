@@ -360,6 +360,9 @@ class SystemTray:
         self.register_window_class()
         self.create_window()
 
+        # Set up Windows console control handler for CTRL+C
+        self.console_handler = self.setup_console_control_handler(self.logger)
+
         # Add tray icon
         self.add_tray_icon()
 
