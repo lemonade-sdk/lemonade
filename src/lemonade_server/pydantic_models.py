@@ -8,6 +8,7 @@ DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
 DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
 DEFAULT_LLAMACPP_BACKEND = os.getenv("LEMONADE_LLAMACPP", "vulkan")
 DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
+DEFAULT_PREFILL_PROGRESS = os.getenv("LEMONADE_PREFILL_PROGRESS", "false").lower() == "true"
 
 
 class LoadConfig(BaseModel):

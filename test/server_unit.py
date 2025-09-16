@@ -6,8 +6,11 @@ import os
 import unittest
 import tempfile
 import platform
+import json
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.llamacpp.utils import parse_checkpoint, identify_gguf_models
+from lemonade.tools.server.llamacpp import LlamaTelemetry
+from lemonade.tools.server.wrapped_server import create_progress_tool_call_chunk
 
 # Only import system tray related modules on Windows
 if platform.system() == "Windows":
@@ -127,6 +130,148 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             "mmproj": "mmproj-BF16.gguf",
         }
         assert sharded_files == []
+
+    def test_020_unit_parse_telemetry_line_progress_update(self):
+        """Unit test for parsing progress update lines"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "prompt processing progress: progress = 0.25"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert
+        self.assertEqual(telemetry.prefill_progress, 0.25)
+        self.assertFalse(telemetry.prefill_complete)
+
+    def test_021_unit_parse_telemetry_line_prompt_done(self):
+        """Unit test for parsing prompt done completion marker"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "prompt done"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert
+        self.assertTrue(telemetry.prefill_complete)
+        self.assertEqual(telemetry.prefill_progress, 1.0)
+
+    def test_022_unit_parse_telemetry_line_vulkan_device(self):
+        """Unit test for parsing Vulkan device detection"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "ggml_vulkan: Found 2 Vulkan devices:"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert - This test verifies the function doesn't crash and handles Vulkan detection
+        # The actual behavior is logging, which we don't test here
+
+    def test_023_unit_parse_telemetry_line_prompt_eval(self):
+        """Unit test for parsing prompt evaluation metrics"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "prompt eval time = 1234.5 ms / 100 tokens (12.34 tokens per second)"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert
+        self.assertAlmostEqual(telemetry.prompt_eval_time, 1.2, places=1)
+        self.assertEqual(telemetry.input_tokens, 100)
+        self.assertAlmostEqual(telemetry.time_to_first_token, 1.2, places=1)
+        self.assertTrue(telemetry.prefill_complete)
+        self.assertEqual(telemetry.prefill_progress, 1.0)
+
+    def test_024_unit_parse_telemetry_line_generation_eval(self):
+        """Unit test for parsing generation evaluation metrics"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "eval time = 2345.6 ms / 50 tokens (21.3 tokens per second)"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert
+        self.assertAlmostEqual(telemetry.eval_time, 2.3, places=1)
+        self.assertEqual(telemetry.output_tokens, 50)
+        self.assertAlmostEqual(telemetry.tokens_per_second, 21.3, places=1)
+
+    def test_025_unit_parse_telemetry_line_error_detection(self):
+        """Unit test for parsing error lines"""
+        # Arrange
+        telemetry = LlamaTelemetry()
+        line = "Error: Something went wrong"
+        
+        # Act
+        telemetry.parse_telemetry_line(line)
+        
+        # Assert - This test verifies the function handles error lines without crashing
+        # The actual behavior is logging, which we don't test here
+
+    def test_026_unit_create_progress_chunk_structure(self):
+        """Unit test for create_progress_tool_call_chunk structure verification"""
+        # Arrange
+        progress = 0.5
+        
+        # Act
+        chunk = create_progress_tool_call_chunk(progress)
+        
+        # Assert
+        self.assertEqual(chunk.id, "progress")
+        self.assertEqual(chunk.object, "chat.completion.chunk")
+        self.assertEqual(chunk.model, "progress")
+        self.assertEqual(len(chunk.choices), 1)
+        self.assertEqual(chunk.choices[0].index, 0)
+        self.assertIsNone(chunk.choices[0].finish_reason)
+        self.assertIsNotNone(chunk.choices[0].delta.tool_calls)
+
+    def test_027_unit_create_progress_chunk_zero_progress(self):
+        """Unit test for create_progress_tool_call_chunk with 0.0 progress"""
+        # Arrange
+        progress = 0.0
+        
+        # Act
+        chunk = create_progress_tool_call_chunk(progress)
+        
+        # Assert
+        tool_call = chunk.choices[0].delta.tool_calls[0]
+        self.assertEqual(tool_call.index, 0)
+        self.assertEqual(tool_call.id, "progress_update")
+        self.assertEqual(tool_call.type, "function")
+        self.assertEqual(tool_call.function.name, "update_progress")
+        
+        # Verify the JSON arguments contain the correct progress
+        arguments = json.loads(tool_call.function.arguments)
+        self.assertEqual(arguments["progress"], 0.0)
+
+    def test_028_unit_create_progress_chunk_half_progress(self):
+        """Unit test for create_progress_tool_call_chunk with 0.5 progress"""
+        # Arrange
+        progress = 0.5
+        
+        # Act
+        chunk = create_progress_tool_call_chunk(progress)
+        
+        # Assert
+        tool_call = chunk.choices[0].delta.tool_calls[0]
+        arguments = json.loads(tool_call.function.arguments)
+        self.assertEqual(arguments["progress"], 0.5)
+
+    def test_029_unit_create_progress_chunk_full_progress(self):
+        """Unit test for create_progress_tool_call_chunk with 1.0 progress"""
+        # Arrange  
+        progress = 1.0
+        
+        # Act
+        chunk = create_progress_tool_call_chunk(progress)
+        
+        # Assert
+        tool_call = chunk.choices[0].delta.tool_calls[0]
+        arguments = json.loads(tool_call.function.arguments)
+        self.assertEqual(arguments["progress"], 1.0)
 
 
 @unittest.skipIf(
