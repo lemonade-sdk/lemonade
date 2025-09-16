@@ -5,6 +5,7 @@ import shutil
 import huggingface_hub
 from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
+from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 from lemonade.common.network import custom_snapshot_download
@@ -39,7 +40,6 @@ class ModelManager:
 
             # Backwards compatibility for user models that were created before version 8.0.4
             # "reasoning" was a boolean, but as of 8.0.4 it became a label
-            # "vision" follows the same pattern for consistency
             for _, model_info in user_models.items():
                 if "reasoning" in model_info:
                     model_info["labels"] = (
@@ -48,14 +48,6 @@ class ModelManager:
                         else model_info["labels"] + ["reasoning"]
                     )
                     del model_info["reasoning"]
-
-                if "vision" in model_info:
-                    model_info["labels"] = (
-                        ["vision"]
-                        if not model_info.get("labels", None)
-                        else model_info["labels"] + ["vision"]
-                    )
-                    del model_info["vision"]
 
             models.update(user_models)
 
