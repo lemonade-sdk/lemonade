@@ -623,7 +623,7 @@ function abortCurrentRequest() {
         abortController = null;
         if (toggleBtn) {
             toggleBtn.disabled = false;
-            toggleBtn.textContent = 'Start';
+            toggleBtn.textContent = 'Send';
         }
         isStreaming = false;
         console.log('Streaming request aborted by user.');
