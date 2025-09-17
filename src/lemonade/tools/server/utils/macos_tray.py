@@ -162,7 +162,7 @@ class MacOSSystemTray:
         """
         if not RUMPS_AVAILABLE:
             raise RuntimeError(
-                "rumps library is not available. Install with: pip install 'lemonade-sdk[dev]' "
+                "rumps library is not available. Install with: pip install lemonade-sdk "
                 "or 'pip install rumps' for macOS tray support"
             )
 
