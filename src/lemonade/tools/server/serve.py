@@ -1414,6 +1414,7 @@ class Server:
             checkpoint=config.checkpoint,
             recipe=config.recipe,
             reasoning=config.reasoning,
+            vision=config.vision,
             mmproj=config.mmproj,
             # The pull endpoint will download an upgraded model if available, even
             # if we already have a local copy of the model
