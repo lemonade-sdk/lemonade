@@ -16,6 +16,7 @@ from dotenv import set_key, load_dotenv
 
 LLAMA_VERSION_VULKAN = "b6431"
 LLAMA_VERSION_ROCM = "b1057"
+LLAMA_VERSION_METAL = "b6431"
 
 
 def identify_rocm_arch_from_name(device_name: str) -> str | None:
@@ -126,8 +127,12 @@ def get_llama_version(backend: str) -> str:
         return LLAMA_VERSION_ROCM
     elif backend == "vulkan":
         return LLAMA_VERSION_VULKAN
+    elif backend == "metal":
+        return LLAMA_VERSION_METAL
     else:
-        raise ValueError(f"Unsupported backend: {backend}")
+        raise ValueError(
+            f"Unsupported backend: {backend}. Supported: vulkan, rocm, metal"
+        )
 
 
 def get_llama_folder_path(backend: str):
@@ -142,10 +147,12 @@ def get_llama_exe_path(exe_name: str, backend: str):
     Get path to platform-specific llama-server executable
     """
     base_dir = get_llama_folder_path(backend)
-    if platform.system().lower() == "windows":
+    system = platform.system().lower()
+
+    if system == "windows":
         return os.path.join(base_dir, f"{exe_name}.exe")
-    else:  # Linux/Ubuntu
-        # Check if executable exists in build/bin subdirectory (Current Ubuntu structure)
+    else:  # Darwin/Linux/Ubuntu
+        # Check if executable exists in build/bin subdirectory
         build_bin_path = os.path.join(base_dir, "build", "bin", exe_name)
         if os.path.exists(build_bin_path):
             return build_bin_path
@@ -223,8 +230,24 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
             raise NotImplementedError(
                 f"Platform {system} not supported for Vulkan llamacpp. Supported: Windows, Ubuntu Linux"
             )
+
+    elif backend == "metal":
+        # Metal support for macOS Apple Silicon from ggml-org/llama.cpp
+        repo = "ggml-org/llama.cpp"
+        version = LLAMA_VERSION_METAL
+        if system == "darwin":
+            if platform.machine().lower() in ["arm64", "aarch64"]:
+                filename = f"llama-{version}-bin-macos-arm64.zip"
+            else:
+                raise NotImplementedError(
+                    "Metal backend only supports Apple Silicon (ARM64) processors"
+                )
+        else:
+            raise NotImplementedError(
+                f"Platform {system} not supported for Metal llamacpp. Metal is only supported on macOS"
+            )
     else:
-        supported_backends = ["vulkan", "rocm"]
+        supported_backends = ["vulkan", "rocm", "metal"]
         raise NotImplementedError(
             f"Unsupported backend: {backend}. Supported backends: {supported_backends}"
         )
@@ -239,10 +262,10 @@ def validate_platform_support():
     """
     system = platform.system().lower()
 
-    if system not in ["windows", "linux"]:
+    if system not in ["windows", "linux", "darwin"]:
         raise NotImplementedError(
             f"Platform {system} not supported for llamacpp. "
-            "Supported: Windows, Ubuntu Linux"
+            "Supported: Windows, Ubuntu Linux, macOS"
         )
 
     if system == "linux":
@@ -341,6 +364,31 @@ def install_llamacpp(backend):
         if filename.endswith(".zip"):
             with zipfile.ZipFile(llama_archive_path, "r") as zip_ref:
                 zip_ref.extractall(llama_server_exe_dir)
+
+            # On Unix-like systems (macOS/Linux), make executables executable
+            import platform
+
+            if platform.system().lower() in ["darwin", "linux"]:
+                import stat
+
+                # Find and make executable files executable
+                for root, dirs, files in os.walk(llama_server_exe_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # Make files in bin/ directories executable
+                        if "bin" in root.split(os.sep) or file in [
+                            "llama-server",
+                            "llama-simple",
+                        ]:
+                            try:
+                                current_permissions = os.stat(file_path).st_mode
+                                os.chmod(file_path, current_permissions | stat.S_IEXEC)
+                                logging.debug(f"Made {file_path} executable")
+                            except Exception as e:
+                                raise RuntimeError(
+                                    f"Failed to make {file_path} executable. This will prevent "
+                                    f"llama-server from starting. Error: {e}"
+                                )
         else:
             raise NotImplementedError(f"Unsupported archive format: {filename}")
 
@@ -857,7 +905,9 @@ def get_hip_devices():
     try:
         libhip = ctypes.CDLL(matching_files[0])
     except OSError:
-        raise RuntimeError(f"Could not load HIP runtime library from {path}")
+        raise RuntimeError(
+            f"Could not load HIP runtime library from {matching_files[0]}"
+        )
 
     # Setup function signatures
     hipError_t = c_int
