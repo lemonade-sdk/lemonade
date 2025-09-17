@@ -310,13 +310,10 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_007_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
-        # Refer to https://github.com/lemonade-sdk/lemonade/issues/274 for more details
-        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan":
+        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan" or self.llamacpp_backend == "metal":
             self.skipTest(
                 "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )
-        if self.llamacpp_backend == "metal":
-            self.skipTest("Skipping test when backend is set to metal")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",
