@@ -310,9 +310,13 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_007_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
-        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan" or self.llamacpp_backend == "metal":
+        if (
+            self.llamacpp_backend == "rocm"
+            or self.llamacpp_backend == "vulkan"
+            or self.llamacpp_backend == "metal"
+        ):
             self.skipTest(
-                "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
+                "Skipping test when backend is set to rocm, vulkan, or metal because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )
         client = OpenAI(
             base_url=self.base_url,
@@ -471,13 +475,11 @@ class LlamaCppMetalTesting(LlamaCppTesting):
         """Test macOS tray functionality and imports."""
         import platform
 
-        # Test rumps availability
+        # Test rumps availability - should be installed on macOS
         try:
             import rumps
         except ImportError:
-            self.skipTest(
-                "rumps library not available - install with: pip install rumps"
-            )
+            self.fail("rumps library not available.")
 
         # Test tray imports
         from lemonade.tools.server.tray import LemonadeTray

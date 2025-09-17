@@ -52,14 +52,18 @@ class MacOSSystemTray:
     """
 
     def __init__(self, app_name: str, icon_path: str):
-        if not RUMPS_AVAILABLE:
-            raise ImportError("rumps library is required for macOS tray support")
+        self._check_rumps_availability()
 
         self.app_name = app_name
         self.icon_path = icon_path
         self.app = None
         self.menu_callbacks = {}
         self._menu_update_timer = None
+
+    def _check_rumps_availability(self):
+        """Check if rumps is available and raise error if not."""
+        if not RUMPS_AVAILABLE:
+            raise ImportError("rumps library is required for macOS tray support")
 
     def create_menu(self):
         """
@@ -160,11 +164,7 @@ class MacOSSystemTray:
         """
         Run the tray application.
         """
-        if not RUMPS_AVAILABLE:
-            raise RuntimeError(
-                "rumps library is not available. Install with: pip install lemonade-sdk "
-                "or 'pip install rumps' for macOS tray support"
-            )
+        self._check_rumps_availability()
 
         try:
             # Create the rumps app
@@ -224,31 +224,3 @@ class MacOSSystemTray:
         Update the menu by rebuilding it.
         """
         self.refresh_menu()
-
-
-# Create a factory function to get the appropriate tray class
-def get_system_tray_class():
-    """
-    Get the appropriate system tray class for the current platform.
-    """
-    system = platform.system()
-
-    if system == "Darwin":  # macOS
-        if not RUMPS_AVAILABLE:
-            raise ImportError(
-                "rumps library is required for macOS tray support. "
-                "Install with: pip install 'lemonade-sdk[dev]' or 'pip install rumps'"
-            )
-        return MacOSSystemTray
-    elif system == "Windows":
-        try:
-            from .windows_tray import SystemTray
-
-            return SystemTray
-        except ImportError as e:
-            raise ImportError(f"Windows tray dependencies not available: {e}") from e
-    else:
-        raise NotImplementedError(
-            f"System tray not implemented for {system}. "
-            f"Supported platforms: Windows, macOS (Darwin)"
-        )
