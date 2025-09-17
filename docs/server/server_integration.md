@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux and macOS users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
 
 ### Checking Server Status
 
@@ -73,7 +73,9 @@ Specific version:
 https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on a Linux machine must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on Linux or macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
+
+**macOS Requirements:** macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.
 
 ### Installing Additional Models
 
@@ -109,7 +111,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag:
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS only):
 
 ```bash
 lemonade-server serve --no-tray

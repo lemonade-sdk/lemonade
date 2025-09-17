@@ -71,7 +71,7 @@ After loading with `llamacpp-load`, the model can be used with any tool that sup
 - and more
 
 The integration provides:
-- Platform-independent path handling (works on both Windows and Linux)
+- Platform-independent path handling (works on Windows, Linux, and macOS)
 - Proper error handling with detailed messages
 - Performance metrics collection
 - Configurable generation parameters (temperature, top_p, top_k)

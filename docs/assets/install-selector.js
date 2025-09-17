@@ -30,6 +30,11 @@ const lmnAllowlist = [
   {os:'win', method:'src', fw:'llama', dev:'gpu'},
   {os:'linux', method:'src', fw:'llama', dev:'cpu'},
   {os:'linux', method:'src', fw:'llama', dev:'gpu'},
+  // macOS: llama.cpp only (Apple Silicon, macOS 14+)
+  {os:'macos', method:'pypi', fw:'llama', dev:'cpu'},
+  {os:'macos', method:'pypi', fw:'llama', dev:'gpu'},
+  {os:'macos', method:'src', fw:'llama', dev:'cpu'},
+  {os:'macos', method:'src', fw:'llama', dev:'gpu'},
 ];
 
 const lmnAlwaysEnabledMethod = ['pypi', 'src'];
@@ -149,7 +154,7 @@ window.lmnSet = function(type, val) {
 
 window.lmnRender = function() {
   // Reset all
-  ['os-win','os-linux','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
+  ['os-win','os-linux','os-macos','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) {
       el.className = '';
@@ -161,6 +166,8 @@ window.lmnRender = function() {
   if (osWin) osWin.onclick = function() { lmnSet('os','win'); };
   var osLinux = document.getElementById('os-linux');
   if (osLinux) osLinux.onclick = function() { lmnSet('os','linux'); };
+  var osMacOS = document.getElementById('os-macos');
+  if (osMacOS) osMacOS.onclick = function() { lmnSet('os','macos'); };
   var typeServer = document.getElementById('type-server');
   if (typeServer) typeServer.onclick = function() { lmnSet('type','server'); };
   var typeFull = document.getElementById('type-full');
@@ -198,7 +205,7 @@ window.lmnRender = function() {
 
   // Gray out incompatible options (but keep them clickable)
   const opts = {
-    os: ['win','linux'],
+    os: ['win','linux','macos'],
     type: ['server','full'],
     method: ['gui','pypi','src'],
     fw: ['oga','torch','llama'],
@@ -256,6 +263,8 @@ window.lmnRender = function() {
     var osVersions = '';
     if (lmnState.os === 'linux') {
       osVersions = 'Ubuntu%2024.04%20%7C%2025.04';
+    } else if (lmnState.os === 'macos') {
+      osVersions = 'macOS%2014%2B';
     } else { // windows
       osVersions = 'Windows%2011';
     }
@@ -437,7 +446,7 @@ window.lmnRender = function() {
       exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
       
       // Add llama.cpp tip below Quick Start commands
-      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu') {
+      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu' && lmnState.os !== 'macos') {
         exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';
       }
 
@@ -504,6 +513,7 @@ window.lmnInit = function() {
           <td class="lmn-label">Operating System</td>
           <td id="os-win" class="lmn-active" onclick="lmnSet('os','win')">Windows</td>
           <td id="os-linux" onclick="lmnSet('os','linux')">Linux</td>
+          <td id="os-macos" onclick="lmnSet('os','macos')">macOS</td>
         </tr>
         <tr>
           <td class="lmn-label">Installation Type</td>
