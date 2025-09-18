@@ -9,8 +9,7 @@ RequestExecutionLevel user
 Name "Lemonade Server"
 OutFile "Lemonade_Server_Installer.exe"
 
-; Include modern UI el    FileWrite $4 "if exist \"$R1\" ($\r$\n"
-    FileWrite $4 "  echo Warning: Some files could not be removed from \"$R1\"$\r$\n"ents
+; Include modern UI elements
 !include "MUI2.nsh"
 
 !include FileFunc.nsh
