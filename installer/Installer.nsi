@@ -65,13 +65,58 @@ SectionIn RO ; Read only, always installed
 
   ; Check if directory exists before proceeding
   IfFileExists "$INSTDIR\*.*" 0 continue_install
+  
+  ; Add diagnostic checks before attempting rename
+  DetailPrint "Running diagnostic checks..."
+  
+  ; Check for running lemonade/llama processes
+  DetailPrint "- Checking for running processes..."
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object {$_.ProcessName -like \"*lemonade*\" -or $_.ProcessName -like \"*llama*\" -or $_.ProcessName -like \"*python*\" -and $_.Path -like \"*lemonade*\"} | Select-Object ProcessName,Id,Path | Format-Table -AutoSize"'
+  Pop $0 ; Return value
+  Pop $1 ; Output
+  ${If} $0 == 0
+    ${If} $1 != ""
+      DetailPrint "Found potentially interfering processes:"
+      DetailPrint "$1"
+    ${Else}
+      DetailPrint "No lemonade/llama processes found running"
+    ${EndIf}
+  ${Else}
+    DetailPrint "Process check failed (return code: $0)"
+  ${EndIf}
+  
   ; Directory exists, first check if it's in use by trying to rename it
-  Rename "$INSTDIR" "$INSTDIR.tmp"
+  DetailPrint "- Attempting to rename folder to check if in use..."
+  
+  ; Try rename with retry logic
+  StrCpy $R0 0 ; retry counter
+  retry_rename:
+    Rename "$INSTDIR" "$INSTDIR.tmp"
     
-  ; Check if rename was successful
-  IfFileExists "$INSTDIR.tmp\*.*" 0 folder_in_use
-    ; Rename was successful, rename it back - directory is not in use
-    Rename "$INSTDIR.tmp" "$INSTDIR"
+    ; Check if rename was successful
+    IfFileExists "$INSTDIR.tmp\*.*" 0 check_retry
+      ; Rename was successful, rename it back - directory is not in use
+      DetailPrint "- Folder rename successful (not in use)"
+      Rename "$INSTDIR.tmp" "$INSTDIR"
+      Goto ask_remove
+      
+    check_retry:
+      ; Rename failed
+      IntOp $R0 $R0 + 1
+      DetailPrint "- Folder rename failed (attempt $R0/3)"
+      
+      ; If this is not the last attempt, wait and retry
+      ${If} $R0 < 3
+        DetailPrint "- Waiting 2 seconds before retry..."
+        Sleep 2000
+        Goto retry_rename
+      ${Else}
+        ; All retries failed
+        DetailPrint "- All rename attempts failed - folder is definitely in use"
+        Goto folder_in_use
+      ${EndIf}
+      
+    ask_remove:
     
     ; Now ask user if they want to remove it
     ${IfNot} ${Silent}
@@ -85,8 +130,48 @@ SectionIn RO ; Read only, always installed
 
   folder_in_use:
     ; Rename failed, folder is in use
+    DetailPrint "Folder rename failed - investigating what's using the folder..."
+    
+    ; Try to identify which processes have handles to the folder
+    DetailPrint "- Checking for open file handles using PowerShell..."
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-Process | Where-Object { try { $_.Modules.FileName -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id,Path | Format-Table -AutoSize } catch { \"Handle check failed\" }"'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      ${If} $1 != ""
+        DetailPrint "Processes with lemonade modules loaded:"
+        DetailPrint "$1"
+      ${EndIf}
+    ${EndIf}
+    
+    ; Check for files currently open in the directory
+    DetailPrint "- Checking for open files in installation directory..."
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-ChildItem \"$INSTDIR\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { try { [System.IO.File]::OpenWrite($_.FullName).Close(); \"OK: $($_.Name)\" } catch { \"LOCKED: $($_.Name) - $($_.Exception.Message)\" } } | Where-Object { $_ -like \"LOCKED:*\" } | Select-Object -First 5 } catch { \"File check failed\" }"'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      ${If} $1 != ""
+        DetailPrint "Locked files detected:"
+        DetailPrint "$1"
+      ${Else}
+        DetailPrint "No obviously locked files found"
+      ${EndIf}
+    ${EndIf}
+    
+    ; Check current working directories
+    DetailPrint "- Checking if any processes have CWD in installation folder..."
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object { try { (Get-Location -PSProvider FileSystem).Path -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id | Format-Table -AutoSize"'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      ${If} $1 != ""
+        DetailPrint "Processes with CWD in lemonade folder:"
+        DetailPrint "$1"
+      ${EndIf}
+    ${EndIf}
+    
     ${IfNot} ${Silent}
-      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, click 'Quit' from the tray icon$\n3. Open a terminal and run: lemonade-server stop$\n4. If still running, end lemonade-server.exe and llama-server.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
+      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\nDiagnostic information has been logged above. Common solutions:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, click 'Quit' from the tray icon$\n3. Open a terminal and run: lemonade-server stop$\n4. If still running, end lemonade-server.exe and llama-server.exe in Task Manager$\n5. Close any command prompts with current directory in the installation folder$\n$\nIf the issue persists, try restarting your computer and run the installer again."
     ${EndIf}
     Quit
 
