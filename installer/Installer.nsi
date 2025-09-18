@@ -17,6 +17,10 @@ OutFile "Lemonade_Server_Installer.exe"
 ; Include LogicLib for logging in silent mode
 !include LogicLib.nsh
 Var LogHandle
+Var DiagLogHandle
+
+; Enable detailed logging
+ShowInstDetails show
 
 Var LEMONADE_SERVER_STRING
 Var HYBRID_SELECTED
@@ -69,8 +73,17 @@ SectionIn RO ; Read only, always installed
   ; Add diagnostic checks before attempting rename
   DetailPrint "Running diagnostic checks..."
   
+  ; Create a diagnostic log file
+  StrCpy $DiagLogHandle "$TEMP\lemonade_installer_diagnostics.log"
+  FileOpen $3 $DiagLogHandle w
+  FileWrite $3 "=== Lemonade Installer Diagnostics ===$\r$\n"
+  FileWrite $3 "Timestamp: $\r$\n"
+  FileWrite $3 "Installation Directory: $INSTDIR$\r$\n"
+  FileWrite $3 "$\r$\n"
+  
   ; Check for running lemonade/llama processes
   DetailPrint "- Checking for running processes..."
+  FileWrite $3 "1. Process Check:$\r$\n"
   nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object {$_.ProcessName -like \"*lemonade*\" -or $_.ProcessName -like \"*llama*\" -or $_.ProcessName -like \"*python*\" -and $_.Path -like \"*lemonade*\"} | Select-Object ProcessName,Id,Path | Format-Table -AutoSize"'
   Pop $0 ; Return value
   Pop $1 ; Output
@@ -78,12 +91,17 @@ SectionIn RO ; Read only, always installed
     ${If} $1 != ""
       DetailPrint "Found potentially interfering processes:"
       DetailPrint "$1"
+      FileWrite $3 "Found potentially interfering processes:$\r$\n$1$\r$\n"
     ${Else}
       DetailPrint "No lemonade/llama processes found running"
+      FileWrite $3 "No lemonade/llama processes found running$\r$\n"
     ${EndIf}
   ${Else}
     DetailPrint "Process check failed (return code: $0)"
+    FileWrite $3 "Process check failed (return code: $0)$\r$\n"
   ${EndIf}
+  
+  FileWrite $3 "$\r$\n2. Folder Rename Test:$\r$\n"
   
   ; Directory exists, first check if it's in use by trying to rename it
   DetailPrint "- Attempting to rename folder to check if in use..."
@@ -97,22 +115,28 @@ SectionIn RO ; Read only, always installed
     IfFileExists "$INSTDIR.tmp\*.*" 0 check_retry
       ; Rename was successful, rename it back - directory is not in use
       DetailPrint "- Folder rename successful (not in use)"
+      FileWrite $3 "Attempt $R0: Folder rename successful (not in use)$\r$\n"
       Rename "$INSTDIR.tmp" "$INSTDIR"
+      FileClose $3
       Goto ask_remove
       
     check_retry:
       ; Rename failed
       IntOp $R0 $R0 + 1
       DetailPrint "- Folder rename failed (attempt $R0/3)"
+      FileWrite $3 "Attempt $R0: Folder rename failed$\r$\n"
       
       ; If this is not the last attempt, wait and retry
       ${If} $R0 < 3
         DetailPrint "- Waiting 2 seconds before retry..."
+        FileWrite $3 "Waiting 2 seconds before retry...$\r$\n"
         Sleep 2000
         Goto retry_rename
       ${Else}
         ; All retries failed
         DetailPrint "- All rename attempts failed - folder is definitely in use"
+        FileWrite $3 "All rename attempts failed - folder is definitely in use$\r$\n"
+        FileWrite $3 "$\r$\n3. Detailed Diagnostics:$\r$\n"
         Goto folder_in_use
       ${EndIf}
       
@@ -134,6 +158,7 @@ SectionIn RO ; Read only, always installed
     
     ; Try to identify which processes have handles to the folder
     DetailPrint "- Checking for open file handles using PowerShell..."
+    FileWrite $3 "Checking for open file handles...$\r$\n"
     nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-Process | Where-Object { try { $_.Modules.FileName -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id,Path | Format-Table -AutoSize } catch { \"Handle check failed\" }"'
     Pop $0
     Pop $1
@@ -141,11 +166,17 @@ SectionIn RO ; Read only, always installed
       ${If} $1 != ""
         DetailPrint "Processes with lemonade modules loaded:"
         DetailPrint "$1"
+        FileWrite $3 "Processes with lemonade modules loaded:$\r$\n$1$\r$\n"
+      ${Else}
+        FileWrite $3 "No processes with lemonade modules found$\r$\n"
       ${EndIf}
+    ${Else}
+      FileWrite $3 "Handle check failed (return code: $0)$\r$\n"
     ${EndIf}
     
     ; Check for files currently open in the directory
     DetailPrint "- Checking for open files in installation directory..."
+    FileWrite $3 "Checking for locked files...$\r$\n"
     nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-ChildItem \"$INSTDIR\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { try { [System.IO.File]::OpenWrite($_.FullName).Close(); \"OK: $($_.Name)\" } catch { \"LOCKED: $($_.Name) - $($_.Exception.Message)\" } } | Where-Object { $_ -like \"LOCKED:*\" } | Select-Object -First 5 } catch { \"File check failed\" }"'
     Pop $0
     Pop $1
@@ -153,13 +184,18 @@ SectionIn RO ; Read only, always installed
       ${If} $1 != ""
         DetailPrint "Locked files detected:"
         DetailPrint "$1"
+        FileWrite $3 "Locked files detected:$\r$\n$1$\r$\n"
       ${Else}
         DetailPrint "No obviously locked files found"
+        FileWrite $3 "No obviously locked files found$\r$\n"
       ${EndIf}
+    ${Else}
+      FileWrite $3 "File lock check failed (return code: $0)$\r$\n"
     ${EndIf}
     
     ; Check current working directories
     DetailPrint "- Checking if any processes have CWD in installation folder..."
+    FileWrite $3 "Checking for processes with CWD in installation folder...$\r$\n"
     nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object { try { (Get-Location -PSProvider FileSystem).Path -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id | Format-Table -AutoSize"'
     Pop $0
     Pop $1
@@ -167,11 +203,20 @@ SectionIn RO ; Read only, always installed
       ${If} $1 != ""
         DetailPrint "Processes with CWD in lemonade folder:"
         DetailPrint "$1"
+        FileWrite $3 "Processes with CWD in lemonade folder:$\r$\n$1$\r$\n"
+      ${Else}
+        FileWrite $3 "No processes with CWD in lemonade folder found$\r$\n"
       ${EndIf}
+    ${Else}
+      FileWrite $3 "CWD check failed (return code: $0)$\r$\n"
     ${EndIf}
     
+    ; Close the log file and tell user where to find it
+    FileWrite $3 "$\r$\n=== End of Diagnostics ===$\r$\n"
+    FileClose $3
+    
     ${IfNot} ${Silent}
-      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\nDiagnostic information has been logged above. Common solutions:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, click 'Quit' from the tray icon$\n3. Open a terminal and run: lemonade-server stop$\n4. If still running, end lemonade-server.exe and llama-server.exe in Task Manager$\n5. Close any command prompts with current directory in the installation folder$\n$\nIf the issue persists, try restarting your computer and run the installer again."
+      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\nDiagnostic information has been logged above and saved to:$\n$DiagLogHandle$\n$\nCommon solutions:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, click 'Quit' from the tray icon$\n3. Open a terminal and run: lemonade-server stop$\n4. If still running, end lemonade-server.exe and llama-server.exe in Task Manager$\n5. Close any command prompts with current directory in the installation folder$\n$\nIf the issue persists, try restarting your computer and run the installer again."
     ${EndIf}
     Quit
 
