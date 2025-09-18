@@ -65,14 +65,14 @@ The following table explains what checkpoints work with each recipe, the hardwar
     <td><code>hf-cpu</code></td>
     <td>safetensors (Hugging Face)</td>
     <td>Any x86 CPU</td>
-    <td>Windows, Linux</td>
-    <td>Compatible with x86 CPUs, offering broad accessibility.</td>
+    <td>Windows, Linux, macOS</td>
+    <td>Compatible with x86 CPUs and Apple Silicon, offering broad accessibility.</td>
   </tr>
   <tr>
     <td><code>hf-dgpu</code></td>
     <td>safetensors (Hugging Face)</td>
     <td>Compatible Discrete GPU</td>
-    <td>Windows, Linux</td>
+    <td>Windows, Linux, macOS</td>
     <td>Requires PyTorch and a compatible GPU.<sup>[1]</sup></td>
   </tr>
   <tr>

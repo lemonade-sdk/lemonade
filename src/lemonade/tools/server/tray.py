@@ -7,6 +7,7 @@ import webbrowser
 from pathlib import Path
 import logging
 import tempfile
+import platform
 
 import requests
 from packaging.version import parse as parse_version
@@ -14,7 +15,20 @@ from packaging.version import parse as parse_version
 from lemonade_server.pydantic_models import DEFAULT_CTX_SIZE
 
 from lemonade.version import __version__
-from lemonade.tools.server.utils.system_tray import SystemTray, Menu, MenuItem
+
+# Import the appropriate tray implementation based on platform
+if platform.system() == "Darwin":  # macOS
+    from lemonade.tools.server.utils.macos_tray import (
+        MacOSSystemTray as SystemTray,
+        Menu,
+        MenuItem,
+    )
+else:  # Windows/Linux
+    from lemonade.tools.server.utils.windows_tray import (
+        SystemTray,
+        Menu,
+        MenuItem,
+    )
 
 
 class OutputDuplicator:
@@ -86,6 +100,9 @@ class LemonadeTray(SystemTray):
         # Background thread for version checking
         self.version_check_thread = None
         self.stop_version_check = threading.Event()
+
+        # Hook function for platform-specific initialization callback
+        self.on_ready = None
 
     def get_latest_version(self):
         """
@@ -191,15 +208,38 @@ class LemonadeTray(SystemTray):
         Show the log file in a new window.
         """
         try:
-            subprocess.Popen(
-                [
-                    "powershell",
-                    "Start-Process",
-                    "powershell",
-                    "-ArgumentList",
-                    f'"-NoExit", "Get-Content -Wait {self.log_file}"',
-                ]
-            )
+            system = platform.system().lower()
+            if system == "darwin":
+                # Use Terminal.app to show live logs on macOS
+                try:
+                    subprocess.Popen(
+                        [
+                            "osascript",
+                            "-e",
+                            f'tell application "Terminal" to do script "tail -f {self.log_file}"',
+                        ]
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                    self.logger.error(f"Failed to open Terminal for logs: {e}")
+                    self.show_balloon_notification(
+                        "Error",
+                        f"Failed to open logs in Terminal. Log file: {self.log_file}",
+                    )
+            elif system == "windows":
+                # Use PowerShell on Windows
+                subprocess.Popen(
+                    [
+                        "powershell",
+                        "Start-Process",
+                        "powershell",
+                        "-ArgumentList",
+                        f'"-NoExit", "Get-Content -Wait {self.log_file}"',
+                    ]
+                )
+            else:
+                # Unsupported platform
+                self.logger.error(f"Log viewing not supported on platform: {system}")
+
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(f"Error opening logs: {str(e)}")
 
@@ -228,7 +268,7 @@ class LemonadeTray(SystemTray):
         try:
             response = requests.get(
                 f"http://localhost:{self.port}/api/v0/health",
-                timeout=0.1,  # Add timeout
+                timeout=0.1,
             )
             response.raise_for_status()
             response_data = response.json()
@@ -257,7 +297,9 @@ class LemonadeTray(SystemTray):
         """
         Change the server port and restart the server.
         """
+
         try:
+
             # Stop the current server
             if self.server_thread and self.server_thread.is_alive():
                 # Set should_exit flag on the uvicorn server instance
@@ -270,16 +312,17 @@ class LemonadeTray(SystemTray):
 
             # Update the port in both the tray and the server instance
             self.port = new_port
-            if self.server:
-                self.server.port = new_port
 
-            # Restart the server
+            # Clear the old server instance to ensure a fresh start
+            # This prevents middleware conflicts when restarting
+            self.server = None
+
             self.server_thread = threading.Thread(target=self.start_server, daemon=True)
             self.server_thread.start()
 
-            # Show notification
             self.show_balloon_notification(
-                "Port Changed", f"Lemonade Server is now running on port {self.port}"
+                "Port Changed",
+                f"Lemonade Server is now running on port {self.port}",
             )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -539,6 +582,11 @@ class LemonadeTray(SystemTray):
         Start the uvicorn server.
         """
         self.server = self.server_factory()
+
+        # Ensure the server uses the current port from the tray
+        # This is important when changing ports
+        self.server.port = self.port
+
         self.server.uvicorn_server = self.server.run_in_thread(self.server.host)
         self.server.uvicorn_server.run()
 
@@ -546,16 +594,6 @@ class LemonadeTray(SystemTray):
         """
         Run the Lemonade tray application.
         """
-
-        # Register window class and create window
-        self.register_window_class()
-        self.create_window()
-
-        # Set up Windows console control handler for CTRL+C
-        self.console_handler = self.setup_console_control_handler(self.logger)
-
-        # Add tray icon
-        self.add_tray_icon()
 
         # Start the background model mapping update thread
         self.model_update_thread = threading.Thread(
@@ -573,17 +611,27 @@ class LemonadeTray(SystemTray):
         self.server_thread = threading.Thread(target=self.start_server, daemon=True)
         self.server_thread.start()
 
-        # Show initial notification
-        self.show_balloon_notification(
-            "Woohoo!",
-            (
-                "Lemonade Server is running! "
-                "Right-click the tray icon below to access options."
-            ),
-        )
+        # Provide an on_ready hook that Windows base tray will call after
+        # the HWND/icon are created. macOS will call it immediately after run.
+        def _on_ready():
+            system = platform.system().lower()
+            if system == "darwin":
+                message = (
+                    "Lemonade Server is running! "
+                    "Click the tray icon above to access options."
+                )
+            else:  # Windows/Linux
+                message = (
+                    "Lemonade Server is running! "
+                    "Right-click the tray icon below to access options."
+                )
+            self.show_balloon_notification("Woohoo!", message)
 
-        # Run the message loop in the main thread
-        self.message_loop()
+        # Attach hook for both implementations to invoke after init
+        self.on_ready = _on_ready
+
+        # Call the parent run method which handles platform-specific initialization
+        super().run()
 
     def exit_app(self, icon, item):
         """
@@ -598,8 +646,16 @@ class LemonadeTray(SystemTray):
         if self.version_check_thread and self.version_check_thread.is_alive():
             self.version_check_thread.join(timeout=1)
 
-        # Call parent exit method
-        super().exit_app(icon, item)
+        # Platform-specific exit handling
+        system = platform.system().lower()
+        if system == "darwin":  # macOS
+            # For macOS, quit the rumps application
+            import rumps
+
+            rumps.quit_application()
+        else:
+            # Call parent exit method for Windows
+            super().exit_app(icon, item)
 
         # Stop the server using the CLI stop command to ensure a rigorous cleanup
         # This must be a subprocess to ensure the cleanup doesnt kill itself

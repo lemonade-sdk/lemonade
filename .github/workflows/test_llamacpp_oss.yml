@@ -21,6 +21,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
     strategy:
       matrix:
@@ -89,6 +90,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
     strategy:
       matrix:
@@ -145,3 +147,53 @@ jobs:
 
           python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
           python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
+
+  test-server-llamacpp-macos:
+    env:
+      LEMONADE_CI_MODE: "True"
+      CONDA_ENV_PATH: ./lemon-ci-env
+      LEMONADE_CACHE_DIR: ./ci-cache
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+        backend: ['metal']
+
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-variant: Miniforge3
+          miniforge-version: latest
+
+      - name: Set up Conda environment
+        run: |
+          conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
+          conda init
+
+      - name: Install dependencies
+        run: |
+          source $CONDA/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
+          pip install -e .[dev]
+          pip check
+
+          echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+
+      - name: Run lemonade Llamacpp API tests (Metal)
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          source $CONDA/etc/profile.d/conda.sh
+          conda activate $CONDA_ENV_PATH
+
+          python test/server_llamacpp.py metal || exit 1
+          python test/server_llamacpp.py metal --offline || exit 1

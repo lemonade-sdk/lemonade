@@ -450,6 +450,7 @@ The `recipe` field defines which software framework and device will be used to l
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+| `vision` | No | Whether the model has vision capabilities for processing images (default: false). |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:
@@ -734,7 +735,7 @@ Where `[level]` can be one of:
 
 The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced experimental support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) Vulkan `llama-server` as an alternative backend for CPU and GPU.
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `embeddings`, and `reranking` endpoints are supported. 
   - Non-chat `completions`, and `responses` are not supported at this time.
@@ -748,11 +749,12 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 
 ## Platform Support Matrix
 
-| Platform | Vulkan GPU | x64 CPU      |
-|----------|------------|--------------|
-| Windows  | ✅         | ✅           |
-| Ubuntu   | ✅         | ✅           |
-| Other Linux | ⚠️*     | ⚠️*          |
+| Platform | GPU Acceleration | CPU Architecture |
+|----------|------------------|------------------|
+| Windows  | ✅ Vulkan        | ✅ x64           |
+| Ubuntu   | ✅ Vulkan        | ✅ x64           |
+| macOS    | ✅ Metal         | ✅ Apple Silicon |
+| Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.
 
