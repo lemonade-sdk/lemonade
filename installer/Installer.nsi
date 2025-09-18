@@ -9,7 +9,8 @@ RequestExecutionLevel user
 Name "Lemonade Server"
 OutFile "Lemonade_Server_Installer.exe"
 
-; Include modern UI elements
+; Include modern UI el    FileWrite $4 "if exist \"$R1\" ($\r$\n"
+    FileWrite $4 "  echo Warning: Some files could not be removed from \"$R1\"$\r$\n"ents
 !include "MUI2.nsh"
 
 !include FileFunc.nsh
@@ -55,14 +56,24 @@ SectionIn RO ; Read only, always installed
   
   ; Check if lemonade-server.bat exists in the installation folder
   IfFileExists "$INSTDIR\bin\lemonade-server.bat" 0 stop_complete
-    ; Use the existing lemonade-server.bat to stop the server (in background)
-    nsExec::Exec '"$INSTDIR\bin\lemonade-server.bat" stop'
+    ; Copy the stop script to temp location to avoid file locks
+    CopyFiles "$INSTDIR\bin\lemonade-server.bat" "$TEMP\lemonade-stop-temp.bat"
+    
+    ; Use the copied script to stop the server
+    nsExec::Exec '"$TEMP\lemonade-stop-temp.bat" stop'
     Pop $0
     ${If} $0 == 0
       DetailPrint "- Lemonade Server stopped successfully"
     ${Else}
       DetailPrint "- Lemonade Server stop command failed (continuing anyway)"
     ${EndIf}
+    
+    ; Clean up temp script
+    Delete "$TEMP\lemonade-stop-temp.bat"
+    
+    ; Wait longer for processes to fully exit
+    DetailPrint "- Waiting 5 seconds for processes to fully terminate..."
+    Sleep 5000
     Goto stop_complete
 
   stop_complete:
@@ -103,6 +114,15 @@ SectionIn RO ; Read only, always installed
   
   FileWrite $3 "$\r$\n2. Folder Rename Test:$\r$\n"
   
+  ; Try to forcefully terminate any remaining lemonade processes before rename
+  DetailPrint "- Terminating any remaining lemonade processes..."
+  nsExec::Exec 'taskkill /f /im lemonade-server.exe /t 2>nul'
+  nsExec::Exec 'taskkill /f /im llama-server.exe /t 2>nul'
+  nsExec::Exec 'taskkill /f /im python.exe /fi "WINDOWTITLE eq lemonade*" /t 2>nul'
+  
+  ; Wait for processes to fully terminate
+  Sleep 2000
+  
   ; Directory exists, first check if it's in use by trying to rename it
   DetailPrint "- Attempting to rename folder to check if in use..."
   
@@ -116,8 +136,9 @@ SectionIn RO ; Read only, always installed
       ; Rename was successful, rename it back - directory is not in use
       DetailPrint "- Folder rename successful (not in use)"
       FileWrite $3 "Attempt $R0: Folder rename successful (not in use)$\r$\n"
-      Rename "$INSTDIR.tmp" "$INSTDIR"
+      FileWrite $3 "$\r$\n=== Diagnostics Complete - No Issues Found ===$\r$\n"
       FileClose $3
+      Rename "$INSTDIR.tmp" "$INSTDIR"
       Goto ask_remove
       
     check_retry:
@@ -221,15 +242,63 @@ SectionIn RO ; Read only, always installed
     Quit
 
   remove_dir:
-    ; Remove directory (we already know it's not in use)
-    RMDir /r "$INSTDIR"
+    ; Multi-stage removal strategy to handle file locks properly
+    DetailPrint "- Attempting to remove existing installation..."
     
-    ; Verify deletion was successful
-    IfFileExists "$INSTDIR\*.*" 0 continue_install
+    ; First, try direct removal (fastest if it works)
+    RMDir /r "$INSTDIR"
+    IfFileExists "$INSTDIR\*.*" 0 removal_success
+    
+    ; Direct removal failed, try move-then-delete approach
+    DetailPrint "- Direct removal failed, trying move-then-delete..."
+    GetTempFileName $R1
+    Delete "$R1" ; Remove the temp file, we just want the name
+    StrCpy $R1 "$R1.lemonade_old"
+    
+    ; Move to temp location
+    Rename "$INSTDIR" "$R1"
+    IfFileExists "$R1\*.*" 0 move_failed
+    
+    ; Move succeeded, now try to delete from temp location
+    DetailPrint "- Moved to temp location, attempting cleanup..."
+    RMDir /r "$R1"
+    IfFileExists "$R1\*.*" 0 removal_success
+    
+    ; Still couldn't delete, schedule for reboot and warn user
+    DetailPrint "- Scheduling cleanup for next reboot..."
+    RMDir /REBOOTOK /r "$R1"
+    
+    ; Create a cleanup script for immediate retry
+    FileOpen $4 "$TEMP\lemonade_cleanup.bat" w
+    FileWrite $4 "@echo off$\r$\n"
+    FileWrite $4 "echo Cleaning up old Lemonade installation...$\r$\n"
+    FileWrite $4 "timeout /t 5 /nobreak >nul$\r$\n"
+    FileWrite $4 "rmdir /s /q \"$R1\" 2>nul$\r$\n"
+    FileWrite $4 "if exist \"$R1\" ($\r$\n"
+    FileWrite $4 "  echo Warning: Some files could not be removed from \"$R1\"$\r$\n"
+    FileWrite $4 "  echo These will be cleaned up after restart.$\r$\n"
+    FileWrite $4 ") else ($\r$\n"
+    FileWrite $4 "  echo Cleanup completed successfully.$\r$\n"
+    FileWrite $4 ")$\r$\n"
+    FileWrite $4 "del "%~f0" 2>nul$\r$\n"
+    FileClose $4
+    
+    ; Run cleanup script in background and don't wait for it
+    Exec '"$TEMP\lemonade_cleanup.bat"'
+    
+    Goto removal_success
+    
+    move_failed:
+      DetailPrint "- Both direct removal and move failed"
       ${IfNot} ${Silent}
-        MessageBox MB_OK "Unable to remove existing installation. Please close any applications using $LEMONADE_SERVER_STRING and try again."
+        MessageBox MB_OK "Unable to remove existing installation. Please restart your computer and try the installer again.$\n$\nIf the problem persists, manually delete the folder:$\n$INSTDIR"
       ${EndIf}
       Quit
+      
+    removal_success:
+      DetailPrint "- Successfully removed existing installation"
+      ; Clean up diagnostic log since installation succeeded
+      Delete "$DiagLogHandle"
 
   continue_install:
     ; Create fresh directory
