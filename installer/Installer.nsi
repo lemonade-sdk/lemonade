@@ -279,7 +279,7 @@ SectionIn RO ; Read only, always installed
     FileWrite $4 ") else ($\r$\n"
     FileWrite $4 "  echo Cleanup completed successfully.$\r$\n"
     FileWrite $4 ")$\r$\n"
-    FileWrite $4 "del "%~f0" 2>nul$\r$\n"
+    FileWrite $4 $"del "%~f0" 2>nul$\r$\n$"
     FileClose $4
     
     ; Run cleanup script in background and don't wait for it
