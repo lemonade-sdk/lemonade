@@ -94,7 +94,7 @@ SectionIn RO ; Read only, always installed
   ; Check for running lemonade/llama processes
   DetailPrint "- Checking for running processes..."
   FileWrite $3 "1. Process Check:$\r$\n"
-  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object {$_.ProcessName -like \"*lemonade*\" -or $_.ProcessName -like \"*llama*\" -or $_.ProcessName -like \"*python*\" -and $_.Path -like \"*lemonade*\"} | Select-Object ProcessName,Id,Path | Format-Table -AutoSize"'
+  nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object {$$_.ProcessName -like \"*lemonade*\" -or $$_.ProcessName -like \"*llama*\" -or $$_.ProcessName -like \"*python*\" -and $$_.Path -like \"*lemonade*\"} | Select-Object ProcessName,Id,Path | Format-Table -AutoSize"'
   Pop $0 ; Return value
   Pop $1 ; Output
   ${If} $0 == 0
@@ -128,6 +128,7 @@ SectionIn RO ; Read only, always installed
   ; Try rename with retry logic
   StrCpy $R0 0 ; retry counter
   retry_rename:
+    IntOp $R0 $R0 + 1
     Rename "$INSTDIR" "$INSTDIR.tmp"
     
     ; Check if rename was successful
@@ -142,7 +143,6 @@ SectionIn RO ; Read only, always installed
       
     check_retry:
       ; Rename failed
-      IntOp $R0 $R0 + 1
       DetailPrint "- Folder rename failed (attempt $R0/3)"
       FileWrite $3 "Attempt $R0: Folder rename failed$\r$\n"
       
@@ -179,7 +179,7 @@ SectionIn RO ; Read only, always installed
     ; Try to identify which processes have handles to the folder
     DetailPrint "- Checking for open file handles using PowerShell..."
     FileWrite $3 "Checking for open file handles...$\r$\n"
-    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-Process | Where-Object { try { $_.Modules.FileName -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id,Path | Format-Table -AutoSize } catch { \"Handle check failed\" }"'
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-Process | Where-Object { try { $$_.Modules.FileName -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id,Path | Format-Table -AutoSize } catch { \"Handle check failed\" }"'
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -197,7 +197,7 @@ SectionIn RO ; Read only, always installed
     ; Check for files currently open in the directory
     DetailPrint "- Checking for open files in installation directory..."
     FileWrite $3 "Checking for locked files...$\r$\n"
-    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-ChildItem \"$INSTDIR\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { try { [System.IO.File]::OpenWrite($_.FullName).Close(); \"OK: $($_.Name)\" } catch { \"LOCKED: $($_.Name) - $($_.Exception.Message)\" } } | Where-Object { $_ -like \"LOCKED:*\" } | Select-Object -First 5 } catch { \"File check failed\" }"'
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "try { Get-ChildItem \"$$INSTDIR\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { try { [System.IO.File]::OpenWrite($$_.FullName).Close(); \"OK: $$($$_.Name)\" } catch { \"LOCKED: $$($$_.Name) - $$($$_.Exception.Message)\" } } | Where-Object { $$_ -like \"LOCKED:*\" } | Select-Object -First 5 } catch { \"File check failed\" }"'
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -216,7 +216,7 @@ SectionIn RO ; Read only, always installed
     ; Check current working directories
     DetailPrint "- Checking if any processes have CWD in installation folder..."
     FileWrite $3 "Checking for processes with CWD in installation folder...$\r$\n"
-    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object { try { (Get-Location -PSProvider FileSystem).Path -like \"*lemonade*\" } catch {} } | Select-Object ProcessName,Id | Format-Table -AutoSize"'
+    nsExec::ExecToStack 'powershell -NoProfile -ExecutionPolicy RemoteSigned -Command "Get-Process | Where-Object { try { (Get-Location -PSProvider FileSystem).Path -like \\\"*lemonade*\\\" } catch {} } | Select-Object ProcessName,Id | Format-Table -AutoSize"'
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -272,9 +272,9 @@ SectionIn RO ; Read only, always installed
     FileWrite $4 "@echo off$\r$\n"
     FileWrite $4 "echo Cleaning up old Lemonade installation...$\r$\n"
     FileWrite $4 "timeout /t 5 /nobreak >nul$\r$\n"
-    FileWrite $4 "rmdir /s /q \"$R1\" 2>nul$\r$\n"
-    FileWrite $4 "if exist \"$R1\" ($\r$\n"
-    FileWrite $4 "  echo Warning: Some files could not be removed from \"$R1\"$\r$\n"
+    FileWrite $4 "rmdir /s /q $\"$R1$\" 2>nul$\r$\n"
+    FileWrite $4 "if exist $\"$R1$\" ($\r$\n"
+    FileWrite $4 "  echo Warning: Some files could not be removed from $\"$R1$\"$\r$\n"
     FileWrite $4 "  echo These will be cleaned up after restart.$\r$\n"
     FileWrite $4 ") else ($\r$\n"
     FileWrite $4 "  echo Cleanup completed successfully.$\r$\n"
