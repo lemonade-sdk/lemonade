@@ -48,14 +48,14 @@
 			</div>
             <div class="tab-content active" id="content-chat">
                 <div class="chat-container">
-                    <div class="chat-history" id="chat-history"></div>
+                    <div class="chat-history" id="chat-history" style="overflow-y: auto;"></div>
                     <div class="chat-input-row">
                         <div class="input-with-indicator">
                             <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea> 
                         </div>
                         <input type="file" id="file-attachment" style="display: none;" multiple accept="image/*">
                         <button id="attachment-btn" title="Attach files">&#x1F4CE;</button>
-                        <button id="send-btn">Send</button> 
+                        <button id="toggle-btn" title="Start">Start</button>
                     </div>
                     <div class="attachments-preview-container" id="attachments-preview-container">
                         <div class="attachments-preview-row" id="attachments-preview-row"></div>
@@ -255,5 +255,4 @@
     <script src="/static/js/model-settings.js"></script>
     <script src="/static/js/chat.js"></script>
 </body>
-</html>
 </html>

@@ -318,18 +318,44 @@ class WrappedServer(ABC):
         if chat_completion_request.stream:
 
             def event_stream():
-                try:
-                    # Enable streaming
+                # Ensure streaming is enabled in params
+                stream_params = dict(openai_client_params)
+                stream_params["stream"] = True
+
+                # Use streaming context so we can explicitly close on cancellation
+                with client.chat.completions.with_streaming_response.create(
                     # pylint: disable=missing-kwoa
-                    for chunk in client.chat.completions.create(**openai_client_params):
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                    yield "data: [DONE]\n\n"
+                    **stream_params,
+                ) as response:
+                    try:
+                        for line in response.iter_lines():
+                            # Preserve SSE event boundaries: blank line separates events
+                            if line == b"" or line == "":
+                                yield "\n"
+                                continue
+                            if isinstance(line, bytes):
+                                try:
+                                    line = line.decode("utf-8", errors="ignore")
+                                except (UnicodeDecodeError, LookupError):
+                                    # Skip lines that fail decoding due to encoding issues
+                                    continue
+                            # Forward SSE lines as-is
+                            if not line.endswith("\n"):
+                                line += "\n"
+                            yield line
 
-                    # Show telemetry after completion
-                    self.telemetry.show_telemetry()
+                        # Show telemetry after completion
+                        self.telemetry.show_telemetry()
 
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    yield f'data: {{"error": "{str(e)}"}}\n\n'
+                    except GeneratorExit:
+                        # Client disconnected/cancelled; close upstream stream and stop
+                        try:
+                            response.close()
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            pass
+                        raise
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        yield f'data: {{"error": "{str(e)}"}}\n\n'
 
             return StreamingResponse(
                 event_stream(),
@@ -387,18 +413,44 @@ class WrappedServer(ABC):
         if completion_request.stream:
 
             def event_stream():
-                try:
-                    # Enable streaming
+                # Ensure streaming is enabled in params
+                stream_params = dict(openai_client_params)
+                stream_params["stream"] = True
+
+                # Use streaming context so we can explicitly close on cancellation
+                with client.completions.with_streaming_response.create(
                     # pylint: disable=missing-kwoa
-                    for chunk in client.completions.create(**openai_client_params):
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                    yield "data: [DONE]\n\n"
+                    **stream_params,
+                ) as response:
+                    try:
+                        for line in response.iter_lines():
+                            # Preserve SSE event boundaries: blank line separates events
+                            if line == b"" or line == "":
+                                yield "\n"
+                                continue
+                            if isinstance(line, bytes):
+                                try:
+                                    line = line.decode("utf-8", errors="ignore")
+                                except (UnicodeDecodeError, LookupError):
+                                    # Skip lines that fail decoding due to encoding issues
+                                    continue
+                            # Forward SSE lines as-is
+                            if not line.endswith("\n"):
+                                line += "\n"
+                            yield line
 
-                    # Show telemetry after completion
-                    self.telemetry.show_telemetry()
+                        # Show telemetry after completion
+                        self.telemetry.show_telemetry()
 
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    yield f'data: {{"error": "{str(e)}"}}\n\n'
+                    except GeneratorExit:
+                        # Client disconnected/cancelled; close upstream stream and stop
+                        try:
+                            response.close()
+                        except Exception:  # pylint: disable=broad-exception-caught
+                            pass
+                        raise
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        yield f'data: {{"error": "{str(e)}"}}\n\n'
 
             return StreamingResponse(
                 event_stream(),
