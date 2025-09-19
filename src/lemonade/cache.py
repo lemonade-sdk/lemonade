@@ -43,7 +43,11 @@ def build_name(input_name):
     """
 
     if os.path.isdir(input_name):
+        # Input is a folder so no good way to determine a model name
         input_name_sanitized = "local_model"
+    elif os.path.isfile(input_name):
+        # Use the filename without its extension
+        input_name_sanitized = os.path.splitext(os.path.basename(input_name))[0]
     else:
         # Sanitize the input name
         input_name_sanitized = input_name.replace("/", "_")
@@ -63,8 +67,9 @@ class Keys:
     TOKEN_GENERATION_TOKENS_PER_SECOND = "token_generation_tokens_per_second"
     STD_DEV_TOKENS_PER_SECOND = "std_dev_tokens_per_second"
     SECONDS_TO_FIRST_TOKEN = "seconds_to_first_token"
-    PREFILL_TOKENS_PER_SECOND = "prefill_tokens_per_second"
     STD_DEV_SECONDS_TO_FIRST_TOKEN = "std_dev_seconds_to_first_token"
+    PREFILL_TOKENS_PER_SECOND = "prefill_tokens_per_second"
+    STD_DEV_PREFILL_TOKENS_PER_SECOND = "std_dev_prefill_tokens_per_second"
     CHECKPOINT = "checkpoint"
     DTYPE = "dtype"
     PROMPT = "prompt"
