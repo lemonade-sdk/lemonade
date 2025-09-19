@@ -414,18 +414,38 @@ button:disabled {
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   background: #fff;
-  resize: both;
-  overflow: auto;
+  /* Use a semi-fixed chat 'window' height so streaming content never expands the page.
+     The chat-history area inside will scroll. The CSS variable allows easy tuning. */
+  --chat-height: 520px;
+  /* Allow vertical resizing by the user while keeping horizontal size fixed.
+     Constrain the resize with min/max heights so it stays usable and doesn't overflow the viewport. */
+  resize: vertical;
+  height: var(--chat-height);
+  min-height: 240px;
+  max-height: calc(100vh - 120px);
+  overflow: hidden; /* hide overflow at container level; chat-history will scroll */
+}
+
+/* Responsive fallback: if the viewport height is small, cap the chat window to fit */
+@media (max-height: 700px) {
+  .chat-container {
+    height: calc(100vh - 180px); /* leave space for navbar/footer */
+  }
 }
 
 .chat-history {
-  flex: 1;
+  /* Make chat history take remaining space in the chat container and scroll when content
+     exceeds this space. This prevents streaming text from expanding the overall layout. */
+  flex: 1 1 auto;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 1em;
   border-bottom: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
   gap: 0.5em;
+  /* Optional visual hint for scrollable content */
+  scrollbar-width: thin;
 }
 
 .chat-message {

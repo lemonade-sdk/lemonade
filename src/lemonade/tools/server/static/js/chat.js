@@ -18,6 +18,9 @@ const THINKING_FRAMES = THINKING_USE_LEMON
 let chatHistory, chatInput, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, toggleBtn;
 // Track if a stream is currently active (separate from abortController existing briefly before validation)
 let isStreaming = false;
+// When the user scrolls up in the chat history, disable automatic scrolling until they scroll back to the bottom.
+let autoscrollEnabled = true;
+const AUTOSCROLL_TOLERANCE_PX = 10;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -32,6 +35,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Set up event listeners
     setupChatEventListeners();
+
+    // Pause autoscroll when user scrolls up in the chat history. If they scroll back to bottom, resume.
+    if (chatHistory) {
+        chatHistory.addEventListener('scroll', function () {
+            try {
+                const atBottom = chatHistory.scrollTop + chatHistory.clientHeight >= chatHistory.scrollHeight - AUTOSCROLL_TOLERANCE_PX;
+                if (atBottom) {
+                    if (!autoscrollEnabled) {
+                        autoscrollEnabled = true;
+                        chatHistory.classList.remove('autoscroll-paused');
+                    }
+                } else {
+                    if (autoscrollEnabled) {
+                        autoscrollEnabled = false;
+                        chatHistory.classList.add('autoscroll-paused');
+                    }
+                }
+            } catch (_) {}
+        });
+    }
 
     // Initialize model dropdown (will be populated when models.js calls updateModelStatusIndicator)
     initializeModelDropdown();
@@ -547,6 +570,18 @@ function updateMessageContent(bubbleElement, text, isMarkdown = false) {
     bubbleElement.dataset.thinkExpanded = expanded ? 'true' : 'false';
 }
 
+// Scroll helper that respects user's scroll interaction. If autoscroll is disabled
+// because the user scrolled up, this will not force the view to the bottom.
+function scrollChatToBottom(force = false) {
+    if (!chatHistory) return;
+    if (force || autoscrollEnabled) {
+        // Small timeout to allow DOM insertion/layout to finish in streaming cases
+        setTimeout(() => {
+            try { chatHistory.scrollTop = chatHistory.scrollHeight; } catch (_) {}
+        }, 0);
+    }
+}
+
 function appendMessage(role, text, isMarkdown = false) {
     const div = document.createElement('div');
     div.className = 'chat-message ' + role;
@@ -564,7 +599,7 @@ function appendMessage(role, text, isMarkdown = false) {
 
     div.appendChild(bubble);
     chatHistory.appendChild(div);
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    scrollChatToBottom();
     return bubble;
 }
 
@@ -607,7 +642,7 @@ function displaySystemMessage() {
 
         div.appendChild(bubble);
         chatHistory.appendChild(div);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
+        scrollChatToBottom();
 
         systemMessageElement = div;
     }
@@ -1013,7 +1048,7 @@ async function sendMessage(existingTextIfAny) {
                         llmText += '<think>' + parts.slice(1).join('<think>');
                         receivedAnyReasoning = true;
                         updateMessageContent(llmBubble, llmText, true);
-                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                        scrollChatToBottom();
                         continue;
                     }
 
@@ -1021,7 +1056,7 @@ async function sendMessage(existingTextIfAny) {
                 }
 
                 updateMessageContent(llmBubble, llmText, true);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+                scrollChatToBottom();
             }
         }
 
