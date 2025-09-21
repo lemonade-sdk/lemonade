@@ -51,6 +51,18 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 |Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
 </div>
 
+### Docker
+
+#### Linux
+```bash
+docker run -p 8000:8000 -d --device /dev/dri -v lemonade-models:/home/ubuntu/.cache/huggingface/hub ghcr.io/lemonade-sdk/lemonade:latest
+```
+
+#### Windows
+```bash
+docker run -p 8000:8000 -d --gpus all -v lemonade-models:/home/ubuntu/.cache/huggingface/hub ghcr.io/lemonade-sdk/lemonade:latest
+```
+
 ### Use it with your favorite OpenAI-compatible app!
 
 <p align="center">
