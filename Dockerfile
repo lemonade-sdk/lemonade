@@ -4,6 +4,7 @@ FROM ubuntu:24.04
 # Install system dependencies for Vulkan backend
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip pipx \
+    curl build-essential \
     pciutils \
     vulkan-tools vulkan-validationlayers mesa-vulkan-drivers libvulkan-dev \
 && rm -rf /var/lib/apt/lists/*
