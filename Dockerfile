@@ -45,4 +45,4 @@ ENV LEMONADE_HOST=0.0.0.0 \
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uv run lemonade-server-dev serve --llamacpp vulkan"]
+CMD ["uv", "run", "lemonade-server-dev", "serve", "--llamacpp", "vulkan"]
