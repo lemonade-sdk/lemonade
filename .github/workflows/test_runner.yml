@@ -1,0 +1,107 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Test Lemonade on Runner
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      runson:
+        description: 'Which nimbys group to run the workflow on'
+        default: 'stx'
+        required: true
+        type: choice
+        options:
+        - 'stx'
+        - 'stx-test'
+      setup:
+        description: 'Install miniforge to C:\Users\nimbys'
+        default: false
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  make-npu-oga-lemonade:
+    env:
+        LEMONADE_CI_MODE: "True"
+    runs-on: ["${{ inputs.runson || 'stx' }}", 'miniforge']
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download and Install Miniforge
+        shell: PowerShell
+        if: ${{ inputs.setup }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (!(Test-Path -Path "C:\Users\nimbys")) { mkdir C:\Users\nimbys }
+          Invoke-WebRequest -Uri "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe" -OutFile "miniforge3.exe"
+          Start-Process -FilePath "miniforge3.exe" -ArgumentList "/S /InstallationType=JustMe /AddToPath=1 /RegisterPython=0 /D=C:\Users\nimbys\miniforge3" -Wait
+
+      - name: Initialize Conda
+        shell: PowerShell
+        if: ${{ inputs.setup }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Step 1: Add Conda to system PATH"
+          $env:Path = "C:\Users\nimbys\miniforge3;C:\Users\nimbys\miniforge3\Scripts;$env:Path"
+          [System.Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::Machine)
+
+          Write-Host "Step 2: Initialize conda for both shells"
+          & "C:\Users\nimbys\miniforge3\Scripts\conda.exe" init powershell
+          & "C:\Users\nimbys\miniforge3\Scripts\conda.exe" init cmd.exe
+      - name: Create conda environment
+        shell: PowerShell
+        run: |
+          # Make sure the system-level python is clean
+          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force 
+          
+          $ErrorActionPreference = "Stop"
+          conda create -p .\lemon-npu-ci python=3.10 -y
+          conda init
+      - name: Install dependencies
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          conda activate .\lemon-npu-ci
+          python -m pip install --upgrade pip
+          conda install pylint
+          python -m pip check
+          pip install -e .[llm-oga-npu]
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Install OGA support for NPU
+          # This test uses the --token option, while the hybrid test uses the token env var
+          lemonade-install --ryzenai npu -y --token ${{ secrets.OGA_TOKEN }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+      - name: Run lemonade NPU OGA tests
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
+        run: |
+          $ErrorActionPreference = "Stop"
+          conda activate .\lemon-npu-ci
+
+          # Test CLI
+          lemonade -i amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Test low-level APIs
+          python test/npu_api.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Test high-level APIs
+          python examples/api_oga_npu.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python examples/api_oga_npu_streaming.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
