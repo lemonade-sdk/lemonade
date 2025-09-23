@@ -966,6 +966,12 @@ class Server:
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
 
+        if self.llm_loaded.recipe == "llamacpp":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Responses API not supported for recipe: {self.llm_loaded.recipe}",
+            )
+
         # Convert chat messages to text using the model's chat template
         if isinstance(responses_request.input, str):
             text = responses_request.input
