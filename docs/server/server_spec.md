@@ -21,6 +21,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `api/v1/responses` - Chat Completions (prompt|messages -> event)
 - GET `/api/v1/models` - List models available locally
+- GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
 ### Additional Endpoints
 
@@ -356,6 +357,48 @@ curl http://localhost:8000/api/v1/models
 }
 ```
 
+### `GET /api/v1/models/{model_id}` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Retrieve a specific model by its ID in an OpenAI-compatible format. Returns detailed information about a single model including the `checkpoint` and `recipe` fields.
+
+#### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_id` | Yes | The ID of the model to retrieve. Must match one of the model IDs from the [models list](./server_models.md). |
+
+#### Example request
+
+```bash
+curl http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
+```
+
+#### Response format
+
+```json
+{
+  "id": "Llama-3.2-1B-Instruct-Hybrid",
+  "created": 1744173590,
+  "object": "model",
+  "owned_by": "lemonade",
+  "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+  "recipe": "oga-hybrid"
+}
+```
+
+#### Error responses
+
+If the model is not found, the endpoint returns a 404 error:
+
+```json
+{
+  "error": {
+    "message": "Model Llama-3.2-1B-Instruct-Hybrid has not been found",
+    "type": "not_found"
+  }
+}
+```
+
 ## Additional Endpoints
 
 ### `GET /api/v1/pull` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -407,6 +450,7 @@ The `recipe` field defines which software framework and device will be used to l
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
 | `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
+| `vision` | No | Whether the model has vision capabilities for processing images (default: false). |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:
@@ -691,7 +735,7 @@ Where `[level]` can be one of:
 
 The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced experimental support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) Vulkan `llama-server` as an alternative backend for CPU and GPU.
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `embeddings`, and `reranking` endpoints are supported. 
   - Non-chat `completions`, and `responses` are not supported at this time.
@@ -705,11 +749,12 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 
 ## Platform Support Matrix
 
-| Platform | Vulkan GPU | x64 CPU      |
-|----------|------------|--------------|
-| Windows  | ✅         | ✅           |
-| Ubuntu   | ✅         | ✅           |
-| Other Linux | ⚠️*     | ⚠️*          |
+| Platform | GPU Acceleration | CPU Architecture |
+|----------|------------------|------------------|
+| Windows  | ✅ Vulkan        | ✅ x64           |
+| Ubuntu   | ✅ Vulkan        | ✅ x64           |
+| macOS    | ✅ Metal         | ✅ Apple Silicon |
+| Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.
 

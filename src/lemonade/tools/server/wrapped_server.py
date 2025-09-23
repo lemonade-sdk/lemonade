@@ -95,6 +95,7 @@ class WrappedServer(ABC):
         self.process: subprocess.Popen = None
         self.server_name: str = server_name
         self.telemetry: WrappedServerTelemetry = telemetry
+        self.log_thread_exception = None
 
     def _choose_port(self):
         """
@@ -206,6 +207,8 @@ class WrappedServer(ABC):
 
                     if self.process.poll() is not None:
                         break
+            except HTTPException as e:
+                self.log_thread_exception = e
             except UnicodeDecodeError as e:
                 logging.debug(
                     "Unicode decode error reading subprocess output: %s", str(e)
@@ -230,6 +233,11 @@ class WrappedServer(ABC):
                     f"result: {health_response.json()}"
                 )
             time.sleep(1)
+
+        if self.log_thread_exception:
+            e = self.log_thread_exception
+            self.log_thread_exception = None
+            raise e
 
     @abstractmethod
     def _launch_server_subprocess(

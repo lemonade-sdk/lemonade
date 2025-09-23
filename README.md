@@ -2,41 +2,31 @@
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
-    <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" />
-  </a>
+    <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/tree/main/test" title="Check out our tests">
-    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" />
-  </a>
+    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
-    <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" />
-  </a>
+    <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/#linux" title="Ubuntu 24.04 & 25.04 Supported">
-    <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" />
-  </a>
+    <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
+  <a href="https://lemonade-server.ai/" title="macOS 14+ with Apple Silicon">
+    <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white" alt="macOS 14+" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
-    <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" />
-  </a>
+    <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" />
-  </a>
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" title="Download the latest release">
-    <img src="https://img.shields.io/github/v/release/lemonade-sdk/lemonade?include_prereleases" alt="Latest Release" />
-  </a>
+    <img src="https://img.shields.io/github/v/release/lemonade-sdk/lemonade?include_prereleases" alt="Latest Release" /></a>
   <a href="https://tooomm.github.io/github-release-stats/?username=lemonade-sdk&repository=lemonade">
-    <img src="https://img.shields.io/github/downloads/lemonade-sdk/lemonade/total.svg" alt="GitHub downloads" />
-  </a>
+    <img src="https://img.shields.io/github/downloads/lemonade-sdk/lemonade/total.svg" alt="GitHub downloads" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/issues">
-    <img src="https://img.shields.io/github/issues/lemonade-sdk/lemonade" alt="GitHub issues" />
-  </a>
+    <img src="https://img.shields.io/github/issues/lemonade-sdk/lemonade" alt="GitHub issues" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/License-Apache-yellow.svg" alt="License: Apache" />
-  </a>
+    <img src="https://img.shields.io/badge/License-Apache-yellow.svg" alt="License: Apache" /></a>
   <a href="https://github.com/psf/black">
-    <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: black" />
-  </a>
+    <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: black" /></a>
   <a href="https://star-history.com/#lemonade-sdk/lemonade">
-    <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" />
-  </a>
+    <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
 </p>
 <p align="center">
   <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner.png?raw=true" alt="Lemonade Banner" />
@@ -64,7 +54,7 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 ### Use it with your favorite OpenAI-compatible app!
 
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png" alt="AnythingLLM" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/" title="AI Dev Gallery" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp" alt="AI Dev Gallery" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/lm-eval/" title="LM-Eval" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/codeGPT/" title="CodeGPT" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/codegpt.jpg" alt="CodeGPT" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/apps/ai-toolkit.md" title="AI Toolkit" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" width="60" /></a>
+  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png" alt="AnythingLLM" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/" title="AI Dev Gallery" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp" alt="AI Dev Gallery" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/lm-eval/" title="LM-Eval" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/lemonade-arcade" title="Lemonade Arcade" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/lemonade-arcade/refs/heads/main/docs/assets/favicon.ico" alt="Lemonade Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/apps/ai-toolkit.md" title="AI Toolkit" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" width="60" /></a>
 </p>
 
 > [!TIP]
@@ -108,11 +98,11 @@ You can also import custom GGUF and ONNX models from Hugging Face by using our [
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
 
-| Hardware | Engine: OGA | Engine: llamacpp | Engine: HF | Windows | Linux |
-|----------|-------------|------------------|------------|---------|-------|
-| **🧠 CPU** | All platforms | All platforms | All platforms | ✅ | ✅ |
-| **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms* | — | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | — | ✅ | — |
+| Hardware | Engine: OGA | Engine: llamacpp | Engine: HF | Windows | Linux | macOS |
+|----------|-------------|------------------|------------|---------|-------|-------|
+| **🧠 CPU** | All platforms | All platforms | All platforms | ✅ | ✅ | ✅ |
+| **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ | ✅ |
+| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | — | ✅ | — | — |
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
@@ -135,7 +125,7 @@ Lemonade supports the following configurations, while also making it easy to swi
     </tr>
     <tr>
       <td><b>gfx120X</b> (RDNA4)</td>
-      <td>Windows only</td>
+      <td>Windows, Ubuntu</td>
       <td>Radeon AI PRO R9700, RX 9070 XT/GRE/9070, RX 9060 XT</td>
     </tr>
     <tr>

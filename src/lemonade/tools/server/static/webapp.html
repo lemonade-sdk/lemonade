@@ -10,6 +10,7 @@
     window.SERVER_PORT = {{SERVER_PORT}};
     </script>
     {{SERVER_MODELS_JS}}
+    {{PLATFORM_JS}}
 </head>
 <body>
     <nav class="navbar" id="navbar">
@@ -32,27 +33,25 @@
         <div class="tab-container"> 
             <div class="tabs"> 
                 <div class="tab-group">
-                    <button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button> 
-                    <button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
-                    <button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button> 
-                </div>
-                
-                <!-- Model Status Indicator integrated into tab bar -->
-                <div class="model-status-indicator" id="model-status-indicator">
-                    <div class="status-light" id="status-light"></div>
-                    <span class="model-status-text" id="model-status-text">Loading...</span>
-                    <button class="model-action-btn" id="model-unload-btn" style="display: none;" title="Unload model">⏏</button>
-                </div>
-            </div> 
-            <div class="tab-content active" id="content-chat"> 
-                <div class="chat-container"> 
-                    <div class="chat-history" id="chat-history"></div> 
-                    <div class="chat-input-row"> 
-                        <select id="model-select" class="model-select">
-                            <option value="">Pick a model</option>
-                        </select>
+					<button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button>
+					<button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
+					<button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button>
+				</div>
+
+				<div class="model-status-indicator" id="model-status-indicator">
+					<div class="status-light" id="status-light"></div>
+					<select id="model-select" class="model-select">
+						<option value="">Pick a model</option>
+					</select>
+					<button class="model-action-btn" id="model-unload-btn" title="Unload model" style="display: flex;">⏏</button>
+				</div>
+			</div>
+            <div class="tab-content active" id="content-chat">
+                <div class="chat-container">
+                    <div class="chat-history" id="chat-history"></div>
+                    <div class="chat-input-row">
                         <div class="input-with-indicator">
-                            <input type="text" id="chat-input" placeholder="Type your message..." /> 
+                            <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea> 
                         </div>
                         <input type="file" id="file-attachment" style="display: none;" multiple accept="image/*">
                         <button id="attachment-btn" title="Attach files">&#x1F4CE;</button>
@@ -92,9 +91,9 @@
                             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" class="app-logo-img">
                             <span class="app-name">LM-Eval</span>
                         </a>
-                        <a href="https://lemonade-server.ai/docs/server/apps/codeGPT/" target="_blank" class="app-logo-item" title="CodeGPT">
-                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/codegpt.jpg" alt="CodeGPT" class="app-logo-img">
-                            <span class="app-name">CodeGPT</span>
+                        <a href="https://github.com/lemonade-sdk/lemonade-arcade" target="_blank" class="app-logo-item" title="Lemonade Arcade">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/lemonade-arcade/refs/heads/main/docs/assets/favicon.ico" alt="Lemonade Arcade" class="app-logo-img">
+                            <span class="app-name">Lemonade Arcade</span>
                         </a>
                     <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/apps/ai-toolkit.md" target="_blank" class="app-logo-item" title="AI Toolkit">
                         <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" class="app-logo-img">
@@ -142,7 +141,6 @@
                             </div>
                             <div class="category-content expanded" id="category-hot"></div>
                         </div>
-                        
                         <div class="model-category-section">
                             <div class="section-header">
                                 <span class="section-icon">🔧</span>
@@ -155,7 +153,6 @@
                                 <div class="subcategory" data-recipe="oga-cpu" onclick="selectRecipe('oga-cpu')">OGA CPU</div>
                             </div>
                         </div>
-                        
                         <div class="model-category-section">
                             <div class="section-header">
                                 <span class="section-icon">🏷️</span>
@@ -165,12 +162,12 @@
                                 <div class="subcategory" data-label="coding" onclick="selectLabel('coding')">Coding</div>
                                 <div class="subcategory" data-label="vision" onclick="selectLabel('vision')">Vision</div>
                                 <div class="subcategory" data-label="reasoning" onclick="selectLabel('reasoning')">Reasoning</div>
+                                <div class="subcategory" data-label="tool-calling" onclick="selectLabel('tool-calling')">Tool Calling</div>
                                 <div class="subcategory" data-label="reranking" onclick="selectLabel('reranking')">Reranking</div>
                                 <div class="subcategory" data-label="embeddings" onclick="selectLabel('embeddings')">Embeddings</div>
                                 <div class="subcategory" data-label="custom" onclick="selectLabel('custom')">Custom</div>
                             </div>
                         </div>
-                        
                         <div class="model-category" data-category="add">
                             <div class="category-header" onclick="showAddModelForm()">
                                 <span class="category-icon">➕</span>
@@ -178,7 +175,6 @@
                             </div>
                         </div>
                     </div>
-                    
                     <div class="model-browser-main">
                         <div class="model-list" id="model-list"></div>
                         
@@ -226,6 +222,11 @@
                                         Reasoning
                                         <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has reasoning capabilities that will use thinking tokens.">ⓘ</span>
                                     </label>
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-vision" name="vision">
+                                        Vision
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has vision capabilities for processing images.">ⓘ</span>
+                                    </label>
                                 </div>
                                 <div class="register-form-row register-form-row-tight">
                                     <button type="submit" id="register-submit">Install</button>
@@ -254,4 +255,5 @@
     <script src="/static/js/model-settings.js"></script>
     <script src="/static/js/chat.js"></script>
 </body>
+</html>
 </html>

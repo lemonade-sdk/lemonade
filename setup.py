@@ -17,7 +17,6 @@ setup(
         "lemonade.tools.huggingface",
         "lemonade.tools.oga",
         "lemonade.tools.llamacpp",
-        "lemonade.tools.quark",
         "lemonade.tools.report",
         "lemonade.tools.server.utils",
         "lemonade.tools.server",
@@ -36,7 +35,7 @@ setup(
         "fasteners",
         "GitPython>=3.1.40",
         "psutil>=6.1.1",
-        "wmi",
+        "wmi; platform_system == 'Windows'",
         "py-cpuinfo",
         "pytz",
         "zstandard",
@@ -49,6 +48,8 @@ setup(
         "sentencepiece",
         "huggingface-hub[hf_xet]==0.33.0",
         "python-dotenv",
+        # macOS-specific dependencies
+        "rumps>=0.4.0; sys_platform == 'darwin'",
     ],
     extras_require={
         # The non-dev extras are meant to deploy specific backends into end-user
@@ -79,44 +80,6 @@ setup(
         ],
         "model-generate": [
             "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
-        ],
-        # Keep backwards compatibility for old extras names
-        "oga-hybrid": ["lemonade-sdk[oga-ryzenai]"],
-        "oga-unified": ["lemonade-sdk[oga-ryzenai]"],
-        "oga-hybrid-minimal": ["lemonade-sdk[oga-ryzenai]"],
-        "oga-cpu-minimal": ["lemonade-sdk[oga-cpu]"],
-        "oga-npu-minimal": ["lemonade-sdk[oga-ryzenai]"],
-        "llm": ["lemonade-sdk[dev]"],
-        "llm-oga-cpu": ["lemonade-sdk[dev,oga-cpu]"],
-        # The following extras are deprecated and/or not commonly used
-        "llm-oga-npu": [
-            "onnx==1.16.0",
-            # NPU requires specific onnxruntime version for Ryzen AI compatibility
-            # This may conflict with other OGA extras that require >=1.22.0
-            "onnxruntime==1.18.0",
-            "numpy==1.26.4",
-            "protobuf>=6.30.1",
-            "lemonade-sdk[dev]",
-        ],
-        "llm-oga-hybrid": [
-            # Note: `lemonade-install --ryzenai hybrid` is necessary
-            # to complete installation for RAI 1.4.0.
-            "onnx==1.16.1",
-            "numpy==1.26.4",
-            "protobuf>=6.30.1",
-        ],
-        "llm-oga-unified": ["lemonade-sdk[dev, llm-oga-hybrid]"],
-        "llm-oga-igpu": [
-            "onnxruntime-genai-directml==0.6.0",
-            "onnxruntime-directml>=1.19.0,<1.22.0",
-            "transformers<4.45.0",
-            "lemonade-sdk[dev]",
-        ],
-        "llm-oga-cuda": [
-            "onnxruntime-genai-cuda==0.8.2",
-            "onnxruntime-gpu >=1.22.0",
-            "transformers<=4.51.3",
-            "lemonade-sdk[dev]",
         ],
     },
     classifiers=[],

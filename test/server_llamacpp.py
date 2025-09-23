@@ -104,7 +104,7 @@ class LlamaCppTesting(ServerTestingBase):
         complete_response = ""
         chunk_count = 0
         for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
+            if chunk.choices and chunk.choices[0].delta.content is not None:
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
@@ -310,8 +310,14 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_007_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
-        if self.llamacpp_backend == "rocm":
-            self.skipTest("Skipping test when backend is set to rocm")
+        if (
+            self.llamacpp_backend == "rocm"
+            or self.llamacpp_backend == "vulkan"
+            or self.llamacpp_backend == "metal"
+        ):
+            self.skipTest(
+                "Skipping test when backend is set to rocm, vulkan, or metal because of https://github.com/lemonade-sdk/lemonade/issues/274"
+            )
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",
@@ -414,6 +420,89 @@ class LlamaCppRocmTesting(LlamaCppTesting):
     llamacpp_backend = "rocm"
 
 
+class LlamaCppMetalTesting(LlamaCppTesting):
+    """Testing class for GGUF/LlamaCPP models with Metal backend on macOS Apple Silicon."""
+
+    llamacpp_backend = "metal"
+
+    def setUp(self):
+        """Call parent setUp but verify we're on macOS Apple Silicon."""
+        import platform
+
+        if platform.system() != "Darwin":
+            self.skipTest("Metal backend tests require macOS")
+
+        if platform.machine().lower() not in ["arm64", "aarch64"]:
+            self.skipTest("Metal backend tests require Apple Silicon (ARM64)")
+
+        print(f"\n=== Starting GGUF/LlamaCPP Metal test on {platform.machine()} ===")
+        super().setUp()
+
+    def test_001_metal_backend_selection(self):
+        """Test that Metal backend is correctly selected by default on Apple Silicon."""
+        from lemonade_server.pydantic_models import (
+            DEFAULT_LLAMACPP_BACKEND,
+            _get_default_llamacpp_backend,
+        )
+        from lemonade.tools.llamacpp.utils import (
+            validate_platform_support,
+            get_binary_url_and_filename,
+        )
+        import platform
+
+        # Test platform validation
+        validate_platform_support()
+
+        # Test backend selection
+        default_backend = _get_default_llamacpp_backend()
+        assert (
+            default_backend == "metal"
+        ), f"Expected Metal backend, got: {default_backend}"
+        assert (
+            DEFAULT_LLAMACPP_BACKEND == "metal"
+        ), f"Expected Metal default, got: {DEFAULT_LLAMACPP_BACKEND}"
+
+        # Test Metal binary URL generation
+        url, filename = get_binary_url_and_filename("metal")
+        assert (
+            "macos-arm64" in filename
+        ), f"Expected macOS ARM64 binary, got: {filename}"
+        assert (
+            "github.com/ggml-org/llama.cpp" in url
+        ), f"Expected llama.cpp URL, got: {url}"
+
+    def test_002_macos_tray_functionality(self):
+        """Test macOS tray functionality and imports."""
+        import platform
+
+        # Test rumps availability - should be installed on macOS
+        try:
+            import rumps
+        except ImportError:
+            self.fail("rumps library not available.")
+
+        # Test tray imports
+        from lemonade.tools.server.tray import LemonadeTray
+
+        # Test tray creation
+        tray = LemonadeTray("/tmp/test.log", 8000, lambda: None, log_level="debug")
+
+        # Verify expected attributes
+        expected_attrs = ["app_name", "icon_path", "port", "server_factory"]
+        for attr in expected_attrs:
+            assert hasattr(tray, attr), f"Tray missing {attr} attribute"
+
+        # Test menu creation
+        menu = tray.create_menu()
+        assert len(menu.items) > 0, "Menu should have items"
+
+        # Verify menu has expected items
+        menu_texts = [item.text for item in menu.items if hasattr(item, "text")]
+        assert (
+            "Quit Lemonade" in menu_texts
+        ), f"Menu missing 'Quit Lemonade': {menu_texts}"
+
+
 if __name__ == "__main__":
     import sys
     import os
@@ -421,10 +510,11 @@ if __name__ == "__main__":
     # Simple command line parsing without argparse
     if len(sys.argv) < 2:
         print("Usage: python server_llamacpp.py [backend] [--offline]")
-        print("Backend options: vulkan, rocm")
+        print("Backend options: vulkan, rocm, metal")
         print("Examples:")
         print("    python server_llamacpp.py vulkan")
         print("    python server_llamacpp.py rocm --offline")
+        print("    python server_llamacpp.py metal")
         sys.exit(1)
 
     backend = sys.argv[1].lower()
@@ -437,9 +527,12 @@ if __name__ == "__main__":
     elif backend == "rocm":
         test_class = LlamaCppRocmTesting
         description = "GGUF/LLAMACPP ROCM SERVER TESTS"
+    elif backend == "metal":
+        test_class = LlamaCppMetalTesting
+        description = "GGUF/LLAMACPP METAL SERVER TESTS"
     else:
         print(
-            f"Error: Unsupported backend '{backend}'. Supported backends: vulkan, rocm"
+            f"Error: Unsupported backend '{backend}'. Supported backends: vulkan, rocm, metal"
         )
         sys.exit(1)
 

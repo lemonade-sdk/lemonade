@@ -1,4 +1,5 @@
 import os
+import platform
 from typing import Optional, Union, List
 
 from pydantic import BaseModel
@@ -6,7 +7,28 @@ from pydantic import BaseModel
 DEFAULT_PORT = int(os.getenv("LEMONADE_PORT", "8000"))
 DEFAULT_HOST = os.getenv("LEMONADE_HOST", "localhost")
 DEFAULT_LOG_LEVEL = os.getenv("LEMONADE_LOG_LEVEL", "info")
-DEFAULT_LLAMACPP_BACKEND = os.getenv("LEMONADE_LLAMACPP", "vulkan")
+
+
+# Platform-aware default backend selection
+def _get_default_llamacpp_backend():
+    """
+    Get the default llamacpp backend based on the current platform.
+    """
+    # Allow environment variable override
+    env_backend = os.getenv("LEMONADE_LLAMACPP")
+    if env_backend:
+        return env_backend
+
+    # Platform-specific defaults: use metal for Apple Silicon, vulkan for everything else
+    if platform.system() == "Darwin" and platform.machine().lower() in [
+        "arm64",
+        "aarch64",
+    ]:
+        return "metal"
+    return "vulkan"
+
+
+DEFAULT_LLAMACPP_BACKEND = _get_default_llamacpp_backend()
 DEFAULT_CTX_SIZE = int(os.getenv("LEMONADE_CTX_SIZE", "4096"))
 
 
@@ -23,6 +45,8 @@ class LoadConfig(BaseModel):
     recipe: Optional[str] = None
     # Indicates whether the model is a reasoning model, like DeepSeek
     reasoning: Optional[bool] = False
+    # Indicates whether the model is a vision model with image processing capabilities
+    vision: Optional[bool] = False
     # Indicates which Multimodal Projector (mmproj) file to use
     mmproj: Optional[str] = None
 
