@@ -1164,12 +1164,6 @@ class Server:
             )
             self.input_tokens = len(input_ids[0])
 
-<<<<<<< HEAD
-        # For non-llamacpp recipes, truncate inputs to ctx_size if needed
-        if (
-            self.llm_loaded.recipe != "llamacpp" and self.llm_loaded.recipe != "flm"
-        ) and self.input_tokens > self.ctx_size:
-=======
         max_prompt_length = self.ctx_size  # Default fallback
         # For OGA models, try to read the actual max prompt length from config
         if "oga-" in self.llm_loaded.recipe:
@@ -1185,7 +1179,6 @@ class Server:
 
         # Apply truncation if input exceeds the limit
         if self.input_tokens > max_prompt_length:
->>>>>>> main
             # Truncate input ids
             truncate_amount = self.input_tokens - max_prompt_length
             input_ids = input_ids[:max_prompt_length]
