@@ -739,6 +739,9 @@ class Install:
         Install FLM (FastFlowLM) for running local language models.
         """
 
+        # Check if the processor is supported before proceeding
+        check_ryzen_ai_processor()
+
         from lemonade.tools.flm.utils import install_flm
 
         install_flm()

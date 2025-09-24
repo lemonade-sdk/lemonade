@@ -304,7 +304,7 @@ function displayModelsByRecipe(recipe) {
             <div class="flm-notice-content">
                 <div class="flm-notice-icon">⚠️</div>
                 <div class="flm-notice-text">
-                    <strong>FastFlowLM (FLM) support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com">lemonade@amd.com</a> for inquiries.
+                    <strong><a href="https://github.com/FastFlowLM/FastFlowLM">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com">lemonade@amd.com</a> for inquiries.
                 </div>
             </div>
         `;

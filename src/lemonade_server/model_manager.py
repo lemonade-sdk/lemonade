@@ -368,6 +368,17 @@ class ModelManager:
             and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
 
+        from lemonade_install.install import (
+            check_ryzen_ai_processor,
+            UnsupportedPlatformError,
+        )
+
+        try:
+            check_ryzen_ai_processor()
+            ryzenai_npu_available = True
+        except UnsupportedPlatformError:
+            ryzenai_npu_available = False
+
         # On macOS, only llamacpp (GGUF) models are supported, and only on Apple Silicon with macOS 14+
         is_macos = platform.system() == "Darwin"
         if is_macos:
@@ -414,6 +425,10 @@ class ModelManager:
                 if not hybrid_installed:
                     continue
 
+            if recipe == "flm":
+                if not ryzenai_npu_available:
+                    continue
+
             # On macOS, only show llamacpp models (GGUF format)
             if is_macos and recipe != "llamacpp":
                 continue
@@ -421,12 +436,6 @@ class ModelManager:
             filtered[model] = value
 
         return filtered
-
-    def _is_flm_available(self) -> bool:
-        """
-        Check if FLM is available on the system.
-        """
-        return is_flm_available()
 
     def delete_model(self, model_name: str):
         """
