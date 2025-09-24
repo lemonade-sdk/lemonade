@@ -42,13 +42,13 @@ class FlmServer(WrappedServer):
 
     def _choose_port(self):
         """
-        `flm serve` doesn't support port selection as of v0.9.4
+        `flm serve` doesn't support port selection as of v0.9.10
         """
         self.port = 11434
 
     def address(self):
         """
-        `flm serve` doesn't support host name selection as of v0.9.4
+        `flm serve` doesn't support host name selection as of v0.9.10
         """
 
         return f"http://localhost:{self.port}/v1"
