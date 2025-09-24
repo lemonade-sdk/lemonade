@@ -176,6 +176,9 @@ class ModelManager:
             if model not in self.supported_models:
                 # Register the model as a user model if the model name
                 # is not already registered
+                import logging
+
+                logging.debug("hi, you made it to registration!")
 
                 # Ensure the model name includes the `user` namespace
                 model_parsed = model.split(".", 1)
@@ -301,7 +304,12 @@ class ModelManager:
             print(f"Downloading {model} ({checkpoint_to_download})")
 
             # Handle FLM models
-            if self.supported_models[model].get("recipe") == "flm":
+            current_recipe = (
+                recipe
+                if new_registration_model_config
+                else self.supported_models[model].get("recipe")
+            )
+            if current_recipe == "flm":
                 # Check if FLM is available, and install it if not
                 if not is_flm_available():
                     print(
