@@ -108,7 +108,7 @@ class FlmServer(WrappedServer):
         # Start background thread to log subprocess output
         threading.Thread(
             target=self._log_subprocess_output,
-            args=(f"FLM SERVER",),
+            args=("FLM SERVER",),
             daemon=True,
         ).start()
 
