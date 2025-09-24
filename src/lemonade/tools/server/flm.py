@@ -8,6 +8,7 @@ import requests
 
 from lemonade_server.pydantic_models import (
     PullConfig,
+    ChatCompletionRequest,
 )
 
 from lemonade.tools.server.wrapped_server import WrappedServerTelemetry, WrappedServer
@@ -36,6 +37,7 @@ class FlmServer(WrappedServer):
     """
 
     def __init__(self):
+        self.flm_model_name = None
         super().__init__(server_name="flm-server", telemetry=FlmTelemetry())
 
     def _choose_port(self):
@@ -78,10 +80,13 @@ class FlmServer(WrappedServer):
         # port into the command below when its supported
         self._choose_port()
 
+        # Keep track of the FLM model name so that we can use it later
+        self.flm_model_name = model_config.checkpoint
+
         command = [
             "flm",
             "serve",
-            f"{model_config.checkpoint}",
+            f"{self.flm_model_name}",
             "--ctx-len",
             str(ctx_size),
         ]
@@ -129,3 +134,10 @@ class FlmServer(WrappedServer):
                     health_response.json(),
                 )
             time.sleep(1)
+
+    def chat_completion(self, chat_completion_request: ChatCompletionRequest):
+        # FLM requires the correct model name to be in the request
+        # (whereas llama-server ignores the model name field in the request)
+        chat_completion_request.model = self.flm_model_name
+
+        return super().chat_completion(chat_completion_request)
