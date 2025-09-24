@@ -5,13 +5,14 @@ FLM (FastFlowLM) utilities for installation, version checking, and model managem
 import os
 import logging
 import subprocess
-import requests
 import tempfile
 import time
 from typing import List, Optional
 
+import requests
 
-FLM_MINIMUM_VERSION = "0.9.5"
+
+FLM_MINIMUM_VERSION = "0.9.10"
 
 
 def check_flm_version() -> Optional[str]:
@@ -108,6 +109,7 @@ def install_flm():
         )
 
     # Download the installer
+    # pylint: disable=line-too-long
     installer_url = "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe"
     installer_path = os.path.join(tempfile.gettempdir(), "flm-setup.exe")
 

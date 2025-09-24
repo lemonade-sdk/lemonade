@@ -1,7 +1,7 @@
 import json
 import os
 import subprocess
-from typing import Optional, List
+from typing import Optional
 import shutil
 import huggingface_hub
 from importlib.metadata import distributions
