@@ -174,12 +174,9 @@ jobs:
           miniforge-variant: Miniforge3
           miniforge-version: latest
 
-
       - name: Set up Conda environment
         run: |
-          if [ ! -d "$CONDA_ENV_PATH" ]; then
-            conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
-          fi
+          conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
           conda init
 
       - name: Install dependencies
