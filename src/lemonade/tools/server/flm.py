@@ -2,6 +2,7 @@ import os
 import logging
 import subprocess
 import time
+import threading
 
 import requests
 
@@ -77,7 +78,13 @@ class FlmServer(WrappedServer):
         # port into the command below when its supported
         self._choose_port()
 
-        command = ["flm", "serve", f"{model_config.checkpoint}"]
+        command = [
+            "flm",
+            "serve",
+            f"{model_config.checkpoint}",
+            "--ctx-len",
+            str(ctx_size),
+        ]
 
         # Set up environment with library path for Linux
         env = os.environ.copy()
@@ -92,6 +99,13 @@ class FlmServer(WrappedServer):
             bufsize=1,
             env=env,
         )
+
+        # Start background thread to log subprocess output
+        threading.Thread(
+            target=self._log_subprocess_output,
+            args=(f"FLM SERVER",),
+            daemon=True,
+        ).start()
 
     def _wait_for_load(self):
         """
