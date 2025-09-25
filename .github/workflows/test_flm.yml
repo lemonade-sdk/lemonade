@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  test-npu-and-hybrid:
+  test-flm-npu:
     env:
         LEMONADE_CI_MODE: "True"
     runs-on: [stx, Windows]
