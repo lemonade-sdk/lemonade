@@ -46,6 +46,21 @@ MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
 
+def stop_lemonade():
+    """
+    Kill the lemonade server and stop the model
+    """
+    # Kill the server subprocess
+    print("\n=== Stopping Lemonade ===")
+
+    result = subprocess.run(
+        ["lemonade-server-dev", "stop"],
+        capture_output=True,
+        text=True,
+    )
+    print(result.stdout)
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Test lemonade server")
@@ -169,7 +184,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         ]
 
         # Ensure we stop lemonade
-        self.stop_lemonade()
+        stop_lemonade()
 
         # Build the command to start the server
         cmd = ["lemonade-server-dev", "serve"]
@@ -223,7 +238,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
 
         print("Server started successfully")
 
-        self.addCleanup(self.stop_lemonade)
+        self.addCleanup(stop_lemonade)
 
         # Ensure stdout can handle Unicode
         if sys.stdout.encoding != "utf-8":
@@ -234,20 +249,6 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
                 sys.stderr.buffer, encoding="utf-8", errors="replace"
             )
 
-    def stop_lemonade(self):
-        """
-        Kill the lemonade server and stop the model
-        """
-
-        # Kill the server subprocess
-        print("\n=== Stopping Lemonade ===")
-
-        result = subprocess.run(
-            ["lemonade-server-dev", "stop"],
-            capture_output=True,
-            text=True,
-        )
-        print(result.stdout)
 
 
 def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
