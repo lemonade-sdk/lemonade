@@ -374,8 +374,6 @@ def install_llamacpp(backend):
                 zip_ref.extractall(llama_server_exe_dir)
 
             # On Unix-like systems (macOS/Linux), make executables executable
-            import platform
-
             if platform.system().lower() in ["darwin", "linux"]:
                 import stat
 
