@@ -21,7 +21,7 @@ import io
 import httpx
 from lemonade import __version__ as version_number
 
-from utils.server_base import kill_process_on_port, PORT, MODEL_NAME
+from utils.server_base import stop_lemonade, PORT, MODEL_NAME
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -36,9 +36,9 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         """
         print("\n=== Starting new test ===")
 
-        # Ensure we kill anything using the test port before and after the test
-        kill_process_on_port(PORT)
-        self.addCleanup(kill_process_on_port, PORT)
+        # Ensure we stop any existing lemonade servers
+        stop_lemonade()
+        self.addCleanup(stop_lemonade)
 
     def test_001_version(self):
         result = subprocess.run(
