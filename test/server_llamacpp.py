@@ -59,11 +59,6 @@ class LlamaCppTesting(ServerTestingBase):
         print(f"\n=== Starting new GGUF/LlamaCPP test{backend_msg} ===")
         super().setUp()
 
-    def cleanup_lemonade(self, server_subprocess):
-        """Call parent cleanup but with GGUF-specific messaging."""
-        print("\n=== Cleaning up GGUF/LlamaCPP test ===")
-        super().cleanup_lemonade(server_subprocess)
-
     def test_000_get_hip_devices_returns_zero(self):
         """ROCm-only: get_hip_devices should report zero devices in CI."""
         if self.llamacpp_backend != "rocm":
