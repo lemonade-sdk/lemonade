@@ -522,7 +522,9 @@ class Server:
 
         return lc
 
-    async def completions(self, completion_request: CompletionRequest):
+    async def completions(
+        self, completion_request: CompletionRequest, request: Request
+    ):
         """
         Stream completion responses using HTTP chunked transfer encoding.
         """
@@ -574,29 +576,43 @@ class Server:
                 # This is necessary because the variable is modified
                 # in the inner function
                 nonlocal reasoning_first_token
+                try:
+                    async for token in self._generate_tokens(**generation_args):
+                        # Handle client disconnect: stop generation and exit
+                        if await request.is_disconnected():
+                            self.stop_event.set()
+                            break
 
-                async for token in self._generate_tokens(**generation_args):
-                    choice = CompletionChoice(
-                        text=("<think>" + token if reasoning_first_token else token),
-                        index=0,
-                        finish_reason="stop",
-                        logprobs=None,
-                    )
+                        choice = CompletionChoice(
+                            text=(
+                                "<think>" + token if reasoning_first_token else token
+                            ),
+                            index=0,
+                            finish_reason="stop",
+                            logprobs=None,
+                        )
 
-                    completion = Completion(
-                        id="0",
-                        choices=[choice],
-                        model=self.llm_loaded.checkpoint,
-                        object="text_completion",
-                        created=int(time.time()),
-                    )
+                        completion = Completion(
+                            id="0",
+                            choices=[choice],
+                            model=self.llm_loaded.checkpoint,
+                            object="text_completion",
+                            created=int(time.time()),
+                        )
 
-                    # Format as SSE
-                    reasoning_first_token = False
-                    yield f"data: {completion.model_dump_json()}\n\n".encode("utf-8")
+                        # Format as SSE
+                        reasoning_first_token = False
+                        yield f"data: {completion.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
 
-                # Send the [DONE] marker
-                yield b"data: [DONE]\n\n"
+                    # Send the [DONE] marker only if still connected
+                    if not await request.is_disconnected():
+                        yield b"data: [DONE]\n\n"
+                except asyncio.CancelledError:
+                    # Propagate cancellation to the generator loop
+                    self.stop_event.set()
+                    return
 
             return StreamingResponse(
                 generate(),
@@ -654,7 +670,9 @@ class Server:
                 created=int(time.time()),
             )
 
-    async def chat_completions(self, chat_completion_request: ChatCompletionRequest):
+    async def chat_completions(
+        self, chat_completion_request: ChatCompletionRequest, request: Request
+    ):
         """
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
@@ -732,69 +750,80 @@ class Server:
 
                 # Keep track of the full response for tool call extraction
                 full_response = ""
+                try:
+                    async for token in self._generate_tokens(**generation_args):
+                        # Handle client disconnect: stop generation and exit
+                        if await request.is_disconnected():
+                            self.stop_event.set()
+                            break
 
-                async for token in self._generate_tokens(**generation_args):
-                    # Continuously look for tool calls embedded into the generated text
-                    openai_tool_calls = None
-                    if chat_completion_request.tools:
+                        # Continuously look for tool calls embedded into the generated text
+                        openai_tool_calls = None
+                        if chat_completion_request.tools:
 
-                        # Append the token to the full response
-                        full_response += token
+                            # Append the token to the full response
+                            full_response += token
 
-                        tool_calls, _ = extract_tool_calls(
-                            full_response,
-                            tool_call_pattern,
+                            tool_calls, _ = extract_tool_calls(
+                                full_response,
+                                tool_call_pattern,
+                            )
+
+                            # If there are tool calls, reset the full response for the next call
+                            if tool_calls:
+                                openai_tool_calls = []
+                                full_response = ""
+                            for tool_call in tool_calls:
+                                openai_tool_calls.append(
+                                    ChoiceDeltaToolCall(
+                                        index=0,
+                                        id="-",
+                                        function=ChoiceDeltaToolCallFunction(
+                                            arguments=json.dumps(
+                                                tool_call["arguments"]
+                                            ),
+                                            name=tool_call["name"],
+                                        ),
+                                        type="function",
+                                    )
+                                )
+
+                        # Create a ChatCompletionChunk
+                        chunk = ChatCompletionChunk.model_construct(
+                            id="0",
+                            object="chat.completion.chunk",
+                            created=int(time.time()),
+                            model=self.llm_loaded.checkpoint,
+                            choices=[
+                                Choice.model_construct(
+                                    index=0,
+                                    delta=ChoiceDelta(
+                                        content=(
+                                            "<think>" + token
+                                            if reasoning_first_token
+                                            else token
+                                        ),
+                                        function_call=None,
+                                        role="assistant",
+                                        tool_calls=openai_tool_calls,
+                                        refusal=None,
+                                    ),
+                                    finish_reason=None,
+                                    logprobs=None,
+                                )
+                            ],
                         )
 
-                        # If there are tool calls, reset the full response for the next tool call
-                        if tool_calls:
-                            openai_tool_calls = []
-                            full_response = ""
-                        for tool_call in tool_calls:
-                            openai_tool_calls.append(
-                                ChoiceDeltaToolCall(
-                                    index=0,
-                                    id="-",
-                                    function=ChoiceDeltaToolCallFunction(
-                                        arguments=json.dumps(tool_call["arguments"]),
-                                        name=tool_call["name"],
-                                    ),
-                                    type="function",
-                                )
-                            )
+                        # Format as SSE
+                        reasoning_first_token = False
+                        yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
 
-                    # Create a ChatCompletionChunk
-                    chunk = ChatCompletionChunk.model_construct(
-                        id="0",
-                        object="chat.completion.chunk",
-                        created=int(time.time()),
-                        model=self.llm_loaded.checkpoint,
-                        choices=[
-                            Choice.model_construct(
-                                index=0,
-                                delta=ChoiceDelta(
-                                    content=(
-                                        "<think>" + token
-                                        if reasoning_first_token
-                                        else token
-                                    ),
-                                    function_call=None,
-                                    role="assistant",
-                                    tool_calls=openai_tool_calls,
-                                    refusal=None,
-                                ),
-                                finish_reason=None,
-                                logprobs=None,
-                            )
-                        ],
-                    )
-
-                    # Format as SSE
-                    reasoning_first_token = False
-                    yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
-
-                # Send the [DONE] marker
-                yield b"data: [DONE]\n\n"
+                    # Send the [DONE] marker only if still connected
+                    if not await request.is_disconnected():
+                        yield b"data: [DONE]\n\n"
+                except asyncio.CancelledError:
+                    self.stop_event.set()
+                    return
 
             return StreamingResponse(
                 generate(),
@@ -953,7 +982,7 @@ class Server:
             formatted_messages.append(f"{role_marker}\n{content} <|end|>")
         return "\n".join(formatted_messages) + "\n<|assistant|>"
 
-    async def responses(self, responses_request: ResponsesRequest):
+    async def responses(self, responses_request: ResponsesRequest, request: Request):
         """
         Stream responses using HTTP chunked transfer encoding.
         """
@@ -1025,56 +1054,71 @@ class Server:
 
                 full_response = "<think>" if reasoning_first_token else ""
 
-                async for token in self._generate_tokens(**generation_args):
+                try:
+                    async for token in self._generate_tokens(**generation_args):
+                        # Handle client disconnect: stop generation and exit
+                        if await request.is_disconnected():
+                            self.stop_event.set()
+                            break
 
-                    # Create an event
-                    delta_event = ResponseTextDeltaEvent(
-                        content_index=0,
-                        delta=("<think>" + token if reasoning_first_token else token),
-                        item_id="0 ",
-                        output_index=0,
-                        type="response.output_text.delta",
-                        sequence_number=0,
-                    )
-                    full_response += token
-
-                    # Format as SSE
-                    reasoning_first_token = False
-                    yield f"data: {delta_event.model_dump_json()}\n\n".encode("utf-8")
-
-                # Send the completed event
-                response_output_message = ResponseOutputMessage(
-                    id="0",
-                    content=[
-                        ResponseOutputText(
-                            annotations=[],
-                            text=full_response,
-                            type="output_text",
+                        # Create an event
+                        delta_event = ResponseTextDeltaEvent(
+                            content_index=0,
+                            delta=(
+                                "<think>" + token if reasoning_first_token else token
+                            ),
+                            item_id="0 ",
+                            output_index=0,
+                            type="response.output_text.delta",
+                            sequence_number=0,
                         )
-                    ],
-                    role="assistant",
-                    status="completed",
-                    type="message",
-                )
-                response = Response(
-                    id="0",
-                    model=self.llm_loaded.checkpoint,
-                    created_at=int(time.time()),
-                    object="response",
-                    output=[response_output_message],
-                    parallel_tool_calls=True,
-                    tool_choice="auto",
-                    tools=[],
-                )
-                completed_event = ResponseCompletedEvent(
-                    response=response,
-                    type="response.completed",
-                    sequence_number=0,
-                )
-                yield f"data: {completed_event.model_dump_json()}\n\n".encode("utf-8")
+                        full_response += token
 
-                # Send the [DONE] marker
-                yield b"data: [DONE]\n\n"
+                        # Format as SSE
+                        reasoning_first_token = False
+                        yield f"data: {delta_event.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
+
+                    # Send the completed event (only if still connected)
+                    if not await request.is_disconnected():
+                        response_output_message = ResponseOutputMessage(
+                            id="0",
+                            content=[
+                                ResponseOutputText(
+                                    annotations=[],
+                                    text=full_response,
+                                    type="output_text",
+                                )
+                            ],
+                            role="assistant",
+                            status="completed",
+                            type="message",
+                        )
+                        response = Response(
+                            id="0",
+                            model=self.llm_loaded.checkpoint,
+                            created_at=int(time.time()),
+                            object="response",
+                            output=[response_output_message],
+                            parallel_tool_calls=True,
+                            tool_choice="auto",
+                            tools=[],
+                        )
+                        completed_event = ResponseCompletedEvent(
+                            response=response,
+                            type="response.completed",
+                            sequence_number=0,
+                        )
+                        yield f"data: {completed_event.model_dump_json()}\n\n".encode(
+                            "utf-8"
+                        )
+
+                        # Send the [DONE] marker
+                        yield b"data: [DONE]\n\n"
+                except asyncio.CancelledError:
+                    self.stop_event.set()
+                    return
 
             return StreamingResponse(
                 generate(),

@@ -2,6 +2,7 @@
 let messages = [];
 let attachedFiles = [];
 let systemMessageElement = null;
+let abortController = null;
 
 // Default model configuration
 const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
@@ -14,13 +15,18 @@ const THINKING_FRAMES = THINKING_USE_LEMON
     : ['Thinking.','Thinking..','Thinking...'];
 
 // Get DOM elements
-let chatHistory, chatInput, sendBtn, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect;
+let chatHistory, chatInput, attachmentBtn, fileAttachment, attachmentsPreviewContainer, attachmentsPreviewRow, modelSelect, toggleBtn;
+// Track if a stream is currently active (separate from abortController existing briefly before validation)
+let isStreaming = false;
+// When the user scrolls up in the chat history, disable automatic scrolling until they scroll back to the bottom.
+let autoscrollEnabled = true;
+const AUTOSCROLL_TOLERANCE_PX = 10;
 
 // Initialize chat functionality when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     chatHistory = document.getElementById('chat-history');
     chatInput = document.getElementById('chat-input');
-    sendBtn = document.getElementById('send-btn');
+    toggleBtn = document.getElementById('toggle-btn');
     attachmentBtn = document.getElementById('attachment-btn');
     fileAttachment = document.getElementById('file-attachment');
     attachmentsPreviewContainer = document.getElementById('attachments-preview-container');
@@ -29,6 +35,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Set up event listeners
     setupChatEventListeners();
+
+    // Pause autoscroll when user scrolls up in the chat history. If they scroll back to bottom, resume.
+    if (chatHistory) {
+        chatHistory.addEventListener('scroll', function () {
+            try {
+                const atBottom = chatHistory.scrollTop + chatHistory.clientHeight >= chatHistory.scrollHeight - AUTOSCROLL_TOLERANCE_PX;
+                if (atBottom) {
+                    if (!autoscrollEnabled) {
+                        autoscrollEnabled = true;
+                        chatHistory.classList.remove('autoscroll-paused');
+                    }
+                } else {
+                    if (autoscrollEnabled) {
+                        autoscrollEnabled = false;
+                        chatHistory.classList.add('autoscroll-paused');
+                    }
+                }
+            } catch (_) {}
+        });
+    }
 
     // Initialize model dropdown (will be populated when models.js calls updateModelStatusIndicator)
     initializeModelDropdown();
@@ -42,42 +68,34 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function setupChatEventListeners() {
-    // Send button click
-    sendBtn.onclick = sendMessage;
-
-    // Attachment button click
-    attachmentBtn.onclick = () => {
-        if (!currentLoadedModel) {
-            alert('Please load a model first before attaching images.');
-            return;
+    // Toggle button click – send or stop streaming
+    toggleBtn.onclick = function () {
+        if (abortController) {
+            abortCurrentRequest();
+        } else {
+            sendMessage();
         }
-        if (!isVisionModel(currentLoadedModel)) {
-            alert(`The current model "${currentLoadedModel}" does not support image inputs. Please load a model with "Vision" capabilities to attach images.`);
-            return;
-        }
-        fileAttachment.click();
     };
 
-    // File input change
-    fileAttachment.addEventListener('change', handleFileSelection);
+    // Send on Enter, clear attachments on Escape
+    if (chatInput) {
+        chatInput.addEventListener('keydown', handleChatInputKeydown);
+        chatInput.addEventListener('paste', handleChatInputPaste);
+    }
 
-    // Chat input events
-    chatInput.addEventListener('keydown', handleChatInputKeydown);
-    chatInput.addEventListener('paste', handleChatInputPaste);
+    // Open file picker and handle image selection
+    if (attachmentBtn && fileAttachment) {
+        attachmentBtn.addEventListener('click', function () {
+            // Let the selection handler validate vision capability, etc.
+            fileAttachment.click();
+        });
+        fileAttachment.addEventListener('change', handleFileSelection);
+    }
 
-    // Model select change
-    modelSelect.addEventListener('change', handleModelSelectChange);
-
-    // Send button click
-    sendBtn.addEventListener('click', function() {
-        // Check if we have a loaded model
-        if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
-            sendMessage();
-        } else if (!currentLoadedModel) {
-            // Auto-load default model and send
-            autoLoadDefaultModelAndSend();
-        }
-    });
+    // React to model selection changes
+    if (modelSelect) {
+        modelSelect.addEventListener('change', handleModelSelectChange);
+    }
 }
 
 // Initialize model dropdown with available models
@@ -168,12 +186,15 @@ function updateAttachmentButtonState() {
     updateModelSelectValue();
 
     // Update send button state based on model loading
-    if (modelSelect.disabled) {
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Loading...';
-    } else {
-        sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
+    if (toggleBtn) {
+        const loading = !!(modelSelect && modelSelect.disabled);
+        if (isStreaming) {
+            toggleBtn.disabled = false;
+            toggleBtn.textContent = 'Stop';
+        } else {
+            toggleBtn.disabled = loading;
+            toggleBtn.textContent = 'Send';
+        }
     }
     
     if (!currentLoadedModel) {
@@ -224,9 +245,14 @@ async function autoLoadDefaultModelAndSend() {
     // Use the standardized load function
     const success = await loadModelStandardized(DEFAULT_MODEL, {
         // Custom UI updates for auto-loading
-        onLoadingStart: () => { sendBtn.textContent = 'Loading model...'; },
-        // Reset send button text
-        onLoadingEnd: () => { sendBtn.textContent = 'Send'; },
+        onLoadingStart: () => {
+            if (toggleBtn) {
+                toggleBtn.disabled = true;
+                toggleBtn.textContent = 'Send';
+            }
+        },
+        // Reset send button state
+        onLoadingEnd: () => { updateAttachmentButtonState(); },
         // Send the message after successful load
         onSuccess: () => { sendMessage(messageToSend); },
         onError: (error) => {
@@ -544,6 +570,18 @@ function updateMessageContent(bubbleElement, text, isMarkdown = false) {
     bubbleElement.dataset.thinkExpanded = expanded ? 'true' : 'false';
 }
 
+// Scroll helper that respects user's scroll interaction. If autoscroll is disabled
+// because the user scrolled up, this will not force the view to the bottom.
+function scrollChatToBottom(force = false) {
+    if (!chatHistory) return;
+    if (force || autoscrollEnabled) {
+        // Small timeout to allow DOM insertion/layout to finish in streaming cases
+        setTimeout(() => {
+            try { chatHistory.scrollTop = chatHistory.scrollHeight; } catch (_) {}
+        }, 0);
+    }
+}
+
 function appendMessage(role, text, isMarkdown = false) {
     const div = document.createElement('div');
     div.className = 'chat-message ' + role;
@@ -561,7 +599,7 @@ function appendMessage(role, text, isMarkdown = false) {
 
     div.appendChild(bubble);
     chatHistory.appendChild(div);
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    scrollChatToBottom();
     return bubble;
 }
 
@@ -604,33 +642,29 @@ function displaySystemMessage() {
 
         div.appendChild(bubble);
         chatHistory.appendChild(div);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
+        scrollChatToBottom();
 
         systemMessageElement = div;
     }
 }
 
-function toggleThinkTokens(header) {
-    const container = header.parentElement;
-    const content = container.querySelector('.think-tokens-content');
-    const chevron = header.querySelector('.think-tokens-chevron');
-    const bubble = header.closest('.chat-bubble');
+function abortCurrentRequest() {
+    if (abortController) {
+        // Abort the in-flight fetch stream immediately
+        abortController.abort();
 
-    const nowCollapsed = !container.classList.contains('collapsed'); // current (before toggle) expanded?
-    if (nowCollapsed) {
-        // Collapse
-        content.style.display = 'none';
-        chevron.textContent = '▶';
-        container.classList.add('collapsed');
-        if (bubble) bubble.dataset.thinkExpanded = 'false';
-    } else {
-        // Expand
-        content.style.display = 'block';
-        chevron.textContent = '▼';
-        container.classList.remove('collapsed');
-        if (bubble) bubble.dataset.thinkExpanded = 'true';
+        // Also signal the server to halt generation promptly (helps slow CPU backends)
+        try {
+            // Fire-and-forget; no await to avoid blocking UI
+            fetch(getServerBaseUrl() + '/api/v1/halt', { method: 'GET', keepalive: true }).catch(() => {});
+        } catch (_) {}
+        abortController = null;
+        isStreaming = false;
+        updateAttachmentButtonState();
+        console.log('Streaming request aborted by user.');
     }
 }
+
 
 // ---------- Reasoning Parsing (Harmony + <think>) ----------
 
@@ -779,7 +813,22 @@ function stopThinkingAnimation(container, finalLabel = 'Thought Process') {
 
 async function sendMessage(existingTextIfAny) {
     const text = (existingTextIfAny !== undefined ? existingTextIfAny : chatInput.value.trim());
-    if (!text && attachedFiles.length === 0) return;
+
+    // Prepare abort controller for this request
+    abortController = new AbortController();
+    // UI state: set button to Stop
+    if (toggleBtn) {
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = 'Stop';
+    }
+    if (!text && attachedFiles.length === 0) {
+        // Nothing to send; revert button state and clear abort handle
+        abortController = null;
+        updateAttachmentButtonState();
+        return;
+    }
+
+    isStreaming = true;
 
     // Remove system message when user starts chatting
     if (systemMessageElement) {
@@ -878,7 +927,7 @@ async function sendMessage(existingTextIfAny) {
     updateInputPlaceholder(); // Reset placeholder
     updateAttachmentPreviewVisibility(); // Hide preview container
     updateAttachmentPreviews(); // Clear previews
-    sendBtn.disabled = true;
+    // Keep the Send/Stop button enabled during streaming so user can abort.
 
     // Streaming OpenAI completions (placeholder, adapt as needed)
     let llmText = '';
@@ -898,7 +947,8 @@ async function sendMessage(existingTextIfAny) {
         const resp = await httpRequest(getServerBaseUrl() + '/api/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: abortController ? abortController.signal : undefined
         });
         if (!resp.body) throw new Error('No stream');
         const reader = resp.body.getReader();
@@ -998,7 +1048,7 @@ async function sendMessage(existingTextIfAny) {
                         llmText += '<think>' + parts.slice(1).join('<think>');
                         receivedAnyReasoning = true;
                         updateMessageContent(llmBubble, llmText, true);
-                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                        scrollChatToBottom();
                         continue;
                     }
 
@@ -1006,7 +1056,7 @@ async function sendMessage(existingTextIfAny) {
                 }
 
                 updateMessageContent(llmBubble, llmText, true);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+                scrollChatToBottom();
             }
         }
 
@@ -1019,7 +1069,11 @@ async function sendMessage(existingTextIfAny) {
         messages.push({ role: 'assistant', ...assistantMsg });
 
     } catch (e) {
-        let detail = e.message;
+        // If the request was aborted by the user, just clean up UI without error banner
+        if (e.name === 'AbortError') {
+            console.log('Chat request aborted by user.');
+        } else {
+            let detail = e.message;
         try {
             const errPayload = { model: currentLoadedModel, messages: messages, stream: false };
             const errResp = await httpJson(getServerBaseUrl() + '/api/v1/chat/completions', {
@@ -1029,10 +1083,15 @@ async function sendMessage(existingTextIfAny) {
             });
             if (errResp && errResp.detail) detail = errResp.detail;
         } catch (_) {}
-        llmBubble.textContent = '[Error: ' + detail + ']';
-        showErrorBanner(`Chat error: ${detail}`);
+        if (e && e.name !== 'AbortError') {
+            llmBubble.textContent = '[Error: ' + detail + ']';
+            showErrorBanner(`Chat error: ${detail}`);
+        }
     }
-    sendBtn.disabled = false;
-    // Force a final render to trigger stop animation if needed
+    }
+    // Reset UI state after streaming finishes
+    abortController = null;
+    isStreaming = false;
+    updateAttachmentButtonState();
     updateMessageContent(llmBubble, llmText, true);
 }
