@@ -168,8 +168,8 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "content": "In which state was it played?"},
         ]
 
-        # Ensure we kill anything using port 8000
-        stop_lemonade()
+        # Ensure we stop lemonade
+        self.stop_lemonade()
 
         # Build the command to start the server
         cmd = ["lemonade-server-dev", "serve"]
