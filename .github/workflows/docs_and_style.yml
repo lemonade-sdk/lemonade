@@ -3,10 +3,8 @@ on:
   push:
     branches: ["main"]
     paths:
-      - '**/*.md'
   pull_request:
     paths:
-      - '**/*.md'
   merge_group:
 
 permissions:
