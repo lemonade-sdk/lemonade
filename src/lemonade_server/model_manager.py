@@ -5,6 +5,7 @@ import shutil
 import huggingface_hub
 from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
+from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 from lemonade.common.network import custom_snapshot_download
@@ -137,6 +138,7 @@ class ModelManager:
         checkpoint: Optional[str] = None,
         recipe: Optional[str] = None,
         reasoning: bool = False,
+        vision: bool = False,
         mmproj: str = "",
         do_not_upgrade: bool = False,
     ):
@@ -172,11 +174,17 @@ class ModelManager:
                     )
 
                 # JSON content that will be used for registration if the download succeeds
+                labels = ["custom"]
+                if reasoning:
+                    labels.append("reasoning")
+                if vision:
+                    labels.append("vision")
+
                 new_user_model = {
                     "checkpoint": checkpoint,
                     "recipe": recipe,
                     "suggested": True,
-                    "labels": ["custom"] + (["reasoning"] if reasoning else []),
+                    "labels": labels,
                 }
 
                 if mmproj:
@@ -199,8 +207,64 @@ class ModelManager:
                     checkpoint=checkpoint,
                     recipe=recipe,
                     reasoning=reasoning,
+                    vision=vision,
                 )
             else:
+                # Model is already registered - check if trying to register with different parameters
+                existing_model = self.supported_models[model]
+                existing_checkpoint = existing_model.get("checkpoint")
+                existing_recipe = existing_model.get("recipe")
+                existing_reasoning = "reasoning" in existing_model.get("labels", [])
+                existing_mmproj = existing_model.get("mmproj", "")
+                existing_vision = "vision" in existing_model.get("labels", [])
+
+                # Compare parameters
+                checkpoint_differs = checkpoint and checkpoint != existing_checkpoint
+                recipe_differs = recipe and recipe != existing_recipe
+                reasoning_differs = reasoning and reasoning != existing_reasoning
+                mmproj_differs = mmproj and mmproj != existing_mmproj
+                vision_differs = vision and vision != existing_vision
+
+                if (
+                    checkpoint_differs
+                    or recipe_differs
+                    or reasoning_differs
+                    or mmproj_differs
+                    or vision_differs
+                ):
+                    conflicts = []
+                    if checkpoint_differs:
+                        conflicts.append(
+                            f"checkpoint (existing: '{existing_checkpoint}', new: '{checkpoint}')"
+                        )
+                    if recipe_differs:
+                        conflicts.append(
+                            f"recipe (existing: '{existing_recipe}', new: '{recipe}')"
+                        )
+                    if reasoning_differs:
+                        conflicts.append(
+                            f"reasoning (existing: {existing_reasoning}, new: {reasoning})"
+                        )
+                    if mmproj_differs:
+                        conflicts.append(
+                            f"mmproj (existing: '{existing_mmproj}', new: '{mmproj}')"
+                        )
+                    if vision_differs:
+                        conflicts.append(
+                            f"vision (existing: {existing_vision}, new: {vision})"
+                        )
+
+                    conflict_details = ", ".join(conflicts)
+
+                    additional_suggestion = ""
+                    if model.startswith("user."):
+                        additional_suggestion = f" or delete the existing model first using `lemonade-server delete {model}`"
+
+                    raise ValueError(
+                        f"Model {model} is already registered with a different configuration. "
+                        f"Conflicting parameters: {conflict_details}. "
+                        f"Please use a different model name{additional_suggestion}."
+                    )
                 new_registration_model_config = None
 
             # Download the model
@@ -244,21 +308,69 @@ class ModelManager:
     def filter_models_by_backend(self, models: dict) -> dict:
         """
         Returns a filtered dict of models that are enabled by the
-        current environment.
+        current environment and platform.
         """
+        import platform
+
         installed_packages = {dist.metadata["Name"].lower() for dist in distributions()}
 
         hybrid_installed = (
             "onnxruntime-vitisai" in installed_packages
             and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
+
+        # On macOS, only llamacpp (GGUF) models are supported, and only on Apple Silicon with macOS 14+
+        is_macos = platform.system() == "Darwin"
+        if is_macos:
+            machine = platform.machine().lower()
+            if machine == "x86_64":
+                # Intel Macs are not supported - return empty model list with error info
+                return {
+                    "_unsupported_platform_error": {
+                        "error": "Intel Mac Not Supported",
+                        "message": (
+                            "Lemonade Server requires Apple Silicon processors on macOS. "
+                            "Intel Macs are not currently supported. "
+                            "Please use a Mac with Apple Silicon or try Lemonade on Windows/Linux."
+                        ),
+                        "platform": f"macOS {machine}",
+                        "supported": "macOS 14+ with Apple Silicon (arm64/aarch64)",
+                    }
+                }
+
+            # Check macOS version requirement
+            mac_version = platform.mac_ver()[0]
+            if mac_version:
+                major_version = int(mac_version.split(".")[0])
+                if major_version < 14:
+                    return {
+                        "_unsupported_platform_error": {
+                            "error": "macOS Version Not Supported",
+                            "message": (
+                                f"Lemonade Server requires macOS 14 or later. "
+                                f"Your system is running macOS {mac_version}. "
+                                f"Please update your macOS version to use Lemonade Server."
+                            ),
+                            "platform": f"macOS {mac_version} {machine}",
+                            "supported": "macOS 14+ with Apple Silicon (arm64/aarch64)",
+                        }
+                    }
+
         filtered = {}
         for model, value in models.items():
-            if value.get("recipe") == "oga-hybrid":
-                if hybrid_installed:
-                    filtered[model] = value
-            else:
-                filtered[model] = value
+            recipe = value.get("recipe")
+
+            # Filter OGA hybrid models based on package availability
+            if recipe == "oga-hybrid":
+                if not hybrid_installed:
+                    continue
+
+            # On macOS, only show llamacpp models (GGUF format)
+            if is_macos and recipe != "llamacpp":
+                continue
+
+            filtered[model] = value
+
         return filtered
 
     def delete_model(self, model_name: str):

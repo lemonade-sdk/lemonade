@@ -60,7 +60,7 @@ The goal of Lemonade is to help achieve maximum LLM performance on your PC. To c
 | Mode | Description |
 | :--- | :--- |
 | **NPU & Hybrid** | Ryzen™ AI 300-series devices have a neural processing unit (NPU) that can run LLMs and accelerate time-to-first-token (TTFT) performance. The typical way of utilizing the NPU is called *hybrid execution*, where the prompt is processed on the NPU to produce the first token, and the remaining tokens are computed on the Ryzen AI integrated GPU (iGPU). |
-| **GPU** | PCs with an integrated GPU (iGPU), such as many laptop SoCs, and/or discrete GPU (dGPU), such as many desktop and workstation PCs, can run LLMs on that GPU hardware. Lemonade Server provides GPU support in every installation via the Vulkan llama.cpp binaries.<br/><br/> <sub>Note: GPU support is not currently provided for CLI tasks such as benchmarking.</sub> |
+| **GPU** | PCs with an integrated GPU (iGPU), such as many laptop SoCs, and/or discrete GPU (dGPU), such as many desktop and workstation PCs, can run LLMs on that GPU hardware. Lemonade Server provides GPU support via Vulkan llama.cpp binaries (Windows, Linux, macOS), ROCm binaries (Windows, Linux), and Metal binaries (macOS with Apple Silicon).<br/><br/> <sub>Note: GPU support is not currently provided for CLI tasks such as benchmarking.</sub> |
 
 ### Supported Inference Engines
 | Engine | Description |

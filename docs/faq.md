@@ -8,7 +8,7 @@
 
 ### 2. **What is Lemonade Server and how is it different from the SDK?**
 
-   Lemonade Server is a component of the SDK that enables local LLM deployment via an OpenAI-compatible API. It allows integration with apps like chatbots and coding assistants without requiring code changes. It's available as a standalone Windows GUI installer or via command line for Linux.
+   Lemonade Server is a component of the SDK that enables local LLM deployment via an OpenAI-compatible API. It allows integration with apps like chatbots and coding assistants without requiring code changes. It's available as a standalone Windows GUI installer or via command line for Linux and macOS.
 
 ### 3. **What are the use cases for different audiences?**
 
@@ -29,9 +29,14 @@
 
    For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid-and-npu-questions).
 
-### 3. **Is Linux supported?**
+### 3. **Is Linux supported? What about macOS?**
 
-   Yes! To install Lemonade on Linux, visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions. Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
+   Yes! Both Linux and macOS are supported:
+   
+   - **Linux**: Visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions.
+   - **macOS**: Requires macOS 14+ with Apple Silicon (arm64/aarch64). Intel Macs are not supported.
+   
+   Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
 ### 4. **How do I uninstall Lemonade Server? (Windows)**
 
@@ -161,7 +166,7 @@
 
 ### 1. **What if I encounter installation or runtime errors?**
 
-   Check the Lemonade Server logs via the tray icon. Common issues include model compatibility or outdated versions.
+   Check the Lemonade Server logs via the tray icon (Windows and macOS). Common issues include model compatibility or outdated versions.
    
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 

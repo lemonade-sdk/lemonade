@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 from typing import Tuple, Optional
 import psutil
 from typing import List
@@ -104,12 +105,34 @@ def serve(
         max_wait_time = 30
         wait_interval = 0.5
         waited = 0
-        while waited < max_wait_time:
-            time.sleep(wait_interval)
-            _, running_port = get_server_info()
-            if running_port is not None:
-                break
-            waited += wait_interval
+
+        if platform.system() == "Darwin":
+            # On macOS, use direct HTTP health check instead of process scanning for better
+            # performance
+            import requests
+
+            while waited < max_wait_time:
+                time.sleep(wait_interval)
+                try:
+                    response = requests.get(
+                        f"http://{host}:{port}/api/v1/health", timeout=1
+                    )
+                    if response.status_code == 200:
+                        break
+                except (
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                ):
+                    pass  # Server not ready yet
+                waited += wait_interval
+        else:
+            # On other platforms, use the existing approach
+            while waited < max_wait_time:
+                time.sleep(wait_interval)
+                _, running_port = get_server_info()
+                if running_port is not None:
+                    break
+                waited += wait_interval
 
         return port, server_thread
 
@@ -176,6 +199,7 @@ def pull(
     checkpoint: Optional[str] = None,
     recipe: Optional[str] = None,
     reasoning: bool = False,
+    vision: bool = False,
     mmproj: str = "",
 ):
     """
@@ -197,15 +221,16 @@ def pull(
         for model_name in model_names:
             payload = {"model_name": model_name}
 
-            if checkpoint and recipe:
-                # Add the parameters for registering a new model
-                payload["checkpoint"] = checkpoint
-                payload["recipe"] = recipe
-
-                if reasoning:
-                    payload["reasoning"] = reasoning
-                if mmproj:
-                    payload["mmproj"] = mmproj
+            # Add the parameters to the payload
+            for key, value in [
+                ("checkpoint", checkpoint),
+                ("recipe", recipe),
+                ("reasoning", reasoning),
+                ("vision", vision),
+                ("mmproj", mmproj),
+            ]:
+                if value:
+                    payload[key] = value
 
             # Install the model
             pull_response = requests.post(f"{base_url}/pull", json=payload)
@@ -224,7 +249,11 @@ def pull(
             checkpoint=checkpoint,
             recipe=recipe,
             reasoning=reasoning,
+            vision=vision,
             mmproj=mmproj,
+            # The pull command will download an upgraded model if available, even
+            # if we already have a local copy of the model
+            do_not_upgrade=False,
         )
 
 
@@ -278,6 +307,10 @@ def run(
     import webbrowser
     import time
     import os
+
+    # Disable tray on macOS for run command due to threading issues
+    if platform.system() == "Darwin":
+        tray = False
 
     # Start the server if not running
     _, running_port = get_server_info()
@@ -364,6 +397,23 @@ def is_lemonade_server(pid):
     """
     Check whether or not a given PID corresponds to a Lemonade server
     """
+    # macOS only: Self-exclusion to prevent blocking server startup
+    if platform.system() == "Darwin":
+        current_pid = os.getpid()
+        if pid == current_pid:
+            return False
+
+        # Exclude children of current process to avoid detecting status commands
+        try:
+            current_process = psutil.Process(current_pid)
+            child_pids = [
+                child.pid for child in current_process.children(recursive=True)
+            ]
+            if pid in child_pids:
+                return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
     try:
         process = psutil.Process(pid)
 
@@ -372,11 +422,29 @@ def is_lemonade_server(pid):
             if process_name in [  # Windows
                 "lemonade-server-dev.exe",
                 "lemonade-server.exe",
+                "lsdev.exe",
             ] or process_name in [  # Linux
                 "lemonade-server-dev",
                 "lemonade-server",
+                "lsdev",
             ]:
                 return True
+            # macOS only: Python scripts appear as "python3.x", check command line
+            elif process_name.startswith("python") and platform.system() == "Darwin":
+                try:
+                    cmdline = process.cmdline()
+                    if len(cmdline) >= 2:
+                        script_path = cmdline[1]
+                        # Check for various lemonade server command patterns (macOS only)
+                        lemonade_patterns = [
+                            "lemonade-server-dev",
+                            "lemonade-server",
+                            "lsdev",  # Short alias for lemonade-server-dev
+                        ]
+                        if any(pattern in script_path for pattern in lemonade_patterns):
+                            return True
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    pass
             elif "llama-server" in process_name:
                 return False
             if not process.parent():
@@ -394,17 +462,42 @@ def get_server_info() -> Tuple[int | None, int | None]:
     2. The port that Lemonade Server is running on
     """
 
-    # Get all network connections and filter for localhost IPv4 listening ports
+    # Try the global approach first (works on Windows/Linux without permissions)
     try:
         connections = psutil.net_connections(kind="tcp4")
-
         for conn in connections:
             if conn.status == "LISTEN" and conn.laddr and conn.pid is not None:
                 if is_lemonade_server(conn.pid):
                     return conn.pid, conn.laddr.port
-
-    except Exception:
+    except (psutil.AccessDenied, PermissionError):
+        # Global approach needs elevated permissions on macOS, fall back to per-process approach
         pass
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
+    # Per-process approach (macOS only - needs this due to permission requirements)
+    if platform.system() == "Darwin":
+        try:
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    pid = proc.info["pid"]
+                    if is_lemonade_server(pid):
+                        # Found a lemonade server, check its listening ports
+                        connections = proc.net_connections(kind="inet")
+                        for conn in connections:
+                            if conn.status == "LISTEN" and conn.laddr:
+                                return pid, conn.laddr.port
+                        # If no listening connections found, this process is not actually serving
+                        # Continue looking for other processes
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
+                    # Some processes may be inaccessible, continue to next
+                    continue
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     return None, None
 
@@ -420,12 +513,13 @@ def list_models():
 
     # Get all supported models and downloaded models
     supported_models = model_manager.supported_models
+    filtered_models = model_manager.filter_models_by_backend(supported_models)
     downloaded_models = model_manager.downloaded_models
 
     # Filter to only show recommended models
     recommended_models = {
         model_name: model_info
-        for model_name, model_info in supported_models.items()
+        for model_name, model_info in filtered_models.items()
         if model_info.get("suggested", False)
     }
 
@@ -502,7 +596,7 @@ def _add_server_arguments(parser):
         "--llamacpp",
         type=str,
         help="LlamaCpp backend to use",
-        choices=["vulkan", "rocm"],
+        choices=["vulkan", "rocm", "metal"],
         default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(
@@ -515,7 +609,7 @@ def _add_server_arguments(parser):
         default=DEFAULT_CTX_SIZE,
     )
 
-    if os.name == "nt":
+    if os.name == "nt" or platform.system() == "Darwin":
         parser.add_argument(
             "--no-tray",
             action="store_true",
@@ -615,7 +709,7 @@ def main():
 
     args = parser.parse_args()
 
-    if os.name != "nt":
+    if os.name != "nt" and platform.system() != "Darwin":
         args.no_tray = True
 
     if args.version:
