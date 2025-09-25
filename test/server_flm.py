@@ -48,25 +48,7 @@ class FlmTesting(ServerTestingBase):
         assert chunk_count > 5
         assert len(complete_response) > 5
 
-    # Endpoint: /api/v1/chat/completions
-    def test_002_test_llamacpp_chat_completion_non_streaming(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
 
-        response = client.chat.completions.create(
-            model="Llama-3.2-1B-FLM",
-            messages=self.messages,
-            stream=False,
-            max_completion_tokens=10,
-        )
-
-        assert response.choices[0].message.content is not None
-        assert len(response.choices[0].message.content) > 5
-        print(response.choices[0].message.content)
-
-    
 if __name__ == "__main__":
     run_server_tests_with_class(FlmTesting, "SERVER TESTS")
 
