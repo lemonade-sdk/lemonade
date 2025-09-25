@@ -147,29 +147,6 @@ def ensure_model_is_cached():
         print(f"Failed to download model: {e}")
         return False
 
-
-def kill_process_on_port(port):
-    """Kill any process that is using the specified port."""
-    killed = False
-    for proc in psutil.process_iter(["pid", "name"]):
-        try:
-            connections = proc.net_connections()
-            for conn in connections:
-                if conn.laddr.port == port:
-                    proc_name = proc.name()
-                    proc_pid = proc.pid
-                    proc.kill()
-                    print(
-                        f"Killed process {proc_name} (PID: {proc_pid}) using port {port}"
-                    )
-                    killed = True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-
-    if not killed:
-        print(f"No process found using port {port}")
-
-
 class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
     """Base class containing only shared setup/cleanup functionality, no test methods."""
 
@@ -192,7 +169,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         ]
 
         # Ensure we kill anything using port 8000
-        kill_process_on_port(PORT)
+        stop_lemonade()
 
         # Build the command to start the server
         cmd = ["lemonade-server-dev", "serve"]
@@ -246,7 +223,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
 
         print("Server started successfully")
 
-        self.addCleanup(self.cleanup_lemonade, lemonade_process)
+        self.addCleanup(self.stop_lemonade)
 
         # Ensure stdout can handle Unicode
         if sys.stdout.encoding != "utf-8":
@@ -257,21 +234,20 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
                 sys.stderr.buffer, encoding="utf-8", errors="replace"
             )
 
-    def cleanup_lemonade(self, server_subprocess: subprocess.Popen):
+    def stop_lemonade(self):
         """
         Kill the lemonade server and stop the model
         """
 
         # Kill the server subprocess
-        print("\n=== Cleaning up test ===")
+        print("\n=== Stopping Lemonade ===")
 
-        parent = psutil.Process(server_subprocess.pid)
-        for child in parent.children(recursive=True):
-            child.kill()
-
-        server_subprocess.kill()
-
-        kill_process_on_port(PORT)
+        result = subprocess.run(
+            ["lemonade-server-dev", "stop"],
+            capture_output=True,
+            text=True,
+        )
+        print(result.stdout)
 
 
 def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
