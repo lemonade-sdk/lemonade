@@ -1,16 +1,8 @@
 """
-Usage: python server_llamacpp.py [backend] [--offline]
+Usage: python server_flm.py [--offline]
 
-This will launch the lemonade server with the specified LlamaCPP backend,
-query it in openai mode, and make sure that the response is valid for GGUF/LlamaCPP models.
-
-Backend options:
-    vulkan  - Use Vulkan backend (python server_llamacpp.py vulkan)
-    rocm    - Use ROCm backend (python server_llamacpp.py rocm)
-
-Examples:
-    python server_llamacpp.py vulkan
-    python server_llamacpp.py rocm --offline
+This will launch the lemonade server, query it in openai mode, and make
+sure that the response is valid for FLM models.
 
 If --offline is provided, tests will run in offline mode to ensure
 the server works without network connectivity.
@@ -32,7 +24,7 @@ class FlmTesting(ServerTestingBase):
     """Testing class for FLM models that inherits shared functionality."""
 
     # Endpoint: /api/v1/chat/completions
-    def test_001_test_llamacpp_chat_completion_streaming(self):
+    def test_001_test_flm_chat_completion_streaming(self):
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused

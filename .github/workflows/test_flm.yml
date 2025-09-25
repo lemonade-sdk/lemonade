@@ -49,7 +49,11 @@ jobs:
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
 
-      - name: Run NPU tests
+          # Install FLM
+          Invoke-WebRequest -Uri "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe" -OutFile "flm-setup.exe"
+          flm-setup.exe /VERYSILENT
+
+      - name: Run FLM NPU tests
         shell: PowerShell
         env:
           HF_HOME: "${{ env.HF_HOME }}"
