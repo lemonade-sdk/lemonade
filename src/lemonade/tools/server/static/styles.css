@@ -167,6 +167,9 @@ body::before {
   width: 100%;
   margin-left: 1rem;
   margin-right: 1rem;
+  /* Removing only the bottom border and shadow for the content tab gap to look nicer */
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0);
+  border-bottom: none;    
 }
 
 .tabs {
@@ -391,11 +394,19 @@ button:disabled {
   display: flex;
 }
 
+.tab-content-wrapper {
+    padding: 0 1%; /* adding gaps for the tab contents */
+    background-color: #fff3c8;
+}
+
 .tab-content {
   display: none;
   padding: 2em;
   background: #fafafa;
   border-radius: 0 0 8px 8px;
+  /* adding border and shadow that was removed for the gap look from higher div */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid #e0e0e0;  
 }
 
 .tab-content.active {
@@ -406,7 +417,7 @@ button:disabled {
 .chat-container {
   display: flex;
   flex-direction: column;
-  min-height: 300px;
+  min-height: calc(100vh - 550px); /* max space available in viewport */
   min-width: 300px;
   max-width: 100%;
   width: 100%;
