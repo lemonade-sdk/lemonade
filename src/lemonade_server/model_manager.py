@@ -13,12 +13,11 @@ from lemonade.common.network import custom_snapshot_download
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
-
-# Import FLM utilities from the new location
 from lemonade.tools.flm.utils import (
     get_flm_installed_models,
     is_flm_available,
     install_flm,
+    download_flm_model,
 )
 
 
@@ -318,10 +317,7 @@ class ModelManager:
                     install_flm()
 
                 try:
-                    command = ["flm", "pull", checkpoint_to_download]
-                    subprocess.run(
-                        command, check=True, encoding="utf-8", errors="replace"
-                    )
+                    download_flm_model(checkpoint_to_download, None, do_not_upgrade)
                     print(f"Successfully downloaded FLM model: {model}")
                 except subprocess.CalledProcessError as e:
                     raise RuntimeError(

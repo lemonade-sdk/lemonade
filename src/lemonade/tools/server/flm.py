@@ -12,7 +12,7 @@ from lemonade_server.pydantic_models import (
 )
 
 from lemonade.tools.server.wrapped_server import WrappedServerTelemetry, WrappedServer
-from lemonade.tools.flm.utils import install_flm
+from lemonade.tools.flm.utils import install_flm, download_flm_model
 
 
 class FlmTelemetry(WrappedServerTelemetry):
@@ -63,9 +63,7 @@ class FlmServer(WrappedServer):
     def download_model(
         self, config_checkpoint, config_mmproj=None, do_not_upgrade=False
     ) -> dict:
-        command = ["flm", "pull", f"{config_checkpoint}"]
-
-        subprocess.run(command, check=True)
+        download_flm_model(config_checkpoint, config_mmproj, do_not_upgrade)
 
     def _launch_server_subprocess(
         self,
