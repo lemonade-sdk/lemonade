@@ -59,8 +59,14 @@ jobs:
           .\flm-setup.exe /VERYSILENT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Download FLM Model
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
           # Pull all models needed for testing
-          flm pull llama3.2:1b
+          flm pull llama3.2:1b --force
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM NPU tests
         shell: PowerShell
