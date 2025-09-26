@@ -10,6 +10,7 @@ import time
 from typing import List, Optional
 
 import requests
+from packaging.version import Version
 
 
 FLM_MINIMUM_VERSION = "0.9.10"
@@ -36,22 +37,6 @@ def check_flm_version() -> Optional[str]:
 
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
-
-
-def version_compare(version1: str, version2: str) -> bool:
-    """Compare two version strings. Returns True if version1 >= version2."""
-    try:
-        v1_parts = [int(x) for x in version1.split(".")]
-        v2_parts = [int(x) for x in version2.split(".")]
-
-        # Pad shorter version with zeros
-        max_len = max(len(v1_parts), len(v2_parts))
-        v1_parts.extend([0] * (max_len - len(v1_parts)))
-        v2_parts.extend([0] * (max_len - len(v2_parts)))
-
-        return v1_parts >= v2_parts
-    except (ValueError, AttributeError):
-        return False
 
 
 def refresh_environment():
@@ -89,7 +74,7 @@ def install_flm():
     # Check current FLM installation
     current_version = check_flm_version()
 
-    if current_version and version_compare(current_version, FLM_MINIMUM_VERSION):
+    if current_version and Version(current_version) >= Version(FLM_MINIMUM_VERSION):
         logging.info(
             "FLM v%s is already installed and meets minimum version requirement (v%s)",
             current_version,
@@ -162,7 +147,7 @@ def install_flm():
         max_retries = 10
         for attempt in range(max_retries):
             new_version = check_flm_version()
-            if new_version and version_compare(new_version, FLM_MINIMUM_VERSION):
+            if new_version and Version(new_version) >= Version(FLM_MINIMUM_VERSION):
                 logging.info("FLM v%s successfully installed and verified", new_version)
                 return
 
@@ -252,6 +237,6 @@ def get_flm_installed_models() -> List[str]:
 def is_flm_available() -> bool:
     """Check if FLM is available and meets minimum version requirements."""
     current_version = check_flm_version()
-    return current_version is not None and version_compare(
-        current_version, FLM_MINIMUM_VERSION
+    return current_version is not None and Version(current_version) >= Version(
+        FLM_MINIMUM_VERSION
     )
