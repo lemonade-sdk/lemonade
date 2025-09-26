@@ -414,6 +414,7 @@ class Server:
 
         # Update debug logging state after setting log level
         self.debug_logging_enabled = logging.getLogger().isEnabledFor(logging.DEBUG)
+
         if tray:
             # Save original stdout/stderr
             sys.stdout = OutputDuplicator(self.log_file, sys.stdout)
@@ -1677,37 +1678,47 @@ class Server:
     def setup_middleware_timer(self):
         logging.info("Middleware set up")
 
-        @self.app.middleware("http")
-        async def log_request_time(request: Request, call_next):
-            """
-            Log the request processing time for any request.
-            For streaming responses, wraps the body iterator to measure total time.
-            Only applies the wrapper in debug mode.
-            """
-            start_time = time.perf_counter()
-            response = await call_next(request)
+        try:
 
-            if (
-                self.debug_logging_enabled
-                and hasattr(response, "body_iterator")
-                and response.body_iterator is not None
-            ):
-                original_iterator = response.body_iterator
+            @self.app.middleware("http")
+            async def log_request_time(request: Request, call_next):
+                """
+                Log the request processing time for any request.
+                For streaming responses, wraps the body iterator to measure total time.
+                Only applies the wrapper in debug mode.
+                """
+                start_time = time.perf_counter()
+                response = await call_next(request)
 
-                async def wrapped_iterator():
-                    async for chunk in original_iterator:
-                        yield chunk
+                if (
+                    self.debug_logging_enabled
+                    and hasattr(response, "body_iterator")
+                    and response.body_iterator is not None
+                ):
+                    original_iterator = response.body_iterator
+
+                    async def wrapped_iterator():
+                        async for chunk in original_iterator:
+                            yield chunk
+                        request_time = time.perf_counter() - start_time
+                        logging.debug(
+                            f"Total request time (streamed): {request_time:.4f} seconds"
+                        )
+
+                    response.body_iterator = wrapped_iterator()
+                else:
                     request_time = time.perf_counter() - start_time
-                    logging.debug(
-                        f"Total request time (streamed): {request_time:.4f} seconds"
-                    )
+                    if self.debug_logging_enabled:
+                        logging.debug(f"Total request time: {request_time:.4f} seconds")
+                return response
 
-                response.body_iterator = wrapped_iterator()
+        except RuntimeError as e:
+            if "Cannot add middleware after an application has started" in str(e):
+                logging.warning(
+                    "Middleware already configured - skipping timer middleware setup"
+                )
             else:
-                request_time = time.perf_counter() - start_time
-                if self.debug_logging_enabled:
-                    logging.debug(f"Total request time: {request_time:.4f} seconds")
-            return response
+                raise
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
