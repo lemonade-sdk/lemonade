@@ -194,6 +194,21 @@ def install_flm():
                 pass  # Ignore cleanup errors
 
 
+def download_flm_model(
+    config_checkpoint, config_mmproj=None, do_not_upgrade=False
+) -> dict:
+    """
+    Downloads the FLM model for the given configuration.
+    """
+
+    if do_not_upgrade:
+        command = ["flm", "pull", f"{config_checkpoint}"]
+    else:
+        command = ["flm", "pull", f"{config_checkpoint}", "--force"]
+
+    subprocess.run(command, check=True)
+
+
 def get_flm_installed_models() -> List[str]:
     """
     Parse FLM model list and return installed model checkpoints.

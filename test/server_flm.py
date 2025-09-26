@@ -1,5 +1,9 @@
 """
-Usage: python server_flm.py [--offline]
+Usage:
+
+1. Install flm
+2. flm pull llama3.2:1b
+3. python server_flm.py [--offline]
 
 This will launch the lemonade server, query it in openai mode, and make
 sure that the response is valid for FLM models.
