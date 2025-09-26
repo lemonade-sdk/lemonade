@@ -194,9 +194,7 @@ def install_flm():
                 pass  # Ignore cleanup errors
 
 
-def download_flm_model(
-    config_checkpoint, config_mmproj=None, do_not_upgrade=False
-) -> dict:
+def download_flm_model(config_checkpoint, _=None, do_not_upgrade=False) -> dict:
     """
     Downloads the FLM model for the given configuration.
     """
