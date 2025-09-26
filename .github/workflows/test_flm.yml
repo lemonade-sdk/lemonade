@@ -1,0 +1,85 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Test Lemonade integration with FLM 🌩️
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-flm-npu:
+    env:
+        LEMONADE_CI_MODE: "True"
+    runs-on: [stx, Windows]
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Create conda environment
+        shell: PowerShell
+        run: |
+          # Make sure the system-level python is clean
+          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force 
+          
+          $ErrorActionPreference = "Stop"
+          conda create -p .\lemon-flm-ci python=3.10 -y
+          conda init
+          
+      - name: Install dependencies
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          conda activate .\lemon-flm-ci
+          python -m pip install --upgrade pip
+          conda install pylint
+          python -m pip check
+          
+          pip install -e .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+
+      - name: Install FLM
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Install FLM
+          Invoke-WebRequest -Uri "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe" -OutFile "flm-setup.exe"
+          .\flm-setup.exe /VERYSILENT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Add FLM to PATH for all subsequent steps
+          echo "C:\Program Files\flm" >> $env:GITHUB_PATH
+
+      - name: Download FLM Model
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Pull all models needed for testing
+          flm pull llama3.2:1b --force
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run FLM NPU tests
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
+        run: |
+          $ErrorActionPreference = "Stop"
+          conda activate .\lemon-flm-ci
+
+          python test/server_flm.py
+
+
