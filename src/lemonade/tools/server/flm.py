@@ -23,9 +23,11 @@ class FlmTelemetry(WrappedServerTelemetry):
     def parse_telemetry_line(self, line: str):
         """
         Parse telemetry data from FLM server output lines.
-        """
 
-        # TODO: parse perf data
+        Note: as of FLM 0.9.10, no telemetry data is provided by the server CLI.
+                This function is required to be implemented, so we leave it empty
+                as a placeholder for now.
+        """
 
         return
 
