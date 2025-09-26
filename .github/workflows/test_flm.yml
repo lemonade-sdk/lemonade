@@ -58,6 +58,9 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe" -OutFile "flm-setup.exe"
           .\flm-setup.exe /VERYSILENT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Add FLM to PATH for all subsequent steps
+          echo "C:\Program Files\flm" >> $env:GITHUB_PATH
 
       - name: Download FLM Model
         shell: PowerShell
