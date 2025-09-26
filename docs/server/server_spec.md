@@ -7,7 +7,8 @@ Lemonade Server currently supports two backends:
 | Backend                                                                 | Model Format | Description                                                                                                                |
 |----------------------------------------------------------------------|--------------|----------------------------------------------------------------------------------------------------------------------------|
 | [ONNX Runtime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai) | `.ONNX`      | Lemonade's built-in server, recommended for standard use on AMD platforms.                                                |
-| [Llama.cpp](https://github.com/ggml-org/llama.cpp) _(Experimental)_    | `.GGUF`      | Uses llama.cpp's Vulkan-powered llama-server backend. More details [here](#experimental-gguf-support).                    |
+| [Llama.cpp](https://github.com/ggml-org/llama.cpp)    | `.GGUF`      | Uses llama.cpp's `llama-server` backend. More details [here](#gguf-support).                    |
+| [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
 
 
 ## OGA Endpoints Overview
@@ -440,7 +441,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
 
-The `recipe` field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the [Lemonade API README](../lemonade_api.md). For information on GGUF recipes, see [llamacpp](#experimental-gguf-support).
+The `recipe` field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the [Lemonade API README](../lemonade_api.md). For information on GGUF recipes, see [llamacpp](#gguf-support).
 
 > Note: the `model_name` for registering a new model must use the `user` namespace, to prevent collisions with built-in models. For example, `user.Phi-4-Mini-GGUF`.
 
@@ -731,32 +732,48 @@ Where `[level]` can be one of:
 - **debug**: Detailed diagnostic information for troubleshooting, including metrics such as input/output token counts, Time To First Token (TTFT), and Tokens Per Second (TPS).
 - **trace**: Very detailed tracing information, including everything from debug level plus all input prompts.
 
-# Experimental GGUF Support
+# GGUF Support
 
-The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced experimental support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) Vulkan `llama-server` as an alternative backend for CPU and GPU.
+The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's built-in server implementation. However, Lemonade SDK v7.0.1 introduced support for [llama.cpp's](https://github.com/ggml-org/llama.cpp) `llama-server` as an alternative backend for CPU and GPU.
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
-  - The `chat/completions`, `embeddings`, and `reranking` endpoints are supported. 
-  - Non-chat `completions`, and `responses` are not supported at this time.
+  - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported. 
+  - `responses` is not supported at this time.
 - A single Lemonade Server process can seamlessly switch between OGA and GGUF models.
   - Lemonade Server will attempt to load models onto GPU with Vulkan first, and if that doesn't work it will fall back to CPU.
   - From the end-user's perspective, OGA vs. GGUF should be completely transparent: they wont be aware of whether the built-in server or `llama-server` is serving their model.
 
 ## Installing GGUF Models
 
-To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:8000 in your web browser and click the Model Management tab.
+To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:8000 in your web browser, click the Model Management tab, and use the Add a Model form.
 
 ## Platform Support Matrix
 
 | Platform | GPU Acceleration | CPU Architecture |
 |----------|------------------|------------------|
-| Windows  | ✅ Vulkan        | ✅ x64           |
-| Ubuntu   | ✅ Vulkan        | ✅ x64           |
+| Windows  | ✅ Vulkan, ROCm        | ✅ x64           |
+| Ubuntu   | ✅ Vulkan, ROCm        | ✅ x64           |
 | macOS    | ✅ Metal         | ✅ Apple Silicon |
 | Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.
+
+# FastFlowLM Support
+
+Similar to the [llama-server support](#gguf-support), Lemonade can also route OpenAI API requests to a FastFlowLM `flm serve` backend.
+
+The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
+- Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
+  - The only OpenAI API endpoints supported are `models` and `chat/completions stream=True`. 
+- A single Lemonade Server process can seamlessly switch between FLM, OGA, and GGUF models.
+
+## Installing FLM Models
+
+To install an arbitrary FLM model:
+1. `flm list` to view the supported models.
+1. Open the Lemonade web app by navigating to http://localhost:8000 in your web browser, click the Model Management tab, and use the Add a Model form.
+1. Use the model name from `flm list` as the "checkpoint name" in the Add a Model form and select "flm" as the recipe.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
