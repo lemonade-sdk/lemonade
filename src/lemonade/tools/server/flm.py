@@ -49,10 +49,6 @@ class FlmServer(WrappedServer):
         self.port = 11434
 
     def address(self):
-        """
-        `flm serve` doesn't support host name selection as of v0.9.10
-        """
-
         return f"http://localhost:{self.port}/v1"
 
     def install_server(self):
@@ -76,8 +72,6 @@ class FlmServer(WrappedServer):
         supports_reranking: bool = False,
     ):
 
-        # This call is a placeholder for now; eventually we'll pass the
-        # port into the command below when its supported
         self._choose_port()
 
         # Keep track of the FLM model name so that we can use it later
