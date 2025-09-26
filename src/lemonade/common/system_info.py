@@ -5,7 +5,7 @@ import platform
 import re
 import subprocess
 import ctypes
-import glob
+import os
 from .inference_engines import detect_inference_engines
 
 # AMD GPU classification keywords - shared across all OS implementations
@@ -555,7 +555,6 @@ class WindowsSystemInfo(SystemInfo):
         """
         try:
             import tempfile
-            import os
 
             with tempfile.NamedTemporaryFile(
                 mode="w+", suffix=".txt", delete=False
@@ -917,51 +916,60 @@ class LinuxSystemInfo(SystemInfo):
         """
         gpu_devices = []
         try:
-            lspci_output = subprocess.check_output(
-                "lspci | grep -i 'vga\\|3d\\|display'", shell=True
-            ).decode()
+            gpu_info = {}
+            kfd_dir = "/sys/class/kfd/kfd/topology/nodes/"
+            if not os.path.isdir(kfd_dir):
+                return gpu_devices
 
-            for line in lspci_output.split("\n"):
-                if line.strip() and "AMD" in line:
-                    name_lower = line.lower()
+            for node in os.listdir(kfd_dir):
+                isa = 0
+                render_minor = None
+                properties_path = os.path.join(kfd_dir, node, "properties")
+                if os.path.isfile(properties_path):
+                    try:
+                        with open(properties_path, "r", encoding="utf-8") as f:
+                            for line in f:
+                                if "gfx_target_version" in line:
+                                    isa = line.split()[1].strip()
+                                if "drm_render_minor" in line:
+                                    render_minor = line.split()[1].strip()
+                    except (OSError, ValueError):
+                        continue
+                if int(isa) == 0:
+                    continue
+                gpu_info = {
+                    "name": f"AMD GPU Node {node}",
+                    "isa": isa,
+                    "drm_render_minor": render_minor,
+                    "available": True,
+                }
 
-                    # Keyword-based classification - simple and reliable
-                    is_discrete_by_name = any(
-                        kw in name_lower for kw in AMD_DISCRETE_GPU_KEYWORDS
-                    )
-                    is_integrated = not is_discrete_by_name
+            device_path = (
+                f"/sys/class/drm/renderD{gpu_info['drm_render_minor']}/device/"
+            )
+            board_info_path = os.path.join(device_path, "board_info")
 
-                    # Filter based on requested type
-                    if (gpu_type == "integrated" and is_integrated) or (
-                        gpu_type == "discrete" and not is_integrated
-                    ):
+            is_discrete = os.path.isfile(board_info_path)
+            is_integrated = not is_discrete
+            if (
+                is_integrated
+                and gpu_type != "integrated"
+                or (is_discrete and gpu_type != "discrete")
+            ):
+                return gpu_devices
 
-                        device_type = "amd_igpu" if is_integrated else "amd_dgpu"
-                        device_name = line.split(": ")[1] if ": " in line else line
+            # Filter based on requested type
+            device_type = "amd_igpu" if is_integrated else "amd_dgpu"
 
-                        gpu_info = {
-                            "name": device_name,
-                            "available": True,
-                        }
+            # Get VRAM information for discrete GPUs
+            if is_discrete:
+                gpu_info["vram_gb"] = self._get_amd_vram_sysfs(device_path)
 
-                        # Get VRAM information for discrete GPUs
-                        if not is_integrated:  # Only add VRAM for discrete GPUs
-                            vram_gb = self._get_amd_vram_rocm_smi_linux()
-                            if vram_gb == 0.0:
-                                # Fallback to sysfs - extract PCI ID from lspci line
-                                pci_id = line.split()[0] if line else ""
-                                vram_gb = self._get_amd_vram_sysfs(pci_id)
-
-                            if vram_gb > 0.0:
-                                gpu_info["vram_gb"] = vram_gb
-                            else:
-                                gpu_info["vram_gb"] = "Unknown"
-
-                        if include_inference_engines:
-                            gpu_info["inference_engines"] = (
-                                self._detect_inference_engines(device_type, device_name)
-                            )
-                        gpu_devices.append(gpu_info)
+            if include_inference_engines:
+                gpu_info["inference_engines"] = self._detect_inference_engines(
+                    device_type, gpu_info["isa"]
+                )
+            gpu_devices.append(gpu_info)
 
         except Exception as e:  # pylint: disable=broad-except
             error_msg = f"AMD {gpu_type} GPU detection failed: {e}"
@@ -1216,79 +1224,21 @@ class LinuxSystemInfo(SystemInfo):
             pass
         return 0.0
 
-    def _get_amd_vram_rocm_smi_linux(self) -> float:
-        """
-        Get AMD GPU VRAM using rocm-smi command on Linux.
-
-        Returns:
-            float: VRAM in GB, or 0.0 if detection fails
-        """
-        try:
-            output = (
-                subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram", "--csv"],
-                    stderr=subprocess.DEVNULL,
-                )
-                .decode()
-                .strip()
-            )
-
-            # Parse CSV output to extract VRAM
-            lines = output.split("\n")
-            for line in lines:
-                if "Total VRAM" in line or "vram" in line.lower():
-                    # Extract numeric value (assuming it's in MB or GB)
-                    numbers = re.findall(r"\d+", line)
-                    if numbers:
-                        vram_value = int(numbers[0])
-                        # Assume MB if value is large, GB if small
-                        if vram_value > 100:  # Likely MB
-                            vram_gb = round(vram_value / 1024, 1)
-                        else:  # Likely GB
-                            vram_gb = float(vram_value)
-                        return vram_gb
-        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            pass
-        return 0.0
-
-    def _get_amd_vram_sysfs(self, pci_id: str) -> float:
+    def _get_amd_vram_sysfs(self, device: str) -> float:
         """
         Get AMD GPU VRAM using sysfs on Linux.
 
         Args:
-            pci_id: PCI ID of the GPU (e.g., "0000:01:00.0")
+            device: base device path
 
         Returns:
-            float: VRAM in GB, or 0.0 if detection fails
+            float: VRAM in GBfails
         """
-        try:
-            # Try different sysfs paths for VRAM information
-            sysfs_paths = [
-                f"/sys/bus/pci/devices/{pci_id}/mem_info_vram_total",
-                "/sys/class/drm/card*/device/mem_info_vram_total",
-            ]
-
-            for path in sysfs_paths:
-                try:
-                    if "*" in path:
-                        # Handle wildcard paths
-                        matching_paths = glob.glob(path)
-                        for match_path in matching_paths:
-                            with open(match_path, "r", encoding="utf-8") as f:
-                                vram_bytes = int(f.read().strip())
-                                vram_gb = round(vram_bytes / (1024**3), 1)
-                                if vram_gb > 0:
-                                    return vram_gb
-                    else:
-                        with open(path, "r", encoding="utf-8") as f:
-                            vram_bytes = int(f.read().strip())
-                            vram_gb = round(vram_bytes / (1024**3), 1)
-                            return vram_gb
-                except (FileNotFoundError, ValueError, PermissionError):
-                    continue
-        except Exception:  # pylint: disable=broad-except
-            pass
-        return 0.0
+        path = os.path.join(device, "mem_info_vram_total")
+        with open(path, "r", encoding="utf-8") as f:
+            vram_bytes = int(f.read().strip())
+            vram_gb = round(vram_bytes / (1024**3), 1)
+        return vram_gb
 
     def _detect_inference_engines(self, device_type: str, device_name: str) -> dict:
         """
