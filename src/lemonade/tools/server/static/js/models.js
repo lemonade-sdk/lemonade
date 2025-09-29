@@ -387,7 +387,6 @@ function createModelItem(modelId, modelData, container) {
                     loadButton: loadBtn,
                     onSuccess: (loadedModelId) => {
                         console.log(`Model ${loadedModelId} loaded successfully`);
-                        // UI refresh will be handled by loadModelStandardized via updateModelStatusIndicator
                     },
                     onError: (error, failedModelId) => {
                         console.error(`Failed to load model ${failedModelId}:`, error);
@@ -591,7 +590,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 await loadModelStandardized(modelId, {
                     onSuccess: (loadedModelId) => {
                         console.log(`Model ${loadedModelId} loaded successfully`);
-                        // UI refresh will be handled by loadModelStandardized via updateModelStatusIndicator
                     },
                     onError: (error, failedModelId) => {
                         console.error(`Failed to load model ${failedModelId}:`, error);
