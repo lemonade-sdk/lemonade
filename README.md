@@ -102,7 +102,7 @@ Lemonade supports the following configurations, while also making it easy to swi
 |----------|-------------|------------------|------------|---------|-------|-------|
 | **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ | ✅ |
 | **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen AI 300 series | ✅ | — | — |
+| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — | — |
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
