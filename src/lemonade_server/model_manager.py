@@ -177,8 +177,6 @@ class ModelManager:
                 # is not already registered
                 import logging
 
-                logging.debug("hi, you made it to registration!")
-
                 # Ensure the model name includes the `user` namespace
                 model_parsed = model.split(".", 1)
                 if len(model_parsed) != 2 or model_parsed[0] != "user":

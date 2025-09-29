@@ -186,6 +186,13 @@ def install_flm():
 def download_flm_model(config_checkpoint, _=None, do_not_upgrade=False) -> dict:
     """
     Downloads the FLM model for the given configuration.
+
+    Args:
+        config_checkpoint: name of the FLM model to install.
+        _: placeholder for `config_mmproj`, which is standard
+            for WrappedServer (see llamacpp/utils.py) .
+        do_not_upgrade: whether to re-download the model if it is already
+            available.
     """
 
     if do_not_upgrade:
