@@ -286,14 +286,13 @@
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["hot"],
         "size": 17.4
     },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["coding","tool-calling"],
+        "labels": ["coding","tool-calling","hot"],
         "size": 18.6
     },
     "Gemma-3-4b-it-GGUF": {
@@ -402,7 +401,7 @@
         "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
         "recipe": "llamacpp",
         "suggested": true,
-        "labels": ["reasoning","hot"],
+        "labels": ["reasoning"],
         "size": 73.1
     }
 }
