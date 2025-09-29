@@ -99,6 +99,15 @@ body::before {
 .brand-title a {
   color: inherit;
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  vertical-align: middle;
 }
 
 .navbar-links {
@@ -1512,6 +1521,11 @@ button:disabled {
     font-size: 1.3rem;
   }
   
+  .brand-icon {
+    width: 1.3rem;
+    height: 1.3rem;
+  }
+  
   .navbar-links {
     gap: 1.5rem;
     font-size: 1rem;
@@ -1525,6 +1539,11 @@ button:disabled {
   
   .brand-title {
     font-size: 1.2rem;
+  }
+  
+  .brand-icon {
+    width: 1.2rem;
+    height: 1.2rem;
   }
   
   .navbar-links {
