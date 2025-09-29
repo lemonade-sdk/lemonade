@@ -239,7 +239,9 @@ def get_flm_installed_models() -> List[str]:
 
 
 def is_flm_available() -> bool:
-    """Check if FLM is available and meets minimum version requirements."""
+    """
+    Check if FLM is available and meets minimum version requirements.
+    """
     current_version = check_flm_version()
     return current_version is not None and Version(current_version) >= Version(
         FLM_MINIMUM_VERSION
