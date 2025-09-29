@@ -17,7 +17,9 @@ FLM_MINIMUM_VERSION = "0.9.10"
 
 
 def check_flm_version() -> Optional[str]:
-    """Check if FLM is installed and return version, or None if not available."""
+    """
+    Check if FLM is installed and return version, or None if not available.
+    """
     try:
         result = subprocess.run(
             ["flm", "version"],
@@ -40,7 +42,9 @@ def check_flm_version() -> Optional[str]:
 
 
 def refresh_environment():
-    """Refresh PATH to pick up newly installed executables."""
+    """
+    Refresh PATH to pick up newly installed executables.
+    """
     if os.name == "nt":  # Windows
         # On Windows, we need to refresh the PATH from registry
         import winreg
