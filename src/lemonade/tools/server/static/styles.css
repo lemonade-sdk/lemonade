@@ -176,6 +176,9 @@ body::before {
   width: 100%;
   margin-left: 1rem;
   margin-right: 1rem;
+  /* Removing only the bottom border and shadow for the content tab gap to look nicer */
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0);
+  border-bottom: none;    
 }
 
 .tabs {
@@ -400,11 +403,18 @@ button:disabled {
   display: flex;
 }
 
+.tab-content-wrapper {
+   width: 85%;
+}
+
 .tab-content {
   display: none;
   padding: 2em;
   background: #fafafa;
   border-radius: 0 0 8px 8px;
+  /* adding border and shadow that was removed for the gap look from higher div */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid #e0e0e0;  
 }
 
 .tab-content.active {
@@ -415,7 +425,9 @@ button:disabled {
 .chat-container {
   display: flex;
   flex-direction: column;
-  min-height: 300px;
+  /* Max space available in viewport 
+     This also prevents the chat-history section to resize lower than a certain point */
+  min-height: calc(100vh - 550px); 
   min-width: 300px;
   max-width: 100%;
   width: 100%;
@@ -430,7 +442,6 @@ button:disabled {
      Constrain the resize with min/max heights so it stays usable and doesn't overflow the viewport. */
   resize: vertical;
   height: var(--chat-height);
-  min-height: 240px;
   max-height: calc(100vh - 120px);
   overflow: hidden; /* hide overflow at container level; chat-history will scroll */
 }
