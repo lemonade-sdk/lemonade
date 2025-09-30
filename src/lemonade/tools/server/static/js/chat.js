@@ -332,8 +332,6 @@ function handleChatInputKeydown(e) {
 
 // Handle paste events for images
 async function handleChatInputPaste(e) {
-    e.preventDefault();
-
     const clipboardData = e.clipboardData || window.clipboardData;
     const items = clipboardData.items;
     let hasImage = false;
@@ -356,7 +354,7 @@ async function handleChatInputPaste(e) {
                 const currentModel = modelSelect.value;
                 if (!isVisionModel(currentModel)) {
                     alert(`The selected model "${currentModel}" does not support image inputs. Please select a model with "Vision" capabilities to paste images.`);
-                    if (pastedText) chatInput.value = pastedText;
+                    // Don't prevent default if we're not handling the paste
                     return;
                 }
                 // Add to attachedFiles array only if it's an image and model supports vision
@@ -367,13 +365,39 @@ async function handleChatInputPaste(e) {
         }
     }
 
-    // Update input box content - only show text, images will be indicated separately
-    if (pastedText) chatInput.value = pastedText;
+    // If we have images, prevent default and handle specially
+    if (hasImage && attachedFiles.length > 0) {
+        e.preventDefault();
+        
+        // If there's also text, insert it at cursor position
+        if (pastedText) {
+            insertTextAtCursor(chatInput, pastedText);
+        }
 
-    // Update placeholder to show attached images
-    updateInputPlaceholder();
-    updateAttachmentPreviewVisibility();
-    updateAttachmentPreviews();
+        // Update placeholder to show attached images
+        updateInputPlaceholder();
+        updateAttachmentPreviewVisibility();
+        updateAttachmentPreviews();
+    }
+    // If no images, let the browser handle the paste normally (preserves cursor position and undo)
+}
+
+// Helper function to insert text at cursor position
+function insertTextAtCursor(textElement, text) {
+    const start = textElement.selectionStart;
+    const end = textElement.selectionEnd;
+    const currentValue = textElement.value;
+    
+    // Insert the text at the cursor position
+    const newValue = currentValue.substring(0, start) + text + currentValue.substring(end);
+    textElement.value = newValue;
+    
+    // Move cursor to end of inserted text
+    const newCursorPos = start + text.length;
+    textElement.setSelectionRange(newCursorPos, newCursorPos);
+    
+    // Focus the element to ensure cursor is visible
+    textElement.focus();
 }
 
 function clearAttachments() {
