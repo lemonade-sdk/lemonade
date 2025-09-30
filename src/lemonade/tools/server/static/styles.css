@@ -225,14 +225,24 @@ body::before {
   position: relative;
 }
 
+/* Wrapper for the select element with embedded status light */
+.model-select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .status-light {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  position: relative;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   transition: all var(--transition-fast);
   flex-shrink: 0;
-  align-self: center;
+  z-index: 10;
 }
 
 .status-light::before {
@@ -300,7 +310,7 @@ body::before {
 
 /* Base styles for the select element */
 .model-select {
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.5rem;
   border: 1px solid #ddd;
   border-radius: 6px;
   background: #fafafa;
