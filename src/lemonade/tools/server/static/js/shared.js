@@ -181,7 +181,7 @@ async function loadModelStandardized(modelId, options = {}) {
         // Update load button if provided
         if (loadButton) {
             loadButton.disabled = true;
-            loadButton.textContent = '⌛';
+            loadButton.textContent = '⏳';
         }
         
         // Update status indicator to show loading state
@@ -246,7 +246,8 @@ async function loadModelStandardized(modelId, options = {}) {
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
-            loadButton.textContent = 'Load';
+            loadButton.textContent = '🚀';
+            loadButton.classList.remove('loading');
         }
         
         // Reset chat controls
@@ -280,7 +281,8 @@ async function loadModelStandardized(modelId, options = {}) {
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
-            loadButton.textContent = 'Load';
+            loadButton.textContent = '🚀';
+            loadButton.classList.remove('loading');
         }
         
         // Reset status indicator on error
