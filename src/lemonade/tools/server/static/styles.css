@@ -2383,3 +2383,47 @@ button:disabled {
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+
+
+/* Dropdown styling */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropbtn {
+    background-color: transparent;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;              /* align to the right edge of the parent */
+    left: auto;            /* prevent left alignment */
+    top: calc(100% + 1px); /* opens 8px below the button */
+    background-color: #ffe76c;
+    border-radius: 8px;
+    min-width: 140px;
+    box-shadow: 0px 8px 16px rgba(0,0,0,0.2);
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.dropdown-content a {
+    color: black;
+    font-size: 12px;   /* smaller font */
+    padding: 8px 12px;
+    text-decoration: none;
+    display: block;
+}
+
+.dropdown-content a:hover {
+    background-color: #f6c146;
+}
+
+.dropdown:hover .dropdown-content {
+    display: block;
+}

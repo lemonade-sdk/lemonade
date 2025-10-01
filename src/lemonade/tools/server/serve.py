@@ -10,11 +10,13 @@ import traceback
 from typing import Optional, Union
 import json
 from pathlib import Path
+import os
 
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 import uvicorn
 from uvicorn.config import Config
 from uvicorn.server import Server as UvicornServer
@@ -79,6 +81,57 @@ DEFAULT_MAX_NEW_TOKENS = 1500
 if platform.system() in ["Windows", "Darwin"]:
     # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
+
+
+class WebsocketTextFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Only allow logs that don't include "> TEXT"
+        return "> TEXT" not in record.getMessage()
+
+
+async def log_streamer(websocket: WebSocket, path: str, interval: float = 1.0):
+    logger = logging.getLogger()
+    await websocket.accept()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            f.seek(0, os.SEEK_END)  # start at end
+            while True:
+                # Try reading a line
+                line = f.readline()
+                if not line:
+                    await asyncio.sleep(interval)
+                    continue
+
+                # Send defensively: if disconnected, bail out
+                if websocket.application_state != WebSocketState.CONNECTED:
+                    # Server-side state says we're not connected anymore
+                    break
+
+                try:
+                    await websocket.send_text(line)
+                except WebSocketDisconnect:
+                    # Client closed — normal path out
+                    break
+                except RuntimeError as re:
+                    # Starlette will raise this if a close has already been sent
+                    logger.debug("RuntimeError during send: %s", re)
+                    break
+
+    except WebSocketDisconnect:
+        # Client closed the socket; do not try to send or close again
+        pass
+    except Exception as e:  # pylint: disable=broad-except
+        # Log server-side; do not attempt to send error over a possibly closed socket
+        logger.exception("Error in log_streamer: %s", e)
+    finally:
+        # Only close if Starlette still thinks we're connected.
+        # This prevents "Cannot call send once a close message has been sent."
+        try:
+            if websocket.application_state == WebSocketState.CONNECTED:
+                await websocket.close()
+        except Exception:  # pylint: disable=broad-except
+            # If close itself races, swallow — we're shutting down anyway.
+            pass
 
 
 class ServerModel(Model):
@@ -271,6 +324,7 @@ class Server:
             self.app.post(f"{prefix}/completions")(self.completions)
             self.app.post(f"{prefix}/responses")(self.responses)
             self.app.post(f"{prefix}/log-level")(self.set_log_level)
+            self.app.websocket(f"{prefix}/logs/ws")(self.logs_ws)
 
             # OpenAI-compatible routes
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
@@ -400,11 +454,13 @@ class Server:
             )
             file_handler.setLevel(logging_level)
             file_handler.setFormatter(uvicorn_formatter)
+            file_handler.addFilter(WebsocketTextFilter())
 
             # Set up console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging_level)
             console_handler.setFormatter(uvicorn_formatter)
+            console_handler.addFilter(WebsocketTextFilter())
 
             # Configure root logger with both handlers
             logging.basicConfig(
@@ -1719,6 +1775,12 @@ class Server:
                 if self.debug_logging_enabled:
                     logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response
+
+    async def logs_ws(self, websocket: WebSocket):
+        if not self.log_file or not os.path.exists(self.log_file):
+            await websocket.close(code=4000)
+            return
+        await log_streamer(websocket, self.log_file)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
