@@ -207,6 +207,7 @@ This project is:
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
   - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
   - [OpenAI API](https://github.com/openai/openai-python)
+  - [IRON/MLIR-AIE](https://github.com/Xilinx/mlir-aie)
   - and more...
 - Accelerated by mentorship from the OCV Catalyst program.
 - Licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE).
