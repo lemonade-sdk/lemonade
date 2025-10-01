@@ -13,7 +13,7 @@ import requests
 from packaging.version import Version
 
 
-FLM_MINIMUM_VERSION = "0.9.10"
+FLM_MINIMUM_VERSION = "0.9.11"
 
 
 def check_flm_version() -> Optional[str]:
