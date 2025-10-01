@@ -93,6 +93,11 @@ async function updateModelStatusIndicator() {
     if (modelsTab && modelsTab.classList.contains('active')) {
         // Use the display-only version to avoid re-fetching data we just fetched
         refreshModelMgmtUIDisplay();
+        
+        // Also refresh the model browser to show updated button states
+        if (currentCategory === 'hot') displayHotModels();
+        else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
+        else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
     }
 	
     if (health && health.model_loaded) {
@@ -393,9 +398,17 @@ function createModelItem(modelId, modelData, container) {
             loadBtn.textContent = '🚀';
             loadBtn.title = 'Load';
             loadBtn.onclick = () => {
-				modelSelect.value = modelId;
-				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
-				};
+                loadModelStandardized(modelId, {
+                    loadButton: loadBtn,
+                    onSuccess: (loadedModelId) => {
+                        console.log(`Model ${loadedModelId} loaded successfully`);
+                    },
+                    onError: (error, failedModelId) => {
+                        console.error(`Failed to load model ${failedModelId}:`, error);
+                        showErrorBanner('Failed to load model: ' + error.message);
+                    }
+                });
+            };
             actions.appendChild(loadBtn);
         }
         
@@ -420,7 +433,7 @@ async function installModel(modelId) {
     
     modelItems.forEach(item => {
         const nameElement = item.querySelector('.model-item-name .model-labels-container span');
-        if (nameElement && nameElement.textContent === modelId) {
+        if (nameElement && nameElement.getAttribute('data-model-id') === modelId) {
             installBtn = item.querySelector('.model-item-btn.install');
         }
     });
@@ -458,60 +471,32 @@ async function installModel(modelId) {
         // Reset button state on error
         if (installBtn) {
             installBtn.disabled = false;
-            installBtn.textContent = 'Install';
+            installBtn.textContent = '📥';
         }
     }
 }
 
-// Load model
-async function loadModel(modelId) {
-    const indicator = document.getElementById('model-status-indicator');
-    const select = document.getElementById('model-select');
-    
-    // Set loading state for indicator
-	modelSelect.value = 'loading-model';
-    indicator.classList.remove('loaded', 'online', 'offline');
-    indicator.classList.add('loading');
-    select.disabled = true;
-
-    // Find the load button and show loading state
-    const modelItems = document.querySelectorAll('.model-item');
-    let loadBtn = null;
-    
-    modelItems.forEach(item => {
-        const nameElement = item.querySelector('.model-item-name .model-labels-container span');
-        if (nameElement && nameElement.textContent === modelId) {
-            loadBtn = item.querySelector('.model-item-btn.load');
-        }
-    });
-
-    if (loadBtn) {
-        loadBtn.disabled = true;
-        loadBtn.textContent = '⏳';
-        loadBtn.classList.add('loading');
-    }
-    
-    // Use the standardized load function
-    const success = await loadModelStandardized(modelId, {
-        loadButton: loadBtn,
-        onSuccess: (loadedModelId) => {
-            console.log(`Model ${loadedModelId} loaded successfully`);
-            // Refresh model list after successful load
-            if (currentCategory === 'hot') displayHotModels();
-            else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
-            else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
-        },
-        onError: (error, failedModelId) => {
-            console.error(`Failed to load model ${failedModelId}:`, error);
-            showErrorBanner('Failed to load model: ' + error.message);
-        }
-    });
-}
 
 // Delete model
 async function deleteModel(modelId) {
     if (!confirm(`Are you sure you want to delete the model "${modelId}"?`)) {
         return;
+    }
+    
+    // Find the delete button and show loading state
+    const modelItems = document.querySelectorAll('.model-item');
+    let deleteBtn = null;
+    
+    modelItems.forEach(item => {
+        const nameElement = item.querySelector('.model-item-name .model-labels-container span');
+        if (nameElement && nameElement.getAttribute('data-model-id') === modelId) {
+            deleteBtn = item.querySelector('.model-item-btn.delete');
+        }
+    });
+    
+    if (deleteBtn) {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = '⏳';
     }
     
     try {
@@ -537,6 +522,12 @@ async function deleteModel(modelId) {
     } catch (error) {
         console.error('Error deleting model:', error);
         showErrorBanner('Failed to delete model: ' + error.message);
+        
+        // Reset button state on error
+        if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = '🗑️';
+        }
     }
 }
 
@@ -551,6 +542,9 @@ function createModelNameWithLabels(modelId, serverModels) {
     // Model name
     const nameSpan = document.createElement('span');
 
+    // Store the original modelId as a data attribute for button finding
+    nameSpan.setAttribute('data-model-id', modelId);
+    
     // Append size if available
     let displayName = modelId;
     if (modelData && typeof modelData.size === 'number') {
@@ -608,7 +602,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         modelSelect.addEventListener('change', async function() {
             const modelId = this.value;
             if (modelId) {
-                await loadModel(modelId);
+                await loadModelStandardized(modelId, {
+                    onSuccess: (loadedModelId) => {
+                        console.log(`Model ${loadedModelId} loaded successfully`);
+                    },
+                    onError: (error, failedModelId) => {
+                        console.error(`Failed to load model ${failedModelId}:`, error);
+                        showErrorBanner('Failed to load model: ' + error.message);
+                    }
+                });
             }
         });
     }
@@ -671,7 +673,7 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
             btn.title = 'Install model';
             btn.onclick = async function() {
                 btn.disabled = true;
-                btn.textContent = 'Installing...';
+                btn.textContent = '⏳';
                 btn.classList.add('installing-btn');
                 try {
                     await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
@@ -686,6 +688,7 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                     }
                 } catch (e) {
                     btn.textContent = 'Error';
+                    btn.disabled = false;
                     showErrorBanner(`Failed to install model: ${e.message}`);
                 }
             };
@@ -762,7 +765,7 @@ async function refreshModelMgmtUI() {
                     return;
                 }
                 btn.disabled = true;
-                btn.textContent = 'Deleting...';
+                btn.textContent = '⏳';
                 btn.style.backgroundColor = '#888';
                 try {
                     await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
@@ -778,6 +781,7 @@ async function refreshModelMgmtUI() {
                 } catch (e) {
                     btn.textContent = 'Error';
                     btn.disabled = false;
+                    btn.style.backgroundColor = '';
                     showErrorBanner(`Failed to delete model: ${e.message}`);
                 }
             };
@@ -864,6 +868,10 @@ function refreshModelMgmtUIDisplay() {
             btn.title = 'Remove this model';
             btn.onclick = async function() {
                 if (confirm(`Are you sure you want to remove the model "${mid}"?`)) {
+                    btn.disabled = true;
+                    btn.textContent = '⏳';
+                    const originalBgColor = btn.style.backgroundColor;
+                    btn.style.backgroundColor = '#888';
                     try {
                         await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
                             method: 'POST',
@@ -874,6 +882,10 @@ function refreshModelMgmtUIDisplay() {
                     } catch (error) {
                         console.error('Error removing model:', error);
                         showErrorBanner('Failed to remove model: ' + error.message);
+                        // Reset button state on error
+                        btn.disabled = false;
+                        btn.textContent = '−';
+                        btn.style.backgroundColor = originalBgColor;
                     }
                 }
             };
@@ -971,5 +983,4 @@ window.selectLabel = selectLabel;
 window.showAddModelForm = showAddModelForm;
 window.unloadModel = unloadModel;
 window.installModel = installModel;
-window.loadModel = loadModel;
 window.deleteModel = deleteModel;
