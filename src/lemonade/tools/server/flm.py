@@ -77,7 +77,7 @@ class FlmServer(WrappedServer):
             f"{self.flm_model_name}",
             "--ctx-len",
             str(ctx_size),
-            "port",
+            "--port",
             str(self.port),
         ]
 
