@@ -1898,6 +1898,53 @@ button:disabled {
   align-items: center;
 }
 
+/* FastFlowLM notice styles */
+.flm-notice {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border: 1px solid #ffeaa7;
+  border-left: 4px solid #f39c12;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 8px rgba(243, 156, 18, 0.1);
+  animation: fadeIn 0.3s ease;
+}
+
+.flm-notice-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+
+.flm-notice-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.flm-notice-text {
+  flex: 1;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #856404;
+}
+
+.flm-notice-text strong {
+  color: #6c5ce7;
+  font-weight: 600;
+}
+
+.flm-notice-text a {
+  color: var(--info-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.flm-notice-text a:hover {
+  text-decoration: underline;
+  color: var(--info-hover);
+}
+
 .error-banner .close-btn {
   background: none;
   border: none;

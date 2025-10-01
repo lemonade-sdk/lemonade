@@ -17,6 +17,7 @@ setup(
         "lemonade.tools.huggingface",
         "lemonade.tools.oga",
         "lemonade.tools.llamacpp",
+        "lemonade.tools.flm",
         "lemonade.tools.report",
         "lemonade.tools.server.utils",
         "lemonade.tools.server",

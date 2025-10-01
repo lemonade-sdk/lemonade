@@ -98,11 +98,11 @@ You can also import custom GGUF and ONNX models from Hugging Face by using our [
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
 
-| Hardware | Engine: OGA | Engine: llamacpp | Engine: HF | Windows | Linux | macOS |
+| Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux | macOS |
 |----------|-------------|------------------|------------|---------|-------|-------|
-| **🧠 CPU** | All platforms | All platforms | All platforms | ✅ | ✅ | ✅ |
+| **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ | ✅ |
 | **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | — | ✅ | — | — |
+| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — | — |
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>

@@ -448,6 +448,12 @@ class Install:
         )
 
         parser.add_argument(
+            "--flm",
+            action="store_true",
+            help="Install FLM (FastFlowLM) for running local language models",
+        )
+
+        parser.add_argument(
             "--override",
             action="store_true",
             help="Override the deprecation error to use legacy tools.",
@@ -727,19 +733,33 @@ class Install:
 
         install_llamacpp(backend)
 
+    @staticmethod
+    def _install_flm():
+        """
+        Install FLM (FastFlowLM) for running local language models.
+        """
+
+        # Check if the processor is supported before proceeding
+        check_ryzen_ai_processor()
+
+        from lemonade.tools.flm.utils import install_flm
+
+        install_flm()
+
     def run(
         self,
         ryzenai: Optional[str] = None,
         build_model: Optional[str] = None,
         llamacpp: Optional[str] = None,
+        flm: Optional[bool] = None,
         yes: bool = False,
         token: Optional[str] = None,
         override: bool = False,
     ):
-        if ryzenai is None and llamacpp is None:
+        if ryzenai is None and llamacpp is None and flm is None:
             raise ValueError(
                 "You must select something to install, "
-                "for example `--ryzenai` or `--llamacpp`"
+                "for example `--llamacpp`, `--flm`, or `--ryzenai`"
             )
 
         if ryzenai is not None:
@@ -747,6 +767,9 @@ class Install:
 
         if llamacpp is not None:
             self._install_llamacpp(llamacpp)
+
+        if flm:
+            self._install_flm()
 
 
 def main():

@@ -403,5 +403,44 @@
         "suggested": true,
         "labels": ["reasoning"],
         "size": 73.1
+    },
+    "Gemma-3-4b-it-FLM": {
+        "checkpoint": "gemma3:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["hot","vision"],
+        "size": 5.26
+    },
+    "Qwen3-4B-Instruct-2507-FLM": {
+        "checkpoint": "qwen3-it:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["hot"],
+        "size": 3.07
+    },
+    "Qwen3-8b-FLM": {
+        "checkpoint": "qwen3:8b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 5.57 
+    },
+    "Llama-3.2-1B-FLM": {
+        "checkpoint": "llama3.2:1b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 1.21
+    },
+    "Llama-3.2-3B-FLM": {
+        "checkpoint": "llama3.2:3b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 2.62
+    },
+    "Llama-3.1-8B-FLM": {
+        "checkpoint": "llama3.1:8b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 5.36
     }
 }

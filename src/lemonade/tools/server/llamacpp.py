@@ -88,9 +88,8 @@ class LlamaTelemetry(WrappedServerTelemetry):
 
 class LlamaServer(WrappedServer):
     def __init__(self, backend: str):
-        self.telemetry = LlamaTelemetry()
         self.backend = backend
-        super().__init__(server_name="llama-server", telemetry=self.telemetry)
+        super().__init__(server_name="llama-server", telemetry=LlamaTelemetry())
 
     def install_server(self, backend=None):
         """
@@ -157,7 +156,7 @@ class LlamaServer(WrappedServer):
 
         # Find a port, and save it in the telemetry object for future reference
         # by other functions
-        self.choose_port()
+        self._choose_port()
 
         # Add port and jinja to enable tool use
         base_command.extend(["--port", str(self.port), "--jinja"])
