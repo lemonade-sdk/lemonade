@@ -10,11 +10,10 @@ print("=" * 50)
 print("Test 1: enable_thinking=True (thinking mode)")
 try:
     completion = client.chat.completions.create(
-    
         model="Qwen3-4B-GGUF",  # Make sure you have this model
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
         max_completion_tokens=100,
-        extra_body={"enable_thinking": True}
+        extra_body={"enable_thinking": True},
     )
     print("Response with thinking:")
     print(completion.choices[0].message.content)
@@ -30,7 +29,7 @@ try:
         model="Qwen3-4B-GGUF",
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
         max_completion_tokens=100,
-        extra_body={"enable_thinking": False}
+        extra_body={"enable_thinking": False},
     )
     print("Response without thinking:")
     print(completion.choices[0].message.content)
@@ -45,7 +44,7 @@ try:
     completion = client.chat.completions.create(
         model="Qwen3-4B-GGUF",
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
-        max_completion_tokens=100
+        max_completion_tokens=100,
     )
     print("Default response:")
     print(completion.choices[0].message.content)
