@@ -582,6 +582,12 @@ class LemonadePerfTable(Table):
                     ".2f",
                 ),
                 StatWithSD(
+                    _wrap("Prefill Tokens per Second", 8),
+                    Keys.PREFILL_TOKENS_PER_SECOND,
+                    Keys.STD_DEV_PREFILL_TOKENS_PER_SECOND,
+                    ".2f",
+                ),
+                StatWithSD(
                     _wrap("Tokens per Second", 8),
                     Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
                     Keys.STD_DEV_TOKENS_PER_SECOND,
