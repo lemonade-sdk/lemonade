@@ -1,10 +1,7 @@
 from openai import OpenAI
 
 # Initialize client
-client = OpenAI(
-    base_url="http://localhost:8000/api/v1",
-    api_key="lemonade"  # required but unused
-)
+client = OpenAI(base_url="http://localhost:8000/api/v0", api_key="not-needed")
 
 print("🧠 Testing enable_thinking parameter...")
 print("=" * 50)
@@ -14,7 +11,7 @@ print("Test 1: enable_thinking=True (thinking mode)")
 try:
     completion = client.chat.completions.create(
     
-        model="Qwen3-4B-Instruct-2507-GGUF",  # Make sure you have this model
+        model="Qwen3-4B-GGUF",  # Make sure you have this model
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
         max_completion_tokens=100,
         extra_body={"enable_thinking": True}
@@ -30,7 +27,7 @@ except Exception as e:
 print("Test 2: enable_thinking=False (fast mode)")
 try:
     completion = client.chat.completions.create(
-        model="Qwen3-4B-Instruct-2507-GGUF",
+        model="Qwen3-4B-GGUF",
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
         max_completion_tokens=100,
         extra_body={"enable_thinking": False}
@@ -46,7 +43,7 @@ except Exception as e:
 print("Test 3: Default behavior (should default to thinking)")
 try:
     completion = client.chat.completions.create(
-        model="Qwen3-4B-Instruct-2507-GGUF",
+        model="Qwen3-4B-GGUF",
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
         max_completion_tokens=100
     )
