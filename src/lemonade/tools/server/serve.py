@@ -809,7 +809,7 @@ class Server:
             "repeat_penalty": chat_completion_request.repeat_penalty,
             "top_k": chat_completion_request.top_k,
             "top_p": chat_completion_request.top_p,
-            "enable_thinking": chat_completion_request.enable_thinking, 
+            "enable_thinking": chat_completion_request.enable_thinking,
             "max_new_tokens": max_new_tokens,
         }
 
@@ -1337,7 +1337,7 @@ class Server:
             # If we aren't using HF, we can just use a list of StopOnEvent to
             # avoid the torch dep
             stopping_criteria = [StopOnEvent(self.stop_event)]
-            
+
         # Apply Qwen3 thinking mode
         if enable_thinking is not None and "qwen" in self.llm_loaded.model_name.lower():
             if enable_thinking:
