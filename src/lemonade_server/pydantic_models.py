@@ -69,6 +69,7 @@ class CompletionRequest(BaseModel):
     repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
+    enable_thinking: bool | None = True
     max_tokens: int | None = None
 
 
@@ -89,6 +90,7 @@ class ChatCompletionRequest(BaseModel):
     repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
+    enable_thinking: bool | None = True
     tools: list[dict] | None = None
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
@@ -131,6 +133,7 @@ class ResponsesRequest(BaseModel):
     repeat_penalty: float | None = None
     top_k: int | None = None
     top_p: float | None = None
+    enable_thinking: bool | None = True
     stream: bool = False
 
 
