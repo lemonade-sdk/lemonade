@@ -615,6 +615,7 @@ class Server:
             "repeat_penalty": completion_request.repeat_penalty,
             "top_k": completion_request.top_k,
             "top_p": completion_request.top_p,
+            "enable_thinking": completion_request.enable_thinking,
             "max_new_tokens": completion_request.max_tokens,
         }
 
@@ -787,6 +788,7 @@ class Server:
             "repeat_penalty": chat_completion_request.repeat_penalty,
             "top_k": chat_completion_request.top_k,
             "top_p": chat_completion_request.top_p,
+            "enable_thinking": chat_completion_request.enable_thinking,
             "max_new_tokens": max_new_tokens,
         }
 
@@ -1079,6 +1081,7 @@ class Server:
             "repeat_penalty": responses_request.repeat_penalty,
             "top_k": responses_request.top_k,
             "top_p": responses_request.top_p,
+            "enable_thinking": responses_request.enable_thinking,
             "max_new_tokens": responses_request.max_output_tokens,
         }
 
@@ -1226,6 +1229,7 @@ class Server:
         repeat_penalty: float | None = None,
         top_k: int | None = None,
         top_p: float | None = None,
+        enable_thinking: bool | None = True,
     ):
         """
         Core streaming completion logic, separated from response handling.
@@ -1313,6 +1317,13 @@ class Server:
             # avoid the torch dep
             stopping_criteria = [StopOnEvent(self.stop_event)]
 
+        # Apply Qwen3 thinking mode
+        if enable_thinking is not None and "qwen" in self.llm_loaded.model_name.lower():
+            if enable_thinking:
+                message = f"/think\n{message}"
+            else:
+                message = f"/no_think\n{message}"
+
         generation_kwargs = {
             "input_ids": input_ids,
             "streamer": streamer,
@@ -1327,6 +1338,13 @@ class Server:
             "top_k": top_k,
             "top_p": top_p,
         }
+        # Add enable_thinking for Qwen3 models
+        if (
+            enable_thinking is not None
+            and "qwen" in self.llm_loaded.model_name.lower()
+            and "oga-" not in self.llm_loaded.recipe
+        ):
+            generation_kwargs["enable_thinking"] = enable_thinking
 
         # Initialize performance variables
         generation_start_time = time.perf_counter()
