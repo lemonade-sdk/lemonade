@@ -442,5 +442,11 @@
         "recipe": "flm",
         "suggested": true,
         "size": 5.36
+    },
+    "gpt-oss-20b-FLM": {
+        "checkpoint": "gpt-oss:20b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 13.4
     }
 }
