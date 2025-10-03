@@ -34,7 +34,7 @@ jobs:
 
           # Keep conda up-to-date since they can apparently break things on the server side
           # We can probably remove this in the future
-          conda update conda conda-libmamba-solver
+          conda update conda conda-libmamba-solver --solver classic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           conda create -p .\lemon-flm-ci python=3.10 -y
