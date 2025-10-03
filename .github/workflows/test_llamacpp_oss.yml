@@ -49,8 +49,16 @@ jobs:
 
       - name: Set up Conda environment
         run: |
+          # Keep conda up-to-date since they can apparently break things on the server side
+          # We can probably remove this in the future
+          conda update conda conda-libmamba-solver --solver classic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           conda create -p $CONDA_ENV_PATH python=3.10 -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           conda init
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies
         run: |
