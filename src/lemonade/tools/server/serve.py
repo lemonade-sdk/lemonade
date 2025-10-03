@@ -1360,7 +1360,11 @@ class Server:
             "top_p": top_p,
         }
         # Add enable_thinking for Qwen3 models
-        if enable_thinking is not None and "qwen" in self.llm_loaded.model_name.lower():
+        if (
+            enable_thinking is not None
+            and "qwen" in self.llm_loaded.model_name.lower()
+            and "oga-" not in self.llm_loaded.recipe
+        ):
             generation_kwargs["enable_thinking"] = enable_thinking
 
         # Initialize performance variables
