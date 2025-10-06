@@ -326,6 +326,16 @@ def run(
             ctx_size=ctx_size,
         )
     else:
+        # macOS: Check for port conflicts when server is already running
+        if platform.system() == "Darwin":
+            requested_port = port if port is not None else DEFAULT_PORT
+            if running_port != requested_port:
+                print(
+                    f"Lemonade Server is already running on port {running_port}\n"
+                    f"You requested port {requested_port}. Please stop the existing server first "
+                )
+                sys.exit(ExitCodes.SERVER_ALREADY_RUNNING)
+
         port = running_port
 
     # Pull model
