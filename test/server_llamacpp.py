@@ -61,6 +61,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_000_get_hip_devices_returns_zero(self):
         """ROCm-only: get_hip_devices should report zero devices in CI."""
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         if self.llamacpp_backend != "rocm":
             return
 
@@ -109,6 +111,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     # Endpoint: /api/v1/chat/completions
     def test_002_test_llamacpp_chat_completion_non_streaming(self):
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -127,6 +131,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     # Endpoint: /api/v1/embeddings
     def test_003_test_embeddings_with_gguf(self):
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -222,6 +228,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     # Endpoint: /api/v1/reranking
     def test_004_test_reranking_with_gguf(self):
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         query = "A man is eating pasta."
         documents = [
             "A man is eating food.",  # index 0
@@ -259,6 +267,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_005_test_llamacpp_completions_non_streaming(self):
         """Test completion endpoint specifically with llamacpp model (non-streaming)"""
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -280,6 +290,8 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_006_test_llamacpp_completions_streaming(self):
         """Test streaming completion endpoint specifically with llamacpp model"""
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -305,13 +317,14 @@ class LlamaCppTesting(ServerTestingBase):
 
     def test_007_test_generation_parameters_with_llamacpp(self):
         """Test generation parameters across all endpoints with llamacpp models"""
+        if self.llamacpp_backend == "metal":
+            self.skipTest("Skipping in metal smoke test mode")
         if (
             self.llamacpp_backend == "rocm"
             or self.llamacpp_backend == "vulkan"
-            or self.llamacpp_backend == "metal"
         ):
             self.skipTest(
-                "Skipping test when backend is set to rocm, vulkan, or metal because of https://github.com/lemonade-sdk/lemonade/issues/274"
+                "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )
         client = OpenAI(
             base_url=self.base_url,
