@@ -94,7 +94,7 @@ async def log_streamer(websocket: WebSocket, path: str, interval: float = 1.0):
     await websocket.accept()
     try:
         with open(path, "r", encoding="utf-8") as f:
-            f.seek(0, os.SEEK_END)  # start at end
+            f.seek(0)  # start at the beginning of the file
             while True:
                 # Try reading a line
                 line = f.readline()
