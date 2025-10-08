@@ -404,6 +404,13 @@
         "labels": ["reasoning"],
         "size": 73.1
     },
+    "Playable1-GGUF": {
+        "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "labels": ["coding"],
+        "size": 4.68
+    },
     "Gemma-3-4b-it-FLM": {
         "checkpoint": "gemma3:4b",
         "recipe": "flm",
