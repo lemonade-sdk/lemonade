@@ -67,6 +67,7 @@ The goal of Lemonade is to help achieve maximum LLM performance on your PC. To c
 | :--- | :--- |
 | **OnnxRuntime GenAI (OGA)** | Microsoft engine that runs `.onnx` models and enables hardware vendors to provide their own execution providers (EPs) to support specialized hardware, such as neural processing units (NPUs). |
 | **llamacpp** | Community-driven engine with strong GPU acceleration, support for thousands of `.gguf` models, and advanced features such as vision-language models (VLMs) and mixture-of-experts (MoEs). |
+| **FastFlowLM** | A [startup-driven engine](https://github.com/FastFlowLM/FastFlowLM) optimized for Ryzen™ AI 300-series NPUs, with support for `.q4nx` models with vision-language model (VLM) support. Available in early access; commercial licensing terms apply. |
 | **Hugging Face (HF)** | Hugging Face's `transformers` library can run the original `.safetensors` trained weights for models on Meta's PyTorch engine, which provides a source of truth for accuracy measurement. |
 
 ## Contributing

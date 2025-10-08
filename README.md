@@ -98,11 +98,11 @@ You can also import custom GGUF and ONNX models from Hugging Face by using our [
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
 
-| Hardware | Engine: OGA | Engine: llamacpp | Engine: HF | Windows | Linux | macOS |
+| Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux | macOS |
 |----------|-------------|------------------|------------|---------|-------|-------|
-| **🧠 CPU** | All platforms | All platforms | All platforms | ✅ | ✅ | ✅ |
+| **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ | ✅ |
 | **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | — | ✅ | — | — |
+| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — | — |
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
@@ -207,6 +207,7 @@ This project is:
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
   - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
   - [OpenAI API](https://github.com/openai/openai-python)
+  - [IRON/MLIR-AIE](https://github.com/Xilinx/mlir-aie)
   - and more...
 - Accelerated by mentorship from the OCV Catalyst program.
 - Licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE).

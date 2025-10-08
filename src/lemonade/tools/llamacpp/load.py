@@ -93,6 +93,7 @@ class LoadLlamaCpp(FirstTool):
         from lemonade.tools.llamacpp.utils import (
             install_llamacpp,
             get_llama_cli_exe_path,
+            get_llama_bench_exe_path,
             get_llama_installed_version,
             parse_checkpoint,
             download_gguf,
@@ -102,6 +103,8 @@ class LoadLlamaCpp(FirstTool):
         )
 
         install_llamacpp(backend)
+
+        extension = ""
 
         # Check if input is a local folder containing a .GGUF model
         if os.path.isdir(input):
@@ -121,6 +124,17 @@ class LoadLlamaCpp(FirstTool):
                 )
             model_to_use = gguf_files[0]
             full_model_path = os.path.join(local_model_folder, model_to_use)
+            extension = ".gguf"
+
+        elif input.endswith(".gguf") and os.path.isfile(input):
+            # input is a local .gguf file
+            full_model_path = os.path.abspath(input)
+            checkpoint = "local_model"
+            state.checkpoint = checkpoint
+            state.save_stat(Keys.CHECKPOINT, checkpoint)
+            state.save_stat(Keys.LOCAL_MODEL_FOLDER, full_model_path)
+            model_to_use = os.path.basename(full_model_path)
+            extension = ".gguf"
 
         else:
             # Input is a model checkpoint
@@ -161,6 +175,7 @@ class LoadLlamaCpp(FirstTool):
                 model_to_use = os.path.basename(full_model_path)
 
         llama_cli_exe_path = get_llama_cli_exe_path(backend)
+        llama_bench_exe_path = get_llama_bench_exe_path(backend)
         printing.log_info(f"Using llama_cli for GGUF model: {llama_cli_exe_path}")
 
         # Get the directory containing the executable for shared libraries
@@ -174,8 +189,10 @@ class LoadLlamaCpp(FirstTool):
             context_size=context_size,
             threads=threads,
             executable=llama_cli_exe_path,
+            bench_executable=llama_bench_exe_path,
             reasoning=reasoning,
             lib_dir=lib_dir,
+            state=state,
         )
         state.tokenizer = LlamaCppTokenizerAdapter()
         state.device = device
@@ -186,7 +203,9 @@ class LoadLlamaCpp(FirstTool):
             Keys.LLAMA_CLI_VERSION_INFO, get_llama_installed_version(backend)
         )
 
-        status.add_to_state(state=state, name=input, model=model_to_use)
+        status.add_to_state(
+            state=state, name=input, model=model_to_use, extension=extension
+        )
         return state
 
 

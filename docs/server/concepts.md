@@ -89,7 +89,7 @@ completion = client.chat.completions.create(
 
 # This code gets the LLM's response from the `completion`
 # and prints it to the screen
-reponse = completion.choices[0].message.content
+response = completion.choices[0].message.content
 print(response)
 ```
 
