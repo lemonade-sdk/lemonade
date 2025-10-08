@@ -112,10 +112,10 @@ class UniqueInvocationInfo(BasicInfo):
         if print_file_name:
             print(f"{self.script_name}{self.extension}:")
 
-        # Print invocation about the model (only applies to scripts, not ONNX files or
+        # Print invocation about the model (only applies to scripts, not ONNX or GGUF files, nor
         # LLMs, which have no extension)
         if not (
-            self.extension == ".onnx"
+            self.extension in [".onnx", ".gguf"]
             or self.extension == build.state_file_name
             or self.extension == ""
         ):
@@ -138,7 +138,7 @@ class UniqueInvocationInfo(BasicInfo):
 
         if self.depth == 0:
             print(f"{self.indent}\tLocation:\t{self.file}", end="")
-            if self.extension == ".onnx":
+            if self.extension in [".onnx", ".gguf"]:
                 print()
             else:
                 print(f", line {self.line}")
@@ -314,7 +314,7 @@ class UniqueInvocationInfo(BasicInfo):
         Print information about a given model or submodel.
         """
 
-        if self.extension == ".onnx" or self.extension == "":
+        if self.extension in [".onnx", ".gguf"] or self.extension == "":
             self.indent = "\t" * (2 * self.depth)
         else:
             self.indent = "\t" * (2 * self.depth + 1)

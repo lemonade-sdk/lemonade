@@ -81,7 +81,7 @@ jobs:
           }
 
           lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Run lemonade Llamacpp API tests
         env:
@@ -143,7 +143,7 @@ jobs:
           fi
 
           lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -w 0 -i 2 || exit 1
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -i 2 --output-tokens 16 || exit 1
 
       - name: Run lemonade Llamacpp API tests
         env:

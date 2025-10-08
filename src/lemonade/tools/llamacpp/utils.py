@@ -7,6 +7,7 @@ import zipfile
 from typing import Optional
 import subprocess
 import requests
+import lemonade.common.build as build
 import lemonade.common.printing as printing
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 
@@ -173,6 +174,13 @@ def get_llama_cli_exe_path(backend: str):
     Get path to platform-specific llama-cli executable
     """
     return get_llama_exe_path("llama-cli", backend)
+
+
+def get_llama_bench_exe_path(backend: str):
+    """
+    Get path to platform-specific llama-bench executable
+    """
+    return get_llama_exe_path("llama-bench", backend)
 
 
 def get_version_txt_path(backend: str):
@@ -406,6 +414,7 @@ def install_llamacpp(backend):
             exe_paths = [
                 (get_llama_server_exe_path(backend), "llama-server"),
                 (get_llama_cli_exe_path(backend), "llama-cli"),
+                (get_llama_bench_exe_path(backend), "llama-bench"),
             ]
 
             for exe_path, exe_name in exe_paths:
@@ -699,8 +708,10 @@ class LlamaCppAdapter(ModelAdapter):
         context_size,
         threads,
         executable,
+        bench_executable,
         reasoning=False,
         lib_dir=None,
+        state=None,
     ):
         super().__init__()
 
@@ -712,8 +723,10 @@ class LlamaCppAdapter(ModelAdapter):
         self.context_size = context_size
         self.threads = threads
         self.executable = os.path.normpath(executable)
+        self.bench_executable = os.path.normpath(bench_executable)
         self.reasoning = reasoning
         self.lib_dir = lib_dir
+        self.state = state
 
     def generate(
         self,
@@ -754,31 +767,53 @@ class LlamaCppAdapter(ModelAdapter):
             self.executable,
             "-m",
             self.model,
-            "--ctx-size",
+            "--ctx-size",  # size of the prompt context, 0 = loaded from model
             str(self.context_size),
-            "-n",
+            "-n",  # number of tokens to predict, -1 = infinity, =2 - until context filled
             str(n_predict),
-            "-t",
+            "-t",  # number of threads to use during generation
             str(self.threads),
             "-p",
             prompt,
+            "-b",  # logical maximum batch size
+            "1",
+            "-ub",  # physical maximum batch size
+            "1",
             "--temp",
             str(temperature),
             "--top-p",
             str(top_p),
             "--top-k",
             str(top_k),
-            "-e",
-            "-no-cnv",
-            "--reasoning-format",
+            "-e",  # process escape sequences
+            "--no-conversation",  # disable conversation mode
+            "--reasoning-format",  # leaves thoughts unparsed in message content
             "none",
         ]
+
+        # If prompt exceeds 500 characters, then use a file
+        if len(prompt) < 500:
+            cmd += ["-p", prompt]
+        else:
+            # Create prompt file in cache directory
+            prompt_file = os.path.join(
+                build.output_dir(self.state.cache_dir, self.state.build_name),
+                "prompt.txt",
+            )
+            with open(prompt_file, "w", encoding="utf-8") as file:
+                file.write(prompt)
+            cmd += ["-f", prompt_file]
 
         # Configure GPU layers: 99 for GPU, 0 for CPU-only
         ngl_value = "99" if self.device == "igpu" else "0"
         cmd = cmd + ["-ngl", ngl_value]
 
         cmd = [str(m) for m in cmd]
+
+        # save llama-cli command
+        self.state.llama_cli_cmd = getattr(self.state, "llama_cli_cmd", []) + [
+            " ".join(cmd)
+        ]
 
         try:
             # Set up environment with library path for Linux
@@ -809,6 +844,15 @@ class LlamaCppAdapter(ModelAdapter):
             )
 
             raw_output, stderr = process.communicate(timeout=600)
+
+            # save llama-cli command output with performance info to state
+            # (can be viewed in state.yaml file in cache)
+            self.state.llama_cli_stderr = getattr(
+                self.state, "llama_cli_stderr", []
+            ) + [
+                [line for line in stderr.splitlines() if line.startswith("llama_perf_")]
+            ]
+
             if process.returncode != 0:
                 error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
                 error_msg += f"Command: {' '.join(cmd)}\n"
@@ -873,7 +917,108 @@ class LlamaCppAdapter(ModelAdapter):
             return [output_text]
 
         except Exception as e:
-            error_msg = f"Failed to run llama.cpp command: {str(e)}\n"
+            error_msg = f"Failed to run llama-cli.exe command: {str(e)}\n"
+            error_msg += f"Command: {' '.join(cmd)}"
+            raise Exception(error_msg)
+
+    def benchmark(self, prompts, iterations, output_tokens):
+        """
+        Runs the llama-bench.exe tool to measure TTFT and TPS
+        """
+        cmd = [
+            self.bench_executable,
+            "-m",
+            self.model,
+            "-r",
+            iterations,
+            "-p",
+            ",".join([str(p) for p in prompts]),
+            "-n",
+            output_tokens,
+            "-t",
+            self.threads if self.threads > 0 else 16,
+            "-b",
+            1,
+            "-ub",
+            1,
+        ]
+        cmd = [str(m) for m in cmd]
+
+        # save llama-bench command
+        self.state.llama_bench_cmd = " ".join(cmd)
+
+        try:
+            # Set up environment with library path for Linux
+            env = os.environ.copy()
+
+            # Load environment variables from .env file in the executable directory
+            exe_dir = os.path.dirname(self.executable)
+            env_file_path = os.path.join(exe_dir, ".env")
+            if os.path.exists(env_file_path):
+                load_dotenv(env_file_path, override=True)
+                env.update(os.environ)
+
+            if self.lib_dir and os.name != "nt":  # Not Windows
+                current_ld_path = env.get("LD_LIBRARY_PATH", "")
+                if current_ld_path:
+                    env["LD_LIBRARY_PATH"] = f"{self.lib_dir}:{current_ld_path}"
+                else:
+                    env["LD_LIBRARY_PATH"] = self.lib_dir
+
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+
+            raw_output, stderr = process.communicate(timeout=600)
+
+            # save llama-bench command output with performance info to state
+            # (can be viewed in state.yaml file in cache)
+            self.state.llama_bench_standard_output = raw_output.splitlines()
+
+            if process.returncode != 0:
+                error_msg = (
+                    f"llama-bench.exe failed with return code {process.returncode}.\n"
+                )
+                error_msg += f"Command: {' '.join(cmd)}\n"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{raw_output}"
+                raise Exception(error_msg)
+
+            if raw_output is None:
+                raise Exception("No output received from llama-bench.exe process")
+
+            # Parse information from llama-bench.exe output
+            prompt_lengths = []
+            pp_tps = []
+            pp_tps_sd = []
+            tg_tps = None
+            tg_tps_sd = None
+
+            for line in self.state.llama_bench_standard_output:
+                # Parse TPS information
+                for p in prompts:
+                    if f"pp{p:d}" in line:
+                        parts = line.split("|")
+                        timings = parts[-2].strip().split(" ")
+                        prompt_lengths.append(p)
+                        pp_tps.append(float(timings[0]))
+                        pp_tps_sd.append(float(timings[-1]))
+                    if f"tg{output_tokens:d}" in line:
+                        parts = line.split("|")
+                        timings = parts[-2].strip().split(" ")
+                        tg_tps = float(timings[0])
+                        tg_tps_sd = float(timings[-1])
+
+            return prompt_lengths, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd
+
+        except Exception as e:
+            error_msg = f"Failed to run llama-bench.exe command: {str(e)}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
 

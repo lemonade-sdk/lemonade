@@ -39,12 +39,13 @@ You can specify inference on the CPU by using the `--device` flag:
 lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --device cpu
 ```
 
-The `llamacpp-load` tool can also load a GGUF file from a local folder:
+The `llamacpp-load` tool can also load a GGUF file.  You can specify the filename or folder,
+if there is only one GGUF file in the folder:
 ```
+lemonade -i models/my_gguf_model/my_model-Q4_0.gguf llamacpp-load
+
 lemonade -i models/my_gguf_model llamacpp-load
 ```
-There should be only one GGUF file in the `models/my_gguf_model` folder.
-
 Please see `lemonade llamacpp-load -h` for more options.
 
 ## Usage
@@ -60,6 +61,10 @@ lemonade -i <MODEL_CHECKPOINT:VARIANT> llamacpp-load llamacpp-bench
 The benchmark will measure and report:
 - Time to first token (prompt evaluation time)
 - Token generation speed (tokens per second)
+
+- By default, the `llamacpp-bench` tool will use the `llama-bench.exe` executable for benchmarking.  Use the 
+`--cli` flag to use `llama-cli.exe`.  In this case, the bench tool will make multiple calls to the executable,
+one per sample, which will have lower overall performance.
 
 
 ### Integration with Other Tools
