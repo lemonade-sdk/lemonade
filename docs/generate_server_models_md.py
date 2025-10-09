@@ -68,6 +68,7 @@ hybrid_models = []
 npu_models = []
 cpu_models = []
 gguf_models = []
+flm_models = []
 for model_name, details in models.items():
     if details.get("suggested", False):
         # Check for hot models first (these can appear in multiple sections)
@@ -82,6 +83,8 @@ for model_name, details in models.items():
             cpu_models.append((model_name, details))
         elif model_name.endswith("-GGUF"):
             gguf_models.append((model_name, details))
+        elif model_name.endswith("-FLM"):
+            flm_models.append((model_name, details))
 
 
 def model_section_md(title, models):
@@ -119,8 +122,9 @@ def model_section_md(title, models):
 # Add models sections using the helper function - Hot models first!
 markdown_content += model_section_md("🔥 Hot Models", hot_models)
 markdown_content += model_section_md("GGUF", gguf_models)
-markdown_content += model_section_md("Hybrid", hybrid_models)
-markdown_content += model_section_md("NPU", npu_models)
+markdown_content += model_section_md("Ryzen AI Hybrid (NPU+GPU)", hybrid_models)
+markdown_content += model_section_md("Ryzen AI NPU", npu_models)
+markdown_content += model_section_md("FastFlowLM (NPU)", npu_models)
 markdown_content += model_section_md("CPU", cpu_models)
 
 # Add the FAQ items at the bottom
