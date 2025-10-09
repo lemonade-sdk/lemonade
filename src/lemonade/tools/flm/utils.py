@@ -240,7 +240,7 @@ def get_flm_installed_models() -> List[str]:
 
         return installed_checkpoints
 
-    except (subprocess.CalledProcessError, FileNotFoundError, AttributeError):
+    except (subprocess.CalledProcessError, FileNotFoundError, AttributeError, NotADirectoryError):
         # FLM not installed, not available, or output parsing failed
         return []
 
