@@ -793,81 +793,123 @@ lemonade-server pull Phi-3.5-Mini-Instruct-NPU
 ### FastFlowLM (NPU)
 
 <details>
-<summary>Qwen-2.5-7B-Instruct-NPU</summary>
+<summary>Gemma-3-4b-it-FLM</summary>
 
 ```bash
-lemonade-server pull Qwen-2.5-7B-Instruct-NPU
+lemonade-server pull Gemma-3-4b-it-FLM
 ```
 
 <table>
 <tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-7B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Qwen2.5-7B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
-<tr><td>Recipe</td><td>oga-npu</td></tr>
-<tr><td>Size</td><td>10.14</td></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/gemma3">gemma3</a></td></tr>
+<tr><td>GGUF Variant</td><td>4b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>hot, vision</td></tr>
+<tr><td>Size</td><td>5.26</td></tr>
 </table>
 
 </details>
 
 <details>
-<summary>Qwen-2.5-1.5B-Instruct-NPU</summary>
+<summary>Qwen3-4B-Instruct-2507-FLM</summary>
 
 ```bash
-lemonade-server pull Qwen-2.5-1.5B-Instruct-NPU
+lemonade-server pull Qwen3-4B-Instruct-2507-FLM
 ```
 
 <table>
 <tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Qwen2.5-1.5B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Qwen2.5-1.5B-Instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
-<tr><td>Recipe</td><td>oga-npu</td></tr>
-<tr><td>Size</td><td>2.89</td></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/qwen3-it">qwen3-it</a></td></tr>
+<tr><td>GGUF Variant</td><td>4b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size</td><td>3.07</td></tr>
 </table>
 
 </details>
 
 <details>
-<summary>DeepSeek-R1-Distill-Llama-8B-NPU</summary>
+<summary>Qwen3-8b-FLM</summary>
 
 ```bash
-lemonade-server pull DeepSeek-R1-Distill-Llama-8B-NPU
+lemonade-server pull Qwen3-8b-FLM
 ```
 
 <table>
 <tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/DeepSeek-R1-Distill-Llama-8B-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
-<tr><td>Recipe</td><td>oga-npu</td></tr>
-<tr><td>Size</td><td>10.63</td></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/qwen3">qwen3</a></td></tr>
+<tr><td>GGUF Variant</td><td>8b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
+<tr><td>Size</td><td>5.57</td></tr>
 </table>
 
 </details>
 
 <details>
-<summary>Mistral-7B-v0.3-Instruct-NPU</summary>
+<summary>Llama-3.2-1B-FLM</summary>
 
 ```bash
-lemonade-server pull Mistral-7B-v0.3-Instruct-NPU
+lemonade-server pull Llama-3.2-1B-FLM
 ```
 
 <table>
 <tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Mistral-7B-Instruct-v0.3-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
-<tr><td>Recipe</td><td>oga-npu</td></tr>
-<tr><td>Size</td><td>11.75</td></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/llama3.2">llama3.2</a></td></tr>
+<tr><td>GGUF Variant</td><td>1b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size</td><td>1.21</td></tr>
 </table>
 
 </details>
 
 <details>
-<summary>Phi-3.5-Mini-Instruct-NPU</summary>
+<summary>Llama-3.2-3B-FLM</summary>
 
 ```bash
-lemonade-server pull Phi-3.5-Mini-Instruct-NPU
+lemonade-server pull Llama-3.2-3B-FLM
 ```
 
 <table>
 <tr><th>Key</th><th>Value</th></tr>
-<tr><td>Checkpoint</td><td><a href="https://huggingface.co/amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix">amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix</a></td></tr>
-<tr><td>Recipe</td><td>oga-npu</td></tr>
-<tr><td>Size</td><td>4.18</td></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/llama3.2">llama3.2</a></td></tr>
+<tr><td>GGUF Variant</td><td>3b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size</td><td>2.62</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Llama-3.1-8B-FLM</summary>
+
+```bash
+lemonade-server pull Llama-3.1-8B-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/llama3.1">llama3.1</a></td></tr>
+<tr><td>GGUF Variant</td><td>8b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size</td><td>5.36</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>gpt-oss-20b-FLM</summary>
+
+```bash
+lemonade-server pull gpt-oss-20b-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/gpt-oss">gpt-oss</a></td></tr>
+<tr><td>GGUF Variant</td><td>20b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size</td><td>13.4</td></tr>
 </table>
 
 </details>
