@@ -95,18 +95,22 @@ def model_section_md(title, models):
         section += "<table>\n<tr><th>Key</th><th>Value</th></tr>\n"
         for key, value in details.items():
             if key == "checkpoint":
-                colon_split = value.split(":")
-                checkpoint = colon_split[0]
-                variant = None
-                if len(colon_split) > 1:
-                    variant = colon_split[1]
+                # Skip GGUF variant splitting for FLM models
+                if model_name.endswith("-FLM"):
+                    section += f"<tr><td>{key.capitalize()}</td><td>{value}</td></tr>\n"
+                else:
+                    colon_split = value.split(":")
+                    checkpoint = colon_split[0]
+                    variant = None
+                    if len(colon_split) > 1:
+                        variant = colon_split[1]
 
-                hyperlink = (
-                    f'<a href="https://huggingface.co/{checkpoint}">{checkpoint}</a>'
-                )
-                section += f"<tr><td>{key.capitalize()}</td><td>{hyperlink}</td></tr>\n"
-                if variant:
-                    section += f"<tr><td>GGUF Variant</td><td>{variant}</td></tr>\n"
+                    hyperlink = f'<a href="https://huggingface.co/{checkpoint}">{checkpoint}</a>'
+                    section += (
+                        f"<tr><td>{key.capitalize()}</td><td>{hyperlink}</td></tr>\n"
+                    )
+                    if variant:
+                        section += f"<tr><td>GGUF Variant</td><td>{variant}</td></tr>\n"
             elif key == "labels":
                 # Pretty-print labels as comma-separated values with nice formatting
                 labels_str = ", ".join(value) if isinstance(value, list) else str(value)
@@ -114,7 +118,10 @@ def model_section_md(title, models):
                     f"<tr><td>{key.capitalize()}</td><td>{labels_str}</td></tr>\n"
                 )
             elif key not in ["max_prompt_length", "suggested"]:
-                section += f"<tr><td>{key.capitalize()}</td><td>{value}</td></tr>\n"
+                if key.lower() == "size":
+                    section += f"<tr><td>Size (GB)</td><td>{value}</td></tr>\n"
+                else:
+                    section += f"<tr><td>{key.capitalize()}</td><td>{value}</td></tr>\n"
         section += "</table>\n\n</details>\n\n"
     return section
 
