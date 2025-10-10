@@ -42,12 +42,6 @@ class FlmServer(WrappedServer):
         self.flm_model_name = None
         super().__init__(server_name="flm-server", telemetry=FlmTelemetry())
 
-    def _choose_port(self):
-        """
-        `flm serve` doesn't support port selection as of v0.9.10
-        """
-        self.port = 11434
-
     def address(self):
         return f"http://localhost:{self.port}/v1"
 
@@ -83,6 +77,8 @@ class FlmServer(WrappedServer):
             f"{self.flm_model_name}",
             "--ctx-len",
             str(ctx_size),
+            "--port",
+            str(self.port),
         ]
 
         # Set up environment with library path for Linux

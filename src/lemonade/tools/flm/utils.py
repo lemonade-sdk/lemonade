@@ -13,7 +13,7 @@ import requests
 from packaging.version import Version
 
 
-FLM_MINIMUM_VERSION = "0.9.10"
+FLM_MINIMUM_VERSION = "0.9.12"
 
 
 def check_flm_version() -> Optional[str]:
@@ -240,7 +240,12 @@ def get_flm_installed_models() -> List[str]:
 
         return installed_checkpoints
 
-    except (subprocess.CalledProcessError, FileNotFoundError, AttributeError):
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        AttributeError,
+        NotADirectoryError,
+    ):
         # FLM not installed, not available, or output parsing failed
         return []
 
