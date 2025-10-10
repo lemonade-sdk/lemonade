@@ -156,6 +156,7 @@ class TestLlamaCpp(unittest.TestCase):
             iterations=2,
             warmup_iterations=1,
             output_tokens=128,
+            cli=True,
             prompts=[
                 "Hello, I am a test prompt that is long enough to get meaningful metrics."
             ],

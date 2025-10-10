@@ -29,7 +29,9 @@ class Bench(Tool, ABC):
             Keys.SECONDS_TO_FIRST_TOKEN,
             Keys.STD_DEV_SECONDS_TO_FIRST_TOKEN,
             Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
+            Keys.STD_DEV_TOKENS_PER_SECOND,
             Keys.PREFILL_TOKENS_PER_SECOND,
+            Keys.STD_DEV_PREFILL_TOKENS_PER_SECOND,
             Keys.PROMPT_TOKENS,
             Keys.RESPONSE_TOKENS,
             Keys.MAX_MEMORY_USED_GBYTE,
@@ -42,7 +44,9 @@ class Bench(Tool, ABC):
         self.mean_time_to_first_token_list = []
         self.std_dev_time_to_first_token_list = []
         self.prefill_tokens_per_second_list = []
+        self.std_dev_prefill_tokens_per_second_list = []
         self.token_generation_tokens_per_second_list = []
+        self.std_dev_token_generation_tokens_per_second_list = []
         self.max_memory_used_gb_list = []
 
         # Max memory used can only be measured on Windows systems
@@ -88,7 +92,7 @@ class Bench(Tool, ABC):
             default=[str(default_prompt_length)],
             metavar="PROMPT",
             help="Input one or more prompts to the LLM. Three formats are supported. "
-            "1) integer: use a synthetic prompt with the specified length "
+            "1) integer: use a synthetic prompt with the specified token length "
             "2) str: use a user-provided prompt string "
             "3) path/to/prompt.txt: load the prompt from a text file. "
             f"(default: {default_prompt_length}) ",
@@ -246,10 +250,27 @@ class Bench(Tool, ABC):
             Keys.PREFILL_TOKENS_PER_SECOND,
             self.get_item_or_list(self.prefill_tokens_per_second_list),
         )
+        if not all(
+            element is None for element in self.std_dev_prefill_tokens_per_second_list
+        ):
+            state.save_stat(
+                Keys.STD_DEV_PREFILL_TOKENS_PER_SECOND,
+                self.get_item_or_list(self.std_dev_prefill_tokens_per_second_list),
+            )
         state.save_stat(
             Keys.TOKEN_GENERATION_TOKENS_PER_SECOND,
             self.get_item_or_list(self.token_generation_tokens_per_second_list),
         )
+        if not all(
+            element is None
+            for element in self.std_dev_token_generation_tokens_per_second_list
+        ):
+            state.save_stat(
+                Keys.STD_DEV_TOKENS_PER_SECOND,
+                self.get_item_or_list(
+                    self.std_dev_token_generation_tokens_per_second_list
+                ),
+            )
         if self.save_max_memory_used:
             state.save_stat(
                 Keys.MAX_MEMORY_USED_GBYTE,
