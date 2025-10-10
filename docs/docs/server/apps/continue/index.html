@@ -527,9 +527,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#configuring-with-continue-hub" class="md-nav__link">
+  <a href="#configuring-lemonade-server-with-continue" class="md-nav__link">
     <span class="md-ellipsis">
-      Configuring with Continue Hub
+      Configuring Lemonade Server with Continue
     </span>
   </a>
   
@@ -1006,9 +1006,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#configuring-with-continue-hub" class="md-nav__link">
+  <a href="#configuring-lemonade-server-with-continue" class="md-nav__link">
     <span class="md-ellipsis">
-      Configuring with Continue Hub
+      Configuring Lemonade Server with Continue
     </span>
   </a>
   
@@ -1151,15 +1151,15 @@
 
 <h1 id="continue-coding-assistant">Continue Coding Assistant</h1>
 <p><a href="https://www.continue.dev/">Continue</a> provides open-source Integrated Development Environment (IDE) extensions, such as for <a href="https://code.visualstudio.com/">Visual Studio Code</a> and <a href="https://www.jetbrains.com/ides/">JetBrains</a>, and an open-source CLI that lets developers leverage custom AI coding agents.</p>
-<p>This guide walks through how to use Lemonade Server with Continue Hub and the VS Code extension for code generation, editing, and chat capabilities, all running locally on your AMD PC.</p>
+<p>This guide walks through how to use Lemonade Server with the Continue VS Code extension for code generation, editing, and chat capabilities, all running locally on your AMD PC.</p>
 <h2 id="prerequisites">Prerequisites</h2>
 <p>Before you start, make sure you have the following:</p>
 <h3 id="software-requirements">Software Requirements</h3>
 <ul>
 <li><strong>IDE</strong>: <a href="https://code.visualstudio.com/">Visual Studio Code (v1.80+)</a> or another supported IDE.</li>
 <li><strong>Lemonade Server</strong>: Installed and set up using the <a href="https://lemonade-server.ai/docs/server/">Getting Started guide</a>.</li>
-<li><strong>Lemonade Server Running</strong>: The server should be running at <code>http://localhost:8000</code>.</li>
-<li><strong>Model Downloaded</strong>: At least one model from the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> must be installed locally. This should match the model you plan to use in <a href="https://hub.continue.dev/lemonade">Continue Hub</a>.</li>
+<li><strong>Lemonade Server Running</strong>: The server should be running at <code>http://localhost:8000</code>. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.</li>
+<li><strong>Model Downloaded</strong>: At least one model from the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a> must be installed locally.</li>
 </ul>
 <h3 id="hardware-requirements">Hardware Requirements</h3>
 <p>For best results, a code-tuned model with at least 20B parameters is required. To run such a model:</p>
@@ -1172,7 +1172,7 @@
 </li>
 </ul>
 <h2 id="setup">Setup</h2>
-<h3 id="configuring-with-continue-hub">Configuring with Continue Hub</h3>
+<h3 id="configuring-lemonade-server-with-continue">Configuring Lemonade Server with Continue</h3>
 <ol>
 <li>
 <p><strong>Install Models Locally</strong></p>
@@ -1186,23 +1186,14 @@
 </code></pre></div></p>
 </li>
 <li>
-<p><strong>Open Continue Hub</strong>: Go to <a href="https://hub.continue.dev/lemonade">hub.continue.dev</a>. Sign up if you are a new user.</p>
+<p><strong>Start Lemonade Server</strong>: Ensure Lemonade Server is running at <code>http://localhost:8000</code>. You can start it from the Lemon tray icon or by running:</p>
+<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve
+</code></pre></div>
 </li>
 <li>
-<p><strong>Add an Assistant</strong>: In the Assistants section, click the <code>+</code> next to any available assistant (e.g., <code>llama.cpp</code>).</p>
-</li>
-<li>
-<p><strong>Add Models to Your Assistant</strong></p>
-<ul>
-<li>Browse the list of supported models and click the <code>+</code> next to the model name to add it to your assistant.</li>
-<li>All models shown must be installed locally using the command provided in Step 1. See the <a href="https://lemonade-server.ai/docs/server/server_models/">supported models list</a>.</li>
-<li>When you sign in to the Continue extension in your IDE, your configuration will automatically sync.</li>
-</ul>
+<p><strong>Verify Model is Loaded</strong>: Use the Model Manager or tray icon to confirm your model is loaded and ready. Continue will automatically detect Lemonade Server running on localhost.</p>
 </li>
 </ol>
-<p><em>Example configuration screen:</em>
-  <img alt="Continue Configuration Settings" src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_hub_assistant_configed.png" /></p>
-<p>For more details, see the <a href="https://docs.continue.dev/guides/understanding-assistants">Continue Assistants Guide</a>.</p>
 <h3 id="setting-up-continue-extension-in-vs-code">Setting Up Continue Extension in VS Code</h3>
 <ol>
 <li><strong>Go to Extensions Marketplace</strong>: In VS Code, click the Extensions icon in the Activity bar (default is on the left).</li>
@@ -1214,11 +1205,15 @@
 <li>
 <p><strong>Open Continue in VS Code</strong>: After installation completes, the Continue logo appears in the Activity bar. Click it to open the extension.</p>
 </li>
-<li><strong>Sign In to Continue</strong>: Click the gear icon, then the <code>Sign In</code> button. A browser window will open for you to log in.</li>
 <li>
-<p><strong>Select Your Assistant</strong>: Once signed in, use the drop-down menu to select the assistant you added earlier (e.g., <code>llama.cpp</code>).</p>
-<p><em>Example extension screen:</em>
-<img alt="Configuration Added to Continue" src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_extension_assistant.png" /></p>
+<p><strong>Add Lemonade Server Provider</strong>: Click the model dropdown menu in the Continue sidebar, then select "Add Chat Model". Choose "Lemonade Server" from the list of available providers. Continue will set the default address to <code>http://localhost:8000</code>, but it can be changed to match a different setup.</p>
+<p><em>Example configuration screen:</em>
+<img alt="Add Lemonade Provider" src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_add_lemonade_provider.png" /></p>
+</li>
+<li>
+<p><strong>Select Your Model</strong>: Once Lemonade Server is added, use the drop-down menu to select the model you downloaded earlier (e.g., <code>Qwen3-Coder-30B-A3B-Instruct-GGUF</code>).</p>
+<p><em>Example model selection:</em>
+<img alt="Model Selection Dropdown" src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/guides/continue/continue_model_selection_dropdown.png" /></p>
 </li>
 </ol>
 <h2 id="working-with-continuedev">Working with Continue.dev</h2>
@@ -1268,8 +1263,7 @@
 <li><strong>Increase Context Size for Agent Mode</strong>: For large code changes with GGUF models, start Lemonade Server with a higher context size:
     <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">8192</span>
 </code></pre></div></li>
-<li><strong>Create Custom Assistants</strong>: Build assistants tailored to specific languages or domains (e.g., JavaScript/TypeScript for Node.js projects) for more relevant results.</li>
-<li><strong>Customize Scoping</strong>: See <a href="https://docs.continue.dev/customization/overview">Continue Customization</a> for tips on effective assistant and model scoping.</li>
+<li><strong>Customize Scoping</strong>: See <a href="https://docs.continue.dev/customization/overview">Continue Customization</a> for tips on effective model configuration and scoping.</li>
 </ul>
 <h3 id="development-workflow">Development Workflow</h3>
 <ul>
@@ -1308,7 +1302,6 @@
 <li><a href="https://lemonade-server.ai/docs/server/server_models/">Lemonade Server Supported Models</a></li>
 <li><a href="https://lemonade-server.ai/docs/server/apps/">Lemonade Applications</a></li>
 <li><a href="https://docs.continue.dev">Continue Documentation</a></li>
-<li><a href="https://hub.continue.dev/lemonade">Lemonade on Continue Hub</a></li>
 </ul>
 
 
