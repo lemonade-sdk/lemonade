@@ -7,12 +7,14 @@ import logging
 import platform
 import tempfile
 import traceback
-from typing import Optional, Union
+from typing import Optional, Union, List
 import json
 from pathlib import Path
 import os
-
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket
+import shutil
+from pathlib import Path
+from huggingface_hub.constants import HF_HUB_CACHE
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -325,6 +327,7 @@ class Server:
             self.app.post(f"{prefix}/responses")(self.responses)
             self.app.post(f"{prefix}/log-level")(self.set_log_level)
             self.app.websocket(f"{prefix}/logs/ws")(self.logs_ws)
+            self.app.post(f"{prefix}/upload-model")(self.upload_model)
 
             # OpenAI-compatible routes
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
@@ -335,6 +338,94 @@ class Server:
             # JinaAI routes (jina.ai/reranker/)
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
+
+    async def upload_model(
+        self,
+        model_name: str = Form(...),
+        recipe: str = Form(...),
+        reasoning: bool = Form(False),
+        vision: bool = Form(False),
+        mmproj: str = Form(None),
+        model_files: List[UploadFile] = None
+    ):
+        """
+        Upload and register a local model from files.
+        """
+        try:
+            if not model_files:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No model files provided for upload"
+                )
+
+            if not model_name.startswith("user."):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Model name must start with 'user.'"
+                )
+
+            valid_recipes = ["llamacpp", "oga-npu", "oga-hybrid", "oga-cpu"]
+            if recipe not in valid_recipes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid recipe. Must be one of: {', '.join(valid_recipes)}"
+                )
+
+            if recipe == "llamacpp" and not any(f.filename.lower().endswith('.gguf') for f in model_files):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="At least one .gguf file is required for llamacpp"
+                )
+
+            # Create a unique directory for the model in the HF cache            
+            model_name_clean = model_name.replace("user.", "")
+            repo_cache_name = f"{model_name_clean.replace('/', '--')}"
+            snapshot_path = os.path.join(HF_HUB_CACHE, f"models--{repo_cache_name}")
+            os.makedirs(snapshot_path, exist_ok=True)
+
+            # Save uploaded files, preserving folder structure
+            for file in model_files:
+                relative_path = file.filename
+                path_parts = relative_path.split('/')
+                
+                if len(path_parts) > 1:
+                    internal_path = '/'.join(path_parts[1:])
+                    file_path = os.path.join(snapshot_path, internal_path)
+                else:
+                    file_path = os.path.join(snapshot_path, path_parts[0])
+                
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+
+            checkpoint = os.path.basename(snapshot_path)
+
+            # Register the model
+            ModelManager().register_local_model(
+                model_name=model_name,
+                checkpoint=checkpoint,
+                recipe=recipe,
+                reasoning=reasoning,
+                vision=vision,
+                mmproj=mmproj,
+                snapshot_path=snapshot_path
+            )
+
+            # Refresh local models
+            self.local_models = ModelManager().downloaded_models_enabled
+
+            return {
+                "status": "success",
+                "message": f"Model {model_name} uploaded and registered successfully"
+            }
+        except Exception as e:
+            if os.path.exists(model_cache_dir):
+                shutil.rmtree(model_cache_dir)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload model: {str(e)}"
+            )
 
     async def set_log_level(self, config: LogLevelConfig):
         """
@@ -1596,6 +1687,62 @@ class Server:
 
                 # Get additional properties from the model registry
                 config_to_use = LoadConfig(**supported_models[config.model_name])
+
+
+            if config_to_use.model_name.startswith("user."):
+                model_name_clean = config_to_use.model_name.replace("user.", "")
+                repo_cache_name = f"{model_name_clean.replace('/', '--')}"
+                model_cache_dir = os.path.join(HF_HUB_CACHE, f"models--{repo_cache_name}")
+                
+                if os.path.exists(model_cache_dir):
+                    # For ONNX models (oga-* recipes), look for genai_config.json
+                    if config_to_use.recipe.startswith("oga-"):
+                        for root, dirs, files in os.walk(model_cache_dir):
+                            if "genai_config.json" in files:
+                                config_to_use.checkpoint = root
+                                break
+                        else:
+                            config_to_use.checkpoint = model_cache_dir
+                    # For GGUF models (llamacpp recipe), look for .gguf files
+                    elif config_to_use.recipe == "llamacpp":
+                        snapshots_dir = os.path.join(model_cache_dir, "snapshots")
+                        if os.path.isdir(snapshots_dir):
+                            candidates = []
+                            for d in os.listdir(snapshots_dir):
+                                p = os.path.join(snapshots_dir, d)
+                                if os.path.isdir(p):
+                                    gguf_files = [f for f in os.listdir(p) if f.endswith('.gguf')]
+                                    if gguf_files:
+                                        candidates.append((p, gguf_files))
+                            if candidates:
+                                # Use the most recently modified directory
+                                latest_snapshot = max(candidates, key=lambda x: os.path.getmtime(x[0]))
+                                config_to_use.checkpoint = os.path.join(latest_snapshot[0], latest_snapshot[1][0])  # Point to first GGUF file
+                        # Brute force check outside snapshots
+                        for root, _, files in os.walk(model_cache_dir):
+                            gguf_files = [f for f in files if f.endswith('.gguf')]
+                            if gguf_files:
+                                config_to_use.checkpoint = os.path.join(root, gguf_files[0])  # Point to first GGUF file
+                                break
+                        else:
+                            config_to_use.checkpoint = model_cache_dir  # Fallback if no GGUF files found
+
+                        # Also search for mmproj file if provided
+                        if config_to_use.mmproj:
+                            mmproj_filename = config_to_use.mmproj
+                            logging.info(f"Searching for mmproj file: {mmproj_filename}")
+                            for root, _, files in os.walk(model_cache_dir):
+                                if mmproj_filename in files:
+                                    config_to_use.mmproj = os.path.join(root, mmproj_filename)
+                                    logging.info(f"Found mmproj at: {config_to_use.mmproj}")
+                                    break
+                            else:
+                                logging.warning(f"mmproj file '{mmproj_filename}' not found in {model_cache_dir}")
+                    else:
+                        # Fallback for other recipes
+                        config_to_use.checkpoint = model_cache_dir
+                else:
+                    config_to_use.checkpoint = os.path.join(HF_HUB_CACHE, f"models--{repo_cache_name}")
 
             # Caching mechanism: if the checkpoint is already loaded there is nothing else to do
             if (

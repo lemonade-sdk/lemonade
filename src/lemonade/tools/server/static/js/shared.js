@@ -223,10 +223,18 @@ async function loadModelStandardized(modelId, options = {}) {
         }
         
         // Make the API call to load the model
+        // Include mmproj if the model has it defined
+        const loadPayload = { model_name: modelId };
+        const allModels = window.SERVER_MODELS || {};
+        const modelData = allModels[modelId];
+        if (modelData && modelData.mmproj) {
+            loadPayload.mmproj = modelData.mmproj;
+        }
+
         await httpRequest(getServerBaseUrl() + '/api/v1/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: modelId })
+            body: JSON.stringify(loadPayload)
         });
         
         // Update model status indicator after successful load

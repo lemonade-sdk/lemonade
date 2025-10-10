@@ -10,6 +10,7 @@ from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 from lemonade.common.network import custom_snapshot_download
+from huggingface_hub.constants import HF_HUB_CACHE
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
@@ -104,6 +105,11 @@ class ModelManager:
             else:
                 # Handle other models
                 checkpoint = model_info["checkpoint"]
+                if model.startswith('user.'):
+                    local_model_path = os.path.join(HF_HUB_CACHE, checkpoint)
+                    if os.path.exists(local_model_path):
+                        downloaded_models[model] = model_info
+                    continue
                 base_checkpoint, variant = parse_checkpoint(checkpoint)
 
                 if base_checkpoint in downloaded_checkpoints:
@@ -146,6 +152,76 @@ class ModelManager:
                         # For non-GGUF models or GGUF without variants, use the original logic
                         downloaded_models[model] = model_info
         return downloaded_models
+
+    def register_local_model(
+    self,
+    model_name: str,
+    checkpoint: str,
+    recipe: str,
+    reasoning: bool = False,
+    vision: bool = False,
+    mmproj: str = "",
+    snapshot_path: str = ""
+    ):
+        if not model_name.startswith("user."):
+            raise ValueError("Model name must start with 'user.'")
+
+        model_name_clean = model_name[5:]
+
+        valid_recipes = ["llamacpp", "oga-npu", "oga-hybrid", "oga-cpu"]
+        if recipe not in valid_recipes:
+            raise ValueError(f"Invalid recipe. Must be one of: {', '.join(valid_recipes)}")
+
+        # Prepare model info
+        labels = ["custom"]
+        if reasoning:
+            labels.append("reasoning")
+        if vision:
+            labels.append("vision")
+
+        new_user_model = {
+            "checkpoint": checkpoint,
+            "recipe": recipe,
+            "suggested": True,
+            "labels": labels,
+        }
+        if mmproj:
+            new_user_model["mmproj"] = mmproj
+
+        # Load existing user models
+        user_models = {}
+        if os.path.exists(USER_MODELS_FILE):
+            with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                user_models = json.load(file)
+
+        # Check for conflicts
+        if model_name_clean in user_models:
+            existing = user_models[model_name_clean]
+            conflicts = []
+            if existing["checkpoint"] != checkpoint:
+                conflicts.append(f"checkpoint (existing: {existing['checkpoint']}, new: {checkpoint})")
+            if existing["recipe"] != recipe:
+                conflicts.append(f"recipe (existing: {existing['recipe']}, new: {recipe})")
+            if mmproj and existing.get("mmproj", "") != mmproj:
+                conflicts.append(f"mmproj (existing: {existing.get('mmproj', '')}, new: {mmproj})")
+            existing_labels = existing.get("labels", [])
+            if reasoning != ("reasoning" in existing_labels):
+                conflicts.append(f"reasoning (existing: {'reasoning' in existing_labels}, new: {reasoning})")
+            if vision != ("vision" in existing_labels):
+                conflicts.append(f"vision (existing: {'vision' in existing_labels}, new: {vision})")
+            if conflicts:
+                raise ValueError(
+                    f"Model {model_name} is already registered with different configuration. "
+                    f"Conflicting parameters: {', '.join(conflicts)}. "
+                    f"Please use a different model name or delete the existing model."
+                )
+
+        # Save to user_models.json
+        user_models[model_name_clean] = new_user_model
+        os.makedirs(os.path.dirname(USER_MODELS_FILE), exist_ok=True)
+        with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+            json.dump(user_models, file)
+
 
     @property
     def downloaded_models_enabled(self) -> dict:
@@ -464,6 +540,29 @@ class ModelManager:
             except subprocess.CalledProcessError as e:
                 raise ValueError(f"Failed to delete FLM model {model_name}: {e}") from e
 
+        if checkpoint.startswith("models--"):
+            # This is already in cache directory format (local model)
+            model_cache_dir = os.path.join(HF_HUB_CACHE, checkpoint)
+            
+            if os.path.exists(model_cache_dir):
+                shutil.rmtree(model_cache_dir)
+                print(f"Successfully deleted local model {model_name} from {model_cache_dir}")
+            else:
+                print(f"Model {model_name} directory not found at {model_cache_dir} - may have been manually deleted")
+            
+            # Clean up user models registry
+            if model_name.startswith("user.") and os.path.exists(USER_MODELS_FILE):
+                with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                    user_models = json.load(file)
+                
+                base_model_name = model_name[5:]  # Remove "user." prefix
+                if base_model_name in user_models:
+                    del user_models[base_model_name]
+                    with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+                        json.dump(user_models, file)
+                    print(f"Removed {model_name} from user models registry")
+            
+            return
         # Parse checkpoint to get base and variant
         base_checkpoint, variant = parse_checkpoint(checkpoint)
 

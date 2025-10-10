@@ -10,7 +10,7 @@ import requests
 import lemonade.common.build as build
 import lemonade.common.printing as printing
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
-
+from huggingface_hub.constants import HF_HUB_CACHE
 from lemonade.common.system_info import get_system_info
 
 from dotenv import set_key, load_dotenv
@@ -655,14 +655,24 @@ def identify_gguf_models(
 
     return core_files, sharded_files
 
-
-def download_gguf(config_checkpoint, config_mmproj=None, do_not_upgrade=False) -> dict:
+def download_gguf(config_checkpoint: str, config_mmproj=None, do_not_upgrade: bool = False) -> dict:
     """
     Downloads the GGUF file for the given model configuration.
 
     For sharded models, if the variant points to a folder (e.g. Q4_0), all files in that folder
     will be downloaded but only the first file will be returned for loading.
     """
+    # Check if this is a user-uploaded model (path contains models-- pattern or is already a full path)
+    if "models--" in config_checkpoint and os.path.exists(config_checkpoint):
+        result = {"variant": config_checkpoint}
+        if config_mmproj:
+            result["mmproj"] = config_mmproj
+        return result
+
+    result = {"variant": config_checkpoint}
+    if config_mmproj:
+        result["mmproj"] = config_mmproj
+    return result
 
     # This code handles all cases by constructing the appropriate filename or pattern
     checkpoint, variant = parse_checkpoint(config_checkpoint)

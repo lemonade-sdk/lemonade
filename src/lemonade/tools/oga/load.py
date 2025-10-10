@@ -37,6 +37,15 @@ execution_providers = {
     "cuda": "cuda",
 }
 
+def find_onnx_files_recursively(directory):
+    """
+    Recursively search for ONNX files in a directory and its subdirectories.
+    """
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".onnx"):
+                return True
+    return False
 
 def _get_npu_driver_version():
     """
@@ -703,7 +712,7 @@ class OgaLoad(FirstTool):
             state.save_stat(Keys.LOCAL_MODEL_FOLDER, full_model_path)
             # See if there is a file ending in ".onnx" in this folder
             dir = os.listdir(input)
-            has_onnx_file = any([filename.endswith(".onnx") for filename in dir])
+            has_onnx_file = find_onnx_files_recursively(input)
             if not has_onnx_file:
                 raise ValueError(
                     f"The folder {input} does not contain an ONNX model file."
