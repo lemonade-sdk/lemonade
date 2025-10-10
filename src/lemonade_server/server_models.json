@@ -455,5 +455,18 @@
         "recipe": "flm",
         "suggested": true,
         "size": 13.4
+    },
+    "granite-4.0-h-tiny-GGUF": {
+        "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["tool-calling"],
+        "size": 4.25
+    },
+    "LFM2-8B-A1B-GGUF": {
+        "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 4.8
     }
 }
