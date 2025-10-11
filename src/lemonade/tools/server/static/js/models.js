@@ -283,7 +283,7 @@ function displayHotModels() {
     modelList.innerHTML = '';
     
     Object.entries(allModels).forEach(([modelId, modelData]) => {
-        if (modelData.labels && modelData.labels.includes('hot')) {
+        if (modelData.labels && modelData.labels.includes('hot') && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
@@ -317,7 +317,7 @@ function displayModelsByRecipe(recipe) {
     }
     
     Object.entries(allModels).forEach(([modelId, modelData]) => {
-        if (modelData.recipe === recipe) {
+        if (modelData.recipe === recipe && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
@@ -341,7 +341,7 @@ function displayModelsByLabel(label) {
             if (modelId.startsWith('user.')) {
                 createModelItem(modelId, modelData, modelList);
             }
-        } else if (modelData.labels && modelData.labels.includes(label)) {
+        } else if (modelData.labels && modelData.labels.includes(label) && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
