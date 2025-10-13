@@ -57,7 +57,7 @@ setup(
         # applications, without including developer-focused tools
         # Primary NPU extra using unified PyPI package
         "oga-ryzenai": [
-            "onnxruntime-genai-directml-ryzenai==0.7.0.2.1",
+            "onnxruntime-genai-directml-ryzenai==0.9.2",
             "protobuf>=6.30.1",
         ],
         "oga-cpu": [

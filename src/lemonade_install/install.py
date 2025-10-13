@@ -37,7 +37,6 @@ import sys
 from typing import Optional
 import zipfile
 
-DEFAULT_RYZEN_AI_VERSION = "1.4.0"
 version_info_filename = "version_info.json"
 
 # NPU Driver configuration
@@ -52,42 +51,13 @@ lemonade_install_dir = Path(__file__).parent.parent.parent
 # List of supported Ryzen AI processor series (can be extended in the future)
 SUPPORTED_RYZEN_AI_SERIES = ["300"]
 
-npu_install_data = {
-    "1.4.0": {
-        "artifacts_zipfile": (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            "filename=npu-llm-artifacts_1.4.0_032925.zip"
-        ),
-        "license_file": (
-            "https://account.amd.com/content/dam/account/en/licenses/download/"
-            "amd-end-user-license-agreement.pdf"
-        ),
-        "license_tag": "",
-    },
-}
+# Legacy installation data dictionaries removed - RyzenAI 1.4.0 is no longer supported
+# Please use PyPI installation: pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
+npu_install_data = {}
 
-hybrid_install_data = {
-    "1.4.0": {
-        "artifacts_zipfile": (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            "filename=hybrid-llm-artifacts_1.4.0_032925.zip"
-        ),
-        "license_file": (
-            "https://account.amd.com/content/dam/account/en/licenses/download/"
-            "amd-end-user-license-agreement.pdf"
-        ),
-        "license_tag": "",
-    },
-}
+hybrid_install_data = {}
 
-model_prep_install_data = {
-    "1.4.0": {
-        "model_prep_artifacts_zipfile": (
-            "https://www.xilinx.com/bin/public/openDownload?"
-            "filename=model-prep-artifacts-1.4.0-0331.zip"
-        )
-    }
-}
+model_prep_install_data = {}
 
 
 def get_ryzen_ai_path(check_exists=True):
@@ -159,17 +129,26 @@ def _get_ryzenai_version_info(device=None):
         if Version(og.__version__) >= Version("0.7.0"):
             oga_path = os.path.dirname(og.__file__)
             if og.__version__ in ("0.7.0.2.1", "0.7.0.2"):
-                return "1.5.0", oga_path
-            elif og.__version__ in ("0.9.2"):
+                raise ValueError(
+                    f"RyzenAI 1.5.0 (onnxruntime-genai-directml-ryzenai {og.__version__}) is no longer supported.\n"
+                    "RyzenAI 1.6.0 introduced breaking changes. Please upgrade to 1.6.0:\n"
+                    "pip install --upgrade lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
+                )
+            elif og.__version__ in ("0.9.2",):
                 return "1.6.0", oga_path
             else:
-                return "1.4.0", oga_path
+                raise ValueError(
+                    f"Unsupported onnxruntime-genai-directml-ryzenai version: {og.__version__}\n"
+                    "Only RyzenAI 1.6.0 is currently supported. Please upgrade:\n"
+                    "pip install --upgrade lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
+                )
         else:
-            if device == "npu":
-                oga_path, version = get_oga_npu_dir()
-            else:
-                oga_path, version = get_oga_hybrid_dir()
-            return version, oga_path
+            # Legacy lemonade-install approach is no longer supported
+            raise ValueError(
+                "Legacy RyzenAI installation detected (version < 0.7.0).\n"
+                "RyzenAI 1.4.0 and 1.5.0 are no longer supported. Please upgrade to 1.6.0:\n"
+                "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
+            )
     except ImportError as e:
         raise ImportError(
             f"{e}\n Please install lemonade-sdk with "
@@ -409,16 +388,13 @@ class Install:
 
         parser.add_argument(
             "--ryzenai",
-            help="Install Ryzen AI software for LLMs. Requires an authentication token. "
-            "The 'npu' and 'hybrid' choices install the default "
-            f"{DEFAULT_RYZEN_AI_VERSION} version.",
+            help="[DEPRECATED] Legacy Ryzen AI installation method (no longer supported for 1.4.0). "
+            "Please use PyPI installation instead: "
+            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple",
             choices=[
                 "npu",
                 "hybrid",
                 "unified",
-                "npu-1.4.0",
-                "hybrid-1.4.0",
-                "unified-1.4.0",
             ],
         )
 
@@ -547,13 +523,12 @@ class Install:
             version (str): Version of the Ryzen AI artifacts.
         """
 
-        # Check if model prep artifacts are available for the given version
-        if version not in model_prep_install_data:
-            raise ValueError(
-                "Model prep artifacts are only available "
-                "for version 1.4.0 and above, "
-                "and only for 'hybrid' and 'npu-only' targets."
-            )
+        # Model prep artifacts installation is no longer supported
+        raise ValueError(
+            "Legacy model prep artifacts installation is no longer supported.\n"
+            "RyzenAI 1.4.0 has been deprecated. Please upgrade to RyzenAI 1.6.0:\n"
+            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
+        )
 
         # Get the model prep artifacts zipfile URL
         file = model_prep_install_data[version].get(
@@ -645,21 +620,19 @@ class Install:
         # Check if the processor is supported before proceeding
         check_ryzen_ai_processor()
 
-        warning_msg = (
+        error_msg = (
             "\n" + "=" * 80 + "\n"
-            "WARNING: IMPORTANT: NEW RYZEN AI 1.5.0 INSTALLATION PROCESS\n"
+            "ERROR: LEGACY RYZEN AI INSTALLATION NO LONGER SUPPORTED\n"
             + "=" * 80
             + "\n"
-            "Starting with Ryzen AI 1.5.0, installation is now available through PyPI.\n"
-            "For new installations, consider using:\n\n"
+            "RyzenAI 1.4.0 is no longer supported. The legacy lemonade-install method\n"
+            "has been deprecated.\n\n"
+            "Please use the PyPI installation method for RyzenAI 1.6.0:\n\n"
             "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple\n\n"
-            "This legacy installation method (lemonade-install --ryzenai) is still\n"
-            "supported for version 1.4.0, but may be deprecated in future releases.\n"
             + "=" * 80
             + "\n"
         )
-        if not override:
-            raise ValueError(warning_msg)
+        raise ValueError(error_msg)
 
         print(warning_msg)
 
