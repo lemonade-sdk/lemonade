@@ -45,9 +45,6 @@ def get_flm_latest_version() -> Optional[str]:
         return None
 
 
-FLM_LATEST_VERSION = get_flm_latest_version()
-
-
 def check_flm_version() -> Optional[str]:
     """
     Check if FLM is installed and return version, or None if not available.
