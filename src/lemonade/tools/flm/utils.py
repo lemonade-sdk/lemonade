@@ -52,6 +52,7 @@ def check_flm_version() -> Optional[str]:
     """
     Check if FLM is installed and return version, or None if not available.
     """
+    latest_version_str = get_flm_latest_version()
     try:
         result = subprocess.run(
             ["flm", "version"],
@@ -66,11 +67,11 @@ def check_flm_version() -> Optional[str]:
         output = result.stdout.strip()
         if output.startswith("FLM v"):
             version_str = output[5:]  # Remove "FLM v" prefix
-            return version_str
-        return None
+            return version_str, latest_version_str
+        return None, latest_version_str
 
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+        return None, latest_version_str
 
 
 def refresh_environment():
@@ -108,22 +109,22 @@ def install_flm():
     If not, download and run the GUI installer, then wait for completion.
     """
     # Check current FLM installation
-    current_version = check_flm_version()
+    current_version, latest_version = check_flm_version()
 
     if (
         current_version
-        and FLM_LATEST_VERSION
-        and Version(current_version) == Version(FLM_LATEST_VERSION)
+        and latest_version
+        and Version(current_version) == Version(latest_version)
     ):
         logging.info(
             "FLM v%s is already installed and is up to date (latest version: v%s).",
             current_version,
-            FLM_LATEST_VERSION,
+            latest_version,
         )
         return
 
     if current_version:
-        if not FLM_LATEST_VERSION:
+        if not latest_version:
             logging.info(
                 "Unable to detect the latest FLM version; continuing with installed FLM v%s.",
                 current_version,
@@ -132,13 +133,11 @@ def install_flm():
         logging.info(
             "FLM v%s is installed but below latest version v%s. Upgrading...",
             current_version,
-            FLM_LATEST_VERSION,
+            latest_version,
         )
         verysilent = True
     else:
-        logging.info(
-            "FLM not found. Installing FLM v%s or later...", FLM_LATEST_VERSION
-        )
+        logging.info("FLM not found. Installing FLM v%s or later...", latest_version)
         verysilent = False
 
     # Download the installer
@@ -195,8 +194,8 @@ def install_flm():
         # Verify installation
         max_retries = 10
         for attempt in range(max_retries):
-            new_version = check_flm_version()
-            if new_version and Version(new_version) == Version(FLM_LATEST_VERSION):
+            new_version, latest_version = check_flm_version()
+            if new_version and Version(new_version) == Version(latest_version):
                 logging.info("FLM v%s successfully installed and verified", new_version)
                 return
 
@@ -299,7 +298,7 @@ def is_flm_available() -> bool:
     """
     Check if FLM is available and meets minimum version requirements.
     """
-    current_version = check_flm_version()
+    current_version, latest_version = check_flm_version()
     return current_version is not None and Version(current_version) == Version(
-        FLM_LATEST_VERSION
+        latest_version
     )
