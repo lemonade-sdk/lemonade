@@ -310,7 +310,7 @@ class ModelManager:
                 # Check if FLM is available, and install it if not
                 if not is_flm_available():
                     print(
-                        "FLM is not installed or not at the minimum required version. Installing FLM..."
+                        "FLM is not installed or not at the latest version. Installing FLM..."
                     )
                     install_flm()
 

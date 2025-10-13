@@ -10,10 +10,42 @@ import time
 from typing import List, Optional
 
 import requests
-from packaging.version import Version
+from packaging.version import Version, InvalidVersion
 
 
-FLM_MINIMUM_VERSION = "0.9.12"
+def get_flm_latest_version() -> Optional[str]:
+    """
+    Get and return the latest FLM version from "https://github.com/FastFlowLM/FastFlowLM/tags"
+    This uses the GitHub tags API.
+    """
+    url = "https://api.github.com/repos/FastFlowLM/FastFlowLM/tags"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        tags = response.json()
+        if not tags:
+            return None
+        # Tags are sorted in reverse chronological order; find the first that looks like a version
+        for tag in tags:
+            tag_name = tag.get("name", "")
+            # Accept tags of the form v0.9.10, 0.9.10, etc.
+            if tag_name.startswith("v"):
+                version_candidate = tag_name[1:]
+            else:
+                version_candidate = tag_name
+            try:
+                # validate it's a version string
+                _ = Version(version_candidate)
+                return version_candidate
+            except InvalidVersion:
+                continue
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.debug("Error retrieving latest FLM version: %s", e)
+        return None
+
+
+FLM_LATEST_VERSION = get_flm_latest_version()
 
 
 def check_flm_version() -> Optional[str]:
@@ -78,29 +110,42 @@ def install_flm():
     # Check current FLM installation
     current_version = check_flm_version()
 
-    if current_version and Version(current_version) >= Version(FLM_MINIMUM_VERSION):
+    if (
+        current_version
+        and FLM_LATEST_VERSION
+        and Version(current_version) == Version(FLM_LATEST_VERSION)
+    ):
         logging.info(
-            "FLM v%s is already installed and meets minimum version requirement (v%s)",
+            "FLM v%s is already installed and is up to date (latest version: v%s).",
             current_version,
-            FLM_MINIMUM_VERSION,
+            FLM_LATEST_VERSION,
         )
         return
 
     if current_version:
+        if not FLM_LATEST_VERSION:
+            logging.info(
+                "Unable to detect the latest FLM version; continuing with installed FLM v%s.",
+                current_version,
+            )
+            return
         logging.info(
-            "FLM v%s is installed but below minimum version v%s. Upgrading...",
+            "FLM v%s is installed but below latest version v%s. Upgrading...",
             current_version,
-            FLM_MINIMUM_VERSION,
+            FLM_LATEST_VERSION,
         )
+        verysilent = True
     else:
         logging.info(
-            "FLM not found. Installing FLM v%s or later...", FLM_MINIMUM_VERSION
+            "FLM not found. Installing FLM v%s or later...", FLM_LATEST_VERSION
         )
+        verysilent = False
 
     # Download the installer
     # pylint: disable=line-too-long
     installer_url = "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe"
     installer_path = os.path.join(tempfile.gettempdir(), "flm-setup.exe")
+    installer_args = [installer_path, "/VERYSILENT"] if verysilent else [installer_path]
 
     try:
         # Remove existing installer if present
@@ -127,9 +172,9 @@ def install_flm():
 
         # Launch installer and wait for it to complete
         if os.name == "nt":  # Windows
-            process = subprocess.Popen([installer_path], shell=True)
+            process = subprocess.Popen(installer_args, shell=True)
         else:
-            process = subprocess.Popen([installer_path])
+            process = subprocess.Popen(installer_args)
 
         # Wait for installer to complete
         process.wait()
@@ -151,7 +196,7 @@ def install_flm():
         max_retries = 10
         for attempt in range(max_retries):
             new_version = check_flm_version()
-            if new_version and Version(new_version) >= Version(FLM_MINIMUM_VERSION):
+            if new_version and Version(new_version) == Version(FLM_LATEST_VERSION):
                 logging.info("FLM v%s successfully installed and verified", new_version)
                 return
 
@@ -255,6 +300,6 @@ def is_flm_available() -> bool:
     Check if FLM is available and meets minimum version requirements.
     """
     current_version = check_flm_version()
-    return current_version is not None and Version(current_version) >= Version(
-        FLM_MINIMUM_VERSION
+    return current_version is not None and Version(current_version) == Version(
+        FLM_LATEST_VERSION
     )
