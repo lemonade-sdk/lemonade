@@ -58,8 +58,22 @@ class WrappedServerTelemetry(ABC):
         telemetry = [
             ["Input tokens", self.input_tokens],
             ["Output tokens", self.output_tokens],
-            ["TTFT (s)", f"{self.time_to_first_token:.2f}"],
-            ["TPS", f"{self.tokens_per_second:.2f}"],
+            [
+                "TTFT (s)",
+                (
+                    f"{self.time_to_first_token:.2f}"
+                    if self.time_to_first_token is not None
+                    else "N/A"
+                ),
+            ],
+            [
+                "TPS",
+                (
+                    f"{self.tokens_per_second:.2f}"
+                    if self.tokens_per_second is not None
+                    else "N/A"
+                ),
+            ],
         ]
 
         table = tabulate(
@@ -83,7 +97,7 @@ class WrappedServer(ABC):
         self.telemetry: WrappedServerTelemetry = telemetry
         self.log_thread_exception = None
 
-    def choose_port(self):
+    def _choose_port(self):
         """
         Users probably don't care what port we start the wrapped server on, so let's
         search for an empty port

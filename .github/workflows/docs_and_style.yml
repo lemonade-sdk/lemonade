@@ -2,9 +2,7 @@ name: Docs And Style
 on:
   push:
     branches: ["main"]
-    paths:
   pull_request:
-    paths:
   merge_group:
 
 permissions:

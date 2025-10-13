@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lemonade Server Logs</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 0;
+        }
+        #log-container {
+            padding: 10px;
+            height: 100vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div id="log-container"></div>
+
+<script>
+    function stripAnsi(str) {
+        return str.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+    }
+
+    const logContainer = document.getElementById("log-container");
+    const ws = new WebSocket(`ws://${location.host}/api/v1/logs/ws`);
+
+    function isNearBottom() {
+        const threshold = 50; // px from bottom
+        return logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - threshold;
+    }
+
+    ws.onmessage = (event) => {
+        const line = document.createElement("div");
+        line.textContent = stripAnsi(event.data);
+        logContainer.appendChild(line);
+
+        // Only autoscroll if the user is already at (or near) the bottom
+        if (isNearBottom()) {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+    };
+
+    ws.onclose = () => {
+        const msg = document.createElement("div");
+        msg.textContent = "[Disconnected from log stream]";
+        msg.style.color = "red";
+        logContainer.appendChild(msg);
+    };
+</script>
+</body>
+</html>

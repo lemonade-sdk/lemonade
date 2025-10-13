@@ -65,11 +65,12 @@ function showErrorBanner(msg) {
     const banner = document.getElementById('error-banner');
     if (!banner) return;
     const msgEl = document.getElementById('error-banner-msg');
-    const fullMsg = msg + '\nCheck the Lemonade Server logs via the system tray app for more information.';
+    const logsUrl = window.location.origin + '/static/logs.html';
+    const fullMsg = `${msg} <br>Check the Lemonade Server logs <a href="${logsUrl}" target="_blank" rel="noopener noreferrer">on the browser</a> or via the system tray app for more information.`;
     if (msgEl) {
-        msgEl.textContent = fullMsg;
+        msgEl.innerHTML = fullMsg;
     } else {
-        banner.textContent = fullMsg;
+        banner.innerHTML = fullMsg;
     }
     banner.style.display = 'flex';
 }
@@ -181,7 +182,7 @@ async function loadModelStandardized(modelId, options = {}) {
         // Update load button if provided
         if (loadButton) {
             loadButton.disabled = true;
-            loadButton.textContent = '⌛';
+            loadButton.textContent = '⏳';
         }
         
         // Update status indicator to show loading state
@@ -246,7 +247,8 @@ async function loadModelStandardized(modelId, options = {}) {
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
-            loadButton.textContent = 'Load';
+            loadButton.textContent = '🚀';
+            loadButton.classList.remove('loading');
         }
         
         // Reset chat controls
@@ -280,7 +282,8 @@ async function loadModelStandardized(modelId, options = {}) {
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
-            loadButton.textContent = 'Load';
+            loadButton.textContent = '🚀';
+            loadButton.classList.remove('loading');
         }
         
         // Reset status indicator on error

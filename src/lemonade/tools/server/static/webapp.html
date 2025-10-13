@@ -15,8 +15,8 @@
 <body>
     <nav class="navbar" id="navbar">
         <div class="navbar-brand">
-            <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
-        </div>
+            <span class="brand-title"><a href="https://lemonade-server.ai"><img src="/static/favicon.ico" alt="🍋" class="brand-icon"> Lemonade Server</a></span>
+        </div>  
         <div class="navbar-links">
             <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a>
             <a href="https://lemonade-server.ai/docs/" target="_blank">Docs</a>
@@ -30,6 +30,7 @@
         <button class="close-btn" onclick="hideErrorBanner()">&times;</button>
     </div>
     <main class="main">
+        <div class="tab-content-wrapper">
         <div class="tab-container"> 
             <div class="tabs"> 
                 <div class="tab-group">
@@ -39,13 +40,22 @@
 				</div>
 
 				<div class="model-status-indicator" id="model-status-indicator">
-					<div class="status-light" id="status-light"></div>
-					<select id="model-select" class="model-select">
-						<option value="">Pick a model</option>
-					</select>
+					<div class="model-select-wrapper">
+						<div class="status-light" id="status-light"></div>
+						<select id="model-select" class="model-select">
+							<option value="">Pick a model</option>
+						</select>
+					</div>
 					<button class="model-action-btn" id="model-unload-btn" title="Unload model" style="display: flex;">⏏</button>
+                    <!-- Dropdown -->
+                    <div class="dropdown">
+                        <button class="dropbtn" aria-label="Dropdown" style="display: flex;">🛠️</button>
+                        <div class="dropdown-content">
+                            <a href="/static/logs.html" target="_blank">View Logs</a>
+                        </div>
+                    </div>
 				</div>
-			</div>
+			</div>            
             <div class="tab-content active" id="content-chat">
                 <div class="chat-container">
                     <div class="chat-history" id="chat-history" style="overflow-y: auto;"></div>
@@ -151,6 +161,7 @@
                                 <div class="subcategory" data-recipe="oga-hybrid" onclick="selectRecipe('oga-hybrid')">OGA Hybrid</div>
                                 <div class="subcategory" data-recipe="oga-npu" onclick="selectRecipe('oga-npu')">OGA NPU</div>
                                 <div class="subcategory" data-recipe="oga-cpu" onclick="selectRecipe('oga-cpu')">OGA CPU</div>
+                                <div class="subcategory" data-recipe="flm" onclick="selectRecipe('flm')">FastFlowLM NPU</div>
                             </div>
                         </div>
                         <div class="model-category-section">
@@ -205,6 +216,7 @@
                                     </label>
                                     <select id="register-recipe" name="recipe" required>
                                         <option value="llamacpp">llamacpp</option>
+                                        <option value="flm">flm</option>
                                         <option value="oga-npu">oga-npu</option>
                                         <option value="oga-hybrid">oga-hybrid</option>
                                         <option value="oga-cpu">oga-cpu</option>
@@ -237,6 +249,7 @@
                     </div>
                 </div>
             </div> 
+            </div>
         </div> 
     </main>
     <footer class="site-footer">

@@ -30,6 +30,10 @@ const lmnAllowlist = [
   {os:'win', method:'src', fw:'llama', dev:'gpu'},
   {os:'linux', method:'src', fw:'llama', dev:'cpu'},
   {os:'linux', method:'src', fw:'llama', dev:'gpu'},
+  // FastFlowLM: NPU only (Windows only)
+  {os:'win', method:'gui', fw:'flm', dev:'npu'},
+  {os:'win', method:'pypi', fw:'flm', dev:'npu'},
+  {os:'win', method:'src', fw:'flm', dev:'npu'},
   // macOS: llama.cpp only (Apple Silicon, macOS 14+)
   {os:'macos', method:'pypi', fw:'llama', dev:'cpu'},
   {os:'macos', method:'pypi', fw:'llama', dev:'gpu'},
@@ -154,7 +158,7 @@ window.lmnSet = function(type, val) {
 
 window.lmnRender = function() {
   // Reset all
-  ['os-win','os-linux','os-macos','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
+  ['os-win','os-linux','os-macos','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','fw-flm','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) {
       el.className = '';
@@ -184,6 +188,8 @@ window.lmnRender = function() {
   if (fwTorch) fwTorch.onclick = function() { lmnSet('fw','torch'); };
   var fwLlama = document.getElementById('fw-llama');
   if (fwLlama) fwLlama.onclick = function() { lmnSet('fw','llama'); };
+  var fwFlm = document.getElementById('fw-flm');
+  if (fwFlm) fwFlm.onclick = function() { lmnSet('fw','flm'); };
   var devNpu = document.getElementById('dev-npu');
   if (devNpu) devNpu.onclick = function() { lmnSet('dev','npu'); };
   var devCpu = document.getElementById('dev-cpu');
@@ -208,7 +214,7 @@ window.lmnRender = function() {
     os: ['win','linux','macos'],
     type: ['server','full'],
     method: ['gui','pypi','src'],
-    fw: ['oga','torch','llama'],
+    fw: ['oga','torch','llama','flm'],
     dev: ['npu','cpu','gpu']
   };
   opts.os.forEach(os => {
@@ -246,13 +252,18 @@ window.lmnRender = function() {
 
   // Command rendering
   
+  // Generate FastFlowLM notice
+  function generateFlmNotice() {
+    return '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank" style="color:#666; text-decoration:underline;">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com" style="color:#666; text-decoration:underline;">lemonade@amd.com</a> for inquiries.</div>';
+  }
+  
   // Generate badges
   function generateBadges() {
     var badges = '';
     
     // Python version badge
     var pythonVersions = '';
-    if (lmnState.dev === 'npu' || lmnState.method === 'gui') {
+    if (lmnState.fw === 'oga' && lmnState.dev === 'npu') {
       pythonVersions = '3.10';
     } else {
       pythonVersions = '3.10--3.13';
@@ -296,6 +307,8 @@ window.lmnRender = function() {
       }
     } else if (lmnState.fw === 'llama') {
       commands.push(prefix + ' run Gemma-3-4b-it-GGUF');
+    } else if (lmnState.fw === 'flm') {
+      commands.push(prefix + ' run Gemma-3-4b-it-FLM');
     } else if (lmnState.fw === 'torch') {
       // No command for PyTorch, refer user to dev_cli documentation; leave blank
     } else {
@@ -320,6 +333,11 @@ window.lmnRender = function() {
       }
     } else if (lmnState.fw === 'llama') {
       if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
+        cmd = 'Download Lemonade Server Installer (.exe)';
+        link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe';
+      }
+    } else if (lmnState.fw === 'flm') {
+      if (lmnState.dev === 'npu') {
         cmd = 'Download Lemonade Server Installer (.exe)';
         link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe';
       }
@@ -358,6 +376,15 @@ window.lmnRender = function() {
         // Add ROCm requirement for llama.cpp GPU Linux installations (GUI)
         if (lmnState.os === 'linux' && lmnState.dev === 'gpu') {
           cmd = 'sudo update-pciids\n' + cmd;
+        }
+      }
+    } else if (lmnState.fw === 'flm') {
+      // FastFlowLM: same install commands as llama.cpp CPU
+      if (lmnState.dev === 'npu') {
+        if (lmnState.method === 'pypi') {
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install lemonade-sdk[dev]';
+        } else {
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
         }
       }
     }
@@ -401,6 +428,11 @@ window.lmnRender = function() {
       if (lmnState.dev === 'npu') {
         cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
       }
+      
+      // Add FastFlowLM Early Access notice
+      if (lmnState.fw === 'flm') {
+        cmdDiv.innerHTML += generateFlmNotice();
+      }
     }
   } else if (cmd) {
     // Show command area, hide download area
@@ -414,6 +446,11 @@ window.lmnRender = function() {
       // Add a note if NPU is selected
       if (lmnState.dev === 'npu') {
         cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
+      }
+      
+      // Add FastFlowLM Early Access notice
+      if (lmnState.fw === 'flm') {
+        cmdDiv.innerHTML += generateFlmNotice();
       }
       
       // Render command lines with copy buttons
@@ -530,6 +567,7 @@ window.lmnInit = function() {
           <td class="lmn-label">Inference Engine</td>
           <td id="fw-oga" class="lmn-active" onclick="lmnSet('fw','oga')">OGA</td>
           <td id="fw-llama" onclick="lmnSet('fw','llama')">llama.cpp</td>
+          <td id="fw-flm" onclick="lmnSet('fw','flm')">FastFlowLM</td>
           <td id="fw-torch" onclick="lmnSet('fw','torch')">PyTorch</td>
         </tr>
         <tr>
