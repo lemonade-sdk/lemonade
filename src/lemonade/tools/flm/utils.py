@@ -164,6 +164,8 @@ def install_flm():
         # Launch the installer GUI
         logging.warning(
             "Launching FLM installer GUI. Please complete the installation..."
+            if not verysilent
+            else "Installing FLM..."
         )
 
         # Launch installer and wait for it to complete
