@@ -340,7 +340,9 @@ class Server:
             self.app.get(f"{prefix}/migration/incompatible-models")(
                 self.get_incompatible_models
             )
-            self.app.post(f"{prefix}/migration/cleanup")(self.cleanup_incompatible_models)
+            self.app.post(f"{prefix}/migration/cleanup")(
+                self.cleanup_incompatible_models
+            )
 
     async def set_log_level(self, config: LogLevelConfig):
         """

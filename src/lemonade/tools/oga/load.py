@@ -321,6 +321,7 @@ class OgaLoad(FirstTool):
 
     @staticmethod
     def _setup_model_dependencies(full_model_path, device, ryzenai_version, oga_path):
+        # pylint: disable=unused-argument
         """
         Sets up model dependencies for hybrid and NPU inference by:
         1. Configuring the custom_ops_library path in genai_config.json.
@@ -408,25 +409,9 @@ class OgaLoad(FirstTool):
         if dll_source_path not in current_path:
             os.environ["PATH"] = dll_source_path + os.pathsep + current_path
 
-        # Update the model config with custom_ops_library path
+        # Check if genai_config.json exists (informational only for RyzenAI 1.6.0)
         config_path = os.path.join(full_model_path, "genai_config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-            # if (
-            #     "model" in config
-            #     and "decoder" in config["model"]
-            #     and "session_options" in config["model"]["decoder"]
-            # ):
-            #     config["model"]["decoder"]["session_options"][
-            #         "custom_ops_library"
-            #     ] = custom_ops_path
-
-            # with open(config_path, "w", encoding="utf-8") as f:
-            #     json.dump(config, f, indent=4)
-
-        else:
+        if not os.path.exists(config_path):
             printing.log_info(
                 f"Model's `genai_config.json` not found in {full_model_path}"
             )
@@ -496,6 +481,7 @@ class OgaLoad(FirstTool):
 
     @staticmethod
     def _setup_npu_environment(ryzenai_version, oga_path):
+        # pylint: disable=unused-argument
         """
         Sets up environment for NPU flow of ONNX model and returns saved state to be restored
         later in cleanup.

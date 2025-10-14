@@ -9,7 +9,6 @@ import os
 import json
 import shutil
 import logging
-from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 
@@ -25,7 +24,7 @@ def get_directory_size(path: str) -> int:
     """
     total_size = 0
     try:
-        for dirpath, dirnames, filenames in os.walk(path):
+        for dirpath, _, filenames in os.walk(path):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
                 try:
