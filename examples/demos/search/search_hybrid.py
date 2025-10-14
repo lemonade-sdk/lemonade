@@ -17,7 +17,8 @@ def system_prompt(user_prompt):
     return f"""
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-You are a helpful assistant who can only answer questions about this employee handbook: {employee_handbook}. 
+You are a helpful assistant who can only answer questions about this employee handbook:
+{employee_handbook}.
 Don't make up information that isn't in the handbook already. 
 <|eot_id|><|start_header_id|>user<|end_header_id|>
 
