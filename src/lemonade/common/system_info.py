@@ -1110,32 +1110,6 @@ class LinuxSystemInfo(SystemInfo):
 
         return ""
 
-    def _get_nvidia_vram_smi_linux(self) -> float:
-        """
-        Get NVIDIA GPU VRAM on Linux using nvidia-smi command.
-
-        Returns:
-            float: VRAM in GB, or 0.0 if detection fails
-        """
-        try:
-            output = (
-                subprocess.check_output(
-                    "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits",
-                    shell=True,
-                    stderr=subprocess.DEVNULL,
-                )
-                .decode()
-                .strip()
-            )
-
-            # nvidia-smi returns memory in MB
-            vram_mb = int(output.split("\n")[0])
-            vram_gb = round(vram_mb / 1024, 1)
-            return vram_gb
-        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            pass
-        return 0.0
-
     @staticmethod
     def get_processor_name() -> str:
         """
