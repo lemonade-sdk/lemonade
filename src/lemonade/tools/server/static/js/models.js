@@ -618,9 +618,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
     
-    // Set up periodic refresh of model status
-    setInterval(updateModelStatusIndicator, 1000); // Check every 1 seconds
-    
     // Initialize model browser with hot models
     displayHotModels();
     
@@ -635,6 +632,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Set up register model form
     setupRegisterModelForm();
+    
+    // Set up smart periodic refresh to detect external model changes
+    // Poll every 15 seconds (much less aggressive than 1 second)
+    // Only poll when page is visible to save resources
+    let pollInterval = null;
+    
+    function startPolling() {
+        if (!pollInterval) {
+            pollInterval = setInterval(async () => {
+                // Only update if page is visible
+                if (document.visibilityState === 'visible') {
+                    await updateModelStatusIndicator();
+                }
+            }, 15000); // Check every 15 seconds
+        }
+    }
+    
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    }
+    
+    // Start polling when page is visible, stop when hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // Page became visible - update immediately and resume polling
+            updateModelStatusIndicator();
+            startPolling();
+        } else {
+            // Page hidden - stop polling to save resources
+            stopPolling();
+        }
+    });
+    
+    // Start polling initially
+    startPolling();
 });
 
 // Toggle Add Model form
