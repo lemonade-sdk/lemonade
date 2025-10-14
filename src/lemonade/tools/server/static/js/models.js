@@ -166,6 +166,29 @@ async function unloadModel() {
 
 // === Model Browser Management ===
 
+// Update visibility of categories/subcategories based on available models
+function updateCategoryVisibility() {
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Count models for each recipe
+    const recipeCounts = {};
+    const recipes = ['llamacpp', 'oga-hybrid', 'oga-npu', 'oga-cpu', 'flm'];
+    recipes.forEach(recipe => {
+        recipeCounts[recipe] = 0;
+        Object.entries(allModels).forEach(([modelId, modelData]) => {
+            if (modelData.recipe === recipe && (modelData.suggested || installedModels.has(modelId))) {
+                recipeCounts[recipe]++;
+            }
+        });
+        
+        // Show/hide recipe subcategory
+        const subcategory = document.querySelector(`[data-recipe="${recipe}"]`);
+        if (subcategory) {
+            subcategory.style.display = recipeCounts[recipe] > 0 ? 'block' : 'none';
+        }
+    });
+}
+
 // Toggle category in model browser (only for Hot Models now)
 function toggleCategory(categoryName) {
     const header = document.querySelector(`[data-category="${categoryName}"] .category-header`);
@@ -617,6 +640,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
+    
+    // Update category visibility on initial load
+    updateCategoryVisibility();
     
     // Initialize model browser with hot models
     displayHotModels();
