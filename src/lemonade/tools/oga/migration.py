@@ -190,7 +190,9 @@ def scan_huggingface_cache(hf_home: Optional[str] = None) -> List[Dict[str, any]
                 if not check_rai_config_version(snapshot_path):
                     # Extract readable model name from directory
                     model_name = item.replace("models--", "").replace("--", "/")
-                    size = get_directory_size(model_dir)  # Size of entire model directory
+                    size = get_directory_size(
+                        model_dir
+                    )  # Size of entire model directory
                     incompatible_models.append(
                         {
                             "path": model_dir,  # Delete entire model dir, not just snapshot
