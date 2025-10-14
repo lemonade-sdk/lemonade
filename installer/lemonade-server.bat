@@ -9,21 +9,18 @@ for /f "tokens=1-4 delims=:.," %%a in ("!time!") do (
 REM Use temp directory for the lock file
 set "LOCK_FILE=%TEMP%\lemonade_server.lock"
 
-REM Default to "serve" if no arguments are provided
-set "CLI_ARGS=%*"
-if "%CLI_ARGS%"=="" set "CLI_ARGS=serve"
+set "ARGS=%*"
 
-REM Show a notification and run the server in tray mode.
-REM Note: command line arguments are parsed in order from left to right
 set TRAY=0
-set ARGS=
-for %%a in (!CLI_ARGS!) do (
-    set ARGS=!ARGS! %%a
-    if /I "%%a"=="serve" (
-        set TRAY=1
-    )
-    if /I "%%a"=="--no-tray" (
-        set TRAY=0
+REM Only parse arguments if they exist, to avoid errors on empty calls.
+if not "%ARGS%"=="" (
+    for %%a in (%ARGS%) do (
+        if /I "%%a"=="serve" (
+            set TRAY=1
+        )
+        if /I "%%a"=="--no-tray" (
+            set TRAY=0
+        )
     )
 )
 
