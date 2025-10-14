@@ -166,6 +166,29 @@ async function unloadModel() {
 
 // === Model Browser Management ===
 
+// Update visibility of categories/subcategories based on available models
+function updateCategoryVisibility() {
+    const allModels = window.SERVER_MODELS || {};
+    
+    // Count models for each recipe
+    const recipeCounts = {};
+    const recipes = ['llamacpp', 'oga-hybrid', 'oga-npu', 'oga-cpu', 'flm'];
+    recipes.forEach(recipe => {
+        recipeCounts[recipe] = 0;
+        Object.entries(allModels).forEach(([modelId, modelData]) => {
+            if (modelData.recipe === recipe && (modelData.suggested || installedModels.has(modelId))) {
+                recipeCounts[recipe]++;
+            }
+        });
+        
+        // Show/hide recipe subcategory
+        const subcategory = document.querySelector(`[data-recipe="${recipe}"]`);
+        if (subcategory) {
+            subcategory.style.display = recipeCounts[recipe] > 0 ? 'block' : 'none';
+        }
+    });
+}
+
 // Toggle category in model browser (only for Hot Models now)
 function toggleCategory(categoryName) {
     const header = document.querySelector(`[data-category="${categoryName}"] .category-header`);
@@ -283,7 +306,7 @@ function displayHotModels() {
     modelList.innerHTML = '';
     
     Object.entries(allModels).forEach(([modelId, modelData]) => {
-        if (modelData.labels && modelData.labels.includes('hot')) {
+        if (modelData.labels && modelData.labels.includes('hot') && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
@@ -317,7 +340,7 @@ function displayModelsByRecipe(recipe) {
     }
     
     Object.entries(allModels).forEach(([modelId, modelData]) => {
-        if (modelData.recipe === recipe) {
+        if (modelData.recipe === recipe && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
@@ -341,7 +364,7 @@ function displayModelsByLabel(label) {
             if (modelId.startsWith('user.')) {
                 createModelItem(modelId, modelData, modelList);
             }
-        } else if (modelData.labels && modelData.labels.includes(label)) {
+        } else if (modelData.labels && modelData.labels.includes(label) && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
         }
     });
@@ -618,8 +641,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
     
-    // Set up periodic refresh of model status
-    setInterval(updateModelStatusIndicator, 1000); // Check every 1 seconds
+    // Update category visibility on initial load
+    updateCategoryVisibility();
     
     // Initialize model browser with hot models
     displayHotModels();
@@ -635,6 +658,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Set up register model form
     setupRegisterModelForm();
+    
+    // Set up smart periodic refresh to detect external model changes
+    // Poll every 15 seconds (much less aggressive than 1 second)
+    // Only poll when page is visible to save resources
+    let pollInterval = null;
+    
+    function startPolling() {
+        if (!pollInterval) {
+            pollInterval = setInterval(async () => {
+                // Only update if page is visible
+                if (document.visibilityState === 'visible') {
+                    await updateModelStatusIndicator();
+                }
+            }, 15000); // Check every 15 seconds
+        }
+    }
+    
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+    }
+    
+    // Start polling when page is visible, stop when hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // Page became visible - update immediately and resume polling
+            updateModelStatusIndicator();
+            startPolling();
+        } else {
+            // Page hidden - stop polling to save resources
+            stopPolling();
+        }
+    });
+    
+    // Start polling initially
+    startPolling();
 });
 
 // Toggle Add Model form

@@ -314,7 +314,7 @@ class ModelManager:
                 # Check if FLM is available, and install it if not
                 if not is_flm_available():
                     print(
-                        "FLM is not installed or not at the minimum required version. Installing FLM..."
+                        "FLM is not installed or not at the latest version. Installing FLM..."
                     )
                     install_flm()
 
@@ -369,7 +369,7 @@ class ModelManager:
 
         installed_packages = {dist.metadata["Name"].lower() for dist in distributions()}
 
-        hybrid_installed = (
+        ryzenai_installed = (
             "onnxruntime-vitisai" in installed_packages
             and "onnxruntime-genai-directml-ryzenai" in installed_packages
         )
@@ -426,9 +426,9 @@ class ModelManager:
         for model, value in models.items():
             recipe = value.get("recipe")
 
-            # Filter OGA hybrid models based on package availability
-            if recipe == "oga-hybrid":
-                if not hybrid_installed:
+            # Filter Ryzen AI  models based on package availability
+            if recipe == "oga-hybrid" or recipe == "oga-npu":
+                if not ryzenai_installed:
                     continue
 
             if recipe == "flm":
