@@ -157,7 +157,7 @@
         "suggested": true,
         "size": 8.82
     },
-    "Qwen-2.5-1.5B-Instruct-NPU": {
+    "Qwen-2.5-3B-Instruct-NPU": {
         "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-npu",
         "recipe": "oga-npu",
         "suggested": true,
