@@ -411,12 +411,32 @@
         "labels": ["coding"],
         "size": 4.68
     },
-    "Gemma-3-4b-it-FLM": {
+    "gpt-oss-20b-FLM": {
+        "checkpoint": "gpt-oss:20b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 13.4
+    },
+    "Gemma3-1b-it-FLM": {
+        "checkpoint": "gemma3:1b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 1.17
+    },
+    "Gemma3-4b-it-FLM": {
         "checkpoint": "gemma3:4b",
         "recipe": "flm",
         "suggested": true,
         "labels": ["hot","vision"],
         "size": 5.26
+    },
+    "Qwen3-0.6b-FLM": {
+        "checkpoint": "qwen3:0.6b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 0.66
     },
     "Qwen3-4B-Instruct-2507-FLM": {
         "checkpoint": "qwen3-it:4b",
@@ -432,6 +452,12 @@
         "labels": ["reasoning"],
         "size": 5.57 
     },
+    "Llama-3.1-8B-FLM": {
+        "checkpoint": "llama3.1:8b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 5.36
+    },
     "Llama-3.2-1B-FLM": {
         "checkpoint": "llama3.2:1b",
         "recipe": "flm",
@@ -443,17 +469,5 @@
         "recipe": "flm",
         "suggested": true,
         "size": 2.62
-    },
-    "Llama-3.1-8B-FLM": {
-        "checkpoint": "llama3.1:8b",
-        "recipe": "flm",
-        "suggested": true,
-        "size": 5.36
-    },
-    "gpt-oss-20b-FLM": {
-        "checkpoint": "gpt-oss:20b",
-        "recipe": "flm",
-        "suggested": true,
-        "size": 13.4
     }
 }
