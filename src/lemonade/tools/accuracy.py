@@ -83,42 +83,116 @@ class LMEvalHarness(Tool):
 
         return parser
 
-    def _process_results(self, results_dir, state):
-        """Process evaluation results and save to state stats"""
-        if not os.path.exists(results_dir) or not os.path.isdir(results_dir):
-            printing.log_warning(f"Results directory not found at {results_dir}")
+    def _scale_metric(self, metric_name, value):
+        """
+        Scale metric value appropriately based on type and range
+
+        Args:
+            metric_name: Name of the metric (e.g., "acc,none", "ppl")
+            value: Numeric value of the metric
+
+        Returns:
+            tuple: (scaled_value, units, display_string)
+        """
+        fraction_metrics = {
+            "acc",
+            "accuracy",
+            "f1",
+            "exact_match",
+            "em",
+            "win_rate",
+            "recall",
+            "precision",
+            "rouge",
+            "bleu",
+            "meteor",
+            "bertscore",
+            "match",
+            "correct",
+            "pass",
+            "success_rate",
+        }
+
+        metric_base = metric_name.split(",")[0].lower()
+        is_fraction = any(
+            frac_metric in metric_base for frac_metric in fraction_metrics
+        )
+        is_in_unit_range = 0 <= value <= 1
+
+        if is_fraction and is_in_unit_range:
+            scaled_value = float(value) * 100
+            units = "%"
+            display_str = f"{value:.4f} ({scaled_value:.2f}%)"
+        else:
+            scaled_value = float(value)
+            units = "raw"
+            display_str = f"{value:.4f}"
+
+        return scaled_value, units, display_str
+
+    def _process_results(self, results_path, state):
+        """
+        Process evaluation results and save to state stats
+
+        Args:
+            results_path: Can be either a direct JSON file path or a directory path
+            state: State object to save metrics to
+        """
+        results_file_path = None
+
+        # Determine if this is a file or directory and find the JSON file
+        if os.path.isfile(results_path) and results_path.endswith(".json"):
+            # Direct JSON file path (modern format)
+            results_file_path = results_path
+        elif os.path.isdir(results_path):
+            # Look for model subdirectories
+            model_dirs = [
+                d
+                for d in os.listdir(results_path)
+                if os.path.isdir(os.path.join(results_path, d))
+            ]
+
+            if model_dirs:
+                # Format: results_dir/model_name/results_*.json
+                model_dir = os.path.join(results_path, model_dirs[0])
+                printing.log_info(f"Found model directory: {model_dir}")
+
+                results_files = [
+                    f
+                    for f in os.listdir(model_dir)
+                    if f.startswith("results_") and f.endswith(".json")
+                ]
+
+                if results_files:
+                    results_files.sort(reverse=True)
+                    results_file_path = os.path.join(model_dir, results_files[0])
+                else:
+                    printing.log_warning(f"No results files found in {model_dir}")
+                    return
+            else:
+                printing.log_warning(f"No model directories found in {results_path}")
+                return
+        else:
+            # Handle case where lm-eval adds timestamp to expected filename
+            results_dir = os.path.dirname(results_path)
+            if os.path.exists(results_dir):
+                json_files = [f for f in os.listdir(results_dir) if f.endswith(".json")]
+                if json_files:
+                    results_file_path = os.path.join(results_dir, json_files[0])
+                    printing.log_info(f"Found results file: {results_file_path}")
+                else:
+                    printing.log_warning(f"No JSON results file found in {results_dir}")
+                    return
+            else:
+                printing.log_warning(f"Results path not found at {results_path}")
+                return
+
+        if not results_file_path or not os.path.exists(results_file_path):
+            printing.log_warning(f"Results file not found at {results_file_path}")
             return
 
-        model_dirs = [
-            d
-            for d in os.listdir(results_dir)
-            if os.path.isdir(os.path.join(results_dir, d))
-        ]
-
-        if not model_dirs:
-            printing.log_warning(f"No model directories found in {results_dir}")
-            return
-
-        model_dir = os.path.join(results_dir, model_dirs[0])
-        printing.log_info(f"Found model directory: {model_dir}")
-
-        # Find the results JSON file with timestamp
-        results_files = [
-            f
-            for f in os.listdir(model_dir)
-            if f.startswith("results_") and f.endswith(".json")
-        ]
-
-        if not results_files:
-            printing.log_warning(f"No results files found in {model_dir}")
-            return
-
-        # Sort by timestamp
-        results_files.sort(reverse=True)
-        results_file_path = os.path.join(model_dir, results_files[0])
         printing.log_info(f"Processing results from {results_file_path}")
 
-        # Read and process results
         try:
             with open(results_file_path, "r", encoding="utf-8") as f:
                 results = json.load(f)
@@ -132,18 +206,21 @@ class LMEvalHarness(Tool):
                         if isinstance(value, (int, float)) and not metric.startswith(
                             "alias"
                         ):
-                            # Format metric name for stats
-                            clean_metric = metric.replace(",", "_")
+                            # Format metric name for stats - remove ,none suffix
+                            clean_metric = metric.split(",")[0]  # Remove ,none suffix
                             stat_name = f"lm_eval_{task_name}_{clean_metric}"
 
-                            # Save to state stats as percentage
-                            state.save_stat(stat_name, float(value) * 100)
-                            state.save_stat(f"{stat_name}_units", "%")
+                            # Scale metric appropriately
+                            scaled_value, units, value_str = self._scale_metric(
+                                metric, value
+                            )
+                            display_str = f"  {metric}: {value_str}"
+
+                            state.save_stat(stat_name, scaled_value)
+                            state.save_stat(f"{stat_name}_units", units)
                             self.status_stats.append(stat_name)
 
-                            printing.log_info(
-                                f"  {metric}: {value:.4f} ({value*100:.2f}%)"
-                            )
+                            printing.log_info(display_str)
 
                 # Save summary metrics if available
                 avg_metrics = {}
@@ -167,12 +244,17 @@ class LMEvalHarness(Tool):
                     if values:
                         avg_value = sum(values) / len(values)
                         stat_name = f"lm_eval_average_{metric}"
-                        state.save_stat(stat_name, float(avg_value) * 100)
-                        state.save_stat(f"{stat_name}_units", "%")
-                        self.status_stats.append(stat_name)
-                        printing.log_info(
-                            f"Average {metric}: {avg_value:.4f} ({avg_value*100:.2f}%)"
+
+                        # Apply same scaling logic as individual metrics
+                        scaled_avg, units, value_str = self._scale_metric(
+                            metric, avg_value
                         )
+                        display_str = f"Average {metric}: {value_str}"
+
+                        state.save_stat(stat_name, scaled_avg)
+                        state.save_stat(f"{stat_name}_units", units)
+                        self.status_stats.append(stat_name)
+                        printing.log_info(display_str)
 
         except (IOError, json.JSONDecodeError) as e:
             printing.log_error(f"Error processing results: {e}")
@@ -188,6 +270,20 @@ class LMEvalHarness(Tool):
         log_samples: bool = False,
         output_path: Optional[str] = None,
     ) -> State:
+
+        # Check if lm-eval is available
+        try:
+            # pylint: disable=unused-import
+            import lm_eval
+        except ImportError:
+            error_msg = (
+                "lm-eval-harness is required but not installed. "
+                "Please install it using one of the following commands:\n"
+                "  pip install lemonade-sdk[dev]\n"
+                "  pip install -e .[dev]\n"
+            )
+            printing.log_error(error_msg)
+            raise ImportError(error_msg)
 
         import requests
         from lemonade.tools.server.utils.thread import ServerRunner
@@ -261,7 +357,7 @@ class LMEvalHarness(Tool):
                     raise RuntimeError("Failed to start the server")
 
         # Build API URL
-        results_file = os.path.join(output_path, f"{task}_results")
+        results_file = os.path.join(output_path, f"{task}_results.json")
 
         printing.log_info(f"Running lm-eval-harness on {task}...")
 
@@ -312,9 +408,8 @@ class LMEvalHarness(Tool):
                     "Results obtained successfully but couldn't display due to encoding issues"
                 )
 
-            # Process results from the correct location
-            results_dir = os.path.join(output_path, f"{task}_results")
-            self._process_results(results_dir, state)
+            # Process results from the JSON file
+            self._process_results(results_file, state)
 
         except subprocess.CalledProcessError as e:
             printing.log_error(f"Error running lm-eval-harness: {e}")
