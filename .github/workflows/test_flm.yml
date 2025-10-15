@@ -17,6 +17,7 @@ jobs:
   test-flm-npu:
     env:
         LEMONADE_CI_MODE: "True"
+        PYTHONIOENCODING: utf-8
     runs-on: [stx, Windows]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,20 +40,22 @@ jobs:
 
           conda create -p .\lemon-flm-ci python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda init
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          conda activate .\lemon-flm-ci
-          python -m pip install --upgrade pip
-          conda install pylint
-          python -m pip check
           
-          pip install -e .
+          conda run -p .\lemon-flm-ci python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p .\lemon-flm-ci conda install -y pylint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p .\lemon-flm-ci python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p .\lemon-flm-ci pip install -e .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -87,8 +90,8 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          conda activate .\lemon-flm-ci
-
-          python test/server_flm.py
+          
+          conda run -p .\lemon-flm-ci python test/server_flm.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 
