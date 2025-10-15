@@ -47,11 +47,11 @@ def format_size(size_bytes: int) -> str:
     Returns:
         Formatted string (e.g., "1.5 GB", "450 MB")
     """
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
+    for unit in ["B", "KB", "MB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024.0
-    return f"{size_bytes:.1f} PB"
+    return f"{size_bytes:.1f} GB"
 
 
 def check_rai_config_version(model_path: str, required_version: str = "1.6.0") -> bool:
@@ -69,7 +69,7 @@ def check_rai_config_version(model_path: str, required_version: str = "1.6.0") -
 
     # If no rai_config.json exists, it's not a RyzenAI model
     if not os.path.exists(rai_config_path):
-        return True  # Not a RyzenAI model, don't flag as incompatible
+        return True
 
     try:
         with open(rai_config_path, "r", encoding="utf-8") as f:
@@ -81,10 +81,9 @@ def check_rai_config_version(model_path: str, required_version: str = "1.6.0") -
             if isinstance(max_prompt_length, dict):
                 # If it's a dict with version keys, check for required version
                 return required_version in max_prompt_length
-            # If it's not a dict, it's likely a new format - consider compatible
+            # Fallback to True to avoid deleting models if format changes
             return True
 
-        # No max_prompt_length field - consider compatible (might be newer format)
         return True
 
     except (json.JSONDecodeError, OSError) as e:
@@ -195,14 +194,14 @@ def scan_huggingface_cache(hf_home: Optional[str] = None) -> List[Dict[str, any]
                     )  # Size of entire model directory
                     incompatible_models.append(
                         {
-                            "path": model_dir,  # Delete entire model dir, not just snapshot
+                            "path": model_dir,
                             "name": model_name,
                             "size": size,
                             "size_formatted": format_size(size),
                             "cache_type": "huggingface",
                         }
                     )
-                    break  # Only add model once, even if multiple snapshots
+                    break
 
     except (OSError, PermissionError) as e:
         logging.warning(f"Error scanning HuggingFace cache: {e}")
@@ -297,7 +296,3 @@ def delete_incompatible_models(model_paths: List[str]) -> Dict[str, any]:
         "freed_size": freed_size,
         "freed_size_formatted": format_size(freed_size),
     }
-
-
-# This file was originally licensed under Apache 2.0. It has been modified.
-# Modifications Copyright (c) 2025 AMD

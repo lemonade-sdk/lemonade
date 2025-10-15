@@ -3,41 +3,16 @@
 # import any lemonade modules in order to avoid any installation
 # collisions on imported modules.
 #
-# This tool can install Ryzen AI software artifacts (libraries, wheels, etc.).
-# The Ryzen AI hybrid artifacts directory hierarchy is:
-#
-#     RYZEN_AI\hybrid
-#         libs
-#         wheels
-#
-# The Ryzen AI npu artifacts directory hierarchy is:
-#
-#     RYZEN_AI\npu
-#         libs
-#         wheels
-#
-# In the above, RYZEN_AI is the path to the folder ryzen_ai that is contained in the
-# same folder as the executable python.exe.
-# The folder RYZEN_AI also contains a file `version_info.json` that contains information
-# about the installed Ryzen AI artifacts.
-#
-# In any python environment, only one set of artifacts can be installed at a time.
-# Python environments created by Lemonade v6.1.x or earlier will need to be recreated.
-#
+# This tool can install llama.cpp and FLM (FastFlowLM) for local LLM inference.
+# For RyzenAI support, use PyPI installation:
+#   pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
 
 import argparse
-import glob
-import json
 import os
-from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 from typing import Optional
-import zipfile
-
-version_info_filename = "version_info.json"
 
 # NPU Driver configuration
 NPU_DRIVER_DOWNLOAD_URL = (
@@ -46,74 +21,8 @@ NPU_DRIVER_DOWNLOAD_URL = (
 )
 REQUIRED_NPU_DRIVER_VERSION = "32.0.203.280"
 
-lemonade_install_dir = Path(__file__).parent.parent.parent
-
 # List of supported Ryzen AI processor series (can be extended in the future)
 SUPPORTED_RYZEN_AI_SERIES = ["300"]
-
-# Legacy installation data dictionaries removed - RyzenAI 1.4.0 is no longer supported
-# Please use PyPI installation: pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
-npu_install_data = {}
-
-hybrid_install_data = {}
-
-model_prep_install_data = {}
-
-
-def get_ryzen_ai_path(check_exists=True):
-    python_executable_path = sys.executable
-    python_executable_dir = os.path.dirname(python_executable_path)
-    ryzen_ai_folder = os.path.join(python_executable_dir, "ryzen_ai")
-    if check_exists:
-        if not os.path.isdir(ryzen_ai_folder):
-            raise RuntimeError(
-                "Please use `lemonade-install --ryzenai` to install Ryzen AI into the current "
-                "python environment. For more info, see "
-                "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
-            )
-    return ryzen_ai_folder
-
-
-def get_ryzen_ai_version_info():
-    ryzen_ai_folder = get_ryzen_ai_path()
-    version_info_path = os.path.join(ryzen_ai_folder, version_info_filename)
-    if not os.path.isfile(version_info_path):
-        raise RuntimeError(
-            f"The file {version_info_filename} is missing from the Ryzen AI "
-            f"folder {ryzen_ai_folder}.  Please run `lemonade-install` to fix.  For more info, see "
-            "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
-        )
-    with open(version_info_path, encoding="utf-8") as file:
-        version_info = json.load(file)
-    return version_info
-
-
-def get_oga_npu_dir():
-    version_info = get_ryzen_ai_version_info()
-    version = version_info["version"]
-    ryzen_ai_folder = get_ryzen_ai_path()
-    npu_dir = os.path.join(ryzen_ai_folder, "npu")
-    if not os.path.isdir(npu_dir):
-        raise RuntimeError(
-            f"The npu artifacts are missing from the Ryzen AI folder {ryzen_ai_folder}. "
-            " Please run `lemonade-install --ryzenai npu` again to fix.  For more info, see"
-            "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
-        )
-    return npu_dir, version
-
-
-def get_oga_hybrid_dir():
-    version_info = get_ryzen_ai_version_info()
-    version = version_info["version"]
-    ryzen_ai_folder = get_ryzen_ai_path()
-    hybrid_dir = os.path.join(ryzen_ai_folder, "hybrid")
-    if not os.path.isdir(hybrid_dir):
-        raise RuntimeError(
-            f"The hybrid artifacts are missing from the Ryzen AI folder {ryzen_ai_folder}. "
-            " Please run `lemonade-install --ryzenai hybrid` again to fix.  For more info, see "
-            "https://ryzenai.docs.amd.com/en/latest/llm/high_level_python.html."
-        )
-    return hybrid_dir, version
 
 
 def _get_ryzenai_version_info(device=None):
@@ -128,13 +37,7 @@ def _get_ryzenai_version_info(device=None):
 
         if Version(og.__version__) >= Version("0.7.0"):
             oga_path = os.path.dirname(og.__file__)
-            if og.__version__ in ("0.7.0.2.1", "0.7.0.2"):
-                raise ValueError(
-                    f"RyzenAI 1.5.0 (onnxruntime-genai-directml-ryzenai {og.__version__}) is no longer supported.\n"
-                    "RyzenAI 1.6.0 introduced breaking changes. Please upgrade to 1.6.0:\n"
-                    "pip install --upgrade lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
-                )
-            elif og.__version__ in ("0.9.2",):
+            if og.__version__ in ("0.9.2",):
                 return "1.6.0", oga_path
             else:
                 raise ValueError(
@@ -156,73 +59,6 @@ def _get_ryzenai_version_info(device=None):
             "pip install lemonade-sdk[dev,oga-cpu]\n"
             "See https://lemonade-server.ai/install_options.html for details"
         ) from e
-
-
-def download_lfs_file(token, file, output_filename):
-    """Downloads a file from LFS"""
-    import requests
-
-    # Set up the headers for the request
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    response = requests.get(
-        f"https://api.github.com/repos/aigdat/ryzenai-sw-ea/contents/{file}",
-        headers=headers,
-    )
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Parse the JSON response to get the download URL
-        content = response.json()
-        download_url = content.get("download_url")
-
-        if download_url:
-            # Download the file from the download URL
-            file_response = requests.get(download_url)
-
-            # Write the content to a file
-            with open(output_filename, "wb") as file:
-                file.write(file_response.content)
-        else:
-            print("Download URL not found in the response.")
-    else:
-        raise ValueError(
-            "Failed to fetch the content from GitHub API. "
-            f"Status code: {response.status_code}, Response: {response.json()}"
-        )
-
-    if not os.path.isfile(output_filename):
-        raise ValueError(f"Error: {output_filename} does not exist.")
-
-
-def download_file(url: str, output_filename: str, description: str = None):
-    import requests
-
-    try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            raise Exception(
-                f"Failed to fetch the content from GitHub API. \
-                Status code: {response.status_code}, Response: {response.json()}"
-            )
-
-        with open(output_filename, "wb") as file:
-            file.write(response.content)
-
-        if not os.path.isfile(output_filename):
-            raise Exception(f"\nError: Failed to write to {output_filename}")
-
-    except Exception as e:
-        raise Exception(f"\nError downloading {description or 'file'}: {str(e)}")
-
-
-def unzip_file(zip_path, extract_to):
-    """Unzips the specified zip file to the given directory."""
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(extract_to)
 
 
 def check_ryzen_ai_processor():
@@ -300,75 +136,6 @@ def check_ryzen_ai_processor():
         print("[WARNING]: Hybrid features may not work if processor is not supported.")
 
 
-def download_and_extract_package(
-    url: str,
-    version: str,
-    install_dir: str,
-    package_name: str,
-) -> str:
-    """
-    Downloads, Extracts and Renames the folder
-
-    Args:
-        url: Download URL for the package
-        version: Version string
-        install_dir: Directory to install to
-        package_name: Name of the package
-
-    Returns:
-        str: Path where package was extracted (renamed to package-version)
-    """
-    import requests
-
-    zip_filename = f"{package_name}-{version}.zip"
-    zip_path = os.path.join(install_dir, zip_filename)
-    target_folder = os.path.join(install_dir, f"{package_name}-{version}")
-
-    print(f"\nDownloading {package_name} from {url}")
-    response = requests.get(url)
-    if response.status_code == 200:
-        with open(zip_path, "wb") as f:
-            f.write(response.content)
-    else:
-        raise Exception(
-            f"Failed to download {package_name}. Status code: {response.status_code}"
-        )
-
-    print("\n[INFO]: Extracting zip file ...")
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(install_dir)
-    print("\n[INFO]: Extraction completed.")
-
-    os.remove(zip_path)
-
-    extracted_folder = None
-    for folder in os.listdir(install_dir):
-        folder_path = os.path.join(install_dir, folder)
-        if os.path.isdir(folder_path) and folder.startswith(f"{package_name}-"):
-            extracted_folder = folder_path
-            break
-
-    if extracted_folder is None:
-        raise ValueError(
-            f"Error: Extracted folder for {package_name} version {version} not found."
-        )
-
-    # Rename extracted folder to package-version
-    if extracted_folder != target_folder:
-        if os.path.exists(target_folder):
-            shutil.rmtree(target_folder)  # Remove if already exists
-        os.rename(extracted_folder, target_folder)
-        print(f"\n[INFO]: Renamed folder to {target_folder}")
-
-    return target_folder
-
-
-class LicenseRejected(Exception):
-    """
-    Raise an exception if the user rejects the license prompt.
-    """
-
-
 class UnsupportedPlatformError(Exception):
     """
     Raise an exception if the hardware is not supported.
@@ -387,39 +154,6 @@ class Install:
         )
 
         parser.add_argument(
-            "--ryzenai",
-            help="[DEPRECATED] Legacy Ryzen AI installation method (no longer supported for 1.4.0). "
-            "Please use PyPI installation instead: "
-            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple",
-            choices=[
-                "npu",
-                "hybrid",
-                "unified",
-            ],
-        )
-
-        parser.add_argument(
-            "--build-model",
-            action="store_true",
-            help="If specified, installs additional model prep artifacts for Ryzen AI.",
-        )
-
-        parser.add_argument(
-            "-y",
-            "--yes",
-            action="store_true",
-            help="Answer 'yes' to all questions. "
-            "Make sure to review all legal agreements before selecting this option.",
-        )
-
-        parser.add_argument(
-            "--token",
-            help="Some software requires an authentication token to download. "
-            "If this argument is not provided, the token can come from an environment "
-            "variable (e.g., Ryzen AI uses environment variable OGA_TOKEN).",
-        )
-
-        parser.add_argument(
             "--llamacpp",
             help="Install llama.cpp binaries with specified backend",
             choices=["rocm", "vulkan"],
@@ -431,269 +165,7 @@ class Install:
             help="Install FLM (FastFlowLM) for running local language models",
         )
 
-        parser.add_argument(
-            "--override",
-            action="store_true",
-            help="Override the deprecation error to use legacy tools.",
-        )
-
         return parser
-
-    @staticmethod
-    def _get_license_acceptance(version, license_file, license_tag, yes):
-        if yes:
-            print(
-                f"\nYou have accepted the AMD {license_tag}Software End User License "
-                f"Agreement for Ryzen AI {version} by providing the `--yes` option. "
-                "The license file is available for your review at "
-                f"{license_file}\n"
-            )
-        else:
-            print(
-                f"\nYou must accept the AMD {license_tag}Software End User License "
-                "Agreement in order to install this software. To continue, type the word "
-                "yes to assert that you agree and are authorized to agree "
-                "on behalf of your organization, to the terms and "
-                f"conditions, in the {license_tag}Software End User License Agreement, "
-                "which terms and conditions may be reviewed, downloaded and "
-                "printed from this link: "
-                f"{license_file}\n"
-            )
-
-            response = input("Would you like to accept the license (yes/No)? ")
-            if response.lower() == "yes" or response.lower() == "y":
-                pass
-            else:
-                raise LicenseRejected("Exiting because the license was not accepted.")
-
-    @staticmethod
-    def _install_artifacts(version, install_dir, token, file, wheels_full_path):
-        archive_file_name = "artifacts.zip"
-        archive_file_path = os.path.join(install_dir, archive_file_name)
-
-        if token:
-            token_to_use = token
-        else:
-            token_to_use = os.environ.get("OGA_TOKEN")
-
-        # Retrieve the installation artifacts
-        if os.path.exists(install_dir):
-            # Remove any artifacts from a previous installation attempt
-            shutil.rmtree(install_dir)
-        os.makedirs(install_dir)
-        if any(proto in file for proto in ["https:", "http:"]):
-            print(f"\nDownloading {file}\n")
-            download_file(file, archive_file_path)
-        elif "file:" in file:
-            local_file = file.replace("file://", "C:/")
-            print(f"\nCopying {local_file}\n")
-            shutil.copy(local_file, archive_file_path)
-        else:
-            print(f"\nDownloading {file} from GitHub LFS to {install_dir}\n")
-            download_lfs_file(token_to_use, file, archive_file_path)
-
-        # Unzip the file
-        print(f"\nUnzipping archive {archive_file_path}\n")
-        unzip_file(archive_file_path, install_dir)
-        print(f"\nDLLs installed\n")
-
-        # Install all whl files in the specified wheels folder
-        if wheels_full_path is not None:
-            print(f"\nInstalling wheels from {wheels_full_path}\n")
-            # Install all the wheel files together, allowing pip to work out the dependencies
-            wheel_files = glob.glob(os.path.join(wheels_full_path, "*.whl"))
-            install_cmd = [sys.executable, "-m", "pip", "install"] + wheel_files
-            subprocess.run(
-                install_cmd,
-                check=True,
-                shell=True,
-            )
-
-        # Delete the zip file
-        print(f"\nCleaning up, removing {archive_file_path}\n")
-        os.remove(archive_file_path)
-
-    @staticmethod
-    def _install_ryzenai_model_artifacts(ryzen_ai_folder, version):
-        """
-        Installs the Ryzen AI model prep artifacts if the build-model flag is provided.
-
-        Args:
-            ryzen_ai_folder (str): Path to the Ryzen AI installation folder.
-            version (str): Version of the Ryzen AI artifacts.
-        """
-
-        # Model prep artifacts installation is no longer supported
-        raise ValueError(
-            "Legacy model prep artifacts installation is no longer supported.\n"
-            "RyzenAI 1.4.0 has been deprecated. Please upgrade to RyzenAI 1.6.0:\n"
-            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple"
-        )
-
-        # Get the model prep artifacts zipfile URL
-        file = model_prep_install_data[version].get(
-            "model_prep_artifacts_zipfile", None
-        )
-        if not file:
-            raise ValueError(
-                "Model prep artifacts zipfile URL is missing for version " f"{version}."
-            )
-
-        # Download and extract the model prep artifacts
-        print(f"\nDownloading model prep artifacts for Ryzen AI {version}.")
-        model_prep_dir = download_and_extract_package(
-            url=file,
-            version=version,
-            install_dir=ryzen_ai_folder,
-            package_name="model-prep",
-        )
-
-        # Install all .whl files from the extracted model prep artifacts
-        wheels_full_path = os.path.join(model_prep_dir)
-        print(f"\nInstalling model prep wheels from {wheels_full_path}\n")
-        wheel_files = glob.glob(os.path.join(wheels_full_path, "*.whl"))
-        if not wheel_files:
-            raise ValueError(
-                f"No .whl files found in the model prep artifacts directory: {wheels_full_path}"
-            )
-
-        install_cmd = [sys.executable, "-m", "pip", "install"] + wheel_files
-        subprocess.run(install_cmd, check=True, shell=True)
-
-        print(f"\nModel prep artifacts installed successfully from {model_prep_dir}.")
-        return file
-
-    @staticmethod
-    def _install_ryzenai_npu(ryzen_ai_folder, version, yes, token, skip_wheels=False):
-        # Check version is valid
-        if version not in npu_install_data:
-            raise ValueError(
-                "Invalid Ryzen AI version for NPU.  Valid options are "
-                f"{list(npu_install_data.keys())}."
-            )
-        file = npu_install_data[version].get("artifacts_zipfile", None)
-        license_file = npu_install_data[version].get("license_file", None)
-        license_tag = npu_install_data[version].get("license_tag", None)
-        install_dir = os.path.join(ryzen_ai_folder, "npu")
-        wheels_full_path = os.path.join(install_dir, "wheels")
-
-        if license_file:
-            Install._get_license_acceptance(version, license_file, license_tag, yes)
-
-        print(f"Downloading NPU artifacts for Ryzen AI {version}.")
-        if skip_wheels:
-            wheels_full_path = None
-        else:
-            print("Wheels will be added to current activated environment.")
-        Install._install_artifacts(version, install_dir, token, file, wheels_full_path)
-        return file
-
-    @staticmethod
-    def _install_ryzenai_hybrid(
-        ryzen_ai_folder, version, yes, token, skip_wheels=False
-    ):
-        # Check version is valid
-        if version not in hybrid_install_data:
-            raise ValueError(
-                "Invalid version for hybrid.  Valid options are "
-                f"{list(hybrid_install_data.keys())}."
-            )
-        file = hybrid_install_data[version].get("artifacts_zipfile", None)
-        license_file = hybrid_install_data[version].get("license_file", None)
-        license_tag = hybrid_install_data[version].get("license_tag", None)
-        install_dir = os.path.join(ryzen_ai_folder, "hybrid")
-        wheels_full_path = os.path.join(install_dir, "wheels")
-
-        if license_file:
-            Install._get_license_acceptance(version, license_file, license_tag, yes)
-
-        print(f"Downloading hybrid artifacts for Ryzen AI {version}.")
-        if skip_wheels:
-            wheels_full_path = None
-        else:
-            print("Wheels will be added to current activated environment.")
-        Install._install_artifacts(version, install_dir, token, file, wheels_full_path)
-        return file
-
-    @staticmethod
-    def _install_ryzenai(ryzenai, build_model, yes, token, override=False):
-        # Check if the processor is supported before proceeding
-        check_ryzen_ai_processor()
-
-        error_msg = (
-            "\n" + "=" * 80 + "\n"
-            "ERROR: LEGACY RYZEN AI INSTALLATION NO LONGER SUPPORTED\n"
-            + "=" * 80
-            + "\n"
-            "RyzenAI 1.4.0 is no longer supported. The legacy lemonade-install method\n"
-            "has been deprecated.\n\n"
-            "Please use the PyPI installation method for RyzenAI 1.6.0:\n\n"
-            "pip install lemonade-sdk[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple\n\n"
-            + "=" * 80
-            + "\n"
-        )
-        raise ValueError(error_msg)
-
-        print(warning_msg)
-
-        # Delete any previous Ryzen AI installation in this environment
-        ryzen_ai_folder = get_ryzen_ai_path(check_exists=False)
-        if os.path.exists(ryzen_ai_folder):
-            print("Deleting previous Ryzen AI installation in this environment.")
-            shutil.rmtree(ryzen_ai_folder)
-
-        # Determine Ryzen AI version to install
-        version = DEFAULT_RYZEN_AI_VERSION
-        if "-" in ryzenai:
-            # ryzenai is: (npu|hybrid)-(<VERSION>)
-            parts = ryzenai.split("-")
-            ryzenai = parts[0]
-            version = parts[1]
-
-        # Install artifacts needed for npu, hybrid, or unified (both) inference
-        npu_file = None
-        hybrid_file = None
-        model_prep_file = None
-        if ryzenai == "npu":
-            npu_file = Install._install_ryzenai_npu(
-                ryzen_ai_folder, version, yes, token
-            )
-        elif ryzenai == "hybrid":
-            hybrid_file = Install._install_ryzenai_hybrid(
-                ryzen_ai_folder, version, yes, token
-            )
-        elif ryzenai == "unified":
-            # Download NPU artifacts and use the NPU wheels
-            npu_file = Install._install_ryzenai_npu(
-                ryzen_ai_folder, version, yes, token
-            )
-            # Download Hybrid artifacts (and skip wheels as they are already loaded)
-            hybrid_file = Install._install_ryzenai_hybrid(
-                ryzen_ai_folder, version, yes, token, skip_wheels=True
-            )
-        else:
-            raise ValueError(
-                f"Value passed to ryzenai argument is not supported: {ryzenai}"
-            )
-
-        if build_model:
-            model_prep_file = Install._install_ryzenai_model_artifacts(
-                ryzen_ai_folder, version
-            )
-
-        # Write version_info file
-        version_info = {
-            "version": version,
-            "hybrid_artifacts": hybrid_file,
-            "npu_artifacts": npu_file,
-            "model_prep_artifacts": model_prep_file,
-        }
-        version_info_path = os.path.join(ryzen_ai_folder, version_info_filename)
-        try:
-            with open(version_info_path, "w", encoding="utf-8") as file:
-                json.dump(version_info, file, indent=4)
-        except IOError as e:
-            print(f"An error occurred while writing {version_info_path}: {e}")
 
     @staticmethod
     def _install_llamacpp(backend):
@@ -723,22 +195,14 @@ class Install:
 
     def run(
         self,
-        ryzenai: Optional[str] = None,
-        build_model: Optional[str] = None,
         llamacpp: Optional[str] = None,
         flm: Optional[bool] = None,
-        yes: bool = False,
-        token: Optional[str] = None,
-        override: bool = False,
     ):
-        if ryzenai is None and llamacpp is None and flm is None:
+        if llamacpp is None and flm is None:
             raise ValueError(
                 "You must select something to install, "
-                "for example `--llamacpp`, `--flm`, or `--ryzenai`"
+                "for example `--llamacpp` or `--flm`"
             )
-
-        if ryzenai is not None:
-            self._install_ryzenai(ryzenai, build_model, yes, token, override)
 
         if llamacpp is not None:
             self._install_llamacpp(llamacpp)
