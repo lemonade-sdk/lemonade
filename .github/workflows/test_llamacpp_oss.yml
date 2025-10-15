@@ -59,7 +59,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          conda activate $CONDA_ENV_PATH
+          call "%CONDA_PREFIX%\Scripts\activate.bat" "%CONDA_ENV_PATH%"
           python -m pip install --upgrade pip
           conda install -y pylint
           pip install -e .[dev]
@@ -71,7 +71,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          conda activate $CONDA_ENV_PATH
+          call "%CONDA_PREFIX%\Scripts\activate.bat" "%CONDA_ENV_PATH%"
 
           if ("${{ matrix.backend }}" -ne "rocm") {
             lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -84,7 +84,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          conda activate $CONDA_ENV_PATH
+          call "%CONDA_PREFIX%\Scripts\activate.bat" "%CONDA_ENV_PATH%"
 
           python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
           python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
