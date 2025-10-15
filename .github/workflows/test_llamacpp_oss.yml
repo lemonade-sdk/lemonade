@@ -21,6 +21,7 @@ jobs:
       CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      PYTHONIOENCODING: utf-8
 
     strategy:
       matrix:
@@ -54,19 +55,22 @@ jobs:
           conda update conda conda-libmamba-solver --solver classic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          conda create -p $CONDA_ENV_PATH python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda init
+          conda create -p $env:CONDA_ENV_PATH python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies
         run: |
-          conda activate $CONDA_ENV_PATH
-          python -m pip install --upgrade pip
-          conda install -y pylint
-          pip install -e .[dev]
-          pip check
+          conda run -p $env:CONDA_ENV_PATH python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p $env:CONDA_ENV_PATH conda install -y pylint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p $env:CONDA_ENV_PATH pip install -e .[dev]
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p $env:CONDA_ENV_PATH pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
@@ -74,23 +78,19 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          conda activate $CONDA_ENV_PATH
-
           if ("${{ matrix.backend }}" -ne "rocm") {
-            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+            conda run -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
           }
 
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
+          conda run -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          conda run -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Run lemonade Llamacpp API tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          conda activate $CONDA_ENV_PATH
-
-          python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
-          python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
+          conda run -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
+          conda run -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 
   test-server-llamacpp-ubuntu:
     env:

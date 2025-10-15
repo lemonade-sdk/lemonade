@@ -75,23 +75,27 @@ jobs:
 
           conda create -p .\lemon-ryzenai-ci python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda init
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          conda activate .\lemon-ryzenai-ci
-          python -m pip install --upgrade pip
-          conda install pylint
-          python -m pip check
+          
+          conda run -p .\lemon-ryzenai-ci python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p .\lemon-ryzenai-ci conda install -y pylint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          conda run -p .\lemon-ryzenai-ci python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install using new PyPI approach for v1.5.0
-          pip install -e .[dev]
+          conda run -p .\lemon-ryzenai-ci pip install -e .[dev]
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
           # Install ryzenai as a separate step to minimize use of pypi.amd.com
-          pip install -e .[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
+          conda run -p .\lemon-ryzenai-ci pip install -e .[oga-ryzenai] --extra-index-url https://pypi.amd.com/simple
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -104,16 +108,15 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          conda activate .\lemon-ryzenai-ci
 
           # Test CLI
-          lemonade -i amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          conda run -p .\lemon-ryzenai-ci lemonade -i amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs
-          python examples/api_oga_npu.py
+          conda run -p .\lemon-ryzenai-ci python examples/api_oga_npu.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python examples/api_oga_npu_streaming.py
+          conda run -p .\lemon-ryzenai-ci python examples/api_oga_npu_streaming.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Hybrid tests
@@ -123,14 +126,13 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          conda activate .\lemon-ryzenai-ci
 
           # Test CLI
-          lemonade -m -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          conda run -p .\lemon-ryzenai-ci lemonade -m -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs
-          python examples/api_oga_hybrid.py
+          conda run -p .\lemon-ryzenai-ci python examples/api_oga_hybrid.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python examples/api_oga_hybrid_streaming.py
+          conda run -p .\lemon-ryzenai-ci python examples/api_oga_hybrid_streaming.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
