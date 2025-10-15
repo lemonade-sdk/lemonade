@@ -57,9 +57,6 @@ jobs:
           conda create -p $CONDA_ENV_PATH python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          conda init
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Install dependencies
         run: |
           conda activate $CONDA_ENV_PATH
