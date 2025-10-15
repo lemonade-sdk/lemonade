@@ -329,8 +329,6 @@ class OgaLoad(FirstTool):
         3. Check NPU driver version if required for device and ryzenai_version.
         """
 
-        env_path = sys.prefix
-
         # For RyzenAI 1.6.0, check NPU driver version for NPU and hybrid devices
         if device in ["npu", "hybrid"]:
             required_driver_version = REQUIRED_NPU_DRIVER_VERSION
