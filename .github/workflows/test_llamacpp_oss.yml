@@ -28,7 +28,7 @@ jobs:
           - backend: vulkan
             runner: [stx, Windows]
           - backend: rocm
-            runner: [Windows, test]
+            runner: [stx-halo, Windows]
 
     runs-on: ${{ matrix.runner }}
     concurrency:
