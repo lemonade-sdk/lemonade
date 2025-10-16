@@ -1037,6 +1037,153 @@ function setupRegisterModelForm() {
     }
 }
 
+// === Migration/Cleanup Functions ===
+
+// Store incompatible models data globally
+let incompatibleModelsData = null;
+
+// Check for incompatible models on page load
+async function checkIncompatibleModels() {
+    try {
+        const response = await httpJson(getServerBaseUrl() + '/api/v1/migration/incompatible-models');
+        incompatibleModelsData = response;
+
+        if (response.count > 0) {
+            showMigrationBanner(response.count, response.total_size);
+        }
+    } catch (error) {
+        console.error('Error checking for incompatible models:', error);
+    }
+}
+
+// Show migration banner
+function showMigrationBanner(count, totalSize) {
+    const banner = document.getElementById('migration-banner');
+    const msg = document.getElementById('migration-banner-msg');
+
+    const sizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(1);
+    msg.textContent = `Found ${count} incompatible RyzenAI model${count > 1 ? 's' : ''} (${sizeGB} GB). Clean up to free disk space.`;
+    banner.style.display = 'flex';
+}
+
+// Hide migration banner
+function hideMigrationBanner() {
+    const banner = document.getElementById('migration-banner');
+    banner.style.display = 'none';
+}
+
+// Show migration modal with model list
+function showMigrationModal() {
+    if (!incompatibleModelsData || incompatibleModelsData.count === 0) {
+        return;
+    }
+
+    const modal = document.getElementById('migration-modal');
+    const modelList = document.getElementById('migration-model-list');
+    const totalSize = document.getElementById('migration-total-size');
+
+    // Populate model list
+    modelList.innerHTML = '';
+    incompatibleModelsData.models.forEach(model => {
+        const item = document.createElement('div');
+        item.className = 'migration-model-item';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'migration-model-name';
+        nameSpan.textContent = model.name;
+
+        const sizeSpan = document.createElement('span');
+        sizeSpan.className = 'migration-model-size';
+        sizeSpan.textContent = model.size_formatted;
+
+        item.appendChild(nameSpan);
+        item.appendChild(sizeSpan);
+        modelList.appendChild(item);
+    });
+
+    // Set total size
+    const sizeGB = (incompatibleModelsData.total_size / (1024 * 1024 * 1024)).toFixed(1);
+    totalSize.textContent = `${sizeGB} GB`;
+
+    modal.style.display = 'flex';
+}
+
+// Hide migration modal
+function hideMigrationModal() {
+    const modal = document.getElementById('migration-modal');
+    modal.style.display = 'none';
+}
+
+// Delete incompatible models
+async function deleteIncompatibleModels() {
+    if (!incompatibleModelsData || incompatibleModelsData.count === 0) {
+        return;
+    }
+
+    const modelPaths = incompatibleModelsData.models.map(m => m.path);
+
+    try {
+        // Disable buttons during deletion
+        const deleteBtn = document.querySelector('.delete-btn');
+        const cancelBtn = document.querySelector('.cancel-btn');
+        deleteBtn.disabled = true;
+        cancelBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting...';
+
+        const response = await httpRequest(getServerBaseUrl() + '/api/v1/migration/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_paths: modelPaths })
+        });
+
+        const result = await response.json();
+
+        // Close modal
+        hideMigrationModal();
+
+        // Hide banner
+        hideMigrationBanner();
+
+        // Show success message
+        showSuccessMessage(`Successfully deleted ${result.success_count} model${result.success_count > 1 ? 's' : ''}, freed ${result.freed_size_formatted}`);
+
+        // Clear cached data
+        incompatibleModelsData = null;
+
+    } catch (error) {
+        console.error('Error deleting incompatible models:', error);
+        showErrorBanner('Failed to delete models: ' + error.message);
+
+        // Re-enable buttons
+        const deleteBtn = document.querySelector('.delete-btn');
+        const cancelBtn = document.querySelector('.cancel-btn');
+        deleteBtn.disabled = false;
+        cancelBtn.disabled = false;
+        deleteBtn.textContent = 'Delete All';
+    }
+}
+
+// Show success message (reuse error banner with green color)
+function showSuccessMessage(message) {
+    const banner = document.getElementById('error-banner');
+    const msg = document.getElementById('error-banner-msg');
+    msg.textContent = message;
+    banner.style.backgroundColor = '#2d7f47';
+    banner.style.display = 'flex';
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        banner.style.display = 'none';
+        banner.style.backgroundColor = ''; // Reset to default
+    }, 5000);
+}
+
+// Check for incompatible models when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Run check after a short delay to let the page load
+    setTimeout(checkIncompatibleModels, 1000);
+});
+
 // Make functions globally available for HTML onclick handlers and other components
 window.toggleCategory = toggleCategory;
 window.selectRecipe = selectRecipe;
@@ -1045,3 +1192,7 @@ window.showAddModelForm = showAddModelForm;
 window.unloadModel = unloadModel;
 window.installModel = installModel;
 window.deleteModel = deleteModel;
+window.showMigrationModal = showMigrationModal;
+window.hideMigrationModal = hideMigrationModal;
+window.hideMigrationBanner = hideMigrationBanner;
+window.deleteIncompatibleModels = deleteIncompatibleModels;

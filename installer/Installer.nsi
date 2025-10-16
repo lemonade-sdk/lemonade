@@ -141,7 +141,7 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "Set up Python"
     CreateDirectory "$INSTDIR\python"
-    ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip"'
+    ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"'
     ExecWait 'tar -xf "$INSTDIR\python\python.zip" -C "$INSTDIR\python"'
     ExecWait 'curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py'
     ExecWait '"$INSTDIR\python\python.exe" get-pip.py --no-warn-script-location'

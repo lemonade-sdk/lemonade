@@ -11,7 +11,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md#installation
 from lemonade.api import from_pretrained
 
 model, tokenizer = from_pretrained(
-    "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+    "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
     recipe="oga-npu",
 )
 
