@@ -118,12 +118,6 @@
         "suggested": true,
         "size": 9.09
     },
-    "Llama-xLAM-2-8b-fc-r-Hybrid": {
-        "checkpoint": "amd/Llama-xLAM-2-8b-fc-r-awq-g128-int4-asym-bfp16-onnx-hybrid",
-        "recipe": "oga-hybrid",
-        "suggested": false,
-        "size": 8.47
-    },
     "Qwen3-1.7B-Hybrid": {
         "checkpoint": "amd/Qwen3-1.7B-awq-quant-onnx-hybrid",
         "recipe": "oga-hybrid",

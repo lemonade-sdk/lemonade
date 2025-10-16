@@ -266,23 +266,115 @@ def delete_model_directory(model_path: str) -> bool:
         return False
 
 
-def delete_incompatible_models(model_paths: List[str]) -> Dict[str, any]:
+def _extract_checkpoint_from_path(path: str) -> Optional[str]:
     """
-    Delete multiple incompatible model directories.
+    Extract the checkpoint name from a model path.
+
+    Args:
+        path: Model directory path (either Lemonade cache or HuggingFace cache)
+
+    Returns:
+        Checkpoint name (e.g., "amd/Qwen2.5-1.5B-Instruct-awq") or None if not extractable
+    """
+    # Normalize path separators to handle both Unix and Windows paths
+    normalized_path = path.replace("\\", "/")
+    parts = normalized_path.split("/")
+
+    # Handle HuggingFace cache paths: models--{org}--{repo}
+    if "models--" in normalized_path:
+        for part in parts:
+            if part.startswith("models--"):
+                # Convert models--org--repo to org/repo
+                # Replace first two occurrences of -- with /
+                checkpoint = part.replace("models--", "", 1).replace("--", "/", 1)
+                return checkpoint
+        return None
+
+    # Handle Lemonade cache paths: oga_models/{model_name}/{device}-{dtype}
+    if "oga_models" in normalized_path:
+        try:
+            oga_models_idx = parts.index("oga_models")
+            if oga_models_idx + 1 < len(parts):
+                model_name = parts[oga_models_idx + 1]
+                # Convert model_name back to checkpoint (e.g., amd_model -> amd/model)
+                # This is a heuristic - we look for the pattern {org}_{model}
+                checkpoint = model_name.replace("_", "/", 1)
+                return checkpoint
+        except (ValueError, IndexError):
+            return None
+
+    return None
+
+
+def _cleanup_user_models_json(deleted_checkpoints: List[str], user_models_file: str):
+    """
+    Remove entries from user_models.json for models that have been deleted.
+
+    Args:
+        deleted_checkpoints: List of checkpoint names that were deleted
+        user_models_file: Path to user_models.json
+    """
+    if not deleted_checkpoints or not os.path.exists(user_models_file):
+        return
+
+    try:
+        with open(user_models_file, "r", encoding="utf-8") as f:
+            user_models = json.load(f)
+
+        # Track which models to remove
+        models_to_remove = []
+        for model_name, model_info in user_models.items():
+            checkpoint = model_info.get("checkpoint", "")
+            # Check if this checkpoint matches any deleted checkpoints
+            # We do a case-insensitive comparison since paths may have been lowercased
+            for deleted_checkpoint in deleted_checkpoints:
+                if checkpoint.lower() == deleted_checkpoint.lower():
+                    models_to_remove.append(model_name)
+                    break
+
+        # Remove the models
+        for model_name in models_to_remove:
+            del user_models[model_name]
+            logging.info(f"Removed {model_name} from user_models.json")
+
+        # Save the updated file only if we removed something
+        if models_to_remove:
+            with open(user_models_file, "w", encoding="utf-8") as f:
+                json.dump(user_models, f, indent=2)
+            logging.info(
+                f"Updated user_models.json - removed {len(models_to_remove)} entries"
+            )
+
+    except (json.JSONDecodeError, OSError) as e:
+        logging.warning(f"Could not update user_models.json: {e}")
+
+
+def delete_incompatible_models(
+    model_paths: List[str], user_models_file: Optional[str] = None
+) -> Dict[str, any]:
+    """
+    Delete multiple incompatible model directories and clean up user_models.json.
 
     Args:
         model_paths: List of paths to delete
+        user_models_file: Path to user_models.json (optional, will use default if not provided)
 
     Returns:
-        Dict with deletion results (success_count, failed_count, freed_size)
+        Dict with deletion results (success_count, failed_count, freed_size, cleaned_user_models)
     """
     success_count = 0
     failed_count = 0
     freed_size = 0
+    deleted_checkpoints = []
 
     for path in model_paths:
         # Calculate size before deletion
         size = get_directory_size(path)
+
+        # Extract checkpoint name before deleting
+        checkpoint = _extract_checkpoint_from_path(path)
+        if checkpoint:
+            deleted_checkpoints.append(checkpoint)
 
         if delete_model_directory(path):
             success_count += 1
@@ -290,9 +382,22 @@ def delete_incompatible_models(model_paths: List[str]) -> Dict[str, any]:
         else:
             failed_count += 1
 
+    # Clean up user_models.json if we deleted any models
+    cleaned_user_models = False
+    if deleted_checkpoints:
+        # Use default path if not provided
+        if user_models_file is None:
+            from lemonade.cache import DEFAULT_CACHE_DIR
+
+            user_models_file = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
+
+        _cleanup_user_models_json(deleted_checkpoints, user_models_file)
+        cleaned_user_models = True
+
     return {
         "success_count": success_count,
         "failed_count": failed_count,
         "freed_size": freed_size,
         "freed_size_formatted": format_size(freed_size),
+        "cleaned_user_models": cleaned_user_models,
     }

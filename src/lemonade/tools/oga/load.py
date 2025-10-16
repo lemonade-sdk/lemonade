@@ -333,6 +333,7 @@ class OgaLoad(FirstTool):
             required_driver_version = REQUIRED_NPU_DRIVER_VERSION
 
             current_driver_version = _get_npu_driver_version()
+            rai_version, _ = _get_ryzenai_version_info(device)
 
             if not current_driver_version:
                 printing.log_warning(
@@ -349,7 +350,7 @@ class OgaLoad(FirstTool):
             ):
                 printing.log_warning(
                     f"Incorrect NPU driver version detected: {current_driver_version}\n"
-                    f"{device.upper()} inference with RyzenAI 1.6.0 requires driver "
+                    f"{device.upper()} inference with RyzenAI {rai_version} requires driver "
                     f"version {required_driver_version} or higher.\n"
                     "Please download and install the correct NPU Driver from:\n"
                     f"{NPU_DRIVER_DOWNLOAD_URL}\n"
@@ -419,18 +420,6 @@ class OgaLoad(FirstTool):
             raise ValueError("[Model builder] " + str(e)) from e
 
         return full_model_path
-
-    @staticmethod
-    def _setup_npu_environment(ryzenai_version, oga_path):
-        # pylint: disable=unused-argument
-        """
-        Sets up environment for NPU flow of ONNX model and returns saved state to be restored
-        later in cleanup.
-
-        For RyzenAI 1.6.0 (PyPI installation), no environment setup is needed.
-        """
-        # For PyPI installation (1.6.0), no environment setup needed
-        return None
 
     @staticmethod
     def _load_model_and_setup_state(
