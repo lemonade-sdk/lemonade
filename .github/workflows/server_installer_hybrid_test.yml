@@ -1,4 +1,6 @@
 name: Hybrid Server Installer 🌩️
+permissions:
+  contents: read
 
 on:
   push:
