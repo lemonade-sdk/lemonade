@@ -88,6 +88,8 @@ class ModelManager:
         Returns a dictionary of locally available models.
         For GGUF models with variants, checks if the specific variant files exist.
         """
+        from huggingface_hub.constants import HF_HUB_CACHE
+
         downloaded_models = {}
         downloaded_checkpoints = self.downloaded_hf_checkpoints
 
@@ -105,6 +107,12 @@ class ModelManager:
                 # Handle other models
                 checkpoint = model_info["checkpoint"]
                 base_checkpoint, variant = parse_checkpoint(checkpoint)
+                if model.startswith("user."):
+                    # Parse checkpoint to get base path (models--xxx) without variant
+                    local_model_path = os.path.join(HF_HUB_CACHE, base_checkpoint)
+                    if os.path.exists(local_model_path):
+                        downloaded_models[model] = model_info
+                    continue
 
                 if base_checkpoint in downloaded_checkpoints:
                     # For GGUF models with variants, verify the specific variant files exist
@@ -146,6 +154,54 @@ class ModelManager:
                         # For non-GGUF models or GGUF without variants, use the original logic
                         downloaded_models[model] = model_info
         return downloaded_models
+
+    def register_local_model(
+        self,
+        model_name: str,
+        checkpoint: str,
+        recipe: str,
+        reasoning: bool = False,
+        vision: bool = False,
+        mmproj: str = "",
+        snapshot_path: str = "",
+    ):
+
+        model_name_clean = model_name[5:]
+
+        # Prepare model info
+        labels = ["custom"]
+        if reasoning:
+            labels.append("reasoning")
+        if vision:
+            labels.append("vision")
+
+        new_user_model = {
+            "checkpoint": checkpoint,
+            "recipe": recipe,
+            "suggested": True,
+            "labels": labels,
+        }
+        if mmproj:
+            new_user_model["mmproj"] = mmproj
+
+        # Load existing user models
+        user_models = {}
+        if os.path.exists(USER_MODELS_FILE):
+            with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                user_models = json.load(file)
+
+        # Check for conflicts
+        if model_name_clean in user_models:
+            raise ValueError(
+                f"{model_name_clean} is already registered."
+                f"Please use a different model name or delete the existing model."
+            )
+
+        # Save to user_models.json
+        user_models[model_name_clean] = new_user_model
+        os.makedirs(os.path.dirname(USER_MODELS_FILE), exist_ok=True)
+        with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+            json.dump(user_models, file)
 
     @property
     def downloaded_models_enabled(self) -> dict:
@@ -342,6 +398,37 @@ class ModelManager:
             # We do this registration after the download so that we don't register
             # any incorrectly configured models where the download would fail
             if new_registration_model_config:
+                from huggingface_hub.constants import HF_HUB_CACHE
+
+                # Parse checkpoint to get base checkpoint without variant
+                base_checkpoint, variant = parse_checkpoint(checkpoint)
+                repo_cache_name = base_checkpoint.replace("/", "--")
+                cache_checkpoint = f"models--{repo_cache_name}"
+
+                # For GGUF models, preserve variant so the loader knows which file to use
+                if variant:
+                    cache_checkpoint = f"{cache_checkpoint}:{variant}"
+
+                # For OGA models, resolve the path to genai_config.json
+                elif current_recipe and current_recipe.startswith("oga-"):
+                    model_cache_dir = os.path.join(HF_HUB_CACHE, cache_checkpoint)
+
+                    # Search for genai_config.json in the downloaded model
+                    resolved_checkpoint = None
+                    if os.path.exists(model_cache_dir):
+                        for root, _, files in os.walk(model_cache_dir):
+                            if "genai_config.json" in files:
+                                # Store relative path from HF_HUB_CACHE for portability
+                                resolved_checkpoint = os.path.relpath(
+                                    root, HF_HUB_CACHE
+                                )
+                                break
+
+                    if resolved_checkpoint:
+                        cache_checkpoint = resolved_checkpoint
+
+                new_user_model["checkpoint"] = cache_checkpoint
+
                 if os.path.exists(USER_MODELS_FILE):
                     with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
                         user_models: dict = json.load(file)
@@ -444,6 +531,8 @@ class ModelManager:
         Deletes the specified model from local storage.
         For GGUF models with variants, only deletes the specific variant files.
         """
+        from huggingface_hub.constants import HF_HUB_CACHE
+
         if model_name not in self.supported_models:
             raise ValueError(
                 f"Model {model_name} is not supported. Please choose from the following: "
@@ -464,6 +553,37 @@ class ModelManager:
             except subprocess.CalledProcessError as e:
                 raise ValueError(f"Failed to delete FLM model {model_name}: {e}") from e
 
+        if checkpoint.startswith("models--"):
+            # This is already in cache directory format (local model)
+            # Extract just the base directory name (models--{name}) from checkpoint
+            # which might contain full file path like models--name\files\model.gguf
+            checkpoint_parts = checkpoint.replace("\\", "/").split("/")
+            base_checkpoint = checkpoint_parts[0]  # Just the models--{name} part
+            model_cache_dir = os.path.join(HF_HUB_CACHE, base_checkpoint)
+
+            if os.path.exists(model_cache_dir):
+                shutil.rmtree(model_cache_dir)
+                print(
+                    f"Successfully deleted local model {model_name} from {model_cache_dir}"
+                )
+            else:
+                print(
+                    f"Model {model_name} directory not found at {model_cache_dir} - may have been manually deleted"
+                )
+
+            # Clean up user models registry
+            if model_name.startswith("user.") and os.path.exists(USER_MODELS_FILE):
+                with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                    user_models = json.load(file)
+
+                base_model_name = model_name[5:]  # Remove "user." prefix
+                if base_model_name in user_models:
+                    del user_models[base_model_name]
+                    with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+                        json.dump(user_models, file)
+                    print(f"Removed {model_name} from user models registry")
+
+            return
         # Parse checkpoint to get base and variant
         base_checkpoint, variant = parse_checkpoint(checkpoint)
 

@@ -10,9 +10,7 @@ import requests
 import lemonade.common.build as build
 import lemonade.common.printing as printing
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
-
 from lemonade.common.system_info import get_system_info
-
 from dotenv import set_key, load_dotenv
 
 LLAMA_VERSION_VULKAN = "b6510"
@@ -378,7 +376,7 @@ def install_llamacpp(backend):
                 import stat
 
                 # Find and make executable files executable
-                for root, dirs, files in os.walk(llama_server_exe_dir):
+                for root, _, files in os.walk(llama_server_exe_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
                         # Make files in bin/ directories executable
@@ -656,16 +654,71 @@ def identify_gguf_models(
     return core_files, sharded_files
 
 
-def download_gguf(config_checkpoint, config_mmproj=None, do_not_upgrade=False) -> dict:
+def download_gguf(
+    config_checkpoint: str, config_mmproj=None, do_not_upgrade: bool = False
+) -> dict:
     """
     Downloads the GGUF file for the given model configuration.
 
     For sharded models, if the variant points to a folder (e.g. Q4_0), all files in that folder
     will be downloaded but only the first file will be returned for loading.
     """
+    if os.path.exists(config_checkpoint):
+        result = {"variant": config_checkpoint}
+        if config_mmproj:
+            result["mmproj"] = config_mmproj
+        return result
+
+    # Parse checkpoint to extract base and variant
+    # Checkpoint format: models--{model_name} or models--{model_name}:variant for gguf models
+    checkpoint, variant = parse_checkpoint(config_checkpoint)
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    if checkpoint.startswith("models--"):
+        model_cache_dir = os.path.join(HF_HUB_CACHE, checkpoint)
+    else:
+        # This is a HuggingFace repo - convert to cache directory format
+        repo_cache_name = checkpoint.replace("/", "--")
+        model_cache_dir = os.path.join(HF_HUB_CACHE, f"models--{repo_cache_name}")
+
+    # Check if this is a local model
+    if os.path.exists(model_cache_dir):
+        gguf_file_found = None
+
+        # If variant is specified, look for that specific file
+        if variant:
+            search_term = variant if variant.endswith(".gguf") else f"{variant}.gguf"
+
+            for root, _, files in os.walk(model_cache_dir):
+                if search_term in files:
+                    gguf_file_found = os.path.join(root, search_term)
+                    break
+
+        # If no variant or variant not found, find any .gguf file (excluding mmproj)
+        if not gguf_file_found:
+            for root, _, files in os.walk(model_cache_dir):
+                gguf_files = [
+                    f
+                    for f in files
+                    if f.endswith(".gguf") and "mmproj" not in f.lower()
+                ]
+                if gguf_files:
+                    gguf_file_found = os.path.join(root, gguf_files[0])
+                    break
+        if gguf_file_found:
+            result = {"variant": gguf_file_found}
+
+            # Search for mmproj file if provided
+            if config_mmproj:
+                for root, _, files in os.walk(model_cache_dir):
+                    if config_mmproj in files:
+                        result["mmproj"] = os.path.join(root, config_mmproj)
+                        break
+            logging.info(result)
+            return result
+        # If no GGUF files found in local cache, continue to HuggingFace download logic below
 
     # This code handles all cases by constructing the appropriate filename or pattern
-    checkpoint, variant = parse_checkpoint(config_checkpoint)
 
     # Identify the GGUF model files in the repository that match the variant
     core_files, sharded_files = identify_gguf_models(checkpoint, variant, config_mmproj)
