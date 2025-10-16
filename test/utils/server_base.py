@@ -162,6 +162,7 @@ def ensure_model_is_cached():
         print(f"Failed to download model: {e}")
         return False
 
+
 class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
     """Base class containing only shared setup/cleanup functionality, no test methods."""
 
@@ -250,7 +251,6 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             )
 
 
-
 def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
     """Utility function to run server tests with a given test class."""
     # If offline parameter is not provided, use argparse to get it
@@ -273,7 +273,9 @@ def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=
 
         # Run the tests in offline mode
         with simulate_offline_mode():
-            result = unittest.TextTestRunner().run(test_suite)
+            result = unittest.TextTestRunner(
+                verbosity=2, buffer=False, failfast=True
+            ).run(test_suite)
 
         # Set exit code based on test results
         sys.exit(0 if result.wasSuccessful() else 1)
@@ -282,7 +284,11 @@ def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=
         # Create a new test suite for the specific class
         test_loader = unittest.TestLoader()
         test_suite = test_loader.loadTestsFromTestCase(test_class)
-        unittest.TextTestRunner().run(test_suite)
+        # Use verbosity=2 to show test names, buffer=False to see output in real-time,
+        # and failfast=True to stop on first failure and show the error immediately
+        unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True).run(
+            test_suite
+        )
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
