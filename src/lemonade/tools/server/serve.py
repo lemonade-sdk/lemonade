@@ -83,10 +83,31 @@ if platform.system() in ["Windows", "Darwin"]:
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
 
 
-class WebsocketTextFilter(logging.Filter):
+class ServerLogFilter(logging.Filter):
+    def __init__(self, server):
+        super().__init__()
+        self.server = server
+        self.noisy_paths = {
+            "/api/v1/health",
+            "/api/v0/health",
+            "/api/v1/models",
+            "/api/v0/models",
+        }
+
     def filter(self, record: logging.LogRecord) -> bool:
-        # Only allow logs that don't include "> TEXT"
-        return "> TEXT" not in record.getMessage()
+        msg = record.getMessage()
+
+        # Filter out websocket logs
+        if "> TEXT" in msg:
+            return False
+
+        # Filter out noisy HTTP routes if debug logs are OFF
+        if not self.server.debug_logging_enabled:
+            if any(path in msg for path in self.noisy_paths):
+                return False
+
+        # Otherwise, allow the log
+        return True
 
 
 async def log_streamer(websocket: WebSocket, path: str, interval: float = 1.0):
@@ -454,13 +475,13 @@ class Server:
             )
             file_handler.setLevel(logging_level)
             file_handler.setFormatter(uvicorn_formatter)
-            file_handler.addFilter(WebsocketTextFilter())
+            file_handler.addFilter(ServerLogFilter(self))
 
             # Set up console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging_level)
             console_handler.setFormatter(uvicorn_formatter)
-            console_handler.addFilter(WebsocketTextFilter())
+            console_handler.addFilter(ServerLogFilter(self))
 
             # Configure root logger with both handlers
             logging.basicConfig(
