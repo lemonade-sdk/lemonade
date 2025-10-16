@@ -13,7 +13,6 @@ If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions
 """
 
 import asyncio
-import numpy as np
 import requests
 from openai import NotFoundError
 
@@ -48,7 +47,7 @@ class Testing(ServerTestingBase):
     """Main testing class that inherits shared functionality from ServerTestingBase."""
 
     def test_000_endpoints_available(self):
-        # List of endpoints to check
+        # List of endpoints to check for registration
         valid_endpoints = [
             "chat/completions",
             "completions",
@@ -67,14 +66,15 @@ class Testing(ServerTestingBase):
 
         # Ensure that we get a 404 error when the endpoint is not registered
         url = f"http://localhost:{PORT}/api/v0/nonexistent"
-        response = requests.get(url)
+        response = requests.head(url, timeout=60)
         assert response.status_code == 404
 
         # Check that all endpoints are properly registered on both v0 and v1
+        # Using HEAD to avoid executing expensive endpoint logic
         for endpoint in valid_endpoints:
             for version in ["v0", "v1"]:
                 url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
-                response = requests.get(url)
+                response = requests.head(url, timeout=60)
                 assert (
                     response.status_code != 404
                 ), f"Endpoint {endpoint} is not registered on {version}"
@@ -325,7 +325,7 @@ class Testing(ServerTestingBase):
         assert len(completion.choices[0].text) > len(prompt)
 
     # Test simultaneous load requests
-    async def test_001_test_simultaneous_load_requests(self):
+    async def test_011_test_simultaneous_load_requests(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
             first_model = "Qwen2.5-0.5B-Instruct-CPU"
             second_model = "Llama-3.2-1B-Instruct-CPU"
@@ -628,7 +628,7 @@ class Testing(ServerTestingBase):
         url = f"{self.base_url}/system-info"
 
         # Test GET request to system-info endpoint (default mode)
-        response = requests.get(url)
+        response = requests.get(url, timeout=60)
         assert (
             response.status_code == 200
         ), f"System info endpoint failed with status {response.status_code}"
@@ -656,7 +656,7 @@ class Testing(ServerTestingBase):
             assert device in devices, f"Missing device type: {device}"
 
         # Test verbose mode
-        verbose_response = requests.get(f"{url}?verbose=true")
+        verbose_response = requests.get(f"{url}?verbose=true", timeout=60)
         assert (
             verbose_response.status_code == 200
         ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
