@@ -1,8 +1,11 @@
 import logging
 import os
 import platform
+import psutil
 import shutil
 import sys
+import threading
+import time
 import zipfile
 from typing import Optional
 import subprocess
@@ -695,6 +698,28 @@ def download_gguf(config_checkpoint, config_mmproj=None, do_not_upgrade=False) -
     }
 
 
+# Function to read a stream (stdout or stderr) into a list
+def stream_reader(stream, output_list):
+    for line in iter(stream.readline, b""):
+        decoded_line = line.decode().rstrip()
+        output_list.append(decoded_line)
+    stream.close()
+
+
+# Function to monitor memory usage
+def monitor_memory(proc, interval=0.5):
+    p = psutil.Process(proc.pid)
+    rss = 0
+    peak_wset = None
+    while proc.poll() is None:  # While the process is still running
+        mem_info = p.memory_info()
+        rss = mem_info.rss
+        if platform.system() == "Windows":
+            peak_wset = mem_info.peak_wset
+        time.sleep(interval)
+    return [rss, peak_wset]
+
+
 class LlamaCppTokenizerAdapter(PassthroughTokenizer):
     pass
 
@@ -833,6 +858,8 @@ class LlamaCppAdapter(ModelAdapter):
                 else:
                     env["LD_LIBRARY_PATH"] = self.lib_dir
 
+            stdout_lines = []
+            stderr_lines = []
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -843,28 +870,47 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            raw_output, stderr = process.communicate(timeout=600)
+            # Threads to capture stdout and stderr into lists
+            stdout_thread = threading.Thread(
+                target=stream_reader, args=(process.stdout, stdout_lines)
+            )
+            stderr_thread = threading.Thread(
+                target=stream_reader, args=(process.stderr, stderr_lines)
+            )
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Track memory usage concurrently
+            [rss, max_wset] = monitor_memory(process)
+            print(
+                f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB    max_wset={max_wset / 1024 ** 3:,.3f} GB"
+            )
+
+            # Ensure threads complete
+            stdout_thread.join()
+            stderr_thread.join()
+            process.wait()
 
             # save llama-cli command output with performance info to state
             # (can be viewed in state.yaml file in cache)
             self.state.llama_cli_stderr = getattr(
                 self.state, "llama_cli_stderr", []
-            ) + [
-                [line for line in stderr.splitlines() if line.startswith("llama_perf_")]
-            ]
+            ) + [[line for line in stderr_lines if line.startswith("llama_perf_")]]
 
             if process.returncode != 0:
+                stdout_str = "\n".join(stdout_lines)
+                stderr_str = "\n".join(stderr_lines)
                 error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
                 error_msg += f"Command: {' '.join(cmd)}\n"
-                error_msg += f"Error output:\n{stderr}\n"
-                error_msg += f"Standard output:\n{raw_output}"
+                error_msg += f"Error output:\n{stderr_str}\n"
+                error_msg += f"Standard output:\n{stdout_str}"
                 raise Exception(error_msg)
 
-            if raw_output is None:
+            if not stdout_lines:
                 raise Exception("No output received from llama.cpp process")
 
             # Parse information from llama.cpp output
-            for line in stderr.splitlines():
+            for line in stderr_lines:
                 # Parse timing and token information
                 #
                 # Prompt processing time and length (tokens)
@@ -892,13 +938,13 @@ class LlamaCppAdapter(ModelAdapter):
                     )
 
             if return_raw:
-                return [raw_output, stderr]
+                return ["\n".join(stdout_lines), "\n".join(stderr_lines)]
 
             # Find where the prompt ends and the generated text begins
             prompt_found = False
             output_text = ""
             prompt_first_line = prompt.split("\n")[0]
-            for line in raw_output.splitlines():
+            for line in stdout_lines:
                 if prompt_first_line in line:
                     prompt_found = True
                 if prompt_found:
@@ -906,11 +952,13 @@ class LlamaCppAdapter(ModelAdapter):
                     output_text = output_text + line
 
             if not prompt_found:
+                stdout_str = "\n".join(stdout_lines)
+                stderr_str = "\n".join(stderr_lines)
                 raise Exception(
                     f"Could not find prompt '{prompt_first_line}' in llama.cpp output. "
                     "This usually means the model failed to process the prompt correctly.\n"
-                    f"Raw output:\n{raw_output}\n"
-                    f"Stderr:\n{stderr}"
+                    f"Raw output:\n{stdout_str}\n"
+                    f"Stderr:\n{stderr_str}"
                 )
 
             # Return list containing the generated text
@@ -965,6 +1013,8 @@ class LlamaCppAdapter(ModelAdapter):
                 else:
                     env["LD_LIBRARY_PATH"] = self.lib_dir
 
+            stdout_lines = []
+            stderr_lines = []
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -975,23 +1025,52 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            raw_output, stderr = process.communicate(timeout=600)
+            # Threads to capture stdout and stderr into lists
+            stdout_thread = threading.Thread(
+                target=stream_reader, args=(process.stdout, stdout_lines)
+            )
+            stderr_thread = threading.Thread(
+                target=stream_reader, args=(process.stderr, stderr_lines)
+            )
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Track memory usage concurrently
+            [rss, max_wset] = monitor_memory(process)
+            if max_wset is not None:
+                print(
+                    f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB    max_wset={max_wset / 1024 ** 3:,.3f} GB"
+                )
+            else:
+                print(f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB")
+
+            # Ensure threads complete
+            stdout_thread.join()
+            stderr_thread.join()
+            process.wait()
 
             # save llama-bench command output with performance info to state
             # (can be viewed in state.yaml file in cache)
-            self.state.llama_bench_standard_output = raw_output.splitlines()
+            self.state.llama_bench_standard_output = stdout_lines
 
             if process.returncode != 0:
+                stdout_str = "\n".join(stdout_lines)
+                stderr_str = "\n".join(stderr_lines)
                 error_msg = (
                     f"llama-bench.exe failed with return code {process.returncode}.\n"
                 )
                 error_msg += f"Command: {' '.join(cmd)}\n"
-                error_msg += f"Error output:\n{stderr}\n"
-                error_msg += f"Standard output:\n{raw_output}"
+                error_msg += f"Error output:\n{stderr_str}\n"
+                error_msg += f"Standard output:\n{stdout_str}"
                 raise Exception(error_msg)
 
-            if raw_output is None:
-                raise Exception("No output received from llama-bench.exe process")
+            if not stdout_lines:
+                stdout_str = "\n".join(stdout_lines)
+                stderr_str = "\n".join(stderr_lines)
+                error_msg = "No output received from llama-bench.exe process\n"
+                error_msg += f"Error output:\n{stderr_str}\n"
+                error_msg += f"Standard output:\n{stdout_str}"
+                raise Exception(error_msg)
 
             # Parse information from llama-bench.exe output
             prompt_lengths = []
@@ -1000,7 +1079,7 @@ class LlamaCppAdapter(ModelAdapter):
             tg_tps = None
             tg_tps_sd = None
 
-            for line in self.state.llama_bench_standard_output:
+            for line in stdout_lines:
                 # Parse TPS information
                 for p in prompts:
                     if f"pp{p:d}" in line:
