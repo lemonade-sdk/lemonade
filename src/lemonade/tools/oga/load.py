@@ -743,15 +743,10 @@ class OgaLoad(FirstTool):
 
             try:
                 if device == "npu":
-                    saved_env_state = self._setup_npu_environment(
-                        ryzenai_version, oga_path
-                    )
                     # Set USE_AIE_RoPE based on model type
                     os.environ["USE_AIE_RoPE"] = (
                         "0" if "phi-" in checkpoint.lower() else "1"
                     )
-                elif device == "hybrid":
-                    saved_env_state = None
 
                 self._load_model_and_setup_state(
                     state, full_model_path, checkpoint, trust_remote_code

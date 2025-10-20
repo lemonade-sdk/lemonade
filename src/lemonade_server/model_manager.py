@@ -65,9 +65,16 @@ class ModelManager:
 
         # Add the model name as a key in each entry, to make it easier
         # to access later
-
+        # Also convert labels to boolean fields for LoadConfig compatibility
         for key, value in models.items():
             value["model_name"] = key
+
+            # Convert labels to boolean fields for backwards compatibility with LoadConfig
+            labels = value.get("labels", [])
+            if "reasoning" in labels and "reasoning" not in value:
+                value["reasoning"] = True
+            if "vision" in labels and "vision" not in value:
+                value["vision"] = True
 
         return models
 
