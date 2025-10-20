@@ -155,6 +155,9 @@ SectionIn RO ; Read only, always installed
     FileWrite $2 "$\r$\nLib\site-packages\Pythonwin$\r$\n"
     FileClose $2
 
+    DetailPrint "- Installing build tools (setuptools and wheel)..."
+    ExecWait '"$INSTDIR\python\python.exe" -m pip install setuptools wheel --no-warn-script-location'
+
     DetailPrint "-------------------------"
     DetailPrint "- Lemonade Installation -"
     DetailPrint "-------------------------" 
