@@ -145,8 +145,8 @@ SectionIn RO ; Read only, always installed
     ExecWait 'tar -xf "$INSTDIR\python\python.zip" -C "$INSTDIR\python"'
     ExecWait 'curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py'
     ExecWait '"$INSTDIR\python\python.exe" get-pip.py --no-warn-script-location'
-    
-    FileOpen $2 "$INSTDIR\python\python310._pth" a
+
+    FileOpen $2 "$INSTDIR\python\python312._pth" a
     FileSeek $2 0 END
     FileWrite $2 "$\r$\nLib$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages$\r$\n"
