@@ -166,41 +166,21 @@ SectionIn RO ; Read only, always installed
 
 
     DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
-    
-    ; Always install base CPU version first to ensure lemonade-server-dev.exe is available
-    ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
-    DetailPrint "- Base lemonade installation return code: $8"
-    
-    ; Check if base installation was successful
-    StrCmp $8 0 base_install_success base_install_failed
-    
-    base_install_success:
-      DetailPrint "- Base $LEMONADE_SERVER_STRING installation successful"
-      
-      ; If hybrid mode is selected, upgrade to hybrid
-      ${If} $HYBRID_SELECTED == "true"
-        DetailPrint "- Upgrading to hybrid mode..."
-                 ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
-        DetailPrint "- Hybrid upgrade return code: $8"
-        
-        ; Check if hybrid upgrade was successful
-        StrCmp $8 0 hybrid_upgrade_success hybrid_upgrade_failed
-        
-        hybrid_upgrade_success:
-          DetailPrint "- Hybrid mode upgrade successful"
-          Goto install_success
-          
-        hybrid_upgrade_failed:
-          DetailPrint "- Hybrid mode upgrade failed"
-          Goto install_failed
-      ${Else}
-        DetailPrint "- CPU-only installation completed"
-        Goto install_success
-      ${EndIf}
-      
-    base_install_failed:
-      DetailPrint "- Base $LEMONADE_SERVER_STRING installation failed"
-      Goto install_failed
+
+    ; Install with the appropriate extras based on selection
+    ; One-step install to avoid DLL conflicts with embedded Python
+    ${If} $HYBRID_SELECTED == "true"
+      DetailPrint "- Installing with hybrid mode (oga-ryzenai)..."
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
+      DetailPrint "- Hybrid installation return code: $8"
+    ${Else}
+      DetailPrint "- Installing with CPU-only mode (oga-cpu)..."
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
+      DetailPrint "- CPU installation return code: $8"
+    ${EndIf}
+
+    ; Check if installation was successful
+    StrCmp $8 0 install_success install_failed
 
     install_success:
       DetailPrint "- $LEMONADE_SERVER_STRING installation successful"
