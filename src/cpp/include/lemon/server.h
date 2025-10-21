@@ -48,6 +48,7 @@ private:
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
+    void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     
     int port_;
     std::string host_;

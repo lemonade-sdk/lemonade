@@ -101,6 +101,11 @@ void Server::setup_routes() {
         handle_log_level(req, res);
     });
     
+    // Internal shutdown endpoint (not part of public API)
+    http_server_->Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_shutdown(req, res);
+    });
+    
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
@@ -541,6 +546,16 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {
+    std::cout << "[Server] Shutdown request received" << std::endl;
+    
+    nlohmann::json response = {{"status", "shutting down"}};
+    res.set_content(response.dump(), "application/json");
+    
+    // Stop the server (this will trigger cleanup)
+    stop();
 }
 
 } // namespace lemon
