@@ -249,8 +249,12 @@ SubSection /e "Selected Models" ModelsSec
   SectionEnd
 
   Section "-Download Models" DownloadModels
-    ; Always download the Qwen2.5-0.5B model
-    nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
+    ; Download default model based on hybrid selection
+    ${If} $HYBRID_SELECTED == "true"
+      nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Llama-3.2-1B-Instruct-Hybrid'
+    ${Else}
+      nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
+    ${EndIf}
   SectionEnd
 
 SubSectionEnd

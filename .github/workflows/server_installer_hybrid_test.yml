@@ -61,7 +61,7 @@ jobs:
         shell: PowerShell
         run: |
           cd installer
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /Extras=hybrid /Models=Llama-3.2-1B-Instruct-Hybrid /D=C:\Users\nimbys\AppData\Local\lemonade_server" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /Extras=hybrid /D=C:\Users\nimbys\AppData\Local\lemonade_server" -Wait
 
       - name: Verify installer ran successfully
         shell: PowerShell
