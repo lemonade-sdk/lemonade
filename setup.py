@@ -61,7 +61,7 @@ setup(
             "protobuf>=6.30.1",
         ],
         "oga-cpu": [
-            "onnxruntime-genai==0.8.2",
+            "onnxruntime-genai==0.9.2",
             "onnxruntime >=1.22.0",
         ],
         # Developer-focused tools for benchmarking, accuracy testing, and
