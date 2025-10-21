@@ -148,6 +148,7 @@ SectionIn RO ; Read only, always installed
 
     FileOpen $2 "$INSTDIR\python\python312._pth" a
     FileSeek $2 0 END
+    FileWrite $2 "$\r$\nDLLs$\r$\n"
     FileWrite $2 "$\r$\nLib$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages\win32$\r$\n"
@@ -173,6 +174,14 @@ SectionIn RO ; Read only, always installed
       DetailPrint "- Installing with hybrid mode (oga-ryzenai)..."
       ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
       DetailPrint "- Hybrid installation return code: $8"
+
+      ; Verify onnxruntime-genai-directml-ryzenai was installed
+      DetailPrint "- Verifying installed packages..."
+      nsExec::ExecToLog '"$INSTDIR\python\python.exe" -m pip list | findstr /i "onnxruntime"'
+
+      ; Try to import onnxruntime_genai to catch DLL errors early
+      DetailPrint "- Testing onnxruntime_genai import..."
+      nsExec::ExecToLog '"$INSTDIR\python\python.exe" -c "import onnxruntime_genai; print(f\"OGA version: {onnxruntime_genai.__version__}\")"'
     ${Else}
       DetailPrint "- Installing with CPU-only mode (oga-cpu)..."
       ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
