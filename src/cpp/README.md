@@ -56,3 +56,9 @@ A `WrappedServer` implementation needs to be able to:
 - Route `chat/completions` requests to the backend server and route the response back to the client.
     - We will implement support for `completions`, `resposnes`, `embedding`, and `reranking` APIs later.
 - Parse the wrapped server's stdout/stderr for important information such as performance data, important errors to escalate, etc.
+
+## Testing
+
+`lemon.cpp` will be hosted in the GitHub repo https://github.com/lemonade-sdk/lemonade
+
+`lemonade.cpp` should be tested using GitHub actions. There are already workflows in `.github` for running `test/server_llamacpp.py` and `test/server_flm.py`, so these will be copied as a starting point and adapted for testing `lemon.cpp` instead of the Python implementation.
