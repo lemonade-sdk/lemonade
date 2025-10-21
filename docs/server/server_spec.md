@@ -20,7 +20,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 ### OpenAI-Compatible Endpoints
 - POST `/api/v1/chat/completions` - Chat Completions (messages -> completion)
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
-- POST `api/v1/responses` - Chat Completions (prompt|messages -> event)
+- POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -88,7 +88,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv1load).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
 
 #### Example request
 
@@ -184,7 +184,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv1load).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
 
 #### Example request
 
@@ -250,7 +250,7 @@ Responses API. You provide an input and receive a response. This API will also l
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#get-apiv1load).
+> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
 
 #### Streaming Events
 
@@ -402,7 +402,7 @@ If the model is not found, the endpoint returns a 404 error:
 
 ## Additional Endpoints
 
-### `GET /api/v1/pull` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+### `POST /api/v1/pull` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Register and install models for use with Lemonade Server.
 
@@ -419,7 +419,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 Example request:
 
 ```bash
-curl http://localhost:8000/api/v1/pull \
+curl -X POST http://localhost:8000/api/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -457,7 +457,7 @@ The `recipe` field defines which software framework and device will be used to l
 Example request:
 
 ```bash
-curl http://localhost:8000/api/v1/pull \
+curl -X POST http://localhost:8000/api/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.Phi-4-Mini-GGUF",
@@ -490,7 +490,7 @@ Delete a model by removing it from local storage. If the model is currently load
 Example request:
 
 ```bash
-curl http://localhost:8000/api/v1/delete \
+curl -X POST http://localhost:8000/api/v1/delete \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -508,8 +508,8 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
-<a id="get-apiv1load"></a>
-### `GET /api/v1/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<a id="post-apiv1load"></a>
+### `POST /api/v1/load` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
 
@@ -522,7 +522,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 Example request:
 
 ```bash
-curl http://localhost:8000/api/v1/load \
+curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "Qwen2.5-0.5B-Instruct-CPU"
@@ -551,7 +551,7 @@ This endpoint does not take any parameters.
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/unload
+curl -X POST http://localhost:8000/api/v1/unload
 ```
 
 #### Response format
@@ -582,7 +582,7 @@ Set the generation parameters for text completion. These parameters will persist
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/params \
+curl -X POST http://localhost:8000/api/v1/params \
   -H "Content-Type: application/json" \
   -d '{
     "temperature": 0.8,
