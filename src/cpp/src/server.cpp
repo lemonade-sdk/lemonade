@@ -2,6 +2,8 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 
 namespace lemon {
 
@@ -130,6 +132,11 @@ void Server::stop() {
     if (running_) {
         http_server_->stop();
         running_ = false;
+        
+        // Unload any loaded model and stop backend servers (only on first stop)
+        if (router_) {
+            router_->unload_model();
+        }
     }
 }
 
@@ -240,16 +247,123 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             // Get the backend server address
             std::string backend_url = router_->get_backend_address() + "/chat/completions";
             
+            // Log the HTTP request
+            std::cout << "[Server] POST " << backend_url << " - ";
+            
             // Make streaming request using HttpClient
             auto stream_response = utils::HttpClient::post(backend_url, req.body, {{"Content-Type", "application/json"}});
+            
+            // Complete the log line with status
+            std::cout << stream_response.status_code << " " 
+                     << (stream_response.status_code == 200 ? "OK" : "Error") << std::endl;
             
             // Forward the SSE response
             res.set_content(stream_response.body, "text/event-stream");
             res.status = stream_response.status_code;
+            
+            // Parse streaming response to extract telemetry
+            // llama-server includes timing data in SSE chunks
+            std::istringstream stream(stream_response.body);
+            std::string line;
+            json last_chunk_with_usage;
+            
+            while (std::getline(stream, line)) {
+                if (line.find("data: ") == 0) {
+                    std::string json_str = line.substr(6); // Remove "data: " prefix
+                    if (json_str != "[DONE]" && !json_str.empty()) {
+                        try {
+                            auto chunk = json::parse(json_str);
+                            // Look for usage or timings in the chunk
+                            if (chunk.contains("usage") || chunk.contains("timings")) {
+                                last_chunk_with_usage = chunk;
+                            }
+                        } catch (...) {
+                            // Skip invalid JSON
+                        }
+                    }
+                }
+            }
+            
+            // Print telemetry if found
+            if (!last_chunk_with_usage.empty()) {
+                if (last_chunk_with_usage.contains("usage")) {
+                    auto usage = last_chunk_with_usage["usage"];
+                    std::cout << "\n=== Telemetry ===" << std::endl;
+                    if (usage.contains("prompt_tokens")) {
+                        std::cout << "Input tokens:  " << usage["prompt_tokens"] << std::endl;
+                    }
+                    if (usage.contains("completion_tokens")) {
+                        std::cout << "Output tokens: " << usage["completion_tokens"] << std::endl;
+                    }
+                    std::cout << "=================" << std::endl;
+                } else if (last_chunk_with_usage.contains("timings")) {
+                    auto timings = last_chunk_with_usage["timings"];
+                    std::cout << "\n=== Telemetry ===" << std::endl;
+                    if (timings.contains("prompt_n")) {
+                        std::cout << "Input tokens:  " << timings["prompt_n"] << std::endl;
+                    }
+                    if (timings.contains("predicted_n")) {
+                        std::cout << "Output tokens: " << timings["predicted_n"] << std::endl;
+                    }
+                    if (timings.contains("prompt_ms")) {
+                        double ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
+                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(2) 
+                                 << ttft_seconds << std::endl;
+                    }
+                    if (timings.contains("predicted_per_second")) {
+                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
+                                 << timings["predicted_per_second"].get<double>() << std::endl;
+                    }
+                    std::cout << "=================" << std::endl;
+                }
+            }
         } else {
             // Forward to router for non-streaming
+            std::string backend_url = router_->get_backend_address() + "/chat/completions";
+            
+            // Log the HTTP request
+            std::cout << "[Server] POST " << backend_url << " - ";
+            
             auto response = router_->chat_completion(request_json);
+            
+            // Complete the log line with status
+            std::cout << "200 OK" << std::endl;
+            
             res.set_content(response.dump(), "application/json");
+            
+            // Print telemetry for non-streaming
+            // llama-server includes timing data in the response under "timings" field
+            if (response.contains("timings")) {
+                auto timings = response["timings"];
+                std::cout << "\n=== Telemetry ===" << std::endl;
+                if (timings.contains("prompt_n")) {
+                    std::cout << "Input tokens:  " << timings["prompt_n"] << std::endl;
+                }
+                if (timings.contains("predicted_n")) {
+                    std::cout << "Output tokens: " << timings["predicted_n"] << std::endl;
+                }
+                if (timings.contains("prompt_ms")) {
+                    double ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
+                    std::cout << "TTFT (s):      " << std::fixed << std::setprecision(2) 
+                             << ttft_seconds << std::endl;
+                }
+                if (timings.contains("predicted_per_second")) {
+                    std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
+                             << timings["predicted_per_second"].get<double>() << std::endl;
+                }
+                std::cout << "=================" << std::endl;
+            } else if (response.contains("usage")) {
+                // OpenAI format uses "usage" field
+                auto usage = response["usage"];
+                std::cout << "\n=== Telemetry ===" << std::endl;
+                if (usage.contains("prompt_tokens")) {
+                    std::cout << "Input tokens:  " << usage["prompt_tokens"] << std::endl;
+                }
+                if (usage.contains("completion_tokens")) {
+                    std::cout << "Output tokens: " << usage["completion_tokens"] << std::endl;
+                }
+                std::cout << "=================" << std::endl;
+            }
         }
         
     } catch (const std::exception& e) {

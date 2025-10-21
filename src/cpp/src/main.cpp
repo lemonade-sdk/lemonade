@@ -2,6 +2,8 @@
 #include <iomanip>
 #include <thread>
 #include <chrono>
+#include <csignal>
+#include <atomic>
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
 #include <lemon/model_manager.h>
@@ -9,6 +11,21 @@
 
 using namespace lemon;
 using namespace lemon::utils;
+
+// Global flag for signal handling
+static std::atomic<bool> g_shutdown_requested(false);
+static Server* g_server_instance = nullptr;
+
+// Signal handler for Ctrl+C
+void signal_handler(int signal) {
+    if (signal == SIGINT || signal == SIGTERM) {
+        std::cout << "\n[Server] Shutdown signal received, cleaning up..." << std::endl;
+        g_shutdown_requested = true;
+        if (g_server_instance) {
+            g_server_instance->stop();
+        }
+    }
+}
 
 // Helper: Check if server is running
 bool is_server_running(const std::string& host, int port) {
@@ -62,7 +79,16 @@ int main(int argc, char** argv) {
             auto config = parser.get_serve_config();
             Server server(config.port, config.host, config.log_level,
                         config.ctx_size, config.tray, config.llamacpp_backend);
+            
+            // Register signal handler for Ctrl+C
+            g_server_instance = &server;
+            std::signal(SIGINT, signal_handler);
+            std::signal(SIGTERM, signal_handler);
+            
             server.run();
+            
+            // Clean up
+            g_server_instance = nullptr;
             
         } else if (command == "status") {
             // TODO: Implement status checking
