@@ -21,7 +21,7 @@ public:
     void load_model(const std::string& model_name,
                     const std::string& checkpoint,
                     const std::string& recipe,
-                    bool do_not_upgrade = false);
+                    bool do_not_upgrade = true);
     
     // Unload the currently loaded model
     void unload_model();
@@ -29,6 +29,7 @@ public:
     // Get the currently loaded model info
     std::string get_loaded_model() const { return loaded_model_; }
     std::string get_loaded_checkpoint() const { return loaded_checkpoint_; }
+    std::string get_loaded_recipe() const { return loaded_recipe_; }
     
     // Check if a model is loaded
     bool is_model_loaded() const { return wrapped_server_ != nullptr; }

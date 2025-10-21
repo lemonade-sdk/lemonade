@@ -4,6 +4,11 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <memory>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
 
 namespace lemon {
 
@@ -228,13 +233,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             
             auto info = model_manager_->get_model_info(model_name);
             
-            // Auto-download if not cached
-            if (!model_manager_->is_model_downloaded(model_name)) {
-                std::cout << "[Server] Model not downloaded, pulling..." << std::endl;
+            // Auto-download if not cached (only for non-FLM models)
+            // FLM models are downloaded by FastFlowLMServer using 'flm pull'
+            if (info.recipe != "flm" && !model_manager_->is_model_downloaded(model_name)) {
+                std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
                 model_manager_->download_model(model_name);
             }
             
-            // Load the model
+            // Load the model (will auto-download FLM models if needed)
             router_->load_model(model_name, info.checkpoint, info.recipe);
             std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         } else if (!router_->is_model_loaded()) {
@@ -248,79 +254,212 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
         if (is_streaming) {
-            // For streaming, we need to proxy the SSE response directly
-            // Get the backend server address
-            std::string backend_url = router_->get_backend_address() + "/chat/completions";
-            
-            // Log the HTTP request
-            std::cout << "[Server] POST " << backend_url << " - ";
-            
-            // Make streaming request using HttpClient
-            auto stream_response = utils::HttpClient::post(backend_url, req.body, {{"Content-Type", "application/json"}});
-            
-            // Complete the log line with status
-            std::cout << stream_response.status_code << " " 
-                     << (stream_response.status_code == 200 ? "OK" : "Error") << std::endl;
-            
-            // Forward the SSE response
-            res.set_content(stream_response.body, "text/event-stream");
-            res.status = stream_response.status_code;
-            
-            // Parse streaming response to extract telemetry
-            // llama-server includes timing data in SSE chunks
-            std::istringstream stream(stream_response.body);
-            std::string line;
-            json last_chunk_with_usage;
-            
-            while (std::getline(stream, line)) {
-                if (line.find("data: ") == 0) {
-                    std::string json_str = line.substr(6); // Remove "data: " prefix
-                    if (json_str != "[DONE]" && !json_str.empty()) {
-                        try {
-                            auto chunk = json::parse(json_str);
-                            // Look for usage or timings in the chunk
-                            if (chunk.contains("usage") || chunk.contains("timings")) {
-                                last_chunk_with_usage = chunk;
+            try {
+                // For streaming, forward chunks in real-time to the client
+                std::string backend_url = router_->get_backend_address() + "/chat/completions";
+                
+                // FLM requires the checkpoint name in the request, not the Lemonade model name
+                std::string request_body = req.body;
+                if (router_->get_loaded_recipe() == "flm") {
+                    auto request_json_copy = request_json;
+                    request_json_copy["model"] = router_->get_loaded_checkpoint();
+                    request_body = request_json_copy.dump();
+                }
+                
+                // Log the HTTP request
+                std::cout << "[Server] POST " << backend_url << " - Streaming" << std::endl;
+                
+                // CRITICAL: Heap-allocate shared state so it outlives the handler function
+                // Using shared_ptr ensures the state lives as long as both threads need it
+                struct StreamState {
+                    std::queue<std::string> chunk_queue;
+                    std::mutex queue_mutex;
+                    std::condition_variable queue_cv;
+                    bool stream_complete = false;
+                    std::string telemetry_buffer;
+                    std::unique_ptr<std::thread> curl_thread;
+                };
+                auto state = std::make_shared<StreamState>();
+                
+                // Set up streaming response headers
+                res.set_header("Content-Type", "text/event-stream");
+                res.set_header("Cache-Control", "no-cache");
+                res.set_header("Connection", "keep-alive");
+                res.status = 200;
+                
+                // Start CURL streaming in a background thread
+                state->curl_thread = std::make_unique<std::thread>([state, backend_url, request_body]() {
+                    try {
+                        auto stream_result = utils::HttpClient::post_stream(
+                            backend_url,
+                            request_body,
+                            [state](const char* data, size_t length) {
+                                std::string chunk(data, length);
+                                state->telemetry_buffer.append(chunk);
+                                
+                                {
+                                    std::lock_guard<std::mutex> lock(state->queue_mutex);
+                                    state->chunk_queue.push(chunk);
+                                }
+                                state->queue_cv.notify_one();
+                                return true;
                             }
-                        } catch (...) {
-                            // Skip invalid JSON
+                        );
+                    } catch (...) {
+                        // Error handling
+                    }
+                    
+                    // Signal completion
+                    {
+                        std::lock_guard<std::mutex> lock(state->queue_mutex);
+                        state->stream_complete = true;
+                    }
+                    state->queue_cv.notify_one();
+                });
+                
+                // Use chunked content provider to stream chunks to client
+                // Capture state by value (shared_ptr) so it stays alive
+                res.set_chunked_content_provider(
+                    "text/event-stream",
+                    [state](size_t offset, httplib::DataSink &sink) {
+                        bool client_disconnected = false;
+                        
+                        while (true) {
+                            std::unique_lock<std::mutex> lock(state->queue_mutex);
+                            
+                            // Wait for data or completion
+                            state->queue_cv.wait(lock, [&state]() {
+                                return !state->chunk_queue.empty() || state->stream_complete;
+                            });
+                            
+                            // Send all available chunks
+                            while (!state->chunk_queue.empty()) {
+                                std::string chunk = state->chunk_queue.front();
+                                state->chunk_queue.pop();
+                                lock.unlock();
+                                
+                                if (!sink.write(chunk.data(), chunk.size())) {
+                                    client_disconnected = true;
+                                    lock.lock();
+                                    break; // Client disconnected, exit inner loop
+                                }
+                                
+                                lock.lock();
+                            }
+                            
+                            // If client disconnected or stream is complete, exit
+                            if (client_disconnected || (state->stream_complete && state->chunk_queue.empty())) {
+                                lock.unlock();
+                                break;
+                            }
                         }
+                        
+                        // CRITICAL: Always join the thread before returning
+                        // Otherwise unique_ptr destructor will call std::terminate()
+                        if (state->curl_thread && state->curl_thread->joinable()) {
+                            state->curl_thread->join();
+                        }
+                        
+                        if (client_disconnected) {
+                            std::cout << "[Server] Streaming aborted - client disconnected" << std::endl;
+                            return false;
+                        }
+                        
+                        std::cout << "[Server] Streaming completed - 200 OK" << std::endl;
+                        
+                        // Parse and print telemetry
+                        try {
+                            std::istringstream stream(state->telemetry_buffer);
+                            std::string line;
+                            json last_chunk_with_usage;
+                        
+                            while (std::getline(stream, line)) {
+                                // Handle SSE format (data: ...)
+                                std::string json_str;
+                                if (line.find("data: ") == 0) {
+                                    json_str = line.substr(6); // Remove "data: " prefix
+                                } else if (line.find("ChatCompletionChunk: ") == 0) {
+                                    // FLM debug format
+                                    json_str = line.substr(21); // Remove "ChatCompletionChunk: " prefix
+                                } else {
+                                    // Try parsing as raw JSON
+                                    json_str = line;
+                                }
+                                
+                                if (!json_str.empty() && json_str != "[DONE]") {
+                                    try {
+                                        auto chunk = json::parse(json_str);
+                                        // Look for usage or timings in the chunk
+                                        if (chunk.contains("usage") || chunk.contains("timings")) {
+                                            last_chunk_with_usage = chunk;
+                                        }
+                                    } catch (...) {
+                                        // Skip invalid JSON
+                                    }
+                                }
+                            }
+                            
+                            // Print telemetry if found
+                            if (!last_chunk_with_usage.empty()) {
+                                if (last_chunk_with_usage.contains("usage")) {
+                                    auto usage = last_chunk_with_usage["usage"];
+                                    std::cout << "\n=== Telemetry ===" << std::endl;
+                                    
+                                    // Input/Output tokens
+                                    if (usage.contains("prompt_tokens")) {
+                                        std::cout << "Input tokens:  " << usage["prompt_tokens"] << std::endl;
+                                    }
+                                    if (usage.contains("completion_tokens")) {
+                                        std::cout << "Output tokens: " << usage["completion_tokens"] << std::endl;
+                                    }
+                                    
+                                    // TTFT - check FLM format first, then llama.cpp format
+                                    if (usage.contains("prefill_duration_ttft")) {
+                                        double ttft_seconds = usage["prefill_duration_ttft"].get<double>();
+                                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3) 
+                                                 << ttft_seconds << std::endl;
+                                    }
+                                    
+                                    // TPS - check FLM format first
+                                    if (usage.contains("decoding_speed_tps")) {
+                                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
+                                                 << usage["decoding_speed_tps"].get<double>() << std::endl;
+                                    }
+                                    
+                                    std::cout << "=================" << std::endl;
+                                } else if (last_chunk_with_usage.contains("timings")) {
+                                    auto timings = last_chunk_with_usage["timings"];
+                                    std::cout << "\n=== Telemetry ===" << std::endl;
+                                    if (timings.contains("prompt_n")) {
+                                        std::cout << "Input tokens:  " << timings["prompt_n"] << std::endl;
+                                    }
+                                    if (timings.contains("predicted_n")) {
+                                        std::cout << "Output tokens: " << timings["predicted_n"] << std::endl;
+                                    }
+                                    if (timings.contains("prompt_ms")) {
+                                        double ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
+                                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3) 
+                                                 << ttft_seconds << std::endl;
+                                    }
+                                    if (timings.contains("predicted_per_second")) {
+                                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
+                                                 << timings["predicted_per_second"].get<double>() << std::endl;
+                                    }
+                                    std::cout << "=================" << std::endl;
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            // Telemetry parsing is optional, don't error on failure
+                        }
+                        
+                        // Return false to signal "no more data" and stop the provider from being called again
+                        return false;
                     }
-                }
-            }
-            
-            // Print telemetry if found
-            if (!last_chunk_with_usage.empty()) {
-                if (last_chunk_with_usage.contains("usage")) {
-                    auto usage = last_chunk_with_usage["usage"];
-                    std::cout << "\n=== Telemetry ===" << std::endl;
-                    if (usage.contains("prompt_tokens")) {
-                        std::cout << "Input tokens:  " << usage["prompt_tokens"] << std::endl;
-                    }
-                    if (usage.contains("completion_tokens")) {
-                        std::cout << "Output tokens: " << usage["completion_tokens"] << std::endl;
-                    }
-                    std::cout << "=================" << std::endl;
-                } else if (last_chunk_with_usage.contains("timings")) {
-                    auto timings = last_chunk_with_usage["timings"];
-                    std::cout << "\n=== Telemetry ===" << std::endl;
-                    if (timings.contains("prompt_n")) {
-                        std::cout << "Input tokens:  " << timings["prompt_n"] << std::endl;
-                    }
-                    if (timings.contains("predicted_n")) {
-                        std::cout << "Output tokens: " << timings["predicted_n"] << std::endl;
-                    }
-                    if (timings.contains("prompt_ms")) {
-                        double ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(2) 
-                                 << ttft_seconds << std::endl;
-                    }
-                    if (timings.contains("predicted_per_second")) {
-                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
-                                 << timings["predicted_per_second"].get<double>() << std::endl;
-                    }
-                    std::cout << "=================" << std::endl;
-                }
+                );
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Streaming failed: " << e.what() << std::endl;
+                res.status = 500;
+                res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
             }
         } else {
             // Forward to router for non-streaming
@@ -408,11 +547,11 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model"];
+        std::string model_name = request_json["model_name"];
         
         model_manager_->download_model(model_name);
         
-        nlohmann::json response = {{"status", "success"}, {"model", model_name}};
+        nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
@@ -425,7 +564,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model"];
+        std::string model_name = request_json["model_name"];
         
         std::cout << "[Server] Loading model: " << model_name << std::endl;
         
@@ -447,19 +586,21 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             recipe = info.recipe;
         }
         
-        // Auto-download if not cached
-        if (!model_manager_->is_model_downloaded(model_name)) {
-            std::cout << "[Server] Model not downloaded, pulling..." << std::endl;
+        // Auto-download if not cached (only for non-FLM models)
+        // FLM models are downloaded by FastFlowLMServer using 'flm pull'
+        if (recipe != "flm" && !model_manager_->is_model_downloaded(model_name)) {
+            std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
             model_manager_->download_model(model_name);
         }
         
+        // Load the model (will auto-download FLM models if needed)
         router_->load_model(model_name, checkpoint, recipe);
         
         std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         
         nlohmann::json response = {
             {"status", "success"},
-            {"model", model_name},
+            {"model_name", model_name},
             {"checkpoint", checkpoint},
             {"recipe", recipe}
         };
@@ -488,11 +629,11 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
 void Server::handle_delete(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model"];
+        std::string model_name = request_json["model_name"];
         
         model_manager_->delete_model(model_name);
         
-        nlohmann::json response = {{"status", "success"}, {"model", model_name}};
+        nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cstdlib>
+#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -118,11 +119,12 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
         models[info.model_name] = info;
     }
     
-    return models;
+    // Filter by backend availability before returning
+    return filter_models_by_backend(models);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
-    auto all_models = get_supported_models();
+    auto all_models = get_supported_models(); // Already filtered by backend
     std::map<std::string, ModelInfo> downloaded;
     
     for (const auto& [name, info] : all_models) {
@@ -134,12 +136,90 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     return downloaded;
 }
 
+// Helper function to check if NPU is available
+// Matches Python behavior: on Windows, assume available (FLM will fail at runtime if not compatible)
+// This allows showing FLM models on Windows systems - the actual compatibility check happens when loading
+static bool is_npu_available() {
+#ifdef _WIN32
+    // Check if user explicitly disabled NPU check
+    const char* skip_check = std::getenv("RYZENAI_SKIP_PROCESSOR_CHECK");
+    if (skip_check && (std::string(skip_check) == "1" || 
+                       std::string(skip_check) == "true" || 
+                       std::string(skip_check) == "yes")) {
+        return true;
+    }
+    
+    // On Windows, we assume NPU is available for filtering purposes
+    // The real compatibility check happens at runtime when FLM tries to use the NPU
+    // This matches the Python implementation which only raises exceptions for non-Windows platforms
+    return true;
+#else
+    // Non-Windows platforms don't support FLM
+    return false;
+#endif
+}
+
+// Helper function to check if FLM is available
+static bool is_flm_available() {
+#ifdef _WIN32
+    return system("where flm > nul 2>&1") == 0;
+#else
+    return system("which flm > /dev/null 2>&1") == 0;
+#endif
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
-    // TODO: Check which backends are available
-    // For now, return all models
-    return models;
+    std::map<std::string, ModelInfo> filtered;
+    
+    // Detect platform
+#ifdef __APPLE__
+    bool is_macos = true;
+#else
+    bool is_macos = false;
+#endif
+    
+    // Check backend availability
+    bool flm_exe_available = is_flm_available();
+    bool npu_hw_available = is_npu_available();
+    bool flm_available = flm_exe_available && npu_hw_available;
+    
+    // Debug output (only shown once during startup)
+    static bool debug_printed = false;
+    if (!debug_printed) {
+        std::cout << "[ModelManager] Backend availability:" << std::endl;
+        std::cout << "  - FLM executable: " << (flm_exe_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - NPU hardware: " << (npu_hw_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - FLM support: " << (flm_available ? "Enabled" : "Disabled") << std::endl;
+        debug_printed = true;
+    }
+    
+    for (const auto& [name, info] : models) {
+        const std::string& recipe = info.recipe;
+        
+        // Filter out OGA models (not implemented in C++)
+        if (recipe.find("oga-") == 0) {
+            continue;
+        }
+        
+        // Filter FLM models based on availability
+        if (recipe == "flm") {
+            if (!flm_available) {
+                continue;
+            }
+        }
+        
+        // On macOS, only show llamacpp models
+        if (is_macos && recipe != "llamacpp") {
+            continue;
+        }
+        
+        // Model passes all filters
+        filtered[name] = info;
+    }
+    
+    return filtered;
 }
 
 void ModelManager::register_user_model(const std::string& model_name,
@@ -181,8 +261,89 @@ void ModelManager::register_user_model(const std::string& model_name,
     user_models_ = updated_user_models;
 }
 
+// Helper function to get FLM installed models by calling 'flm list'
+static std::vector<std::string> get_flm_installed_models() {
+    std::vector<std::string> installed_models;
+    
+#ifdef _WIN32
+    std::string command = "where flm > nul 2>&1";
+#else
+    std::string command = "which flm > /dev/null 2>&1";
+#endif
+    
+    // Check if flm is available
+    if (system(command.c_str()) != 0) {
+        return installed_models; // FLM not installed
+    }
+    
+    // Run 'flm list' to get installed models
+#ifdef _WIN32
+    FILE* pipe = _popen("flm list", "r");
+#else
+    FILE* pipe = popen("flm list", "r");
+#endif
+    
+    if (!pipe) {
+        return installed_models;
+    }
+    
+    char buffer[256];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    
+#ifdef _WIN32
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+    
+    // Parse output - look for lines starting with "- " and ending with " ✅"
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        
+        if (line.find("- ") == 0) {
+            // Remove "- " prefix
+            std::string model_info = line.substr(2);
+            
+            // Check if model is installed (ends with ✅)
+            // Note: ✅ is UTF-8, so we need to check for the byte sequence
+            if (model_info.size() >= 4 && 
+                (model_info.substr(model_info.size() - 4) == " \xE2\x9C\x85" || 
+                 model_info.find(" \xE2\x9C\x85") != std::string::npos)) {
+                // Remove the checkmark and trim
+                size_t checkmark_pos = model_info.find(" \xE2\x9C\x85");
+                if (checkmark_pos != std::string::npos) {
+                    std::string checkpoint = model_info.substr(0, checkmark_pos);
+                    checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
+                    checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
+                    installed_models.push_back(checkpoint);
+                }
+            }
+        }
+    }
+    
+    return installed_models;
+}
+
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
     auto info = get_model_info(model_name);
+    
+    // Check FLM models separately
+    if (info.recipe == "flm") {
+        auto flm_models = get_flm_installed_models();
+        for (const auto& installed : flm_models) {
+            if (installed == info.checkpoint) {
+                return true;
+            }
+        }
+        return false;
+    }
     
     // Get Hugging Face cache directory (not Lemonade cache!)
     std::string hf_cache;

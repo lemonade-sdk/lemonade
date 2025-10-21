@@ -85,8 +85,8 @@ protected:
     // Choose an available port
     int choose_port();
     
-    // Wait for server to be ready
-    bool wait_for_ready();
+    // Wait for server to be ready (can be overridden for custom health checks)
+    virtual bool wait_for_ready();
     
     // Parse telemetry from subprocess output
     virtual void parse_telemetry(const std::string& line) = 0;

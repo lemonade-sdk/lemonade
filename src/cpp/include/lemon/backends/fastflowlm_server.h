@@ -31,6 +31,9 @@ public:
     json embeddings(const json& request) override;
     json reranking(const json& request) override;
     
+    // FLM uses /api/tags for readiness check instead of /health
+    bool wait_for_ready() override;
+    
 protected:
     void parse_telemetry(const std::string& line) override;
     
@@ -38,6 +41,7 @@ private:
     std::string get_flm_path();
     bool check_npu_available();
     std::string model_name_;
+    bool is_loaded_ = false;
 };
 
 } // namespace backends

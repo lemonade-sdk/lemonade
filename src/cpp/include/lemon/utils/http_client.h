@@ -14,6 +14,7 @@ struct HttpResponse {
 };
 
 using ProgressCallback = std::function<void(size_t downloaded, size_t total)>;
+using StreamCallback = std::function<bool(const char* data, size_t length)>;
 
 class HttpClient {
 public:
@@ -25,6 +26,12 @@ public:
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {});
+    
+    // Streaming POST request (calls callback for each chunk as it arrives)
+    static HttpResponse post_stream(const std::string& url,
+                                   const std::string& body,
+                                   StreamCallback stream_callback,
+                                   const std::map<std::string, std::string>& headers = {});
     
     // Download file to disk
     static bool download_file(const std::string& url,

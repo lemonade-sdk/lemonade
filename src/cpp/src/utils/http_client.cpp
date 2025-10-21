@@ -132,6 +132,89 @@ HttpResponse HttpClient::post(const std::string& url,
     return response;
 }
 
+// Helper struct to pass stream callback through C interface
+struct StreamCallbackData {
+    StreamCallback* callback;
+    std::string* buffer;
+};
+
+// Static C-style callback function
+static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    try {
+        StreamCallbackData* data = static_cast<StreamCallbackData*>(userdata);
+        size_t total_size = size * nmemb;
+        
+        if (!data || !data->callback || !*(data->callback)) {
+            std::cerr << "[HttpClient ERROR] Callback data is null!" << std::endl;
+            return 0;
+        }
+        
+        if (!(*(data->callback))(ptr, total_size)) {
+            return 0; // Signal error to stop transfer
+        }
+        
+        return total_size;
+    } catch (const std::exception& e) {
+        std::cerr << "[HttpClient ERROR] Exception in stream callback: " << e.what() << std::endl;
+        return 0;
+    } catch (...) {
+        std::cerr << "[HttpClient ERROR] Unknown exception in stream callback" << std::endl;
+        return 0;
+    }
+}
+
+HttpResponse HttpClient::post_stream(const std::string& url,
+                                     const std::string& body,
+                                     StreamCallback stream_callback,
+                                     const std::map<std::string, std::string>& headers) {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL");
+    }
+    
+    HttpResponse response;
+    
+    // Create callback data
+    StreamCallbackData callback_data;
+    callback_data.callback = &stream_callback;
+    callback_data.buffer = nullptr;
+    
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+    
+    // Add custom headers
+    struct curl_slist* header_list = nullptr;
+    header_list = curl_slist_append(header_list, "Content-Type: application/json");
+    for (const auto& header : headers) {
+        std::string header_str = header.first + ": " + header.second;
+        header_list = curl_slist_append(header_list, header_str.c_str());
+    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+    
+    CURLcode res = curl_easy_perform(curl);
+    
+    if (res != CURLE_OK) {
+        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        std::cerr << "[HttpClient ERROR] " << error << std::endl;
+        curl_slist_free_all(header_list);
+        curl_easy_cleanup(curl);
+        throw std::runtime_error(error);
+    }
+    
+    long response_code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    response.status_code = static_cast<int>(response_code);
+    
+    curl_slist_free_all(header_list);
+    curl_easy_cleanup(curl);
+    
+    return response;
+}
+
 bool HttpClient::download_file(const std::string& url,
                                const std::string& output_path,
                                ProgressCallback callback,
