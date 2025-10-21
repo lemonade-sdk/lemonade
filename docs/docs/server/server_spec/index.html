@@ -1014,13 +1014,13 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#get-apiv1pull" class="md-nav__link">
+  <a href="#post-apiv1pull" class="md-nav__link">
     <span class="md-ellipsis">
-      GET /api/v1/pull
+      POST /api/v1/pull
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="GET /api/v1/pull">
+    <nav class="md-nav" aria-label="POST /api/v1/pull">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1062,13 +1062,13 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#get-apiv1load" class="md-nav__link">
+  <a href="#post-apiv1load" class="md-nav__link">
     <span class="md-ellipsis">
-      GET /api/v1/load
+      POST /api/v1/load
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="GET /api/v1/load">
+    <nav class="md-nav" aria-label="POST /api/v1/load">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1720,13 +1720,13 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#get-apiv1pull" class="md-nav__link">
+  <a href="#post-apiv1pull" class="md-nav__link">
     <span class="md-ellipsis">
-      GET /api/v1/pull
+      POST /api/v1/pull
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="GET /api/v1/pull">
+    <nav class="md-nav" aria-label="POST /api/v1/pull">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1768,13 +1768,13 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#get-apiv1load" class="md-nav__link">
+  <a href="#post-apiv1load" class="md-nav__link">
     <span class="md-ellipsis">
-      GET /api/v1/load
+      POST /api/v1/load
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="GET /api/v1/load">
+    <nav class="md-nav" aria-label="POST /api/v1/load">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2061,7 +2061,7 @@
 <ul>
 <li>POST <code>/api/v1/chat/completions</code> - Chat Completions (messages -&gt; completion)</li>
 <li>POST <code>/api/v1/completions</code> - Text Completions (prompt -&gt; completion)</li>
-<li>POST <code>api/v1/responses</code> - Chat Completions (prompt|messages -&gt; event)</li>
+<li>POST <code>/api/v1/responses</code> - Chat Completions (prompt|messages -&gt; event)</li>
 <li>GET <code>/api/v1/models</code> - List models available locally</li>
 <li>GET <code>/api/v1/models/{model_id}</code> - Retrieve a specific model by ID</li>
 </ul>
@@ -2188,7 +2188,7 @@
 </tbody>
 </table>
 <blockquote>
-<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#get-apiv1load">load endpoint</a>.</p>
+<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#post-apiv1load">load endpoint</a>.</p>
 </blockquote>
 <h4 id="example-request">Example request</h4>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PowerShell</label><label for="__tabbed_1_2">Bash</label></div>
@@ -2345,7 +2345,7 @@
 </tbody>
 </table>
 <blockquote>
-<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#get-apiv1load">load endpoint</a>.</p>
+<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#post-apiv1load">load endpoint</a>.</p>
 </blockquote>
 <h4 id="example-request_1">Example request</h4>
 <div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">PowerShell</label><label for="__tabbed_3_2">Bash</label></div>
@@ -2451,7 +2451,7 @@
 </tbody>
 </table>
 <blockquote>
-<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#get-apiv1load">load endpoint</a>.</p>
+<p>Note: The value for <code>model</code> is either a <a href="../server_models/">Lemonade Server model name</a>, or a checkpoint that has been pre-loaded using the <a href="#post-apiv1load">load endpoint</a>.</p>
 </blockquote>
 <h4 id="streaming-events">Streaming Events</h4>
 <p>The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about. Our initial implementation only offers support to:</p>
@@ -2584,7 +2584,7 @@
 <span class="p">}</span>
 </code></pre></div>
 <h2 id="additional-endpoints_1">Additional Endpoints</h2>
-<h3 id="get-apiv1pull"><code>GET /api/v1/pull</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
+<h3 id="post-apiv1pull"><code>POST /api/v1/pull</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Register and install models for use with Lemonade Server.</p>
 <h4 id="parameters_5">Parameters</h4>
 <p>The Lemonade Server built-in model registry has a collection of model names that can be pulled and loaded. The <code>pull</code> endpoint can install any registered model, and it can also register-then-install any model available on Hugging Face.</p>
@@ -2606,7 +2606,7 @@
 </tbody>
 </table>
 <p>Example request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/pull<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/pull<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span>
@@ -2667,7 +2667,7 @@
 </tbody>
 </table>
 <p>Example request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/pull<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/pull<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;user.Phi-4-Mini-GGUF&quot;,</span>
@@ -2702,7 +2702,7 @@
 </tbody>
 </table>
 <p>Example request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/delete<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/delete<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span>
@@ -2715,8 +2715,8 @@
 <span class="p">}</span>
 </code></pre></div>
 <p>In case of an error, the status will be <code>error</code> and the message will contain the error message.</p>
-<p><a id="get-apiv1load"></a></p>
-<h3 id="get-apiv1load"><code>GET /api/v1/load</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
+<p><a id="post-apiv1load"></a></p>
+<h3 id="post-apiv1load"><code>POST /api/v1/load</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.</p>
 <h4 id="parameters_7">Parameters</h4>
 <table>
@@ -2736,7 +2736,7 @@
 </tbody>
 </table>
 <p>Example request:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;model_name&quot;: &quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span>
@@ -2754,7 +2754,7 @@
 <h4 id="parameters_8">Parameters</h4>
 <p>This endpoint does not take any parameters.</p>
 <h4 id="example-request_5">Example request</h4>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/unload
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/unload
 </code></pre></div>
 <h4 id="response-format_5">Response format</h4>
 <p><div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -2808,7 +2808,7 @@ In case of an error, the status will be <code>error</code> and the message will 
 </tbody>
 </table>
 <h4 id="example-request_6">Example request</h4>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/params<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/params<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
 <span class="s1">    &quot;temperature&quot;: 0.8,</span>
