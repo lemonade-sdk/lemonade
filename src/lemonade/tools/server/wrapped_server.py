@@ -1,7 +1,6 @@
 import logging
 import time
 import subprocess
-import json
 from abc import ABC, abstractmethod
 
 import requests
