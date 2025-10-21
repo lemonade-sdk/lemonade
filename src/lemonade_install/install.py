@@ -33,6 +33,20 @@ def _get_ryzenai_version_info(device=None):
     try:
         # Lazy import to avoid errors when OGA is not installed
         from packaging.version import Version
+
+        # For embedded Python on Windows, add DLL directory before importing onnxruntime_genai
+        # This is required to find DirectML.dll and other dependencies
+        if sys.platform.startswith("win"):
+            import site
+            site_packages = site.getsitepackages()
+            for sp in site_packages:
+                oga_dir = os.path.join(sp, "onnxruntime_genai")
+                if os.path.exists(oga_dir):
+                    # Add the onnxruntime_genai directory to DLL search path
+                    # This ensures DirectML.dll and onnxruntime.dll can be found
+                    os.add_dll_directory(oga_dir)
+                    break
+
         import onnxruntime_genai as og
 
         if Version(og.__version__) >= Version("0.7.0"):
