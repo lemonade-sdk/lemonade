@@ -193,15 +193,27 @@ bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
         return false;
     }
     
+    std::string response_body;
+    
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);  // HEAD request
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     
     CURLcode res = curl_easy_perform(curl);
+    
+    if (res != CURLE_OK) {
+        curl_easy_cleanup(curl);
+        return false;
+    }
+    
+    // Check HTTP status code
+    long response_code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     curl_easy_cleanup(curl);
     
-    return res == CURLE_OK;
+    return response_code == 200;
 }
 
 } // namespace utils

@@ -91,8 +91,8 @@ int main(int argc, char** argv) {
                 }
             }
             
-            // Get models via API
-            auto response = api_request("GET", "/api/v1/models");
+            // Get models via API (with show_all=true to see all models, not just downloaded)
+            auto response = api_request("GET", "/api/v1/models?show_all=true");
             
             if (response.status_code == 200) {
                 try {

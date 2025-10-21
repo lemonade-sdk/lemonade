@@ -8,7 +8,7 @@ namespace backends {
 
 class FastFlowLMServer : public WrappedServer {
 public:
-    FastFlowLMServer();
+    FastFlowLMServer(const std::string& log_level = "info");
     
     ~FastFlowLMServer() override;
     

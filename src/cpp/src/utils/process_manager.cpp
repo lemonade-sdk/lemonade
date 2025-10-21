@@ -24,7 +24,8 @@ namespace utils {
 ProcessHandle ProcessManager::start_process(
     const std::string& executable,
     const std::vector<std::string>& args,
-    const std::string& working_dir) {
+    const std::string& working_dir,
+    bool inherit_output) {
     
     ProcessHandle handle;
     handle.handle = nullptr;
@@ -43,13 +44,24 @@ ProcessHandle ProcessManager::start_process(
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
     
+    // If inherit_output is true, inherit stdout/stderr from parent
+    if (inherit_output) {
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+        std::cout << "[ProcessManager] Starting process with inherited output: " << cmdline << std::endl;
+    } else {
+        std::cout << "[ProcessManager] Starting process: " << cmdline << std::endl;
+    }
+    
     BOOL success = CreateProcessA(
         nullptr,
         const_cast<char*>(cmdline.c_str()),
         nullptr,
         nullptr,
-        FALSE,
-        CREATE_NO_WINDOW,
+        TRUE,  // Inherit handles when inherit_output is true
+        inherit_output ? 0 : CREATE_NO_WINDOW,  // Show window only in debug mode
         nullptr,
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
@@ -57,8 +69,25 @@ ProcessHandle ProcessManager::start_process(
     );
     
     if (!success) {
-        throw std::runtime_error("Failed to start process: " + executable);
+        DWORD error = GetLastError();
+        char error_msg[256];
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            error,
+            0,
+            error_msg,
+            sizeof(error_msg),
+            nullptr
+        );
+        
+        std::string full_error = "Failed to start process '" + executable + 
+                                "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
+        std::cerr << "[ProcessManager ERROR] " << full_error << std::endl;
+        throw std::runtime_error(full_error);
     }
+    
+    std::cout << "[ProcessManager] Process started successfully, PID: " << pi.dwProcessId << std::endl;
     
     handle.handle = pi.hProcess;
     handle.pid = pi.dwProcessId;
@@ -148,6 +177,42 @@ bool ProcessManager::is_running(ProcessHandle handle) {
     int status;
     pid_t result = waitpid(handle.pid, &status, WNOHANG);
     return result == 0;  // 0 means still running
+#endif
+}
+
+int ProcessManager::get_exit_code(ProcessHandle handle) {
+#ifdef _WIN32
+    if (!handle.handle) {
+        return -1;
+    }
+    
+    DWORD exit_code;
+    if (!GetExitCodeProcess(handle.handle, &exit_code)) {
+        return -1;
+    }
+    
+    if (exit_code == STILL_ACTIVE) {
+        return -1;  // Still running
+    }
+    
+    return static_cast<int>(exit_code);
+#else
+    if (handle.pid <= 0) {
+        return -1;
+    }
+    
+    int status;
+    pid_t result = waitpid(handle.pid, &status, WNOHANG);
+    
+    if (result == 0) {
+        return -1;  // Still running
+    }
+    
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    
+    return -1;
 #endif
 }
 

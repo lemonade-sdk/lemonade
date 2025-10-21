@@ -3,10 +3,12 @@
 #include <string>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include "utils/process_manager.h"
 
 namespace lemon {
 
 using json = nlohmann::json;
+using utils::ProcessHandle;
 
 struct Telemetry {
     int input_tokens = 0;
@@ -36,10 +38,16 @@ struct Telemetry {
 
 class WrappedServer {
 public:
-    WrappedServer(const std::string& server_name)
-        : server_name_(server_name), port_(0), process_handle_(nullptr) {}
+    WrappedServer(const std::string& server_name, const std::string& log_level = "info")
+        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level) {}
     
     virtual ~WrappedServer() = default;
+    
+    // Set log level
+    void set_log_level(const std::string& log_level) { log_level_ = log_level; }
+    
+    // Check if debug logging is enabled
+    bool is_debug() const { return log_level_ == "debug" || log_level_ == "trace"; }
     
     // Install the backend server
     virtual void install(const std::string& backend = "") = 0;
@@ -75,18 +83,19 @@ public:
     
 protected:
     // Choose an available port
-    void choose_port();
+    int choose_port();
     
     // Wait for server to be ready
-    void wait_for_ready();
+    bool wait_for_ready();
     
     // Parse telemetry from subprocess output
     virtual void parse_telemetry(const std::string& line) = 0;
     
     std::string server_name_;
     int port_;
-    void* process_handle_;  // Platform-specific process handle
+    ProcessHandle process_handle_;
     Telemetry telemetry_;
+    std::string log_level_;
 };
 
 } // namespace lemon

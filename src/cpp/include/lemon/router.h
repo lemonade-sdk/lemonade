@@ -11,7 +11,9 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(int ctx_size = 4096, const std::string& llamacpp_backend = "vulkan");
+    Router(int ctx_size = 4096, 
+           const std::string& llamacpp_backend = "vulkan",
+           const std::string& log_level = "info");
     
     ~Router();
     
@@ -31,6 +33,9 @@ public:
     // Check if a model is loaded
     bool is_model_loaded() const { return wrapped_server_ != nullptr; }
     
+    // Get backend server address (for streaming proxy)
+    std::string get_backend_address() const;
+    
     // Forward requests to the appropriate wrapped server
     json chat_completion(const json& request);
     json completion(const json& request);
@@ -48,6 +53,7 @@ private:
     
     int ctx_size_;
     std::string llamacpp_backend_;
+    std::string log_level_;
 };
 
 } // namespace lemon

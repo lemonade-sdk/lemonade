@@ -19,13 +19,17 @@ public:
     static ProcessHandle start_process(
         const std::string& executable,
         const std::vector<std::string>& args,
-        const std::string& working_dir = "");
+        const std::string& working_dir = "",
+        bool inherit_output = false);
     
     // Stop a process
     static void stop_process(ProcessHandle handle);
     
     // Check if process is running
     static bool is_running(ProcessHandle handle);
+    
+    // Get process exit code (returns -1 if still running)
+    static int get_exit_code(ProcessHandle handle);
     
     // Wait for process to exit
     static int wait_for_exit(ProcessHandle handle, int timeout_seconds = -1);

@@ -8,7 +8,7 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer {
 public:
-    LlamaCppServer(const std::string& backend = "vulkan");
+    LlamaCppServer(const std::string& backend = "vulkan", const std::string& log_level = "info");
     
     ~LlamaCppServer() override;
     
@@ -36,6 +36,8 @@ protected:
     
 private:
     std::string get_llama_server_path();
+    std::string find_gguf_file(const std::string& checkpoint);
+    
     std::string backend_;  // vulkan, rocm, metal
     std::string model_path_;
 };

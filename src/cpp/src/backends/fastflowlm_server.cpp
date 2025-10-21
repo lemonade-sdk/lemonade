@@ -4,8 +4,8 @@
 namespace lemon {
 namespace backends {
 
-FastFlowLMServer::FastFlowLMServer()
-    : WrappedServer("FastFlowLM") {
+FastFlowLMServer::FastFlowLMServer(const std::string& log_level)
+    : WrappedServer("FastFlowLM", log_level) {
 }
 
 FastFlowLMServer::~FastFlowLMServer() {

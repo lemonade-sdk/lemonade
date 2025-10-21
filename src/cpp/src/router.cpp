@@ -5,8 +5,8 @@
 
 namespace lemon {
 
-Router::Router(int ctx_size, const std::string& llamacpp_backend)
-    : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend) {
+Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level)
+    : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level) {
 }
 
 Router::~Router() {
@@ -19,8 +19,40 @@ void Router::load_model(const std::string& model_name,
                        const std::string& checkpoint,
                        const std::string& recipe,
                        bool do_not_upgrade) {
-    // TODO: Implement model loading logic
-    std::cout << "[Router] Loading model: " << model_name << std::endl;
+    
+    std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
+    
+    try {
+        // Unload any existing model
+        if (wrapped_server_) {
+            std::cout << "[Router] Unloading previous model..." << std::endl;
+            unload_model();
+        }
+        
+        // Determine which backend to use based on recipe
+        if (recipe == "flm") {
+            std::cout << "[Router] Using FastFlowLM backend" << std::endl;
+            wrapped_server_ = std::make_unique<backends::FastFlowLMServer>(log_level_);
+        } else {
+            std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
+            wrapped_server_ = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
+        }
+        
+        // Load the model
+        wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade);
+        
+        loaded_model_ = model_name;
+        loaded_checkpoint_ = checkpoint;
+        loaded_recipe_ = recipe;
+        
+        std::cout << "[Router] Model loaded successfully" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[Router ERROR] Failed to load model: " << e.what() << std::endl;
+        if (wrapped_server_) {
+            wrapped_server_.reset();
+        }
+        throw;  // Re-throw to propagate up
+    }
 }
 
 void Router::unload_model() {
@@ -31,6 +63,13 @@ void Router::unload_model() {
         loaded_checkpoint_.clear();
         loaded_recipe_.clear();
     }
+}
+
+std::string Router::get_backend_address() const {
+    if (!wrapped_server_) {
+        return "";
+    }
+    return wrapped_server_->get_address();
 }
 
 json Router::chat_completion(const json& request) {

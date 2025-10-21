@@ -1,5 +1,6 @@
 #include "lemon/server.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/http_client.h"
 #include <iostream>
 
 namespace lemon {
@@ -11,7 +12,11 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     http_server_ = std::make_unique<httplib::Server>();
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend);
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level);
+    
+    if (log_level_ == "debug" || log_level_ == "trace") {
+        std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
+    }
     
     setup_routes();
 }
@@ -137,28 +142,38 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
-    auto models = model_manager_->get_supported_models();
+    auto all_models = model_manager_->get_supported_models();
+    
+    // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
+    bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
     
     nlohmann::json response;
     response["data"] = nlohmann::json::array();
     response["object"] = "list";
     
-    for (const auto& [model_id, model_info] : models) {
+    for (const auto& [model_id, model_info] : all_models) {
         bool is_downloaded = model_manager_->is_model_downloaded(model_id);
         
-        nlohmann::json model_json = {
-            {"id", model_id},
-            {"object", "model"},
-            {"created", 1234567890},
-            {"owned_by", "lemonade"},
-            {"name", model_info.model_name},
-            {"checkpoint", model_info.checkpoint},
-            {"recipe", model_info.recipe},
-            {"downloaded", is_downloaded},
-            {"labels", model_info.labels}
-        };
-        
-        response["data"].push_back(model_json);
+        // Only include downloaded models unless show_all is requested
+        if (show_all || is_downloaded) {
+            nlohmann::json model_json = {
+                {"id", model_id},
+                {"object", "model"},
+                {"created", 1234567890},
+                {"owned_by", "lemonade"},
+                {"checkpoint", model_info.checkpoint},
+                {"recipe", model_info.recipe}
+            };
+            
+            // Add extra fields when showing all models (for CLI list command)
+            if (show_all) {
+                model_json["name"] = model_info.model_name;
+                model_json["downloaded"] = is_downloaded;
+                model_json["labels"] = model_info.labels;
+            }
+            
+            response["data"].push_back(model_json);
+        }
     }
     
     res.set_content(response.dump(), "application/json");
@@ -186,18 +201,59 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Check if model is loaded
-        if (!router_->is_model_loaded()) {
+        // Auto-load model if specified and not loaded
+        if (!router_->is_model_loaded() && request_json.contains("model")) {
+            std::string model_name = request_json["model"];
+            std::cout << "[Server] No model loaded, auto-loading: " << model_name << std::endl;
+            
+            // Get model info
+            if (!model_manager_->model_exists(model_name)) {
+                std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                return;
+            }
+            
+            auto info = model_manager_->get_model_info(model_name);
+            
+            // Auto-download if not cached
+            if (!model_manager_->is_model_downloaded(model_name)) {
+                std::cout << "[Server] Model not downloaded, pulling..." << std::endl;
+                model_manager_->download_model(model_name);
+            }
+            
+            // Load the model
+            router_->load_model(model_name, info.checkpoint, info.recipe);
+            std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
+        } else if (!router_->is_model_loaded()) {
+            std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
-            res.set_content("{\"error\": \"No model loaded\"}", "application/json");
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
         }
         
-        // Forward to router
-        auto response = router_->chat_completion(request_json);
-        res.set_content(response.dump(), "application/json");
+        // Check if streaming is requested
+        bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
+        
+        if (is_streaming) {
+            // For streaming, we need to proxy the SSE response directly
+            // Get the backend server address
+            std::string backend_url = router_->get_backend_address() + "/chat/completions";
+            
+            // Make streaming request using HttpClient
+            auto stream_response = utils::HttpClient::post(backend_url, req.body, {{"Content-Type", "application/json"}});
+            
+            // Forward the SSE response
+            res.set_content(stream_response.body, "text/event-stream");
+            res.status = stream_response.status_code;
+        } else {
+            // Forward to router for non-streaming
+            auto response = router_->chat_completion(request_json);
+            res.set_content(response.dump(), "application/json");
+        }
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server ERROR] Chat completion failed: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -251,19 +307,47 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
         std::string model_name = request_json["model"];
+        
+        std::cout << "[Server] Loading model: " << model_name << std::endl;
+        
+        // Look up model info from registry if not provided
         std::string checkpoint = request_json.value("checkpoint", "");
         std::string recipe = request_json.value("recipe", "");
         
+        if (checkpoint.empty()) {
+            // Get model info from model manager
+            if (!model_manager_->model_exists(model_name)) {
+                std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                return;
+            }
+            
+            auto info = model_manager_->get_model_info(model_name);
+            checkpoint = info.checkpoint;
+            recipe = info.recipe;
+        }
+        
+        // Auto-download if not cached
+        if (!model_manager_->is_model_downloaded(model_name)) {
+            std::cout << "[Server] Model not downloaded, pulling..." << std::endl;
+            model_manager_->download_model(model_name);
+        }
+        
         router_->load_model(model_name, checkpoint, recipe);
+        
+        std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         
         nlohmann::json response = {
             {"status", "success"},
             {"model", model_name},
-            {"loaded_checkpoint", router_->get_loaded_checkpoint()}
+            {"checkpoint", checkpoint},
+            {"recipe", recipe}
         };
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
