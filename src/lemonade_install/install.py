@@ -38,6 +38,7 @@ def _get_ryzenai_version_info(device=None):
         # This is required to find DirectML.dll and other dependencies
         if sys.platform.startswith("win"):
             import site
+
             site_packages = site.getsitepackages()
             for sp in site_packages:
                 oga_dir = os.path.join(sp, "onnxruntime_genai")
