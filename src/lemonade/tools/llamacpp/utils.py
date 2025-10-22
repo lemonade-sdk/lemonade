@@ -1,13 +1,13 @@
 import logging
 import os
 import platform
-import psutil
 import shutil
 import sys
 import threading
 import time
 import zipfile
 from typing import Optional
+import psutil
 import subprocess
 import requests
 import lemonade.common.build as build
@@ -706,18 +706,28 @@ def stream_reader(stream, output_list):
     stream.close()
 
 
-# Function to monitor memory usage
-def monitor_memory(proc, interval=0.5):
-    p = psutil.Process(proc.pid)
-    rss = 0
-    peak_wset = None
-    while proc.poll() is None:  # While the process is still running
-        mem_info = p.memory_info()
-        rss = mem_info.rss
-        if platform.system() == "Windows":
-            peak_wset = mem_info.peak_wset
-        time.sleep(interval)
-    return [rss, peak_wset]
+def monitor_process_memory(pid, memory_data, interval=0.5):
+    """Monitor memory usage of a process in a separate thread."""
+
+    try:
+        is_windows = platform.system() == "Windows"
+        process = psutil.Process(pid)
+        while process.is_running():
+            try:
+                mem_info = process.memory_info()
+                printing.log_info(
+                    f"Memory: rss={mem_info.rss} peak_wset={mem_info.peak_wset}"
+                )
+                memory_data["rss"] = mem_info.rss
+                if is_windows:
+                    memory_data["peak_wset"] = mem_info.peak_wset
+            except psutil.NoSuchProcess:
+                break
+            time.sleep(interval)
+    except Exception as e:
+        print(f"Error monitoring process: {e}")
+
+    return memory_data
 
 
 class LlamaCppTokenizerAdapter(PassthroughTokenizer):
@@ -858,8 +868,6 @@ class LlamaCppAdapter(ModelAdapter):
                 else:
                     env["LD_LIBRARY_PATH"] = self.lib_dir
 
-            stdout_lines = []
-            stderr_lines = []
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -870,47 +878,48 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            # Threads to capture stdout and stderr into lists
-            stdout_thread = threading.Thread(
-                target=stream_reader, args=(process.stdout, stdout_lines)
+            # Start memory monitoring in a separate thread
+            memory_data = {}
+            monitor_thread = threading.Thread(
+                target=monitor_process_memory,
+                args=(process.pid, memory_data),
+                daemon=True,
             )
-            stderr_thread = threading.Thread(
-                target=stream_reader, args=(process.stderr, stderr_lines)
-            )
-            stdout_thread.start()
-            stderr_thread.start()
+            monitor_thread.start()
+
+            # Communicate with the subprocess
+            stdout, stderr = process.communicate(timeout=600)
+
+            # Wait for monitor thread to finish
+            monitor_thread.join(timeout=2)
 
             # Track memory usage concurrently
-            [rss, max_wset] = monitor_memory(process)
-            print(
-                f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB    max_wset={max_wset / 1024 ** 3:,.3f} GB"
+            printing.log_info(
+                f"{memory_data}\n"
+                f"Llama.cpp: rss={memory_data.get('rss', 0) / 1024 ** 3:,.3f} GB    "
+                f"peak_wset={memory_data.get('peak_wset', 0) / 1024 ** 3:,.3f} GB"
             )
-
-            # Ensure threads complete
-            stdout_thread.join()
-            stderr_thread.join()
-            process.wait()
 
             # save llama-cli command output with performance info to state
             # (can be viewed in state.yaml file in cache)
             self.state.llama_cli_stderr = getattr(
                 self.state, "llama_cli_stderr", []
-            ) + [[line for line in stderr_lines if line.startswith("llama_perf_")]]
+            ) + [
+                [line for line in stderr.splitlines() if line.startswith("llama_perf_")]
+            ]
 
             if process.returncode != 0:
-                stdout_str = "\n".join(stdout_lines)
-                stderr_str = "\n".join(stderr_lines)
                 error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
                 error_msg += f"Command: {' '.join(cmd)}\n"
-                error_msg += f"Error output:\n{stderr_str}\n"
-                error_msg += f"Standard output:\n{stdout_str}"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{stdout}"
                 raise Exception(error_msg)
 
-            if not stdout_lines:
+            if stdout is None:
                 raise Exception("No output received from llama.cpp process")
 
             # Parse information from llama.cpp output
-            for line in stderr_lines:
+            for line in stderr.splitlines():
                 # Parse timing and token information
                 #
                 # Prompt processing time and length (tokens)
@@ -938,13 +947,13 @@ class LlamaCppAdapter(ModelAdapter):
                     )
 
             if return_raw:
-                return ["\n".join(stdout_lines), "\n".join(stderr_lines)]
+                return [stdout, stderr]
 
             # Find where the prompt ends and the generated text begins
             prompt_found = False
             output_text = ""
             prompt_first_line = prompt.split("\n")[0]
-            for line in stdout_lines:
+            for line in stdout.splitlines():
                 if prompt_first_line in line:
                     prompt_found = True
                 if prompt_found:
@@ -952,13 +961,11 @@ class LlamaCppAdapter(ModelAdapter):
                     output_text = output_text + line
 
             if not prompt_found:
-                stdout_str = "\n".join(stdout_lines)
-                stderr_str = "\n".join(stderr_lines)
                 raise Exception(
                     f"Could not find prompt '{prompt_first_line}' in llama.cpp output. "
                     "This usually means the model failed to process the prompt correctly.\n"
-                    f"Raw output:\n{stdout_str}\n"
-                    f"Stderr:\n{stderr_str}"
+                    f"Raw output:\n{stdout}\n"
+                    f"Stderr:\n{stderr}"
                 )
 
             # Return list containing the generated text
@@ -969,7 +976,7 @@ class LlamaCppAdapter(ModelAdapter):
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
 
-    def benchmark(self, prompts, iterations, output_tokens):
+    def benchmark(self, prompt, iterations, output_tokens):
         """
         Runs the llama-bench.exe tool to measure TTFT and TPS
         """
@@ -980,7 +987,7 @@ class LlamaCppAdapter(ModelAdapter):
             "-r",
             iterations,
             "-p",
-            ",".join([str(p) for p in prompts]),
+            str(prompt),
             "-n",
             output_tokens,
             "-t",
@@ -1013,8 +1020,6 @@ class LlamaCppAdapter(ModelAdapter):
                 else:
                     env["LD_LIBRARY_PATH"] = self.lib_dir
 
-            stdout_lines = []
-            stderr_lines = []
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -1025,81 +1030,75 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            # Threads to capture stdout and stderr into lists
-            stdout_thread = threading.Thread(
-                target=stream_reader, args=(process.stdout, stdout_lines)
+            # Start memory monitoring in a separate thread
+            memory_data = {}
+            monitor_thread = threading.Thread(
+                target=monitor_process_memory,
+                args=(process.pid, memory_data),
+                daemon=True,
             )
-            stderr_thread = threading.Thread(
-                target=stream_reader, args=(process.stderr, stderr_lines)
-            )
-            stdout_thread.start()
-            stderr_thread.start()
+            monitor_thread.start()
+
+            # Communicate with the subprocess
+            stdout, stderr = process.communicate(timeout=600)
+
+            # Wait for monitor thread to finish
+            monitor_thread.join(timeout=2)
 
             # Track memory usage concurrently
-            [rss, max_wset] = monitor_memory(process)
-            if max_wset is not None:
-                print(
-                    f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB    max_wset={max_wset / 1024 ** 3:,.3f} GB"
-                )
-            else:
-                print(f"Llama.cpp: rss={rss / 1024 ** 3:,.3f} GB")
-
-            # Ensure threads complete
-            stdout_thread.join()
-            stderr_thread.join()
-            process.wait()
+            peak_wset = memory_data.get("peak_wset", None)
+            # printing.log_info(
+            #     f"{memory_data}\n"
+            #     f"Llama.cpp: rss={memory_data.get('rss', 0) / 1024 ** 3:,.3f} GB    "
+            #     f"peak_wset={memory_data.get('peak_wset', 0) / 1024 ** 3:,.3f} GB"
+            # )
 
             # save llama-bench command output with performance info to state
             # (can be viewed in state.yaml file in cache)
-            self.state.llama_bench_standard_output = stdout_lines
+            self.state.llama_bench_standard_output = stdout.splitlines()
 
             if process.returncode != 0:
-                stdout_str = "\n".join(stdout_lines)
-                stderr_str = "\n".join(stderr_lines)
                 error_msg = (
                     f"llama-bench.exe failed with return code {process.returncode}.\n"
                 )
                 error_msg += f"Command: {' '.join(cmd)}\n"
-                error_msg += f"Error output:\n{stderr_str}\n"
-                error_msg += f"Standard output:\n{stdout_str}"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{stdout}"
                 raise Exception(error_msg)
 
-            if not stdout_lines:
-                stdout_str = "\n".join(stdout_lines)
-                stderr_str = "\n".join(stderr_lines)
+            if stdout is None:
                 error_msg = "No output received from llama-bench.exe process\n"
-                error_msg += f"Error output:\n{stderr_str}\n"
-                error_msg += f"Standard output:\n{stdout_str}"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{stdout}"
                 raise Exception(error_msg)
 
             # Parse information from llama-bench.exe output
-            prompt_lengths = []
-            pp_tps = []
-            pp_tps_sd = []
+            prompt_length = None
+            pp_tps = None
+            pp_tps_sd = None
             tg_tps = None
             tg_tps_sd = None
 
-            for line in stdout_lines:
+            for line in stdout.splitlines():
                 # Parse TPS information
-                for p in prompts:
-                    if f"pp{p:d}" in line:
-                        parts = line.split("|")
-                        timings = parts[-2].strip().split(" ")
-                        prompt_lengths.append(p)
-                        pp_tps.append(float(timings[0]))
-                        pp_tps_sd.append(float(timings[-1]))
-                    if f"tg{output_tokens:d}" in line:
-                        parts = line.split("|")
-                        timings = parts[-2].strip().split(" ")
-                        tg_tps = float(timings[0])
-                        tg_tps_sd = float(timings[-1])
-
-            return prompt_lengths, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd
+                if f"pp{prompt:d}" in line:
+                    parts = line.split("|")
+                    timings = parts[-2].strip().split(" ")
+                    prompt_length = prompt
+                    pp_tps = float(timings[0])
+                    pp_tps_sd = float(timings[-1])
+                if f"tg{output_tokens:d}" in line:
+                    parts = line.split("|")
+                    timings = parts[-2].strip().split(" ")
+                    tg_tps = float(timings[0])
+                    tg_tps_sd = float(timings[-1])
 
         except Exception as e:
             error_msg = f"Failed to run llama-bench.exe command: {str(e)}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
+
+        return prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset
 
 
 def get_hip_devices():
