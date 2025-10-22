@@ -1,6 +1,7 @@
 #include "lemon/server.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/streaming_proxy.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -47,15 +48,6 @@ void Server::setup_routes() {
     http_server_->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
-        
-        // Special handling for POST /api/v1/unload with no body
-        // cpp-httplib might reject POST requests without Content-Type, so handle it here
-        if (req.method == "POST" && req.path == "/api/v1/unload") {
-            std::cout << "[Server PRE-ROUTE] Handling unload in pre-routing" << std::endl;
-            handle_unload(req, res);
-            return httplib::Server::HandlerResponse::Handled;
-        }
-        
         return httplib::Server::HandlerResponse::Unhandled;
     });
     
@@ -107,7 +99,10 @@ void Server::setup_routes() {
         handle_load(req, res);
     });
     
-    // Unload endpoint is handled in pre-routing handler to work around cpp-httplib POST validation
+    // Unload endpoint - POST only (matches Python implementation)
+    http_server_->Post("/api/v1/unload", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_unload(req, res);
+    });
     
     http_server_->Post("/api/v1/delete", [this](const httplib::Request& req, httplib::Response& res) {
         handle_delete(req, res);
@@ -367,190 +362,31 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Log the HTTP request
                 std::cout << "[Server] POST " << backend_url << " - Streaming" << std::endl;
                 
-                // CRITICAL: Heap-allocate shared state so it outlives the handler function
-                // Using shared_ptr ensures the state lives as long as both threads need it
-                struct StreamState {
-                    std::queue<std::string> chunk_queue;
-                    std::mutex queue_mutex;
-                    std::condition_variable queue_cv;
-                    bool stream_complete = false;
-                    std::string telemetry_buffer;
-                    std::unique_ptr<std::thread> curl_thread;
-                };
-                auto state = std::make_shared<StreamState>();
-                
-                // Set up streaming response headers
+                // Set up streaming response with SSE headers
                 res.set_header("Content-Type", "text/event-stream");
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
-                res.status = 200;
+                res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
                 
-                // Start CURL streaming in a background thread
-                state->curl_thread = std::make_unique<std::thread>([state, backend_url, request_body]() {
-                    try {
-                        auto stream_result = utils::HttpClient::post_stream(
-                            backend_url,
-                            request_body,
-                            [state](const char* data, size_t length) {
-                                std::string chunk(data, length);
-                                state->telemetry_buffer.append(chunk);
-                                
-                                {
-                                    std::lock_guard<std::mutex> lock(state->queue_mutex);
-                                    state->chunk_queue.push(chunk);
-                                }
-                                state->queue_cv.notify_one();
-                                return true;
-                            }
-                        );
-                    } catch (...) {
-                        // Error handling
-                    }
-                    
-                    // Signal completion
-                    {
-                        std::lock_guard<std::mutex> lock(state->queue_mutex);
-                        state->stream_complete = true;
-                    }
-                    state->queue_cv.notify_one();
-                });
-                
-                // Use chunked content provider to stream chunks to client
-                // Capture state by value (shared_ptr) so it stays alive
+                // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [state](size_t offset, httplib::DataSink &sink) {
-                        bool client_disconnected = false;
-                        
-                        while (true) {
-                            std::unique_lock<std::mutex> lock(state->queue_mutex);
-                            
-                            // Wait for data or completion
-                            state->queue_cv.wait(lock, [&state]() {
-                                return !state->chunk_queue.empty() || state->stream_complete;
-                            });
-                            
-                            // Send all available chunks
-                            while (!state->chunk_queue.empty()) {
-                                std::string chunk = state->chunk_queue.front();
-                                state->chunk_queue.pop();
-                                lock.unlock();
-                                
-                                if (!sink.write(chunk.data(), chunk.size())) {
-                                    client_disconnected = true;
-                                    lock.lock();
-                                    break; // Client disconnected, exit inner loop
-                                }
-                                
-                                lock.lock();
-                            }
-                            
-                            // If client disconnected or stream is complete, exit
-                            if (client_disconnected || (state->stream_complete && state->chunk_queue.empty())) {
-                                lock.unlock();
-                                break;
-                            }
+                    [backend_url, request_body](size_t offset, httplib::DataSink& sink) {
+                        // For chunked responses, offset tracks bytes sent so far
+                        // We only want to stream once when offset is 0
+                        if (offset > 0) {
+                            return false; // We're done after the first call
                         }
                         
-                        // CRITICAL: Always join the thread before returning
-                        // Otherwise unique_ptr destructor will call std::terminate()
-                        if (state->curl_thread && state->curl_thread->joinable()) {
-                            state->curl_thread->join();
-                        }
+                        // Use our StreamingProxy to handle all the complexity
+                        StreamingProxy::forward_sse_stream(
+                            backend_url,
+                            request_body,
+                            sink,
+                            nullptr // Telemetry is printed automatically
+                        );
                         
-                        if (client_disconnected) {
-                            std::cout << "[Server] Streaming aborted - client disconnected" << std::endl;
-                            return false;
-                        }
-                        
-                        std::cout << "[Server] Streaming completed - 200 OK" << std::endl;
-                        
-                        // Parse and print telemetry
-                        try {
-                            std::istringstream stream(state->telemetry_buffer);
-                            std::string line;
-                            json last_chunk_with_usage;
-                        
-                            while (std::getline(stream, line)) {
-                                // Handle SSE format (data: ...)
-                                std::string json_str;
-                                if (line.find("data: ") == 0) {
-                                    json_str = line.substr(6); // Remove "data: " prefix
-                                } else if (line.find("ChatCompletionChunk: ") == 0) {
-                                    // FLM debug format
-                                    json_str = line.substr(21); // Remove "ChatCompletionChunk: " prefix
-                                } else {
-                                    // Try parsing as raw JSON
-                                    json_str = line;
-                                }
-                                
-                                if (!json_str.empty() && json_str != "[DONE]") {
-                                    try {
-                                        auto chunk = json::parse(json_str);
-                                        // Look for usage or timings in the chunk
-                                        if (chunk.contains("usage") || chunk.contains("timings")) {
-                                            last_chunk_with_usage = chunk;
-                                        }
-                                    } catch (...) {
-                                        // Skip invalid JSON
-                                    }
-                                }
-                            }
-                            
-                            // Print telemetry if found
-                            if (!last_chunk_with_usage.empty()) {
-                                if (last_chunk_with_usage.contains("usage")) {
-                                    auto usage = last_chunk_with_usage["usage"];
-                                    std::cout << "\n=== Telemetry ===" << std::endl;
-                                    
-                                    // Input/Output tokens
-                                    if (usage.contains("prompt_tokens")) {
-                                        std::cout << "Input tokens:  " << usage["prompt_tokens"] << std::endl;
-                                    }
-                                    if (usage.contains("completion_tokens")) {
-                                        std::cout << "Output tokens: " << usage["completion_tokens"] << std::endl;
-                                    }
-                                    
-                                    // TTFT - check FLM format first, then llama.cpp format
-                                    if (usage.contains("prefill_duration_ttft")) {
-                                        double ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3) 
-                                                 << ttft_seconds << std::endl;
-                                    }
-                                    
-                                    // TPS - check FLM format first
-                                    if (usage.contains("decoding_speed_tps")) {
-                                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
-                                                 << usage["decoding_speed_tps"].get<double>() << std::endl;
-                                    }
-                                    
-                                    std::cout << "=================" << std::endl;
-                                } else if (last_chunk_with_usage.contains("timings")) {
-                                    auto timings = last_chunk_with_usage["timings"];
-                                    std::cout << "\n=== Telemetry ===" << std::endl;
-                                    if (timings.contains("prompt_n")) {
-                                        std::cout << "Input tokens:  " << timings["prompt_n"] << std::endl;
-                                    }
-                                    if (timings.contains("predicted_n")) {
-                                        std::cout << "Output tokens: " << timings["predicted_n"] << std::endl;
-                                    }
-                                    if (timings.contains("prompt_ms")) {
-                                        double ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                                        std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3) 
-                                                 << ttft_seconds << std::endl;
-                                    }
-                                    if (timings.contains("predicted_per_second")) {
-                                        std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
-                                                 << timings["predicted_per_second"].get<double>() << std::endl;
-                                    }
-                                    std::cout << "=================" << std::endl;
-                                }
-                            }
-                        } catch (const std::exception& e) {
-                            // Telemetry parsing is optional, don't error on failure
-                        }
-                        
-                        // Return false to signal "no more data" and stop the provider from being called again
+                        // Return false to indicate we're done streaming
                         return false;
                     }
                 );

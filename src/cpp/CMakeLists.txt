@@ -8,7 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Platform-specific configurations
 if(WIN32)
     set(EXECUTABLE_NAME "lemonade")
-    add_compile_definitions(_WIN32_WINNT=0x0601)
+    # Set Windows target version to Windows 10 for cpp-httplib v0.26.0
+    add_compile_definitions(_WIN32_WINNT=0x0A00)
 else()
     set(EXECUTABLE_NAME "lemonade")
 endif()
@@ -29,7 +30,7 @@ set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
 # cpp-httplib (MIT License)
 FetchContent_Declare(httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG v0.14.0
+    GIT_TAG v0.26.0
 )
 
 # nlohmann/json (MIT License)
@@ -82,6 +83,7 @@ set(SOURCES
     src/cli_parser.cpp
     src/model_manager.cpp
     src/wrapped_server.cpp
+    src/streaming_proxy.cpp
     src/utils/http_client.cpp
     src/utils/json_utils.cpp
     src/utils/process_manager.cpp
