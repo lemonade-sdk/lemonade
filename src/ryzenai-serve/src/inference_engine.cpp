@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <cstdlib>
 
 namespace ryzenai {
@@ -76,6 +77,70 @@ InferenceEngine::InferenceEngine(const std::string& model_path, const std::strin
 
 InferenceEngine::~InferenceEngine() {
     std::cout << "[InferenceEngine] Shutting down" << std::endl;
+}
+
+std::string InferenceEngine::applyChatTemplate(const std::string& messages_json) {
+    // Parse messages
+    json messages = json::parse(messages_json);
+    std::ostringstream prompt;
+    
+    // Check if we have a Qwen-style chat template (contains <|im_start|>)
+    bool is_qwen_style = !chat_template_.empty() && 
+                         (chat_template_.find("<|im_start|>") != std::string::npos ||
+                          chat_template_.find("\\u003c|im_start|\\u003e") != std::string::npos);
+    
+    if (is_qwen_style) {
+        // Use Qwen/ChatML format: <|im_start|>role\ncontent<|im_end|>\n
+        for (const auto& msg : messages) {
+            std::string role = msg.value("role", "user");
+            std::string content = msg.value("content", "");
+            
+            prompt << "<|im_start|>" << role << "\n"
+                   << content << "<|im_end|>\n";
+        }
+        
+        // Add generation prompt for assistant
+        prompt << "<|im_start|>assistant\n";
+        
+        std::cout << "[InferenceEngine] Applied Qwen/ChatML template" << std::endl;
+    } else {
+        // Try using the OGA's built-in chat template
+        try {
+            const char* template_str = chat_template_.empty() ? nullptr : chat_template_.c_str();
+            
+            auto result = tokenizer_->ApplyChatTemplate(
+                template_str,
+                messages_json.c_str(),
+                nullptr,
+                true
+            );
+            
+            return std::string(result);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[WARNING] OGA chat template failed: " << e.what() << std::endl;
+            std::cerr << "[WARNING] Using simple fallback template" << std::endl;
+            
+            // Simple fallback template
+            prompt.str("");  // Clear
+            for (const auto& msg : messages) {
+                std::string role = msg.value("role", "user");
+                std::string content = msg.value("content", "");
+                
+                if (role == "system") {
+                    prompt << "System: " << content << "\n\n";
+                } else if (role == "user") {
+                    prompt << "User: " << content << "\n\n";
+                } else if (role == "assistant") {
+                    prompt << "Assistant: " << content << "\n\n";
+                }
+            }
+            
+            prompt << "Assistant: ";
+        }
+    }
+    
+    return prompt.str();
 }
 
 std::string InferenceEngine::resolveModelPath(const std::string& path) {
@@ -187,6 +252,21 @@ void InferenceEngine::loadModel() {
         
         // Create tokenizer using factory method
         tokenizer_ = OgaTokenizer::Create(*model_);
+        
+        // Load chat template from tokenizer_config.json
+        std::string tokenizer_config_path = model_path_ + "/tokenizer_config.json";
+        if (fs::exists(tokenizer_config_path)) {
+            try {
+                std::ifstream file(tokenizer_config_path);
+                json config = json::parse(file);
+                if (config.contains("chat_template") && config["chat_template"].is_string()) {
+                    chat_template_ = config["chat_template"];
+                    std::cout << "[InferenceEngine] Loaded chat template from tokenizer_config.json" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[WARNING] Failed to load chat template: " << e.what() << std::endl;
+            }
+        }
         
         std::cout << "[InferenceEngine] Model and tokenizer loaded successfully" << std::endl;
         

@@ -28,6 +28,9 @@ public:
                        const GenerationParams& params,
                        StreamCallback callback);
     
+    // Apply chat template to messages
+    std::string applyChatTemplate(const std::string& messages_json);
+    
     // Getters
     std::string getModelName() const { return model_name_; }
     std::string getExecutionMode() const { return execution_mode_; }
@@ -50,6 +53,7 @@ private:
     std::string model_name_;
     std::string execution_mode_;  // "npu", "hybrid", or "auto"
     std::string ryzenai_version_;
+    std::string chat_template_;  // Chat template from tokenizer_config.json
     int max_prompt_length_ = 2048;  // Default, overridden by rai_config.json
     
     std::mutex inference_mutex_;  // Protect inference operations

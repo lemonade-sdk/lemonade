@@ -265,8 +265,17 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             return;
         }
         
-        // Convert chat messages to prompt
-        std::string prompt = chat_req.toPrompt();
+        // Convert messages to JSON array for chat template
+        json messages_array = json::array();
+        for (const auto& msg : chat_req.messages) {
+            messages_array.push_back({
+                {"role", msg.role},
+                {"content", msg.content}
+            });
+        }
+        
+        // Apply the model's chat template
+        std::string prompt = inference_engine_->applyChatTemplate(messages_array.dump());
         
         std::cout << "[Server] Chat completion request (stream=" << chat_req.stream << ")" << std::endl;
         
