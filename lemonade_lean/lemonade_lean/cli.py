@@ -17,9 +17,11 @@ def main():
     serve_parser = subparsers.add_parser("serve", help="Start the server")
     serve_parser.add_argument(
         "--model",
-        required=True,
+        required=False,
+        default=None,
         help="Path to GGUF model file, HuggingFace repo ID (e.g., unsloth/Qwen3-0.6B-GGUF), "
-        "or repo:file format (e.g., unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf)",
+        "or repo:file format (e.g., unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf). "
+        "If not specified, model will be loaded on first request.",
     )
     serve_parser.add_argument(
         "--port", type=int, default=8000, help="Port to serve on (default: 8000)"
@@ -59,7 +61,10 @@ def main():
         from lemonade_lean.server import LemonadeServer
 
         logging.info("Starting Lemonade Lean Server...")
-        logging.info(f"Model: {args.model}")
+        if args.model:
+            logging.info(f"Model: {args.model}")
+        else:
+            logging.info("Model: Will be loaded on first request")
         logging.info(f"Server: http://{args.host}:{args.port}")
 
         server = LemonadeServer(

@@ -23,7 +23,7 @@ class LemonadeServer:
 
     def __init__(
         self,
-        model_path: str,
+        model_path: Optional[str] = None,
         port: int = 8000,
         host: str = "localhost",
         ctx_size: int = 4096,
@@ -33,6 +33,7 @@ class LemonadeServer:
         self.host = host
         self.ctx_size = ctx_size
         self.llama_wrapper: Optional[LlamaServerWrapper] = None
+        self._model_loading = False  # Flag to prevent concurrent loading
 
         # Create FastAPI app
         self.app = FastAPI(title="Lemonade Lean Server")
@@ -49,18 +50,51 @@ class LemonadeServer:
         # Setup routes
         self._setup_routes()
 
+    def _load_model(self, model_path: Optional[str] = None):
+        """Load the model (either provided path or default)."""
+        if self.llama_wrapper:
+            logging.info("Model already loaded")
+            return
+
+        if self._model_loading:
+            raise HTTPException(status_code=503, detail="Model is currently loading")
+
+        self._model_loading = True
+        try:
+            # Use provided model_path or fall back to instance model_path
+            path_to_load = model_path or self.model_path
+
+            if not path_to_load:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No model specified. Please provide a model path.",
+                )
+
+            logging.info(f"Loading model: {path_to_load}")
+            self.llama_wrapper = LlamaServerWrapper(
+                path_to_load, port=self.port, ctx_size=self.ctx_size
+            )
+            self.llama_wrapper.start()
+            self.model_path = path_to_load  # Update instance model path
+            logging.info("Model loaded successfully")
+        finally:
+            self._model_loading = False
+
     def _setup_routes(self):
         """Setup API routes."""
 
         @self.app.on_event("startup")
         async def startup():
-            """Start llama-server on startup."""
-            logging.info(f"Loading model: {self.model_path}")
-            self.llama_wrapper = LlamaServerWrapper(
-                self.model_path, port=self.port, ctx_size=self.ctx_size
-            )
-            self.llama_wrapper.start()
-            logging.info("Model loaded successfully")
+            """Start llama-server on startup if model is provided."""
+            if self.model_path:
+                logging.info(f"Loading model: {self.model_path}")
+                self.llama_wrapper = LlamaServerWrapper(
+                    self.model_path, port=self.port, ctx_size=self.ctx_size
+                )
+                self.llama_wrapper.start()
+                logging.info("Model loaded successfully")
+            else:
+                logging.info("No model specified - will load on first request")
 
         @self.app.on_event("shutdown")
         async def shutdown():
@@ -72,8 +106,12 @@ class LemonadeServer:
         @self.app.get("/health")
         async def health():
             """Health check."""
+            status = "ok"
+            if self._model_loading:
+                status = "loading"
+
             return HealthResponse(
-                status="ok",
+                status=status,
                 model_loaded=self.model_path if self.llama_wrapper else None,
             )
 
@@ -92,9 +130,11 @@ class LemonadeServer:
         @self.app.post("/chat/completions")
         async def chat_completions(request: ChatCompletionRequest):
             """Chat completions endpoint."""
-            # Ensure model is loaded
+            # Lazy load model if not already loaded
             if not self.llama_wrapper:
-                raise HTTPException(status_code=503, detail="Model not loaded")
+                # Try to load model using the request's model field or default
+                model_to_load = getattr(request, "model", None) or self.model_path
+                self._load_model(model_to_load)
 
             # Verify llama-server is still running
             if not self.llama_wrapper.is_alive():
@@ -135,9 +175,11 @@ class LemonadeServer:
         @self.app.post("/completions")
         async def completions(request: CompletionRequest):
             """Text completions endpoint."""
-            # Ensure model is loaded
+            # Lazy load model if not already loaded
             if not self.llama_wrapper:
-                raise HTTPException(status_code=503, detail="Model not loaded")
+                # Try to load model using the request's model field or default
+                model_to_load = getattr(request, "model", None) or self.model_path
+                self._load_model(model_to_load)
 
             # Verify llama-server is still running
             if not self.llama_wrapper.is_alive():
