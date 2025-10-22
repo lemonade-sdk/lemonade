@@ -1,0 +1,59 @@
+#pragma once
+
+#include "types.h"
+#include <string>
+#include <vector>
+#include <memory>
+#include <mutex>
+
+// Forward declarations for ONNX Runtime GenAI
+struct OgaModel;
+struct OgaTokenizer;
+struct OgaGeneratorParams;
+struct OgaGenerator;
+struct OgaSequences;
+
+namespace ryzenai {
+
+class InferenceEngine {
+public:
+    InferenceEngine(const std::string& model_path, const std::string& mode);
+    ~InferenceEngine();
+    
+    // Synchronous completion
+    std::string complete(const std::string& prompt, const GenerationParams& params);
+    
+    // Streaming completion
+    void streamComplete(const std::string& prompt, 
+                       const GenerationParams& params,
+                       StreamCallback callback);
+    
+    // Getters
+    std::string getModelName() const { return model_name_; }
+    std::string getExecutionMode() const { return execution_mode_; }
+    int getMaxPromptLength() const { return max_prompt_length_; }
+    std::string getRyzenAIVersion() const { return ryzenai_version_; }
+    
+private:
+    void loadModel();
+    void setupExecutionProvider();
+    void loadRaiConfig();
+    std::string detectRyzenAIVersion();
+    std::string resolveModelPath(const std::string& path);
+    std::vector<int32_t> truncatePrompt(const std::vector<int32_t>& input_ids);
+    bool validateModelDirectory(const std::string& path);
+    
+    std::unique_ptr<OgaModel> model_;
+    std::unique_ptr<OgaTokenizer> tokenizer_;
+    
+    std::string model_path_;
+    std::string model_name_;
+    std::string execution_mode_;  // "npu", "hybrid", or "auto"
+    std::string ryzenai_version_;
+    int max_prompt_length_ = 2048;  // Default, overridden by rai_config.json
+    
+    std::mutex inference_mutex_;  // Protect inference operations
+};
+
+} // namespace ryzenai
+
