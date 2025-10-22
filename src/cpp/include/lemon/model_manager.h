@@ -73,6 +73,9 @@ private:
     void download_from_huggingface(const std::string& repo_id, 
                                    const std::string& variant = "");
     
+    // Download from FLM
+    void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);
+    
     json server_models_;
     json user_models_;
 };

@@ -1,11 +1,14 @@
 #include <lemon/model_manager.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
+#include <lemon/utils/process_manager.h>
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
 #include <cstdlib>
 #include <sstream>
+#include <thread>
+#include <chrono>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -449,8 +452,12 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
     
-    // Download using Hugging Face API
-    download_from_huggingface(repo_id, variant);
+    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    if (actual_recipe == "flm") {
+        download_from_flm(actual_checkpoint, do_not_upgrade);
+    } else {
+        download_from_huggingface(repo_id, variant);
+    }
     
     // Register if needed
     if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
@@ -567,6 +574,64 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         std::cerr << "Error downloading model: " << e.what() << std::endl;
         throw;
     }
+}
+
+void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_upgrade) {
+    std::cout << "[ModelManager] Pulling FLM model: " << checkpoint << std::endl;
+    
+    // Find flm executable
+    std::string flm_path;
+#ifdef _WIN32
+    // On Windows, check if flm.exe is in PATH
+    flm_path = "flm";
+#else
+    // On Unix, check if flm is in PATH
+    flm_path = "flm";
+#endif
+    
+    // Prepare arguments
+    std::vector<std::string> args = {"pull", checkpoint};
+    if (!do_not_upgrade) {
+        args.push_back("--force");
+    }
+    
+    std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
+    for (const auto& arg : args) {
+        std::cout << " \"" << arg << "\"";
+    }
+    std::cout << std::endl;
+    
+    // Run flm pull command
+    auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
+    
+    // Wait for download to complete
+    if (!utils::ProcessManager::is_running(handle)) {
+        int exit_code = utils::ProcessManager::get_exit_code(handle);
+        std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
+        throw std::runtime_error("FLM pull failed");
+    }
+    
+    // Wait for process to complete
+    int timeout_seconds = 300; // 5 minutes
+    std::cout << "[ModelManager] Waiting for FLM model download to complete..." << std::endl;
+    for (int i = 0; i < timeout_seconds * 10; ++i) {
+        if (!utils::ProcessManager::is_running(handle)) {
+            int exit_code = utils::ProcessManager::get_exit_code(handle);
+            if (exit_code != 0) {
+                std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
+                throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // Print progress every 5 seconds
+        if (i % 50 == 0 && i > 0) {
+            std::cout << "[ModelManager] Still downloading... (" << (i/10) << "s elapsed)" << std::endl;
+        }
+    }
+    
+    std::cout << "[ModelManager] FLM model pull completed successfully" << std::endl;
 }
 
 void ModelManager::delete_model(const std::string& model_name) {
