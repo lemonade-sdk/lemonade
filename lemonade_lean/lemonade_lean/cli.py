@@ -39,7 +39,7 @@ def main():
 
     # List models command
     list_parser = subparsers.add_parser(
-        "list-models", help="List GGUF models in HuggingFace cache"
+        "list", help="List GGUF models in HuggingFace cache"
     )
     list_parser.add_argument(
         "--cache-dir",
@@ -75,7 +75,7 @@ def main():
             logging.info("Server stopped by user")
             sys.exit(0)
 
-    elif args.command == "list-models":
+    elif args.command == "list":
         from lemonade_lean.hf_cache import (
             find_gguf_models,
             get_hf_cache_dir,
