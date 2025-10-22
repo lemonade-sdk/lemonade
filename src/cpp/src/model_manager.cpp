@@ -173,6 +173,25 @@ static bool is_flm_available() {
 #endif
 }
 
+static bool is_ryzenai_available() {
+#ifdef _WIN32
+    // Check if ryzenai-serve.exe is in PATH or in the ryzenai-serve build directory
+    if (system("where ryzenai-serve > nul 2>&1") == 0) {
+        return true;
+    }
+    
+    // Check in relative path (from src/cpp/build/Release to src/ryzenai-serve/build/bin/Release)
+    std::string relative_path = "../../../ryzenai-serve/build/bin/Release/ryzenai-serve.exe";
+    if (std::filesystem::exists(relative_path)) {
+        return true;
+    }
+    
+    return false;
+#else
+    return system("which ryzenai-serve > /dev/null 2>&1") == 0;
+#endif
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
@@ -189,6 +208,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool flm_exe_available = is_flm_available();
     bool npu_hw_available = is_npu_available();
     bool flm_available = flm_exe_available && npu_hw_available;
+    bool ryzenai_available = is_ryzenai_available();
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
@@ -197,22 +217,30 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::cout << "  - FLM executable: " << (flm_exe_available ? "Yes" : "No") << std::endl;
         std::cout << "  - NPU hardware: " << (npu_hw_available ? "Yes" : "No") << std::endl;
         std::cout << "  - FLM support: " << (flm_available ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "  - RyzenAI-Serve: " << (ryzenai_available ? "Yes" : "No") << std::endl;
         debug_printed = true;
     }
     
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
         
-        // Filter out OGA models (not implemented in C++)
-        if (recipe.find("oga-") == 0) {
-            continue;
-        }
-        
         // Filter FLM models based on availability
         if (recipe == "flm") {
             if (!flm_available) {
                 continue;
             }
+        }
+        
+        // Filter RyzenAI (OGA) models based on availability
+        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
+            if (!ryzenai_available) {
+                continue;
+            }
+        }
+        
+        // Filter out other OGA models (not yet implemented)
+        if (recipe == "oga-cpu" || recipe == "oga-igpu") {
+            continue;
         }
         
         // On macOS, only show llamacpp models

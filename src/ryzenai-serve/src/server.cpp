@@ -170,8 +170,13 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                     
                     try {
                         int token_count = 0;
+                        bool client_disconnected = false;
                         inference_engine_->streamComplete(comp_req.prompt, params, 
-                            [&sink, &token_count, this](const std::string& token, bool is_final) {
+                            [&sink, &token_count, &client_disconnected, this](const std::string& token, bool is_final) {
+                                if (client_disconnected) {
+                                    return;  // Skip this token
+                                }
+                                
                                 json chunk = {
                                     {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
                                     {"object", "text_completion.chunk"},
@@ -185,13 +190,18 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                                 };
                                 
                                 std::string data = "data: " + chunk.dump() + "\n\n";
-                                sink.write(data.c_str(), data.size());
+                                if (!sink.write(data.c_str(), data.size())) {
+                                    client_disconnected = true;
+                                    std::cerr << "[Server] Client disconnected during streaming" << std::endl;
+                                    return;  // Skip remaining tokens
+                                }
                                 token_count++;
                             }
                         );
                         
                         // Send final done message
                         sink.write("data: [DONE]\n\n", 14);
+                        sink.done();  // Signal that we're done streaming
                         std::cout << "[Server] [OK] Streamed " << token_count << " tokens" << std::endl;
                         
                     } catch (const std::exception& e) {
@@ -199,6 +209,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                         json error_chunk = createErrorResponse(e.what(), "inference_error");
                         std::string error_data = "data: " + error_chunk.dump() + "\n\n";
                         sink.write(error_data.c_str(), error_data.size());
+                        sink.done();  // Signal completion even on error
                     }
                     
                     return false;
@@ -299,28 +310,52 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                     
                     try {
                         int token_count = 0;
+                        bool client_disconnected = false;
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, &token_count, this](const std::string& token, bool is_final) {
-                                json chunk = {
-                                    {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
-                                    {"object", "chat.completion.chunk"},
-                                    {"created", std::time(nullptr)},
-                                    {"model", model_id_},
-                                    {"choices", {{
-                                        {"index", 0},
-                                        {"delta", {{"content", token}}},
-                                        {"finish_reason", is_final ? "stop" : nullptr}
-                                    }}}
-                                };
-                                
-                                std::string data = "data: " + chunk.dump() + "\n\n";
-                                sink.write(data.c_str(), data.size());
-                                token_count++;
+                            [&sink, &token_count, &client_disconnected, this](const std::string& token, bool is_final) {
+                                try {
+                                    std::cout << "[Server] Callback entered, token: '" << token << "'" << std::endl;
+                                    if (client_disconnected) {
+                                        std::cout << "[Server] Client disconnected, skipping token" << std::endl;
+                                        return;  // Skip this token
+                                    }
+                                    
+                                    std::cout << "[Server] Creating JSON chunk..." << std::endl;
+                                    json chunk = {
+                                        {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
+                                        {"object", "chat.completion.chunk"},
+                                        {"created", std::time(nullptr)},
+                                        {"model", model_id_},
+                                        {"choices", {{
+                                            {"index", 0},
+                                            {"delta", {{"content", token}}},
+                                            {"finish_reason", is_final ? "stop" : nullptr}
+                                        }}}
+                                    };
+                                    
+                                    std::cout << "[Server] Dumping JSON..." << std::endl;
+                                    std::string data = "data: " + chunk.dump() + "\n\n";
+                                    std::cout << "[Server] About to write to sink: " << data.size() << " bytes" << std::endl;
+                                    if (!sink.write(data.c_str(), data.size())) {
+                                        client_disconnected = true;
+                                        std::cerr << "[Server] Client disconnected during streaming" << std::endl;
+                                        return;  // Skip remaining tokens
+                                    }
+                                    std::cout << "[Server] Sink write successful" << std::endl;
+                                    token_count++;
+                                } catch (const std::exception& e) {
+                                    std::cerr << "[Server ERROR] Exception in callback: " << e.what() << std::endl;
+                                    client_disconnected = true;
+                                } catch (...) {
+                                    std::cerr << "[Server ERROR] Unknown exception in callback" << std::endl;
+                                    client_disconnected = true;
+                                }
                             }
                         );
                         
                         // Send final done message
                         sink.write("data: [DONE]\n\n", 14);
+                        sink.done();  // Signal that we're done streaming
                         std::cout << "[Server] [OK] Streamed " << token_count << " tokens" << std::endl;
                         
                     } catch (const std::exception& e) {
@@ -328,6 +363,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                         json error_chunk = createErrorResponse(e.what(), "inference_error");
                         std::string error_data = "data: " + error_chunk.dump() + "\n\n";
                         sink.write(error_data.c_str(), error_data.size());
+                        sink.done();  // Signal completion even on error
                     }
                     
                     return false;

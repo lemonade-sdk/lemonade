@@ -89,6 +89,7 @@ set(SOURCES
     src/utils/process_manager.cpp
     src/backends/llamacpp_server.cpp
     src/backends/fastflowlm_server.cpp
+    src/backends/ryzenaiserver.cpp
 )
 
 # Create executable
