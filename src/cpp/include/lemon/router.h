@@ -51,6 +51,7 @@ private:
     std::string loaded_model_;
     std::string loaded_checkpoint_;
     std::string loaded_recipe_;
+    bool unload_called_ = false;  // Track if unload has been called
     
     int ctx_size_;
     std::string llamacpp_backend_;

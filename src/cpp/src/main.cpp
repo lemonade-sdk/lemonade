@@ -99,7 +99,7 @@ std::pair<int, int> get_server_info() {
 
 // Helper: Check if server is running
 bool is_server_running(const std::string& host, int port) {
-    std::string url = "http://" + host + ":" + std::to_string(port) + "/health";
+    std::string url = "http://" + host + ":" + std::to_string(port) + "/api/v1/health";
     return HttpClient::is_reachable(url, 2);
 }
 

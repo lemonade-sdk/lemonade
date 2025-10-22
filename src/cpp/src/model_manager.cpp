@@ -50,8 +50,10 @@ json ModelManager::load_server_models() {
         std::string models_path = "resources/server_models.json";
         return JsonUtils::load_from_file(models_path);
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Could not load server_models.json: " << e.what() << std::endl;
-        return json::object();
+        std::cerr << "ERROR: Failed to load server_models.json: " << e.what() << std::endl;
+        std::cerr << "This is a critical file required for the application to run." << std::endl;
+        std::cerr << "Make sure you are running from the correct directory or rebuild the project." << std::endl;
+        throw std::runtime_error("Failed to load server_models.json");
     }
 }
 

@@ -1,5 +1,10 @@
 #pragma once
 
+// CRITICAL: Define thread pool count BEFORE including httplib.h
+#ifndef CPPHTTPLIB_THREAD_POOL_COUNT
+#define CPPHTTPLIB_THREAD_POOL_COUNT 8
+#endif
+
 #include <string>
 #include <memory>
 #include <httplib.h>

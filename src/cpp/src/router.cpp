@@ -10,7 +10,10 @@ Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::str
 }
 
 Router::~Router() {
-    if (wrapped_server_) {
+    // Only unload if it hasn't been explicitly unloaded already
+    // (Server::stop() calls unload_model() explicitly for graceful shutdown)
+    if (wrapped_server_ && !unload_called_) {
+        std::cout << "[Router] Destructor: unloading model" << std::endl;
         unload_model();
     }
 }
@@ -44,6 +47,7 @@ void Router::load_model(const std::string& model_name,
         loaded_model_ = model_name;
         loaded_checkpoint_ = checkpoint;
         loaded_recipe_ = recipe;
+        unload_called_ = false;  // Reset unload flag for newly loaded model
         
         std::cout << "[Router] Model loaded successfully" << std::endl;
     } catch (const std::exception& e) {
@@ -56,12 +60,20 @@ void Router::load_model(const std::string& model_name,
 }
 
 void Router::unload_model() {
-    if (wrapped_server_) {
+    std::cout << "[Router] Unload model called" << std::endl;
+    if (wrapped_server_ && !unload_called_) {
+        std::cout << "[Router] Calling wrapped_server->unload()" << std::endl;
         wrapped_server_->unload();
         wrapped_server_.reset();
         loaded_model_.clear();
         loaded_checkpoint_.clear();
         loaded_recipe_.clear();
+        unload_called_ = true;  // Mark as unloaded
+        std::cout << "[Router] Wrapped server cleaned up" << std::endl;
+    } else if (unload_called_) {
+        std::cout << "[Router] Model already unloaded (skipping)" << std::endl;
+    } else {
+        std::cout << "[Router] No wrapped server to unload" << std::endl;
     }
 }
 

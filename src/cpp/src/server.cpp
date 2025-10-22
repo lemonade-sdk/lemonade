@@ -18,6 +18,16 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
       tray_(tray), llamacpp_backend_(llamacpp_backend), running_(false) {
     
     http_server_ = std::make_unique<httplib::Server>();
+    
+    // CRITICAL: Enable multi-threading so the server can handle concurrent requests
+    // Without this, the server is single-threaded and blocks on long operations
+    http_server_->new_task_queue = [] { 
+        std::cout << "[Server DEBUG] Creating new thread pool with 8 threads" << std::endl;
+        return new httplib::ThreadPool(8);
+    };
+    
+    std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
+    
     model_manager_ = std::make_unique<ModelManager>();
     router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level);
     
@@ -33,11 +43,27 @@ Server::~Server() {
 }
 
 void Server::setup_routes() {
+    // Add pre-routing handler to log ALL incoming requests
+    http_server_->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
+        std::cout.flush();
+        
+        // Special handling for POST /api/v1/unload with no body
+        // cpp-httplib might reject POST requests without Content-Type, so handle it here
+        if (req.method == "POST" && req.path == "/api/v1/unload") {
+            std::cout << "[Server PRE-ROUTE] Handling unload in pre-routing" << std::endl;
+            handle_unload(req, res);
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+    
     // Setup CORS for all routes
     setup_cors();
     
     // Health check
-    http_server_->Get("/health", [this](const httplib::Request& req, httplib::Response& res) {
+    http_server_->Get("/api/v1/health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
     });
     
@@ -81,9 +107,7 @@ void Server::setup_routes() {
         handle_load(req, res);
     });
     
-    http_server_->Post("/api/v1/unload", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_unload(req, res);
-    });
+    // Unload endpoint is handled in pre-routing handler to work around cpp-httplib POST validation
     
     http_server_->Post("/api/v1/delete", [this](const httplib::Request& req, httplib::Response& res) {
         handle_delete(req, res);
@@ -111,6 +135,12 @@ void Server::setup_routes() {
         handle_shutdown(req, res);
     });
     
+    // Test endpoint to verify POST works
+    http_server_->Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
+        std::cout << "[Server] TEST POST endpoint hit!" << std::endl;
+        res.set_content("{\"test\": \"ok\"}", "application/json");
+    });
+    
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
@@ -130,10 +160,48 @@ void Server::setup_cors() {
     http_server_->Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.status = 204;
     });
+    
+    // Catch-all error handler - must be last!
+    http_server_->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
+        std::cerr << "[Server] Error " << res.status << ": " << req.method << " " << req.path << std::endl;
+        
+        if (res.status == 404) {
+            nlohmann::json error = {
+                {"error", {
+                    {"message", "The requested endpoint does not exist"},
+                    {"type", "not_found"},
+                    {"path", req.path}
+                }}
+            };
+            res.set_content(error.dump(), "application/json");
+        } else if (res.status == 400) {
+            // Log more details about 400 errors
+            std::cerr << "[Server] 400 Bad Request details - Body length: " << req.body.length() 
+                      << ", Content-Type: " << req.get_header_value("Content-Type") << std::endl;
+            // Ensure a response is sent
+            if (res.body.empty()) {
+                nlohmann::json error = {
+                    {"error", {
+                        {"message", "Bad request"},
+                        {"type", "bad_request"}
+                    }}
+                };
+                res.set_content(error.dump(), "application/json");
+            }
+        }
+    });
 }
 
 void Server::run() {
-    std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
+    // Display user-friendly address
+    std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
+    std::cout << "[Server] Starting on " << display_host << ":" << port_ << std::endl;
+    
+    // Add request logging for ALL requests
+    http_server_->set_logger([](const httplib::Request& req, const httplib::Response& res) {
+        std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+    });
+    
     running_ = true;
     http_server_->listen(host_, port_);
 }
@@ -155,10 +223,27 @@ bool Server::is_running() const {
 }
 
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
-    res.set_content("{\"status\": \"ok\"}", "application/json");
+    auto thread_id = std::this_thread::get_id();
+    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
+    std::cout.flush();
+    
+    nlohmann::json response = {{"status", "ok"}};
+    
+    // Add model loaded information like Python implementation
+    std::string loaded_checkpoint = router_->get_loaded_checkpoint();
+    std::string loaded_model = router_->get_loaded_model();
+    
+    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : loaded_checkpoint;
+    response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : loaded_model;
+    
+    res.set_content(response.dump(), "application/json");
+    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: " << thread_id << ") =====" << std::endl;
+    std::cout.flush();
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
+    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====" << std::endl;
+    std::cout.flush();
     auto all_models = model_manager_->get_supported_models();
     
     // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
@@ -194,6 +279,8 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     }
     
     res.set_content(response.dump(), "application/json");
+    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====" << std::endl;
+    std::cout.flush();
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
@@ -218,31 +305,42 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Auto-load model if specified and not loaded
-        if (!router_->is_model_loaded() && request_json.contains("model")) {
-            std::string model_name = request_json["model"];
-            std::cout << "[Server] No model loaded, auto-loading: " << model_name << std::endl;
+        // Handle model loading/switching
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            std::string loaded_model = router_->get_loaded_model();
             
-            // Get model info
-            if (!model_manager_->model_exists(model_name)) {
-                std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
-                res.status = 404;
-                res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                return;
+            // Check if we need to switch models
+            if (loaded_model != requested_model) {
+                // Unload current model if one is loaded
+                if (router_->is_model_loaded()) {
+                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+                    router_->unload_model();
+                } else {
+                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+                }
+                
+                // Get model info
+                if (!model_manager_->model_exists(requested_model)) {
+                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
+                    res.status = 404;
+                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                    return;
+                }
+                
+                auto info = model_manager_->get_model_info(requested_model);
+                
+                // Auto-download if not cached (only for non-FLM models)
+                // FLM models are downloaded by FastFlowLMServer using 'flm pull'
+                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
+                    model_manager_->download_model(requested_model);
+                }
+                
+                // Load the requested model (will auto-download FLM models if needed)
+                router_->load_model(requested_model, info.checkpoint, info.recipe);
+                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
-            
-            auto info = model_manager_->get_model_info(model_name);
-            
-            // Auto-download if not cached (only for non-FLM models)
-            // FLM models are downloaded by FastFlowLMServer using 'flm pull'
-            if (info.recipe != "flm" && !model_manager_->is_model_downloaded(model_name)) {
-                std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                model_manager_->download_model(model_name);
-            }
-            
-            // Load the model (will auto-download FLM models if needed)
-            router_->load_model(model_name, info.checkpoint, info.recipe);
-            std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -562,11 +660,30 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 }
 
 void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
+    auto thread_id = std::this_thread::get_id();
+    std::cout << "[Server DEBUG] ===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
+    std::cout.flush();
     try {
         auto request_json = nlohmann::json::parse(req.body);
         std::string model_name = request_json["model_name"];
         
         std::cout << "[Server] Loading model: " << model_name << std::endl;
+        
+        // Check if a different model is already loaded
+        std::string loaded_model = router_->get_loaded_model();
+        if (!loaded_model.empty() && loaded_model != model_name) {
+            std::cout << "[Server] Unloading current model: " << loaded_model << std::endl;
+            router_->unload_model();
+        } else if (loaded_model == model_name) {
+            std::cout << "[Server] Model already loaded: " << model_name << std::endl;
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"message", "Model already loaded"}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
         
         // Look up model info from registry if not provided
         std::string checkpoint = request_json.value("checkpoint", "");
@@ -616,10 +733,22 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
 void Server::handle_unload(const httplib::Request& req, httplib::Response& res) {
     try {
+        std::cout << "[Server] Unload request received" << std::endl;
+        std::cout << "[Server] Request method: " << req.method << ", body length: " << req.body.length() << std::endl;
+        std::cout << "[Server] Content-Type: " << req.get_header_value("Content-Type") << std::endl;
+        
+        // Unload doesn't need any request body
         router_->unload_model();
-        nlohmann::json response = {{"status", "success"}};
+        
+        std::cout << "[Server] Model unloaded successfully" << std::endl;
+        nlohmann::json response = {
+            {"status", "success"},
+            {"message", "Model unloaded successfully"}
+        };
+        res.status = 200; // Explicitly set success status first
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
+        std::cerr << "[Server ERROR] Unload failed: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");

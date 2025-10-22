@@ -38,7 +38,7 @@ void CLIParser::setup_serve_command() {
         ->default_val(8000);
     
     serve->add_option("--host", serve_config_.host, "Address to bind for connections")
-        ->default_val("localhost");
+        ->default_val("0.0.0.0");
     
     serve->add_option("--log-level", serve_config_.log_level, "Log level for the server")
         ->check(CLI::IsMember({"critical", "error", "warning", "info", "debug", "trace"}))

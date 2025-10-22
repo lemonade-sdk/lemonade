@@ -13,6 +13,10 @@ else()
     set(EXECUTABLE_NAME "lemonade")
 endif()
 
+# Enable cpp-httplib thread pool with 8 threads
+# This MUST be defined before including httplib.h
+add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
+
 # Dependencies
 include(FetchContent)
 
@@ -101,11 +105,19 @@ if(WIN32)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE ws2_32 wsock32)
 endif()
 
-# Copy resources at build time
+# Copy resources at build time to both the build directory and the Release directory
 file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade/tools/server/static
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
+
+# Also copy to Release and Debug directories for Visual Studio multi-config
+add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_BINARY_DIR}/resources
+        $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/resources
+    COMMENT "Copying resources to output directory"
+)
 
 # Installation
 install(TARGETS ${EXECUTABLE_NAME}
