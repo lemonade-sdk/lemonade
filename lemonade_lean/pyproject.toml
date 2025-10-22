@@ -16,5 +16,5 @@ dependencies = [
 ]
 
 [project.scripts]
-lemonade-server = "lemonade_lean.cli:main"
+ls-lean = "lemonade_lean.cli:main"
 

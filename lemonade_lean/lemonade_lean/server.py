@@ -90,8 +90,15 @@ class LemonadeServer:
         @self.app.post("/chat/completions")
         async def chat_completions(request: ChatCompletionRequest):
             """Chat completions endpoint."""
+            # Ensure model is loaded
             if not self.llama_wrapper:
                 raise HTTPException(status_code=503, detail="Model not loaded")
+
+            # Verify llama-server is still running
+            if not self.llama_wrapper.is_alive():
+                raise HTTPException(
+                    status_code=503, detail="Model server process has stopped"
+                )
 
             # Convert to llama.cpp format
             llama_request = {
@@ -126,8 +133,15 @@ class LemonadeServer:
         @self.app.post("/completions")
         async def completions(request: CompletionRequest):
             """Text completions endpoint."""
+            # Ensure model is loaded
             if not self.llama_wrapper:
                 raise HTTPException(status_code=503, detail="Model not loaded")
+
+            # Verify llama-server is still running
+            if not self.llama_wrapper.is_alive():
+                raise HTTPException(
+                    status_code=503, detail="Model server process has stopped"
+                )
 
             # Convert to llama.cpp format
             llama_request = {

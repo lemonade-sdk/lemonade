@@ -7,6 +7,8 @@ import logging
 import requests
 from typing import Optional
 
+from lemonade_lean.download import ensure_llama_server
+
 
 class LlamaServerWrapper:
     """Manages llama-server subprocess."""
@@ -20,14 +22,8 @@ class LlamaServerWrapper:
 
     def start(self):
         """Start llama-server subprocess."""
-        # Check if llama-server is available
-        llama_server_path = self._find_llama_server()
-
-        if not llama_server_path:
-            raise RuntimeError(
-                "llama-server not found. Please install llama.cpp and ensure "
-                "llama-server is in your PATH or set LLAMA_SERVER_PATH environment variable."
-            )
+        # Ensure llama-server is available (download if needed)
+        llama_server_path = ensure_llama_server()
 
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Model file not found: {self.model_path}")
@@ -56,37 +52,6 @@ class LlamaServerWrapper:
         # Wait for server to be ready
         self._wait_for_ready()
 
-    def _find_llama_server(self) -> Optional[str]:
-        """Find llama-server executable."""
-        # Check environment variable
-        if "LLAMA_SERVER_PATH" in os.environ:
-            path = os.environ["LLAMA_SERVER_PATH"]
-            if os.path.exists(path):
-                return path
-
-        # Check common locations
-        common_paths = [
-            "llama-server",
-            "llama-server.exe",
-            "./llama-server",
-            "./llama-server.exe",
-        ]
-
-        for path in common_paths:
-            try:
-                # Try to find in PATH
-                result = subprocess.run(
-                    ["which" if os.name != "nt" else "where", path],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    return result.stdout.strip().split("\n")[0]
-            except:
-                pass
-
-        return None
-
     def _wait_for_ready(self, timeout: int = 30):
         """Wait for llama-server to be ready."""
         start_time = time.time()
@@ -111,8 +76,18 @@ class LlamaServerWrapper:
 
         raise TimeoutError("llama-server failed to start within timeout")
 
+    def is_alive(self) -> bool:
+        """Check if llama-server process is alive."""
+        if not self.process:
+            return False
+        return self.process.poll() is None
+
     def forward_request(self, endpoint: str, json_data: dict) -> requests.Response:
         """Forward request to llama-server."""
+        # Ensure process is still alive
+        if not self.is_alive():
+            raise RuntimeError("llama-server process is not running")
+
         url = f"http://localhost:{self.llama_port}{endpoint}"
 
         # Handle streaming

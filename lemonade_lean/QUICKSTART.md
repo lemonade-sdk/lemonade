@@ -3,9 +3,9 @@
 ## Prerequisites
 
 1. **Python 3.8+** installed
-2. **llama.cpp** with Vulkan support compiled and `llama-server` in PATH
-   - Or set `LLAMA_SERVER_PATH` environment variable to point to llama-server executable
-3. A **GGUF model file** (e.g., from Hugging Face)
+2. A **GGUF model file** (e.g., from Hugging Face)
+
+That's it! llama-server will be automatically downloaded on first run.
 
 ## Installation
 
@@ -19,7 +19,7 @@ pip install -e .
 ### 1. Start the Server
 
 ```bash
-# Basic usage
+# Basic usage (auto-downloads llama.cpp on first run)
 lemonade-server serve --model /path/to/your/model.gguf
 
 # With custom settings
@@ -30,6 +30,8 @@ lemonade-server serve \
   --ctx-size 4096 \
   --log-level info
 ```
+
+**Note:** On first run, llama-server will be automatically downloaded (~100-200 MB) to `~/.lemonade_lean/llama_server/`
 
 ### 2. Test the Server
 
@@ -56,34 +58,22 @@ python examples/simple_client.py
 
 ## Getting llama.cpp
 
-### Option 1: Use Pre-built Binaries
+**Automatic (Recommended):** llama-server is automatically downloaded on first run.
 
-Download from: https://github.com/ggerganov/llama.cpp/releases
-
-### Option 2: Build from Source
+**Manual (Optional):** If you prefer to use your own llama-server:
 
 ```bash
-git clone https://github.com/ggerganov/llama.cpp.git
-cd llama.cpp
+# Set environment variable to use custom llama-server
+export LLAMA_SERVER_PATH=/path/to/your/llama-server
 
-# Build with Vulkan support
-cmake -B build -DGGML_VULKAN=ON
-cmake --build build --config Release
-
-# The llama-server binary will be in build/bin/
-export LLAMA_SERVER_PATH=$(pwd)/build/bin/llama-server
+# Or add llama-server to your PATH
 ```
 
-### Option 3: Install via Package Manager
-
-Some package managers provide llama.cpp:
-
-```bash
-# Homebrew (macOS)
-brew install llama.cpp
-
-# After installation, llama-server should be in PATH
-```
+The auto-download will:
+- Download the appropriate build for your platform (Windows/Linux/macOS)
+- Use Vulkan backend on Windows/Linux, Metal on macOS
+- Store it in `~/.lemonade_lean/llama_server/`
+- Only download once (reused on subsequent runs)
 
 ## Getting Models
 
@@ -118,15 +108,30 @@ All endpoints are OpenAI-compatible:
 
 ## Environment Variables
 
-- `LLAMA_SERVER_PATH` - Path to llama-server executable
-- `LEMONADE_PORT` - Default port (overridden by --port)
-- `LEMONADE_HOST` - Default host (overridden by --host)
+- `LLAMA_SERVER_PATH` - Path to llama-server executable (skips auto-download if set)
+
+## Auto-Download Details
+
+On first run, lemonade-lean will:
+1. Check if `llama-server` is in PATH or `LLAMA_SERVER_PATH` is set
+2. If not found, download the appropriate binary for your platform:
+   - **Windows**: Vulkan build (~150 MB)
+   - **Linux**: Vulkan build (~120 MB)  
+   - **macOS**: Metal build (~100 MB)
+3. Extract to `~/.lemonade_lean/llama_server/`
+4. Use it automatically for all future runs
+
+This happens only once. Subsequent runs use the cached binary.
 
 ## Troubleshooting
 
-### llama-server not found
+### Auto-download fails
 
-Set the path explicitly:
+If the automatic download fails:
+
+1. Check your internet connection
+2. Download manually from: https://github.com/ggerganov/llama.cpp/releases
+3. Set the path:
 
 ```bash
 export LLAMA_SERVER_PATH=/path/to/llama-server

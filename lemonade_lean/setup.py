@@ -22,7 +22,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "lemonade-server=lemonade_lean.cli:main",
+            "ls-lean=lemonade_lean.cli:main",
         ],
     },
     classifiers=[
