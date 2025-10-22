@@ -1,6 +1,7 @@
 #include <lemon/wrapped_server.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/http_client.h>
+#include <lemon/error_types.h>
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -18,8 +19,8 @@ int WrappedServer::choose_port() {
 
 bool WrappedServer::wait_for_ready() {
     // Try both /health and /v1/health (FLM uses /v1/health, llama-server uses /health)
-    std::string health_url = "http://127.0.0.1:" + std::to_string(port_) + "/health";
-    std::string health_url_v1 = "http://127.0.0.1:" + std::to_string(port_) + "/v1/health";
+    std::string health_url = get_base_url() + "/health";
+    std::string health_url_v1 = get_base_url() + "/v1/health";
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
@@ -54,6 +55,42 @@ bool WrappedServer::wait_for_ready() {
     
     std::cerr << server_name_ + " failed to start within timeout" << std::endl;
     return false;
+}
+
+json WrappedServer::forward_request(const std::string& endpoint, const json& request) {
+    if (!process_handle_.handle) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+    
+    std::string url = get_base_url() + endpoint;
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+    
+    try {
+        auto response = utils::HttpClient::post(url, request.dump(), headers);
+        
+        if (response.status_code == 200) {
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+            
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::from_exception(NetworkException(e.what()));
+    }
 }
 
 } // namespace lemon

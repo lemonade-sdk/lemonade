@@ -4,6 +4,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include "utils/process_manager.h"
+#include "server_capabilities.h"
 
 namespace lemon {
 
@@ -36,7 +37,7 @@ struct Telemetry {
     }
 };
 
-class WrappedServer {
+class WrappedServer : public ICompletionServer {
 public:
     WrappedServer(const std::string& server_name, const std::string& log_level = "info")
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level) {}
@@ -67,15 +68,13 @@ public:
     // Unload the model and stop the server
     virtual void unload() = 0;
     
-    // Forward requests to the wrapped server
-    virtual json chat_completion(const json& request) = 0;
-    virtual json completion(const json& request) = 0;
-    virtual json embeddings(const json& request) = 0;
-    virtual json reranking(const json& request) = 0;
+    // ICompletionServer implementation - forward requests to the wrapped server
+    virtual json chat_completion(const json& request) override = 0;
+    virtual json completion(const json& request) override = 0;
     
     // Get the server address
     std::string get_address() const {
-        return "http://127.0.0.1:" + std::to_string(port_) + "/v1";
+        return get_base_url() + "/v1";
     }
     
     // Get telemetry data
@@ -90,6 +89,14 @@ protected:
     
     // Parse telemetry from subprocess output
     virtual void parse_telemetry(const std::string& line) = 0;
+    
+    // Common method to forward requests to the wrapped server
+    json forward_request(const std::string& endpoint, const json& request);
+    
+    // Get the base URL for the wrapped server
+    std::string get_base_url() const {
+        return "http://127.0.0.1:" + std::to_string(port_);
+    }
     
     std::string server_name_;
     int port_;

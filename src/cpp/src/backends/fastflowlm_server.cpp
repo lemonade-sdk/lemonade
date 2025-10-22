@@ -1,6 +1,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -167,7 +168,7 @@ void FastFlowLMServer::unload() {
 
 bool FastFlowLMServer::wait_for_ready() {
     // FLM doesn't have a health endpoint, so we use /api/tags to check if it's up
-    std::string tags_url = "http://127.0.0.1:" + std::to_string(port_) + "/api/tags";
+    std::string tags_url = get_base_url() + "/api/tags";
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
@@ -200,80 +201,24 @@ bool FastFlowLMServer::wait_for_ready() {
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
     // FLM requires the correct checkpoint name in the request
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
     modified_request["model"] = model_name_;  // Use the checkpoint (e.g., "qwen3:0.6b")
     
-    // Forward request to flm-server
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/chat/completions";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = utils::HttpClient::post(url, modified_request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "flm-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/chat/completions", modified_request);
 }
 
 json FastFlowLMServer::completion(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    // Forward request to flm-server
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/completions";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = utils::HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "flm-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/completions", request);
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    // Forward request to flm-server
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/embeddings";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = utils::HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "flm-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/embeddings", request);
 }
 
 json FastFlowLMServer::reranking(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    // Forward request to flm-server
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/rerank";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = utils::HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "flm-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/rerank", request);
 }
 
 void FastFlowLMServer::parse_telemetry(const std::string& line) {

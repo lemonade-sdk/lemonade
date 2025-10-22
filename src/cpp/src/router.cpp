@@ -1,6 +1,7 @@
 #include "lemon/router.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
+#include "lemon/error_types.h"
 #include <iostream>
 
 namespace lemon {
@@ -86,35 +87,51 @@ std::string Router::get_backend_address() const {
 
 json Router::chat_completion(const json& request) {
     if (!wrapped_server_) {
-        return {{"error", "No model loaded"}};
+        return ErrorResponse::from_exception(ModelNotLoadedException());
     }
     return wrapped_server_->chat_completion(request);
 }
 
 json Router::completion(const json& request) {
     if (!wrapped_server_) {
-        return {{"error", "No model loaded"}};
+        return ErrorResponse::from_exception(ModelNotLoadedException());
     }
     return wrapped_server_->completion(request);
 }
 
 json Router::embeddings(const json& request) {
     if (!wrapped_server_) {
-        return {{"error", "No model loaded"}};
+        return ErrorResponse::from_exception(ModelNotLoadedException());
     }
-    return wrapped_server_->embeddings(request);
+    
+    auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(wrapped_server_.get());
+    if (!embeddings_server) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Embeddings", loaded_recipe_)
+        );
+    }
+    
+    return embeddings_server->embeddings(request);
 }
 
 json Router::reranking(const json& request) {
     if (!wrapped_server_) {
-        return {{"error", "No model loaded"}};
+        return ErrorResponse::from_exception(ModelNotLoadedException());
     }
-    return wrapped_server_->reranking(request);
+    
+    auto reranking_server = dynamic_cast<IRerankingServer*>(wrapped_server_.get());
+    if (!reranking_server) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Reranking", loaded_recipe_)
+        );
+    }
+    
+    return reranking_server->reranking(request);
 }
 
 json Router::get_stats() const {
     if (!wrapped_server_) {
-        return {{"error", "No model loaded"}};
+        return ErrorResponse::from_exception(ModelNotLoadedException());
     }
     return wrapped_server_->get_telemetry().to_json();
 }

@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -278,60 +279,15 @@ void LlamaCppServer::unload() {
 }
 
 json LlamaCppServer::chat_completion(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    // Forward request to llama-server
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/chat/completions";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "llama-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/chat/completions", request);
 }
 
 json LlamaCppServer::completion(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/completions";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "llama-server request failed"}, {"status", response.status_code}};
-    }
+    return forward_request("/v1/completions", request);
 }
 
 json LlamaCppServer::embeddings(const json& request) {
-    if (!process_handle_.handle) {
-        return {{"error", "No model loaded"}};
-    }
-    
-    std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/v1/embeddings";
-    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
-    auto response = HttpClient::post(url, request.dump(), headers);
-    
-    if (response.status_code == 200) {
-        return json::parse(response.body);
-    } else {
-        return {{"error", "llama-server request failed"}, {"status", response.status_code}};
-    }
-}
-
-json LlamaCppServer::reranking(const json& request) {
-    // llama-server doesn't support reranking natively
-    return {{"error", "Reranking not supported by llama.cpp"}};
+    return forward_request("/v1/embeddings", request);
 }
 
 void LlamaCppServer::parse_telemetry(const std::string& line) {

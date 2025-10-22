@@ -6,7 +6,7 @@
 namespace lemon {
 namespace backends {
 
-class LlamaCppServer : public WrappedServer {
+class LlamaCppServer : public WrappedServer, public IEmbeddingsServer {
 public:
     LlamaCppServer(const std::string& backend = "vulkan", const std::string& log_level = "info");
     
@@ -26,10 +26,12 @@ public:
     
     void unload() override;
     
+    // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
+    
+    // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
-    json reranking(const json& request) override;
     
 protected:
     void parse_telemetry(const std::string& line) override;

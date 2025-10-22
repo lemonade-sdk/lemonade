@@ -6,7 +6,7 @@
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
     FastFlowLMServer(const std::string& log_level = "info");
     
@@ -26,9 +26,14 @@ public:
     
     void unload() override;
     
+    // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
+    
+    // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
+    
+    // IRerankingServer implementation
     json reranking(const json& request) override;
     
     // FLM uses /api/tags for readiness check instead of /health
