@@ -15,7 +15,7 @@ class ChatCompletionRequest(BaseModel):
     """Request for chat completion."""
 
     messages: List[ChatMessage]
-    model: Optional[str] = "llama-model"
+    model: Optional[str] = "unsloth/Qwen3-0.6B-GGUF"
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 512
     stream: Optional[bool] = False
@@ -26,7 +26,7 @@ class CompletionRequest(BaseModel):
     """Request for text completion."""
 
     prompt: str
-    model: Optional[str] = "llama-model"
+    model: Optional[str] = "unsloth/Qwen3-0.6B-GGUF"
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 512
     stream: Optional[bool] = False

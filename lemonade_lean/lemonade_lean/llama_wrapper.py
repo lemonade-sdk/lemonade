@@ -6,8 +6,10 @@ import time
 import logging
 import requests
 from typing import Optional
+from pathlib import Path
 
 from lemonade_lean.download import ensure_llama_server
+from lemonade_lean.hf_cache import get_model_snapshot_path
 
 
 class LlamaServerWrapper:
@@ -25,14 +27,17 @@ class LlamaServerWrapper:
         # Ensure llama-server is available (download if needed)
         llama_server_path = ensure_llama_server()
 
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(f"Model file not found: {self.model_path}")
+        # Resolve model path - could be a file path or HuggingFace repo ID
+        resolved_path = self._resolve_model_path(self.model_path)
+
+        if not os.path.exists(resolved_path):
+            raise FileNotFoundError(f"Model file not found: {resolved_path}")
 
         # Build command
         cmd = [
             llama_server_path,
             "-m",
-            self.model_path,
+            resolved_path,
             "--ctx-size",
             str(self.ctx_size),
             "--port",
@@ -51,6 +56,73 @@ class LlamaServerWrapper:
 
         # Wait for server to be ready
         self._wait_for_ready()
+
+    def _resolve_model_path(self, model_path: str) -> str:
+        """
+        Resolve model path. Can be:
+        1. A direct file path (e.g., /path/to/model.gguf)
+        2. A HuggingFace repo ID (e.g., unsloth/Qwen3-0.6B-GGUF)
+        3. A HuggingFace repo ID with file (e.g., unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf)
+
+        Returns the resolved file path.
+        """
+        # If it's already a file that exists, return it
+        if os.path.exists(model_path):
+            return model_path
+
+        # Check if it looks like a HuggingFace repo ID (contains '/')
+        if "/" in model_path:
+            # Parse repo_id and optional filename
+            if ":" in model_path:
+                repo_id, filename = model_path.split(":", 1)
+            else:
+                repo_id = model_path
+                filename = None
+
+            # Try to get the snapshot path
+            snapshot_path = get_model_snapshot_path(repo_id)
+
+            if snapshot_path is None:
+                raise FileNotFoundError(
+                    f"HuggingFace model '{repo_id}' not found in cache. "
+                    f"Please download it first or provide a direct file path."
+                )
+
+            # If filename was specified, use it
+            if filename:
+                full_path = snapshot_path / filename
+                if not full_path.exists():
+                    raise FileNotFoundError(
+                        f"Model file '{filename}' not found in {repo_id}. "
+                        f"Available files: {list(snapshot_path.glob('*.gguf'))}"
+                    )
+                logging.info(f"Resolved {model_path} to {full_path}")
+                return str(full_path)
+
+            # Otherwise, find GGUF files in the snapshot
+            gguf_files = list(snapshot_path.glob("**/*.gguf"))
+
+            if not gguf_files:
+                raise FileNotFoundError(
+                    f"No GGUF files found in HuggingFace model '{repo_id}'. "
+                    f"Snapshot path: {snapshot_path}"
+                )
+
+            if len(gguf_files) > 1:
+                # List available files
+                file_list = "\n  ".join([f.name for f in gguf_files])
+                raise ValueError(
+                    f"Multiple GGUF files found in '{repo_id}':\n  {file_list}\n"
+                    f"Please specify which file to use: {repo_id}:filename.gguf"
+                )
+
+            # Use the single GGUF file found
+            resolved = str(gguf_files[0])
+            logging.info(f"Resolved {model_path} to {resolved}")
+            return resolved
+
+        # Not a repo ID and doesn't exist - return as-is and let the error happen
+        return model_path
 
     def _wait_for_ready(self, timeout: int = 30):
         """Wait for llama-server to be ready."""

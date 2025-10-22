@@ -83,7 +83,9 @@ class LemonadeServer:
             """List models."""
             return {
                 "object": "list",
-                "data": [ModelInfo(id="llama-model", created=int(time.time()))],
+                "data": [
+                    ModelInfo(id="unsloth/Qwen3-0.6B-GGUF", created=int(time.time()))
+                ],
             }
 
         @self.app.post("/v1/chat/completions")

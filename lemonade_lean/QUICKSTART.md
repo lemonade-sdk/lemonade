@@ -16,15 +16,33 @@ pip install -e .
 
 ## Usage
 
-### 1. Start the Server
+### 1. Find Available Models (Optional)
+
+If you have GGUF models in your HuggingFace cache, you can list them:
 
 ```bash
-# Basic usage (auto-downloads llama.cpp on first run)
-lemonade-server serve --model /path/to/your/model.gguf
+ls-lean list-models
+```
+
+This will scan your `~/.cache/huggingface/hub/` directory and show all available GGUF models with their repository IDs.
+
+### 2. Start the Server
+
+You can specify the model in three ways:
+
+```bash
+# Method 1: Direct file path
+ls-lean serve --model /path/to/your/model.gguf
+
+# Method 2: HuggingFace repo ID (auto-resolves from cache)
+ls-lean serve --model unsloth/Qwen3-0.6B-GGUF
+
+# Method 3: HuggingFace repo ID with specific file (if multiple GGUF files)
+ls-lean serve --model unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf
 
 # With custom settings
-lemonade-server serve \
-  --model /path/to/your/model.gguf \
+ls-lean serve \
+  --model unsloth/Qwen3-0.6B-GGUF \
   --port 8000 \
   --host 0.0.0.0 \
   --ctx-size 4096 \
@@ -33,7 +51,7 @@ lemonade-server serve \
 
 **Note:** On first run, llama-server will be automatically downloaded (~100-200 MB) to `~/.lemonade_lean/llama_server/`
 
-### 2. Test the Server
+### 3. Test the Server
 
 In another terminal:
 
@@ -50,7 +68,7 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-### 3. Run the Example Client
+### 4. Run the Example Client
 
 ```bash
 python examples/simple_client.py
@@ -83,15 +101,25 @@ Download GGUF models from Hugging Face:
 # Example: Small model for testing
 wget https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
 
-# Start server with this model
-lemonade-server serve --model tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+# Start server with direct path
+ls-lean serve --model tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+```
+
+Or if you already have models in your HuggingFace cache:
+
+```bash
+# List cached models
+ls-lean list-models
+
+# Use repo ID directly (no need to specify full path!)
+ls-lean serve --model unsloth/Qwen3-0.6B-GGUF
 ```
 
 ## Configuration Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--model` | (required) | Path to GGUF model file |
+| `--model` | (required) | Path to GGUF model file, HuggingFace repo ID, or repo:file format |
 | `--port` | 8000 | Port to serve on |
 | `--host` | localhost | Host to bind to |
 | `--ctx-size` | 4096 | Context window size |
@@ -135,7 +163,7 @@ If the automatic download fails:
 
 ```bash
 export LLAMA_SERVER_PATH=/path/to/llama-server
-lemonade-server serve --model model.gguf
+ls-lean serve --model model.gguf
 ```
 
 ### Port already in use
@@ -143,7 +171,7 @@ lemonade-server serve --model model.gguf
 Use a different port:
 
 ```bash
-lemonade-server serve --model model.gguf --port 8001
+ls-lean serve --model model.gguf --port 8001
 ```
 
 ### Model loading fails
@@ -156,7 +184,7 @@ Check:
 Enable debug logging:
 
 ```bash
-lemonade-server serve --model model.gguf --log-level debug
+ls-lean serve --model model.gguf --log-level debug
 ```
 
 ## What's Removed vs Full Lemonade
@@ -164,7 +192,7 @@ lemonade-server serve --model model.gguf --log-level debug
 This lean version removes:
 
 - ❌ System checks and device enumeration
-- ❌ Model downloading/management
+- ❌ Model downloading (but can use cached HuggingFace models!)
 - ❌ Multiple backends (only Vulkan)
 - ❌ Web UI
 - ❌ Tray icon
@@ -175,7 +203,7 @@ This lean version removes:
 
 What's kept:
 
-- ✅ `lemonade-server serve` command
+- ✅ `ls-lean serve` command
 - ✅ llama.cpp Vulkan backend
 - ✅ OpenAI-compatible API
 - ✅ Streaming support
