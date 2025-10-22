@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
 #include <memory>
 #include <thread>
 #include <mutex>
@@ -136,11 +137,111 @@ void Server::setup_routes() {
         res.set_content("{\"test\": \"ok\"}", "application/json");
     });
     
+    // Setup static file serving for web UI
+    setup_static_files();
+    
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
 void Server::setup_static_files() {
-    // TODO: Implement static file serving
+    // Determine static files directory (relative to executable)
+    std::string static_dir = "./resources/static";
+    
+    // Root path redirects to web UI
+    http_server_->Get("/", [](const httplib::Request&, httplib::Response& res) {
+        res.set_redirect("/webapp.html");
+    });
+    
+    // Special handler for webapp.html to replace template variables
+    http_server_->Get("/webapp.html", [this, static_dir](const httplib::Request&, httplib::Response& res) {
+        std::string webapp_path = static_dir + "/webapp.html";
+        std::ifstream file(webapp_path);
+        
+        if (!file.is_open()) {
+            std::cerr << "[Server] Could not open webapp.html at: " << webapp_path << std::endl;
+            res.status = 404;
+            res.set_content("{\"error\": \"webapp.html not found\"}", "application/json");
+            return;
+        }
+        
+        // Read the entire file
+        std::string html_template((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        file.close();
+        
+        // Get filtered models from model manager
+        auto models_map = model_manager_->get_supported_models();
+        
+        // Convert map to JSON
+        json filtered_models = json::object();
+        for (const auto& [model_name, info] : models_map) {
+            filtered_models[model_name] = {
+                {"model_name", info.model_name},
+                {"checkpoint", info.checkpoint},
+                {"recipe", info.recipe},
+                {"labels", info.labels},
+                {"suggested", info.suggested},
+                {"mmproj", info.mmproj}
+            };
+        }
+        
+        // Create JavaScript snippets
+        std::string server_models_js = "<script>window.SERVER_MODELS = " + filtered_models.dump() + ";</script>";
+        
+        // Get platform name
+        std::string platform_name;
+        #ifdef _WIN32
+            platform_name = "Windows";
+        #elif __APPLE__
+            platform_name = "Darwin";
+        #elif __linux__
+            platform_name = "Linux";
+        #else
+            platform_name = "Unknown";
+        #endif
+        std::string platform_js = "<script>window.PLATFORM = '" + platform_name + "';</script>";
+        
+        // Replace template variables
+        size_t pos;
+        
+        // Replace {{SERVER_PORT}}
+        while ((pos = html_template.find("{{SERVER_PORT}}")) != std::string::npos) {
+            html_template.replace(pos, 17, std::to_string(port_));
+        }
+        
+        // Replace {{SERVER_MODELS_JS}}
+        while ((pos = html_template.find("{{SERVER_MODELS_JS}}")) != std::string::npos) {
+            html_template.replace(pos, 20, server_models_js);
+        }
+        
+        // Replace {{PLATFORM_JS}}
+        while ((pos = html_template.find("{{PLATFORM_JS}}")) != std::string::npos) {
+            html_template.replace(pos, 15, platform_js);
+        }
+        
+        // Set no-cache headers
+        res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.set_header("Pragma", "no-cache");
+        res.set_header("Expires", "0");
+        res.set_content(html_template, "text/html");
+    });
+    
+    // Mount static files directory for other files (CSS, JS, images)
+    // Use /static prefix to avoid conflicts with webapp.html
+    if (!http_server_->set_mount_point("/static", static_dir)) {
+        std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
+        std::cerr << "[Server] Web UI assets will not be available" << std::endl;
+    } else {
+        std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
+    }
+    
+    // Override default headers for static files to include no-cache
+    // This ensures the web UI always gets the latest version
+    http_server_->set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
+        // Add no-cache headers for static files
+        res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.set_header("Pragma", "no-cache");
+        res.set_header("Expires", "0");
+    });
 }
 
 void Server::setup_cors() {
