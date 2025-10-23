@@ -8,6 +8,7 @@
 #include <regex>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -202,7 +203,8 @@ void LlamaCppServer::load(const std::string& model_name,
                          const std::string& checkpoint,
                          const std::string& mmproj,
                          int ctx_size,
-                         bool do_not_upgrade) {
+                         bool do_not_upgrade,
+                         const std::vector<std::string>& labels) {
     
     std::cout << "[LlamaCpp] Loading model: " << model_name << std::endl;
     
@@ -247,7 +249,19 @@ void LlamaCppServer::load(const std::string& model_name,
     args.push_back("--reasoning-format");
     args.push_back("auto");
     
-    // TODO: Add --embeddings and --reranking flags if model supports them
+    // Check for embeddings and reranking support based on labels
+    bool supports_embeddings = std::find(labels.begin(), labels.end(), "embeddings") != labels.end();
+    bool supports_reranking = std::find(labels.begin(), labels.end(), "reranking") != labels.end();
+    
+    if (supports_embeddings) {
+        std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
+        args.push_back("--embeddings");
+    }
+    
+    if (supports_reranking) {
+        std::cout << "[LlamaCpp] Model supports reranking, adding --reranking flag" << std::endl;
+        args.push_back("--reranking");
+    }
     
     // Configure GPU layers
     args.push_back("-ngl");
@@ -288,6 +302,10 @@ json LlamaCppServer::completion(const json& request) {
 
 json LlamaCppServer::embeddings(const json& request) {
     return forward_request("/v1/embeddings", request);
+}
+
+json LlamaCppServer::reranking(const json& request) {
+    return forward_request("/v1/rerank", request);
 }
 
 void LlamaCppServer::parse_telemetry(const std::string& line) {

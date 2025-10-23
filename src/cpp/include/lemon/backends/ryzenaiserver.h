@@ -29,7 +29,8 @@ public:
              const std::string& checkpoint,
              const std::string& mmproj,
              int ctx_size,
-             bool do_not_upgrade = false) override;
+             bool do_not_upgrade = false,
+             const std::vector<std::string>& labels = {}) override;
     
     // RyzenAI-specific: set execution mode before loading
     void set_execution_mode(const std::string& mode) { execution_mode_ = mode; }

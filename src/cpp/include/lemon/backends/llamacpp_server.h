@@ -6,7 +6,7 @@
 namespace lemon {
 namespace backends {
 
-class LlamaCppServer : public WrappedServer, public IEmbeddingsServer {
+class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
     LlamaCppServer(const std::string& backend = "vulkan", const std::string& log_level = "info");
     
@@ -22,7 +22,8 @@ public:
              const std::string& checkpoint,
              const std::string& mmproj,
              int ctx_size,
-             bool do_not_upgrade = false) override;
+             bool do_not_upgrade = false,
+             const std::vector<std::string>& labels = {}) override;
     
     void unload() override;
     
@@ -32,6 +33,9 @@ public:
     
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
+    
+    // IRerankingServer implementation
+    json reranking(const json& request) override;
     
 protected:
     void parse_telemetry(const std::string& line) override;

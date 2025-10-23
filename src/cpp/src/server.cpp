@@ -87,6 +87,16 @@ void Server::setup_routes() {
         handle_completions(req, res);
     });
     
+    // Embeddings (llamacpp only)
+    http_server_->Post("/api/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_embeddings(req, res);
+    });
+    
+    // Reranking (llamacpp only)
+    http_server_->Post("/api/v1/reranking", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_reranking(req, res);
+    });
+    
     // Responses endpoint
     http_server_->Get("/api/v1/responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -442,7 +452,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 }
                 
                 // Load the requested model (will auto-download FLM models if needed)
-                router_->load_model(requested_model, info.checkpoint, info.recipe);
+                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -597,7 +607,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 }
                 
                 // Load the requested model
-                router_->load_model(requested_model, info.checkpoint, info.recipe);
+                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -668,6 +678,120 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     }
 }
 
+void Server::handle_embeddings(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        
+        // Handle model loading/switching (same logic as completions)
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            std::string loaded_model = router_->get_loaded_model();
+            
+            // Check if we need to switch models
+            if (loaded_model != requested_model) {
+                // Unload current model if one is loaded
+                if (router_->is_model_loaded()) {
+                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+                    router_->unload_model();
+                } else {
+                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+                }
+                
+                // Get model info
+                if (!model_manager_->model_exists(requested_model)) {
+                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
+                    res.status = 404;
+                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                    return;
+                }
+                
+                auto info = model_manager_->get_model_info(requested_model);
+                
+                // Auto-download if not cached
+                if (!model_manager_->is_model_downloaded(requested_model)) {
+                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
+                    model_manager_->download_model(requested_model);
+                }
+                
+                // Load the requested model
+                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            }
+        } else if (!router_->is_model_loaded()) {
+            std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            return;
+        }
+        
+        // Call router's embeddings method
+        auto response = router_->embeddings(request_json);
+        res.set_content(response.dump(), "application/json");
+        
+    } catch (const std::exception& e) {
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_reranking(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        
+        // Handle model loading/switching (same logic as completions)
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            std::string loaded_model = router_->get_loaded_model();
+            
+            // Check if we need to switch models
+            if (loaded_model != requested_model) {
+                // Unload current model if one is loaded
+                if (router_->is_model_loaded()) {
+                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+                    router_->unload_model();
+                } else {
+                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+                }
+                
+                // Get model info
+                if (!model_manager_->model_exists(requested_model)) {
+                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
+                    res.status = 404;
+                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                    return;
+                }
+                
+                auto info = model_manager_->get_model_info(requested_model);
+                
+                // Auto-download if not cached
+                if (!model_manager_->is_model_downloaded(requested_model)) {
+                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
+                    model_manager_->download_model(requested_model);
+                }
+                
+                // Load the requested model
+                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            }
+        } else if (!router_->is_model_loaded()) {
+            std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            return;
+        }
+        
+        // Call router's reranking method
+        auto response = router_->reranking(request_json);
+        res.set_content(response.dump(), "application/json");
+        
+    } catch (const std::exception& e) {
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     // Return cached responses (stub for now)
     nlohmann::json response = nlohmann::json::array();
@@ -677,7 +801,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model_name"];
+        // Accept both "model" and "model_name" for compatibility
+        std::string model_name = request_json.contains("model") ? 
+            request_json["model"].get<std::string>() : 
+            request_json["model_name"].get<std::string>();
         
         model_manager_->download_model(model_name);
         
@@ -720,6 +847,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Look up model info from registry if not provided
         std::string checkpoint = request_json.value("checkpoint", "");
         std::string recipe = request_json.value("recipe", "");
+        std::vector<std::string> labels;
         
         if (checkpoint.empty()) {
             // Get model info from model manager
@@ -733,6 +861,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             auto info = model_manager_->get_model_info(model_name);
             checkpoint = info.checkpoint;
             recipe = info.recipe;
+            labels = info.labels;
         }
         
         // Auto-download if not cached (only for non-FLM models)
@@ -743,7 +872,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         // Load the model (will auto-download FLM models if needed)
-        router_->load_model(model_name, checkpoint, recipe);
+        router_->load_model(model_name, checkpoint, recipe, false, labels);
         
         std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         
@@ -856,8 +985,11 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
     nlohmann::json response = {{"status", "shutting down"}};
     res.set_content(response.dump(), "application/json");
     
-    // Stop the server (this will trigger cleanup)
-    stop();
+    // Stop the server asynchronously to allow response to be sent
+    std::thread([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        stop();
+    }).detach();
 }
 
 } // namespace lemon

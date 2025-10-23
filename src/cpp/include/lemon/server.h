@@ -44,6 +44,8 @@ private:
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
+    void handle_embeddings(const httplib::Request& req, httplib::Response& res);
+    void handle_reranking(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);

@@ -21,7 +21,8 @@ public:
     void load_model(const std::string& model_name,
                     const std::string& checkpoint,
                     const std::string& recipe,
-                    bool do_not_upgrade = true);
+                    bool do_not_upgrade = true,
+                    const std::vector<std::string>& labels = {});
     
     // Unload the currently loaded model
     void unload_model();

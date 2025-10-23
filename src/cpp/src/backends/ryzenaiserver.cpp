@@ -107,7 +107,8 @@ void RyzenAIServer::load(const std::string& model_name,
                         const std::string& checkpoint,
                         const std::string& mmproj,
                         int ctx_size,
-                        bool do_not_upgrade) {
+                        bool do_not_upgrade,
+                        const std::vector<std::string>& labels) {
     std::cout << "[RyzenAI-Serve] Loading model: " << model_name << std::endl;
     
     // Check if RyzenAI-Serve is available

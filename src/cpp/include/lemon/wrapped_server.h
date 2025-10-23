@@ -63,7 +63,8 @@ public:
                      const std::string& checkpoint,
                      const std::string& mmproj,
                      int ctx_size,
-                     bool do_not_upgrade = false) = 0;
+                     bool do_not_upgrade = false,
+                     const std::vector<std::string>& labels = {}) = 0;
     
     // Unload the model and stop the server
     virtual void unload() = 0;

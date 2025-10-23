@@ -200,8 +200,17 @@ int main(int argc, char** argv) {
                     return 1;
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Error stopping server: " << e.what() << std::endl;
-                return 1;
+                // Connection error is expected when server shuts down
+                // Wait a moment and verify the server is actually stopped
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                auto [check_pid, check_port] = get_server_info();
+                if (check_port == 0) {
+                    std::cout << "Lemonade Server stopped successfully." << std::endl;
+                    return 0;
+                } else {
+                    std::cerr << "Error stopping server: " << e.what() << std::endl;
+                    return 1;
+                }
             }
             
         } else if (command == "list") {

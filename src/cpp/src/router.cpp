@@ -25,7 +25,8 @@ Router::~Router() {
 void Router::load_model(const std::string& model_name,
                        const std::string& checkpoint,
                        const std::string& recipe,
-                       bool do_not_upgrade) {
+                       bool do_not_upgrade,
+                       const std::vector<std::string>& labels) {
     
     std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
     
@@ -40,7 +41,7 @@ void Router::load_model(const std::string& model_name,
         if (recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             wrapped_server_ = std::make_unique<backends::FastFlowLMServer>(log_level_);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade);
+            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Serve backend: " << recipe << std::endl;
             
@@ -99,11 +100,11 @@ void Router::load_model(const std::string& model_name,
             ryzenai_server->set_model_path(model_path);
             ryzenai_server->set_execution_mode(backend_mode);
             wrapped_server_.reset(ryzenai_server);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade);
+            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         } else {
             std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
             wrapped_server_ = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade);
+            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         }
         
         loaded_model_ = model_name;

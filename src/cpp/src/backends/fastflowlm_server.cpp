@@ -106,7 +106,8 @@ void FastFlowLMServer::load(const std::string& model_name,
                            const std::string& checkpoint,
                            const std::string& mmproj,
                            int ctx_size,
-                           bool do_not_upgrade) {
+                           bool do_not_upgrade,
+                           const std::vector<std::string>& labels) {
     std::cout << "[FastFlowLM] Loading model: " << model_name << std::endl;
     
     // Store model name for later use
