@@ -1,6 +1,7 @@
 #include "lemon/server.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include <iostream>
 #include <iomanip>
@@ -145,7 +146,7 @@ void Server::setup_routes() {
 
 void Server::setup_static_files() {
     // Determine static files directory (relative to executable)
-    std::string static_dir = "./resources/static";
+    std::string static_dir = utils::get_resource_path("resources/static");
     
     // Root path redirects to web UI
     http_server_->Get("/", [](const httplib::Request&, httplib::Response& res) {
@@ -340,38 +341,45 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
     std::cout << "[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====" << std::endl;
     std::cout.flush();
-    auto all_models = model_manager_->get_supported_models();
     
     // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
     bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
+    
+    // OPTIMIZATION: For OpenAI API mode, use get_downloaded_models() which filters first
+    // Only use get_supported_models() when we need to show ALL models
+    std::map<std::string, ModelInfo> models;
+    if (show_all) {
+        models = model_manager_->get_supported_models();
+    } else {
+        models = model_manager_->get_downloaded_models();
+    }
     
     nlohmann::json response;
     response["data"] = nlohmann::json::array();
     response["object"] = "list";
     
-    for (const auto& [model_id, model_info] : all_models) {
-        bool is_downloaded = model_manager_->is_model_downloaded(model_id);
+    for (const auto& [model_id, model_info] : models) {
         
-        // Only include downloaded models unless show_all is requested
-        if (show_all || is_downloaded) {
-            nlohmann::json model_json = {
-                {"id", model_id},
-                {"object", "model"},
-                {"created", 1234567890},
-                {"owned_by", "lemonade"},
-                {"checkpoint", model_info.checkpoint},
-                {"recipe", model_info.recipe}
-            };
+        nlohmann::json model_json = {
+            {"id", model_id},
+            {"object", "model"},
+            {"created", 1234567890},
+            {"owned_by", "lemonade"},
+            {"checkpoint", model_info.checkpoint},
+            {"recipe", model_info.recipe}
+        };
+        
+        // Add extra fields when showing all models (for CLI list command)
+        if (show_all) {
+            // Need to check download status for each model when showing all
+            bool is_downloaded = model_manager_->is_model_downloaded(model_id);
             
-            // Add extra fields when showing all models (for CLI list command)
-            if (show_all) {
-                model_json["name"] = model_info.model_name;
-                model_json["downloaded"] = is_downloaded;
-                model_json["labels"] = model_info.labels;
-            }
-            
-            response["data"].push_back(model_json);
+            model_json["name"] = model_info.model_name;
+            model_json["downloaded"] = is_downloaded;
+            model_json["labels"] = model_info.labels;
         }
+        
+        response["data"].push_back(model_json);
     }
     
     res.set_content(response.dump(), "application/json");
@@ -557,14 +565,101 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        if (!router_->is_model_loaded()) {
+        // Handle model loading/switching (same logic as chat_completions)
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            std::string loaded_model = router_->get_loaded_model();
+            
+            // Check if we need to switch models
+            if (loaded_model != requested_model) {
+                // Unload current model if one is loaded
+                if (router_->is_model_loaded()) {
+                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+                    router_->unload_model();
+                } else {
+                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+                }
+                
+                // Get model info
+                if (!model_manager_->model_exists(requested_model)) {
+                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
+                    res.status = 404;
+                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                    return;
+                }
+                
+                auto info = model_manager_->get_model_info(requested_model);
+                
+                // Auto-download if not cached (only for non-FLM models)
+                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
+                    model_manager_->download_model(requested_model);
+                }
+                
+                // Load the requested model
+                router_->load_model(requested_model, info.checkpoint, info.recipe);
+                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            }
+        } else if (!router_->is_model_loaded()) {
+            std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
-            res.set_content("{\"error\": \"No model loaded\"}", "application/json");
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
         }
         
-        auto response = router_->completion(request_json);
-        res.set_content(response.dump(), "application/json");
+        // Check if streaming is requested
+        bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
+        
+        if (is_streaming) {
+            try {
+                // For streaming, forward chunks in real-time to the client
+                std::string backend_url = router_->get_backend_address() + "/completions";
+                
+                // FLM requires the checkpoint name in the request, not the Lemonade model name
+                std::string request_body = req.body;
+                if (router_->get_loaded_recipe() == "flm") {
+                    auto request_json_copy = request_json;
+                    request_json_copy["model"] = router_->get_loaded_checkpoint();
+                    request_body = request_json_copy.dump();
+                }
+                
+                // Set up SSE headers
+                res.set_header("Content-Type", "text/event-stream");
+                res.set_header("Cache-Control", "no-cache");
+                res.set_header("Connection", "keep-alive");
+                res.set_header("X-Accel-Buffering", "no");
+                
+                // Use atomic flag to ensure content provider is called only once
+                auto stream_started = std::make_shared<std::atomic<bool>>(false);
+                
+                res.set_chunked_content_provider(
+                    "text/event-stream",
+                    [this, backend_url, request_body, stream_started](size_t offset, httplib::DataSink& sink) {
+                        if (offset > 0 || stream_started->exchange(true)) {
+                            return false; // Already sent everything
+                        }
+                        
+                        // Forward the streaming request
+                        StreamingProxy::forward_sse_stream(backend_url, request_body, sink);
+                        
+                        return false; // Signal completion
+                    }
+                );
+                
+                std::cout << "[Server] Streaming completed - 200 OK" << std::endl;
+                return;
+                
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Streaming failed: " << e.what() << std::endl;
+                res.status = 500;
+                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                return;
+            }
+        } else {
+            // Non-streaming
+            auto response = router_->completion(request_json);
+            res.set_content(response.dump(), "application/json");
+        }
         
     } catch (const std::exception& e) {
         res.status = 500;

@@ -32,6 +32,7 @@ from utils.server_base import (
     OpenAI,
     AsyncOpenAI,
     httpx,
+    is_cpp_server,
 )
 
 
@@ -133,6 +134,8 @@ class LlamaCppTesting(ServerTestingBase):
     def test_003_test_embeddings_with_gguf(self):
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping in metal smoke test mode")
+        if is_cpp_server():
+            self.skipTest("C++ server: embeddings endpoint not implemented yet")
         client = OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required, but unused
@@ -230,6 +233,8 @@ class LlamaCppTesting(ServerTestingBase):
     def test_004_test_reranking_with_gguf(self):
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping in metal smoke test mode")
+        if is_cpp_server():
+            self.skipTest("C++ server: reranking endpoint not implemented yet")
         query = "A man is eating pasta."
         documents = [
             "A man is eating food.",  # index 0
@@ -319,10 +324,7 @@ class LlamaCppTesting(ServerTestingBase):
         """Test generation parameters across all endpoints with llamacpp models"""
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping in metal smoke test mode")
-        if (
-            self.llamacpp_backend == "rocm"
-            or self.llamacpp_backend == "vulkan"
-        ):
+        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan":
             self.skipTest(
                 "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )

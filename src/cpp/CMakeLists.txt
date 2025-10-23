@@ -87,6 +87,7 @@ set(SOURCES
     src/utils/http_client.cpp
     src/utils/json_utils.cpp
     src/utils/process_manager.cpp
+    src/utils/path_utils.cpp
     src/backends/llamacpp_server.cpp
     src/backends/fastflowlm_server.cpp
     src/backends/ryzenaiserver.cpp

@@ -61,6 +61,13 @@ public:
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
     
+    // Check if model is downloaded with optional FLM cache (optimization)
+    bool is_model_downloaded(const std::string& model_name, 
+                             const std::vector<std::string>* flm_cache);
+    
+    // Get list of installed FLM models (for caching)
+    std::vector<std::string> get_flm_installed_models();
+    
 private:
     json load_server_models();
     json load_user_models();

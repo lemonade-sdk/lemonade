@@ -1,6 +1,7 @@
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <thread>
@@ -68,8 +69,8 @@ std::string RyzenAIServer::get_ryzenai_serve_path() {
     }
     
     // Check in common locations relative to lemonade executable
-    // From src/cpp/build/Release to src/ryzenai-serve/build/bin/Release
-    std::string relative_path = "../../../ryzenai-serve/build/bin/Release/" + exe_name;
+    // From executable location to src/ryzenai-serve/build/bin/Release
+    std::string relative_path = utils::get_resource_path("../../../ryzenai-serve/build/bin/Release/" + exe_name);
     if (fs::exists(relative_path)) {
         return fs::absolute(relative_path).string();
     }

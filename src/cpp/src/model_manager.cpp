@@ -2,6 +2,7 @@
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
+#include <lemon/utils/path_utils.h>
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -49,13 +51,13 @@ std::string ModelManager::get_user_models_file() {
 
 json ModelManager::load_server_models() {
     try {
-        // Load from resources directory
-        std::string models_path = "resources/server_models.json";
+        // Load from resources directory (relative to executable)
+        std::string models_path = get_resource_path("resources/server_models.json");
         return JsonUtils::load_from_file(models_path);
     } catch (const std::exception& e) {
         std::cerr << "ERROR: Failed to load server_models.json: " << e.what() << std::endl;
         std::cerr << "This is a critical file required for the application to run." << std::endl;
-        std::cerr << "Make sure you are running from the correct directory or rebuild the project." << std::endl;
+        std::cerr << "Executable directory: " << get_executable_dir() << std::endl;
         throw std::runtime_error("Failed to load server_models.json");
     }
 }
@@ -132,8 +134,76 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     auto all_models = get_supported_models(); // Already filtered by backend
     std::map<std::string, ModelInfo> downloaded;
     
+    // OPTIMIZATION: List HF cache directory once instead of checking each model
+    std::string hf_cache;
+    const char* hf_home_env = std::getenv("HF_HOME");
+    if (hf_home_env) {
+        hf_cache = std::string(hf_home_env) + "/hub";
+    } else {
+#ifdef _WIN32
+        const char* userprofile = std::getenv("USERPROFILE");
+        if (userprofile) {
+            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+        }
+#else
+        const char* home = std::getenv("HOME");
+        if (home) {
+            hf_cache = std::string(home) + "/.cache/huggingface/hub";
+        }
+#endif
+    }
+    
+    // Build a set of available model directories by listing the HF cache once
+    std::unordered_set<std::string> available_hf_models;
+    if (!hf_cache.empty() && fs::exists(hf_cache)) {
+        try {
+            for (const auto& entry : fs::directory_iterator(hf_cache)) {
+                if (entry.is_directory()) {
+                    std::string dir_name = entry.path().filename().string();
+                    // Only consider directories that start with "models--"
+                    if (dir_name.find("models--") == 0) {
+                        available_hf_models.insert(dir_name);
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[ModelManager] Warning: Could not list HF cache: " << e.what() << std::endl;
+        }
+    }
+    
+    // Get FLM models once
+    auto flm_models = get_flm_installed_models();
+    std::unordered_set<std::string> available_flm_models(flm_models.begin(), flm_models.end());
+    
+    // Now filter models using in-memory lookups (no filesystem calls per model!)
     for (const auto& [name, info] : all_models) {
-        if (is_model_downloaded(name)) {
+        bool is_available = false;
+        
+        if (info.recipe == "flm") {
+            // Check FLM set
+            is_available = available_flm_models.count(info.checkpoint) > 0;
+        } else {
+            // Convert checkpoint to cache directory name
+            std::string checkpoint = info.checkpoint;
+            size_t colon_pos = checkpoint.find(':');
+            if (colon_pos != std::string::npos) {
+                checkpoint = checkpoint.substr(0, colon_pos);
+            }
+            
+            std::string cache_dir_name = "models--";
+            for (char c : checkpoint) {
+                if (c == '/') {
+                    cache_dir_name += "--";
+                } else {
+                    cache_dir_name += c;
+                }
+            }
+            
+            // Check HF set
+            is_available = available_hf_models.count(cache_dir_name) > 0;
+        }
+        
+        if (is_available) {
             downloaded[name] = info;
         }
     }
@@ -180,8 +250,8 @@ static bool is_ryzenai_available() {
         return true;
     }
     
-    // Check in relative path (from src/cpp/build/Release to src/ryzenai-serve/build/bin/Release)
-    std::string relative_path = "../../../ryzenai-serve/build/bin/Release/ryzenai-serve.exe";
+    // Check in relative path (from executable location to src/ryzenai-serve/build/bin/Release)
+    std::string relative_path = get_resource_path("../../../ryzenai-serve/build/bin/Release/ryzenai-serve.exe");
     if (std::filesystem::exists(relative_path)) {
         return true;
     }
@@ -295,7 +365,7 @@ void ModelManager::register_user_model(const std::string& model_name,
 }
 
 // Helper function to get FLM installed models by calling 'flm list'
-static std::vector<std::string> get_flm_installed_models() {
+std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
     
 #ifdef _WIN32
@@ -365,11 +435,25 @@ static std::vector<std::string> get_flm_installed_models() {
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
+    // Call the optimized version with empty FLM cache (will fetch on demand)
+    static std::vector<std::string> empty_cache;
+    return is_model_downloaded(model_name, nullptr);
+}
+
+bool ModelManager::is_model_downloaded(const std::string& model_name, 
+                                       const std::vector<std::string>* flm_cache) {
     auto info = get_model_info(model_name);
     
     // Check FLM models separately
     if (info.recipe == "flm") {
-        auto flm_models = get_flm_installed_models();
+        // Use cached FLM list if provided, otherwise fetch it
+        std::vector<std::string> flm_models;
+        if (flm_cache) {
+            flm_models = *flm_cache;
+        } else {
+            flm_models = get_flm_installed_models();
+        }
+        
         for (const auto& installed : flm_models) {
             if (installed == info.checkpoint) {
                 return true;
@@ -421,16 +505,9 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     
-    // Check if directory exists and has files
-    if (fs::exists(model_cache_path)) {
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
-            if (entry.is_regular_file()) {
-                return true;  // Found at least one file
-            }
-        }
-    }
-    
-    return false;
+    // OPTIMIZATION: Just check if directory exists instead of recursive scan
+    // This is much faster and sufficient to determine if a model is downloaded
+    return fs::exists(model_cache_path) && fs::is_directory(model_cache_path);
 }
 
 void ModelManager::download_model(const std::string& model_name,
