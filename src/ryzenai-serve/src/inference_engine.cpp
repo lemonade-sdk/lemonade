@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <thread>
+#include <chrono>
 
 namespace ryzenai {
 
@@ -379,51 +381,28 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         
         std::cout << "[InferenceEngine] Generating tokens (streaming)..." << std::endl;
         
-        // Create tokenizer stream for incremental decoding
+        // CRITICAL: Use OgaTokenizerStream instead of repeated full sequence decode
+        // Repeatedly calling tokenizer_->Decode(all_tokens, num_tokens) crashes on NPU!
         auto tokenizer_stream = OgaTokenizerStream::Create(*tokenizer_);
-        if (!tokenizer_stream) {
-            throw std::runtime_error("Failed to create OGA tokenizer stream");
-        }
-        std::cout << "[InferenceEngine] Tokenizer stream created successfully" << std::endl;
         
         size_t token_count = 0;
+        
         while (!generator->IsDone()) {
-            try {
-                std::cout << "[InferenceEngine] About to generate token " << token_count << std::endl;
-                generator->GenerateNextToken();
-                std::cout << "[InferenceEngine] Generated token " << token_count << std::endl;
-                
-                // Get the new token
-                std::cout << "[InferenceEngine] Getting sequence data..." << std::endl;
-                const int32_t* all_tokens = generator->GetSequenceData(0);
-                size_t num_tokens = generator->GetSequenceCount(0);
-                std::cout << "[InferenceEngine] Got " << num_tokens << " tokens total" << std::endl;
-                int32_t new_token = all_tokens[num_tokens - 1];
-                std::cout << "[InferenceEngine] New token ID: " << new_token << std::endl;
-                
-                // Decode the single token with tokenizer stream
-                std::cout << "[InferenceEngine] About to decode token..." << std::endl;
-                const char* decoded = tokenizer_stream->Decode(new_token);
-                std::cout << "[InferenceEngine] Decoded token" << std::endl;
-                if (!decoded) {
-                    std::cerr << "[InferenceEngine] Warning: Decode returned null for token " << new_token << std::endl;
-                    continue;
-                }
-                
-                std::string token_str(decoded ? decoded : "");
-                std::cout << "[InferenceEngine] Token string: '" << token_str << "'" << std::endl;
-                
-                // Call the callback with the new token
+            generator->GenerateNextToken();
+            
+            // Get just the new token
+            const int32_t* all_tokens = generator->GetSequenceData(0);
+            size_t num_tokens = generator->GetSequenceCount(0);
+            int32_t new_token = all_tokens[num_tokens - 1];
+            
+            // Decode incrementally using tokenizer stream (this works!)
+            const char* decoded = tokenizer_stream->Decode(new_token);
+            if (decoded && decoded[0] != '\0') {
                 bool is_final = generator->IsDone();
-                std::cout << "[InferenceEngine] About to call callback..." << std::endl;
-                callback(token_str, is_final);
-                std::cout << "[InferenceEngine] Callback returned" << std::endl;
-                
-                token_count++;
-            } catch (const std::exception& e) {
-                std::cerr << "[InferenceEngine] Error generating token " << token_count << ": " << e.what() << std::endl;
-                throw;
+                callback(std::string(decoded), is_final);
             }
+            
+            token_count++;
         }
         
         std::cout << "[InferenceEngine] Generated " << token_count << " tokens (streaming)" << std::endl;

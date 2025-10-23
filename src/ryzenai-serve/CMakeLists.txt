@@ -49,7 +49,7 @@ set(HTTPLIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/cpp-httplib")
 if(NOT EXISTS "${HTTPLIB_DIR}/httplib.h")
     message(STATUS "Downloading cpp-httplib...")
     file(DOWNLOAD
-        "https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.14.3/httplib.h"
+        "https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.26.0/httplib.h"
         "${HTTPLIB_DIR}/httplib.h"
         SHOW_PROGRESS
     )
@@ -92,8 +92,13 @@ target_link_libraries(ryzenai-serve PRIVATE
     Threads::Threads
 )
 
+# Enable multi-threading for cpp-httplib
+target_compile_definitions(ryzenai-serve PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=8)
+
 # Windows-specific settings
 if(WIN32)
+    # Target Windows 10 or later (required for cpp-httplib v0.26.0)
+    target_compile_definitions(ryzenai-serve PRIVATE _WIN32_WINNT=0x0A00)
     target_link_libraries(ryzenai-serve PRIVATE ws2_32)
     
     # Copy required DLLs to output directory (they're in deployment folder)

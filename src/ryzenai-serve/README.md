@@ -1,5 +1,31 @@
 # Ryzen AI LLM Server
 
+## Known Issues
+
+### Streaming Not Supported (Critical Bug)
+**Status**: Streaming is currently disabled due to a critical bug in OGA's NPU execution provider.
+
+**Symptoms**: 
+- Server crashes after generating the first token in streaming mode
+- The crash occurs on the second call to `GenerateNextToken()` within a single generation session
+- First token generates successfully, but the NPU state becomes corrupted
+
+**Diagnosis**:
+Through extensive debugging, we've confirmed:
+1. ✅ Non-streaming generation works perfectly (fast: ~378ms for full responses)
+2. ✅ All OGA API calls succeed for the first token (GenerateNextToken, GetSequenceData, Decode)
+3. ✅ Callbacks and string operations complete successfully
+4. ❌ Crash occurs when entering the second iteration of the token generation loop
+5. ❌ Happens regardless of threading model (single-threaded, multi-threaded, dedicated thread)
+
+**Root Cause**: Bug in OGA's VitisAI/NPU execution provider that corrupts state after first token generation in a streaming session.
+
+**Workaround**: Use non-streaming mode (`"stream": false`), which works reliably and is performant.
+
+**Next Steps**: Report to AMD RyzenAI team with detailed reproduction steps and debug logs.
+
+# Ryzen AI LLM Server
+
 This project implements an OpenAI API compatible local LLM server for Ryzen AI LLMs written in C++.
 
 Ryzen AI Software is a fork of ONNX Runtime GenAI that adds the capability to run models on the NPU of supported Ryzen AI 300-series CPUs.

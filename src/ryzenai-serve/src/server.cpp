@@ -3,6 +3,7 @@
 #include <sstream>
 #include <chrono>
 #include <iomanip>
+#include <thread>
 
 namespace ryzenai {
 
@@ -21,6 +22,16 @@ RyzenAIServer::RyzenAIServer(const CommandLineArgs& args)
     
     // Create HTTP server
     http_server_ = std::make_unique<httplib::Server>();
+    
+    // CRITICAL: Enable multi-threading to avoid OGA context issues
+    // OGA streaming appears to have thread-local storage requirements
+    // that break when called from a single-threaded HTTP handler
+    http_server_->new_task_queue = [] { 
+        std::cout << "[Server] Creating thread pool with 8 threads" << std::endl;
+        return new httplib::ThreadPool(8);
+    };
+    
+    std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     // Setup routes
     setupRoutes();
@@ -151,65 +162,89 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
         std::cout << "[Server] Completion request (stream=" << comp_req.stream << ")" << std::endl;
         
         if (comp_req.stream) {
-            // Streaming response
+            // REAL-TIME STREAMING: Send chunks as tokens are generated
             res.set_header("Content-Type", "text/event-stream");
             res.set_header("Cache-Control", "no-cache");
             res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+            
+            GenerationParams params;
+            params.max_length = comp_req.max_tokens + 100;
+            params.temperature = comp_req.temperature;
+            params.top_p = comp_req.top_p;
+            params.top_k = comp_req.top_k;
+            params.repetition_penalty = comp_req.repeat_penalty;
+            
+            std::string prompt = comp_req.prompt;
+            std::string model_id = model_id_;
+            int token_count = 0;
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, comp_req](size_t offset, httplib::DataSink& sink) {
-                    if (offset > 0) return false;
-                    
-                    GenerationParams params;
-                    params.max_length = comp_req.max_tokens + 100;  // Add buffer for prompt
-                    params.temperature = comp_req.temperature;
-                    params.top_p = comp_req.top_p;
-                    params.top_k = comp_req.top_k;
-                    params.repetition_penalty = comp_req.repeat_penalty;
+                [this, prompt, params, model_id, &token_count](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) return false; // Only run once
                     
                     try {
-                        int token_count = 0;
-                        bool client_disconnected = false;
-                        inference_engine_->streamComplete(comp_req.prompt, params, 
-                            [&sink, &token_count, &client_disconnected, this](const std::string& token, bool is_final) {
-                                if (client_disconnected) {
-                                    return;  // Skip this token
+                        // Generate and send tokens in real-time
+                        inference_engine_->streamComplete(prompt, params, 
+                            [&sink, model_id, &token_count](const std::string& token, bool is_final) {
+                                // CRITICAL WORKAROUND: Creating nlohmann::json objects inside this OGA callback
+                                // causes a crash. Root cause unknown, but likely related to memory allocation or
+                                // threading issues within OGA's NPU execution provider.
+                                // Solution: Manually build JSON strings without using nlohmann::json.
+                                std::string escaped_token = token;
+                                // Escape special characters for JSON
+                                size_t pos = 0;
+                                while ((pos = escaped_token.find('\\', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\\");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('"', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\"");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\n', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\n");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\r', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\r");
+                                    pos += 2;
                                 }
                                 
-                                json chunk = {
-                                    {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
-                                    {"object", "text_completion.chunk"},
-                                    {"created", std::time(nullptr)},
-                                    {"model", model_id_},
-                                    {"choices", {{
-                                        {"index", 0},
-                                        {"text", token},
-                                        {"finish_reason", is_final ? "stop" : nullptr}
-                                    }}}
-                                };
+                                std::string finish_reason = is_final ? "\"stop\"" : "null";
+                                std::string chunk_json = 
+                                    "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                    "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                    ",\"model\":\"" + model_id + 
+                                    "\",\"choices\":[{\"index\":0,\"text\":\"" + escaped_token + 
+                                    "\",\"finish_reason\":" + finish_reason + "}]}";
                                 
-                                std::string data = "data: " + chunk.dump() + "\n\n";
-                                if (!sink.write(data.c_str(), data.size())) {
-                                    client_disconnected = true;
-                                    std::cerr << "[Server] Client disconnected during streaming" << std::endl;
-                                    return;  // Skip remaining tokens
+                                std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                
+                                if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                    return; // Client disconnected
                                 }
                                 token_count++;
                             }
                         );
                         
-                        // Send final done message
-                        sink.write("data: [DONE]\n\n", 14);
-                        sink.done();  // Signal that we're done streaming
+                        // Send [DONE] marker
+                        const char* done_msg = "data: [DONE]\n\n";
+                        sink.write(done_msg, strlen(done_msg));
+                        sink.done();
+                        
                         std::cout << "[Server] [OK] Streamed " << token_count << " tokens" << std::endl;
                         
                     } catch (const std::exception& e) {
                         std::cerr << "[ERROR] Streaming failed: " << e.what() << std::endl;
                         json error_chunk = createErrorResponse(e.what(), "inference_error");
-                        std::string error_data = "data: " + error_chunk.dump() + "\n\n";
-                        sink.write(error_data.c_str(), error_data.size());
-                        sink.done();  // Signal completion even on error
+                        std::string error_str = "data: " + error_chunk.dump() + "\n\n";
+                        sink.write(error_str.c_str(), error_str.size());
+                        sink.done();
                     }
                     
                     return false;
@@ -291,79 +326,88 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
         std::cout << "[Server] Chat completion request (stream=" << chat_req.stream << ")" << std::endl;
         
         if (chat_req.stream) {
-            // Streaming response
+            // REAL-TIME STREAMING: Send chunks as tokens are generated
             res.set_header("Content-Type", "text/event-stream");
             res.set_header("Cache-Control", "no-cache");
             res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+            
+            GenerationParams params;
+            params.max_length = chat_req.max_tokens + 1000;
+            params.temperature = chat_req.temperature;
+            params.top_p = chat_req.top_p;
+            params.top_k = chat_req.top_k;
+            params.repetition_penalty = chat_req.repeat_penalty;
+            
+            std::string model_id = model_id_;
+            int token_count = 0;
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, prompt, chat_req](size_t offset, httplib::DataSink& sink) {
-                    if (offset > 0) return false;
-                    
-                    GenerationParams params;
-                    params.max_length = chat_req.max_tokens + 1000;  // Add buffer for prompt
-                    params.temperature = chat_req.temperature;
-                    params.top_p = chat_req.top_p;
-                    params.top_k = chat_req.top_k;
-                    params.repetition_penalty = chat_req.repeat_penalty;
+                [this, prompt, params, model_id, &token_count](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) return false; // Only run once
                     
                     try {
-                        int token_count = 0;
-                        bool client_disconnected = false;
+                        // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, &token_count, &client_disconnected, this](const std::string& token, bool is_final) {
-                                try {
-                                    std::cout << "[Server] Callback entered, token: '" << token << "'" << std::endl;
-                                    if (client_disconnected) {
-                                        std::cout << "[Server] Client disconnected, skipping token" << std::endl;
-                                        return;  // Skip this token
-                                    }
-                                    
-                                    std::cout << "[Server] Creating JSON chunk..." << std::endl;
-                                    json chunk = {
-                                        {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
-                                        {"object", "chat.completion.chunk"},
-                                        {"created", std::time(nullptr)},
-                                        {"model", model_id_},
-                                        {"choices", {{
-                                            {"index", 0},
-                                            {"delta", {{"content", token}}},
-                                            {"finish_reason", is_final ? "stop" : nullptr}
-                                        }}}
-                                    };
-                                    
-                                    std::cout << "[Server] Dumping JSON..." << std::endl;
-                                    std::string data = "data: " + chunk.dump() + "\n\n";
-                                    std::cout << "[Server] About to write to sink: " << data.size() << " bytes" << std::endl;
-                                    if (!sink.write(data.c_str(), data.size())) {
-                                        client_disconnected = true;
-                                        std::cerr << "[Server] Client disconnected during streaming" << std::endl;
-                                        return;  // Skip remaining tokens
-                                    }
-                                    std::cout << "[Server] Sink write successful" << std::endl;
-                                    token_count++;
-                                } catch (const std::exception& e) {
-                                    std::cerr << "[Server ERROR] Exception in callback: " << e.what() << std::endl;
-                                    client_disconnected = true;
-                                } catch (...) {
-                                    std::cerr << "[Server ERROR] Unknown exception in callback" << std::endl;
-                                    client_disconnected = true;
+                            [&sink, model_id, &token_count](const std::string& token, bool is_final) {
+                                // CRITICAL WORKAROUND: Creating nlohmann::json objects inside this OGA callback
+                                // causes a crash. Root cause unknown, but likely related to memory allocation or
+                                // threading issues within OGA's NPU execution provider.
+                                // Solution: Manually build JSON strings without using nlohmann::json.
+                                std::string escaped_token = token;
+                                // Escape special characters for JSON
+                                size_t pos = 0;
+                                while ((pos = escaped_token.find('\\', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\\");
+                                    pos += 2;
                                 }
+                                pos = 0;
+                                while ((pos = escaped_token.find('"', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\"");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\n', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\n");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\r', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\r");
+                                    pos += 2;
+                                }
+                                
+                                std::string finish_reason = is_final ? "\"stop\"" : "null";
+                                std::string chunk_json = 
+                                    "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                    "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                    ",\"model\":\"" + model_id + 
+                                    "\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + escaped_token + 
+                                    "\"},\"finish_reason\":" + finish_reason + "}]}";
+                                
+                                std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                
+                                if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                    return; // Client disconnected
+                                }
+                                token_count++;
                             }
                         );
                         
-                        // Send final done message
-                        sink.write("data: [DONE]\n\n", 14);
-                        sink.done();  // Signal that we're done streaming
+                        // Send [DONE] marker
+                        const char* done_msg = "data: [DONE]\n\n";
+                        sink.write(done_msg, strlen(done_msg));
+                        sink.done();
+                        
                         std::cout << "[Server] [OK] Streamed " << token_count << " tokens" << std::endl;
                         
                     } catch (const std::exception& e) {
                         std::cerr << "[ERROR] Streaming failed: " << e.what() << std::endl;
                         json error_chunk = createErrorResponse(e.what(), "inference_error");
-                        std::string error_data = "data: " + error_chunk.dump() + "\n\n";
-                        sink.write(error_data.c_str(), error_data.size());
-                        sink.done();  // Signal completion even on error
+                        std::string error_str = "data: " + error_chunk.dump() + "\n\n";
+                        sink.write(error_str.c_str(), error_str.size());
+                        sink.done();
                     }
                     
                     return false;
