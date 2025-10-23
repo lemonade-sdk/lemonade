@@ -1,55 +1,42 @@
+# for qwen 3
 from openai import OpenAI
 
-# Initialize client
-client = OpenAI(base_url="http://localhost:8000/api/v0", api_key="not-needed")
+# Connect to Lemonade
+client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="not-needed")
 
-print("🧠 Testing enable_thinking parameter...")
-print("=" * 50)
+print("🧪 Testing enable_thinking with Qwen3-4B-GGUF...")
+print("=" * 70)
 
-# Test 1: enable_thinking=True (should show thinking)
-print("Test 1: enable_thinking=True (thinking mode)")
+# # Test 1: enable_thinking=True
+print("\n📝 Test 1: enable_thinking=True")
+print("-" * 70)
 try:
     completion = client.chat.completions.create(
-        model="Qwen3-4B-GGUF",  # Make sure you have this model
+        model="Qwen3-4B-GGUF",  # Changed to Qwen3
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
-        max_completion_tokens=100,
-        extra_body={"enable_thinking": True},
+        max_tokens=500,  # Increased for reasoning content
+        extra_body={"enable_thinking": True},  # Direct parameter
     )
-    print("Response with thinking:")
-    print(completion.choices[0].message.content)
-    print()
+    print("Full message object:")
+    print(completion.choices[0].message)
 except Exception as e:
-    print(f"Error in Test 1: {e}")
-    print()
+    print(f"❌ Error: {e}")
 
-# Test 2: enable_thinking=False (should be fast, no thinking)
-print("Test 2: enable_thinking=False (fast mode)")
+# # Test 2: enable_thinking=False
+print("\n📝 Test 2: enable_thinking=False")
+print("-" * 70)
 try:
     completion = client.chat.completions.create(
         model="Qwen3-4B-GGUF",
         messages=[{"role": "user", "content": "What is 15 * 23?"}],
-        max_completion_tokens=100,
+        max_tokens=500,
         extra_body={"enable_thinking": False},
     )
-    print("Response without thinking:")
-    print(completion.choices[0].message.content)
-    print()
+    print("Full message object:")
+    print(completion.choices[0].message)
 except Exception as e:
-    print(f"Error in Test 2: {e}")
-    print()
+    print(f"❌ Error: {e}")
 
-# Test 3: Default behavior (should be thinking=True)
-print("Test 3: Default behavior (should default to thinking)")
-try:
-    completion = client.chat.completions.create(
-        model="Qwen3-4B-GGUF",
-        messages=[{"role": "user", "content": "What is 15 * 23?"}],
-        max_completion_tokens=100,
-    )
-    print("Default response:")
-    print(completion.choices[0].message.content)
-except Exception as e:
-    print(f"Error in Test 3: {e}")
+print("\n" + "=" * 70)
 
-print("=" * 50)
-print("✅ Testing complete!")
+
