@@ -452,7 +452,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 }
                 
                 // Load the requested model (will auto-download FLM models if needed)
-                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                // Use do_not_upgrade=true for inference requests to avoid re-downloading
+                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -607,7 +608,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 }
                 
                 // Load the requested model
-                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                // Use do_not_upgrade=true for inference requests to avoid re-downloading
+                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -714,7 +716,8 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 }
                 
                 // Load the requested model
-                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                // Use do_not_upgrade=true for inference requests to avoid re-downloading
+                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -771,7 +774,8 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 }
                 
                 // Load the requested model
-                router_->load_model(requested_model, info.checkpoint, info.recipe, false, info.labels);
+                // Use do_not_upgrade=true for inference requests to avoid re-downloading
+                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
                 std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
             }
         } else if (!router_->is_model_loaded()) {
@@ -872,7 +876,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         // Load the model (will auto-download FLM models if needed)
-        router_->load_model(model_name, checkpoint, recipe, false, labels);
+        // Use do_not_upgrade=true to avoid forcing re-download with --force
+        router_->load_model(model_name, checkpoint, recipe, true, labels);
         
         std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
         
