@@ -264,7 +264,7 @@ window.lmnRender = function() {
     // Python version badge
     var pythonVersions = '';
     if (lmnState.fw === 'oga' && lmnState.dev === 'npu') {
-      pythonVersions = '3.10';
+      pythonVersions = '3.12';
     } else {
       pythonVersions = '3.10--3.13';
     }
@@ -459,7 +459,7 @@ window.lmnRender = function() {
         if (pre) {
           var lines = [];
           if (condaBlock) {
-            lines.push('conda create -n lemon python=3.10');
+            lines.push('conda create -n lemon python=3.12');
             lines.push('conda activate lemon');
           }
           cmd.split('\n').forEach(function(line) { lines.push(line); });
