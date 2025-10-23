@@ -10,6 +10,10 @@ from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
 from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
 from lemonade.common.network import custom_snapshot_download
+from lemonade.tools.oga.migration import (
+    detect_incompatible_ryzenai_models,
+    delete_incompatible_models,
+)
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
@@ -61,9 +65,16 @@ class ModelManager:
 
         # Add the model name as a key in each entry, to make it easier
         # to access later
-
+        # Also convert labels to boolean fields for LoadConfig compatibility
         for key, value in models.items():
             value["model_name"] = key
+
+            # Convert labels to boolean fields for backwards compatibility with LoadConfig
+            labels = value.get("labels", [])
+            if "reasoning" in labels and "reasoning" not in value:
+                value["reasoning"] = True
+            if "vision" in labels and "vision" not in value:
+                value["vision"] = True
 
         return models
 
@@ -591,6 +602,38 @@ class ModelManager:
                 with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
                     json.dump(user_models, file)
                 print(f"Removed {model_name} from user models registry")
+
+    def get_incompatible_ryzenai_models(self):
+        """
+        Get information about incompatible RyzenAI models in the cache.
+
+        Returns:
+            dict with 'models' list and 'total_size' info
+        """
+        # Get HF_HOME from environment
+        hf_home = os.environ.get("HF_HOME", None)
+
+        incompatible_models, total_size = detect_incompatible_ryzenai_models(
+            DEFAULT_CACHE_DIR, hf_home
+        )
+
+        return {
+            "models": incompatible_models,
+            "total_size": total_size,
+            "count": len(incompatible_models),
+        }
+
+    def cleanup_incompatible_models(self, model_paths: list):
+        """
+        Delete incompatible RyzenAI models from the cache.
+
+        Args:
+            model_paths: List of model paths to delete
+
+        Returns:
+            dict with deletion results
+        """
+        return delete_incompatible_models(model_paths)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

@@ -4,7 +4,6 @@
 
 import argparse
 import subprocess
-import sys
 import os
 import json
 import webbrowser
@@ -321,6 +320,7 @@ class OgaLoad(FirstTool):
 
     @staticmethod
     def _setup_model_dependencies(full_model_path, device, ryzenai_version, oga_path):
+        # pylint: disable=unused-argument
         """
         Sets up model dependencies for hybrid and NPU inference by:
         1. Configuring the custom_ops_library path in genai_config.json.
@@ -328,116 +328,35 @@ class OgaLoad(FirstTool):
         3. Check NPU driver version if required for device and ryzenai_version.
         """
 
-        env_path = sys.prefix
+        # For RyzenAI 1.6.0, check NPU driver version for NPU and hybrid devices
+        if device in ["npu", "hybrid"]:
+            required_driver_version = REQUIRED_NPU_DRIVER_VERSION
 
-        if "1.4.0" in ryzenai_version:
-            if device == "npu":
-                custom_ops_path = os.path.join(
-                    oga_path, "libs", "onnxruntime_vitis_ai_custom_ops.dll"
+            current_driver_version = _get_npu_driver_version()
+            rai_version, _ = _get_ryzenai_version_info(device)
+
+            if not current_driver_version:
+                printing.log_warning(
+                    f"NPU driver not found. {device.upper()} inference requires NPU driver "
+                    f"version {required_driver_version}.\n"
+                    "Please download and install the NPU Driver from:\n"
+                    f"{NPU_DRIVER_DOWNLOAD_URL}\n"
+                    "NPU functionality may not work properly."
                 )
-            else:
-                custom_ops_path = os.path.join(oga_path, "libs", "onnx_custom_ops.dll")
-        else:
-            # For 1.5.0+, check NPU driver version for NPU and hybrid devices
-            if device in ["npu", "hybrid"]:
-                required_driver_version = REQUIRED_NPU_DRIVER_VERSION
+                _open_driver_install_page()
 
-                current_driver_version = _get_npu_driver_version()
-
-                if not current_driver_version:
-                    printing.log_warning(
-                        f"NPU driver not found. {device.upper()} inference requires NPU driver "
-                        f"version {required_driver_version}.\n"
-                        "Please download and install the NPU Driver from:\n"
-                        f"{NPU_DRIVER_DOWNLOAD_URL}\n"
-                        "NPU functionality may not work properly."
-                    )
-                    _open_driver_install_page()
-
-                elif not _compare_driver_versions(
-                    current_driver_version, required_driver_version
-                ):
-                    printing.log_warning(
-                        f"Incorrect NPU driver version detected: {current_driver_version}\n"
-                        f"{device.upper()} inference with RyzenAI 1.5.0 requires driver "
-                        f"version {required_driver_version} or higher.\n"
-                        "Please download and install the correct NPU Driver from:\n"
-                        f"{NPU_DRIVER_DOWNLOAD_URL}\n"
-                        "NPU functionality may not work properly."
-                    )
-                    _open_driver_install_page()
-
-            if device == "npu":
-                # For 1.5.0, custom ops are in the conda environment's onnxruntime package
-                custom_ops_path = os.path.join(
-                    env_path,
-                    "Lib",
-                    "site-packages",
-                    "onnxruntime",
-                    "capi",
-                    "onnxruntime_vitis_ai_custom_ops.dll",
-                )
-                dll_source_path = os.path.join(
-                    env_path, "Lib", "site-packages", "onnxruntime", "capi"
-                )
-                required_dlls = ["dyn_dispatch_core.dll", "xaiengine.dll"]
-            else:
-                custom_ops_path = os.path.join(
-                    env_path,
-                    "Lib",
-                    "site-packages",
-                    "onnxruntime_genai",
-                    "onnx_custom_ops.dll",
-                )
-                dll_source_path = os.path.join(
-                    env_path, "Lib", "site-packages", "onnxruntime_genai"
-                )
-                required_dlls = ["libutf8_validity.dll", "abseil_dll.dll"]
-
-            # Validate that all required DLLs exist in the source directory
-            missing_dlls = []
-            if not os.path.exists(custom_ops_path):
-                missing_dlls.append(custom_ops_path)
-
-            for dll_name in required_dlls:
-                dll_source = os.path.join(dll_source_path, dll_name)
-                if not os.path.exists(dll_source):
-                    missing_dlls.append(dll_source)
-
-            if missing_dlls:
-                dll_list = "\n  - ".join(missing_dlls)
-                raise RuntimeError(
-                    f"Required DLLs not found for {device} inference:\n  - {dll_list}\n"
-                    f"Please ensure your RyzenAI installation is complete and supports {device}."
-                )
-
-            # Add the DLL source directory to PATH
-            current_path = os.environ.get("PATH", "")
-            if dll_source_path not in current_path:
-                os.environ["PATH"] = dll_source_path + os.pathsep + current_path
-
-        # Update the model config with custom_ops_library path
-        config_path = os.path.join(full_model_path, "genai_config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-            if (
-                "model" in config
-                and "decoder" in config["model"]
-                and "session_options" in config["model"]["decoder"]
+            elif not _compare_driver_versions(
+                current_driver_version, required_driver_version
             ):
-                config["model"]["decoder"]["session_options"][
-                    "custom_ops_library"
-                ] = custom_ops_path
-
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4)
-
-        else:
-            printing.log_info(
-                f"Model's `genai_config.json` not found in {full_model_path}"
-            )
+                printing.log_warning(
+                    f"Incorrect NPU driver version detected: {current_driver_version}\n"
+                    f"{device.upper()} inference with RyzenAI {rai_version} requires driver "
+                    f"version {required_driver_version} or higher.\n"
+                    "Please download and install the correct NPU Driver from:\n"
+                    f"{NPU_DRIVER_DOWNLOAD_URL}\n"
+                    "NPU functionality may not work properly."
+                )
+                _open_driver_install_page()
 
     @staticmethod
     def _is_preoptimized_model(input_model_path):
@@ -501,34 +420,6 @@ class OgaLoad(FirstTool):
             raise ValueError("[Model builder] " + str(e)) from e
 
         return full_model_path
-
-    @staticmethod
-    def _setup_npu_environment(ryzenai_version, oga_path):
-        """
-        Sets up environment for NPU flow of ONNX model and returns saved state to be restored
-        later in cleanup.
-        """
-        if "1.5.0" in ryzenai_version:
-            # For PyPI installation (1.5.0+), no environment setup needed
-            return None
-        elif "1.4.0" in ryzenai_version:
-            # Legacy lemonade-install approach for 1.4.0
-            if not os.path.exists(os.path.join(oga_path, "libs", "onnxruntime.dll")):
-                raise RuntimeError(
-                    f"Cannot find libs/onnxruntime.dll in lib folder: {oga_path}"
-                )
-
-            # Save current state so they can be restored after inference.
-            saved_state = {"cwd": os.getcwd(), "path": os.environ["PATH"]}
-
-            # Setup NPU environment (cwd and path will be restored later)
-            os.chdir(oga_path)
-            os.environ["PATH"] = (
-                os.path.join(oga_path, "libs") + os.pathsep + os.environ["PATH"]
-            )
-            return saved_state
-        else:
-            raise ValueError(f"Unsupported RyzenAI version: {ryzenai_version}")
 
     @staticmethod
     def _load_model_and_setup_state(
@@ -852,15 +743,10 @@ class OgaLoad(FirstTool):
 
             try:
                 if device == "npu":
-                    saved_env_state = self._setup_npu_environment(
-                        ryzenai_version, oga_path
-                    )
                     # Set USE_AIE_RoPE based on model type
                     os.environ["USE_AIE_RoPE"] = (
                         "0" if "phi-" in checkpoint.lower() else "1"
                     )
-                elif device == "hybrid":
-                    saved_env_state = None
 
                 self._load_model_and_setup_state(
                     state, full_model_path, checkpoint, trust_remote_code

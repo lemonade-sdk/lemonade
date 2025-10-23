@@ -357,6 +357,14 @@ class Server:
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
 
+            # Migration routes
+            self.app.get(f"{prefix}/migration/incompatible-models")(
+                self.get_incompatible_models
+            )
+            self.app.post(f"{prefix}/migration/cleanup")(
+                self.cleanup_incompatible_models
+            )
+
     async def set_log_level(self, config: LogLevelConfig):
         """
         Set the logging level of the server.
@@ -1802,6 +1810,42 @@ class Server:
             await websocket.close(code=4000)
             return
         await log_streamer(websocket, self.log_file)
+
+    async def get_incompatible_models(self):
+        """
+        Get information about incompatible RyzenAI models in the cache.
+        """
+        try:
+            return ModelManager().get_incompatible_ryzenai_models()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to scan for incompatible models: {str(e)}",
+            )
+
+    async def cleanup_incompatible_models(self, request: Request):
+        """
+        Delete selected incompatible RyzenAI models from the cache.
+        """
+        try:
+            body = await request.json()
+            model_paths = body.get("model_paths", [])
+
+            if not model_paths:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No model_paths provided",
+                )
+
+            result = ModelManager().cleanup_incompatible_models(model_paths)
+            return result
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to cleanup models: {str(e)}",
+            )
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

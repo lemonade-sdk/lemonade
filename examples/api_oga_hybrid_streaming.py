@@ -17,7 +17,7 @@ from lemonade.api import from_pretrained
 from lemonade.tools.oga.utils import OrtGenaiStreamer
 
 model, tokenizer = from_pretrained(
-    "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid", recipe="oga-hybrid"
+    "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-hybrid", recipe="oga-hybrid"
 )
 
 input_ids = tokenizer("This is my prompt", return_tensors="pt").input_ids

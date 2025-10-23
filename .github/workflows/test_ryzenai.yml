@@ -73,7 +73,7 @@ jobs:
           conda update conda conda-libmamba-solver --solver classic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          conda create -p .\lemon-ryzenai-ci python=3.10 -y
+          conda create -p .\lemon-ryzenai-ci python=3.12 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
@@ -90,7 +90,7 @@ jobs:
           conda run -p .\lemon-ryzenai-ci python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          # Install using new PyPI approach for v1.5.0
+          # Install using PyPI approach for v1.5.0+
           conda run -p .\lemon-ryzenai-ci pip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
@@ -110,7 +110,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           # Test CLI
-          conda run -p .\lemon-ryzenai-ci lemonade -i amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          conda run -p .\lemon-ryzenai-ci lemonade -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs
@@ -128,7 +128,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           # Test CLI
-          conda run -p .\lemon-ryzenai-ci lemonade -m -i amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          conda run -p .\lemon-ryzenai-ci lemonade -m -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs

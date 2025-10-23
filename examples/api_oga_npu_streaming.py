@@ -16,7 +16,7 @@ from lemonade.api import from_pretrained
 from lemonade.tools.oga.utils import OrtGenaiStreamer
 
 model, tokenizer = from_pretrained(
-    "amd/Phi-3.5-mini-instruct-awq-g128-int4-asym-bf16-onnx-ryzen-strix",
+    "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu",
     recipe="oga-npu",
 )
 

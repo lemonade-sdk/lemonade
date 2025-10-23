@@ -1,0 +1,344 @@
+name: Hybrid Server Installer 🌩️
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  hybrid-server-installer:
+    runs-on: [stx, Windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clean up any existing processes
+        shell: PowerShell
+        run: |
+          # Run initial cleanup with strict error handling and log cleanup
+          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Initial Cleanup" -FailOnError $true -CleanLogs $true
+
+      - name: Install NSIS
+        shell: PowerShell
+        run: |
+          # Download NSIS installer
+          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe" -OutFile "nsis.exe"
+
+          # Install NSIS
+          Start-Process nsis.exe -ArgumentList '/S' -Wait
+
+      - name: Verify NSIS installation
+        shell: PowerShell
+        run: |
+          # Check if NSIS is installed
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /VERSION
+
+      - name: Build the Lemonade Server installer
+        shell: PowerShell
+        run: |
+          cd installer
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' 'Installer.nsi'
+
+          if (Test-Path "Lemonade_Server_Installer.exe") {
+            Write-Host "Lemonade_Server_Installer.exe has been created successfully."
+          } else {
+            Write-Host "Lemonade_Server_Installer.exe was not found."
+            exit 1
+          }
+
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LemonadeServerInstaller
+          path: |
+            installer\Lemonade_Server_Installer.exe
+
+      - name: Attempt to install Lemonade Server using installer
+        shell: PowerShell
+        run: |
+          cd installer
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /Extras=hybrid /D=C:\Users\nimbys\AppData\Local\lemonade_server" -Wait
+
+      - name: Verify installer ran successfully
+        shell: PowerShell
+        run: |
+          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server"
+          
+          Write-Host "Verifying installation at: $installPath"
+          
+          # Check if installation directory exists
+          if (-not (Test-Path $installPath)) {
+              Write-Host "Error: Installation directory not found at $installPath"
+              exit 1
+          }
+          
+          # Check for key files/directories that should be installed
+          $expectedItems = @(
+              "bin\lemonade_server.vbs",
+              "bin\lemonade-server.bat", 
+              "python\Scripts\lemonade-server-dev.exe"
+          )
+          
+          $missingItems = @()
+          foreach ($item in $expectedItems) {
+              $fullPath = Join-Path $installPath $item
+              if (-not (Test-Path $fullPath)) {
+                  $missingItems += $item
+              } else {
+                  Write-Host "Found: $item"
+              }
+          }
+          
+          if ($missingItems.Count -gt 0) {
+              Write-Host "Error: Missing expected files after installation:"
+              foreach ($missing in $missingItems) {
+                  Write-Host "  Missing: $missing"
+              }
+              
+              Write-Host "Contents of key directories:"
+              Write-Host "bin directory:"
+              if (Test-Path "$installPath\bin") {
+                  Get-ChildItem "$installPath\bin" | Format-Table Name, Length -AutoSize
+              } else {
+                  Write-Host "  bin directory not found"
+              }
+              Write-Host "python\Scripts directory:"
+              if (Test-Path "$installPath\python\Scripts") {
+                  Get-ChildItem "$installPath\python\Scripts" | Format-Table Name, Length -AutoSize
+              } else {
+                  Write-Host "  python\Scripts directory not found"
+              }
+              exit 1
+          }
+          
+          Write-Host "Installation verification successful - all expected files found"
+          
+          # Test that the lemonade-server command works
+          Write-Host "Testing lemonade-server command..."
+          try {
+              & "C:\Users\nimbys\AppData\Local\lemonade_server\python\Scripts\lemonade-server-dev.exe" --version
+              Write-Host "lemonade-server command executed successfully"
+          } catch {
+              Write-Host "Error running lemonade-server command: $_"
+              exit 1
+          }
+
+      - name: Ensure the Lemonade Server works properly
+        shell: PowerShell
+        env:
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
+          LEMONADE_CI_MODE: "True"
+        run: |
+          Write-Host "Use a function to determine the underlying command from the lemonade server shortcut"
+          function Get-ShortcutTarget {
+              param (
+                  [string]$shortcutPath
+              )
+              $shell = New-Object -ComObject WScript.Shell
+              $shortcut = $shell.CreateShortcut($shortcutPath)
+              $targetPath = $shortcut.TargetPath
+              $arguments = $shortcut.Arguments
+              return "$targetPath $arguments"
+          }
+
+          # Combined function to show server diagnostics including process status and logs
+          function Show-ServerDiagnostics {
+              param(
+                  [string]$context = "",
+                  [object]$serverProcess = $null,
+                  [int]$tailLines = 30,
+                  [switch]$showFileList,
+                  [switch]$showProcessList
+              )
+              
+              if ($context) {
+                  Write-Host "=== Server Diagnostics ($context) ==="
+              } else {
+                  Write-Host "=== Server Diagnostics ==="
+              }
+              
+              # Show server process status if provided
+              if ($serverProcess) {
+                  Write-Host "Server process status:"
+                  Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue | Format-Table ProcessName, Id, CPU, WorkingSet -AutoSize
+              }
+              
+              # Show process list if requested
+              if ($showProcessList) {
+                  Write-Host "Current lemonade/python processes:"
+                  Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*python*" } | Format-Table ProcessName, Id, StartTime -AutoSize
+              }
+              
+              # Show lemonade logs
+              Write-Host "Checking for server logs in temp directory..."
+              $lemonadeLogFiles = Get-ChildItem "$env:TEMP\lemonade_*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+              if ($lemonadeLogFiles) {
+                  if ($showFileList) {
+                      Write-Host "Found $($lemonadeLogFiles.Count) lemonade log file(s) in temp:"
+                      $lemonadeLogFiles | Select-Object -First 3 | Format-Table Name, LastWriteTime, Length -AutoSize
+                  }
+                  
+                  # Show the latest log content
+                  $latestLog = $lemonadeLogFiles | Select-Object -First 1
+                  Write-Host "Latest log content ($($latestLog.Name), last $tailLines lines):"
+                  Get-Content $latestLog.FullName -Tail $tailLines -ErrorAction SilentlyContinue
+              } else {
+                  Write-Host "ERROR: No lemonade_*.log files found in temp directory: $env:TEMP"
+                  Write-Host "This indicates the server never started or failed to create log files."
+                  if ($showFileList) {
+                      Write-Host "Available .log files in temp:"
+                      Get-ChildItem "$env:TEMP\*.log" -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Format-Table -AutoSize
+                  }
+                  Write-Host "=== End Server Diagnostics ==="
+                  Write-Host "Failing workflow due to missing server log files."
+                  exit 1
+              }
+              Write-Host "=== End Server Diagnostics ==="
+          }
+
+          $shortcutPath = "C:\Users\nimbys\AppData\Local\lemonade_server\lemonade-server.lnk"
+          $fullCommand = Get-ShortcutTarget -shortcutPath $shortcutPath
+
+          Write-Host "Server shortcut full command: $fullCommand"
+
+          Write-Host "Start the VBScript as users would, but monitor the actual server process"
+          
+          # Start the VBScript process without extra arguments (this mirrors user experience)
+          Write-Host "Starting VBScript: wscript.exe `"$fullCommand`""
+          Start-Process -FilePath "wscript.exe" -ArgumentList "`"$fullCommand`"" -NoNewWindow
+          
+          Write-Host "VBScript launched (it will exit quickly after starting the server chain)"
+          Write-Host "Server logs will be written to temp files"
+          
+          # Wait a moment for the VBScript to launch the server chain
+          Start-Sleep -Seconds 15
+          
+          # Check what processes are actually running
+          Write-Host "=== Process Telemetry ==="
+          Write-Host "All current processes containing 'lemonade', 'python', 'cmd', or 'wscript':"
+          Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*python*" -or $_.ProcessName -like "*cmd*" -or $_.ProcessName -like "*wscript*" } | Format-Table ProcessName, Id, StartTime -AutoSize
+          
+          # Show lemonade logs
+          Show-ServerDiagnostics -context "Process Telemetry" -tailLines 20 -showFileList
+          Write-Host "=== End Process Telemetry ==="
+          
+          # Find the actual Python server process that should be running
+          Write-Host "Looking for the actual lemonade-server-dev process..."
+          $serverProcess = $null
+          $attempts = 0
+          while ($attempts -lt 12) {  # Try for 2 minutes
+              $serverProcess = Get-Process -Name "lemonade-server-dev" -ErrorAction SilentlyContinue
+              if ($serverProcess) {
+                  Write-Host "Found lemonade-server-dev process with PID: $($serverProcess.Id)"
+                  break
+              }
+              Write-Host "Attempt $($attempts + 1): lemonade-server-dev process not found yet, waiting..."
+              Start-Sleep -Seconds 10
+              $attempts++
+          }
+          
+          if (-not $serverProcess) {
+              Write-Host "Error: lemonade-server-dev process never started!"
+              
+              # Show comprehensive diagnostics for debugging
+              Show-ServerDiagnostics -context "Server Process Not Found" -showFileList -showProcessList
+              
+              exit 1
+          }
+          
+          Write-Host "Server process found and running. Wait for the server port to come up"
+          while ($true) {
+            
+            $llmPortCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000
+            if (-not $llmPortCheck.TcpTestSucceeded) {
+              Write-Host "LLM server is not yet running on port 8000!"
+              
+              # Check if server process is still alive
+              $serverStillRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+              if (-not $serverStillRunning) {
+                  Write-Host "Error: Server process has died!"
+                  Write-Host "Checking for any remaining lemonade processes..."
+                  Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*python*" } | Format-Table ProcessName, Id -AutoSize
+                  exit 1
+              }
+              
+              Write-Host "Server process still running, checking logs if available..."
+              
+              # Show recent log content
+              Show-ServerDiagnostics -context "Port Check - Server Not Ready" -serverProcess $serverProcess -tailLines 30
+            } else {
+              Write-Host "LLM server is running on port 8000."
+              break
+            }
+
+            Start-Sleep -Seconds 30
+          }
+
+          Write-Host "Checking the /health endpoint"
+          $response = Invoke-WebRequest -Uri http://localhost:8000/api/v1/health -UseBasicParsing
+
+          if ($response.StatusCode -eq 200) {
+              Write-Output "Good: /health status code is 200"
+          } else {
+              Write-Output "Error: /health status code is not 200"
+              Show-ServerDiagnostics -context "Health Check Failed" -serverProcess $serverProcess
+              exit 1
+          }
+
+          $jsonContent = $response.Content | ConvertFrom-Json
+          if ($jsonContent) {
+              Write-Output "Good: /health JSON content is not empty: $jsonContent"
+          } else {
+              Write-Output "Error: /health JSON content is empty"
+              Show-ServerDiagnostics -context "Health JSON Empty" -serverProcess $serverProcess
+              exit 1
+          }
+
+          Write-Host "Checking the /chat/completions endpoint, which will run an LLM generation"
+
+          $response = Invoke-WebRequest `
+          -UseBasicParsing `
+          -Uri "http://localhost:8000/api/v1/chat/completions" `
+          -Method POST `
+          -Headers @{ "Content-Type" = "application/json" } `
+          -Body '{
+            "model": "Llama-3.2-1B-Instruct-Hybrid",
+            "messages": [
+              {
+                "role": "user",
+                "content": "What is the population of Paris?"
+              }
+            ],
+            "stream": false
+          }'
+
+          if ($response.StatusCode -eq 200) {
+              Write-Output "Good: /completions status code is 200"
+          } else {
+              Write-Output "Error: /completions status code is not 200"
+              Show-ServerDiagnostics -context "Completions HTTP Error" -serverProcess $serverProcess
+              exit 1
+          }
+
+          $jsonContent = $response.Content | ConvertFrom-Json
+          $llmAnswer = $jsonContent.choices[0].message.content
+          if ($llmAnswer) {
+              Write-Output "Good: /completions JSON content is not empty: $llmAnswer"
+          } else {
+              Write-Output "Error: /completions JSON content is empty"
+              Show-ServerDiagnostics -context "Completions JSON Empty" -serverProcess $serverProcess
+              exit 1
+          }
+
+      - name: Final cleanup
+        shell: PowerShell
+        if: always()
+        run: |
+          # Run final cleanup with strict error handling but preserve logs for analysis
+          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Final Cleanup" -FailOnError $true -CleanLogs $false
+
+          
