@@ -381,8 +381,7 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         
         std::cout << "[InferenceEngine] Generating tokens (streaming)..." << std::endl;
         
-        // CRITICAL: Use OgaTokenizerStream instead of repeated full sequence decode
-        // Repeatedly calling tokenizer_->Decode(all_tokens, num_tokens) crashes on NPU!
+        // Use OgaTokenizerStream for efficient incremental token decoding
         auto tokenizer_stream = OgaTokenizerStream::Create(*tokenizer_);
         
         size_t token_count = 0;

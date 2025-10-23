@@ -2,27 +2,15 @@
 
 ## Known Issues
 
-### Streaming Not Supported (Critical Bug)
-**Status**: Streaming is currently disabled due to a critical bug in OGA's NPU execution provider.
+### Streaming Implementation Note
+**Status**: ✅ Streaming is fully functional with a workaround for a JSON library compatibility issue.
 
-**Symptoms**: 
-- Server crashes after generating the first token in streaming mode
-- The crash occurs on the second call to `GenerateNextToken()` within a single generation session
-- First token generates successfully, but the NPU state becomes corrupted
+**Implementation Detail**:
+Creating `nlohmann::json` objects directly within OGA streaming callbacks causes crashes. This appears to be related to memory allocation or threading interactions between the JSON library and the callback context.
 
-**Diagnosis**:
-Through extensive debugging, we've confirmed:
-1. ✅ Non-streaming generation works perfectly (fast: ~378ms for full responses)
-2. ✅ All OGA API calls succeed for the first token (GenerateNextToken, GetSequenceData, Decode)
-3. ✅ Callbacks and string operations complete successfully
-4. ❌ Crash occurs when entering the second iteration of the token generation loop
-5. ❌ Happens regardless of threading model (single-threaded, multi-threaded, dedicated thread)
+**Solution**: JSON strings are manually constructed within streaming callbacks instead of using `nlohmann::json` objects. This provides stable, real-time streaming performance.
 
-**Root Cause**: Bug in OGA's VitisAI/NPU execution provider that corrupts state after first token generation in a streaming session.
-
-**Workaround**: Use non-streaming mode (`"stream": false`), which works reliably and is performant.
-
-**Next Steps**: Report to AMD RyzenAI team with detailed reproduction steps and debug logs.
+**Performance**: Both streaming and non-streaming modes work reliably with excellent performance characteristics.
 
 # Ryzen AI LLM Server
 

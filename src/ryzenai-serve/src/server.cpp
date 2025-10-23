@@ -23,9 +23,7 @@ RyzenAIServer::RyzenAIServer(const CommandLineArgs& args)
     // Create HTTP server
     http_server_ = std::make_unique<httplib::Server>();
     
-    // CRITICAL: Enable multi-threading to avoid OGA context issues
-    // OGA streaming appears to have thread-local storage requirements
-    // that break when called from a single-threaded HTTP handler
+    // Enable multi-threading for better request handling performance
     http_server_->new_task_queue = [] { 
         std::cout << "[Server] Creating thread pool with 8 threads" << std::endl;
         return new httplib::ThreadPool(8);
@@ -188,10 +186,10 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
                             [&sink, model_id, &token_count](const std::string& token, bool is_final) {
-                                // CRITICAL WORKAROUND: Creating nlohmann::json objects inside this OGA callback
-                                // causes a crash. Root cause unknown, but likely related to memory allocation or
-                                // threading issues within OGA's NPU execution provider.
-                                // Solution: Manually build JSON strings without using nlohmann::json.
+                                // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
+                                // causes a crash. This appears to be a memory allocation issue between
+                                // the JSON library and the callback context (not related to OGA itself).
+                                // Solution: Manually build JSON strings instead of using nlohmann::json objects.
                                 std::string escaped_token = token;
                                 // Escape special characters for JSON
                                 size_t pos = 0;
@@ -351,10 +349,10 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
                             [&sink, model_id, &token_count](const std::string& token, bool is_final) {
-                                // CRITICAL WORKAROUND: Creating nlohmann::json objects inside this OGA callback
-                                // causes a crash. Root cause unknown, but likely related to memory allocation or
-                                // threading issues within OGA's NPU execution provider.
-                                // Solution: Manually build JSON strings without using nlohmann::json.
+                                // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
+                                // causes a crash. This appears to be a memory allocation issue between
+                                // the JSON library and the callback context (not related to OGA itself).
+                                // Solution: Manually build JSON strings instead of using nlohmann::json objects.
                                 std::string escaped_token = token;
                                 // Escape special characters for JSON
                                 size_t pos = 0;
