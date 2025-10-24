@@ -64,9 +64,12 @@ class Testing(ServerTestingBase):
             "system-info",
         ]
 
+        # Use a session for connection pooling to avoid per-request connection overhead
+        session = requests.Session()
+
         # Ensure that we get a 404 error when the endpoint is not registered
         url = f"http://localhost:{PORT}/api/v0/nonexistent"
-        response = requests.head(url, timeout=60)
+        response = session.head(url, timeout=60)
         assert response.status_code == 404
 
         # Check that all endpoints are properly registered on both v0 and v1
@@ -74,10 +77,12 @@ class Testing(ServerTestingBase):
         for endpoint in valid_endpoints:
             for version in ["v0", "v1"]:
                 url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
-                response = requests.head(url, timeout=60)
+                response = session.head(url, timeout=60)
                 assert (
                     response.status_code != 404
                 ), f"Endpoint {endpoint} is not registered on {version}"
+
+        session.close()
 
     # Endpoint: /api/v1/chat/completions
     def test_001_test_chat_completion(self):

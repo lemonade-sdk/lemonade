@@ -354,6 +354,12 @@ bool Server::is_running() const {
 }
 
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+    
     auto thread_id = std::this_thread::get_id();
     std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
     std::cout.flush();
@@ -373,6 +379,12 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+    
     std::cout << "[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====" << std::endl;
     std::cout.flush();
     
@@ -821,6 +833,12 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+    
     // Return cached responses (stub for now)
     nlohmann::json response = nlohmann::json::array();
     res.set_content(response.dump(), "application/json");
@@ -975,6 +993,12 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+    
     try {
         auto stats = router_->get_stats();
         res.set_content(stats.dump(), "application/json");
@@ -986,6 +1010,12 @@ void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {
 }
 
 void Server::handle_system_info(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK without processing
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+    
     nlohmann::json info = {
         {"os", "windows"},
         {"version", "1.0.0"},

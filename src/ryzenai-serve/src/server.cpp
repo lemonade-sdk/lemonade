@@ -264,6 +264,11 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
+            // Count tokens
+            int prompt_tokens = inference_engine_->countTokens(comp_req.prompt);
+            int completion_tokens = inference_engine_->countTokens(output);
+            int total_tokens = prompt_tokens + completion_tokens;
+            
             json response = {
                 {"id", "cmpl-" + std::to_string(std::time(nullptr))},
                 {"object", "text_completion"},
@@ -275,7 +280,9 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                     {"finish_reason", "stop"}
                 }}},
                 {"usage", {
-                    {"total_tokens", 0},  // Could calculate actual tokens
+                    {"prompt_tokens", prompt_tokens},
+                    {"completion_tokens", completion_tokens},
+                    {"total_tokens", total_tokens},
                     {"completion_time_ms", duration.count()}
                 }}
             };
@@ -427,6 +434,11 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
+            // Count tokens
+            int prompt_tokens = inference_engine_->countTokens(prompt);
+            int completion_tokens = inference_engine_->countTokens(output);
+            int total_tokens = prompt_tokens + completion_tokens;
+            
             json response = {
                 {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
                 {"object", "chat.completion"},
@@ -441,7 +453,9 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                     {"finish_reason", "stop"}
                 }}},
                 {"usage", {
-                    {"total_tokens", 0},  // Could calculate actual tokens
+                    {"prompt_tokens", prompt_tokens},
+                    {"completion_tokens", completion_tokens},
+                    {"total_tokens", total_tokens},
                     {"completion_time_ms", duration.count()}
                 }}
             };

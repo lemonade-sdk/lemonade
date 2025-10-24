@@ -37,6 +37,9 @@ public:
     int getMaxPromptLength() const { return max_prompt_length_; }
     std::string getRyzenAIVersion() const { return ryzenai_version_; }
     
+    // Token counting
+    int countTokens(const std::string& text);
+    
 private:
     void loadModel();
     void setupExecutionProvider();

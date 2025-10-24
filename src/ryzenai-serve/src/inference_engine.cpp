@@ -413,5 +413,16 @@ void InferenceEngine::streamComplete(const std::string& prompt,
     }
 }
 
+int InferenceEngine::countTokens(const std::string& text) {
+    try {
+        auto sequences = OgaSequences::Create();
+        tokenizer_->Encode(text.c_str(), *sequences);
+        return static_cast<int>(sequences->SequenceCount(0));
+    } catch (const std::exception& e) {
+        std::cerr << "[WARNING] Failed to count tokens: " << e.what() << std::endl;
+        return 0;
+    }
+}
+
 } // namespace ryzenai
 
