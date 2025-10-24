@@ -313,7 +313,9 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         
         // Create generator params
         auto gen_params = OgaGeneratorParams::Create(*model_);
-        gen_params->SetSearchOption("max_length", params.max_length);
+        // max_length should be prompt_length + max_new_tokens
+        // params.max_length is max_new_tokens from the caller
+        gen_params->SetSearchOption("max_length", static_cast<int>(input_ids.size()) + params.max_length);
         gen_params->SetSearchOption("temperature", params.temperature);
         gen_params->SetSearchOption("top_p", params.top_p);
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
@@ -368,7 +370,9 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         
         // Create generator params
         auto gen_params = OgaGeneratorParams::Create(*model_);
-        gen_params->SetSearchOption("max_length", params.max_length);
+        // max_length should be prompt_length + max_new_tokens
+        // params.max_length is max_new_tokens from the caller
+        gen_params->SetSearchOption("max_length", static_cast<int>(input_ids.size()) + params.max_length);
         gen_params->SetSearchOption("temperature", params.temperature);
         gen_params->SetSearchOption("top_p", params.top_p);
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));

@@ -167,7 +167,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             res.set_header("X-Accel-Buffering", "no");
             
             GenerationParams params;
-            params.max_length = comp_req.max_tokens + 100;
+            params.max_length = comp_req.max_tokens;  // Will be added to prompt length in InferenceEngine
             params.temperature = comp_req.temperature;
             params.top_p = comp_req.top_p;
             params.top_k = comp_req.top_k;
@@ -252,7 +252,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
         } else {
             // Non-streaming response
             GenerationParams params;
-            params.max_length = comp_req.max_tokens + 100;
+            params.max_length = comp_req.max_tokens;  // Will be added to prompt length in InferenceEngine
             params.temperature = comp_req.temperature;
             params.top_p = comp_req.top_p;
             params.top_k = comp_req.top_k;
@@ -338,7 +338,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             res.set_header("X-Accel-Buffering", "no");
             
             GenerationParams params;
-            params.max_length = chat_req.max_tokens + 1000;
+            params.max_length = chat_req.max_tokens;  // Will be added to prompt length in InferenceEngine
             params.temperature = chat_req.temperature;
             params.top_p = chat_req.top_p;
             params.top_k = chat_req.top_k;
@@ -422,7 +422,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
         } else {
             // Non-streaming response
             GenerationParams params;
-            params.max_length = chat_req.max_tokens + 1000;
+            params.max_length = chat_req.max_tokens;  // Will be added to prompt length in InferenceEngine
             params.temperature = chat_req.temperature;
             params.top_p = chat_req.top_p;
             params.top_k = chat_req.top_k;
