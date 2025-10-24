@@ -383,12 +383,14 @@ class Testing(ServerTestingBase):
     async def test_013_test_load_checkpoint_completion(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
+            custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
+
             load_response = await client.post(
                 "/pull",
                 json={
-                    "model_name": "user.Qwen2.5-0.5B-HF-CPU",
-                    "checkpoint": "Qwen/Qwen2.5-0.5B",
-                    "recipe": "hf-cpu",
+                    "model_name": "user.Qwen2.5-Coder-0.5B-Instruct-GGUF",
+                    "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+                    "recipe": "llamacpp",
                 },
             )
 
@@ -405,7 +407,7 @@ class Testing(ServerTestingBase):
             )
 
             completion = client.completions.create(
-                model="user.Qwen2.5-0.5B-HF-CPU",
+                model=custom_model_name,
                 prompt="Hello, how are you?",
                 stream=False,
                 max_tokens=10,

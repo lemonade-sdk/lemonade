@@ -67,6 +67,7 @@ struct GenerationParams {
     float repetition_penalty = 1.1f;
     int min_length = 0;
     bool do_sample = true;
+    std::vector<std::string> stop_sequences;
 };
 
 // Token generation callback for streaming

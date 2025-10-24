@@ -204,7 +204,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Who won the world series in 2020?"},
             {"role": "assistant", "content": "The LA Dodgers won in 2020."},
-            {"role": "user", "content": "In which state was it played?"},
+            {"role": "user", "content": "What was the best play?"},
         ]
 
         # Ensure we stop lemonade

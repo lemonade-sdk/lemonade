@@ -172,6 +172,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             params.top_p = comp_req.top_p;
             params.top_k = comp_req.top_k;
             params.repetition_penalty = comp_req.repeat_penalty;
+            params.stop_sequences = comp_req.stop;
             
             std::string prompt = comp_req.prompt;
             std::string model_id = model_id_;
@@ -257,6 +258,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             params.top_p = comp_req.top_p;
             params.top_k = comp_req.top_k;
             params.repetition_penalty = comp_req.repeat_penalty;
+            params.stop_sequences = comp_req.stop;
             
             auto start_time = std::chrono::high_resolution_clock::now();
             std::string output = inference_engine_->complete(comp_req.prompt, params);
@@ -343,6 +345,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             params.top_p = chat_req.top_p;
             params.top_k = chat_req.top_k;
             params.repetition_penalty = chat_req.repeat_penalty;
+            params.stop_sequences = chat_req.stop;
             
             std::string model_id = model_id_;
             int token_count = 0;
@@ -427,6 +430,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             params.top_p = chat_req.top_p;
             params.top_k = chat_req.top_k;
             params.repetition_penalty = chat_req.repeat_penalty;
+            params.stop_sequences = chat_req.stop;
             
             auto start_time = std::chrono::high_resolution_clock::now();
             std::string output = inference_engine_->complete(prompt, params);

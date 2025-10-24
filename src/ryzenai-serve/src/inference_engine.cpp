@@ -342,6 +342,15 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         auto decoded = tokenizer_->Decode(output_ptr, output_count);
         std::string result(decoded);
         
+        // Apply stop sequences - remove stop sequence and everything after it
+        for (const auto& stop_seq : params.stop_sequences) {
+            size_t pos = result.find(stop_seq);
+            if (pos != std::string::npos) {
+                result = result.substr(0, pos);
+                break;  // Stop at first match
+            }
+        }
+        
         std::cout << "[InferenceEngine] Generated " << (output_count > input_ids.size() ? output_count - input_ids.size() : 0)
                  << " tokens" << std::endl;
         
@@ -391,6 +400,7 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         auto tokenizer_stream = OgaTokenizerStream::Create(*tokenizer_);
         
         size_t token_count = 0;
+        std::string accumulated_output;  // Track full output for stop sequence detection
         
         while (!generator->IsDone()) {
             generator->GenerateNextToken();
@@ -403,8 +413,27 @@ void InferenceEngine::streamComplete(const std::string& prompt,
             // Decode incrementally using tokenizer stream (this works!)
             const char* decoded = tokenizer_stream->Decode(new_token);
             if (decoded && decoded[0] != '\0') {
+                std::string token_str(decoded);
+                
+                // Check for stop sequences before accumulating
+                bool should_stop = false;
+                for (const auto& stop_seq : params.stop_sequences) {
+                    // Check if adding this token would complete a stop sequence
+                    std::string temp_output = accumulated_output + token_str;
+                    if (temp_output.find(stop_seq) != std::string::npos) {
+                        should_stop = true;
+                        break;
+                    }
+                }
+                
+                if (should_stop) {
+                    // Stop generation - don't send this token
+                    break;
+                }
+                
+                accumulated_output += token_str;
                 bool is_final = generator->IsDone();
-                callback(std::string(decoded), is_final);
+                callback(token_str, is_final);
             }
             
             token_count++;
