@@ -56,85 +56,109 @@ void Server::setup_routes() {
     // Setup CORS for all routes
     setup_cors();
     
+    // Helper lambda to register routes for both v0 and v1
+    auto register_get = [this](const std::string& endpoint, 
+                               std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        http_server_->Get("/api/v0/" + endpoint, handler);
+        http_server_->Get("/api/v1/" + endpoint, handler);
+    };
+    
+    auto register_post = [this](const std::string& endpoint, 
+                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        http_server_->Post("/api/v0/" + endpoint, handler);
+        http_server_->Post("/api/v1/" + endpoint, handler);
+        // Also register as GET for HEAD request support (HEAD uses GET handler)
+        // Return 405 Method Not Allowed (endpoint exists but wrong method)
+        http_server_->Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        http_server_->Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+    };
+    
     // Health check
-    http_server_->Get("/api/v1/health", [this](const httplib::Request& req, httplib::Response& res) {
+    register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
     });
     
-    // Models endpoints (both v0 and v1)
-    http_server_->Get("/api/v1/models", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_models(req, res);
-    });
-    http_server_->Get("/api/v0/models", [this](const httplib::Request& req, httplib::Response& res) {
+    // Models endpoints
+    register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models(req, res);
     });
     
-    // Model by ID
+    // Model by ID (need to register for both versions with regex)
+    http_server_->Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
     http_server_->Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
     
     // Chat completions (OpenAI compatible)
-    http_server_->Post("/api/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_chat_completions(req, res);
-    });
-    http_server_->Post("/api/v0/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_chat_completions(req, res);
     });
     
     // Completions
-    http_server_->Post("/api/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("completions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_completions(req, res);
     });
     
-    // Embeddings (llamacpp only)
-    http_server_->Post("/api/v1/embeddings", [this](const httplib::Request& req, httplib::Response& res) {
+    // Embeddings
+    register_post("embeddings", [this](const httplib::Request& req, httplib::Response& res) {
         handle_embeddings(req, res);
     });
     
-    // Reranking (llamacpp only)
-    http_server_->Post("/api/v1/reranking", [this](const httplib::Request& req, httplib::Response& res) {
+    // Reranking
+    register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
         handle_reranking(req, res);
     });
     
     // Responses endpoint
-    http_server_->Get("/api/v1/responses", [this](const httplib::Request& req, httplib::Response& res) {
+    register_get("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
     });
     
     // Model management endpoints
-    http_server_->Post("/api/v1/pull", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("pull", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull(req, res);
     });
     
-    http_server_->Post("/api/v1/load", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);
     });
     
-    // Unload endpoint - POST only (matches Python implementation)
-    http_server_->Post("/api/v1/unload", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("unload", [this](const httplib::Request& req, httplib::Response& res) {
         handle_unload(req, res);
     });
     
-    http_server_->Post("/api/v1/delete", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("delete", [this](const httplib::Request& req, httplib::Response& res) {
         handle_delete(req, res);
     });
     
-    http_server_->Post("/api/v1/params", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
     });
     
     // System endpoints
-    http_server_->Get("/api/v1/stats", [this](const httplib::Request& req, httplib::Response& res) {
+    register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_stats(req, res);
     });
     
-    http_server_->Get("/api/v1/system-info", [this](const httplib::Request& req, httplib::Response& res) {
+    register_get("system-info", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_info(req, res);
     });
     
-    http_server_->Post("/api/v1/log-level", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
+    });
+    
+    // Halt endpoint (same as shutdown for compatibility)
+    register_post("halt", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_shutdown(req, res);
     });
     
     // Internal shutdown endpoint (not part of public API)
