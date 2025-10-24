@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include "wrapped_server.h"
 
@@ -57,6 +58,8 @@ private:
     int ctx_size_;
     std::string llamacpp_backend_;
     std::string log_level_;
+    
+    mutable std::mutex load_mutex_;  // Serialize load_model() calls
 };
 
 } // namespace lemon

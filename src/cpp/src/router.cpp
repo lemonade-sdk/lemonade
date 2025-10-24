@@ -28,6 +28,9 @@ void Router::load_model(const std::string& model_name,
                        bool do_not_upgrade,
                        const std::vector<std::string>& labels) {
     
+    // Serialize load_model() calls to prevent race conditions
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    
     std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
     
     try {

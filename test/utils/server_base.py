@@ -231,19 +231,20 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         )
 
         # Print stdout and stderr in real-time
-        def print_output():
-            while True:
-                stdout = lemonade_process.stdout.readline()
-                stderr = lemonade_process.stderr.readline()
-                if stdout:
-                    print(f"[stdout] {stdout.strip()}")
-                if stderr:
-                    print(f"[stderr] {stderr.strip()}")
-                if not stdout and not stderr and lemonade_process.poll() is not None:
-                    break
+        # Use separate threads for stdout and stderr to prevent blocking
+        def print_stdout():
+            for line in lemonade_process.stdout:
+                print(f"[stdout] {line.strip()}")
 
-        output_thread = Thread(target=print_output, daemon=True)
-        output_thread.start()
+        def print_stderr():
+            for line in lemonade_process.stderr:
+                print(f"[stderr] {line.strip()}")
+
+        # Start output threads
+        stdout_thread = Thread(target=print_stdout, daemon=True)
+        stderr_thread = Thread(target=print_stderr, daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
 
         # Wait for the server to start by checking port 8000
         start_time = time.time()
