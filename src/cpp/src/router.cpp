@@ -42,7 +42,7 @@ void Router::load_model(const std::string& model_name,
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             wrapped_server_ = std::make_unique<backends::FastFlowLMServer>(log_level_);
             wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
-        } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "ryzenai") {
+        } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Serve backend: " << recipe << std::endl;
             
             // RyzenAI-Serve needs the model path to be passed
@@ -92,6 +92,8 @@ void Router::load_model(const std::string& model_name,
                 backend_mode = "npu";
             } else if (recipe == "oga-hybrid") {
                 backend_mode = "hybrid";
+            } else if (recipe == "oga-cpu") {
+                backend_mode = "cpu";
             } else {
                 backend_mode = "auto";
             }

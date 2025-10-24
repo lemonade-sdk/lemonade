@@ -13,7 +13,7 @@ struct CommandLineArgs {
     std::string model_path;           // -m, --model (required)
     std::string host = "127.0.0.1";   // --host
     int port = 8080;                  // --port
-    std::string mode = "auto";        // --mode (auto|npu|hybrid)
+    std::string mode = "auto";        // --mode (auto|npu|hybrid|cpu)
     int ctx_size = 2048;              // --ctx-size
     int threads = 4;                  // --threads
     bool verbose = false;             // --verbose

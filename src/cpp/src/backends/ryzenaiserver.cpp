@@ -93,10 +93,12 @@ std::string RyzenAIServer::download_model(const std::string& checkpoint,
 std::string RyzenAIServer::determine_execution_mode(const std::string& model_path,
                                                    const std::string& backend) {
     // Map backend to execution mode
-    if (backend == "npu") {
+    if (backend == "npu" || backend == "oga-npu") {
         return "npu";
     } else if (backend == "hybrid" || backend == "oga-hybrid") {
         return "hybrid";
+    } else if (backend == "cpu" || backend == "oga-cpu") {
+        return "cpu";
     } else {
         // "auto" will let ryzenai-serve decide
         return "auto";

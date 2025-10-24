@@ -302,14 +302,14 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
         
         // Filter RyzenAI (OGA) models based on availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
+        if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
             if (!ryzenai_available) {
                 continue;
             }
         }
         
         // Filter out other OGA models (not yet implemented)
-        if (recipe == "oga-cpu" || recipe == "oga-igpu") {
+        if (recipe == "oga-igpu") {
             continue;
         }
         

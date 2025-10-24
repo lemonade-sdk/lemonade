@@ -242,6 +242,8 @@ void InferenceEngine::setupExecutionProvider() {
         std::cout << "[InferenceEngine] Using NPU (VitisAI) execution provider" << std::endl;
     } else if (execution_mode_ == "hybrid") {
         std::cout << "[InferenceEngine] Using Hybrid (NPU + iGPU) execution provider" << std::endl;
+    } else if (execution_mode_ == "cpu") {
+        std::cout << "[InferenceEngine] Using CPU execution provider" << std::endl;
     }
 }
 
