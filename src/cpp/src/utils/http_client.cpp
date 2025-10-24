@@ -197,7 +197,14 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     
     CURLcode res = curl_easy_perform(curl);
     
-    if (res != CURLE_OK) {
+    // Get response code before checking for errors
+    long response_code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+    response.status_code = static_cast<int>(response_code);
+    
+    // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
+    // (backend closes connection after sending all data)
+    if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         std::cerr << "[HttpClient ERROR] " << error << std::endl;
         curl_slist_free_all(header_list);
@@ -205,9 +212,11 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         throw std::runtime_error(error);
     }
     
-    long response_code;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    response.status_code = static_cast<int>(response_code);
+    // Log if we got a non-OK CURL code but continue (normal for streaming)
+    if (res != CURLE_OK) {
+        std::cerr << "[HttpClient] Stream ended with: " << curl_easy_strerror(res) 
+                  << " (response code: " << response_code << ")" << std::endl;
+    }
     
     curl_slist_free_all(header_list);
     curl_easy_cleanup(curl);
