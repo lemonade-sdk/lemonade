@@ -20,12 +20,6 @@ class LlamaCppBench(Bench):
 
     unique_name = "llamacpp-bench"
 
-    # def __init__(self, monitor_message="Benchmarking LLM"):
-    #     super().__init__(monitor_message)
-    #
-    #     # Don't track memory usage since we are using a llamacpp executable for compute
-    #     self.save_max_memory_used = False
-
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
@@ -80,8 +74,8 @@ class LlamaCppBench(Bench):
         prompt: str,
         iterations: int,
         warmup_iterations: int,
-        output_tokens: int,
-    ) -> State:
+        output_tokens: int
+    ):
         """
         Benchmark llama.cpp model that was loaded by LoadLlamaCpp.
         """
@@ -169,8 +163,6 @@ class LlamaCppBench(Bench):
             )
             self.max_memory_used_gb_list.append(mean_gb_used)
 
-        return state
-
     def run_llama_bench_exe(self, state, prompts, iterations, output_tokens):
 
         if prompts is None:
@@ -190,7 +182,7 @@ class LlamaCppBench(Bench):
         for counter, prompt in enumerate(prompts):
             report_progress_fn(0)
 
-            state = self.run_prompt_llama_bench_exe(
+            self.run_prompt_llama_bench_exe(
                 state,
                 prompt,
                 iterations,
@@ -198,19 +190,13 @@ class LlamaCppBench(Bench):
             )
             self.first_run_prompt = False
 
-            if self.save_max_memory_used:
-                if getattr(state, "run_bench_peak_set", None) is not None:
-                    self.max_memory_used_gb_list.append(
-                        state.run_bench_peak_wset / 1024**3
-                    )
-
         self.set_percent_progress(None)
         self.save_stats(state)
         return state
 
     def run_prompt_llama_bench_exe(
         self, state, prompt, iterations, output_tokens
-    ) -> State:
+    ):
 
         model: LlamaCppAdapter = state.model
         prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset = (
@@ -224,7 +210,6 @@ class LlamaCppBench(Bench):
         self.std_dev_token_generation_tokens_per_second_list.append(tg_tps_sd)
         self.tokens_out_len_list.append(output_tokens * iterations)
         self.max_memory_used_gb_list.append(peak_wset / 1024**3)
-        return state
 
     def run(
         self,

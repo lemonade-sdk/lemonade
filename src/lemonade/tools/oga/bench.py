@@ -52,7 +52,7 @@ class OgaBench(Bench):
         iterations: int,
         warmup_iterations: int,
         output_tokens: int,
-    ) -> State:
+    ):
 
         model: ModelAdapter = state.model
         tokenizer: TokenizerAdapter = state.tokenizer
@@ -114,8 +114,6 @@ class OgaBench(Bench):
             self.max_memory_used_gb_list.append(
                 psutil.Process().memory_info().peak_wset / 1024**3
             )
-
-        return state
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

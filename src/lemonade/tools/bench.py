@@ -183,7 +183,7 @@ class Bench(Tool, ABC):
         for counter, prompt in enumerate(prompts):
             report_progress_fn(0)
 
-            state = self.run_prompt(
+            self.run_prompt(
                 state,
                 report_progress_fn,
                 prompt,
@@ -209,7 +209,7 @@ class Bench(Tool, ABC):
         warmup_iterations,
         output_tokens,
         **kwargs,
-    ) -> State:
+    ):
         """
         The run_prompt method should append the appropriate value to each of the per prompt
         measurement statistics lists that are members of the Bench class.
