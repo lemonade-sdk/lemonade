@@ -29,6 +29,11 @@
         <span id="error-banner-msg"></span>
         <button class="close-btn" onclick="hideErrorBanner()">&times;</button>
     </div>
+    <div id="migration-banner" class="migration-banner" style="display:none;">
+        <span id="migration-banner-msg"></span>
+        <button class="migration-action-btn" onclick="showMigrationModal()">Clean Up Now</button>
+        <button class="close-btn" onclick="hideMigrationBanner()">&times;</button>
+    </div>
     <main class="main">
         <div class="tab-content-wrapper">
         <div class="tab-container"> 
@@ -262,6 +267,29 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.0/marked.min.js"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     
+    <!-- Migration Cleanup Modal -->
+    <div id="migration-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Clean Up Incompatible Models</h2>
+                <button class="modal-close" onclick="hideMigrationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>The following RyzenAI models are incompatible with RyzenAI 1.6 and can be safely deleted:</p>
+                <p class="migration-instructions">
+                    After deleting, you can re-download compatible Ryzen AI 1.6 models from the <em>OGA NPU</em> and <em>OGA Hybrid</em> tabs.</p>
+                <div id="migration-model-list" class="migration-model-list"></div>
+                <div class="migration-summary">
+                    <strong>Total space to free: <span id="migration-total-size"></span></strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" onclick="hideMigrationModal()">Cancel</button>
+                <button class="delete-btn" onclick="deleteIncompatibleModels()">Delete All</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Application JavaScript -->
     <script src="/static/js/shared.js"></script>
     <script src="/static/js/models.js"></script>
