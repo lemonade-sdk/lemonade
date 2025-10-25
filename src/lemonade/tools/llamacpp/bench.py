@@ -20,12 +20,6 @@ class LlamaCppBench(Bench):
 
     unique_name = "llamacpp-bench"
 
-    def __init__(self, monitor_message="Benchmarking LLM"):
-        super().__init__(monitor_message)
-
-        # Don't track memory usage since we are using a llamacpp executable for compute
-        self.save_max_memory_used = False
-
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
         parser = __class__.helpful_parser(
@@ -38,10 +32,12 @@ class LlamaCppBench(Bench):
         parser.add_argument(
             "--cli",
             action="store_true",
-            help="Set this flag to use llama-cli.exe to benchmark model performance. This executable will be called "
-            "once per iteration.  Otherwise, llama-bench.exe is used by default.  In this default behavior behavior, "
-            "the only valid prompt format is integer token lengths. Also, the warmup-iterations parameter is "
-            "ignored and the default value for number of threads is 16.",
+            help="Set this flag to use llama-cli.exe to benchmark model performance. "
+            "This executable will be called once per iteration.  Otherwise, "
+            "llama-bench.exe is used by default.  In this default behavior behavior, "
+            "the only valid prompt format is integer token lengths. Also, the "
+            "warmup-iterations parameter is ignored and the default value for number of "
+            "threads is 16.",
         )
 
         return parser
@@ -66,8 +62,8 @@ class LlamaCppBench(Bench):
                     prompt_ints.append(int(prompt_item))
                 else:
                     raise Exception(
-                        f"When not using the --cli flag to {self.unique_name}, the prompt format must "
-                        "be in integer format."
+                        f"When not using the --cli flag to {self.unique_name}, the prompt format "
+                        "must be in integer format."
                     )
             parsed_args.prompts = prompt_ints
 
@@ -81,7 +77,7 @@ class LlamaCppBench(Bench):
         iterations: int,
         warmup_iterations: int,
         output_tokens: int,
-    ) -> State:
+    ):
         """
         Benchmark llama.cpp model that was loaded by LoadLlamaCpp.
         """
@@ -99,6 +95,7 @@ class LlamaCppBench(Bench):
 
         per_iteration_tokens_per_second = []
         per_iteration_time_to_first_token = []
+        per_iteration_peak_wset = []
 
         for iteration in range(iterations + warmup_iterations):
             try:
@@ -107,7 +104,10 @@ class LlamaCppBench(Bench):
                 model.time_to_first_token = None
                 model.tokens_per_second = None
                 raw_output, stderr = model.generate(
-                    prompt, max_new_tokens=output_tokens, return_raw=True
+                    prompt,
+                    max_new_tokens=output_tokens,
+                    return_raw=True,
+                    save_max_memory_used=self.save_max_memory_used,
                 )
 
                 if model.time_to_first_token is None or model.tokens_per_second is None:
@@ -123,6 +123,7 @@ class LlamaCppBench(Bench):
                 if iteration > warmup_iterations - 1:
                     per_iteration_tokens_per_second.append(model.tokens_per_second)
                     per_iteration_time_to_first_token.append(model.time_to_first_token)
+                    per_iteration_peak_wset.append(model.peak_wset)
 
                 report_progress_fn((iteration + 1) / (warmup_iterations + iterations))
 
@@ -153,6 +154,16 @@ class LlamaCppBench(Bench):
         except StatisticsError:
             # Less than 2 measurements
             self.std_dev_token_generation_tokens_per_second_list.append(None)
+        if self.save_max_memory_used:
+            filtered_list = [
+                item for item in per_iteration_peak_wset if item is not None
+            ]
+            mean_gb_used = (
+                None
+                if len(filtered_list) == 0
+                else statistics.mean(filtered_list) / 1024**3
+            )
+            self.max_memory_used_gb_list.append(mean_gb_used)
 
     def run_llama_bench_exe(self, state, prompts, iterations, output_tokens):
 
@@ -165,24 +176,44 @@ class LlamaCppBench(Bench):
         state.save_stat("iterations", iterations)
         state.save_stat("output_tokens", output_tokens)
 
-        model: LlamaCppAdapter = state.model
-        prompt_lengths, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd = model.benchmark(
-            prompts, iterations, output_tokens
+        counter = 0
+        report_progress_fn = lambda x: self.set_percent_progress(
+            100 * (counter + x) / len(prompts)
         )
-        self.input_ids_len_list = prompt_lengths
-        self.prefill_tokens_per_second_list = pp_tps
-        if iterations > 1:
-            self.std_dev_prefill_tokens_per_second_list = pp_tps_sd
-        self.mean_time_to_first_token_list = [
-            tokens / tps for tokens, tps in zip(prompt_lengths, pp_tps)
-        ]
-        self.token_generation_tokens_per_second_list = [tg_tps]
-        if iterations > 1:
-            self.std_dev_token_generation_tokens_per_second_list = [tg_tps_sd]
-        self.tokens_out_len_list = [output_tokens] * len(prompts) * iterations
+        self.first_run_prompt = True
+        for counter, prompt in enumerate(prompts):
+            report_progress_fn(0)
 
+            self.run_prompt_llama_bench_exe(
+                state,
+                prompt,
+                iterations,
+                output_tokens,
+            )
+            self.first_run_prompt = False
+
+        self.set_percent_progress(None)
         self.save_stats(state)
         return state
+
+    def run_prompt_llama_bench_exe(self, state, prompt, iterations, output_tokens):
+
+        model: LlamaCppAdapter = state.model
+        prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset = (
+            model.benchmark(prompt, iterations, output_tokens)
+        )
+        self.input_ids_len_list.append(prompt_length)
+        self.prefill_tokens_per_second_list.append(pp_tps)
+        self.std_dev_prefill_tokens_per_second_list.append(pp_tps_sd)
+        self.mean_time_to_first_token_list.append(prompt_length / pp_tps)
+        self.token_generation_tokens_per_second_list.append(tg_tps)
+        self.std_dev_token_generation_tokens_per_second_list.append(tg_tps_sd)
+        self.tokens_out_len_list.append(output_tokens * iterations)
+        if self.save_max_memory_used:
+            if peak_wset is not None:
+                self.max_memory_used_gb_list.append(peak_wset / 1024**3)
+            else:
+                self.max_memory_used_gb_list.append(None)
 
     def run(
         self,
@@ -202,7 +233,7 @@ class LlamaCppBench(Bench):
             - warmup_iterations: Subset of the iterations to treat as warmup,
                 and not included in the results.
             - output_tokens: Number of new tokens LLM to create.
-            - ggml: Use llama-bench.exe directly
+            - cli: Use multiple calls to llama-cpp.exe instead of llama-bench.exe
             - kwargs: Additional parameters used by bench tools
         """
 
