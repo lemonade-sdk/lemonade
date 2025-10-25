@@ -10,14 +10,12 @@ import traceback
 from typing import Optional, Union
 import json
 from pathlib import Path
-import os
 
-
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.websockets import WebSocketDisconnect, WebSocketState
+from fastapi import WebSocket
 import uvicorn
 from uvicorn.config import Config
 from uvicorn.server import Server as UvicornServer
@@ -51,7 +49,6 @@ from openai.types.responses import (
 import lemonade.api as lemonade_api
 from lemonade.tools.server.wrapped_server import WrappedServer
 from lemonade.tools.server.llamacpp import LlamaServer
-from lemonade.tools.server.flm import FlmServer
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
 from lemonade.tools.server.webapp import get_webapp_html
 from lemonade.tools.server.utils.port import lifespan
@@ -82,78 +79,6 @@ DEFAULT_MAX_NEW_TOKENS = 1500
 if platform.system() in ["Windows", "Darwin"]:
     # pylint: disable=ungrouped-imports
     from lemonade.tools.server.tray import LemonadeTray, OutputDuplicator
-
-
-class ServerLogFilter(logging.Filter):
-    def __init__(self, server):
-        super().__init__()
-        self.server = server
-        self.noisy_paths = {
-            "/api/v1/health",
-            "/api/v0/health",
-            "/api/v1/models",
-            "/api/v0/models",
-        }
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-
-        # Filter out websocket logs
-        if "> TEXT" in msg:
-            return False
-
-        # Filter out noisy HTTP routes if debug logs are OFF
-        if not self.server.debug_logging_enabled:
-            if any(path in msg for path in self.noisy_paths):
-                return False
-
-        # Otherwise, allow the log
-        return True
-
-
-async def log_streamer(websocket: WebSocket, path: str, interval: float = 1.0):
-    logger = logging.getLogger()
-    await websocket.accept()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            f.seek(0)  # start at the beginning of the file
-            while True:
-                # Try reading a line
-                line = f.readline()
-                if not line:
-                    await asyncio.sleep(interval)
-                    continue
-
-                # Send defensively: if disconnected, bail out
-                if websocket.application_state != WebSocketState.CONNECTED:
-                    # Server-side state says we're not connected anymore
-                    break
-
-                try:
-                    await websocket.send_text(line)
-                except WebSocketDisconnect:
-                    # Client closed — normal path out
-                    break
-                except RuntimeError as re:
-                    # Starlette will raise this if a close has already been sent
-                    logger.debug("RuntimeError during send: %s", re)
-                    break
-
-    except WebSocketDisconnect:
-        # Client closed the socket; do not try to send or close again
-        pass
-    except Exception as e:  # pylint: disable=broad-except
-        # Log server-side; do not attempt to send error over a possibly closed socket
-        logger.exception("Error in log_streamer: %s", e)
-    finally:
-        # Only close if Starlette still thinks we're connected.
-        # This prevents "Cannot call send once a close message has been sent."
-        try:
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await websocket.close()
-        except Exception:  # pylint: disable=broad-except
-            # If close itself races, swallow — we're shutting down anyway.
-            pass
 
 
 class ServerModel(Model):
@@ -346,7 +271,6 @@ class Server:
             self.app.post(f"{prefix}/completions")(self.completions)
             self.app.post(f"{prefix}/responses")(self.responses)
             self.app.post(f"{prefix}/log-level")(self.set_log_level)
-            self.app.websocket(f"{prefix}/logs/ws")(self.logs_ws)
 
             # OpenAI-compatible routes
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
@@ -357,14 +281,6 @@ class Server:
             # JinaAI routes (jina.ai/reranker/)
             self.app.post(f"{prefix}/reranking")(self.reranking)
             self.app.post(f"{prefix}/rerank")(self.reranking)
-
-            # Migration routes
-            self.app.get(f"{prefix}/migration/incompatible-models")(
-                self.get_incompatible_models
-            )
-            self.app.post(f"{prefix}/migration/cleanup")(
-                self.cleanup_incompatible_models
-            )
 
     async def set_log_level(self, config: LogLevelConfig):
         """
@@ -484,13 +400,11 @@ class Server:
             )
             file_handler.setLevel(logging_level)
             file_handler.setFormatter(uvicorn_formatter)
-            file_handler.addFilter(ServerLogFilter(self))
 
             # Set up console handler
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging_level)
             console_handler.setFormatter(uvicorn_formatter)
-            console_handler.addFilter(ServerLogFilter(self))
 
             # Configure root logger with both handlers
             logging.basicConfig(
@@ -609,9 +523,7 @@ class Server:
 
         return lc
 
-    async def completions(
-        self, completion_request: CompletionRequest, request: Request
-    ):
+    async def completions(self, completion_request: CompletionRequest):
         """
         Stream completion responses using HTTP chunked transfer encoding.
         """
@@ -623,7 +535,8 @@ class Server:
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
-        if self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm":
+
+        if self.llm_loaded.recipe == "llamacpp":
             return self.wrapped_server.completion(completion_request)
 
         # Check if the model supports reasoning
@@ -662,43 +575,29 @@ class Server:
                 # This is necessary because the variable is modified
                 # in the inner function
                 nonlocal reasoning_first_token
-                try:
-                    async for token in self._generate_tokens(**generation_args):
-                        # Handle client disconnect: stop generation and exit
-                        if await request.is_disconnected():
-                            self.stop_event.set()
-                            break
 
-                        choice = CompletionChoice(
-                            text=(
-                                "<think>" + token if reasoning_first_token else token
-                            ),
-                            index=0,
-                            finish_reason="stop",
-                            logprobs=None,
-                        )
+                async for token in self._generate_tokens(**generation_args):
+                    choice = CompletionChoice(
+                        text=("<think>" + token if reasoning_first_token else token),
+                        index=0,
+                        finish_reason="stop",
+                        logprobs=None,
+                    )
 
-                        completion = Completion(
-                            id="0",
-                            choices=[choice],
-                            model=self.llm_loaded.checkpoint,
-                            object="text_completion",
-                            created=int(time.time()),
-                        )
+                    completion = Completion(
+                        id="0",
+                        choices=[choice],
+                        model=self.llm_loaded.checkpoint,
+                        object="text_completion",
+                        created=int(time.time()),
+                    )
 
-                        # Format as SSE
-                        reasoning_first_token = False
-                        yield f"data: {completion.model_dump_json()}\n\n".encode(
-                            "utf-8"
-                        )
+                    # Format as SSE
+                    reasoning_first_token = False
+                    yield f"data: {completion.model_dump_json()}\n\n".encode("utf-8")
 
-                    # Send the [DONE] marker only if still connected
-                    if not await request.is_disconnected():
-                        yield b"data: [DONE]\n\n"
-                except asyncio.CancelledError:
-                    # Propagate cancellation to the generator loop
-                    self.stop_event.set()
-                    return
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate(),
@@ -756,9 +655,7 @@ class Server:
                 created=int(time.time()),
             )
 
-    async def chat_completions(
-        self, chat_completion_request: ChatCompletionRequest, request: Request
-    ):
+    async def chat_completions(self, chat_completion_request: ChatCompletionRequest):
         """
         Stream chat completion responses using HTTP chunked transfer encoding.
         """
@@ -806,9 +703,7 @@ class Server:
             enable_thinking=chat_completion_request.enable_thinking,
         )
 
-        # If the model supports reasoning, we:
-        # 1. add a <think> tag to the model's context
-        # 2. ensure that the first token is a <think> token
+        # Check if the model supports reasoning
         reasoning_first_token = self.llm_loaded.reasoning
 
         if reasoning_first_token:
@@ -859,76 +754,69 @@ class Server:
 
                 # Keep track of the full response for tool call extraction
                 full_response = ""
-                try:
-                    async for token in self._generate_tokens(**generation_args):
-                        # Continuously look for tool calls embedded into the generated text
 
-                        openai_tool_calls = None
-                        if chat_completion_request.tools:
+                async for token in self._generate_tokens(**generation_args):
+                    # Continuously look for tool calls embedded into the generated text
+                    openai_tool_calls = None
+                    if chat_completion_request.tools:
 
-                            # Append the token to the full response
-                            full_response += token
+                        # Append the token to the full response
+                        full_response += token
 
-                            tool_calls, _ = extract_tool_calls(
-                                full_response,
-                                tool_call_pattern,
-                            )
-
-                            # If there are tool calls, reset the full response
-                            # for the next tool call
-                            if tool_calls:
-                                openai_tool_calls = []
-                                full_response = ""
-                            for tool_call in tool_calls:
-                                openai_tool_calls.append(
-                                    ChoiceDeltaToolCall(
-                                        index=0,
-                                        id="-",
-                                        function=ChoiceDeltaToolCallFunction(
-                                            arguments=json.dumps(
-                                                tool_call["arguments"]
-                                            ),
-                                            name=tool_call["name"],
-                                        ),
-                                        type="function",
-                                    )
-                                )
-
-                        # Create a ChatCompletionChunk
-                        chunk = ChatCompletionChunk.model_construct(
-                            id="0",
-                            object="chat.completion.chunk",
-                            created=int(time.time()),
-                            model=self.llm_loaded.checkpoint,
-                            choices=[
-                                Choice.model_construct(
-                                    index=0,
-                                    delta=ChoiceDelta(
-                                        content=(
-                                            "<think>" + token
-                                            if reasoning_first_token
-                                            else token
-                                        ),
-                                        function_call=None,
-                                        role="assistant",
-                                        tool_calls=openai_tool_calls,
-                                        refusal=None,
-                                    ),
-                                    finish_reason=None,
-                                    logprobs=None,
-                                )
-                            ],
+                        tool_calls, _ = extract_tool_calls(
+                            full_response,
+                            tool_call_pattern,
                         )
 
-                        # Format as SSE
-                        reasoning_first_token = False
-                        yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
-                    # Send the [DONE] marker only if still connected
-                    if not await request.is_disconnected():
-                        yield b"data: [DONE]\n\n"
-                except asyncio.CancelledError:
-                    self.stop_event.set()
-                    return
+                        # If there are tool calls, reset the full response for the next tool call
+                        if tool_calls:
+                            openai_tool_calls = []
+                            full_response = ""
+                        for tool_call in tool_calls:
+                            openai_tool_calls.append(
+                                ChoiceDeltaToolCall(
+                                    index=0,
+                                    id="-",
+                                    function=ChoiceDeltaToolCallFunction(
+                                        arguments=json.dumps(tool_call["arguments"]),
+                                        name=tool_call["name"],
+                                    ),
+                                    type="function",
+                                )
+                            )
+
+                    # Create a ChatCompletionChunk
+                    chunk = ChatCompletionChunk.model_construct(
+                        id="0",
+                        object="chat.completion.chunk",
+                        created=int(time.time()),
+                        model=self.llm_loaded.checkpoint,
+                        choices=[
+                            Choice.model_construct(
+                                index=0,
+                                delta=ChoiceDelta(
+                                    content=(
+                                        "<think>" + token
+                                        if reasoning_first_token
+                                        else token
+                                    ),
+                                    function_call=None,
+                                    role="assistant",
+                                    tool_calls=openai_tool_calls,
+                                    refusal=None,
+                                ),
+                                finish_reason=None,
+                                logprobs=None,
+                            )
+                        ],
+                    )
+
+                    # Format as SSE
+                    reasoning_first_token = False
+                    yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
+
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate(),
@@ -1005,6 +893,7 @@ class Server:
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
+
         if self.llm_loaded.recipe == "llamacpp":
             try:
                 return self.wrapped_server.embeddings(embeddings_request)
@@ -1088,7 +977,7 @@ class Server:
             formatted_messages.append(f"{role_marker}\n{content} <|end|>")
         return "\n".join(formatted_messages) + "\n<|assistant|>"
 
-    async def responses(self, responses_request: ResponsesRequest, request: Request):
+    async def responses(self, responses_request: ResponsesRequest):
         """
         Stream responses using HTTP chunked transfer encoding.
         """
@@ -1100,12 +989,6 @@ class Server:
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
-
-        if self.llm_loaded.recipe == "llamacpp":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Responses API not supported for recipe: {self.llm_loaded.recipe}",
-            )
 
         # Convert chat messages to text using the model's chat template
         if isinstance(responses_request.input, str):
@@ -1163,71 +1046,56 @@ class Server:
 
                 full_response = "<think>" if reasoning_first_token else ""
 
-                try:
-                    async for token in self._generate_tokens(**generation_args):
-                        # Handle client disconnect: stop generation and exit
-                        if await request.is_disconnected():
-                            self.stop_event.set()
-                            break
+                async for token in self._generate_tokens(**generation_args):
 
-                        # Create an event
-                        delta_event = ResponseTextDeltaEvent(
-                            content_index=0,
-                            delta=(
-                                "<think>" + token if reasoning_first_token else token
-                            ),
-                            item_id="0 ",
-                            output_index=0,
-                            type="response.output_text.delta",
-                            sequence_number=0,
-                        )
-                        full_response += token
+                    # Create an event
+                    delta_event = ResponseTextDeltaEvent(
+                        content_index=0,
+                        delta=("<think>" + token if reasoning_first_token else token),
+                        item_id="0 ",
+                        output_index=0,
+                        type="response.output_text.delta",
+                        sequence_number=0,
+                    )
+                    full_response += token
 
-                        # Format as SSE
-                        reasoning_first_token = False
-                        yield f"data: {delta_event.model_dump_json()}\n\n".encode(
-                            "utf-8"
-                        )
+                    # Format as SSE
+                    reasoning_first_token = False
+                    yield f"data: {delta_event.model_dump_json()}\n\n".encode("utf-8")
 
-                    # Send the completed event (only if still connected)
-                    if not await request.is_disconnected():
-                        response_output_message = ResponseOutputMessage(
-                            id="0",
-                            content=[
-                                ResponseOutputText(
-                                    annotations=[],
-                                    text=full_response,
-                                    type="output_text",
-                                )
-                            ],
-                            role="assistant",
-                            status="completed",
-                            type="message",
+                # Send the completed event
+                response_output_message = ResponseOutputMessage(
+                    id="0",
+                    content=[
+                        ResponseOutputText(
+                            annotations=[],
+                            text=full_response,
+                            type="output_text",
                         )
-                        response = Response(
-                            id="0",
-                            model=self.llm_loaded.checkpoint,
-                            created_at=int(time.time()),
-                            object="response",
-                            output=[response_output_message],
-                            parallel_tool_calls=True,
-                            tool_choice="auto",
-                            tools=[],
-                        )
-                        completed_event = ResponseCompletedEvent(
-                            response=response,
-                            type="response.completed",
-                            sequence_number=0,
-                        )
-                        yield f"data: {completed_event.model_dump_json()}\n\n".encode(
-                            "utf-8"
-                        )
+                    ],
+                    role="assistant",
+                    status="completed",
+                    type="message",
+                )
+                response = Response(
+                    id="0",
+                    model=self.llm_loaded.checkpoint,
+                    created_at=int(time.time()),
+                    object="response",
+                    output=[response_output_message],
+                    parallel_tool_calls=True,
+                    tool_choice="auto",
+                    tools=[],
+                )
+                completed_event = ResponseCompletedEvent(
+                    response=response,
+                    type="response.completed",
+                    sequence_number=0,
+                )
+                yield f"data: {completed_event.model_dump_json()}\n\n".encode("utf-8")
 
-                        # Send the [DONE] marker
-                        yield b"data: [DONE]\n\n"
-                except asyncio.CancelledError:
-                    self.stop_event.set()
-                    return
+                # Send the [DONE] marker
+                yield b"data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate(),
@@ -1473,10 +1341,8 @@ class Server:
         """
         Send performance statistics to the client.
         """
-        # If using wrapped server, get telemetry from the telemetry instance
-        if self.llm_loaded and (
-            self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm"
-        ):
+        # If using llama server, get telemetry from the telemetry instance
+        if self.llm_loaded and self.llm_loaded.recipe == "llamacpp":
             return self.wrapped_server.telemetry.get_telemetry_data()
 
         # For built-in server, use the existing telemetry
@@ -1657,8 +1523,8 @@ class Server:
             ):
                 if (
                     self.llm_loaded.recipe == "llamacpp"
-                    or self.llm_loaded.recipe == "flm"
-                ) and self.wrapped_server.process.poll():
+                    and self.wrapped_server.process.poll()
+                ):
                     # wrapped server process has gone away for some reason, so we should
                     # proceed with loading to get it back
                     pass
@@ -1676,14 +1542,6 @@ class Server:
             try:
                 if config_to_use.recipe == "llamacpp":
                     self.wrapped_server = LlamaServer(self.llamacpp_backend)
-                    self.wrapped_server.load(
-                        model_config=config_to_use,
-                        ctx_size=self.ctx_size,
-                        do_not_upgrade=True,
-                    )
-
-                elif config_to_use.recipe == "flm":
-                    self.wrapped_server = FlmServer()
                     self.wrapped_server.load(
                         model_config=config_to_use,
                         ctx_size=self.ctx_size,
@@ -1726,7 +1584,7 @@ class Server:
                 for _ in range(self.max_concurrent_generations):
                     await self._generate_semaphore.acquire()
 
-            if self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm":
+            if self.llm_loaded.recipe == "llamacpp":
                 self.wrapped_server.process.terminate()
 
             self.llm_loaded = None
@@ -1828,48 +1686,6 @@ class Server:
                 if self.debug_logging_enabled:
                     logging.debug(f"Total request time: {request_time:.4f} seconds")
             return response
-
-    async def logs_ws(self, websocket: WebSocket):
-        if not self.log_file or not os.path.exists(self.log_file):
-            await websocket.close(code=4000)
-            return
-        await log_streamer(websocket, self.log_file)
-
-    async def get_incompatible_models(self):
-        """
-        Get information about incompatible RyzenAI models in the cache.
-        """
-        try:
-            return ModelManager().get_incompatible_ryzenai_models()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to scan for incompatible models: {str(e)}",
-            )
-
-    async def cleanup_incompatible_models(self, request: Request):
-        """
-        Delete selected incompatible RyzenAI models from the cache.
-        """
-        try:
-            body = await request.json()
-            model_paths = body.get("model_paths", [])
-
-            if not model_paths:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No model_paths provided",
-                )
-
-            result = ModelManager().cleanup_incompatible_models(model_paths)
-            return result
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to cleanup models: {str(e)}",
-            )
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

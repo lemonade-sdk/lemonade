@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 import os
 
-
 from fastapi import FastAPI, HTTPException, status, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -623,6 +622,7 @@ class Server:
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
+
         if self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm":
             return self.wrapped_server.completion(completion_request)
 
@@ -775,35 +775,12 @@ class Server:
         await self.load_llm(lc)
 
         if self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm":
-            # Handle enable_thinking for Qwen3 GGUF models
-            if (
-                hasattr(chat_completion_request, "enable_thinking")
-                and chat_completion_request.enable_thinking is False
-                and "qwen3" in self.llm_loaded.model_name.lower()
-            ):
-                # Modify the last user message to include /no_think
-                if (
-                    chat_completion_request.messages
-                    and len(chat_completion_request.messages) > 0
-                ):
-                    # Find the last user message
-                    for i in range(len(chat_completion_request.messages) - 1, -1, -1):
-                        if chat_completion_request.messages[i].get("role") == "user":
-                            original_content = chat_completion_request.messages[i][
-                                "content"
-                            ]
-                            chat_completion_request.messages[i][
-                                "content"
-                            ] = f"/no_think\n{original_content}"
-                            break
-
             return self.wrapped_server.chat_completion(chat_completion_request)
 
         # Convert chat messages to text using the model's chat template
         text = self.apply_chat_template(
             chat_completion_request.messages,
             tools=chat_completion_request.tools,
-            enable_thinking=chat_completion_request.enable_thinking,
         )
 
         # If the model supports reasoning, we:
@@ -861,8 +838,12 @@ class Server:
                 full_response = ""
                 try:
                     async for token in self._generate_tokens(**generation_args):
-                        # Continuously look for tool calls embedded into the generated text
+                        # Handle client disconnect: stop generation and exit
+                        if await request.is_disconnected():
+                            self.stop_event.set()
+                            break
 
+                        # Continuously look for tool calls embedded into the generated text
                         openai_tool_calls = None
                         if chat_completion_request.tools:
 
@@ -874,8 +855,7 @@ class Server:
                                 tool_call_pattern,
                             )
 
-                            # If there are tool calls, reset the full response
-                            # for the next tool call
+                            # If there are tool calls, reset the full response for the next call
                             if tool_calls:
                                 openai_tool_calls = []
                                 full_response = ""
@@ -923,6 +903,7 @@ class Server:
                         # Format as SSE
                         reasoning_first_token = False
                         yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
+
                     # Send the [DONE] marker only if still connected
                     if not await request.is_disconnected():
                         yield b"data: [DONE]\n\n"
@@ -1005,6 +986,7 @@ class Server:
 
         # Load the model if it's different from the currently loaded one
         await self.load_llm(lc)
+
         if self.llm_loaded.recipe == "llamacpp":
             try:
                 return self.wrapped_server.embeddings(embeddings_request)
@@ -1062,20 +1044,18 @@ class Server:
             )
 
     def apply_chat_template(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None = None,
-        enable_thinking: bool | None = None,
+        self, messages: list[dict], tools: list[dict] | None = None
     ):
+        """
+        Apply the model's chat template to the messages.
+        """
         if self.tokenizer.chat_template:
+
             return self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
                 tools=tools,
-                enable_thinking=(
-                    enable_thinking if enable_thinking is not None else None
-                ),
             )
 
         # Fallback to a standardized template if the model doesn't provide one
@@ -1111,10 +1091,7 @@ class Server:
         if isinstance(responses_request.input, str):
             text = responses_request.input
         else:
-            text = self.apply_chat_template(
-                responses_request.input,
-                enable_thinking=responses_request.enable_thinking,
-            )
+            text = self.apply_chat_template(responses_request.input)
 
         # If the model supports reasoning, we:
         # 1. add a <think> tag to the model's context
@@ -1299,7 +1276,6 @@ class Server:
         # Reset the early-exit flag before we start each generation
         self.stop_event.clear()
 
-        # Tokenize the input message
         input_ids = tokenizer(message, return_tensors="pt").input_ids
 
         # Process stop sequences
