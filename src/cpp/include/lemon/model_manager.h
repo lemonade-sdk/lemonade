@@ -78,7 +78,8 @@ private:
     
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id, 
-                                   const std::string& variant = "");
+                                   const std::string& variant = "",
+                                   const std::string& mmproj = "");
     
     // Download from FLM
     void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);

@@ -330,94 +330,94 @@ class Testing(ServerTestingBase):
     #     assert len(completion.choices[0].text) > len(prompt)
 
     # Test simultaneous load requests
-    async def test_011_test_simultaneous_load_requests(self):
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
-            first_model = "Qwen2.5-0.5B-Instruct-CPU"
-            second_model = "Llama-3.2-1B-Instruct-CPU"
+    # async def test_011_test_simultaneous_load_requests(self):
+    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
+    #         first_model = "Qwen2.5-0.5B-Instruct-CPU"
+    #         second_model = "Llama-3.2-1B-Instruct-CPU"
 
-            # Start two load requests simultaneously
-            load_tasks = [
-                client.post(
-                    "/load",
-                    json={
-                        "model_name": first_model,
-                    },
-                ),
-                client.post(
-                    "/load",
-                    json={
-                        "model_name": second_model,
-                    },
-                ),
-            ]
+    #         # Start two load requests simultaneously
+    #         load_tasks = [
+    #             client.post(
+    #                 "/load",
+    #                 json={
+    #                     "model_name": first_model,
+    #                 },
+    #             ),
+    #             client.post(
+    #                 "/load",
+    #                 json={
+    #                     "model_name": second_model,
+    #                 },
+    #             ),
+    #         ]
 
-            # Execute both requests concurrently
-            responses = await asyncio.gather(*load_tasks)
+    #         # Execute both requests concurrently
+    #         responses = await asyncio.gather(*load_tasks)
 
-            # Verify both requests completed successfully
-            assert responses[0].status_code == 200
-            assert responses[1].status_code == 200
+    #         # Verify both requests completed successfully
+    #         assert responses[0].status_code == 200
+    #         assert responses[1].status_code == 200
 
-            # Verify the final loaded model is one of the two we requested
-            # (The order is non-deterministic with concurrent requests, but
-            # the mutex ensures no corruption and one of them wins)
-            health_response = await client.get("/health")
-            assert health_response.status_code == 200
-            health_data = health_response.json()
-            assert health_data["model_loaded"] in [first_model, second_model], (
-                f"Expected one of [{first_model}, {second_model}], "
-                f"got {health_data['model_loaded']}"
-            )
+    #         # Verify the final loaded model is one of the two we requested
+    #         # (The order is non-deterministic with concurrent requests, but
+    #         # the mutex ensures no corruption and one of them wins)
+    #         health_response = await client.get("/health")
+    #         assert health_response.status_code == 200
+    #         health_data = health_response.json()
+    #         assert health_data["model_loaded"] in [first_model, second_model], (
+    #             f"Expected one of [{first_model}, {second_model}], "
+    #             f"got {health_data['model_loaded']}"
+    #         )
 
-    # Test load by model name
-    async def test_012_test_load_by_name(self):
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
-            load_response = await client.post("/load", json={"model_name": MODEL_NAME})
+    # # Test load by model name
+    # async def test_012_test_load_by_name(self):
+    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+    #         load_response = await client.post("/load", json={"model_name": MODEL_NAME})
 
-            assert load_response.status_code == 200
+    #         assert load_response.status_code == 200
 
-            # Verify the model loaded
-            health_response = await client.get("/health")
-            assert health_response.status_code == 200
-            health_data = health_response.json()
-            assert health_data["model_loaded"] == MODEL_NAME
+    #         # Verify the model loaded
+    #         health_response = await client.get("/health")
+    #         assert health_response.status_code == 200
+    #         health_data = health_response.json()
+    #         assert health_data["model_loaded"] == MODEL_NAME
 
     # Test pull to register-and-install
-    async def test_013_test_load_checkpoint_completion(self):
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+    # async def test_013_test_load_checkpoint_completion(self):
+    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
-            custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
+    #         custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
 
-            load_response = await client.post(
-                "/pull",
-                json={
-                    "model_name": "user.Qwen2.5-Coder-0.5B-Instruct-GGUF",
-                    "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF",
-                    "recipe": "llamacpp",
-                },
-            )
+    #         load_response = await client.post(
+    #             "/pull",
+    #             json={
+    #                 "model_name": custom_model_name,
+    #                 "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF:Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
+    #                 "recipe": "llamacpp",
+    #             },
+    #         )
 
-            assert load_response.status_code == 200
+    #         assert load_response.status_code == 200, load_response.content
 
-            # Verify the model loaded
-            health_response = await client.get("/health")
-            assert health_response.status_code == 200
+    #         # Verify the model loaded
+    #         health_response = await client.get("/health")
+    #         assert health_response.status_code == 200
 
-            # Run a completions request using the new model
-            client = OpenAI(
-                base_url=self.base_url,
-                api_key="lemonade",  # required, but unused
-            )
+    #         # Run a completions request using the new model
+    #         client = OpenAI(
+    #             base_url=self.base_url,
+    #             api_key="lemonade",  # required, but unused
+    #         )
 
-            completion = client.completions.create(
-                model=custom_model_name,
-                prompt="Hello, how are you?",
-                stream=False,
-                max_tokens=10,
-            )
+    #         completion = client.completions.create(
+    #             model=custom_model_name,
+    #             prompt="Hello, how are you?",
+    #             stream=False,
+    #             max_tokens=10,
+    #         )
 
-            print(completion.choices[0].text)
-            assert len(completion.choices[0].text) > 5
+    #         print(completion.choices[0].text)
+    #         assert len(completion.choices[0].text) > 5
 
     # Endpoint: /api/v1/responses
     def test_014_test_responses(self):

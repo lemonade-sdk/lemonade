@@ -710,6 +710,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         }
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_completions: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -768,6 +769,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_embeddings: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -826,6 +828,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_reranking: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -852,12 +855,30 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             request_json["model"].get<std::string>() : 
             request_json["model_name"].get<std::string>();
         
-        model_manager_->download_model(model_name);
+        // Extract optional parameters
+        std::string checkpoint = request_json.value("checkpoint", "");
+        std::string recipe = request_json.value("recipe", "");
+        bool reasoning = request_json.value("reasoning", false);
+        bool vision = request_json.value("vision", false);
+        std::string mmproj = request_json.value("mmproj", "");
+        bool do_not_upgrade = request_json.value("do_not_upgrade", false);
+        
+        std::cout << "[Server] Pulling model: " << model_name << std::endl;
+        if (!checkpoint.empty()) {
+            std::cout << "[Server]   checkpoint: " << checkpoint << std::endl;
+        }
+        if (!recipe.empty()) {
+            std::cout << "[Server]   recipe: " << recipe << std::endl;
+        }
+        
+        model_manager_->download_model(model_name, checkpoint, recipe, 
+                                      reasoning, vision, mmproj, do_not_upgrade);
         
         nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -966,14 +987,19 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
 void Server::handle_delete(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model_name"];
+        // Accept both "model" and "model_name" for compatibility
+        std::string model_name = request_json.contains("model") ? 
+            request_json["model"].get<std::string>() : 
+            request_json["model_name"].get<std::string>();
         
+        std::cout << "[Server] Deleting model: " << model_name << std::endl;
         model_manager_->delete_model(model_name);
         
         nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_delete: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -986,6 +1012,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
         nlohmann::json response = {{"status", "success"}};
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_params: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -1003,6 +1030,7 @@ void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {
         auto stats = router_->get_stats();
         res.set_content(stats.dump(), "application/json");
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_stats: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -1032,6 +1060,7 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         nlohmann::json response = {{"status", "success"}, {"level", log_level_}};
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_log_level: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");

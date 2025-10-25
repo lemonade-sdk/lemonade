@@ -324,7 +324,25 @@ int main(int argc, char** argv) {
             for (const auto& model_name : config.models) {
                 std::cout << "\nPulling model: " << model_name << std::endl;
                 
-                nlohmann::json request = {{"model", model_name}};
+                nlohmann::json request = {{"model_name", model_name}};
+                
+                // Add optional parameters if provided
+                if (!config.checkpoint.empty()) {
+                    request["checkpoint"] = config.checkpoint;
+                }
+                if (!config.recipe.empty()) {
+                    request["recipe"] = config.recipe;
+                }
+                if (config.reasoning) {
+                    request["reasoning"] = config.reasoning;
+                }
+                if (config.vision) {
+                    request["vision"] = config.vision;
+                }
+                if (!config.mmproj.empty()) {
+                    request["mmproj"] = config.mmproj;
+                }
+                
                 auto response = api_request("POST", "/api/v1/pull", request.dump());
                 
                 if (response.status_code == 200) {

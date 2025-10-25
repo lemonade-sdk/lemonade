@@ -17,6 +17,187 @@ using namespace lemon::utils;
 
 namespace lemon {
 
+// Helper functions for string operations
+static std::string to_lower(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+    return result;
+}
+
+static bool ends_with_ignore_case(const std::string& str, const std::string& suffix) {
+    if (suffix.length() > str.length()) {
+        return false;
+    }
+    return to_lower(str.substr(str.length() - suffix.length())) == to_lower(suffix);
+}
+
+static bool starts_with_ignore_case(const std::string& str, const std::string& prefix) {
+    if (prefix.length() > str.length()) {
+        return false;
+    }
+    return to_lower(str.substr(0, prefix.length())) == to_lower(prefix);
+}
+
+static bool contains_ignore_case(const std::string& str, const std::string& substr) {
+    return to_lower(str).find(to_lower(substr)) != std::string::npos;
+}
+
+// Structure to hold identified GGUF files
+struct GGUFFiles {
+    std::map<std::string, std::string> core_files;  // {"variant": "file.gguf", "mmproj": "file.mmproj"}
+    std::vector<std::string> sharded_files;         // Additional shard files
+};
+
+// Identifies GGUF model files matching the variant (Python equivalent of identify_gguf_models)
+static GGUFFiles identify_gguf_models(
+    const std::string& checkpoint,
+    const std::string& variant,
+    const std::string& mmproj,
+    const std::vector<std::string>& repo_files
+) {
+    const std::string hint = R"(
+    The CHECKPOINT:VARIANT scheme is used to specify model files in Hugging Face repositories.
+
+    The VARIANT format can be one of several types:
+    0. wildcard (*): download all .gguf files in the repo
+    1. Full filename: exact file to download
+    2. None/empty: gets the first .gguf file in the repository (excludes mmproj files)
+    3. Quantization variant: find a single file ending with the variant name (case insensitive)
+    4. Folder name: downloads all .gguf files in the folder that matches the variant name (case insensitive)
+
+    Examples:
+    - "ggml-org/gpt-oss-120b-GGUF:*" -> downloads all .gguf files in repo
+    - "unsloth/Qwen3-8B-GGUF:qwen3.gguf" -> downloads "qwen3.gguf"
+    - "unsloth/Qwen3-30B-A3B-GGUF" -> downloads "Qwen3-30B-A3B-GGUF.gguf"
+    - "unsloth/Qwen3-8B-GGUF:Q4_1" -> downloads "Qwen3-8B-GGUF-Q4_1.gguf"
+    - "unsloth/Qwen3-30B-A3B-GGUF:Q4_0" -> downloads all files in "Q4_0/" folder
+    )";
+
+    GGUFFiles result;
+    std::vector<std::string> sharded_files;
+    std::string variant_name;
+
+    // (case 0) Wildcard, download everything
+    if (!variant.empty() && variant == "*") {
+        for (const auto& f : repo_files) {
+            if (ends_with_ignore_case(f, ".gguf")) {
+                sharded_files.push_back(f);
+            }
+        }
+        
+        if (sharded_files.empty()) {
+            throw std::runtime_error("No .gguf files found in repository " + checkpoint + ". " + hint);
+        }
+        
+        // Sort to ensure consistent ordering
+        std::sort(sharded_files.begin(), sharded_files.end());
+        
+        // Use first file as primary (this is how llamacpp handles it)
+        variant_name = sharded_files[0];
+    }
+    // (case 1) If variant ends in .gguf, use it directly
+    else if (!variant.empty() && ends_with_ignore_case(variant, ".gguf")) {
+        variant_name = variant;
+        
+        // Validate file exists in repo
+        bool found = false;
+        for (const auto& f : repo_files) {
+            if (f == variant) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            throw std::runtime_error(
+                "File " + variant + " not found in Hugging Face repository " + checkpoint + ". " + hint
+            );
+        }
+    }
+    // (case 2) If no variant is provided, get the first .gguf file in the repository
+    else if (variant.empty()) {
+        std::vector<std::string> all_variants;
+        for (const auto& f : repo_files) {
+            if (ends_with_ignore_case(f, ".gguf") && !contains_ignore_case(f, "mmproj")) {
+                all_variants.push_back(f);
+            }
+        }
+        
+        if (all_variants.empty()) {
+            throw std::runtime_error(
+                "No .gguf files found in Hugging Face repository " + checkpoint + ". " + hint
+            );
+        }
+        
+        variant_name = all_variants[0];
+    }
+    else {
+        // (case 3) Find a single file ending with the variant name (case insensitive)
+        std::vector<std::string> end_with_variant;
+        std::string variant_suffix = variant + ".gguf";
+        
+        for (const auto& f : repo_files) {
+            if (ends_with_ignore_case(f, variant_suffix) && !contains_ignore_case(f, "mmproj")) {
+                end_with_variant.push_back(f);
+            }
+        }
+        
+        if (end_with_variant.size() == 1) {
+            variant_name = end_with_variant[0];
+        }
+        else if (end_with_variant.size() > 1) {
+            throw std::runtime_error(
+                "Multiple .gguf files found for variant " + variant + ", but only one is allowed. " + hint
+            );
+        }
+        // (case 4) Check whether the variant corresponds to a folder with sharded files (case insensitive)
+        else {
+            std::string folder_prefix = variant + "/";
+            for (const auto& f : repo_files) {
+                if (ends_with_ignore_case(f, ".gguf") && starts_with_ignore_case(f, folder_prefix)) {
+                    sharded_files.push_back(f);
+                }
+            }
+            
+            if (sharded_files.empty()) {
+                throw std::runtime_error(
+                    "No .gguf files found for variant " + variant + ". " + hint
+                );
+            }
+            
+            // Sort to ensure consistent ordering
+            std::sort(sharded_files.begin(), sharded_files.end());
+            
+            // Use first file as primary (this is how llamacpp handles it)
+            variant_name = sharded_files[0];
+        }
+    }
+    
+    result.core_files["variant"] = variant_name;
+    result.sharded_files = sharded_files;
+    
+    // If there is a mmproj file, add it to the core files
+    if (!mmproj.empty()) {
+        bool found = false;
+        for (const auto& f : repo_files) {
+            if (f == mmproj) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            throw std::runtime_error(
+                "The provided mmproj file " + mmproj + " was not found in " + checkpoint + "."
+            );
+        }
+        
+        result.core_files["mmproj"] = mmproj;
+    }
+    
+    return result;
+}
+
 ModelManager::ModelManager() {
     server_models_ = load_server_models();
     user_models_ = load_user_models();
@@ -341,17 +522,17 @@ void ModelManager::register_user_model(const std::string& model_name,
     json model_entry;
     model_entry["checkpoint"] = checkpoint;
     model_entry["recipe"] = recipe;
+    model_entry["suggested"] = true;  // Always set suggested=true for user models
     
-    std::vector<std::string> labels;
+    // Always start with "custom" label (matching Python implementation)
+    std::vector<std::string> labels = {"custom"};
     if (reasoning) {
         labels.push_back("reasoning");
     }
     if (vision) {
         labels.push_back("vision");
     }
-    if (!labels.empty()) {
-        model_entry["labels"] = labels;
-    }
+    model_entry["labels"] = labels;
     
     if (!mmproj.empty()) {
         model_entry["mmproj"] = mmproj;
@@ -521,11 +702,52 @@ void ModelManager::download_model(const std::string& model_name,
     std::string actual_checkpoint = checkpoint;
     std::string actual_recipe = recipe;
     
-    // If checkpoint not provided, look up from registry
-    if (actual_checkpoint.empty()) {
-        auto info = get_model_info(model_name);
-        actual_checkpoint = info.checkpoint;
-        actual_recipe = info.recipe;
+    // Check if model exists in registry
+    bool model_registered = model_exists(model_name);
+    
+    if (!model_registered) {
+        // Model not in registry - this must be a user model registration
+        // Validate it has the "user." prefix
+        if (model_name.substr(0, 5) != "user.") {
+            throw std::runtime_error(
+                "When registering a new model, the model name must include the "
+                "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " + 
+                model_name
+            );
+        }
+        
+        // Check that required arguments are provided
+        if (actual_checkpoint.empty() || actual_recipe.empty()) {
+            throw std::runtime_error(
+                "Model " + model_name + " is not registered with Lemonade Server. "
+                "To register and install it, provide the `checkpoint` and `recipe` "
+                "arguments, as well as the optional `reasoning` and `mmproj` arguments "
+                "as appropriate."
+            );
+        }
+        
+        // Validate GGUF models require a variant
+        std::string checkpoint_lower = actual_checkpoint;
+        std::transform(checkpoint_lower.begin(), checkpoint_lower.end(), 
+                      checkpoint_lower.begin(), ::tolower);
+        if (checkpoint_lower.find("gguf") != std::string::npos && 
+            actual_checkpoint.find(':') == std::string::npos) {
+            throw std::runtime_error(
+                "You are required to provide a 'variant' in the checkpoint field when "
+                "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
+                "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+            );
+        }
+        
+        std::cout << "Registering new user model: " << model_name << std::endl;
+    } else {
+        // Model is registered - if checkpoint not provided, look up from registry
+        if (actual_checkpoint.empty()) {
+            auto info = get_model_info(model_name);
+            actual_checkpoint = info.checkpoint;
+            actual_recipe = info.recipe;
+        }
     }
     
     // Parse checkpoint
@@ -561,7 +783,7 @@ void ModelManager::download_model(const std::string& model_name,
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade);
     } else {
-        download_from_huggingface(repo_id, variant);
+        download_from_huggingface(repo_id, variant, mmproj);
     }
     
     // Register if needed
@@ -572,7 +794,8 @@ void ModelManager::download_model(const std::string& model_name,
 }
 
 void ModelManager::download_from_huggingface(const std::string& repo_id,
-                                            const std::string& variant) {
+                                            const std::string& variant,
+                                            const std::string& mmproj) {
     // Get Hugging Face cache directory
     std::string hf_cache;
     const char* hf_home_env = std::getenv("HF_HOME");
@@ -610,6 +833,8 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     fs::create_directories(model_cache_path);
+    std::string snapshot_path = model_cache_path + "/snapshots/main";
+    fs::create_directories(snapshot_path);
     
     // Get HF token if available
     std::map<std::string, std::string> headers;
@@ -622,61 +847,120 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     std::string api_url = "https://huggingface.co/api/models/" + repo_id;
     
     try {
+        std::cout << "[ModelManager] Fetching repository file list from Hugging Face..." << std::endl;
         auto response = HttpClient::get(api_url, headers);
         
-        if (response.status_code == 200) {
-            auto model_info = JsonUtils::parse(response.body);
-            
-            // Download files based on recipe/variant
-            if (model_info.contains("siblings") && model_info["siblings"].is_array()) {
-                for (const auto& file : model_info["siblings"]) {
-                    std::string filename = file["rfilename"].get<std::string>();
-                    
-                    // Filter files based on variant for GGUF models
-                    if (!variant.empty()) {
-                        // Only download files matching the variant
-                        if (filename.find(variant) == std::string::npos && 
-                            filename != "config.json" &&
-                            filename != "tokenizer.json" &&
-                            filename != "tokenizer_config.json") {
-                            continue;
-                        }
-                    }
-                    
-                    // Download file
-                    std::string file_url = "https://huggingface.co/" + repo_id + 
-                                         "/resolve/main/" + filename;
-                    std::string output_path = model_cache_path + "/snapshots/main/" + filename;
-                    
-                    // Create parent directory
-                    fs::create_directories(fs::path(output_path).parent_path());
-                    
-                    std::cout << "Downloading: " << filename << "..." << std::endl;
-                    
-                    bool success = HttpClient::download_file(
-                        file_url,
-                        output_path,
-                        [](size_t downloaded, size_t total) {
-                            if (total > 0) {
-                                int percent = (downloaded * 100) / total;
-                                std::cout << "\rProgress: " << percent << "%" << std::flush;
-                            }
-                        },
-                        headers
-                    );
-                    
-                    if (success) {
-                        std::cout << "\nDownloaded: " << filename << std::endl;
-                    } else {
-                        std::cerr << "\nFailed to download: " << filename << std::endl;
-                    }
+        if (response.status_code != 200) {
+            throw std::runtime_error(
+                "Failed to fetch model info from Hugging Face API (status: " + 
+                std::to_string(response.status_code) + ")"
+            );
+        }
+        
+        auto model_info = JsonUtils::parse(response.body);
+        
+        if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
+            throw std::runtime_error("Invalid model info response from Hugging Face API");
+        }
+        
+        // Extract list of all files in the repository
+        std::vector<std::string> repo_files;
+        for (const auto& file : model_info["siblings"]) {
+            if (file.contains("rfilename")) {
+                repo_files.push_back(file["rfilename"].get<std::string>());
+            }
+        }
+        
+        std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
+        
+        // Use identify_gguf_models to determine which files to download
+        GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
+        
+        // Combine core files and sharded files into one list
+        std::vector<std::string> files_to_download;
+        for (const auto& [key, filename] : gguf_files.core_files) {
+            files_to_download.push_back(filename);
+        }
+        for (const auto& filename : gguf_files.sharded_files) {
+            files_to_download.push_back(filename);
+        }
+        
+        // Also download essential config files if they exist
+        std::vector<std::string> config_files = {
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "tokenizer.model"
+        };
+        for (const auto& config_file : config_files) {
+            if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
+                if (std::find(files_to_download.begin(), files_to_download.end(), config_file) == files_to_download.end()) {
+                    files_to_download.push_back(config_file);
                 }
             }
-        } else {
-            throw std::runtime_error("Failed to fetch model info from Hugging Face API");
         }
+        
+        std::cout << "[ModelManager] Identified " << files_to_download.size() << " files to download:" << std::endl;
+        for (const auto& filename : files_to_download) {
+            std::cout << "  - " << filename << std::endl;
+        }
+        
+        // Download each file
+        for (const auto& filename : files_to_download) {
+            std::string file_url = "https://huggingface.co/" + repo_id + 
+                                 "/resolve/main/" + filename;
+            std::string output_path = snapshot_path + "/" + filename;
+            
+            // Skip if file already exists
+            if (fs::exists(output_path)) {
+                std::cout << "[ModelManager] Skipping (already exists): " << filename << std::endl;
+                continue;
+            }
+            
+            // Create parent directory for file (handles folders in filenames)
+            fs::create_directories(fs::path(output_path).parent_path());
+            
+            std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
+            
+            bool success = HttpClient::download_file(
+                file_url,
+                output_path,
+                [&filename](size_t downloaded, size_t total) {
+                    if (total > 0) {
+                        int percent = (downloaded * 100) / total;
+                        double mb_downloaded = downloaded / (1024.0 * 1024.0);
+                        double mb_total = total / (1024.0 * 1024.0);
+                        std::cout << "\r  Progress: " << percent << "% (" 
+                                 << std::fixed << std::setprecision(1) 
+                                 << mb_downloaded << "/" << mb_total << " MB)" << std::flush;
+                    }
+                },
+                headers
+            );
+            
+            if (success) {
+                std::cout << "\n[ModelManager] ✓ Downloaded: " << filename << std::endl;
+            } else {
+                throw std::runtime_error("Failed to download file: " + filename);
+            }
+        }
+        
+        // Validate all expected files exist after download
+        std::cout << "[ModelManager] Validating downloaded files..." << std::endl;
+        for (const auto& filename : files_to_download) {
+            std::string expected_path = snapshot_path + "/" + filename;
+            if (!fs::exists(expected_path)) {
+                throw std::runtime_error(
+                    "Hugging Face snapshot download expected file " + filename + 
+                    " not found at " + expected_path
+                );
+            }
+        }
+        
+        std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
+        
     } catch (const std::exception& e) {
-        std::cerr << "Error downloading model: " << e.what() << std::endl;
+        // Don't log here - let the caller (Server) handle error logging
         throw;
     }
 }
@@ -742,6 +1026,22 @@ void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_
 void ModelManager::delete_model(const std::string& model_name) {
     auto info = get_model_info(model_name);
     
+    std::cout << "[ModelManager] Deleting model: " << model_name << std::endl;
+    std::cout << "[ModelManager] Checkpoint: " << info.checkpoint << std::endl;
+    std::cout << "[ModelManager] Recipe: " << info.recipe << std::endl;
+    
+    // Handle FLM models separately
+    if (info.recipe == "flm") {
+        std::cout << "[ModelManager] Deleting FLM model (not yet implemented)" << std::endl;
+        // TODO: Call 'flm remove' command
+        return;
+    }
+    
+    // Validate checkpoint is not empty
+    if (info.checkpoint.empty()) {
+        throw std::runtime_error("Model has empty checkpoint field, cannot determine files to delete");
+    }
+    
     // Get Hugging Face cache directory
     std::string hf_cache;
     const char* hf_home_env = std::getenv("HF_HOME");
@@ -765,7 +1065,7 @@ void ModelManager::delete_model(const std::string& model_name) {
 #endif
     }
     
-    // Parse checkpoint to get repo ID
+    // Parse checkpoint to get repo ID (remove variant after colon)
     std::string checkpoint = info.checkpoint;
     size_t colon_pos = checkpoint.find(':');
     if (colon_pos != std::string::npos) {
@@ -784,9 +1084,14 @@ void ModelManager::delete_model(const std::string& model_name) {
     
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     
+    std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
+    
     if (fs::exists(model_cache_path)) {
+        std::cout << "[ModelManager] Removing directory..." << std::endl;
         fs::remove_all(model_cache_path);
-        std::cout << "Deleted model: " << model_name << std::endl;
+        std::cout << "[ModelManager] ✓ Deleted model files: " << model_name << std::endl;
+    } else {
+        std::cout << "[ModelManager] Warning: Model cache directory not found (may already be deleted)" << std::endl;
     }
     
     // Remove from user models if it's a user model
@@ -796,6 +1101,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         updated_user_models.erase(clean_name);
         save_user_models(updated_user_models);
         user_models_ = updated_user_models;
+        std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
     }
 }
 
