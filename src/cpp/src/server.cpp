@@ -118,7 +118,7 @@ void Server::setup_routes() {
     });
     
     // Responses endpoint
-    register_get("responses", [this](const httplib::Request& req, httplib::Response& res) {
+    register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
     });
     
@@ -836,15 +836,140 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
-    // For HEAD requests, just return 200 OK without processing
-    if (req.method == "HEAD") {
-        res.status = 200;
-        return;
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        
+        // Handle model loading/switching (same as chat_completions)
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            std::string loaded_model = router_->get_loaded_model();
+            
+            // Check if we need to switch models
+            if (loaded_model != requested_model) {
+                // Unload current model if one is loaded
+                if (router_->is_model_loaded()) {
+                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+                    router_->unload_model();
+                } else {
+                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+                }
+                
+                // Get model info
+                if (!model_manager_->model_exists(requested_model)) {
+                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
+                    res.status = 404;
+                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
+                    return;
+                }
+                
+                auto info = model_manager_->get_model_info(requested_model);
+                
+                // Check if model supports responses API (only oga-* recipes)
+                if (info.recipe.find("oga-") == std::string::npos && info.recipe != "oga") {
+                    std::cerr << "[Server ERROR] Responses API not supported for recipe: " << info.recipe << std::endl;
+                    res.status = 422;
+                    nlohmann::json error_response = {
+                        {"error", {
+                            {"message", "Responses API not supported for recipe: " + info.recipe},
+                            {"type", "unsupported_recipe"},
+                            {"code", "responses_not_supported"}
+                        }}
+                    };
+                    res.set_content(error_response.dump(), "application/json");
+                    return;
+                }
+                
+                // Auto-download if not cached (only for non-FLM models)
+                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
+                    model_manager_->download_model(requested_model);
+                }
+                
+                // Load the requested model
+                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
+                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            }
+        } else if (!router_->is_model_loaded()) {
+            std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
+            return;
+        }
+        
+        // Check if current model supports responses API
+        std::string loaded_recipe = router_->get_loaded_recipe();
+        if (loaded_recipe.find("oga-") == std::string::npos && loaded_recipe != "oga") {
+            std::cerr << "[Server ERROR] Responses API not supported for recipe: " << loaded_recipe << std::endl;
+            res.status = 422;
+            nlohmann::json error_response = {
+                {"error", {
+                    {"message", "Responses API not supported for recipe: " + loaded_recipe},
+                    {"type", "unsupported_recipe"},
+                    {"code", "responses_not_supported"}
+                }}
+            };
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+        
+        // Check if streaming is requested
+        bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
+        
+        if (is_streaming) {
+            try {
+                // For streaming, forward chunks in real-time to the client
+                std::string backend_url = router_->get_backend_address() + "/responses";
+                
+                std::cout << "[Server] POST " << backend_url << " - Streaming (Responses API)" << std::endl;
+                
+                // Set up streaming response with SSE headers
+                res.set_header("Content-Type", "text/event-stream");
+                res.set_header("Cache-Control", "no-cache");
+                res.set_header("Connection", "keep-alive");
+                res.set_header("X-Accel-Buffering", "no");
+                
+                // Use cpp-httplib's chunked content provider for SSE streaming
+                res.set_chunked_content_provider(
+                    "text/event-stream",
+                    [backend_url, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                        if (offset > 0) {
+                            return false; // Only stream once
+                        }
+                        
+                        // Use StreamingProxy to forward the SSE stream
+                        StreamingProxy::forward_sse_stream(
+                            backend_url,
+                            request_body,
+                            sink,
+                            nullptr
+                        );
+                        
+                        return false;
+                    }
+                );
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Streaming failed: " << e.what() << std::endl;
+                res.status = 500;
+                res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
+            }
+        } else {
+            // Forward to backend for non-streaming
+            std::string backend_url = router_->get_backend_address() + "/responses";
+            
+            std::cout << "[Server] POST " << backend_url << " - Non-streaming (Responses API)" << std::endl;
+            
+            auto response = router_->responses(request_json);
+            
+            std::cout << "200 OK" << std::endl;
+            res.set_content(response.dump(), "application/json");
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_responses: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
     }
-    
-    // Return cached responses (stub for now)
-    nlohmann::json response = nlohmann::json::array();
-    res.set_content(response.dump(), "application/json");
 }
 
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {

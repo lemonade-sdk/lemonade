@@ -43,6 +43,7 @@ public:
     // Inference operations (from ICompletionServer via WrappedServer)
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
+    json responses(const json& request) override;
 
 private:
     std::string model_name_;

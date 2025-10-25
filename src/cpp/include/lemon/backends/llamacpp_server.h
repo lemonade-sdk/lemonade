@@ -30,6 +30,7 @@ public:
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
+    json responses(const json& request) override;
     
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;

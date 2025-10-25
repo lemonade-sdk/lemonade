@@ -104,6 +104,11 @@ void RyzenAIServer::setupRoutes() {
         handleChatCompletions(req, res);
     });
     
+    // Responses endpoint
+    http_server_->Post("/v1/responses", [this](const httplib::Request& req, httplib::Response& res) {
+        handleResponses(req, res);
+    });
+    
     // Root redirect
     http_server_->Get("/", [this](const httplib::Request&, httplib::Response& res) {
         json response = {
@@ -113,7 +118,8 @@ void RyzenAIServer::setupRoutes() {
             {"endpoints", {
                 "/health",
                 "/v1/completions",
-                "/v1/chat/completions"
+                "/v1/chat/completions",
+                "/v1/responses"
             }}
         };
         res.set_content(response.dump(2), "application/json");
@@ -501,6 +507,230 @@ void RyzenAIServer::run() {
     // Start listening
     if (!http_server_->listen(args_.host, args_.port)) {
         throw std::runtime_error("Failed to start server on " + args_.host + ":" + std::to_string(args_.port));
+    }
+}
+
+void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Response& res) {
+    try {
+        // Parse request
+        json request_json = json::parse(req.body);
+        
+        // Extract parameters (following ResponsesRequest format)
+        bool stream = request_json.value("stream", false);
+        std::string model = request_json.value("model", model_id_);
+        int max_output_tokens = request_json.value("max_output_tokens", 512);
+        float temperature = request_json.value("temperature", 1.0f);
+        float repeat_penalty = request_json.value("repeat_penalty", 1.0f);
+        int top_k = request_json.value("top_k", 40);
+        float top_p = request_json.value("top_p", 0.9f);
+        
+        // Handle input - can be string or array of messages
+        std::string prompt;
+        if (request_json["input"].is_string()) {
+            prompt = request_json["input"].get<std::string>();
+        } else if (request_json["input"].is_array()) {
+            // Apply chat template to messages array
+            prompt = inference_engine_->applyChatTemplate(request_json["input"].dump());
+        } else {
+            res.status = 400;
+            res.set_content(createErrorResponse("Input must be string or messages array", "invalid_request").dump(), 
+                          "application/json");
+            return;
+        }
+        
+        std::cout << "[Server] Responses request (stream=" << stream << ")" << std::endl;
+        
+        if (stream) {
+            // STREAMING RESPONSE: Use Responses API event format
+            res.set_header("Content-Type", "text/event-stream");
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+            
+            GenerationParams params;
+            params.max_length = max_output_tokens;
+            params.temperature = temperature;
+            params.top_p = top_p;
+            params.top_k = top_k;
+            params.repetition_penalty = repeat_penalty;
+            
+            std::string model_name = model;
+            
+            res.set_chunked_content_provider(
+                "text/event-stream",
+                [this, prompt, params, model_name](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) return false; // Only run once
+                    
+                    try {
+                        // Send response.created event
+                        std::string created_time = std::to_string(std::time(nullptr));
+                        std::string created_event = 
+                            "data: {\"type\":\"response.created\",\"sequence_number\":0,"
+                            "\"response\":{\"id\":\"0\",\"model\":\"" + model_name + 
+                            "\",\"created_at\":" + created_time + 
+                            ",\"object\":\"response\",\"output\":[],"
+                            "\"parallel_tool_calls\":true,\"tool_choice\":\"auto\",\"tools\":[]}}\n\n";
+                        
+                        if (!sink.write(created_event.c_str(), created_event.size())) {
+                            std::cout << "[Server] Failed to write created event" << std::endl;
+                            return false;
+                        }
+                        
+                        // Accumulate full response for the completed event
+                        std::string full_response;
+                        
+                        // Generate and send tokens in real-time
+                        inference_engine_->streamComplete(prompt, params, 
+                            [&sink, &full_response](const std::string& token, bool is_final) {
+                                // Escape special characters for JSON
+                                std::string escaped_token = token;
+                                size_t pos = 0;
+                                while ((pos = escaped_token.find('\\', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\\");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('"', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\\"");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\n', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\n");
+                                    pos += 2;
+                                }
+                                pos = 0;
+                                while ((pos = escaped_token.find('\r', pos)) != std::string::npos) {
+                                    escaped_token.replace(pos, 1, "\\r");
+                                    pos += 2;
+                                }
+                                
+                                // Accumulate unescaped token for final response
+                                full_response += token;
+                                
+                                // Send response.output_text.delta event
+                                std::string delta_event = 
+                                    "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,"
+                                    "\"content_index\":0,\"delta\":\"" + escaped_token + 
+                                    "\",\"item_id\":\"0\",\"output_index\":0}\n\n";
+                                
+                                if (!sink.write(delta_event.c_str(), delta_event.size())) {
+                                    std::cout << "[Server] Client disconnected during streaming" << std::endl;
+                                    return; // Client disconnected
+                                }
+                            }
+                        );
+                        
+                        std::cout << "[Server] Token generation completed, sending final events" << std::endl;
+                        
+                        // Escape full_response for JSON
+                        std::string escaped_full_response = full_response;
+                        size_t pos = 0;
+                        while ((pos = escaped_full_response.find('\\', pos)) != std::string::npos) {
+                            escaped_full_response.replace(pos, 1, "\\\\");
+                            pos += 2;
+                        }
+                        pos = 0;
+                        while ((pos = escaped_full_response.find('"', pos)) != std::string::npos) {
+                            escaped_full_response.replace(pos, 1, "\\\"");
+                            pos += 2;
+                        }
+                        pos = 0;
+                        while ((pos = escaped_full_response.find('\n', pos)) != std::string::npos) {
+                            escaped_full_response.replace(pos, 1, "\\n");
+                            pos += 2;
+                        }
+                        pos = 0;
+                        while ((pos = escaped_full_response.find('\r', pos)) != std::string::npos) {
+                            escaped_full_response.replace(pos, 1, "\\r");
+                            pos += 2;
+                        }
+                        
+                        // Send response.completed event
+                        std::string completed_time = std::to_string(std::time(nullptr));
+                        std::string completed_event = 
+                            "data: {\"type\":\"response.completed\",\"sequence_number\":0,"
+                            "\"response\":{\"id\":\"0\",\"model\":\"" + model_name + 
+                            "\",\"created_at\":" + completed_time + 
+                            ",\"object\":\"response\",\"output\":[{\"id\":\"0\",\"content\":[{"
+                            "\"type\":\"output_text\",\"text\":\"" + escaped_full_response + 
+                            "\",\"annotations\":[]}],\"role\":\"assistant\",\"status\":\"completed\","
+                            "\"type\":\"message\"}],\"parallel_tool_calls\":true,"
+                            "\"tool_choice\":\"auto\",\"tools\":[]}}\n\n";
+                        
+                        if (!sink.write(completed_event.c_str(), completed_event.size())) {
+                            std::cout << "[Server] Failed to write completed event" << std::endl;
+                            return false;
+                        }
+                        
+                        // Send [DONE] marker
+                        const char* done_msg = "data: [DONE]\n\n";
+                        if (!sink.write(done_msg, strlen(done_msg))) {
+                            std::cout << "[Server] Failed to write [DONE] marker" << std::endl;
+                            return false;
+                        }
+                        
+                        std::cout << "[Server] Streaming responses completed successfully" << std::endl;
+                        return true;
+                        
+                    } catch (const std::exception& e) {
+                        std::cerr << "[Server] Error in streaming responses: " << e.what() << std::endl;
+                        std::string error_msg = "data: {\"error\":\"" + std::string(e.what()) + "\"}\n\n";
+                        sink.write(error_msg.c_str(), error_msg.size());
+                        return false;
+                    }
+                }
+            );
+            
+        } else {
+            // NON-STREAMING RESPONSE
+            GenerationParams params;
+            params.max_length = max_output_tokens;
+            params.temperature = temperature;
+            params.top_p = top_p;
+            params.top_k = top_k;
+            params.repetition_penalty = repeat_penalty;
+            
+            std::string generated_text = inference_engine_->complete(prompt, params);
+            
+            // Create Response object
+            json response = {
+                {"id", "0"},
+                {"model", model},
+                {"created_at", std::time(nullptr)},
+                {"object", "response"},
+                {"output", json::array({
+                    {
+                        {"id", "0"},
+                        {"content", json::array({
+                            {
+                                {"type", "output_text"},
+                                {"text", generated_text},
+                                {"annotations", json::array()}
+                            }
+                        })},
+                        {"role", "assistant"},
+                        {"status", "completed"},
+                        {"type", "message"}
+                    }
+                })},
+                {"parallel_tool_calls", true},
+                {"tool_choice", "auto"},
+                {"tools", json::array()}
+            };
+            
+            res.set_content(response.dump(), "application/json");
+            std::cout << "[Server] Non-streaming responses completed" << std::endl;
+        }
+        
+    } catch (const json::exception& e) {
+        std::cerr << "[Server] JSON parsing error: " << e.what() << std::endl;
+        res.status = 400;
+        res.set_content(createErrorResponse(e.what(), "invalid_request").dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] Error in responses: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(createErrorResponse(e.what(), "internal_error").dump(), "application/json");
     }
 }
 

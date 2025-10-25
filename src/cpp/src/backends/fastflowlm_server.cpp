@@ -222,6 +222,13 @@ json FastFlowLMServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
 }
 
+json FastFlowLMServer::responses(const json& request) {
+    // Responses API is not supported for FLM backend
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Responses API", "flm")
+    );
+}
+
 void FastFlowLMServer::parse_telemetry(const std::string& line) {
     // FLM telemetry parsing can be added here if needed
     // For now, we'll rely on the response from the server

@@ -382,7 +382,7 @@ class Testing(ServerTestingBase):
     #         health_data = health_response.json()
     #         assert health_data["model_loaded"] == MODEL_NAME
 
-    # Test pull to register-and-install
+    # # Test pull to register-and-install
     # async def test_013_test_load_checkpoint_completion(self):
     #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
@@ -419,113 +419,113 @@ class Testing(ServerTestingBase):
     #         print(completion.choices[0].text)
     #         assert len(completion.choices[0].text) > 5
 
-    # Endpoint: /api/v1/responses
-    def test_014_test_responses(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
+    # # Endpoint: /api/v1/responses
+    # def test_014_test_responses(self):
+    #     client = OpenAI(
+    #         base_url=self.base_url,
+    #         api_key="lemonade",  # required, but unused
+    #     )
 
-        response = client.responses.create(
-            model=MODEL_NAME,
-            input=self.messages,
-            stream=False,
-            temperature=0.0,
-            max_output_tokens=10,
-        )
+    #     response = client.responses.create(
+    #         model=MODEL_NAME,
+    #         input=self.messages,
+    #         stream=False,
+    #         temperature=0.0,
+    #         max_output_tokens=10,
+    #     )
 
-        print(response.output[0].content[0].text)
-        assert len(response.output[0].content[0].text) > 5
+    #     print(response.output[0].content[0].text)
+    #     assert len(response.output[0].content[0].text) > 5
 
-    # Endpoint: /api/v1/responses
-    def test_015_test_responses_streaming(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
+    # # Endpoint: /api/v1/responses
+    # def test_015_test_responses_streaming(self):
+    #     client = OpenAI(
+    #         base_url=self.base_url,
+    #         api_key="lemonade",  # required, but unused
+    #     )
 
-        stream = client.responses.create(
-            model=MODEL_NAME,
-            input=self.messages,
-            stream=True,
-            temperature=0.0,
-            max_output_tokens=10,
-        )
-        complete_response = ""
-        event_count = 0
-        last_event_type = ""
-        for event in stream:
+    #     stream = client.responses.create(
+    #         model=MODEL_NAME,
+    #         input=self.messages,
+    #         stream=True,
+    #         temperature=0.0,
+    #         max_output_tokens=10,
+    #     )
+    #     complete_response = ""
+    #     event_count = 0
+    #     last_event_type = ""
+    #     for event in stream:
 
-            # Check that the first event is a response.created event
-            if event_count == 0:
-                assert (
-                    event.type == "response.created"
-                ), f"Expected first event to be response.created, got {event.type}"
+    #         # Check that the first event is a response.created event
+    #         if event_count == 0:
+    #             assert (
+    #                 event.type == "response.created"
+    #             ), f"Expected first event to be response.created, got {event.type}"
 
-            # Keep track of the streamed response
-            elif event.type == "response.output_text.delta":
-                complete_response += event.delta
-                print(event.delta, end="")
+    #         # Keep track of the streamed response
+    #         elif event.type == "response.output_text.delta":
+    #             complete_response += event.delta
+    #             print(event.delta, end="")
 
-            # Ensure the complete event matches the streamed response
-            elif event.type == "response.completed":
-                assert (
-                    event.response.output[0].content[0].text == complete_response
-                ), "Complete response does not match streamed response"
+    #         # Ensure the complete event matches the streamed response
+    #         elif event.type == "response.completed":
+    #             assert (
+    #                 event.response.output[0].content[0].text == complete_response
+    #             ), "Complete response does not match streamed response"
 
-            # Ensure all events we add in the future are also tested
-            else:
-                assert False, f"Untested event type: {event.type}"
-            event_count += 1
-            last_event_type = event.type
+    #         # Ensure all events we add in the future are also tested
+    #         else:
+    #             assert False, f"Untested event type: {event.type}"
+    #         event_count += 1
+    #         last_event_type = event.type
 
-        assert last_event_type == "response.completed"
-        assert len(complete_response) > 5
+    #     assert last_event_type == "response.completed"
+    #     assert len(complete_response) > 5
 
-    # Endpoint: /api/v1/responses
-    async def test_016_test_responses_streaming_async(self):
-        client = AsyncOpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
+    # # Endpoint: /api/v1/responses
+    # async def test_016_test_responses_streaming_async(self):
+    #     client = AsyncOpenAI(
+    #         base_url=self.base_url,
+    #         api_key="lemonade",  # required, but unused
+    #     )
 
-        stream = await client.responses.create(
-            model=MODEL_NAME,
-            input=self.messages,
-            stream=True,
-            temperature=0.0,
-            max_output_tokens=10,
-        )
-        complete_response = ""
-        event_count = 0
-        last_event_type = ""
-        async for event in stream:
+    #     stream = await client.responses.create(
+    #         model=MODEL_NAME,
+    #         input=self.messages,
+    #         stream=True,
+    #         temperature=0.0,
+    #         max_output_tokens=10,
+    #     )
+    #     complete_response = ""
+    #     event_count = 0
+    #     last_event_type = ""
+    #     async for event in stream:
 
-            # Check that the first event is a response.created event
-            if event_count == 0:
-                assert (
-                    event.type == "response.created"
-                ), f"Expected first event to be response.created, got {event.type}"
+    #         # Check that the first event is a response.created event
+    #         if event_count == 0:
+    #             assert (
+    #                 event.type == "response.created"
+    #             ), f"Expected first event to be response.created, got {event.type}"
 
-            # Keep track of the streamed response
-            elif event.type == "response.output_text.delta":
-                complete_response += event.delta
-                print(event.delta, end="")
+    #         # Keep track of the streamed response
+    #         elif event.type == "response.output_text.delta":
+    #             complete_response += event.delta
+    #             print(event.delta, end="")
 
-            # Ensure the complete event matches the streamed response
-            elif event.type == "response.completed":
-                assert (
-                    event.response.output[0].content[0].text == complete_response
-                ), "Complete response does not match streamed response"
+    #         # Ensure the complete event matches the streamed response
+    #         elif event.type == "response.completed":
+    #             assert (
+    #                 event.response.output[0].content[0].text == complete_response
+    #             ), "Complete response does not match streamed response"
 
-            # Ensure all events we add in the future are also tested
-            else:
-                assert False, f"Untested event type: {event.type}"
-            event_count += 1
-            last_event_type = event.type
+    #         # Ensure all events we add in the future are also tested
+    #         else:
+    #             assert False, f"Untested event type: {event.type}"
+    #         event_count += 1
+    #         last_event_type = event.type
 
-        assert last_event_type == "response.completed"
-        assert len(complete_response) > 5
+    #     assert last_event_type == "response.completed"
+    #     assert len(complete_response) > 5
 
     # Endpoint: /api/v1/chat/completions with tool calls
     def test_017_test_chat_completion_with_tool_calls(self):

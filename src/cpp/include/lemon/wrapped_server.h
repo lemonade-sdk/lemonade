@@ -72,6 +72,7 @@ public:
     // ICompletionServer implementation - forward requests to the wrapped server
     virtual json chat_completion(const json& request) override = 0;
     virtual json completion(const json& request) override = 0;
+    virtual json responses(const json& request) = 0;
     
     // Get the server address
     std::string get_address() const {

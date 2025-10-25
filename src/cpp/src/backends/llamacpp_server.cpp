@@ -308,6 +308,13 @@ json LlamaCppServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
 }
 
+json LlamaCppServer::responses(const json& request) {
+    // Responses API is not supported for llamacpp backend
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Responses API", "llamacpp")
+    );
+}
+
 void LlamaCppServer::parse_telemetry(const std::string& line) {
     // Parse prompt evaluation
     std::regex prompt_regex(R"(prompt eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?([\d.]+)\s*tokens per second)");

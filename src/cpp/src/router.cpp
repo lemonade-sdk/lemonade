@@ -196,6 +196,13 @@ json Router::reranking(const json& request) {
     return reranking_server->reranking(request);
 }
 
+json Router::responses(const json& request) {
+    if (!wrapped_server_) {
+        return ErrorResponse::from_exception(ModelNotLoadedException());
+    }
+    return wrapped_server_->responses(request);
+}
+
 json Router::get_stats() const {
     if (!wrapped_server_) {
         return ErrorResponse::from_exception(ModelNotLoadedException());

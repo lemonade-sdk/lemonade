@@ -44,6 +44,7 @@ public:
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
+    json responses(const json& request);
     
     // Get telemetry data
     json get_stats() const;

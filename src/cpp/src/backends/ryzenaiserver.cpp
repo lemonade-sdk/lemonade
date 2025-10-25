@@ -216,6 +216,15 @@ json RyzenAIServer::completion(const json& request) {
     return forward_request("/v1/completions", request);
 }
 
+json RyzenAIServer::responses(const json& request) {
+    if (!is_loaded_) {
+        throw ModelNotLoadedException("RyzenAI-Serve");
+    }
+    
+    // Forward to /v1/responses endpoint
+    return forward_request("/v1/responses", request);
+}
+
 void RyzenAIServer::parse_telemetry(const std::string& line) {
     // RyzenAI-Serve outputs telemetry in its responses, not in stdout
     // So this method is a no-op for this backend
