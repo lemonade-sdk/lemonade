@@ -319,10 +319,7 @@ class LlamaCppTesting(ServerTestingBase):
         """Test generation parameters across all endpoints with llamacpp models"""
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping in metal smoke test mode")
-        if (
-            self.llamacpp_backend == "rocm"
-            or self.llamacpp_backend == "vulkan"
-        ):
+        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan":
             self.skipTest(
                 "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )
