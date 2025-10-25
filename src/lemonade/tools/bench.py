@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 import argparse
 import os
 import platform
-import psutil
 from lemonade.state import State
 from lemonade.tools import Tool
 from lemonade.cache import Keys
@@ -214,7 +213,6 @@ class Bench(Tool, ABC):
         The run_prompt method should append the appropriate value to each of the per prompt
         measurement statistics lists that are members of the Bench class.
         """
-        pass
 
     @staticmethod
     def get_item_or_list(lst):

@@ -32,10 +32,12 @@ class LlamaCppBench(Bench):
         parser.add_argument(
             "--cli",
             action="store_true",
-            help="Set this flag to use llama-cli.exe to benchmark model performance. This executable will be called "
-            "once per iteration.  Otherwise, llama-bench.exe is used by default.  In this default behavior behavior, "
-            "the only valid prompt format is integer token lengths. Also, the warmup-iterations parameter is "
-            "ignored and the default value for number of threads is 16.",
+            help="Set this flag to use llama-cli.exe to benchmark model performance. "
+            "This executable will be called once per iteration.  Otherwise, "
+            "llama-bench.exe is used by default.  In this default behavior behavior, "
+            "the only valid prompt format is integer token lengths. Also, the "
+            "warmup-iterations parameter is ignored and the default value for number of "
+            "threads is 16.",
         )
 
         return parser
@@ -60,8 +62,8 @@ class LlamaCppBench(Bench):
                     prompt_ints.append(int(prompt_item))
                 else:
                     raise Exception(
-                        f"When not using the --cli flag to {self.unique_name}, the prompt format must "
-                        "be in integer format."
+                        f"When not using the --cli flag to {self.unique_name}, the prompt format "
+                        "must be in integer format."
                     )
             parsed_args.prompts = prompt_ints
 
@@ -74,7 +76,7 @@ class LlamaCppBench(Bench):
         prompt: str,
         iterations: int,
         warmup_iterations: int,
-        output_tokens: int
+        output_tokens: int,
     ):
         """
         Benchmark llama.cpp model that was loaded by LoadLlamaCpp.
@@ -194,9 +196,7 @@ class LlamaCppBench(Bench):
         self.save_stats(state)
         return state
 
-    def run_prompt_llama_bench_exe(
-        self, state, prompt, iterations, output_tokens
-    ):
+    def run_prompt_llama_bench_exe(self, state, prompt, iterations, output_tokens):
 
         model: LlamaCppAdapter = state.model
         prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset = (
