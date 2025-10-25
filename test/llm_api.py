@@ -62,7 +62,7 @@ def download_llamacpp_binary(backend: str = "vulkan"):
         binary_dir = get_llama_folder_path(backend)
 
         # Look for libllama.so in the extracted directory
-        for root, dirs, files in os.walk(binary_dir):
+        for root, _, files in os.walk(binary_dir):
             if any(f.startswith("libllama.so") for f in files):
                 lib_dir = root
                 logger.info(f"Found shared libraries in: {lib_dir}")

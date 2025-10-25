@@ -54,24 +54,53 @@ function renderMarkdown(text) {
 
 // Display an error message in the banner
 function showErrorBanner(msg) {
+    showBanner(msg, 'error');
+}
+
+// Display a banner with a specific type (error, warning, success)
+function showBanner(msg, type = 'error') {
     // If DOM isn't ready, wait for it
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-            showErrorBanner(msg);
+            showBanner(msg, type);
         });
         return;
     }
-    
+
     const banner = document.getElementById('error-banner');
     if (!banner) return;
     const msgEl = document.getElementById('error-banner-msg');
     const logsUrl = window.location.origin + '/static/logs.html';
-    const fullMsg = `${msg} <br>Check the Lemonade Server logs <a href="${logsUrl}" target="_blank" rel="noopener noreferrer">on the browser</a> or via the system tray app for more information.`;
+
+    // Determine the full message and styling based on type
+    let fullMsg = msg;
+    let backgroundColor, color;
+
+    switch(type) {
+        case 'success':
+            backgroundColor = '#27ae60'; // green
+            color = '#ffffff';
+            break;
+        case 'warning':
+            backgroundColor = '#8d5803ff'; // yellow/orange
+            color = '#ffffff';
+            break;
+        case 'error':
+        default:
+            backgroundColor = '#b10819ff'; // red
+            color = '#ffffff';
+            fullMsg = `${msg}<br>Check the Lemonade Server logs <a href="${logsUrl}" target="_blank" rel="noopener noreferrer">on the browser</a> or via the system tray app for more information.`;
+            break;
+    }
+    
     if (msgEl) {
         msgEl.innerHTML = fullMsg;
     } else {
         banner.innerHTML = fullMsg;
     }
+
+    banner.style.backgroundColor = backgroundColor;
+    banner.style.color = color;
     banner.style.display = 'flex';
 }
 
@@ -223,10 +252,18 @@ async function loadModelStandardized(modelId, options = {}) {
         }
         
         // Make the API call to load the model
+        // Include mmproj if the model has it defined
+        const loadPayload = { model_name: modelId };
+        const allModels = window.SERVER_MODELS || {};
+        const modelData = allModels[modelId];
+        if (modelData && modelData.mmproj) {
+            loadPayload.mmproj = modelData.mmproj;
+        }
+
         await httpRequest(getServerBaseUrl() + '/api/v1/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: modelId })
+            body: JSON.stringify(loadPayload)
         });
         
         // Update model status indicator after successful load
