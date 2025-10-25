@@ -183,7 +183,7 @@ class Bench(Tool, ABC):
         for counter, prompt in enumerate(prompts):
             report_progress_fn(0)
 
-            peak_wset = self.run_prompt(
+            state = self.run_prompt(
                 state,
                 report_progress_fn,
                 prompt,
@@ -193,9 +193,6 @@ class Bench(Tool, ABC):
                 **kwargs,
             )
             self.first_run_prompt = False
-
-            if self.save_max_memory_used:
-                self.max_memory_used_gb_list.append(peak_wset / 1024**3)
 
         self.set_percent_progress(None)
         self.save_stats(state)
@@ -212,7 +209,11 @@ class Bench(Tool, ABC):
         warmup_iterations,
         output_tokens,
         **kwargs,
-    ) -> int:
+    ) -> State:
+        """
+        The run_prompt method should append the appropriate value to each of the per prompt
+        measurement statistics lists that are members of the Bench class.
+        """
         pass
 
     @staticmethod

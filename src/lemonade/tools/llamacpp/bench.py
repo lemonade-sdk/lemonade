@@ -99,6 +99,7 @@ class LlamaCppBench(Bench):
 
         per_iteration_tokens_per_second = []
         per_iteration_time_to_first_token = []
+        per_iteration_peak_wset = []
 
         for iteration in range(iterations + warmup_iterations):
             try:
@@ -107,7 +108,10 @@ class LlamaCppBench(Bench):
                 model.time_to_first_token = None
                 model.tokens_per_second = None
                 raw_output, stderr = model.generate(
-                    prompt, max_new_tokens=output_tokens, return_raw=True
+                    prompt,
+                    max_new_tokens=output_tokens,
+                    return_raw=True,
+                    save_max_memory_used=self.save_max_memory_used,
                 )
 
                 if model.time_to_first_token is None or model.tokens_per_second is None:
@@ -123,6 +127,7 @@ class LlamaCppBench(Bench):
                 if iteration > warmup_iterations - 1:
                     per_iteration_tokens_per_second.append(model.tokens_per_second)
                     per_iteration_time_to_first_token.append(model.time_to_first_token)
+                    per_iteration_peak_wset.append(model.peak_wset)
 
                 report_progress_fn((iteration + 1) / (warmup_iterations + iterations))
 
@@ -153,6 +158,18 @@ class LlamaCppBench(Bench):
         except StatisticsError:
             # Less than 2 measurements
             self.std_dev_token_generation_tokens_per_second_list.append(None)
+        if self.save_max_memory_used:
+            filtered_list = [
+                item for item in per_iteration_peak_wset if item is not None
+            ]
+            mean_gb_used = (
+                None
+                if len(filtered_list) == 0
+                else statistics.mean(filtered_list) / 1024**3
+            )
+            self.max_memory_used_gb_list.append(mean_gb_used)
+
+        return state
 
     def run_llama_bench_exe(self, state, prompts, iterations, output_tokens):
 
@@ -173,7 +190,7 @@ class LlamaCppBench(Bench):
         for counter, prompt in enumerate(prompts):
             report_progress_fn(0)
 
-            peak_wset = self.run_prompt_llama_bench_exe(
+            state = self.run_prompt_llama_bench_exe(
                 state,
                 prompt,
                 iterations,
@@ -182,7 +199,10 @@ class LlamaCppBench(Bench):
             self.first_run_prompt = False
 
             if self.save_max_memory_used:
-                self.max_memory_used_gb_list.append(peak_wset / 1024**3)
+                if getattr(state, "run_bench_peak_set", None) is not None:
+                    self.max_memory_used_gb_list.append(
+                        state.run_bench_peak_wset / 1024**3
+                    )
 
         self.set_percent_progress(None)
         self.save_stats(state)
@@ -190,7 +210,7 @@ class LlamaCppBench(Bench):
 
     def run_prompt_llama_bench_exe(
         self, state, prompt, iterations, output_tokens
-    ) -> int:
+    ) -> State:
 
         model: LlamaCppAdapter = state.model
         prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset = (
@@ -203,8 +223,8 @@ class LlamaCppBench(Bench):
         self.token_generation_tokens_per_second_list.append(tg_tps)
         self.std_dev_token_generation_tokens_per_second_list.append(tg_tps_sd)
         self.tokens_out_len_list.append(output_tokens * iterations)
-
-        return peak_wset
+        self.max_memory_used_gb_list.append(peak_wset / 1024**3)
+        return state
 
     def run(
         self,

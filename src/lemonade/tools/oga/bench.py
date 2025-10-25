@@ -1,4 +1,5 @@
 import argparse
+import psutil
 import statistics
 from statistics import StatisticsError
 from lemonade.state import State
@@ -109,6 +110,12 @@ class OgaBench(Bench):
         except StatisticsError:
             # Less than 2 measurements
             self.std_dev_token_generation_tokens_per_second_list.append(None)
+        if self.save_max_memory_used:
+            self.max_memory_used_gb_list.append(
+                psutil.Process().memory_info().peak_wset / 1024**3
+            )
+
+        return state
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
