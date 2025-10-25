@@ -209,7 +209,11 @@ class LlamaCppBench(Bench):
         self.token_generation_tokens_per_second_list.append(tg_tps)
         self.std_dev_token_generation_tokens_per_second_list.append(tg_tps_sd)
         self.tokens_out_len_list.append(output_tokens * iterations)
-        self.max_memory_used_gb_list.append(peak_wset / 1024**3)
+        if self.save_max_memory_used:
+            if peak_wset is not None:
+                self.max_memory_used_gb_list.append(peak_wset / 1024**3)
+            else:
+                self.max_memory_used_gb_list.append(None)
 
     def run(
         self,

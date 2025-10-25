@@ -940,7 +940,7 @@ class LlamaCppAdapter(ModelAdapter):
             # Wait for monitor thread to finish and write peak_wset
             if save_max_memory_used:
                 monitor_thread.join(timeout=2)
-                self.peak_wset = memory_data.get('peak_wset', None)
+                self.peak_wset = memory_data.get("peak_wset", None)
 
             if return_raw:
                 return [stdout, stderr]
