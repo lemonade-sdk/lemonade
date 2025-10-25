@@ -1,7 +1,7 @@
 import argparse
-import psutil
 import statistics
 from statistics import StatisticsError
+import psutil
 from lemonade.state import State
 from lemonade.tools.adapter import ModelAdapter, TokenizerAdapter
 from lemonade.tools.bench import Bench
