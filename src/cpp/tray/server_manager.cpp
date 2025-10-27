@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <fcntl.h>  // For open() and file flags
 #endif
 
 // Use cpp-httplib for HTTP client (must be after Windows headers on Windows)
@@ -253,20 +254,51 @@ std::string ServerManager::get_base_url() const {
 #ifdef _WIN32
 
 bool ServerManager::spawn_process() {
-    // Build command line
+    // Build command line (server doesn't support --log-file, so we'll redirect stdout/stderr)
     std::string cmdline = "\"" + server_binary_path_ + "\" serve";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
-    if (!log_file_.empty()) {
-        cmdline += " --log-file \"" + log_file_ + "\"";
-    }
     
     std::cout << "Starting server: " << cmdline << std::endl;
     
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;  // Hide console window
+    
+    // Redirect stdout/stderr to log file if specified
+    HANDLE log_handle = INVALID_HANDLE_VALUE;
+    if (!log_file_.empty()) {
+        std::cout << "Redirecting output to: " << log_file_ << std::endl;
+        
+        SECURITY_ATTRIBUTES sa = {};
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+        sa.lpSecurityDescriptor = nullptr;
+        
+        log_handle = CreateFileA(
+            log_file_.c_str(),
+            GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &sa,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
+        
+        if (log_handle != INVALID_HANDLE_VALUE) {
+            si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+            si.hStdOutput = log_handle;
+            si.hStdError = log_handle;
+            si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            si.wShowWindow = SW_HIDE;
+        } else {
+            std::cerr << "Failed to create log file: " << GetLastError() << std::endl;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+        }
+    } else {
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+    }
     
     PROCESS_INFORMATION pi = {};
     
@@ -276,7 +308,7 @@ bool ServerManager::spawn_process() {
         const_cast<char*>(cmdline.c_str()),
         nullptr,
         nullptr,
-        FALSE,
+        TRUE,  // Inherit handles so log file redirection works
         CREATE_NO_WINDOW,  // Don't create console window
         nullptr,
         nullptr,
@@ -284,12 +316,20 @@ bool ServerManager::spawn_process() {
         &pi))
     {
         std::cerr << "CreateProcess failed: " << GetLastError() << std::endl;
+        if (log_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(log_handle);
+        }
         return false;
     }
     
     process_handle_ = pi.hProcess;
     server_pid_ = pi.dwProcessId;
     CloseHandle(pi.hThread);
+    
+    // Close the log file handle in parent process (child has its own copy)
+    if (log_handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(log_handle);
+    }
     
     return true;
 }
@@ -324,7 +364,18 @@ bool ServerManager::spawn_process() {
     }
     
     if (pid == 0) {
-        // Child process
+        // Child process - redirect stdout/stderr to log file if specified
+        if (!log_file_.empty()) {
+            int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (log_fd >= 0) {
+                dup2(log_fd, STDOUT_FILENO);
+                dup2(log_fd, STDERR_FILENO);
+                close(log_fd);
+            } else {
+                std::cerr << "Failed to open log file: " << log_file_ << std::endl;
+            }
+        }
+        
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
         args.push_back("serve");
@@ -334,12 +385,6 @@ bool ServerManager::spawn_process() {
         args.push_back("--ctx-size");
         std::string ctx_str = std::to_string(ctx_size_);
         args.push_back(ctx_str.c_str());
-        
-        if (!log_file_.empty()) {
-            args.push_back("--log-file");
-            args.push_back(log_file_.c_str());
-        }
-        
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));

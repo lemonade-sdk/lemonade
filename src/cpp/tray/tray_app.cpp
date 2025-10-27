@@ -304,6 +304,26 @@ bool TrayApp::setup_logging() {
 }
 
 bool TrayApp::start_server() {
+    // Set default log file if not specified
+    if (config_.log_file.empty()) {
+        #ifdef _WIN32
+        // Windows: %TEMP%\lemonade-server.log
+        char* temp_path = nullptr;
+        size_t len = 0;
+        _dupenv_s(&temp_path, &len, "TEMP");
+        if (temp_path) {
+            config_.log_file = std::string(temp_path) + "\\lemonade-server.log";
+            free(temp_path);
+        } else {
+            config_.log_file = "lemonade-server.log";
+        }
+        #else
+        // Unix: /tmp/lemonade-server.log or ~/.lemonade/server.log
+        config_.log_file = "/tmp/lemonade-server.log";
+        #endif
+        std::cout << "Using default log file: " << config_.log_file << std::endl;
+    }
+    
     return server_manager_->start_server(
         config_.server_binary,
         config_.port,
@@ -464,8 +484,9 @@ void TrayApp::on_show_logs() {
     }
     
 #ifdef _WIN32
-    // Open PowerShell with tail command
-    std::string cmd = "powershell Start-Process powershell -ArgumentList \"-NoExit\", \"Get-Content -Wait '" + config_.log_file + "'\"";
+    // Open new PowerShell window with tail-like command
+    // Use Start-Process to open a new window that stays open
+    std::string cmd = "powershell -Command \"Start-Process powershell -ArgumentList '-NoExit','-Command',\\\"Get-Content -Wait '" + config_.log_file + "'\\\"\"";
     system(cmd.c_str());
 #elif defined(__APPLE__)
     // Open Terminal.app with tail command
