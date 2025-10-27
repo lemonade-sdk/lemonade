@@ -460,57 +460,15 @@ static bool is_npu_available() {
 }
 
 static bool is_flm_available() {
-    json hardware = get_backend_availability();
-    
-    // Check if NPU has FLM inference engine available
-    if (hardware.contains("npu") && hardware["npu"].is_object()) {
-        json npu = hardware["npu"];
-        if (npu.value("available", false) && npu.contains("inference_engines")) {
-            json engines = npu["inference_engines"];
-            if (engines.contains("flm") && engines["flm"].is_object()) {
-                return engines["flm"].value("available", false);
-            }
-        }
-    }
-    
-    return false;
+    // FLM models are available if NPU hardware is present
+    // The FLM executable will be obtained as needed
+    return is_npu_available();
 }
 
-static bool is_ryzenai_available() {
-    json hardware = get_backend_availability();
-    
-    // Check if any device (CPU, iGPU, dGPU, NPU) has ryzenai-serve available
-    std::vector<std::string> devices = {"cpu", "amd_igpu", "amd_dgpu", "npu"};
-    
-    for (const auto& device : devices) {
-        if (hardware.contains(device) && hardware[device].is_object()) {
-            json dev = hardware[device];
-            if (dev.value("available", false) && dev.contains("inference_engines")) {
-                json engines = dev["inference_engines"];
-                if (engines.contains("ryzenai-serve") && engines["ryzenai-serve"].is_object()) {
-                    if (engines["ryzenai-serve"].value("available", false)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        
-        // Also check nvidia_dgpu (array)
-        if (device == "npu" && hardware.contains("nvidia_dgpu") && hardware["nvidia_dgpu"].is_array()) {
-            for (const auto& gpu : hardware["nvidia_dgpu"]) {
-                if (gpu.is_object() && gpu.value("available", false) && gpu.contains("inference_engines")) {
-                    json engines = gpu["inference_engines"];
-                    if (engines.contains("ryzenai-serve") && engines["ryzenai-serve"].is_object()) {
-                        if (engines["ryzenai-serve"].value("available", false)) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    return false;
+static bool is_oga_available() {
+    // OGA models are available if NPU hardware is present
+    // The ryzenai-serve executable (OGA backend) will be obtained as needed
+    return is_npu_available();
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
@@ -526,35 +484,31 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 #endif
     
     // Check backend availability
-    bool flm_exe_available = is_flm_available();
-    bool npu_hw_available = is_npu_available();
-    bool flm_available = flm_exe_available && npu_hw_available;
-    bool ryzenai_available = is_ryzenai_available();
+    bool npu_available = is_npu_available();
+    bool flm_available = is_flm_available();
+    bool oga_available = is_oga_available();
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
     if (!debug_printed) {
         std::cout << "[ModelManager] Backend availability:" << std::endl;
-        std::cout << "  - FLM executable: " << (flm_exe_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - NPU hardware: " << (npu_hw_available ? "Yes" : "No") << std::endl;
-        std::cout << "  - FLM support: " << (flm_available ? "Enabled" : "Disabled") << std::endl;
-        std::cout << "  - RyzenAI-Serve: " << (ryzenai_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         debug_printed = true;
     }
     
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
         
-        // Filter FLM models based on availability
+        // Filter FLM models based on NPU availability
         if (recipe == "flm") {
             if (!flm_available) {
                 continue;
             }
         }
         
-        // Filter RyzenAI (OGA) models based on availability
+        // Filter OGA models based on NPU availability
         if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
-            if (!ryzenai_available) {
+            if (!oga_available) {
                 continue;
             }
         }
