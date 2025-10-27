@@ -81,11 +81,18 @@ set(COMMON_SOURCES
     platform/tray_factory.cpp
 )
 
-# Create executable (console app that can create GUI elements)
-add_executable(lemonade-server-beta
-    ${COMMON_SOURCES}
-    ${PLATFORM_SOURCES}
-)
+# Create executable as Windows GUI app (no console window)
+if(WIN32)
+    add_executable(lemonade-server-beta WIN32
+        ${COMMON_SOURCES}
+        ${PLATFORM_SOURCES}
+    )
+else()
+    add_executable(lemonade-server-beta
+        ${COMMON_SOURCES}
+        ${PLATFORM_SOURCES}
+    )
+endif()
 
 # Include directories (use parent's unified include directory)
 target_include_directories(lemonade-server-beta PRIVATE

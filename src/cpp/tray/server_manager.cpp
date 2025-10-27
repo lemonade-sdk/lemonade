@@ -302,6 +302,15 @@ bool ServerManager::spawn_process() {
     
     PROCESS_INFORMATION pi = {};
     
+    // Get the directory containing the server executable to use as working directory
+    // Resources are now in bin/resources/, so working dir should be bin/
+    std::string working_dir;
+    size_t last_slash = server_binary_path_.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        working_dir = server_binary_path_.substr(0, last_slash);
+        std::cout << "Setting working directory to: " << working_dir << std::endl;
+    }
+    
     // Create process
     if (!CreateProcessA(
         nullptr,
@@ -311,7 +320,7 @@ bool ServerManager::spawn_process() {
         TRUE,  // Inherit handles so log file redirection works
         CREATE_NO_WINDOW,  // Don't create console window
         nullptr,
-        nullptr,
+        working_dir.empty() ? nullptr : working_dir.c_str(),  // Set working directory
         &si,
         &pi))
     {
