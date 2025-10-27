@@ -42,6 +42,36 @@ RyzenAIServer::~RyzenAIServer() {
     stop();
 }
 
+GenerationParams RyzenAIServer::createGenerationParams(int max_tokens, float temperature, float top_p, 
+                                                       int top_k, float repeat_penalty, 
+                                                       const std::vector<std::string>& stop) const {
+    // Start with defaults from genai_config.json (or hardcoded defaults if no config)
+    GenerationParams params = inference_engine_->getDefaultParams();
+    
+    // Apply user-provided values (hierarchy: user > config > defaults)
+    // Only override if user explicitly provided a value (non-default)
+    params.max_length = max_tokens;
+    
+    // For these params, check if they differ from the hardcoded defaults in types.h
+    // If they do, it means the user explicitly set them
+    if (temperature != 0.7f) {  // 0.7 is hardcoded default
+        params.temperature = temperature;
+    }
+    if (top_p != 0.9f) {  // 0.9 is hardcoded default
+        params.top_p = top_p;
+    }
+    if (top_k != 40) {  // 40 is hardcoded default
+        params.top_k = top_k;
+    }
+    if (repeat_penalty != 1.1f) {  // 1.1 is hardcoded default
+        params.repetition_penalty = repeat_penalty;
+    }
+    
+    params.stop_sequences = stop;
+    
+    return params;
+}
+
 void RyzenAIServer::loadModel() {
     std::cout << "[Server] Loading model..." << std::endl;
     std::cout << "[Server] Model path: " << args_.model_path << std::endl;
@@ -173,13 +203,10 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
             
-            GenerationParams params;
-            params.max_length = comp_req.max_tokens;  // Will be added to prompt length in InferenceEngine
-            params.temperature = comp_req.temperature;
-            params.top_p = comp_req.top_p;
-            params.top_k = comp_req.top_k;
-            params.repetition_penalty = comp_req.repeat_penalty;
-            params.stop_sequences = comp_req.stop;
+            GenerationParams params = createGenerationParams(
+                comp_req.max_tokens, comp_req.temperature, comp_req.top_p,
+                comp_req.top_k, comp_req.repeat_penalty, comp_req.stop
+            );
             
             std::string prompt = comp_req.prompt;
             std::string model_id = model_id_;
@@ -259,13 +286,10 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             
         } else {
             // Non-streaming response
-            GenerationParams params;
-            params.max_length = comp_req.max_tokens;  // Will be added to prompt length in InferenceEngine
-            params.temperature = comp_req.temperature;
-            params.top_p = comp_req.top_p;
-            params.top_k = comp_req.top_k;
-            params.repetition_penalty = comp_req.repeat_penalty;
-            params.stop_sequences = comp_req.stop;
+            GenerationParams params = createGenerationParams(
+                comp_req.max_tokens, comp_req.temperature, comp_req.top_p,
+                comp_req.top_k, comp_req.repeat_penalty, comp_req.stop
+            );
             
             auto start_time = std::chrono::high_resolution_clock::now();
             std::string output = inference_engine_->complete(comp_req.prompt, params);
@@ -357,13 +381,10 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
             
-            GenerationParams params;
-            params.max_length = chat_req.max_tokens;  // Will be added to prompt length in InferenceEngine
-            params.temperature = chat_req.temperature;
-            params.top_p = chat_req.top_p;
-            params.top_k = chat_req.top_k;
-            params.repetition_penalty = chat_req.repeat_penalty;
-            params.stop_sequences = chat_req.stop;
+            GenerationParams params = createGenerationParams(
+                chat_req.max_tokens, chat_req.temperature, chat_req.top_p,
+                chat_req.top_k, chat_req.repeat_penalty, chat_req.stop
+            );
             
             std::string model_id = model_id_;
             int token_count = 0;
@@ -483,13 +504,10 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             
         } else {
             // Non-streaming response
-            GenerationParams params;
-            params.max_length = chat_req.max_tokens;  // Will be added to prompt length in InferenceEngine
-            params.temperature = chat_req.temperature;
-            params.top_p = chat_req.top_p;
-            params.top_k = chat_req.top_k;
-            params.repetition_penalty = chat_req.repeat_penalty;
-            params.stop_sequences = chat_req.stop;
+            GenerationParams params = createGenerationParams(
+                chat_req.max_tokens, chat_req.temperature, chat_req.top_p,
+                chat_req.top_k, chat_req.repeat_penalty, chat_req.stop
+            );
             
             auto start_time = std::chrono::high_resolution_clock::now();
             std::string output = inference_engine_->complete(prompt, params);
@@ -629,12 +647,10 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
             
-            GenerationParams params;
-            params.max_length = max_output_tokens;
-            params.temperature = temperature;
-            params.top_p = top_p;
-            params.top_k = top_k;
-            params.repetition_penalty = repeat_penalty;
+            GenerationParams params = createGenerationParams(
+                max_output_tokens, temperature, top_p,
+                top_k, repeat_penalty, {}
+            );
             
             std::string model_name = model;
             
@@ -766,12 +782,10 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
             
         } else {
             // NON-STREAMING RESPONSE
-            GenerationParams params;
-            params.max_length = max_output_tokens;
-            params.temperature = temperature;
-            params.top_p = top_p;
-            params.top_k = top_k;
-            params.repetition_penalty = repeat_penalty;
+            GenerationParams params = createGenerationParams(
+                max_output_tokens, temperature, top_p,
+                top_k, repeat_penalty, {}
+            );
             
             std::string generated_text = inference_engine_->complete(prompt, params);
             

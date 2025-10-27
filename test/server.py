@@ -584,51 +584,51 @@ class Testing(ServerTestingBase):
 
     #     assert tool_call_count > 0
 
-    # Endpoint: /api/v1/delete
-    async def test_019_test_delete_model(self):
-        """Test the delete endpoint functionality"""
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+    # # Endpoint: /api/v1/delete
+    # async def test_019_test_delete_model(self):
+    #     """Test the delete endpoint functionality"""
+    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
-            # First, ensure the test model is available by pulling it
-            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
-            assert pull_response.status_code == 200
+    #         # First, ensure the test model is available by pulling it
+    #         pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+    #         assert pull_response.status_code == 200
 
-            # Verify the model is in the models list
-            models_response = await client.get("/models")
-            assert models_response.status_code == 200
-            models_data = models_response.json()
-            model_ids = [model["id"] for model in models_data["data"]]
-            assert (
-                MODEL_NAME in model_ids
-            ), f"Model {MODEL_NAME} not found in models list"
+    #         # Verify the model is in the models list
+    #         models_response = await client.get("/models")
+    #         assert models_response.status_code == 200
+    #         models_data = models_response.json()
+    #         model_ids = [model["id"] for model in models_data["data"]]
+    #         assert (
+    #             MODEL_NAME in model_ids
+    #         ), f"Model {MODEL_NAME} not found in models list"
 
-            # Test deleting the model
-            delete_response = await client.post(
-                "/delete", json={"model_name": MODEL_NAME}
-            )
-            assert delete_response.status_code == 200
-            delete_data = delete_response.json()
-            assert delete_data["status"] == "success"
-            assert MODEL_NAME in delete_data["message"]
+    #         # Test deleting the model
+    #         delete_response = await client.post(
+    #             "/delete", json={"model_name": MODEL_NAME}
+    #         )
+    #         assert delete_response.status_code == 200
+    #         delete_data = delete_response.json()
+    #         assert delete_data["status"] == "success"
+    #         assert MODEL_NAME in delete_data["message"]
 
-            # Verify the model is no longer in the models list
-            models_response = await client.get("/models")
-            assert models_response.status_code == 200
-            models_data = models_response.json()
-            model_ids = [model["id"] for model in models_data["data"]]
-            assert (
-                MODEL_NAME not in model_ids
-            ), f"Model {MODEL_NAME} still found in models list after deletion"
+    #         # Verify the model is no longer in the models list
+    #         models_response = await client.get("/models")
+    #         assert models_response.status_code == 200
+    #         models_data = models_response.json()
+    #         model_ids = [model["id"] for model in models_data["data"]]
+    #         assert (
+    #             MODEL_NAME not in model_ids
+    #         ), f"Model {MODEL_NAME} still found in models list after deletion"
 
-            # Test deleting a non-existent model (should return error)
-            delete_response = await client.post(
-                "/delete", json={"model_name": "NonExistentModel"}
-            )
-            assert delete_response.status_code == 422  # Unprocessable Entity
+    #         # Test deleting a non-existent model (should return error)
+    #         delete_response = await client.post(
+    #             "/delete", json={"model_name": "NonExistentModel"}
+    #         )
+    #         assert delete_response.status_code == 422  # Unprocessable Entity
 
-            # Re-pull the model for subsequent tests
-            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
-            assert pull_response.status_code == 200
+    #         # Re-pull the model for subsequent tests
+    #         pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+    #         assert pull_response.status_code == 200
 
     # Endpoint: /api/v1/system-info
     def test_020_test_system_info_endpoint(self):

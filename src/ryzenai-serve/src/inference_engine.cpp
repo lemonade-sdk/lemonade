@@ -73,12 +73,57 @@ InferenceEngine::InferenceEngine(const std::string& model_path, const std::strin
     // Extract model name from path
     model_name_ = fs::path(model_path_).filename().string();
     
+    // Load default generation params from genai_config.json
+    std::string config_path = model_path_ + "/genai_config.json";
+    if (fs::exists(config_path)) {
+        try {
+            std::ifstream file(config_path);
+            json config = json::parse(file);
+            
+            if (config.contains("search")) {
+                json search = config["search"];
+                has_search_config_ = true;
+                
+                // Load defaults from search config (matching Python implementation)
+                if (search.contains("max_length") && search["max_length"].is_number()) {
+                    default_params_.max_length = search["max_length"];
+                }
+                if (search.contains("temperature") && search["temperature"].is_number()) {
+                    default_params_.temperature = search["temperature"];
+                }
+                if (search.contains("top_p") && search["top_p"].is_number()) {
+                    default_params_.top_p = search["top_p"];
+                }
+                if (search.contains("top_k") && search["top_k"].is_number()) {
+                    default_params_.top_k = search["top_k"];
+                }
+                if (search.contains("repetition_penalty") && search["repetition_penalty"].is_number()) {
+                    default_params_.repetition_penalty = search["repetition_penalty"];
+                }
+                if (search.contains("do_sample") && search["do_sample"].is_boolean()) {
+                    default_params_.do_sample = search["do_sample"];
+                }
+                
+                std::cout << "[InferenceEngine] Loaded search config from genai_config.json" << std::endl;
+                std::cout << "  - temperature: " << default_params_.temperature << std::endl;
+                std::cout << "  - top_p: " << default_params_.top_p << std::endl;
+                std::cout << "  - top_k: " << default_params_.top_k << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[WARNING] Failed to load search config from genai_config.json: " << e.what() << std::endl;
+        }
+    }
+    
     std::cout << "[InferenceEngine] Model loaded successfully: " << model_name_ << std::endl;
     std::cout << "[InferenceEngine] Max prompt length: " << max_prompt_length_ << " tokens" << std::endl;
 }
 
 InferenceEngine::~InferenceEngine() {
     std::cout << "[InferenceEngine] Shutting down" << std::endl;
+}
+
+GenerationParams InferenceEngine::getDefaultParams() const {
+    return default_params_;
 }
 
 std::string InferenceEngine::applyChatTemplate(const std::string& messages_json, const std::string& tools_json) {
@@ -341,6 +386,8 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
         gen_params->SetSearchOption("repetition_penalty", params.repetition_penalty);
         gen_params->SetSearchOptionBool("do_sample", params.do_sample);
+        // Lock random seed to 1 for deterministic behavior (matching Python reference)
+        gen_params->SetSearchOption("seed", 1.0);
         
         // Generate
         auto generator = OgaGenerator::Create(*model_, *gen_params);
@@ -413,6 +460,8 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
         gen_params->SetSearchOption("repetition_penalty", params.repetition_penalty);
         gen_params->SetSearchOptionBool("do_sample", params.do_sample);
+        // Lock random seed to 1 for deterministic behavior (matching Python reference)
+        gen_params->SetSearchOption("seed", 1.0);
         
         // Generate
         auto generator = OgaGenerator::Create(*model_, *gen_params);

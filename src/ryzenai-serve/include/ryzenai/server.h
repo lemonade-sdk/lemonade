@@ -21,6 +21,11 @@ public:
 private:
     void loadModel();
     void setupRoutes();
+    
+    // Helper to create GenerationParams with hierarchy: user provided > search config > defaults
+    GenerationParams createGenerationParams(int max_tokens, float temperature, float top_p, 
+                                           int top_k, float repeat_penalty, 
+                                           const std::vector<std::string>& stop) const;
     std::string extractModelName(const std::string& model_path);
     
     // Route handlers

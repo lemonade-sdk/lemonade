@@ -37,6 +37,9 @@ public:
     int getMaxPromptLength() const { return max_prompt_length_; }
     std::string getRyzenAIVersion() const { return ryzenai_version_; }
     
+    // Get default generation params from genai_config.json (if available)
+    GenerationParams getDefaultParams() const;
+    
     // Token counting
     int countTokens(const std::string& text);
     
@@ -58,6 +61,10 @@ private:
     std::string ryzenai_version_;
     std::string chat_template_;  // Chat template from tokenizer_config.json
     int max_prompt_length_ = 2048;  // Default, overridden by rai_config.json
+    
+    // Default generation params from genai_config.json search section
+    GenerationParams default_params_;
+    bool has_search_config_ = false;
     
     std::mutex inference_mutex_;  // Protect inference operations
 };
