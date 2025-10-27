@@ -1144,12 +1144,24 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
         std::cout << "[Server] Deleting model: " << model_name << std::endl;
         model_manager_->delete_model(model_name);
         
-        nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
+        nlohmann::json response = {
+            {"status", "success"}, 
+            {"message", "Deleted model: " + model_name}
+        };
         res.set_content(response.dump(), "application/json");
         
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_delete: " << e.what() << std::endl;
-        res.status = 500;
+        
+        // Check if this is a "Model not found" error (return 422)
+        std::string error_msg = e.what();
+        if (error_msg.find("Model not found") != std::string::npos ||
+            error_msg.find("not supported") != std::string::npos) {
+            res.status = 422;
+        } else {
+            res.status = 500;
+        }
+        
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }

@@ -726,18 +726,20 @@ void ModelManager::download_model(const std::string& model_name,
             );
         }
         
-        // Validate GGUF models require a variant
-        std::string checkpoint_lower = actual_checkpoint;
-        std::transform(checkpoint_lower.begin(), checkpoint_lower.end(), 
-                      checkpoint_lower.begin(), ::tolower);
-        if (checkpoint_lower.find("gguf") != std::string::npos && 
-            actual_checkpoint.find(':') == std::string::npos) {
-            throw std::runtime_error(
-                "You are required to provide a 'variant' in the checkpoint field when "
-                "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
-            );
+        // Validate GGUF models (llamacpp recipe) require a variant
+        if (actual_recipe == "llamacpp") {
+            std::string checkpoint_lower = actual_checkpoint;
+            std::transform(checkpoint_lower.begin(), checkpoint_lower.end(), 
+                          checkpoint_lower.begin(), ::tolower);
+            if (checkpoint_lower.find("gguf") != std::string::npos && 
+                actual_checkpoint.find(':') == std::string::npos) {
+                throw std::runtime_error(
+                    "You are required to provide a 'variant' in the checkpoint field when "
+                    "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
+                    "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+                );
+            }
         }
         
         std::cout << "Registering new user model: " << model_name << std::endl;
@@ -782,8 +784,12 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade);
-    } else {
+    } else if (actual_recipe == "llamacpp") {
+        // For llamacpp (GGUF) models, use variant-aware download
         download_from_huggingface(repo_id, variant, mmproj);
+    } else {
+        // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
+        download_from_huggingface(repo_id, "", "");
     }
     
     // Register if needed
@@ -873,31 +879,38 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         
         std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
         
-        // Use identify_gguf_models to determine which files to download
-        GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
-        
-        // Combine core files and sharded files into one list
         std::vector<std::string> files_to_download;
-        for (const auto& [key, filename] : gguf_files.core_files) {
-            files_to_download.push_back(filename);
-        }
-        for (const auto& filename : gguf_files.sharded_files) {
-            files_to_download.push_back(filename);
-        }
         
-        // Also download essential config files if they exist
-        std::vector<std::string> config_files = {
-            "config.json",
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "tokenizer.model"
-        };
-        for (const auto& config_file : config_files) {
-            if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
-                if (std::find(files_to_download.begin(), files_to_download.end(), config_file) == files_to_download.end()) {
-                    files_to_download.push_back(config_file);
+        // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
+        if (!variant.empty() || !mmproj.empty()) {
+            // GGUF model: Use identify_gguf_models to determine which files to download
+            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
+            
+            // Combine core files and sharded files into one list
+            for (const auto& [key, filename] : gguf_files.core_files) {
+                files_to_download.push_back(filename);
+            }
+            for (const auto& filename : gguf_files.sharded_files) {
+                files_to_download.push_back(filename);
+            }
+            
+            // Also download essential config files if they exist
+            std::vector<std::string> config_files = {
+                "config.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "tokenizer.model"
+            };
+            for (const auto& config_file : config_files) {
+                if (std::find(repo_files.begin(), repo_files.end(), config_file) != repo_files.end()) {
+                    if (std::find(files_to_download.begin(), files_to_download.end(), config_file) == files_to_download.end()) {
+                        files_to_download.push_back(config_file);
+                    }
                 }
             }
+        } else {
+            // Non-GGUF model (ONNX, etc.): Download all files in repository
+            files_to_download = repo_files;
         }
         
         std::cout << "[ModelManager] Identified " << files_to_download.size() << " files to download:" << std::endl;
@@ -922,17 +935,39 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             
             std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
             
+            // Track progress state for this specific download (not shared across files)
+            auto last_print_time = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
+            auto printed_final = std::make_shared<bool>(false);
+            
             bool success = HttpClient::download_file(
                 file_url,
                 output_path,
-                [&filename](size_t downloaded, size_t total) {
+                [last_print_time, printed_final](size_t downloaded, size_t total) {
                     if (total > 0) {
-                        int percent = (downloaded * 100) / total;
-                        double mb_downloaded = downloaded / (1024.0 * 1024.0);
-                        double mb_total = total / (1024.0 * 1024.0);
-                        std::cout << "\r  Progress: " << percent << "% (" 
-                                 << std::fixed << std::setprecision(1) 
-                                 << mb_downloaded << "/" << mb_total << " MB)" << std::flush;
+                        auto now = std::chrono::steady_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *last_print_time);
+                        
+                        bool is_complete = (downloaded >= total);
+                        
+                        // Skip if we've already printed the final progress
+                        if (is_complete && *printed_final) {
+                            return;
+                        }
+                        
+                        // Print if it's been more than 1 second, or if download just completed
+                        if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
+                            int percent = (downloaded * 100) / total;
+                            double mb_downloaded = downloaded / (1024.0 * 1024.0);
+                            double mb_total = total / (1024.0 * 1024.0);
+                            std::cout << "\r  Progress: " << percent << "% (" 
+                                     << std::fixed << std::setprecision(1) 
+                                     << mb_downloaded << "/" << mb_total << " MB)" << std::flush;
+                            *last_print_time = now;
+                            
+                            if (is_complete) {
+                                *printed_final = true;
+                            }
+                        }
                     }
                 },
                 headers
