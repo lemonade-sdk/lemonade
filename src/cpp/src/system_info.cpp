@@ -5,14 +5,14 @@
 #include <cstdlib>
 #include <iostream>
 #include <regex>
+#include <algorithm>
+#include <cctype>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <comdef.h>
 #include <Wbemidl.h>
 #include "utils/wmi_helper.h"
-#include <algorithm>
-#include <cctype>
 #pragma comment(lib, "wbemuuid.lib")
 #endif
 
@@ -152,14 +152,59 @@ std::vector<std::string> SystemInfo::get_python_packages() {
 json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
     json engines;
     
-    // llamacpp: Only available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
+    // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
     if (device_type == "cpu" || device_type == "amd_igpu" || 
         device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
-        std::string llamacpp_version = get_llamacpp_version();
-        engines["llamacpp"] = {
-            {"available", true},
-            {"version", llamacpp_version}
-        };
+        
+        // Check if device supports vulkan
+        bool device_supported = false;
+        if (device_type == "cpu") {
+            device_supported = true;
+        } else if (device_type == "amd_igpu" || device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
+            device_supported = check_vulkan_support();
+        }
+        
+        if (!device_supported) {
+            engines["llamacpp-vulkan"] = {
+                {"available", false},
+                {"error", "vulkan not available"}
+            };
+        } else if (!is_llamacpp_installed("vulkan")) {
+            engines["llamacpp-vulkan"] = {
+                {"available", false},
+                {"error", "vulkan binaries not installed"}
+            };
+        } else {
+            engines["llamacpp-vulkan"] = {
+                {"available", true},
+                {"version", get_llamacpp_version("vulkan")},
+                {"backend", "vulkan"}
+            };
+        }
+    }
+    
+    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only (NOT CPU, NVIDIA, or NPU)
+    if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
+        // Check if device supports rocm
+        bool device_supported = check_rocm_support(device_name);
+        
+        if (!device_supported) {
+            engines["llamacpp-rocm"] = {
+                {"available", false},
+                {"error", "rocm not available"}
+            };
+        } else if (!is_llamacpp_installed("rocm")) {
+            engines["llamacpp-rocm"] = {
+                {"available", false},
+                {"error", "rocm binaries not installed"}
+            };
+        } else {
+            engines["llamacpp-rocm"] = {
+                {"available", true},
+                {"version", get_llamacpp_version("rocm")},
+                {"backend", "rocm"}
+            };
+        }
     }
     
     // FLM: Only available for NPU (Windows only)
@@ -206,11 +251,11 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         #endif
     }
     
-    // RyzenAI-Serve (OGA): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
+    // OGA (RyzenAI-Serve): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
     if (device_type == "cpu" || device_type == "amd_igpu" || 
         device_type == "amd_dgpu" || device_type == "npu") {
         bool ryzenai_available = is_ryzenai_serve_available();
-        engines["ryzenai-serve"] = {
+        engines["oga"] = {
             {"available", ryzenai_available}
         };
     }
@@ -218,39 +263,17 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
     return engines;
 }
 
-std::string SystemInfo::get_llamacpp_version() {
-    // Try to find version.txt in the llamacpp directory
-    // Location: {python_executable_dir}/vulkan/llama_server/version.txt (or rocm/)
+std::string SystemInfo::get_llamacpp_version(const std::string& backend) {
+    // Try to find version.txt in the llamacpp directory for specific backend
+    // Location: {executable_dir}/{backend}/llama_server/version.txt
     
     #ifdef _WIN32
     char exe_path[MAX_PATH];
     GetModuleFileNameA(NULL, exe_path, MAX_PATH);
     fs::path exe_dir = fs::path(exe_path).parent_path();
     
-    // Try multiple backend locations
-    std::vector<std::string> backends = {"vulkan", "rocm", "cpu"};
-    for (const auto& backend : backends) {
-        fs::path version_file = exe_dir / backend / "llama_server" / "version.txt";
-        if (fs::exists(version_file)) {
-            std::ifstream file(version_file);
-            if (file.is_open()) {
-                std::string version;
-                std::getline(file, version);
-                file.close();
-                // Trim whitespace
-                size_t start = version.find_first_not_of(" \t\n\r");
-                size_t end = version.find_last_not_of(" \t\n\r");
-                if (start != std::string::npos && end != std::string::npos) {
-                    return version.substr(start, end - start + 1);
-                }
-            }
-        }
-    }
-    #else
-    // For Linux, check relative to current executable
-    std::vector<std::string> backends = {"vulkan", "rocm", "cpu"};
-    for (const auto& backend : backends) {
-        std::string version_file = backend + "/llama_server/version.txt";
+    fs::path version_file = exe_dir / backend / "llama_server" / "version.txt";
+    if (fs::exists(version_file)) {
         std::ifstream file(version_file);
         if (file.is_open()) {
             std::string version;
@@ -264,9 +287,135 @@ std::string SystemInfo::get_llamacpp_version() {
             }
         }
     }
+    #else
+    // For Linux, check relative to current executable
+    std::string version_file = backend + "/llama_server/version.txt";
+    std::ifstream file(version_file);
+    if (file.is_open()) {
+        std::string version;
+        std::getline(file, version);
+        file.close();
+        // Trim whitespace
+        size_t start = version.find_first_not_of(" \t\n\r");
+        size_t end = version.find_last_not_of(" \t\n\r");
+        if (start != std::string::npos && end != std::string::npos) {
+            return version.substr(start, end - start + 1);
+        }
+    }
     #endif
     
     return "unknown";
+}
+
+bool SystemInfo::is_llamacpp_installed(const std::string& backend) {
+    // Check if llama-server executable exists for the given backend
+    
+    #ifdef _WIN32
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+    
+    fs::path llama_exe = exe_dir / backend / "llama_server" / "llama-server.exe";
+    return fs::exists(llama_exe);
+    #else
+    // For Linux, check build/bin subdirectory first, then root
+    std::string build_bin_path = backend + "/llama_server/build/bin/llama-server";
+    if (fs::exists(build_bin_path)) {
+        return true;
+    }
+    std::string root_path = backend + "/llama_server/llama-server";
+    return fs::exists(root_path);
+    #endif
+}
+
+bool SystemInfo::check_vulkan_support() {
+    // Check if Vulkan is available
+    #ifdef _WIN32
+    // Check for Vulkan DLL on Windows
+    if (fs::exists("C:\\Windows\\System32\\vulkan-1.dll") || 
+        fs::exists("C:\\Windows\\SysWOW64\\vulkan-1.dll")) {
+        return true;
+    }
+    #else
+    // Check for Vulkan libraries on Linux
+    std::vector<std::string> vulkan_lib_paths = {
+        "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+        "/usr/lib/libvulkan.so.1",
+        "/lib/x86_64-linux-gnu/libvulkan.so.1"
+    };
+    for (const auto& path : vulkan_lib_paths) {
+        if (fs::exists(path)) {
+            return true;
+        }
+    }
+    #endif
+    
+    // Try vulkaninfo command
+    #ifdef _WIN32
+    FILE* pipe = _popen("vulkaninfo --summary 2>NUL", "r");
+    #else
+    FILE* pipe = popen("vulkaninfo --summary 2>/dev/null", "r");
+    #endif
+    
+    if (pipe) {
+        char buffer[128];
+        bool has_output = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
+        #ifdef _WIN32
+        _pclose(pipe);
+        #else
+        pclose(pipe);
+        #endif
+        return has_output;
+    }
+    
+    return false;
+}
+
+// Helper to identify ROCm architecture from GPU name (same logic as llamacpp_server.cpp)
+static std::string identify_rocm_arch_from_name(const std::string& device_name) {
+    std::string device_lower = device_name;
+    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+    
+    if (device_lower.find("radeon") == std::string::npos) {
+        return "";
+    }
+    
+    // STX Halo iGPUs (gfx1151 architecture)
+    // Radeon 8050S Graphics / Radeon 8060S Graphics
+    if (device_lower.find("8050s") != std::string::npos || 
+        device_lower.find("8060s") != std::string::npos) {
+        return "gfx1151";
+    }
+    
+    // RDNA4 GPUs (gfx120X architecture)
+    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
+    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
+    if (device_lower.find("r9700") != std::string::npos ||
+        device_lower.find("9060") != std::string::npos ||
+        device_lower.find("9070") != std::string::npos) {
+        return "gfx120X";
+    }
+    
+    // RDNA3 GPUs (gfx110X architecture)
+    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
+    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
+    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
+    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
+    if (device_lower.find("7700") != std::string::npos ||
+        device_lower.find("7800") != std::string::npos ||
+        device_lower.find("7900") != std::string::npos ||
+        device_lower.find("v710") != std::string::npos) {
+        return "gfx110X";
+    }
+    
+    return "";
+}
+
+bool SystemInfo::check_rocm_support(const std::string& device_name) {
+    // Check if device supports ROCm by attempting to identify the architecture
+    // This matches the Python implementation which uses identify_rocm_arch_from_name
+    std::string arch = identify_rocm_arch_from_name(device_name);
+    return !arch.empty();
 }
 
 std::string SystemInfo::get_flm_version() {

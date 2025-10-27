@@ -409,9 +409,36 @@ static json get_backend_availability() {
     // If no cache, detect hardware
     auto sys_info = create_system_info();
     json hardware = sys_info->get_device_dict();
-    cache.save_hardware_info(hardware);
     
-    return hardware;
+    // Strip inference_engines before caching (hardware only)
+    json hardware_only = hardware;
+    if (hardware_only.contains("cpu") && hardware_only["cpu"].contains("inference_engines")) {
+        hardware_only["cpu"].erase("inference_engines");
+    }
+    if (hardware_only.contains("amd_igpu") && hardware_only["amd_igpu"].contains("inference_engines")) {
+        hardware_only["amd_igpu"].erase("inference_engines");
+    }
+    if (hardware_only.contains("amd_dgpu") && hardware_only["amd_dgpu"].is_array()) {
+        for (auto& gpu : hardware_only["amd_dgpu"]) {
+            if (gpu.contains("inference_engines")) {
+                gpu.erase("inference_engines");
+            }
+        }
+    }
+    if (hardware_only.contains("nvidia_dgpu") && hardware_only["nvidia_dgpu"].is_array()) {
+        for (auto& gpu : hardware_only["nvidia_dgpu"]) {
+            if (gpu.contains("inference_engines")) {
+                gpu.erase("inference_engines");
+            }
+        }
+    }
+    if (hardware_only.contains("npu") && hardware_only["npu"].contains("inference_engines")) {
+        hardware_only["npu"].erase("inference_engines");
+    }
+    
+    cache.save_hardware_info(hardware_only);
+    
+    return hardware_only;
 }
 
 static bool is_npu_available() {

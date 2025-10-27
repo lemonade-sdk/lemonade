@@ -2,6 +2,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "lemon/system_info.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -9,12 +10,12 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
 #else
 #include <sys/stat.h>
-#include <ziplib/ziplib.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -36,32 +37,130 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
+// Helper to identify ROCm architecture from GPU name
+static std::string identify_rocm_arch_from_name(const std::string& device_name) {
+    std::string device_lower = device_name;
+    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+    
+    if (device_lower.find("radeon") == std::string::npos) {
+        return "";
+    }
+    
+    // STX Halo iGPUs (gfx1151 architecture)
+    // Radeon 8050S Graphics / Radeon 8060S Graphics
+    if (device_lower.find("8050s") != std::string::npos || 
+        device_lower.find("8060s") != std::string::npos) {
+        return "gfx1151";
+    }
+    
+    // RDNA4 GPUs (gfx120X architecture)
+    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
+    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
+    if (device_lower.find("r9700") != std::string::npos ||
+        device_lower.find("9060") != std::string::npos ||
+        device_lower.find("9070") != std::string::npos) {
+        return "gfx120X";
+    }
+    
+    // RDNA3 GPUs (gfx110X architecture)
+    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
+    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
+    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
+    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
+    if (device_lower.find("7700") != std::string::npos ||
+        device_lower.find("7800") != std::string::npos ||
+        device_lower.find("7900") != std::string::npos ||
+        device_lower.find("v710") != std::string::npos) {
+        return "gfx110X";
+    }
+    
+    return "";
+}
+
+// Helper to identify ROCm architecture from system
+static std::string identify_rocm_arch() {
+    auto system_info = lemon::create_system_info();
+    
+    // Check iGPU
+    auto igpu = system_info->get_amd_igpu_device();
+    if (igpu.available && !igpu.name.empty()) {
+        std::string arch = identify_rocm_arch_from_name(igpu.name);
+        if (!arch.empty()) {
+            return arch;
+        }
+    }
+    
+    // Check dGPUs
+    auto dgpus = system_info->get_amd_dgpu_devices();
+    for (const auto& gpu : dgpus) {
+        if (gpu.available && !gpu.name.empty()) {
+            std::string arch = identify_rocm_arch_from_name(gpu.name);
+            if (!arch.empty()) {
+                return arch;
+            }
+        }
+    }
+    
+    // Default to gfx110X if no specific arch detected
+    return "gfx110X";
+}
+
+// Helper to get the cache directory
+static std::string get_cache_dir() {
+    // Check environment variable first
+    const char* cache_env = std::getenv("LEMONADE_CACHE_DIR");
+    if (cache_env) {
+        return std::string(cache_env);
+    }
+    
+    // Default cache directory
+#ifdef _WIN32
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile) {
+        return std::string(userprofile) + "\\.cache\\lemonade";
+    }
+    return "C:\\.cache\\lemonade";
+#else
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/lemonade";
+    }
+    return "/tmp/.cache/lemonade";
+#endif
+}
+
 // Helper to get the install directory for llama-server
+// Matches Python: {executable_dir}/{backend}/llama_server/
 static std::string get_install_directory(const std::string& backend) {
 #ifdef _WIN32
     char exe_path[MAX_PATH];
     GetModuleFileNameA(NULL, exe_path, MAX_PATH);
     fs::path exe_dir = fs::path(exe_path).parent_path();
 #else
-    fs::path exe_dir = fs::current_path();  // Or get from /proc/self/exe
+    fs::path exe_dir = fs::current_path();
 #endif
     
     return (exe_dir / backend / "llama_server").string();
 }
 
-// Helper to extract ZIP files (Windows built-in)
+// Helper to extract ZIP files (Windows/Linux built-in tools)
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
 #ifdef _WIN32
     std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
     
-    // Use PowerShell to extract (available on all modern Windows)
-    std::string command = "powershell -Command \"Expand-Archive -Path '" + 
-                         zip_path + "' -DestinationPath '" + dest_dir + "' -Force\"";
+    // Use PowerShell to extract with error handling
+    // Add -ErrorAction Stop to ensure errors are properly caught
+    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
+                         zip_path + "' -DestinationPath '" + dest_dir + 
+                         "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
     
     int result = system(command.c_str());
-    return result == 0;
+    if (result != 0) {
+        std::cerr << "[LlamaCpp] PowerShell extraction failed with code: " << result << std::endl;
+        return false;
+    }
+    return true;
 #else
-    // TODO: Use libzip or system unzip command on Linux
     std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
     std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
     int result = system(command.c_str());
@@ -123,32 +222,58 @@ void LlamaCppServer::install(const std::string& backend) {
         // Determine download URL
         std::string repo, filename;
         
-#ifdef _WIN32
-        std::string platform = "win";
-#elif defined(__linux__)
-        std::string platform = "ubuntu";
-#elif defined(__APPLE__)
-        std::string platform = "macos-arm64";
-#endif
-        
         if (backend_ == "rocm") {
+            // ROCm support from lemonade-sdk/llamacpp-rocm
             repo = "lemonade-sdk/llamacpp-rocm";
-            filename = "llama-" + expected_version + "-" + platform + "-rocm-gfx1100-x64.zip";
+            std::string target_arch = identify_rocm_arch();
+            
+#ifdef _WIN32
+            filename = "llama-" + expected_version + "-windows-rocm-" + target_arch + "-x64.zip";
+#elif defined(__linux__)
+            filename = "llama-" + expected_version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
+#else
+            throw std::runtime_error("ROCm llamacpp only supported on Windows and Linux");
+#endif
+            std::cout << "[LlamaCpp] Detected ROCm architecture: " << target_arch << std::endl;
+            
         } else if (backend_ == "metal") {
+            // Metal support for macOS Apple Silicon from ggml-org/llama.cpp
             repo = "ggml-org/llama.cpp";
-            filename = "llama-" + expected_version + "-bin-" + platform + ".zip";
+#ifdef __APPLE__
+            filename = "llama-" + expected_version + "-bin-macos-arm64.zip";
+#else
+            throw std::runtime_error("Metal llamacpp only supported on macOS");
+#endif
+            
         } else {  // vulkan
+            // Vulkan support from ggml-org/llama.cpp
             repo = "ggml-org/llama.cpp";
-            filename = "llama-" + expected_version + "-bin-" + platform + "-vulkan-x64.zip";
+#ifdef _WIN32
+            filename = "llama-" + expected_version + "-bin-win-vulkan-x64.zip";
+#elif defined(__linux__)
+            filename = "llama-" + expected_version + "-bin-ubuntu-vulkan-x64.zip";
+#else
+            throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
+#endif
         }
         
         std::string url = "https://github.com/" + repo + "/releases/download/" + 
                          expected_version + "/" + filename;
         
+        // Download ZIP right next to the .exe
+#ifdef _WIN32
+        char exe_path[MAX_PATH];
+        GetModuleFileNameA(NULL, exe_path, MAX_PATH);
+        fs::path exe_dir = fs::path(exe_path).parent_path();
+#else
+        fs::path exe_dir = fs::current_path();
+#endif
+        std::string zip_path = (exe_dir / filename).string();
+        
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
+        std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
         
         // Download the file
-        std::string zip_path = (fs::path(install_dir) / filename).string();
         
         bool download_success = utils::HttpClient::download_file(url, zip_path, 
             [](size_t current, size_t total) {
@@ -164,10 +289,41 @@ void LlamaCppServer::install(const std::string& backend) {
         
         std::cout << std::endl << "[LlamaCpp] Download complete!" << std::endl;
         
+        // Verify the downloaded file exists and is valid
+        if (!fs::exists(zip_path)) {
+            throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
+        }
+        
+        std::uintmax_t file_size = fs::file_size(zip_path);
+        std::cout << "[LlamaCpp] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
+        
+        const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
+        if (file_size < MIN_ZIP_SIZE) {
+            std::cerr << "[LlamaCpp] ERROR: Downloaded file is too small (" << file_size << " bytes)" << std::endl;
+            std::cerr << "[LlamaCpp] This usually indicates a failed or incomplete download." << std::endl;
+            fs::remove(zip_path);
+            throw std::runtime_error("Downloaded file is too small (< 1 MB), likely corrupted or incomplete");
+        }
+        
         // Extract
         if (!extract_zip(zip_path, install_dir)) {
+            // Clean up corrupted files
+            fs::remove(zip_path);
+            fs::remove_all(install_dir);
             throw std::runtime_error("Failed to extract llama-server archive");
         }
+        
+        // Verify extraction succeeded by checking if executable exists
+        if (!fs::exists(exe_path)) {
+            std::cerr << "[LlamaCpp] ERROR: Extraction completed but executable not found at: " << exe_path << std::endl;
+            std::cerr << "[LlamaCpp] This usually indicates a corrupted download. Cleaning up..." << std::endl;
+            // Clean up corrupted files
+            fs::remove(zip_path);
+            fs::remove_all(install_dir);
+            throw std::runtime_error("Extraction failed: executable not found. Downloaded file may be corrupted.");
+        }
+        
+        std::cout << "[LlamaCpp] Executable verified at: " << exe_path << std::endl;
         
         // Save version and backend info
         std::ofstream vf(version_file);

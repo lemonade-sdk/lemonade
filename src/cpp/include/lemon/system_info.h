@@ -54,12 +54,15 @@ public:
     static std::string get_os_version();
     static std::vector<std::string> get_python_packages();
     
-protected:
-    // Helper to detect inference engines for a device
+    // Helper to detect inference engines for a device (public so it can be called after loading from cache)
     static json detect_inference_engines(const std::string& device_type, const std::string& device_name);
     
+protected:
     // Helper methods for version detection
-    static std::string get_llamacpp_version();
+    static std::string get_llamacpp_version(const std::string& backend);
+    static bool is_llamacpp_installed(const std::string& backend);
+    static bool check_vulkan_support();
+    static bool check_rocm_support(const std::string& device_name);
     static std::string get_flm_version();
     static bool is_ryzenai_serve_available();
 };

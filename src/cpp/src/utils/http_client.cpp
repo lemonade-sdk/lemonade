@@ -269,10 +269,21 @@ bool HttpClient::download_file(const std::string& url,
     
     fclose(fp);
     curl_slist_free_all(header_list);
+    
+    // Check HTTP response code
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
     curl_easy_cleanup(curl);
     
     if (res != CURLE_OK) {
         std::cerr << "CURL download error: " << curl_easy_strerror(res) << std::endl;
+        return false;
+    }
+    
+    // Check for HTTP errors (404, 403, 500, etc.)
+    if (http_code >= 400) {
+        std::cerr << "HTTP error: " << http_code << " for URL: " << url << std::endl;
         return false;
     }
     

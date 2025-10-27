@@ -1238,25 +1238,89 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         nlohmann::json cached_hardware = cache.load_hardware_info();
         nlohmann::json devices;
         
+        // Create platform-specific system info instance
+        auto sys_info = create_system_info();
+        
         if (!cached_hardware.empty()) {
             std::cout << "[Server] Using cached hardware info from: " << cache.get_cache_file_path() << std::endl;
             devices = cached_hardware;
         } else {
             std::cout << "[Server] Detecting hardware (will cache to: " << cache.get_cache_file_path() << ")" << std::endl;
             
-            // Create platform-specific system info instance
-            auto sys_info = create_system_info();
-            
             // Get hardware information
             devices = sys_info->get_device_dict();
             
-            // Save to cache
-            cache.save_hardware_info(devices);
+            // Strip inference_engines before caching (hardware only)
+            nlohmann::json hardware_only = devices;
+            if (hardware_only.contains("cpu") && hardware_only["cpu"].contains("inference_engines")) {
+                hardware_only["cpu"].erase("inference_engines");
+            }
+            if (hardware_only.contains("amd_igpu") && hardware_only["amd_igpu"].contains("inference_engines")) {
+                hardware_only["amd_igpu"].erase("inference_engines");
+            }
+            if (hardware_only.contains("amd_dgpu") && hardware_only["amd_dgpu"].is_array()) {
+                for (auto& gpu : hardware_only["amd_dgpu"]) {
+                    if (gpu.contains("inference_engines")) {
+                        gpu.erase("inference_engines");
+                    }
+                }
+            }
+            if (hardware_only.contains("nvidia_dgpu") && hardware_only["nvidia_dgpu"].is_array()) {
+                for (auto& gpu : hardware_only["nvidia_dgpu"]) {
+                    if (gpu.contains("inference_engines")) {
+                        gpu.erase("inference_engines");
+                    }
+                }
+            }
+            if (hardware_only.contains("npu") && hardware_only["npu"].contains("inference_engines")) {
+                hardware_only["npu"].erase("inference_engines");
+            }
+            
+            // Save hardware-only info to cache
+            cache.save_hardware_info(hardware_only);
             std::cout << "[Server] Hardware info cached to: " << cache.get_cache_file_path() << std::endl;
         }
         
+        // Detect inference engines (always fresh, never cached)
+        // CPU
+        if (devices.contains("cpu") && devices["cpu"].contains("name")) {
+            std::string cpu_name = devices["cpu"]["name"];
+            devices["cpu"]["inference_engines"] = sys_info->detect_inference_engines("cpu", cpu_name);
+        }
+        
+        // AMD iGPU
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].contains("name")) {
+            std::string gpu_name = devices["amd_igpu"]["name"];
+            devices["amd_igpu"]["inference_engines"] = sys_info->detect_inference_engines("amd_igpu", gpu_name);
+        }
+        
+        // AMD dGPUs
+        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+            for (auto& gpu : devices["amd_dgpu"]) {
+                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                    std::string gpu_name = gpu["name"];
+                    gpu["inference_engines"] = sys_info->detect_inference_engines("amd_dgpu", gpu_name);
+                }
+            }
+        }
+        
+        // NVIDIA dGPUs
+        if (devices.contains("nvidia_dgpu") && devices["nvidia_dgpu"].is_array()) {
+            for (auto& gpu : devices["nvidia_dgpu"]) {
+                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                    std::string gpu_name = gpu["name"];
+                    gpu["inference_engines"] = sys_info->detect_inference_engines("nvidia_dgpu", gpu_name);
+                }
+            }
+        }
+        
+        // NPU
+        if (devices.contains("npu") && devices["npu"].contains("name")) {
+            std::string npu_name = devices["npu"]["name"];
+            devices["npu"]["inference_engines"] = sys_info->detect_inference_engines("npu", npu_name);
+        }
+        
         // Get system information (OS Version, Processor, Physical Memory, etc.)
-        auto sys_info = create_system_info();
         nlohmann::json system_info = sys_info->get_system_info_dict();
         
         // Add devices
