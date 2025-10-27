@@ -77,22 +77,22 @@ include_directories(
 
 # Source files
 set(SOURCES
-    src/main.cpp
-    src/server.cpp
-    src/router.cpp
-    src/cli_parser.cpp
-    src/model_manager.cpp
-    src/wrapped_server.cpp
-    src/streaming_proxy.cpp
-    src/system_info.cpp
-    src/utils/http_client.cpp
-    src/utils/json_utils.cpp
-    src/utils/process_manager.cpp
-    src/utils/path_utils.cpp
-    src/utils/wmi_helper.cpp
-    src/backends/llamacpp_server.cpp
-    src/backends/fastflowlm_server.cpp
-    src/backends/ryzenaiserver.cpp
+    server/main.cpp
+    server/server.cpp
+    server/router.cpp
+    server/cli_parser.cpp
+    server/model_manager.cpp
+    server/wrapped_server.cpp
+    server/streaming_proxy.cpp
+    server/system_info.cpp
+    server/utils/http_client.cpp
+    server/utils/json_utils.cpp
+    server/utils/process_manager.cpp
+    server/utils/path_utils.cpp
+    server/utils/wmi_helper.cpp
+    server/backends/llamacpp_server.cpp
+    server/backends/fastflowlm_server.cpp
+    server/backends/ryzenaiserver.cpp
 )
 
 # Create executable
@@ -130,3 +130,5 @@ install(TARGETS ${EXECUTABLE_NAME}
     RUNTIME DESTINATION bin
 )
 
+# Add tray application subdirectory
+add_subdirectory(tray)
