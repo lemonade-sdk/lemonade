@@ -731,6 +731,24 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         } else {
             // Non-streaming
             auto response = router_->completion(request_json);
+            
+            // Check if response contains an error
+            if (response.contains("error")) {
+                std::cerr << "[Server] ERROR: Backend returned error response: " << response["error"].dump() << std::endl;
+                res.status = 500;
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+            
+            // Verify response has required fields
+            if (!response.contains("choices")) {
+                std::cerr << "[Server] ERROR: Response missing 'choices' field. Response: " << response.dump() << std::endl;
+                res.status = 500;
+                nlohmann::json error = {{"error", "Backend returned invalid response format"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            
             res.set_content(response.dump(), "application/json");
         }
         

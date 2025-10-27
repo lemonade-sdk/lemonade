@@ -48,26 +48,20 @@ GenerationParams RyzenAIServer::createGenerationParams(int max_tokens, float tem
     // Start with defaults from genai_config.json (or hardcoded defaults if no config)
     GenerationParams params = inference_engine_->getDefaultParams();
     
-    // Apply user-provided values (hierarchy: user > config > defaults)
-    // Only override if user explicitly provided a value (non-default)
+    // Always apply user-provided values, regardless of whether they match defaults
+    // The request parsing already handles providing defaults when values aren't specified
     params.max_length = max_tokens;
-    
-    // For these params, check if they differ from the hardcoded defaults in types.h
-    // If they do, it means the user explicitly set them
-    if (temperature != 0.7f) {  // 0.7 is hardcoded default
-        params.temperature = temperature;
-    }
-    if (top_p != 0.9f) {  // 0.9 is hardcoded default
-        params.top_p = top_p;
-    }
-    if (top_k != 40) {  // 40 is hardcoded default
-        params.top_k = top_k;
-    }
-    if (repeat_penalty != 1.1f) {  // 1.1 is hardcoded default
-        params.repetition_penalty = repeat_penalty;
-    }
-    
+    params.temperature = temperature;
+    params.top_p = top_p;
+    params.top_k = top_k;
+    params.repetition_penalty = repeat_penalty;
     params.stop_sequences = stop;
+    
+    std::cout << "[createGenerationParams] Final params: temperature=" << params.temperature 
+              << ", top_p=" << params.top_p 
+              << ", top_k=" << params.top_k 
+              << ", do_sample=" << params.do_sample
+              << ", repetition_penalty=" << params.repetition_penalty << std::endl;
     
     return params;
 }
@@ -194,7 +188,10 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             return;
         }
         
-        std::cout << "[Server] Completion request (stream=" << comp_req.stream << ")" << std::endl;
+        std::cout << "[Server] Completion request (stream=" << comp_req.stream 
+                  << ", temperature=" << comp_req.temperature 
+                  << ", top_p=" << comp_req.top_p 
+                  << ", top_k=" << comp_req.top_k << ")" << std::endl;
         
         if (comp_req.stream) {
             // REAL-TIME STREAMING: Send chunks as tokens are generated

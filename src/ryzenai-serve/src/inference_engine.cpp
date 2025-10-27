@@ -386,8 +386,8 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
         gen_params->SetSearchOption("repetition_penalty", params.repetition_penalty);
         gen_params->SetSearchOptionBool("do_sample", params.do_sample);
-        // Lock random seed to 1 for deterministic behavior (matching Python reference)
-        gen_params->SetSearchOption("seed", 1.0);
+        // Lock random_seed to 1 for deterministic behavior (matching Python reference)
+        gen_params->SetSearchOption("random_seed", 1.0);
         
         // Generate
         auto generator = OgaGenerator::Create(*model_, *gen_params);
@@ -460,8 +460,8 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
         gen_params->SetSearchOption("repetition_penalty", params.repetition_penalty);
         gen_params->SetSearchOptionBool("do_sample", params.do_sample);
-        // Lock random seed to 1 for deterministic behavior (matching Python reference)
-        gen_params->SetSearchOption("seed", 1.0);
+        // Lock random_seed to 1 for deterministic behavior (matching Python reference)
+        gen_params->SetSearchOption("random_seed", 1.0);
         
         // Generate
         auto generator = OgaGenerator::Create(*model_, *gen_params);
