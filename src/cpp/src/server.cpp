@@ -1207,15 +1207,22 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     }
     
     try {
-        nlohmann::json system_info;
+        // Get verbose parameter from query string (default to false)
+        bool verbose = false;
+        if (req.has_param("verbose")) {
+            std::string verbose_param = req.get_param_value("verbose");
+            std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
+            verbose = (verbose_param == "true" || verbose_param == "1");
+        }
         
         // Check cache first
         SystemInfoCache cache;
         nlohmann::json cached_hardware = cache.load_hardware_info();
+        nlohmann::json devices;
         
         if (!cached_hardware.empty()) {
             std::cout << "[Server] Using cached hardware info from: " << cache.get_cache_file_path() << std::endl;
-            system_info["hardware"] = cached_hardware;
+            devices = cached_hardware;
         } else {
             std::cout << "[Server] Detecting hardware (will cache to: " << cache.get_cache_file_path() << ")" << std::endl;
             
@@ -1223,15 +1230,34 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
             auto sys_info = create_system_info();
             
             // Get hardware information
-            system_info["hardware"] = sys_info->get_device_dict();
+            devices = sys_info->get_device_dict();
             
             // Save to cache
-            cache.save_hardware_info(system_info["hardware"]);
+            cache.save_hardware_info(devices);
             std::cout << "[Server] Hardware info cached to: " << cache.get_cache_file_path() << std::endl;
         }
         
-        // Always get fresh software/runtime information (don't cache)
-        system_info["os"] = SystemInfo::get_os_version();
+        // Get system information (OS Version, Processor, Physical Memory, etc.)
+        auto sys_info = create_system_info();
+        nlohmann::json system_info = sys_info->get_system_info_dict();
+        
+        // Add devices
+        system_info["devices"] = devices;
+        
+        // Filter for non-verbose mode (only essential keys)
+        if (!verbose) {
+            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
+            nlohmann::json filtered_info;
+            for (const auto& key : essential_keys) {
+                if (system_info.contains(key)) {
+                    filtered_info[key] = system_info[key];
+                }
+            }
+            system_info = filtered_info;
+        } else {
+            // In verbose mode, add Python packages (empty for C++ implementation)
+            system_info["Python Packages"] = SystemInfo::get_python_packages();
+        }
         
         res.set_content(system_info.dump(), "application/json");
         

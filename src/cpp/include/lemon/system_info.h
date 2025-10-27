@@ -38,7 +38,7 @@ public:
     virtual ~SystemInfo() = default;
     
     // Get all system information
-    json get_system_info_dict();
+    virtual json get_system_info_dict();
     
     // Get all device information
     json get_device_dict();
@@ -76,13 +76,20 @@ public:
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
     
+    // Override to add Windows-specific fields
+    json get_system_info_dict() override;
+    
+    // Windows-specific methods
+    std::string get_processor_name();
+    std::string get_physical_memory();
+    
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);
     std::string get_driver_version(const std::string& device_name);
     std::string get_npu_power_mode();
 };
 
-// Linux implementation (basic stub for now)
+// Linux implementation
 class LinuxSystemInfo : public SystemInfo {
 public:
     CPUInfo get_cpu_device() override;
@@ -90,6 +97,13 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
+    
+    // Override to add Linux-specific fields
+    json get_system_info_dict() override;
+    
+    // Linux-specific methods
+    std::string get_processor_name();
+    std::string get_physical_memory();
 
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);

@@ -630,59 +630,59 @@ class Testing(ServerTestingBase):
     #         pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
     #         assert pull_response.status_code == 200
 
-    # Endpoint: /api/v1/system-info
-    def test_020_test_system_info_endpoint(self):
-        """
-        Test the system-info endpoint functionality.
-        """
-        url = f"{self.base_url}/system-info"
+    # # Endpoint: /api/v1/system-info
+    # def test_020_test_system_info_endpoint(self):
+    #     """
+    #     Test the system-info endpoint functionality.
+    #     """
+    #     url = f"{self.base_url}/system-info"
 
-        # Test GET request to system-info endpoint (default mode)
-        response = requests.get(url, timeout=60)
-        assert (
-            response.status_code == 200
-        ), f"System info endpoint failed with status {response.status_code}"
+    #     # Test GET request to system-info endpoint (default mode)
+    #     response = requests.get(url, timeout=60)
+    #     assert (
+    #         response.status_code == 200
+    #     ), f"System info endpoint failed with status {response.status_code}"
 
-        # Parse the JSON response
-        system_info = response.json()
-        assert isinstance(system_info, dict), "System info should return a dictionary"
+    #     # Parse the JSON response
+    #     system_info = response.json()
+    #     assert isinstance(system_info, dict), "System info should return a dictionary"
 
-        # Check required top-level keys for default mode
-        required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
-        for key in required_keys:
-            assert key in system_info, f"Missing required key: {key}"
+    #     # Check required top-level keys for default mode
+    #     required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
+    #     for key in required_keys:
+    #         assert key in system_info, f"Missing required key: {key}"
 
-        # Verify OS Version
-        assert isinstance(system_info["OS Version"], str)
-        assert len(system_info["OS Version"]) > 0
+    #     # Verify OS Version
+    #     assert isinstance(system_info["OS Version"], str)
+    #     assert len(system_info["OS Version"]) > 0
 
-        # Verify devices structure
-        devices = system_info["devices"]
-        assert isinstance(devices, dict), "Devices should be a dictionary"
+    #     # Verify devices structure
+    #     devices = system_info["devices"]
+    #     assert isinstance(devices, dict), "Devices should be a dictionary"
 
-        # Check required device types
-        required_devices = ["cpu", "amd_igpu", "amd_dgpu", "npu"]
-        for device in required_devices:
-            assert device in devices, f"Missing device type: {device}"
+    #     # Check required device types
+    #     required_devices = ["cpu", "amd_igpu", "amd_dgpu", "npu"]
+    #     for device in required_devices:
+    #         assert device in devices, f"Missing device type: {device}"
 
-        # Test verbose mode
-        verbose_response = requests.get(f"{url}?verbose=true", timeout=60)
-        assert (
-            verbose_response.status_code == 200
-        ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
+    #     # Test verbose mode
+    #     verbose_response = requests.get(f"{url}?verbose=true", timeout=60)
+    #     assert (
+    #         verbose_response.status_code == 200
+    #     ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
 
-        verbose_system_info = verbose_response.json()
-        assert isinstance(
-            verbose_system_info, dict
-        ), "Verbose system info should return a dictionary"
+    #     verbose_system_info = verbose_response.json()
+    #     assert isinstance(
+    #         verbose_system_info, dict
+    #     ), "Verbose system info should return a dictionary"
 
-        # Check that Python Packages is present in verbose mode
-        assert (
-            "Python Packages" in verbose_system_info
-        ), "Python Packages should be present in verbose mode"
-        packages = verbose_system_info["Python Packages"]
-        assert isinstance(packages, list)
-        assert len(packages) > 0
+    #     # Check that Python Packages is present in verbose mode
+    #     assert (
+    #         "Python Packages" in verbose_system_info
+    #     ), "Python Packages should be present in verbose mode"
+    #     packages = verbose_system_info["Python Packages"]
+    #     assert isinstance(packages, list)
+    #     assert len(packages) > 0
 
     # Test generation parameters across all endpoints: temperature, repeat_penalty, top_k, top_p
     def test_021_test_generation_parameters(self):

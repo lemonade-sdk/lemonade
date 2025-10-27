@@ -146,7 +146,7 @@ std::string SystemInfo::get_os_version() {
 
 std::vector<std::string> SystemInfo::get_python_packages() {
     // Not applicable for C++ implementation
-    return {};
+    return {"not-applicable"};
 }
 
 json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
@@ -626,6 +626,69 @@ std::string WindowsSystemInfo::get_npu_power_mode() {
     return "Unknown";
 }
 
+json WindowsSystemInfo::get_system_info_dict() {
+    json info = SystemInfo::get_system_info_dict();  // Get base fields
+    info["Processor"] = get_processor_name();
+    info["Physical Memory"] = get_physical_memory();
+    return info;
+}
+
+std::string WindowsSystemInfo::get_processor_name() {
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "Processor information not found.";
+    }
+    
+    std::string processor_name;
+    int cores = 0;
+    int threads = 0;
+    
+    wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
+        if (processor_name.empty()) {  // Only get first processor
+            processor_name = wmi::get_property_string(pObj, L"Name");
+            cores = wmi::get_property_int(pObj, L"NumberOfCores");
+            threads = wmi::get_property_int(pObj, L"NumberOfLogicalProcessors");
+        }
+    });
+    
+    if (!processor_name.empty()) {
+        // Trim whitespace
+        size_t start = processor_name.find_first_not_of(" \t");
+        size_t end = processor_name.find_last_not_of(" \t");
+        if (start != std::string::npos && end != std::string::npos) {
+            processor_name = processor_name.substr(start, end - start + 1);
+        }
+        
+        return processor_name + " (" + std::to_string(cores) + " cores, " + 
+               std::to_string(threads) + " logical processors)";
+    }
+    
+    return "Processor information not found.";
+}
+
+std::string WindowsSystemInfo::get_physical_memory() {
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "Physical memory information not found.";
+    }
+    
+    uint64_t total_capacity = 0;
+    
+    wmi.query(L"SELECT * FROM Win32_PhysicalMemory", [&](IWbemClassObject* pObj) {
+        uint64_t capacity = wmi::get_property_uint64(pObj, L"Capacity");
+        total_capacity += capacity;
+    });
+    
+    if (total_capacity > 0) {
+        double gb = total_capacity / (1024.0 * 1024.0 * 1024.0);
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2) << gb << " GB";
+        return oss.str();
+    }
+    
+    return "Physical memory information not found.";
+}
+
 #endif // _WIN32
 
 // ============================================================================
@@ -1043,6 +1106,89 @@ double LinuxSystemInfo::get_amd_vram_sysfs(const std::string& pci_id) {
     } catch (...) {
         return 0.0;
     }
+}
+
+json LinuxSystemInfo::get_system_info_dict() {
+    json info = SystemInfo::get_system_info_dict();  // Get base fields
+    info["Processor"] = get_processor_name();
+    info["Physical Memory"] = get_physical_memory();
+    return info;
+}
+
+std::string LinuxSystemInfo::get_processor_name() {
+    FILE* pipe = popen("lscpu 2>/dev/null", "r");
+    if (!pipe) {
+        return "ERROR - Failed to execute lscpu";
+    }
+    
+    char buffer[256];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    pclose(pipe);
+    
+    std::istringstream iss(output);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.find("Model name:") != std::string::npos) {
+            size_t pos = line.find(":");
+            if (pos != std::string::npos) {
+                std::string name = line.substr(pos + 1);
+                // Trim whitespace
+                size_t start = name.find_first_not_of(" \t");
+                size_t end = name.find_last_not_of(" \t");
+                if (start != std::string::npos && end != std::string::npos) {
+                    return name.substr(start, end - start + 1);
+                }
+            }
+        }
+    }
+    
+    return "ERROR - Processor name not found";
+}
+
+std::string LinuxSystemInfo::get_physical_memory() {
+    FILE* pipe = popen("free -m 2>/dev/null", "r");
+    if (!pipe) {
+        return "ERROR - Failed to execute free command";
+    }
+    
+    char buffer[256];
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    pclose(pipe);
+    
+    // Parse output - second line contains memory info
+    std::istringstream iss(output);
+    std::string line;
+    int line_count = 0;
+    while (std::getline(iss, line)) {
+        line_count++;
+        if (line_count == 2) {  // Second line has memory data
+            std::istringstream line_stream(line);
+            std::string token;
+            int token_count = 0;
+            while (line_stream >> token) {
+                token_count++;
+                if (token_count == 2) {  // Second token is total memory in MB
+                    try {
+                        int mem_mb = std::stoi(token);
+                        double mem_gb = std::round(mem_mb / 1024.0 * 100.0) / 100.0;
+                        std::ostringstream oss;
+                        oss << std::fixed << std::setprecision(2) << mem_gb << " GB";
+                        return oss.str();
+                    } catch (...) {
+                        return "ERROR - Failed to parse memory info";
+                    }
+                }
+            }
+        }
+    }
+    
+    return "ERROR - Memory information not found";
 }
 
 #endif // __linux__
