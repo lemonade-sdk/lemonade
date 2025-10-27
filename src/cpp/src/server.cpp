@@ -3,6 +3,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/system_info.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -1205,12 +1206,41 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
     
-    nlohmann::json info = {
-        {"os", "windows"},
-        {"version", "1.0.0"},
-        {"port", port_}
-    };
-    res.set_content(info.dump(), "application/json");
+    try {
+        nlohmann::json system_info;
+        
+        // Check cache first
+        SystemInfoCache cache;
+        nlohmann::json cached_hardware = cache.load_hardware_info();
+        
+        if (!cached_hardware.empty()) {
+            std::cout << "[Server] Using cached hardware info from: " << cache.get_cache_file_path() << std::endl;
+            system_info["hardware"] = cached_hardware;
+        } else {
+            std::cout << "[Server] Detecting hardware (will cache to: " << cache.get_cache_file_path() << ")" << std::endl;
+            
+            // Create platform-specific system info instance
+            auto sys_info = create_system_info();
+            
+            // Get hardware information
+            system_info["hardware"] = sys_info->get_device_dict();
+            
+            // Save to cache
+            cache.save_hardware_info(system_info["hardware"]);
+            std::cout << "[Server] Hardware info cached to: " << cache.get_cache_file_path() << std::endl;
+        }
+        
+        // Always get fresh software/runtime information (don't cache)
+        system_info["os"] = SystemInfo::get_os_version();
+        
+        res.set_content(system_info.dump(), "application/json");
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_system_info: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {

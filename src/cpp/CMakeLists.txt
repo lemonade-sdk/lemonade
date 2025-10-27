@@ -84,10 +84,12 @@ set(SOURCES
     src/model_manager.cpp
     src/wrapped_server.cpp
     src/streaming_proxy.cpp
+    src/system_info.cpp
     src/utils/http_client.cpp
     src/utils/json_utils.cpp
     src/utils/process_manager.cpp
     src/utils/path_utils.cpp
+    src/utils/wmi_helper.cpp
     src/backends/llamacpp_server.cpp
     src/backends/fastflowlm_server.cpp
     src/backends/ryzenaiserver.cpp
@@ -106,7 +108,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE
 
 # Platform-specific linking
 if(WIN32)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ws2_32 wsock32)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ws2_32 wsock32 wbemuuid ole32 oleaut32)
 endif()
 
 # Copy resources at build time to both the build directory and the Release directory

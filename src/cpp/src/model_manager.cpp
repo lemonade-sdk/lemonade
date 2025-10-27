@@ -3,6 +3,7 @@
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/system_info.h>
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
@@ -395,8 +396,25 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
 // Helper function to check if NPU is available
 // Matches Python behavior: on Windows, assume available (FLM will fail at runtime if not compatible)
 // This allows showing FLM models on Windows systems - the actual compatibility check happens when loading
+// Helper function to get backend availability from SystemInfo
+static json get_backend_availability() {
+    // Try to load from cache first
+    SystemInfoCache cache;
+    json cached_hardware = cache.load_hardware_info();
+    
+    if (!cached_hardware.empty()) {
+        return cached_hardware;
+    }
+    
+    // If no cache, detect hardware
+    auto sys_info = create_system_info();
+    json hardware = sys_info->get_device_dict();
+    cache.save_hardware_info(hardware);
+    
+    return hardware;
+}
+
 static bool is_npu_available() {
-#ifdef _WIN32
     // Check if user explicitly disabled NPU check
     const char* skip_check = std::getenv("RYZENAI_SKIP_PROCESSOR_CHECK");
     if (skip_check && (std::string(skip_check) == "1" || 
@@ -405,42 +423,67 @@ static bool is_npu_available() {
         return true;
     }
     
-    // On Windows, we assume NPU is available for filtering purposes
-    // The real compatibility check happens at runtime when FLM tries to use the NPU
-    // This matches the Python implementation which only raises exceptions for non-Windows platforms
-    return true;
-#else
-    // Non-Windows platforms don't support FLM
+    // Use SystemInfo to detect NPU
+    json hardware = get_backend_availability();
+    if (hardware.contains("npu") && hardware["npu"].is_object()) {
+        return hardware["npu"].value("available", false);
+    }
+    
     return false;
-#endif
 }
 
-// Helper function to check if FLM is available
 static bool is_flm_available() {
-#ifdef _WIN32
-    return system("where flm > nul 2>&1") == 0;
-#else
-    return system("which flm > /dev/null 2>&1") == 0;
-#endif
+    json hardware = get_backend_availability();
+    
+    // Check if NPU has FLM inference engine available
+    if (hardware.contains("npu") && hardware["npu"].is_object()) {
+        json npu = hardware["npu"];
+        if (npu.value("available", false) && npu.contains("inference_engines")) {
+            json engines = npu["inference_engines"];
+            if (engines.contains("flm") && engines["flm"].is_object()) {
+                return engines["flm"].value("available", false);
+            }
+        }
+    }
+    
+    return false;
 }
 
 static bool is_ryzenai_available() {
-#ifdef _WIN32
-    // Check if ryzenai-serve.exe is in PATH or in the ryzenai-serve build directory
-    if (system("where ryzenai-serve > nul 2>&1") == 0) {
-        return true;
-    }
+    json hardware = get_backend_availability();
     
-    // Check in relative path (from executable location to src/ryzenai-serve/build/bin/Release)
-    std::string relative_path = get_resource_path("../../../ryzenai-serve/build/bin/Release/ryzenai-serve.exe");
-    if (std::filesystem::exists(relative_path)) {
-        return true;
+    // Check if any device (CPU, iGPU, dGPU, NPU) has ryzenai-serve available
+    std::vector<std::string> devices = {"cpu", "amd_igpu", "amd_dgpu", "npu"};
+    
+    for (const auto& device : devices) {
+        if (hardware.contains(device) && hardware[device].is_object()) {
+            json dev = hardware[device];
+            if (dev.value("available", false) && dev.contains("inference_engines")) {
+                json engines = dev["inference_engines"];
+                if (engines.contains("ryzenai-serve") && engines["ryzenai-serve"].is_object()) {
+                    if (engines["ryzenai-serve"].value("available", false)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Also check nvidia_dgpu (array)
+        if (device == "npu" && hardware.contains("nvidia_dgpu") && hardware["nvidia_dgpu"].is_array()) {
+            for (const auto& gpu : hardware["nvidia_dgpu"]) {
+                if (gpu.is_object() && gpu.value("available", false) && gpu.contains("inference_engines")) {
+                    json engines = gpu["inference_engines"];
+                    if (engines.contains("ryzenai-serve") && engines["ryzenai-serve"].is_object()) {
+                        if (engines["ryzenai-serve"].value("available", false)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
     }
     
     return false;
-#else
-    return system("which ryzenai-serve > /dev/null 2>&1") == 0;
-#endif
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
