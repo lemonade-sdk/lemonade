@@ -401,4 +401,3 @@ def delete_incompatible_models(
         "freed_size_formatted": format_size(freed_size),
         "cleaned_user_models": cleaned_user_models,
     }
-    
