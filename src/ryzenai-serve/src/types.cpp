@@ -102,6 +102,10 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
         }
     }
     
+    if (j.contains("tools")) {
+        req.tools = j["tools"];
+    }
+    
     return req;
 }
 

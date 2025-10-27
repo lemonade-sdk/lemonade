@@ -1,4 +1,5 @@
 #include "ryzenai/server.h"
+#include "ryzenai/tool_calls.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -333,10 +334,21 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             });
         }
         
-        // Apply the model's chat template
-        std::string prompt = inference_engine_->applyChatTemplate(messages_array.dump());
+        // Apply the model's chat template (with tools if provided)
+        std::string tools_json = chat_req.tools.empty() ? "" : chat_req.tools.dump();
         
-        std::cout << "[Server] Chat completion request (stream=" << chat_req.stream << ")" << std::endl;
+        std::cout << "[Server] Chat completion request (stream=" << chat_req.stream;
+        if (!tools_json.empty()) {
+            std::cout << ", with " << chat_req.tools.size() << " tools";
+            std::cout << ")" << std::endl;
+            std::cout << "[Server DEBUG] Tools JSON: " << tools_json << std::endl;
+        } else {
+            std::cout << ")" << std::endl;
+        }
+        
+        std::string prompt = inference_engine_->applyChatTemplate(messages_array.dump(), tools_json);
+        std::cout << "[Server DEBUG] Generated prompt length: " << prompt.length() << " chars" << std::endl;
+        std::cout << "[Server DEBUG] Prompt (first 500 chars): " << prompt.substr(0, std::min(size_t(500), prompt.length())) << std::endl;
         
         if (chat_req.stream) {
             // REAL-TIME STREAMING: Send chunks as tokens are generated
@@ -355,16 +367,23 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             
             std::string model_id = model_id_;
             int token_count = 0;
+            bool has_tools = !chat_req.tools.empty();
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, prompt, params, model_id, &token_count](size_t offset, httplib::DataSink& sink) {
+                [this, prompt, params, model_id, has_tools, &token_count](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false; // Only run once
                     
                     try {
+                        // Accumulate full response for tool call extraction
+                        std::string full_response;
+                        
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count](const std::string& token, bool is_final) {
+                            [&sink, model_id, &token_count, &full_response](const std::string& token, bool is_final) {
+                                // Accumulate for tool call extraction
+                                full_response += token;
+                                
                                 // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
                                 // causes a crash. This appears to be a memory allocation issue between
                                 // the JSON library and the callback context (not related to OGA itself).
@@ -409,6 +428,40 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                             }
                         );
                         
+                        // Extract and send tool calls if tools were provided
+                        if (has_tools) {
+                            auto [extracted_tool_calls, cleaned_text] = extractToolCalls(full_response);
+                            if (!extracted_tool_calls.empty()) {
+                                std::cout << "[Server] Extracted " << extracted_tool_calls.size() << " tool call(s) from stream" << std::endl;
+                                
+                                // Send tool calls as delta chunks
+                                for (const auto& tool_call : extracted_tool_calls) {
+                                    // Escape arguments for JSON
+                                    std::string tool_call_args = tool_call.arguments.dump();
+                                    std::string escaped_args = tool_call_args;
+                                    size_t pos = 0;
+                                    while ((pos = escaped_args.find('\\', pos)) != std::string::npos) {
+                                        escaped_args.replace(pos, 1, "\\\\");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped_args.find('"', pos)) != std::string::npos) {
+                                        escaped_args.replace(pos, 1, "\\\"");
+                                        pos += 2;
+                                    }
+                                    
+                                    std::string tool_call_chunk = 
+                                        "data: {\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                        "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                        ",\"model\":\"" + model_id + 
+                                        "\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"-\",\"type\":\"function\",\"function\":{\"name\":\"" + tool_call.name + 
+                                        "\",\"arguments\":\"" + escaped_args + "\"}}]},\"finish_reason\":null}]}\n\n";
+                                    
+                                    sink.write(tool_call_chunk.c_str(), tool_call_chunk.size());
+                                }
+                            }
+                        }
+                        
                         // Send [DONE] marker
                         const char* done_msg = "data: [DONE]\n\n";
                         sink.write(done_msg, strlen(done_msg));
@@ -444,10 +497,42 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
+            // Extract tool calls if tools were provided
+            std::string content = output;
+            json tool_calls_json = nullptr;
+            
+            if (!chat_req.tools.empty()) {
+                std::cout << "[Server DEBUG] Tools provided, extracting tool calls from output..." << std::endl;
+                std::cout << "[Server DEBUG] Output length: " << output.length() << " chars" << std::endl;
+                std::cout << "[Server DEBUG] First 200 chars: " << output.substr(0, std::min(size_t(200), output.length())) << std::endl;
+                
+                auto [extracted_tool_calls, cleaned_text] = extractToolCalls(output);
+                std::cout << "[Server DEBUG] Extracted " << extracted_tool_calls.size() << " tool call(s)" << std::endl;
+                
+                if (!extracted_tool_calls.empty()) {
+                    content = cleaned_text;
+                    tool_calls_json = formatToolCallsForOpenAI(extracted_tool_calls);
+                    std::cout << "[Server] Extracted " << extracted_tool_calls.size() << " tool call(s)" << std::endl;
+                } else {
+                    std::cout << "[Server DEBUG] No tool calls found in output" << std::endl;
+                }
+            } else {
+                std::cout << "[Server DEBUG] No tools provided in request" << std::endl;
+            }
+            
             // Count tokens
             int prompt_tokens = inference_engine_->countTokens(prompt);
             int completion_tokens = inference_engine_->countTokens(output);
             int total_tokens = prompt_tokens + completion_tokens;
+            
+            // Build message object
+            json message = {
+                {"role", "assistant"},
+                {"content", content}
+            };
+            if (!tool_calls_json.is_null()) {
+                message["tool_calls"] = tool_calls_json;
+            }
             
             json response = {
                 {"id", "chatcmpl-" + std::to_string(std::time(nullptr))},
@@ -456,10 +541,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                 {"model", model_id_},
                 {"choices", {{
                     {"index", 0},
-                    {"message", {
-                        {"role", "assistant"},
-                        {"content", output}
-                    }},
+                    {"message", message},
                     {"finish_reason", "stop"}
                 }}},
                 {"usage", {

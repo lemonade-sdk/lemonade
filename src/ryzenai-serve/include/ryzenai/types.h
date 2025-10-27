@@ -50,6 +50,7 @@ struct ChatCompletionRequest {
     float repeat_penalty = 1.1f;
     bool stream = false;
     std::vector<std::string> stop;
+    json tools;  // Tool definitions (OpenAI format)
     
     // Parse from JSON
     static ChatCompletionRequest fromJSON(const json& j);

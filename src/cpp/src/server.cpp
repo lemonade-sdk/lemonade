@@ -455,6 +455,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
+        // Debug: Check if tools are present
+        if (request_json.contains("tools")) {
+            std::cout << "[Server DEBUG] Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
+            std::cout << "[Server DEBUG] Tools JSON: " << request_json["tools"].dump() << std::endl;
+        } else {
+            std::cout << "[Server DEBUG] No tools in request" << std::endl;
+        }
+        
         // Handle model loading/switching
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -562,6 +570,22 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             
             // Complete the log line with status
             std::cout << "200 OK" << std::endl;
+            
+            // Debug: Check if response contains tool_calls
+            if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+                auto& first_choice = response["choices"][0];
+                if (first_choice.contains("message")) {
+                    auto& message = first_choice["message"];
+                    if (message.contains("tool_calls")) {
+                        std::cout << "[Server DEBUG] Response contains tool_calls: " << message["tool_calls"].dump() << std::endl;
+                    } else {
+                        std::cout << "[Server DEBUG] Response message does NOT contain tool_calls" << std::endl;
+                        if (message.contains("content")) {
+                            std::cout << "[Server DEBUG] Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
+                        }
+                    }
+                }
+            }
             
             res.set_content(response.dump(), "application/json");
             

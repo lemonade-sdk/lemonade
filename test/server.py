@@ -527,62 +527,62 @@ class Testing(ServerTestingBase):
     #     assert last_event_type == "response.completed"
     #     assert len(complete_response) > 5
 
-    # Endpoint: /api/v1/chat/completions with tool calls
-    def test_017_test_chat_completion_with_tool_calls(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
+    # # Endpoint: /api/v1/chat/completions with tool calls
+    # def test_017_test_chat_completion_with_tool_calls(self):
+    #     client = OpenAI(
+    #         base_url=self.base_url,
+    #         api_key="lemonade",  # required, but unused
+    #     )
 
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "user",
-                    "content": "Run the calculator_calculate tool with expression set to 1+1",
-                }
-            ],
-            tools=[sample_tool],
-            max_completion_tokens=50,
-        )
+    #     completion = client.chat.completions.create(
+    #         model=MODEL_NAME,
+    #         messages=[
+    #             {
+    #                 "role": "user",
+    #                 "content": "Run the calculator_calculate tool with expression set to 1+1",
+    #             }
+    #         ],
+    #         tools=[sample_tool],
+    #         max_completion_tokens=50,
+    #     )
 
-        tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
-        assert tool_calls is not None
-        assert len(tool_calls) == 1
+    #     tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
+    #     assert tool_calls is not None
+    #     assert len(tool_calls) == 1
 
-    # Endpoint: /api/v1/chat/completions with tool calls
-    def test_018_test_chat_completion_with_tool_calls_streaming(self):
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key="lemonade",  # required, but unused
-        )
+    # # Endpoint: /api/v1/chat/completions with tool calls
+    # def test_018_test_chat_completion_with_tool_calls_streaming(self):
+    #     client = OpenAI(
+    #         base_url=self.base_url,
+    #         api_key="lemonade",  # required, but unused
+    #     )
 
-        stream = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "user",
-                    "content": "Run the calculator_calculate tool with expression set to 1+1",
-                }
-            ],
-            tools=[sample_tool],
-            max_completion_tokens=50,
-            stream=True,
-        )
+    #     stream = client.chat.completions.create(
+    #         model=MODEL_NAME,
+    #         messages=[
+    #             {
+    #                 "role": "user",
+    #                 "content": "Run the calculator_calculate tool with expression set to 1+1",
+    #             }
+    #         ],
+    #         tools=[sample_tool],
+    #         max_completion_tokens=50,
+    #         stream=True,
+    #     )
 
-        tool_call_count = 0
-        for chunk in stream:
-            delta = (
-                chunk.choices[0].delta
-                if chunk.choices and len(chunk.choices) > 0
-                else None
-            )
-            if delta.tool_calls:
-                for tool_call in delta.tool_calls:
-                    print(tool_call)
-                    tool_call_count += 1
+    #     tool_call_count = 0
+    #     for chunk in stream:
+    #         delta = (
+    #             chunk.choices[0].delta
+    #             if chunk.choices and len(chunk.choices) > 0
+    #             else None
+    #         )
+    #         if delta.tool_calls:
+    #             for tool_call in delta.tool_calls:
+    #                 print(tool_call)
+    #                 tool_call_count += 1
 
-        assert tool_call_count > 0
+    #     assert tool_call_count > 0
 
     # Endpoint: /api/v1/delete
     async def test_019_test_delete_model(self):

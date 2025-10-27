@@ -73,6 +73,7 @@ set(SOURCES
     src/inference_engine.cpp
     src/command_line.cpp
     src/types.cpp
+    src/tool_calls.cpp
 )
 
 # Create executable

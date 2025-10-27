@@ -81,7 +81,7 @@ InferenceEngine::~InferenceEngine() {
     std::cout << "[InferenceEngine] Shutting down" << std::endl;
 }
 
-std::string InferenceEngine::applyChatTemplate(const std::string& messages_json) {
+std::string InferenceEngine::applyChatTemplate(const std::string& messages_json, const std::string& tools_json) {
     // Parse messages
     json messages = json::parse(messages_json);
     std::ostringstream prompt;
@@ -91,7 +91,27 @@ std::string InferenceEngine::applyChatTemplate(const std::string& messages_json)
                          (chat_template_.find("<|im_start|>") != std::string::npos ||
                           chat_template_.find("\\u003c|im_start|\\u003e") != std::string::npos);
     
-    if (is_qwen_style) {
+    // If tools are provided, always use OGA's built-in template (it handles tools properly)
+    if (!tools_json.empty()) {
+        try {
+            const char* template_str = chat_template_.empty() ? nullptr : chat_template_.c_str();
+            const char* tools_str = tools_json.c_str();
+            
+            auto result = tokenizer_->ApplyChatTemplate(
+                template_str,
+                messages_json.c_str(),
+                tools_str,
+                true
+            );
+            
+            std::cout << "[InferenceEngine] Applied chat template with tools" << std::endl;
+            return std::string(result);
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] Failed to apply chat template with tools: " << e.what() << std::endl;
+            throw;
+        }
+    } else if (is_qwen_style) {
         // Use Qwen/ChatML format: <|im_start|>role\ncontent<|im_end|>\n
         for (const auto& msg : messages) {
             std::string role = msg.value("role", "user");
@@ -338,9 +358,15 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         const int32_t* output_ptr = generator->GetSequenceData(0);
         size_t output_count = generator->GetSequenceCount(0);
         
-        // Decode output
-        auto decoded = tokenizer_->Decode(output_ptr, output_count);
-        std::string result(decoded);
+        // Decode only the newly generated tokens (skip the input prompt)
+        std::string result;
+        if (output_count > input_ids.size()) {
+            auto decoded = tokenizer_->Decode(output_ptr + input_ids.size(), output_count - input_ids.size());
+            result = std::string(decoded);
+        } else {
+            // No new tokens generated
+            result = "";
+        }
         
         // Apply stop sequences - remove stop sequence and everything after it
         for (const auto& stop_seq : params.stop_sequences) {

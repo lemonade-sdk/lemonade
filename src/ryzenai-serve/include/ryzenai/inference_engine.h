@@ -29,7 +29,7 @@ public:
                        StreamCallback callback);
     
     // Apply chat template to messages
-    std::string applyChatTemplate(const std::string& messages_json);
+    std::string applyChatTemplate(const std::string& messages_json, const std::string& tools_json = "");
     
     // Getters
     std::string getModelName() const { return model_name_; }
