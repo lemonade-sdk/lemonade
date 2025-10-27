@@ -34,6 +34,7 @@ struct CompletionRequest {
     int top_k = 40;
     float repeat_penalty = 1.1f;
     bool stream = false;
+    bool echo = false;
     std::vector<std::string> stop;
     
     // Parse from JSON

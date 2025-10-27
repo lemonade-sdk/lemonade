@@ -189,11 +189,15 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
         }
         
         std::cout << "[Server] Completion request (stream=" << comp_req.stream 
+                  << ", echo=" << comp_req.echo
                   << ", temperature=" << comp_req.temperature 
                   << ", top_p=" << comp_req.top_p 
                   << ", top_k=" << comp_req.top_k << ")" << std::endl;
         
         if (comp_req.stream) {
+            if (comp_req.echo) {
+                std::cout << "[Server] Warning: `echo` parameter is not supported for streaming completions" << std::endl;
+            }
             // REAL-TIME STREAMING: Send chunks as tokens are generated
             res.set_header("Content-Type", "text/event-stream");
             res.set_header("Cache-Control", "no-cache");
@@ -294,6 +298,9 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
+            // If echo=True, prepend the prompt to the output (matching Python reference)
+            std::string final_text = comp_req.echo ? (comp_req.prompt + output) : output;
+            
             // Count tokens
             int prompt_tokens = inference_engine_->countTokens(comp_req.prompt);
             int completion_tokens = inference_engine_->countTokens(output);
@@ -306,7 +313,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                 {"model", model_id_},
                 {"choices", {{
                     {"index", 0},
-                    {"text", output},
+                    {"text", final_text},
                     {"finish_reason", "stop"}
                 }}},
                 {"usage", {

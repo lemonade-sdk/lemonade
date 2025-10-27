@@ -39,6 +39,10 @@ CompletionRequest CompletionRequest::fromJSON(const json& j) {
         req.stream = j["stream"];
     }
     
+    if (j.contains("echo")) {
+        req.echo = j["echo"];
+    }
+    
     if (j.contains("stop")) {
         if (j["stop"].is_string()) {
             req.stop.push_back(j["stop"]);

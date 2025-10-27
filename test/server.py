@@ -46,643 +46,643 @@ sample_tool = {
 class Testing(ServerTestingBase):
     """Main testing class that inherits shared functionality from ServerTestingBase."""
 
-    # def test_000_endpoints_available(self):
-    #     # List of endpoints to check for registration
-    #     valid_endpoints = [
-    #         "chat/completions",
-    #         "completions",
-    #         "embeddings",
-    #         "models",
-    #         "responses",
-    #         "pull",
-    #         "delete",
-    #         "load",
-    #         "unload",
-    #         "health",
-    #         "halt",
-    #         "stats",
-    #         "system-info",
-    #     ]
+    def test_000_endpoints_available(self):
+        # List of endpoints to check for registration
+        valid_endpoints = [
+            "chat/completions",
+            "completions",
+            "embeddings",
+            "models",
+            "responses",
+            "pull",
+            "delete",
+            "load",
+            "unload",
+            "health",
+            "halt",
+            "stats",
+            "system-info",
+        ]
 
-    #     # Use a session for connection pooling to avoid per-request connection overhead
-    #     session = requests.Session()
+        # Use a session for connection pooling to avoid per-request connection overhead
+        session = requests.Session()
 
-    #     # Ensure that we get a 404 error when the endpoint is not registered
-    #     url = f"http://localhost:{PORT}/api/v0/nonexistent"
-    #     response = session.head(url, timeout=60)
-    #     assert response.status_code == 404
+        # Ensure that we get a 404 error when the endpoint is not registered
+        url = f"http://localhost:{PORT}/api/v0/nonexistent"
+        response = session.head(url, timeout=60)
+        assert response.status_code == 404
 
-    #     # Check that all endpoints are properly registered on both v0 and v1
-    #     # Using HEAD to avoid executing expensive endpoint logic
-    #     for endpoint in valid_endpoints:
-    #         for version in ["v0", "v1"]:
-    #             url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
-    #             response = session.head(url, timeout=60)
-    #             assert (
-    #                 response.status_code != 404
-    #             ), f"Endpoint {endpoint} is not registered on {version}"
+        # Check that all endpoints are properly registered on both v0 and v1
+        # Using HEAD to avoid executing expensive endpoint logic
+        for endpoint in valid_endpoints:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.head(url, timeout=60)
+                assert (
+                    response.status_code != 404
+                ), f"Endpoint {endpoint} is not registered on {version}"
 
-    #     session.close()
+        session.close()
 
-    # # Endpoint: /api/v1/chat/completions
-    # def test_001_test_chat_completion(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions
+    def test_001_test_chat_completion(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     completion = client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=self.messages,
-    #         max_completion_tokens=10,
-    #     )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=self.messages,
+            max_completion_tokens=10,
+        )
 
-    #     print(completion.choices[0].message.content)
-    #     assert len(completion.choices[0].message.content) > 5
+        print(completion.choices[0].message.content)
+        assert len(completion.choices[0].message.content) > 5
 
-    #     # Check usage fields
-    #     assert completion.usage.prompt_tokens > 0
-    #     assert completion.usage.completion_tokens > 0
-    #     assert completion.usage.total_tokens > 0
-    #     assert (
-    #         completion.usage.total_tokens
-    #         == completion.usage.prompt_tokens + completion.usage.completion_tokens
-    #     )
+        # Check usage fields
+        assert completion.usage.prompt_tokens > 0
+        assert completion.usage.completion_tokens > 0
+        assert completion.usage.total_tokens > 0
+        assert (
+            completion.usage.total_tokens
+            == completion.usage.prompt_tokens + completion.usage.completion_tokens
+        )
 
-    # # Endpoint: /api/v1/chat/completions
-    # def test_002_test_chat_completion_streaming(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions
+    def test_002_test_chat_completion_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     stream = client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=self.messages,
-    #         stream=True,
-    #         max_tokens=10,
-    #     )
-    #     complete_response = ""
-    #     chunk_count = 0
-    #     for chunk in stream:
-    #         if chunk.choices[0].delta.content is not None:
-    #             complete_response += chunk.choices[0].delta.content
-    #             print(chunk.choices[0].delta.content, end="")
-    #             chunk_count += 1
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=self.messages,
+            stream=True,
+            max_tokens=10,
+        )
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                complete_response += chunk.choices[0].delta.content
+                print(chunk.choices[0].delta.content, end="")
+                chunk_count += 1
 
-    #     assert chunk_count > 5
-    #     assert len(complete_response) > 5
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
-    # # Endpoint: /api/v1/chat/completions
-    # async def test_003_test_chat_completion_streaming_async(self):
-    #     client = AsyncOpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions
+    async def test_003_test_chat_completion_streaming_async(self):
+        client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     complete_response = ""
-    #     stream = await client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=self.messages,
-    #         stream=True,
-    #         max_completion_tokens=10,
-    #     )
+        complete_response = ""
+        stream = await client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=self.messages,
+            stream=True,
+            max_completion_tokens=10,
+        )
 
-    #     chunk_count = 0
-    #     async for chunk in stream:
-    #         if chunk.choices[0].delta.content is not None:
-    #             complete_response += chunk.choices[0].delta.content
-    #             print(chunk.choices[0].delta.content, end="")
-    #             chunk_count += 1
+        chunk_count = 0
+        async for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                complete_response += chunk.choices[0].delta.content
+                print(chunk.choices[0].delta.content, end="")
+                chunk_count += 1
 
-    #     assert chunk_count > 5
-    #     assert len(complete_response) > 5
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
-    # # Endpoints: /api/v1/models and /api/v1/models/{model_id}
-    # def test_004_test_models(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoints: /api/v1/models and /api/v1/models/{model_id}
+    def test_004_test_models(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     # Get the list of models
-    #     l = client.models.list()
+        # Get the list of models
+        l = client.models.list()
 
-    #     # Check that the list is not empty
-    #     assert len(l.data) > 0
+        # Check that the list is not empty
+        assert len(l.data) > 0
 
-    #     # Check that the list contains a model with both the expected id, checkpoint, and recipe
-    #     assert any(
-    #         model.id == MODEL_NAME
-    #         and model.checkpoint == MODEL_CHECKPOINT
-    #         and model.recipe == "oga-cpu"
-    #         for model in l.data
-    #     )
+        # Check that the list contains a model with both the expected id, checkpoint, and recipe
+        assert any(
+            model.id == MODEL_NAME
+            and model.checkpoint == MODEL_CHECKPOINT
+            and model.recipe == "oga-cpu"
+            for model in l.data
+        )
 
-    #     # Check the individual model endpoint
-    #     test_model = l.data[0]
-    #     model = client.models.retrieve(test_model.id)
-    #     assert model.id == test_model.id
-    #     assert model.checkpoint == test_model.checkpoint
-    #     assert model.recipe == test_model.recipe
+        # Check the individual model endpoint
+        test_model = l.data[0]
+        model = client.models.retrieve(test_model.id)
+        assert model.id == test_model.id
+        assert model.checkpoint == test_model.checkpoint
+        assert model.recipe == test_model.recipe
 
-    #     # Check that the individual model endpoint returns a NotFoundError for a non-existent model
-    #     # Do not modify this test as this exact error type might be checked by different ISVs
-    #     with self.assertRaises(NotFoundError):
-    #         client.models.retrieve("non-existent-model")
+        # Check that the individual model endpoint returns a NotFoundError for a non-existent model
+        # Do not modify this test as this exact error type might be checked by different ISVs
+        with self.assertRaises(NotFoundError):
+            client.models.retrieve("non-existent-model")
 
-    # # Endpoint: /api/v1/completions
-    # def test_005_test_completions(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/completions
+    def test_005_test_completions(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     completion = client.completions.create(
-    #         model=MODEL_NAME,
-    #         prompt="Hello, how are you?",
-    #         stream=False,
-    #         max_tokens=10,
-    #     )
+        completion = client.completions.create(
+            model=MODEL_NAME,
+            prompt="Hello, how are you?",
+            stream=False,
+            max_tokens=10,
+        )
 
-    #     print(completion.choices[0].text)
-    #     assert len(completion.choices[0].text) > 5
+        print(completion.choices[0].text)
+        assert len(completion.choices[0].text) > 5
 
-    #     # Check usage fields
-    #     assert completion.usage.prompt_tokens > 0
-    #     assert completion.usage.completion_tokens > 0
-    #     assert completion.usage.total_tokens > 0
-    #     assert (
-    #         completion.usage.total_tokens
-    #         == completion.usage.prompt_tokens + completion.usage.completion_tokens
-    #     )
+        # Check usage fields
+        assert completion.usage.prompt_tokens > 0
+        assert completion.usage.completion_tokens > 0
+        assert completion.usage.total_tokens > 0
+        assert (
+            completion.usage.total_tokens
+            == completion.usage.prompt_tokens + completion.usage.completion_tokens
+        )
 
-    # # Endpoint: /api/v1/completions
-    # def test_006_test_completions_streaming(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/completions
+    def test_006_test_completions_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     stream = client.completions.create(
-    #         model=MODEL_NAME,
-    #         prompt="Hello, how are you?",
-    #         stream=True,
-    #         max_tokens=10,
-    #     )
+        stream = client.completions.create(
+            model=MODEL_NAME,
+            prompt="Hello, how are you?",
+            stream=True,
+            max_tokens=10,
+        )
 
-    #     complete_response = ""
-    #     chunk_count = 0
-    #     for chunk in stream:
-    #         if chunk.choices[0].text is not None:
-    #             complete_response += chunk.choices[0].text
-    #             print(chunk.choices[0].text, end="")
-    #             chunk_count += 1
+        complete_response = ""
+        chunk_count = 0
+        for chunk in stream:
+            if chunk.choices[0].text is not None:
+                complete_response += chunk.choices[0].text
+                print(chunk.choices[0].text, end="")
+                chunk_count += 1
 
-    #     assert chunk_count > 5
-    #     assert len(complete_response) > 5
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
-    # # Endpoint: /api/v1/completions
-    # async def test_007_test_completions_streaming_async(self):
-    #     client = AsyncOpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/completions
+    async def test_007_test_completions_streaming_async(self):
+        client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     complete_response = ""
-    #     stream = await client.completions.create(
-    #         model=MODEL_NAME,
-    #         prompt="Hello, how are you?",
-    #         stream=True,
-    #         max_tokens=10,
-    #     )
+        complete_response = ""
+        stream = await client.completions.create(
+            model=MODEL_NAME,
+            prompt="Hello, how are you?",
+            stream=True,
+            max_tokens=10,
+        )
 
-    #     chunk_count = 0
-    #     async for chunk in stream:
-    #         if chunk.choices[0].text is not None:
-    #             complete_response += chunk.choices[0].text
-    #             print(chunk.choices[0].text, end="")
-    #             chunk_count += 1
+        chunk_count = 0
+        async for chunk in stream:
+            if chunk.choices[0].text is not None:
+                complete_response += chunk.choices[0].text
+                print(chunk.choices[0].text, end="")
+                chunk_count += 1
 
-    #     assert chunk_count > 5
-    #     assert len(complete_response) > 5
+        assert chunk_count > 5
+        assert len(complete_response) > 5
 
-    # # Endpoint: /api/v1/completions with stop parameter
-    # def test_008_test_completions_with_stop(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/completions with stop parameter
+    def test_008_test_completions_with_stop(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     completion = client.completions.create(
-    #         model=MODEL_NAME,
-    #         prompt="Just say 'I am Joe and I like apples'. Here we go: 'I am Joe and",
-    #         stop=["apples"],  # The model will stop generating when it reaches "apples"
-    #         max_tokens=10,
-    #     )
+        completion = client.completions.create(
+            model=MODEL_NAME,
+            prompt="Just say 'I am Joe and I like apples'. Here we go: 'I am Joe and",
+            stop=["apples"],  # The model will stop generating when it reaches "apples"
+            max_tokens=10,
+        )
 
-    #     print(completion.choices[0].text)
-    #     assert len(completion.choices[0].text) > 2
-    #     assert "apples" not in completion.choices[0].text
+        print(completion.choices[0].text)
+        assert len(completion.choices[0].text) > 2
+        assert "apples" not in completion.choices[0].text
 
-    # # Endpoint: /api/v1/chat/completions with stop parameter
-    # def test_009_test_chat_completion_with_stop(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions with stop parameter
+    def test_009_test_chat_completion_with_stop(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     messages = [
-    #         {"role": "system", "content": "Your name is Joe and you like apples."},
-    #         {"role": "user", "content": "What is your name and what do you like?"},
-    #     ]
+        messages = [
+            {"role": "system", "content": "Your name is Joe and you like apples."},
+            {"role": "user", "content": "What is your name and what do you like?"},
+        ]
 
-    #     completion = client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=messages,
-    #         stop=["apples"],  # The model will stop generating when it reaches "apples"
-    #         max_completion_tokens=10,
-    #     )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            stop=["apples"],  # The model will stop generating when it reaches "apples"
+            max_completion_tokens=10,
+        )
 
-    #     print(completion.choices[0].message.content)
-    #     assert len(completion.choices[0].message.content) > 2
-    #     assert "apples" not in completion.choices[0].message.content
+        print(completion.choices[0].message.content)
+        assert len(completion.choices[0].message.content) > 2
+        assert "apples" not in completion.choices[0].message.content
 
-    # # Endpoint: /api/v1/completions with echo parameter
-    # def test_010_test_completions_with_echo(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/completions with echo parameter
+    def test_010_test_completions_with_echo(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     prompt = "Hello, how are you?"
-    #     completion = client.completions.create(
-    #         model=MODEL_NAME,
-    #         prompt=prompt,
-    #         echo=True,
-    #         max_tokens=10,
-    #     )
+        prompt = "Hello, how are you?"
+        completion = client.completions.create(
+            model=MODEL_NAME,
+            prompt=prompt,
+            echo=True,
+            max_tokens=10,
+        )
 
-    #     print(completion.choices[0].text)
-    #     # Check that the response contains the original prompt
-    #     assert completion.choices[0].text.startswith(prompt)
-    #     # Check that there's additional content beyond the prompt
-    #     assert len(completion.choices[0].text) > len(prompt)
+        print(completion.choices[0].text)
+        # Check that the response contains the original prompt
+        assert completion.choices[0].text.startswith(prompt)
+        # Check that there's additional content beyond the prompt
+        assert len(completion.choices[0].text) > len(prompt)
 
     # Test simultaneous load requests
-    # async def test_011_test_simultaneous_load_requests(self):
-    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
-    #         first_model = "Qwen2.5-0.5B-Instruct-CPU"
-    #         second_model = "Llama-3.2-1B-Instruct-CPU"
+    async def test_011_test_simultaneous_load_requests(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
+            first_model = "Qwen2.5-0.5B-Instruct-CPU"
+            second_model = "Llama-3.2-1B-Instruct-CPU"
 
-    #         # Start two load requests simultaneously
-    #         load_tasks = [
-    #             client.post(
-    #                 "/load",
-    #                 json={
-    #                     "model_name": first_model,
-    #                 },
-    #             ),
-    #             client.post(
-    #                 "/load",
-    #                 json={
-    #                     "model_name": second_model,
-    #                 },
-    #             ),
-    #         ]
+            # Start two load requests simultaneously
+            load_tasks = [
+                client.post(
+                    "/load",
+                    json={
+                        "model_name": first_model,
+                    },
+                ),
+                client.post(
+                    "/load",
+                    json={
+                        "model_name": second_model,
+                    },
+                ),
+            ]
 
-    #         # Execute both requests concurrently
-    #         responses = await asyncio.gather(*load_tasks)
+            # Execute both requests concurrently
+            responses = await asyncio.gather(*load_tasks)
 
-    #         # Verify both requests completed successfully
-    #         assert responses[0].status_code == 200
-    #         assert responses[1].status_code == 200
+            # Verify both requests completed successfully
+            assert responses[0].status_code == 200
+            assert responses[1].status_code == 200
 
-    #         # Verify the final loaded model is one of the two we requested
-    #         # (The order is non-deterministic with concurrent requests, but
-    #         # the mutex ensures no corruption and one of them wins)
-    #         health_response = await client.get("/health")
-    #         assert health_response.status_code == 200
-    #         health_data = health_response.json()
-    #         assert health_data["model_loaded"] in [first_model, second_model], (
-    #             f"Expected one of [{first_model}, {second_model}], "
-    #             f"got {health_data['model_loaded']}"
-    #         )
+            # Verify the final loaded model is one of the two we requested
+            # (The order is non-deterministic with concurrent requests, but
+            # the mutex ensures no corruption and one of them wins)
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
+            health_data = health_response.json()
+            assert health_data["model_loaded"] in [first_model, second_model], (
+                f"Expected one of [{first_model}, {second_model}], "
+                f"got {health_data['model_loaded']}"
+            )
 
-    # # Test load by model name
-    # async def test_012_test_load_by_name(self):
-    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
-    #         load_response = await client.post("/load", json={"model_name": MODEL_NAME})
+    # Test load by model name
+    async def test_012_test_load_by_name(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+            load_response = await client.post("/load", json={"model_name": MODEL_NAME})
 
-    #         assert load_response.status_code == 200
+            assert load_response.status_code == 200
 
-    #         # Verify the model loaded
-    #         health_response = await client.get("/health")
-    #         assert health_response.status_code == 200
-    #         health_data = health_response.json()
-    #         assert health_data["model_loaded"] == MODEL_NAME
+            # Verify the model loaded
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
+            health_data = health_response.json()
+            assert health_data["model_loaded"] == MODEL_NAME
 
-    # # Test pull to register-and-install
-    # async def test_013_test_load_checkpoint_completion(self):
-    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+    # Test pull to register-and-install
+    async def test_013_test_load_checkpoint_completion(self):
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
-    #         custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
+            custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
 
-    #         load_response = await client.post(
-    #             "/pull",
-    #             json={
-    #                 "model_name": custom_model_name,
-    #                 "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF:Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
-    #                 "recipe": "llamacpp",
-    #             },
-    #         )
+            load_response = await client.post(
+                "/pull",
+                json={
+                    "model_name": custom_model_name,
+                    "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF:Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
+                    "recipe": "llamacpp",
+                },
+            )
 
-    #         assert load_response.status_code == 200, load_response.content
+            assert load_response.status_code == 200, load_response.content
 
-    #         # Verify the model loaded
-    #         health_response = await client.get("/health")
-    #         assert health_response.status_code == 200
+            # Verify the model loaded
+            health_response = await client.get("/health")
+            assert health_response.status_code == 200
 
-    #         # Run a completions request using the new model
-    #         client = OpenAI(
-    #             base_url=self.base_url,
-    #             api_key="lemonade",  # required, but unused
-    #         )
+            # Run a completions request using the new model
+            client = OpenAI(
+                base_url=self.base_url,
+                api_key="lemonade",  # required, but unused
+            )
 
-    #         completion = client.completions.create(
-    #             model=custom_model_name,
-    #             prompt="Hello, how are you?",
-    #             stream=False,
-    #             max_tokens=10,
-    #         )
+            completion = client.completions.create(
+                model=custom_model_name,
+                prompt="Hello, how are you?",
+                stream=False,
+                max_tokens=10,
+            )
 
-    #         print(completion.choices[0].text)
-    #         assert len(completion.choices[0].text) > 5
+            print(completion.choices[0].text)
+            assert len(completion.choices[0].text) > 5
 
-    # # Endpoint: /api/v1/responses
-    # def test_014_test_responses(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/responses
+    def test_014_test_responses(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     response = client.responses.create(
-    #         model=MODEL_NAME,
-    #         input=self.messages,
-    #         stream=False,
-    #         temperature=0.0,
-    #         max_output_tokens=10,
-    #     )
+        response = client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=False,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
 
-    #     print(response.output[0].content[0].text)
-    #     assert len(response.output[0].content[0].text) > 5
+        print(response.output[0].content[0].text)
+        assert len(response.output[0].content[0].text) > 5
 
-    # # Endpoint: /api/v1/responses
-    # def test_015_test_responses_streaming(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/responses
+    def test_015_test_responses_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     stream = client.responses.create(
-    #         model=MODEL_NAME,
-    #         input=self.messages,
-    #         stream=True,
-    #         temperature=0.0,
-    #         max_output_tokens=10,
-    #     )
-    #     complete_response = ""
-    #     event_count = 0
-    #     last_event_type = ""
-    #     for event in stream:
+        stream = client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=True,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
+        complete_response = ""
+        event_count = 0
+        last_event_type = ""
+        for event in stream:
 
-    #         # Check that the first event is a response.created event
-    #         if event_count == 0:
-    #             assert (
-    #                 event.type == "response.created"
-    #             ), f"Expected first event to be response.created, got {event.type}"
+            # Check that the first event is a response.created event
+            if event_count == 0:
+                assert (
+                    event.type == "response.created"
+                ), f"Expected first event to be response.created, got {event.type}"
 
-    #         # Keep track of the streamed response
-    #         elif event.type == "response.output_text.delta":
-    #             complete_response += event.delta
-    #             print(event.delta, end="")
+            # Keep track of the streamed response
+            elif event.type == "response.output_text.delta":
+                complete_response += event.delta
+                print(event.delta, end="")
 
-    #         # Ensure the complete event matches the streamed response
-    #         elif event.type == "response.completed":
-    #             assert (
-    #                 event.response.output[0].content[0].text == complete_response
-    #             ), "Complete response does not match streamed response"
+            # Ensure the complete event matches the streamed response
+            elif event.type == "response.completed":
+                assert (
+                    event.response.output[0].content[0].text == complete_response
+                ), "Complete response does not match streamed response"
 
-    #         # Ensure all events we add in the future are also tested
-    #         else:
-    #             assert False, f"Untested event type: {event.type}"
-    #         event_count += 1
-    #         last_event_type = event.type
+            # Ensure all events we add in the future are also tested
+            else:
+                assert False, f"Untested event type: {event.type}"
+            event_count += 1
+            last_event_type = event.type
 
-    #     assert last_event_type == "response.completed"
-    #     assert len(complete_response) > 5
+        assert last_event_type == "response.completed"
+        assert len(complete_response) > 5
 
-    # # Endpoint: /api/v1/responses
-    # async def test_016_test_responses_streaming_async(self):
-    #     client = AsyncOpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/responses
+    async def test_016_test_responses_streaming_async(self):
+        client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     stream = await client.responses.create(
-    #         model=MODEL_NAME,
-    #         input=self.messages,
-    #         stream=True,
-    #         temperature=0.0,
-    #         max_output_tokens=10,
-    #     )
-    #     complete_response = ""
-    #     event_count = 0
-    #     last_event_type = ""
-    #     async for event in stream:
+        stream = await client.responses.create(
+            model=MODEL_NAME,
+            input=self.messages,
+            stream=True,
+            temperature=0.0,
+            max_output_tokens=10,
+        )
+        complete_response = ""
+        event_count = 0
+        last_event_type = ""
+        async for event in stream:
 
-    #         # Check that the first event is a response.created event
-    #         if event_count == 0:
-    #             assert (
-    #                 event.type == "response.created"
-    #             ), f"Expected first event to be response.created, got {event.type}"
+            # Check that the first event is a response.created event
+            if event_count == 0:
+                assert (
+                    event.type == "response.created"
+                ), f"Expected first event to be response.created, got {event.type}"
 
-    #         # Keep track of the streamed response
-    #         elif event.type == "response.output_text.delta":
-    #             complete_response += event.delta
-    #             print(event.delta, end="")
+            # Keep track of the streamed response
+            elif event.type == "response.output_text.delta":
+                complete_response += event.delta
+                print(event.delta, end="")
 
-    #         # Ensure the complete event matches the streamed response
-    #         elif event.type == "response.completed":
-    #             assert (
-    #                 event.response.output[0].content[0].text == complete_response
-    #             ), "Complete response does not match streamed response"
+            # Ensure the complete event matches the streamed response
+            elif event.type == "response.completed":
+                assert (
+                    event.response.output[0].content[0].text == complete_response
+                ), "Complete response does not match streamed response"
 
-    #         # Ensure all events we add in the future are also tested
-    #         else:
-    #             assert False, f"Untested event type: {event.type}"
-    #         event_count += 1
-    #         last_event_type = event.type
+            # Ensure all events we add in the future are also tested
+            else:
+                assert False, f"Untested event type: {event.type}"
+            event_count += 1
+            last_event_type = event.type
 
-    #     assert last_event_type == "response.completed"
-    #     assert len(complete_response) > 5
+        assert last_event_type == "response.completed"
+        assert len(complete_response) > 5
 
-    # # Endpoint: /api/v1/chat/completions with tool calls
-    # def test_017_test_chat_completion_with_tool_calls(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions with tool calls
+    def test_017_test_chat_completion_with_tool_calls(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     completion = client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=[
-    #             {
-    #                 "role": "user",
-    #                 "content": "Run the calculator_calculate tool with expression set to 1+1",
-    #             }
-    #         ],
-    #         tools=[sample_tool],
-    #         max_completion_tokens=50,
-    #     )
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Run the calculator_calculate tool with expression set to 1+1",
+                }
+            ],
+            tools=[sample_tool],
+            max_completion_tokens=50,
+        )
 
-    #     tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
-    #     assert tool_calls is not None
-    #     assert len(tool_calls) == 1
+        tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
+        assert tool_calls is not None
+        assert len(tool_calls) == 1
 
-    # # Endpoint: /api/v1/chat/completions with tool calls
-    # def test_018_test_chat_completion_with_tool_calls_streaming(self):
-    #     client = OpenAI(
-    #         base_url=self.base_url,
-    #         api_key="lemonade",  # required, but unused
-    #     )
+    # Endpoint: /api/v1/chat/completions with tool calls
+    def test_018_test_chat_completion_with_tool_calls_streaming(self):
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key="lemonade",  # required, but unused
+        )
 
-    #     stream = client.chat.completions.create(
-    #         model=MODEL_NAME,
-    #         messages=[
-    #             {
-    #                 "role": "user",
-    #                 "content": "Run the calculator_calculate tool with expression set to 1+1",
-    #             }
-    #         ],
-    #         tools=[sample_tool],
-    #         max_completion_tokens=50,
-    #         stream=True,
-    #     )
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Run the calculator_calculate tool with expression set to 1+1",
+                }
+            ],
+            tools=[sample_tool],
+            max_completion_tokens=50,
+            stream=True,
+        )
 
-    #     tool_call_count = 0
-    #     for chunk in stream:
-    #         delta = (
-    #             chunk.choices[0].delta
-    #             if chunk.choices and len(chunk.choices) > 0
-    #             else None
-    #         )
-    #         if delta.tool_calls:
-    #             for tool_call in delta.tool_calls:
-    #                 print(tool_call)
-    #                 tool_call_count += 1
+        tool_call_count = 0
+        for chunk in stream:
+            delta = (
+                chunk.choices[0].delta
+                if chunk.choices and len(chunk.choices) > 0
+                else None
+            )
+            if delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    print(tool_call)
+                    tool_call_count += 1
 
-    #     assert tool_call_count > 0
+        assert tool_call_count > 0
 
-    # # Endpoint: /api/v1/delete
-    # async def test_019_test_delete_model(self):
-    #     """Test the delete endpoint functionality"""
-    #     async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+    # Endpoint: /api/v1/delete
+    async def test_019_test_delete_model(self):
+        """Test the delete endpoint functionality"""
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
 
-    #         # First, ensure the test model is available by pulling it
-    #         pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
-    #         assert pull_response.status_code == 200
+            # First, ensure the test model is available by pulling it
+            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+            assert pull_response.status_code == 200
 
-    #         # Verify the model is in the models list
-    #         models_response = await client.get("/models")
-    #         assert models_response.status_code == 200
-    #         models_data = models_response.json()
-    #         model_ids = [model["id"] for model in models_data["data"]]
-    #         assert (
-    #             MODEL_NAME in model_ids
-    #         ), f"Model {MODEL_NAME} not found in models list"
+            # Verify the model is in the models list
+            models_response = await client.get("/models")
+            assert models_response.status_code == 200
+            models_data = models_response.json()
+            model_ids = [model["id"] for model in models_data["data"]]
+            assert (
+                MODEL_NAME in model_ids
+            ), f"Model {MODEL_NAME} not found in models list"
 
-    #         # Test deleting the model
-    #         delete_response = await client.post(
-    #             "/delete", json={"model_name": MODEL_NAME}
-    #         )
-    #         assert delete_response.status_code == 200
-    #         delete_data = delete_response.json()
-    #         assert delete_data["status"] == "success"
-    #         assert MODEL_NAME in delete_data["message"]
+            # Test deleting the model
+            delete_response = await client.post(
+                "/delete", json={"model_name": MODEL_NAME}
+            )
+            assert delete_response.status_code == 200
+            delete_data = delete_response.json()
+            assert delete_data["status"] == "success"
+            assert MODEL_NAME in delete_data["message"]
 
-    #         # Verify the model is no longer in the models list
-    #         models_response = await client.get("/models")
-    #         assert models_response.status_code == 200
-    #         models_data = models_response.json()
-    #         model_ids = [model["id"] for model in models_data["data"]]
-    #         assert (
-    #             MODEL_NAME not in model_ids
-    #         ), f"Model {MODEL_NAME} still found in models list after deletion"
+            # Verify the model is no longer in the models list
+            models_response = await client.get("/models")
+            assert models_response.status_code == 200
+            models_data = models_response.json()
+            model_ids = [model["id"] for model in models_data["data"]]
+            assert (
+                MODEL_NAME not in model_ids
+            ), f"Model {MODEL_NAME} still found in models list after deletion"
 
-    #         # Test deleting a non-existent model (should return error)
-    #         delete_response = await client.post(
-    #             "/delete", json={"model_name": "NonExistentModel"}
-    #         )
-    #         assert delete_response.status_code == 422  # Unprocessable Entity
+            # Test deleting a non-existent model (should return error)
+            delete_response = await client.post(
+                "/delete", json={"model_name": "NonExistentModel"}
+            )
+            assert delete_response.status_code == 422  # Unprocessable Entity
 
-    #         # Re-pull the model for subsequent tests
-    #         pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
-    #         assert pull_response.status_code == 200
+            # Re-pull the model for subsequent tests
+            pull_response = await client.post("/pull", json={"model_name": MODEL_NAME})
+            assert pull_response.status_code == 200
 
-    # # Endpoint: /api/v1/system-info
-    # def test_020_test_system_info_endpoint(self):
-    #     """
-    #     Test the system-info endpoint functionality.
-    #     """
-    #     url = f"{self.base_url}/system-info"
+    # Endpoint: /api/v1/system-info
+    def test_020_test_system_info_endpoint(self):
+        """
+        Test the system-info endpoint functionality.
+        """
+        url = f"{self.base_url}/system-info"
 
-    #     # Test GET request to system-info endpoint (default mode)
-    #     response = requests.get(url, timeout=60)
-    #     assert (
-    #         response.status_code == 200
-    #     ), f"System info endpoint failed with status {response.status_code}"
+        # Test GET request to system-info endpoint (default mode)
+        response = requests.get(url, timeout=60)
+        assert (
+            response.status_code == 200
+        ), f"System info endpoint failed with status {response.status_code}"
 
-    #     # Parse the JSON response
-    #     system_info = response.json()
-    #     assert isinstance(system_info, dict), "System info should return a dictionary"
+        # Parse the JSON response
+        system_info = response.json()
+        assert isinstance(system_info, dict), "System info should return a dictionary"
 
-    #     # Check required top-level keys for default mode
-    #     required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
-    #     for key in required_keys:
-    #         assert key in system_info, f"Missing required key: {key}"
+        # Check required top-level keys for default mode
+        required_keys = ["OS Version", "Processor", "Physical Memory", "devices"]
+        for key in required_keys:
+            assert key in system_info, f"Missing required key: {key}"
 
-    #     # Verify OS Version
-    #     assert isinstance(system_info["OS Version"], str)
-    #     assert len(system_info["OS Version"]) > 0
+        # Verify OS Version
+        assert isinstance(system_info["OS Version"], str)
+        assert len(system_info["OS Version"]) > 0
 
-    #     # Verify devices structure
-    #     devices = system_info["devices"]
-    #     assert isinstance(devices, dict), "Devices should be a dictionary"
+        # Verify devices structure
+        devices = system_info["devices"]
+        assert isinstance(devices, dict), "Devices should be a dictionary"
 
-    #     # Check required device types
-    #     required_devices = ["cpu", "amd_igpu", "amd_dgpu", "npu"]
-    #     for device in required_devices:
-    #         assert device in devices, f"Missing device type: {device}"
+        # Check required device types
+        required_devices = ["cpu", "amd_igpu", "amd_dgpu", "npu"]
+        for device in required_devices:
+            assert device in devices, f"Missing device type: {device}"
 
-    #     # Test verbose mode
-    #     verbose_response = requests.get(f"{url}?verbose=true", timeout=60)
-    #     assert (
-    #         verbose_response.status_code == 200
-    #     ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
+        # Test verbose mode
+        verbose_response = requests.get(f"{url}?verbose=true", timeout=60)
+        assert (
+            verbose_response.status_code == 200
+        ), f"Verbose system info endpoint failed with status {verbose_response.status_code}"
 
-    #     verbose_system_info = verbose_response.json()
-    #     assert isinstance(
-    #         verbose_system_info, dict
-    #     ), "Verbose system info should return a dictionary"
+        verbose_system_info = verbose_response.json()
+        assert isinstance(
+            verbose_system_info, dict
+        ), "Verbose system info should return a dictionary"
 
-    #     # Check that Python Packages is present in verbose mode
-    #     assert (
-    #         "Python Packages" in verbose_system_info
-    #     ), "Python Packages should be present in verbose mode"
-    #     packages = verbose_system_info["Python Packages"]
-    #     assert isinstance(packages, list)
-    #     assert len(packages) > 0
+        # Check that Python Packages is present in verbose mode
+        assert (
+            "Python Packages" in verbose_system_info
+        ), "Python Packages should be present in verbose mode"
+        packages = verbose_system_info["Python Packages"]
+        assert isinstance(packages, list)
+        assert len(packages) > 0
 
     # Test generation parameters across all endpoints: temperature, repeat_penalty, top_k, top_p
     def test_021_test_generation_parameters(self):
