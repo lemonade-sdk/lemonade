@@ -1288,6 +1288,62 @@ button:disabled {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(91, 141, 184, 0.3);
 }
+.checkpoint-input-group {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+  min-width: 0;
+}
+
+.checkpoint-input-group:focus-within {
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
+}
+
+.checkpoint-input-group #register-checkpoint {
+  border-radius: 6px 0 0 6px;
+  border: 1px solid #d5d5d5;
+  border-right: none;
+  padding: 0.6em 0.8em;
+  font-size: 0.95em;
+  background: #fff;
+  color: #222;
+  flex: 1;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.checkpoint-input-group #register-checkpoint:focus {
+  border-color: #e6b800;
+  box-shadow: 0 2px 12px rgba(230,184,0,0.25);
+}
+
+.folder-select-btn {
+  background: #f8f9fa;
+  border: 1px solid #d5d5d5;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  padding: 0.6em 0.8em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+  color: #666;
+  min-width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-select-btn:hover {
+  background: #e9ecef;
+  color: #333;
+}
+/*  */
 
 #register-mmproj, #register-checkpoint {
   border-radius: 6px;
