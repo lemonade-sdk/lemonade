@@ -87,8 +87,9 @@ SectionIn RO ; Read only, always installed
     ; Copy the executables from the build directory
     File "build\Release\lemonade-server-beta.exe"
     File "build\Release\lemonade.exe"
+    File "build\Release\zstd.dll"
     
-    DetailPrint "- Copied lemonade-server-beta.exe and lemonade.exe"
+    DetailPrint "- Copied lemonade-server-beta.exe, lemonade.exe, and zstd.dll"
 
     ; Copy resources (icon, etc.) to bin directory so lemonade.exe can find them
     ; The server looks for resources relative to the executable directory
@@ -304,6 +305,7 @@ Section "Uninstall"
   ; Remove files
   Delete "$INSTDIR\bin\lemonade-server-beta.exe"
   Delete "$INSTDIR\bin\lemonade.exe"
+  Delete "$INSTDIR\bin\zstd.dll"
   Delete "$INSTDIR\Uninstall.exe"
 
   ; Remove directories

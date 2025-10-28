@@ -52,6 +52,11 @@ set(CURL_STATICLIB ON CACHE INTERNAL "")
 set(HTTP_ONLY ON CACHE INTERNAL "")
 set(BUILD_TESTING OFF CACHE INTERNAL "")
 set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
+# Completely disable zstd support in curl to avoid runtime dependency
+set(CURL_ZSTD OFF CACHE INTERNAL "")
+set(USE_ZSTD OFF CACHE INTERNAL "")
+set(HAVE_ZSTD OFF CACHE INTERNAL "")
+set(CURL_DISABLE_ZSTD ON CACHE INTERNAL "")
 # Enable native SSL backends per platform
 if(WIN32)
     set(CURL_USE_SCHANNEL ON CACHE INTERNAL "")
@@ -124,6 +129,16 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
         $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/resources
     COMMENT "Copying resources to output directory"
 )
+
+# Copy zstd.dll from system PATH at build time (Windows only)
+if(WIN32)
+    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+        COMMAND where.exe zstd.dll > "${CMAKE_BINARY_DIR}/zstd_path.txt" 2>NUL || echo "zstd.dll not found" > "${CMAKE_BINARY_DIR}/zstd_path.txt"
+        COMMAND powershell -NoProfile -Command "if (Test-Path '${CMAKE_BINARY_DIR}/zstd_path.txt') { $zstdPath = Get-Content '${CMAKE_BINARY_DIR}/zstd_path.txt' -First 1 -ErrorAction SilentlyContinue; if ($zstdPath -and (Test-Path $zstdPath)) { Copy-Item $zstdPath '$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/zstd.dll' -Force; Write-Host 'Copied zstd.dll from' $zstdPath } }"
+        COMMENT "Copying zstd.dll from system PATH"
+        VERBATIM
+    )
+endif()
 
 # Installation
 install(TARGETS ${EXECUTABLE_NAME}

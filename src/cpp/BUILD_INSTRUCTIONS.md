@@ -29,6 +29,7 @@ Ensure you have:
   - macOS: Xcode command line tools
 - **Git** (for fetching dependencies)
 - **Internet connection** (first build downloads dependencies)
+- **miniforge** (to get zstd.dll)
 
 ### 2. Build
 
