@@ -1009,6 +1009,11 @@ class Server:
 
                 # Keep track of the full response for tool call extraction
                 full_response = ""
+
+                # Track whether we're still in the thinking phase (before </think> tag)
+                in_thinking_phase = self.llm_loaded.reasoning
+                reasoning_buffer = ""  # Accumulate reasoning tokens to detect </think>
+
                 try:
                     async for token in self._generate_tokens(**generation_args):
                         # Handle client disconnect: stop generation and exit
@@ -1047,7 +1052,53 @@ class Server:
                                     )
                                 )
 
-                        # Create a ChatCompletionChunk
+                        # Create a ChatCompletionChunk with reasoning_content support
+                        # If we're in reasoning mode and haven't seen </think> yet,
+                        # send tokens as reasoning_content instead of content
+                        delta_content = None
+                        delta_reasoning = None
+
+                        if reasoning_first_token:
+                            # First token - include opening tag in reasoning
+                            delta_reasoning = "<think>" + token
+                            reasoning_first_token = False
+                            reasoning_buffer = token
+                        elif in_thinking_phase:
+                            # Still in thinking phase - accumulate and check for </think>
+                            reasoning_buffer += token
+
+                            # Check if we've seen the closing tag
+                            if "</think>" in reasoning_buffer:
+                                # Split at the closing tag
+                                before_close, after_close = reasoning_buffer.split(
+                                    "</think>", 1
+                                )
+
+                                # Send everything before + closing tag as reasoning
+                                if before_close or not reasoning_buffer.startswith(
+                                    "</think>"
+                                ):
+                                    delta_reasoning = before_close + "</think>"
+                                else:
+                                    delta_reasoning = "</think>"
+
+                                # Everything after goes to content (will be sent in next iteration)
+                                # For now, mark that we've exited thinking phase
+                                in_thinking_phase = False
+
+                                # If there's content after </think>, we need to send it too
+                                # But we send it in the current chunk as regular content
+                                if after_close:
+                                    # We have both reasoning and content in this token
+                                    # Send reasoning first, content will accumulate
+                                    delta_content = after_close
+                            else:
+                                # Still accumulating thinking, send as reasoning_content
+                                delta_reasoning = token
+                        else:
+                            # Normal content (after thinking phase ended)
+                            delta_content = token
+
                         chunk = ChatCompletionChunk.model_construct(
                             id="0",
                             object="chat.completion.chunk",
@@ -1057,11 +1108,8 @@ class Server:
                                 Choice.model_construct(
                                     index=0,
                                     delta=ChoiceDelta(
-                                        content=(
-                                            "<think>" + token
-                                            if reasoning_first_token
-                                            else token
-                                        ),
+                                        content=delta_content,
+                                        reasoning_content=delta_reasoning,
                                         function_call=None,
                                         role="assistant",
                                         tool_calls=openai_tool_calls,
@@ -1074,7 +1122,6 @@ class Server:
                         )
 
                         # Format as SSE
-                        reasoning_first_token = False
                         yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
 
                     # Send the [DONE] marker only if still connected
