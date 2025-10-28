@@ -6,6 +6,7 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <regex>
 #include <thread>
 #include <chrono>
@@ -273,13 +274,39 @@ void LlamaCppServer::install(const std::string& backend) {
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
         std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
         
-        // Download the file
+        // Download the file with throttled progress updates (once per second)
+        auto last_print_time = std::make_shared<std::chrono::steady_clock::time_point>(
+            std::chrono::steady_clock::now());
+        auto printed_final = std::make_shared<bool>(false);
         
         bool download_success = utils::HttpClient::download_file(url, zip_path, 
-            [](size_t current, size_t total) {
+            [last_print_time, printed_final](size_t current, size_t total) {
                 if (total > 0) {
-                    int percent = static_cast<int>((current * 100) / total);
-                    std::cout << "\rDownload progress: " << percent << "%" << std::flush;
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - *last_print_time);
+                    
+                    bool is_complete = (current >= total);
+                    
+                    // Skip if we've already printed the final progress
+                    if (is_complete && *printed_final) {
+                        return;
+                    }
+                    
+                    // Print if it's been more than 1 second, or if download just completed
+                    if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
+                        int percent = static_cast<int>((current * 100) / total);
+                        double mb_current = current / (1024.0 * 1024.0);
+                        double mb_total = total / (1024.0 * 1024.0);
+                        std::cout << "\r  Progress: " << percent << "% (" 
+                                 << std::fixed << std::setprecision(1) 
+                                 << mb_current << "/" << mb_total << " MB)" << std::flush;
+                        *last_print_time = now;
+                        
+                        if (is_complete) {
+                            *printed_final = true;
+                        }
+                    }
                 }
             });
         
