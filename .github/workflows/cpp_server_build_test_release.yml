@@ -260,7 +260,9 @@ jobs:
   test-installer-basic:
     name: Test Installer - Basic Functionality
     runs-on: [stx-halo, Windows]
-    needs: build-lemonade-server-installer
+    needs: 
+      - build-lemonade-server-installer
+      - build-ryzenai-serve
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -298,6 +300,42 @@ jobs:
           Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
           
           Write-Host "Installation complete!" -ForegroundColor Green
+
+      - name: Download RyzenAI Serve artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-serve
+          path: ryzenai-serve-files
+
+      - name: Setup RyzenAI Serve for testing
+        shell: PowerShell
+        run: |
+          Write-Host "Setting up ryzenai-serve from artifact..." -ForegroundColor Cyan
+          
+          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
+          $ryzenaiDir = Join-Path $installPath "bin\ryzenai-serve"
+          
+          # Create ryzenai-serve directory
+          New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
+          
+          # Copy all files from artifact to ryzenai-serve directory
+          Write-Host "Copying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
+          Copy-Item -Path "ryzenai-serve-files\*" -Destination $ryzenaiDir -Recurse -Force
+          
+          # Verify ryzenai-serve.exe exists
+          $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-serve.exe"
+          if (Test-Path $ryzenaiExe) {
+              Write-Host "✓ ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
+              
+              # List a few files to confirm
+              $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
+              Write-Host "✓ Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
+          } else {
+              Write-Host "ERROR: ryzenai-serve.exe not found!" -ForegroundColor Red
+              Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
+              Get-ChildItem $ryzenaiDir | Format-Table Name, Length
+              exit 1
+          }
 
       - name: Verify Installation
         shell: PowerShell
@@ -488,7 +526,7 @@ jobs:
               }
               
               $attempt++
-              Write-Host "Attempt $attempt/$maxAttempts: Server not ready yet, waiting..." -ForegroundColor Yellow
+              Write-Host "Attempt $attempt of ${maxAttempts}: Server not ready yet, waiting..." -ForegroundColor Yellow
               Start-Sleep -Seconds 10
           }
           
