@@ -137,7 +137,7 @@ void RyzenAIServer::download_and_install() {
     // 2. Find a recent "C++ Server Build, Test, and Release" workflow run
     // 3. Click on it, find the "ryzenai-serve" artifact
     // 4. The artifact ID is in the URL: .../artifacts/{artifact_id}
-    std::string artifact_id = "4397163288";
+    std::string artifact_id = "4397765008";
     std::string repo = "lemonade-sdk/lemonade";
     std::string url = "https://api.github.com/repos/" + repo + "/actions/artifacts/" + artifact_id + "/zip";
     std::string filename = "ryzenai-serve.zip";
@@ -164,41 +164,12 @@ void RyzenAIServer::download_and_install() {
     headers["X-GitHub-Api-Version"] = "2022-11-28";
     
     // Download the ZIP file with throttled progress updates (once per second)
-    auto last_print_time = std::make_shared<std::chrono::steady_clock::time_point>(
-        std::chrono::steady_clock::now());
-    auto printed_final = std::make_shared<bool>(false);
-    
-    bool download_success = utils::HttpClient::download_file(url, zip_path,
-        [last_print_time, printed_final](size_t current, size_t total) {
-            if (total > 0) {
-                auto now = std::chrono::steady_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - *last_print_time);
-                
-                bool is_complete = (current >= total);
-                
-                // Skip if we've already printed the final progress
-                if (is_complete && *printed_final) {
-                    return;
-                }
-                
-                // Print if it's been more than 1 second, or if download just completed
-                if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
-                    int percent = static_cast<int>((current * 100) / total);
-                    double mb_current = current / (1024.0 * 1024.0);
-                    double mb_total = total / (1024.0 * 1024.0);
-                    std::cout << "\r  Progress: " << percent << "% (" 
-                             << std::fixed << std::setprecision(1) 
-                             << mb_current << "/" << mb_total << " MB)" << std::flush;
-                    *last_print_time = now;
-                    
-                    if (is_complete) {
-                        *printed_final = true;
-                    }
-                }
-            }
-        },
-        headers);
+    bool download_success = utils::HttpClient::download_file(
+        url, 
+        zip_path,
+        utils::create_throttled_progress_callback(),
+        headers
+    );
     
     if (!download_success) {
         std::cerr << "\n[RyzenAI-Serve ERROR] Failed to download ryzenai-serve artifact" << std::endl;

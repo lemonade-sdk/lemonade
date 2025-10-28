@@ -3,10 +3,11 @@
 // State variables for model management
 let currentLoadedModel = null;
 let installedModels = new Set(); // Track which models are actually installed
-let activeDownloads = new Set(); // Track models currently being downloaded
+let activeOperations = new Set(); // Track models currently being downloaded or loaded
 
-// Make installedModels accessible globally for the chat dropdown
+// Make installedModels and activeOperations accessible globally
 window.installedModels = installedModels;
+window.activeOperations = activeOperations;
 let currentCategory = 'hot';
 let currentFilter = null;
 
@@ -468,7 +469,7 @@ async function installModel(modelId) {
     }
     
     // Track this download as active
-    activeDownloads.add(modelId);
+    activeOperations.add(modelId);
     
     try {
         const modelData = window.SERVER_MODELS[modelId];
@@ -478,8 +479,8 @@ async function installModel(modelId) {
             body: JSON.stringify({ model_name: modelId, ...modelData })
         });
         
-        // Download complete - remove from active downloads
-        activeDownloads.delete(modelId);
+        // Download complete - remove from active operations
+        activeOperations.delete(modelId);
         
         // Refresh installed models and model status
         await fetchInstalledModels();
@@ -498,8 +499,8 @@ async function installModel(modelId) {
         console.error('Error installing model:', error);
         showErrorBanner('Failed to install model: ' + error.message);
         
-        // Remove from active downloads on error too
-        activeDownloads.delete(modelId);
+        // Remove from active operations on error too
+        activeOperations.delete(modelId);
         
         // Reset button state on error
         if (installBtn) {
@@ -682,9 +683,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     function startPolling() {
         if (!pollInterval) {
             pollInterval = setInterval(async () => {
-                // Only update if page is visible AND no active downloads
-                // Skip polling during downloads to prevent false positives
-                if (document.visibilityState === 'visible' && activeDownloads.size === 0) {
+                // Only update if page is visible AND no active operations
+                // Skip polling during downloads/loads to prevent false positives
+                if (document.visibilityState === 'visible' && activeOperations.size === 0) {
                     await updateModelStatusIndicator();
                 }
             }, 15000); // Check every 15 seconds
@@ -754,7 +755,7 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                 btn.classList.add('installing-btn');
                 
                 // Track this download as active
-                activeDownloads.add(mid);
+                activeOperations.add(mid);
                 
                 try {
                     await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
@@ -763,8 +764,8 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                         body: JSON.stringify({ model_name: mid })
                     });
                     
-                    // Download complete - remove from active downloads
-                    activeDownloads.delete(mid);
+                    // Download complete - remove from active operations
+                    activeOperations.delete(mid);
                     
                     await refreshModelMgmtUI();
                     // Update chat dropdown too if loadModels function exists
@@ -776,8 +777,8 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                     btn.disabled = false;
                     showErrorBanner(`Failed to install model: ${e.message}`);
                     
-                    // Remove from active downloads on error too
-                    activeDownloads.delete(mid);
+                    // Remove from active operations on error too
+                    activeOperations.delete(mid);
                 }
             };
             tdBtn.appendChild(btn);

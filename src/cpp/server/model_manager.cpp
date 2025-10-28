@@ -959,41 +959,11 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             
             std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
             
-            // Track progress state for this specific download (not shared across files)
-            auto last_print_time = std::make_shared<std::chrono::steady_clock::time_point>(std::chrono::steady_clock::now());
-            auto printed_final = std::make_shared<bool>(false);
-            
+            // Download with throttled progress updates (once per second)
             bool success = HttpClient::download_file(
                 file_url,
                 output_path,
-                [last_print_time, printed_final](size_t downloaded, size_t total) {
-                    if (total > 0) {
-                        auto now = std::chrono::steady_clock::now();
-                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *last_print_time);
-                        
-                        bool is_complete = (downloaded >= total);
-                        
-                        // Skip if we've already printed the final progress
-                        if (is_complete && *printed_final) {
-                            return;
-                        }
-                        
-                        // Print if it's been more than 1 second, or if download just completed
-                        if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
-                            int percent = (downloaded * 100) / total;
-                            double mb_downloaded = downloaded / (1024.0 * 1024.0);
-                            double mb_total = total / (1024.0 * 1024.0);
-                            std::cout << "\r  Progress: " << percent << "% (" 
-                                     << std::fixed << std::setprecision(1) 
-                                     << mb_downloaded << "/" << mb_total << " MB)" << std::flush;
-                            *last_print_time = now;
-                            
-                            if (is_complete) {
-                                *printed_final = true;
-                            }
-                        }
-                    }
-                },
+                utils::create_throttled_progress_callback(),
                 headers
             );
             

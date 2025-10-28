@@ -647,25 +647,13 @@ jobs:
           
           Write-Host "Running FLM tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag - conda run must properly propagate exit codes
-          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $routerExe
-          
-          # Capture the exit code immediately
-          $testExitCode = $LASTEXITCODE
-          
-          Write-Host "" # Blank line for readability
-          
-          if ($testExitCode -ne 0) { 
-              Write-Host "========================================" -ForegroundColor Red
-              Write-Host "ERROR: FLM tests FAILED!" -ForegroundColor Red
-              Write-Host "Exit code: $testExitCode" -ForegroundColor Red
-              Write-Host "========================================" -ForegroundColor Red
-              exit $testExitCode
+          conda run -p .\test-env python test/server_flm.py --server-binary $routerExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
           }
           
-          Write-Host "========================================" -ForegroundColor Green
           Write-Host "FLM tests PASSED!" -ForegroundColor Green
-          Write-Host "========================================" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -732,25 +720,13 @@ jobs:
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag - conda run must properly propagate exit codes
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
-          
-          # Capture the exit code immediately
-          $testExitCode = $LASTEXITCODE
-          
-          Write-Host "" # Blank line for readability
-          
-          if ($testExitCode -ne 0) { 
-              Write-Host "========================================" -ForegroundColor Red
-              Write-Host "ERROR: Llamacpp Vulkan tests FAILED!" -ForegroundColor Red
-              Write-Host "Exit code: $testExitCode" -ForegroundColor Red
-              Write-Host "========================================" -ForegroundColor Red
-              exit $testExitCode
+          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
           }
           
-          Write-Host "========================================" -ForegroundColor Green
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
-          Write-Host "========================================" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -817,25 +793,13 @@ jobs:
           
           Write-Host "Running Llamacpp ROCm tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag - conda run must properly propagate exit codes
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
-          
-          # Capture the exit code immediately
-          $testExitCode = $LASTEXITCODE
-          
-          Write-Host "" # Blank line for readability
-          
-          if ($testExitCode -ne 0) { 
-              Write-Host "========================================" -ForegroundColor Red
-              Write-Host "ERROR: Llamacpp ROCm tests FAILED!" -ForegroundColor Red
-              Write-Host "Exit code: $testExitCode" -ForegroundColor Red
-              Write-Host "========================================" -ForegroundColor Red
-              exit $testExitCode
+          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
           }
           
-          Write-Host "========================================" -ForegroundColor Green
           Write-Host "Llamacpp ROCm tests PASSED!" -ForegroundColor Green
-          Write-Host "========================================" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -902,25 +866,13 @@ jobs:
           
           Write-Host "Running general server tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag - conda run must be told to fail on non-zero exit
-          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $routerExe
-          
-          # Capture the exit code immediately
-          $testExitCode = $LASTEXITCODE
-          
-          Write-Host "" # Blank line for readability
-          
-          if ($testExitCode -ne 0) { 
-              Write-Host "========================================" -ForegroundColor Red
-              Write-Host "ERROR: General server tests FAILED!" -ForegroundColor Red
-              Write-Host "Exit code: $testExitCode" -ForegroundColor Red
-              Write-Host "========================================" -ForegroundColor Red
-              exit $testExitCode
+          conda run -p .\test-env python test/server.py --server-binary $routerExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
           }
           
-          Write-Host "========================================" -ForegroundColor Green
           Write-Host "General server tests PASSED!" -ForegroundColor Green
-          Write-Host "========================================" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
