@@ -49,6 +49,7 @@ setup(
         "sentencepiece",
         "huggingface-hub[hf_xet]==0.33.0",
         "python-dotenv",
+        "python-multipart",
         # macOS-specific dependencies
         "rumps>=0.4.0; sys_platform == 'darwin'",
     ],
