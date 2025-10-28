@@ -22,6 +22,9 @@ jobs:
     runs-on: [rai-160-sdk, Windows]
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
 
       - name: Install CMake if not available
         shell: PowerShell
@@ -144,6 +147,9 @@ jobs:
     runs-on: [rai-160-sdk, Windows]
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
 
       - name: Install CMake if not available
         shell: PowerShell
