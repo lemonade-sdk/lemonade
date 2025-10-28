@@ -472,15 +472,27 @@ bool SystemInfo::is_ryzenai_serve_available() {
     GetModuleFileNameA(NULL, exe_path, MAX_PATH);
     fs::path exe_dir = fs::path(exe_path).parent_path();
     
-    // Check relative path: from executable to ../../../ryzenai-serve/build/bin/Release
+    // Check relative path: from executable to ../../../ryzenai-serve/build/bin/Release (source tree)
     fs::path relative_path = exe_dir / ".." / ".." / ".." / "ryzenai-serve" / "build" / "bin" / "Release" / exe_name;
     if (fs::exists(relative_path)) {
+        return true;
+    }
+    
+    // Check installed location next to lemonade binary
+    fs::path install_path = exe_dir / "ryzenai-serve" / exe_name;
+    if (fs::exists(install_path)) {
         return true;
     }
     #else
     // For Linux/macOS
     fs::path relative_path = fs::path("../../../ryzenai-serve/build/bin/Release") / exe_name;
     if (fs::exists(relative_path)) {
+        return true;
+    }
+    
+    // Check installed location
+    fs::path install_path = fs::path("ryzenai-serve") / exe_name;
+    if (fs::exists(install_path)) {
         return true;
     }
     #endif

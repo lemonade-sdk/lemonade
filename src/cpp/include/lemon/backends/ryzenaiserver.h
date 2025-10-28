@@ -51,6 +51,9 @@ private:
     std::string execution_mode_; // "auto", "npu", or "hybrid"
     bool is_loaded_;
     
+    // Helper to download and install ryzenai-serve
+    static void download_and_install();
+    
     // Helper to determine best execution mode based on model
     std::string determine_execution_mode(const std::string& model_path,
                                         const std::string& backend);

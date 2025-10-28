@@ -4,10 +4,17 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include <iostream>
+#include <iomanip>
+#include <fstream>
 #include <thread>
 #include <chrono>
 #include <filesystem>
 #include <cstdlib>
+#include <map>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -31,16 +38,17 @@ RyzenAIServer::~RyzenAIServer() {
 }
 
 void RyzenAIServer::install(const std::string& backend) {
-    std::cout << "[RyzenAI-Serve] Installation Instructions:" << std::endl;
-    std::cout << "[RyzenAI-Serve] RyzenAI-Serve must be built from source." << std::endl;
-    std::cout << "[RyzenAI-Serve] Please follow the build instructions at:" << std::endl;
-    std::cout << "[RyzenAI-Serve] https://github.com/amd/ryzenai-serve" << std::endl;
-    std::cout << "[RyzenAI-Serve] After building, ensure ryzenai-serve.exe is in your PATH" << std::endl;
-    std::cout << "[RyzenAI-Serve] or place it in the lemonade installation directory." << std::endl;
-    
-    if (!is_available()) {
-        throw std::runtime_error("RyzenAI-Serve not found. Please install it first.");
+    // Check if already installed
+    std::string path = get_ryzenai_serve_path();
+    if (!path.empty()) {
+        std::cout << "[RyzenAI-Serve] Found existing installation at: " << path << std::endl;
+        return;
     }
+    
+    std::cout << "[RyzenAI-Serve] ryzenai-serve not found, downloading..." << std::endl;
+    
+    // Download and install ryzenai-serve
+    download_and_install();
 }
 
 bool RyzenAIServer::is_available() {
@@ -49,15 +57,13 @@ bool RyzenAIServer::is_available() {
 }
 
 std::string RyzenAIServer::get_ryzenai_serve_path() {
-    // Check in PATH
 #ifdef _WIN32
     std::string exe_name = "ryzenai-serve.exe";
 #else
     std::string exe_name = "ryzenai-serve";
 #endif
     
-    // Check if executable exists in PATH
-    // Simple check: try to find it using 'where' on Windows or 'which' on Unix
+    // 1. Check in PATH first (highest priority)
 #ifdef _WIN32
     std::string check_cmd = "where " + exe_name + " >nul 2>&1";
 #else
@@ -68,14 +74,217 @@ std::string RyzenAIServer::get_ryzenai_serve_path() {
         return exe_name;
     }
     
-    // Check in common locations relative to lemonade executable
-    // From executable location to src/ryzenai-serve/build/bin/Release
+    // 2. Check in source tree location (for developers)
+    // From executable location to ../../../ryzenai-serve/build/bin/Release
     std::string relative_path = utils::get_resource_path("../../../ryzenai-serve/build/bin/Release/" + exe_name);
     if (fs::exists(relative_path)) {
         return fs::absolute(relative_path).string();
     }
     
+    // 3. Check in downloaded/installed location next to lemonade binary
+    // This is where download_and_install() will place it
+    std::string install_path = utils::get_resource_path("ryzenai-serve/" + exe_name);
+    if (fs::exists(install_path)) {
+        return fs::absolute(install_path).string();
+    }
+    
     return ""; // Not found
+}
+
+// Helper function to extract ZIP files
+static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
+#ifdef _WIN32
+    std::cout << "[RyzenAI-Serve] Extracting ZIP to " << dest_dir << std::endl;
+    
+    // Use PowerShell to extract with error handling
+    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
+                         zip_path + "' -DestinationPath '" + dest_dir + 
+                         "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
+    
+    int result = system(command.c_str());
+    if (result != 0) {
+        std::cerr << "[RyzenAI-Serve] PowerShell extraction failed with code: " << result << std::endl;
+        return false;
+    }
+    return true;
+#else
+    std::cout << "[RyzenAI-Serve] Extracting ZIP to " << dest_dir << std::endl;
+    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
+    int result = system(command.c_str());
+    return result == 0;
+#endif
+}
+
+void RyzenAIServer::download_and_install() {
+    std::cout << "[RyzenAI-Serve] Downloading ryzenai-serve..." << std::endl;
+    
+    // Download from GitHub Actions artifact
+    // This requires GITHUB_TOKEN environment variable for authentication
+    const char* github_token = std::getenv("GITHUB_TOKEN");
+    if (!github_token) {
+        std::cerr << "\n[RyzenAI-Serve ERROR] GITHUB_TOKEN environment variable not set!" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] Downloading artifacts requires GitHub authentication." << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] Please set GITHUB_TOKEN with a personal access token." << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] You can create one at: https://github.com/settings/tokens" << std::endl;
+        throw std::runtime_error("GITHUB_TOKEN not set - required for artifact download");
+    }
+    
+    // GitHub API URL for artifact download
+    // Format: https://api.github.com/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip
+    // 
+    // NOTE: Artifacts expire after 90 days. To update:
+    // 1. Go to https://github.com/lemonade-sdk/lemonade/actions
+    // 2. Find a recent "C++ Server Build, Test, and Release" workflow run
+    // 3. Click on it, find the "ryzenai-serve" artifact
+    // 4. The artifact ID is in the URL: .../artifacts/{artifact_id}
+    std::string artifact_id = "4397163288";
+    std::string repo = "lemonade-sdk/lemonade";
+    std::string url = "https://api.github.com/repos/" + repo + "/actions/artifacts/" + artifact_id + "/zip";
+    std::string filename = "ryzenai-serve.zip";
+    
+    // Determine install directory (next to lemonade-router.exe)
+#ifdef _WIN32
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+#else
+    fs::path exe_dir = fs::current_path();
+#endif
+    
+    fs::path install_dir = exe_dir / "ryzenai-serve";
+    std::string zip_path = (exe_dir / filename).string();
+    
+    std::cout << "[RyzenAI-Serve] Downloading from GitHub Actions artifact..." << std::endl;
+    std::cout << "[RyzenAI-Serve] Installing to: " << install_dir.string() << std::endl;
+    
+    // Prepare authentication headers for GitHub API
+    std::map<std::string, std::string> headers;
+    headers["Authorization"] = std::string("Bearer ") + github_token;
+    headers["Accept"] = "application/vnd.github+json";
+    headers["X-GitHub-Api-Version"] = "2022-11-28";
+    
+    // Download the ZIP file with throttled progress updates (once per second)
+    auto last_print_time = std::make_shared<std::chrono::steady_clock::time_point>(
+        std::chrono::steady_clock::now());
+    auto printed_final = std::make_shared<bool>(false);
+    
+    bool download_success = utils::HttpClient::download_file(url, zip_path,
+        [last_print_time, printed_final](size_t current, size_t total) {
+            if (total > 0) {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - *last_print_time);
+                
+                bool is_complete = (current >= total);
+                
+                // Skip if we've already printed the final progress
+                if (is_complete && *printed_final) {
+                    return;
+                }
+                
+                // Print if it's been more than 1 second, or if download just completed
+                if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
+                    int percent = static_cast<int>((current * 100) / total);
+                    double mb_current = current / (1024.0 * 1024.0);
+                    double mb_total = total / (1024.0 * 1024.0);
+                    std::cout << "\r  Progress: " << percent << "% (" 
+                             << std::fixed << std::setprecision(1) 
+                             << mb_current << "/" << mb_total << " MB)" << std::flush;
+                    *last_print_time = now;
+                    
+                    if (is_complete) {
+                        *printed_final = true;
+                    }
+                }
+            }
+        },
+        headers);
+    
+    if (!download_success) {
+        std::cerr << "\n[RyzenAI-Serve ERROR] Failed to download ryzenai-serve artifact" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] Possible causes:" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR]   - Invalid or expired GITHUB_TOKEN" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR]   - Artifact ID " << artifact_id << " no longer exists (artifacts expire after 90 days)" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR]   - No internet connection or GitHub is down" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] Get the latest artifact ID from: https://github.com/lemonade-sdk/lemonade/actions" << std::endl;
+        throw std::runtime_error("Failed to download ryzenai-serve artifact");
+    }
+    
+    std::cout << std::endl << "[RyzenAI-Serve] Download complete!" << std::endl;
+    
+    // Verify the downloaded file exists and is valid
+    if (!fs::exists(zip_path)) {
+        throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
+    }
+    
+    std::uintmax_t file_size = fs::file_size(zip_path);
+    std::cout << "[RyzenAI-Serve] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
+    
+    const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
+    if (file_size < MIN_ZIP_SIZE) {
+        std::cerr << "[RyzenAI-Serve ERROR] Downloaded file is too small (" << file_size << " bytes)" << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] This usually indicates a failed or incomplete download." << std::endl;
+        fs::remove(zip_path);
+        throw std::runtime_error("Downloaded file is too small (< 1 MB), likely corrupted or incomplete");
+    }
+    
+    // Create install directory
+    fs::create_directories(install_dir);
+    
+    // Extract ZIP
+    if (!extract_zip(zip_path, install_dir.string())) {
+        // Clean up corrupted files
+        fs::remove(zip_path);
+        fs::remove_all(install_dir);
+        throw std::runtime_error("Failed to extract ryzenai-serve archive");
+    }
+    
+    // Debug: List what was extracted
+    std::cout << "[RyzenAI-Serve DEBUG] Contents of extracted directory:" << std::endl;
+    try {
+        int file_count = 0;
+        for (const auto& entry : fs::directory_iterator(install_dir)) {
+            std::cout << "  - " << entry.path().filename().string() << std::endl;
+            file_count++;
+            if (file_count > 20) {
+                std::cout << "  ... (and more files)" << std::endl;
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[RyzenAI-Serve ERROR] Failed to list directory: " << e.what() << std::endl;
+    }
+    
+    // Verify extraction succeeded by checking if executable exists
+#ifdef _WIN32
+    std::string exe_name = "ryzenai-serve.exe";
+#else
+    std::string exe_name = "ryzenai-serve";
+#endif
+    
+    fs::path exe_path_check = install_dir / exe_name;
+    std::cout << "[RyzenAI-Serve DEBUG] Looking for executable at: " << exe_path_check << std::endl;
+    
+    if (!fs::exists(exe_path_check)) {
+        std::cerr << "[RyzenAI-Serve ERROR] Extraction completed but executable not found at: " 
+                  << exe_path_check << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] This usually indicates the ZIP structure is different than expected." << std::endl;
+        std::cerr << "[RyzenAI-Serve ERROR] Check the extracted files above for the correct location." << std::endl;
+        // Don't clean up yet - let user inspect the directory
+        throw std::runtime_error("Extraction failed: executable not found in expected location.");
+    }
+    
+    std::cout << "[RyzenAI-Serve] Executable verified at: " << exe_path_check << std::endl;
+    
+#ifndef _WIN32
+    // Make executable on Linux/macOS
+    chmod(exe_path_check.c_str(), 0755);
+#endif
+    
+    // Delete ZIP file
+    fs::remove(zip_path);
+    
+    std::cout << "[RyzenAI-Serve] Installation complete!" << std::endl;
 }
 
 std::string RyzenAIServer::download_model(const std::string& checkpoint,
@@ -113,12 +322,14 @@ void RyzenAIServer::load(const std::string& model_name,
                         const std::vector<std::string>& labels) {
     std::cout << "[RyzenAI-Serve] Loading model: " << model_name << std::endl;
     
-    // Check if RyzenAI-Serve is available
+    // Install/check RyzenAI-Serve (will download if not found)
+    install();
+    
+    // Get the path to ryzenai-serve
     std::string ryzenai_serve_path = get_ryzenai_serve_path();
     if (ryzenai_serve_path.empty()) {
-        std::cerr << "[RyzenAI-Serve ERROR] ryzenai-serve.exe not found in PATH" << std::endl;
-        std::cerr << "[RyzenAI-Serve ERROR] Please build from source or ensure it's in your PATH" << std::endl;
-        throw std::runtime_error("RyzenAI-Serve executable not found");
+        // This shouldn't happen after install(), but check anyway
+        throw std::runtime_error("RyzenAI-Serve executable not found even after installation attempt");
     }
     
     std::cout << "[RyzenAI-Serve] Found ryzenai-serve at: " << ryzenai_serve_path << std::endl;

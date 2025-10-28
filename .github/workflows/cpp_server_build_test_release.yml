@@ -228,37 +228,29 @@ jobs:
           
           Write-Host "ryzenai-serve build successful!" -ForegroundColor Green
 
-      - name: Package RyzenAI Serve Release
+      - name: Verify RyzenAI Serve build
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           
-          # Use absolute path to repository root
-          $repoRoot = "$env:GITHUB_WORKSPACE"
-          $releaseDir = Join-Path $repoRoot "src\ryzenai-serve\build\bin\Release"
-          $zipPath = Join-Path $repoRoot "ryzenai-serve.zip"
+          $releaseDir = "src\ryzenai-serve\build\bin\Release"
           
-          Write-Host "Creating ryzenai-serve.zip with all dependencies..." -ForegroundColor Cyan
-          Write-Host "Release directory: $releaseDir" -ForegroundColor Gray
-          Write-Host "Zip path: $zipPath" -ForegroundColor Gray
+          Write-Host "Verifying ryzenai-serve build output..." -ForegroundColor Cyan
           
-          # Create zip from release directory
-          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath -Force
-          
-          # Verify zip was created
-          if (-not (Test-Path $zipPath)) {
-              Write-Host "ERROR: Failed to create ryzenai-serve.zip!" -ForegroundColor Red
+          if (-not (Test-Path "$releaseDir\ryzenai-serve.exe")) {
+              Write-Host "ERROR: ryzenai-serve.exe not found in $releaseDir" -ForegroundColor Red
               exit 1
           }
           
-          $zipSize = (Get-Item $zipPath).Length / 1MB
-          Write-Host "Package created successfully! Size: $([math]::Round($zipSize, 2)) MB" -ForegroundColor Green
+          $fileCount = (Get-ChildItem $releaseDir -File | Measure-Object).Count
+          Write-Host "Found $fileCount files in release directory" -ForegroundColor Green
+          Write-Host "Contents will be uploaded as artifact (GitHub will zip automatically)" -ForegroundColor Gray
 
       - name: Upload RyzenAI Serve Package
         uses: actions/upload-artifact@v4
         with:
           name: ryzenai-serve
-          path: ryzenai-serve.zip
+          path: src/ryzenai-serve/build/bin/Release/*
           retention-days: 7
 
   # ========================================================================
@@ -272,6 +264,7 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -606,6 +599,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -653,12 +647,15 @@ jobs:
           
           Write-Host "Running FLM tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag and capture output/exit code
-          conda run -p .\test-env python test/server_flm.py --server-binary $routerExe
+          # Run test with --server-binary flag - conda run must properly propagate exit codes
+          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $routerExe
+          
+          # Capture the exit code immediately
           $testExitCode = $LASTEXITCODE
           
+          Write-Host "" # Blank line for readability
+          
           if ($testExitCode -ne 0) { 
-              Write-Host "" -ForegroundColor Red
               Write-Host "========================================" -ForegroundColor Red
               Write-Host "ERROR: FLM tests FAILED!" -ForegroundColor Red
               Write-Host "Exit code: $testExitCode" -ForegroundColor Red
@@ -666,7 +663,6 @@ jobs:
               exit $testExitCode
           }
           
-          Write-Host "" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
           Write-Host "FLM tests PASSED!" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
@@ -689,6 +685,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -735,12 +732,15 @@ jobs:
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag and capture output/exit code
-          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
+          # Run test with --server-binary flag - conda run must properly propagate exit codes
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
+          
+          # Capture the exit code immediately
           $testExitCode = $LASTEXITCODE
           
+          Write-Host "" # Blank line for readability
+          
           if ($testExitCode -ne 0) { 
-              Write-Host "" -ForegroundColor Red
               Write-Host "========================================" -ForegroundColor Red
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED!" -ForegroundColor Red
               Write-Host "Exit code: $testExitCode" -ForegroundColor Red
@@ -748,7 +748,6 @@ jobs:
               exit $testExitCode
           }
           
-          Write-Host "" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
@@ -771,6 +770,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -817,12 +817,15 @@ jobs:
           
           Write-Host "Running Llamacpp ROCm tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag and capture output/exit code
-          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
+          # Run test with --server-binary flag - conda run must properly propagate exit codes
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
+          
+          # Capture the exit code immediately
           $testExitCode = $LASTEXITCODE
           
+          Write-Host "" # Blank line for readability
+          
           if ($testExitCode -ne 0) { 
-              Write-Host "" -ForegroundColor Red
               Write-Host "========================================" -ForegroundColor Red
               Write-Host "ERROR: Llamacpp ROCm tests FAILED!" -ForegroundColor Red
               Write-Host "Exit code: $testExitCode" -ForegroundColor Red
@@ -830,7 +833,6 @@ jobs:
               exit $testExitCode
           }
           
-          Write-Host "" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
           Write-Host "Llamacpp ROCm tests PASSED!" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
@@ -853,6 +855,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -899,12 +902,15 @@ jobs:
           
           Write-Host "Running general server tests with C++ server binary: $routerExe" -ForegroundColor Cyan
           
-          # Run test with --server-binary flag and capture output/exit code
-          conda run -p .\test-env python test/server.py --server-binary $routerExe
+          # Run test with --server-binary flag - conda run must be told to fail on non-zero exit
+          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $routerExe
+          
+          # Capture the exit code immediately
           $testExitCode = $LASTEXITCODE
           
+          Write-Host "" # Blank line for readability
+          
           if ($testExitCode -ne 0) { 
-              Write-Host "" -ForegroundColor Red
               Write-Host "========================================" -ForegroundColor Red
               Write-Host "ERROR: General server tests FAILED!" -ForegroundColor Red
               Write-Host "Exit code: $testExitCode" -ForegroundColor Red
@@ -912,7 +918,6 @@ jobs:
               exit $testExitCode
           }
           
-          Write-Host "" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
           Write-Host "General server tests PASSED!" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Green
@@ -954,7 +959,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ryzenai-serve
-          path: .
+          path: ryzenai-serve-files
+
+      - name: Create ryzenai-serve.zip for release
+        run: |
+          cd ryzenai-serve-files
+          zip -r ../ryzenai-serve.zip *
+          cd ..
+          ls -lh ryzenai-serve.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
