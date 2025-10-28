@@ -341,11 +341,11 @@ jobs:
           # Verify ryzenai-serve.exe exists
           $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-serve.exe"
           if (Test-Path $ryzenaiExe) {
-              Write-Host "✓ ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
+              Write-Host "[OK] ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
               
               # List a few files to confirm
               $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
-              Write-Host "✓ Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
+              Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
           } else {
               Write-Host "ERROR: ryzenai-serve.exe not found!" -ForegroundColor Red
               Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
@@ -558,7 +558,7 @@ jobs:
               $response = Invoke-WebRequest -Uri http://localhost:8000/api/v1/health -UseBasicParsing
               
               if ($response.StatusCode -eq 200) {
-                  Write-Host "✓ /health status code is 200" -ForegroundColor Green
+                  Write-Host "[OK] /health status code is 200" -ForegroundColor Green
               } else {
                   Write-Host "ERROR: /health status code is $($response.StatusCode)" -ForegroundColor Red
                   Show-ServerDiagnostics -context "Health Check Failed" -serverProcess $serverProcess
@@ -567,7 +567,7 @@ jobs:
               
               $jsonContent = $response.Content | ConvertFrom-Json
               if ($jsonContent) {
-                  Write-Host "✓ /health JSON content: $($jsonContent | ConvertTo-Json -Compress)" -ForegroundColor Green
+                  Write-Host "[OK] /health JSON content: $($jsonContent | ConvertTo-Json -Compress)" -ForegroundColor Green
               } else {
                   Write-Host "ERROR: /health JSON content is empty" -ForegroundColor Red
                   Show-ServerDiagnostics -context "Health JSON Empty" -serverProcess $serverProcess
@@ -599,7 +599,7 @@ jobs:
                   }'
               
               if ($response.StatusCode -eq 200) {
-                  Write-Host "✓ /chat/completions status code is 200" -ForegroundColor Green
+                  Write-Host "[OK] /chat/completions status code is 200" -ForegroundColor Green
               } else {
                   Write-Host "ERROR: /chat/completions status code is $($response.StatusCode)" -ForegroundColor Red
                   Show-ServerDiagnostics -context "Completions HTTP Error" -serverProcess $serverProcess
@@ -609,7 +609,7 @@ jobs:
               $jsonContent = $response.Content | ConvertFrom-Json
               $llmAnswer = $jsonContent.choices[0].message.content
               if ($llmAnswer) {
-                  Write-Host "✓ /chat/completions JSON content is not empty: $llmAnswer" -ForegroundColor Green
+                  Write-Host "[OK] /chat/completions JSON content is not empty: $llmAnswer" -ForegroundColor Green
               } else {
                   Write-Host "ERROR: /chat/completions JSON content is empty" -ForegroundColor Red
                   Show-ServerDiagnostics -context "Completions JSON Empty" -serverProcess $serverProcess
