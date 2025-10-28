@@ -42,8 +42,12 @@ jobs:
               # Install CMake silently
               Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
               
-              # Add CMake to PATH for this session
-              $env:PATH = "C:\Program Files\CMake\bin;$env:PATH"
+              # Add CMake to PATH for this session AND future steps
+              $cmakePath = "C:\Program Files\CMake\bin"
+              $env:PATH = "$cmakePath;$env:PATH"
+              
+              # Persist to GITHUB_PATH for future steps
+              echo $cmakePath >> $env:GITHUB_PATH
               
               # Verify installation
               cmake --version
@@ -52,7 +56,7 @@ jobs:
                   exit 1
               }
               
-              Write-Host "CMake installed successfully!" -ForegroundColor Green
+              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
           } else {
               Write-Host "CMake is already installed:" -ForegroundColor Green
               cmake --version
@@ -160,8 +164,12 @@ jobs:
               # Install CMake silently
               Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
               
-              # Add CMake to PATH for this session
-              $env:PATH = "C:\Program Files\CMake\bin;$env:PATH"
+              # Add CMake to PATH for this session AND future steps
+              $cmakePath = "C:\Program Files\CMake\bin"
+              $env:PATH = "$cmakePath;$env:PATH"
+              
+              # Persist to GITHUB_PATH for future steps
+              echo $cmakePath >> $env:GITHUB_PATH
               
               # Verify installation
               cmake --version
@@ -170,7 +178,7 @@ jobs:
                   exit 1
               }
               
-              Write-Host "CMake installed successfully!" -ForegroundColor Green
+              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
           } else {
               Write-Host "CMake is already installed:" -ForegroundColor Green
               cmake --version
