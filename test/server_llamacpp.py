@@ -67,6 +67,10 @@ class LlamaCppTesting(ServerTestingBase):
         if self.llamacpp_backend != "rocm":
             return
 
+        # Skip when testing C++ server (this is Python-specific functionality)
+        if is_cpp_server():
+            self.skipTest("Skipping Python-specific test when using C++ server")
+
         # FIXME: Our HIP ID detection works in most machines, but seems to specifically fail on
         # our CI Linux machines. We should investigate why this is happening.
         # https://github.com/lemonade-sdk/lemonade/issues/272
