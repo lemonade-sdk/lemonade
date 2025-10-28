@@ -242,15 +242,24 @@ jobs:
               exit 1
           }
           
+          Write-Host "`nListing all files that will be uploaded:" -ForegroundColor Cyan
+          Get-ChildItem $releaseDir -File | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
+          }
+          
           $fileCount = (Get-ChildItem $releaseDir -File | Measure-Object).Count
-          Write-Host "Found $fileCount files in release directory" -ForegroundColor Green
+          Write-Host "`nFound $fileCount files in release directory" -ForegroundColor Green
           Write-Host "Contents will be uploaded as artifact (GitHub will zip automatically)" -ForegroundColor Gray
 
       - name: Upload RyzenAI Serve Package
         uses: actions/upload-artifact@v4
         with:
           name: ryzenai-serve
-          path: src/ryzenai-serve/build/bin/Release/*
+          path: |
+            src/ryzenai-serve/build/bin/Release/*.exe
+            src/ryzenai-serve/build/bin/Release/*.dll
+            src/ryzenai-serve/build/bin/Release/*.pdb
           retention-days: 7
 
   # ========================================================================
@@ -259,7 +268,7 @@ jobs:
 
   test-installer-basic:
     name: Test Installer - Basic Functionality
-    runs-on: [stx-halo, Windows]
+    runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
       - build-ryzenai-serve
@@ -312,6 +321,13 @@ jobs:
         run: |
           Write-Host "Setting up ryzenai-serve from artifact..." -ForegroundColor Cyan
           
+          # First, check what we downloaded
+          Write-Host "`nContents of downloaded artifact:" -ForegroundColor Yellow
+          Get-ChildItem "ryzenai-serve-files" -File | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
+          }
+          
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
           $ryzenaiDir = Join-Path $installPath "bin\ryzenai-serve"
           
@@ -319,7 +335,7 @@ jobs:
           New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
           
           # Copy all files from artifact to ryzenai-serve directory
-          Write-Host "Copying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
+          Write-Host "`nCopying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
           Copy-Item -Path "ryzenai-serve-files\*" -Destination $ryzenaiDir -Recurse -Force
           
           # Verify ryzenai-serve.exe exists
@@ -631,7 +647,7 @@ jobs:
 
   test-flm-integration:
     name: Test C++ Server with FLM
-    runs-on: [stx-halo, Windows]
+    runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -705,7 +721,7 @@ jobs:
 
   test-llamacpp-vulkan:
     name: Test C++ Server with Llamacpp (Vulkan)
-    runs-on: [stx-halo, Windows]
+    runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -851,7 +867,7 @@ jobs:
 
   test-general-server:
     name: Test C++ Server - General Tests
-    runs-on: [stx-halo, Windows]
+    runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
