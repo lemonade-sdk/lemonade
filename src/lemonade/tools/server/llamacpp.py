@@ -15,6 +15,8 @@ from lemonade.tools.llamacpp.utils import (
     get_llama_server_exe_path,
     install_llamacpp,
     download_gguf,
+    resolve_local_gguf_model,
+    parse_checkpoint,
 )
 from lemonade.tools.server.wrapped_server import WrappedServerTelemetry, WrappedServer
 
@@ -101,8 +103,25 @@ class LlamaServer(WrappedServer):
         self, config_checkpoint, config_mmproj=None, do_not_upgrade=False
     ) -> dict:
         """
-        Download a model for the wrapper server
+        Download a model for the wrapper server.
+        First checks local cache, then downloads from internet if needed.
         """
+        # If it's a direct file path, just return it
+
+        if os.path.exists(config_checkpoint):
+            result = {"variant": config_checkpoint}
+            if config_mmproj:
+                result["mmproj"] = config_mmproj
+            return result
+
+        # Try to resolve from local cache first to avoid unnecessary downloads
+        checkpoint, variant = parse_checkpoint(config_checkpoint)
+        local_result = resolve_local_gguf_model(checkpoint, variant, config_mmproj)
+
+        if local_result:
+            return local_result
+
+        # Not found locally - download from internet
         return download_gguf(
             config_checkpoint=config_checkpoint,
             config_mmproj=config_mmproj,
