@@ -680,7 +680,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub
+          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub numpy
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp Vulkan tests with C++ server
@@ -744,7 +744,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub
+          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub numpy
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp ROCm tests with C++ server
