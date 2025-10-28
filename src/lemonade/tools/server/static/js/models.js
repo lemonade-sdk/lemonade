@@ -538,7 +538,11 @@ async function deleteModel(modelId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_name: modelId })
         });
-        
+        installedModels.delete(modelId);
+        // Remove custom models from SERVER_MODELS to prevent them from reappearing without having to do a manual refresh
+        if (modelId.startsWith('user.')) {
+            delete window.SERVER_MODELS[modelId];
+        }
         // Refresh installed models and model status
         await fetchInstalledModels();
         await updateModelStatusIndicator();
@@ -668,6 +672,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Set up register model form
     setupRegisterModelForm();
+    setupFolderSelection();
     
     // Set up smart periodic refresh to detect external model changes
     // Poll every 15 seconds (much less aggressive than 1 second)
@@ -1011,7 +1016,17 @@ function setupRegisterModelForm() {
             if (!name.startsWith('user.')) {
                 name = 'user.' + name;
             }
-            
+
+            // Check if model name already exists
+            const allModels = window.SERVER_MODELS || {};
+            if (allModels[name] || installedModels.has(name)) {
+                showErrorBanner('Model name already exists. Please enter a different name.');
+                registerStatus.textContent = 'Model name already exists';
+                registerStatus.style.color = '#b10819ff';
+                registerStatus.className = 'register-status error';
+                return;
+            }
+
             const checkpoint = document.getElementById('register-checkpoint').value.trim();
             const recipe = document.getElementById('register-recipe').value;
             const reasoning = document.getElementById('register-reasoning').checked;
@@ -1022,24 +1037,70 @@ function setupRegisterModelForm() {
                 return; 
             }
             
-            const payload = { model_name: name, recipe, reasoning, vision };
-            if (checkpoint) payload.checkpoint = checkpoint;
-            if (mmproj) payload.mmproj = mmproj;
-            
             const btn = document.getElementById('register-submit');
             btn.disabled = true;
             btn.textContent = 'Installing...';
             
             try {
-                await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                if (isLocalModel && selectedModelFiles) {
+                    if (recipe === 'llamacpp' && !Array.from(selectedModelFiles).some(file => file.name.toLowerCase().endsWith('.gguf'))) {
+                        throw new Error('No .gguf files found in the selected folder for llamacpp');
+                    }
+
+                    const formData = new FormData();
+                    formData.append('model_name', name);
+                    formData.append('checkpoint', checkpoint);
+                    formData.append('recipe', recipe);
+                    formData.append('reasoning', reasoning);
+                    formData.append('vision', vision);
+                    if (mmproj) formData.append('mmproj', mmproj);
+                    Array.from(selectedModelFiles).forEach(file => {
+                        formData.append('model_files', file, file.webkitRelativePath);
+                    });
+
+                    await httpRequest(getServerBaseUrl() + '/api/v1/add-local-model', {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
+                else {
+                    if (!checkpoint) {
+                        throw new Error('Checkpoint is required for remote models');
+                    }
+                    const payload = { model_name: name, recipe, reasoning, vision };
+                    if (checkpoint) payload.checkpoint = checkpoint;
+                    if (mmproj) payload.mmproj = mmproj;
+                    
+                    await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
                 registerStatus.textContent = 'Model installed!';
-                registerStatus.style.color = '#27ae60';
+                registerStatus.style.color = '#0eaf51ff';
                 registerStatus.className = 'register-status success';
+
+                // Add custom model to SERVER_MODELS so it appears in the UI without having to do a manual refresh
+                if (name.startsWith('user.')) {
+                    const labels = ['custom'];
+                    if (vision) labels.push('vision');
+                    if (reasoning) labels.push('reasoning');
+
+                    window.SERVER_MODELS[name] = {
+                        recipe: recipe,
+                        labels: labels
+                    };
+                    if (checkpoint) window.SERVER_MODELS[name].checkpoint = checkpoint;
+                    if (mmproj) window.SERVER_MODELS[name].mmproj = mmproj;
+                }
+
                 registerForm.reset();
+                isLocalModel = false;
+                selectedModelFiles = null;
+                document.getElementById('folder-input').value = '';
+
                 await refreshModelMgmtUI();
                 // Update chat dropdown too if loadModels function exists
                 if (typeof loadModels === 'function') {
@@ -1058,6 +1119,278 @@ function setupRegisterModelForm() {
         };
     }
 }
+let isLocalModel = false;
+let selectedModelFiles = null;
+// Helper function to find mmproj file in selected folder
+function findMmprojFile(files) {
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileName = file.name.toLowerCase();
+        const relativePath = file.webkitRelativePath;
+
+        // Check if file contains 'mmproj' and has .gguf extension
+        if (fileName.includes('mmproj') && fileName.endsWith('.gguf')) {
+            // Return just the filename (last part of the path)
+            return relativePath.split('/').pop();
+        }
+    }
+    return null;
+}
+
+// Helper function to find all non-mmproj GGUF files in selected folder
+function findGgufFiles(files) {
+    const ggufFiles = [];
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileName = file.name.toLowerCase();
+        const relativePath = file.webkitRelativePath;
+
+        // Check if file has .gguf extension but is NOT an mmproj file
+        if (fileName.endsWith('.gguf') && !fileName.includes('mmproj')) {
+            // Store just the filename (last part of the path)
+            ggufFiles.push(relativePath.split('/').pop());
+        }
+    }
+    return ggufFiles;
+}
+
+// Helper function to check GGUF files and show appropriate banners
+function checkGgufFilesAndShowBanner(files) {
+    const recipeSelect = document.getElementById('register-recipe');
+
+    // Only check if llamacpp is selected
+    if (!recipeSelect || recipeSelect.value !== 'llamacpp') {
+        return;
+    }
+
+    const mmprojFile = findMmprojFile(files);
+    const ggufFiles = findGgufFiles(files);
+
+    // Hide any existing banners first
+    hideErrorBanner();
+
+    if (ggufFiles.length > 1) {
+        // Multiple GGUF files detected
+        const folderPath = files[0].webkitRelativePath.split('/')[0];
+        let bannerMsg = `More than one variant detected. Please clarify them at the end of the checkpoint name like:\n<folder_name>:<variant>\nExample: ${folderPath}:${ggufFiles[0]}`;
+
+        if (mmprojFile) {
+            bannerMsg += `\n\nDon't forget to enter the mmproj file name and check the 'vision' checkbox if it is a vision model.`;
+        }
+
+        showBanner(bannerMsg, 'warning');
+    } else if (mmprojFile) {
+        // MMproj detected
+        showBanner("MMproj detected and populated. Please validate the file name and check the 'vision' checkbox if it is a vision model.", 'success');
+    }
+}
+// Helper function to auto-fill mmproj field if llamacpp is selected
+function autoFillMmproj() {
+    const recipeSelect = document.getElementById('register-recipe');
+    const mmprojInput = document.getElementById('register-mmproj');
+
+    if (recipeSelect && mmprojInput && isLocalModel && selectedModelFiles) {
+        const selectedRecipe = recipeSelect.value;
+
+        if (selectedRecipe === 'llamacpp') {
+            const mmprojFile = findMmprojFile(selectedModelFiles);
+            if (mmprojFile) {
+                mmprojInput.value = mmprojFile;
+            }
+
+            // Check GGUF files and show appropriate banner
+            checkGgufFilesAndShowBanner(selectedModelFiles);
+        } else {
+            // Hide banners if not llamacpp
+            hideErrorBanner();
+        }
+    }
+}
+function setupFolderSelection() {
+    const selectFolderBtn = document.getElementById('select-folder-btn');
+    const folderInput = document.getElementById('folder-input');
+    const checkpointInput = document.getElementById('register-checkpoint');
+    const recipeSelect = document.getElementById('register-recipe');
+
+    if (selectFolderBtn && folderInput && checkpointInput) {
+        selectFolderBtn.addEventListener('click', () => {
+            folderInput.click();
+        });
+
+        folderInput.addEventListener('change', (event) => {
+            const files = event.target.files;
+            if (files.length > 0) {
+                const firstFile = files[0];
+                const folderPath = firstFile.webkitRelativePath.split('/')[0];
+                checkpointInput.value = folderPath;
+                isLocalModel = true;
+                selectedModelFiles = files;
+
+                // Auto-fill mmproj if llamacpp is already selected
+                autoFillMmproj();
+            }
+            else {
+                isLocalModel = false;
+                selectedModelFiles = null;
+                checkpointInput.value = '';
+                hideErrorBanner();
+            }
+        });
+
+        // Add listener to recipe dropdown to auto-fill mmproj when changed to llamacpp
+        if (recipeSelect) {
+            recipeSelect.addEventListener('change', () => {
+                autoFillMmproj();
+            });
+        }
+    }
+}
+// === Migration/Cleanup Functions ===
+
+// Store incompatible models data globally
+let incompatibleModelsData = null;
+
+// Check for incompatible models on page load
+async function checkIncompatibleModels() {
+    try {
+        const response = await httpJson(getServerBaseUrl() + '/api/v1/migration/incompatible-models');
+        incompatibleModelsData = response;
+
+        if (response.count > 0) {
+            showMigrationBanner(response.count, response.total_size);
+        }
+    } catch (error) {
+        console.error('Error checking for incompatible models:', error);
+    }
+}
+
+// Show migration banner
+function showMigrationBanner(count, totalSize) {
+    const banner = document.getElementById('migration-banner');
+    const msg = document.getElementById('migration-banner-msg');
+
+    const sizeGB = (totalSize / (1024 * 1024 * 1024)).toFixed(1);
+    msg.textContent = `Found ${count} incompatible RyzenAI model${count > 1 ? 's' : ''} (${sizeGB} GB). Clean up to free disk space.`;
+    banner.style.display = 'flex';
+}
+
+// Hide migration banner
+function hideMigrationBanner() {
+    const banner = document.getElementById('migration-banner');
+    banner.style.display = 'none';
+}
+
+// Show migration modal with model list
+function showMigrationModal() {
+    if (!incompatibleModelsData || incompatibleModelsData.count === 0) {
+        return;
+    }
+
+    const modal = document.getElementById('migration-modal');
+    const modelList = document.getElementById('migration-model-list');
+    const totalSize = document.getElementById('migration-total-size');
+
+    // Populate model list
+    modelList.innerHTML = '';
+    incompatibleModelsData.models.forEach(model => {
+        const item = document.createElement('div');
+        item.className = 'migration-model-item';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'migration-model-name';
+        nameSpan.textContent = model.name;
+
+        const sizeSpan = document.createElement('span');
+        sizeSpan.className = 'migration-model-size';
+        sizeSpan.textContent = model.size_formatted;
+
+        item.appendChild(nameSpan);
+        item.appendChild(sizeSpan);
+        modelList.appendChild(item);
+    });
+
+    // Set total size
+    const sizeGB = (incompatibleModelsData.total_size / (1024 * 1024 * 1024)).toFixed(1);
+    totalSize.textContent = `${sizeGB} GB`;
+
+    modal.style.display = 'flex';
+}
+
+// Hide migration modal
+function hideMigrationModal() {
+    const modal = document.getElementById('migration-modal');
+    modal.style.display = 'none';
+}
+
+// Delete incompatible models
+async function deleteIncompatibleModels() {
+    if (!incompatibleModelsData || incompatibleModelsData.count === 0) {
+        return;
+    }
+
+    const modelPaths = incompatibleModelsData.models.map(m => m.path);
+
+    try {
+        // Disable buttons during deletion
+        const deleteBtn = document.querySelector('.delete-btn');
+        const cancelBtn = document.querySelector('.cancel-btn');
+        deleteBtn.disabled = true;
+        cancelBtn.disabled = true;
+        deleteBtn.textContent = 'Deleting...';
+
+        const response = await httpRequest(getServerBaseUrl() + '/api/v1/migration/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_paths: modelPaths })
+        });
+
+        const result = await response.json();
+
+        // Close modal
+        hideMigrationModal();
+
+        // Hide banner
+        hideMigrationBanner();
+
+        // Show success message
+        showSuccessMessage(`Successfully deleted ${result.success_count} model${result.success_count > 1 ? 's' : ''}, freed ${result.freed_size_formatted}`);
+
+        // Clear cached data
+        incompatibleModelsData = null;
+
+    } catch (error) {
+        console.error('Error deleting incompatible models:', error);
+        showErrorBanner('Failed to delete models: ' + error.message);
+
+        // Re-enable buttons
+        const deleteBtn = document.querySelector('.delete-btn');
+        const cancelBtn = document.querySelector('.cancel-btn');
+        deleteBtn.disabled = false;
+        cancelBtn.disabled = false;
+        deleteBtn.textContent = 'Delete All';
+    }
+}
+
+// Show success message (reuse error banner with green color)
+function showSuccessMessage(message) {
+    const banner = document.getElementById('error-banner');
+    const msg = document.getElementById('error-banner-msg');
+    msg.textContent = message;
+    banner.style.backgroundColor = '#2d7f47';
+    banner.style.display = 'flex';
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        banner.style.display = 'none';
+        banner.style.backgroundColor = ''; // Reset to default
+    }, 5000);
+}
+
+// Check for incompatible models when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Run check after a short delay to let the page load
+    setTimeout(checkIncompatibleModels, 1000);
+});
 
 // Make functions globally available for HTML onclick handlers and other components
 window.toggleCategory = toggleCategory;
@@ -1067,3 +1400,7 @@ window.showAddModelForm = showAddModelForm;
 window.unloadModel = unloadModel;
 window.installModel = installModel;
 window.deleteModel = deleteModel;
+window.showMigrationModal = showMigrationModal;
+window.hideMigrationModal = hideMigrationModal;
+window.hideMigrationBanner = hideMigrationBanner;
+window.deleteIncompatibleModels = deleteIncompatibleModels;
