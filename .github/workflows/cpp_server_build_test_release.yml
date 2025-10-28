@@ -233,17 +233,26 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          cd src\ryzenai-serve\build\bin\Release
-          
-          # Create a zip file with all necessary files
-          $zipPath = "..\..\..\..\..\..\ryzenai-serve.zip"
+          # Use absolute path to repository root
+          $repoRoot = "$env:GITHUB_WORKSPACE"
+          $releaseDir = Join-Path $repoRoot "src\ryzenai-serve\build\bin\Release"
+          $zipPath = Join-Path $repoRoot "ryzenai-serve.zip"
           
           Write-Host "Creating ryzenai-serve.zip with all dependencies..." -ForegroundColor Cyan
+          Write-Host "Release directory: $releaseDir" -ForegroundColor Gray
+          Write-Host "Zip path: $zipPath" -ForegroundColor Gray
           
-          # Use PowerShell's Compress-Archive
-          Compress-Archive -Path "*" -DestinationPath $zipPath -Force
+          # Create zip from release directory
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipPath -Force
           
-          Write-Host "Package created successfully!" -ForegroundColor Green
+          # Verify zip was created
+          if (-not (Test-Path $zipPath)) {
+              Write-Host "ERROR: Failed to create ryzenai-serve.zip!" -ForegroundColor Red
+              exit 1
+          }
+          
+          $zipSize = (Get-Item $zipPath).Length / 1MB
+          Write-Host "Package created successfully! Size: $([math]::Round($zipSize, 2)) MB" -ForegroundColor Green
 
       - name: Upload RyzenAI Serve Package
         uses: actions/upload-artifact@v4
