@@ -3,6 +3,7 @@
 // State variables for model management
 let currentLoadedModel = null;
 let installedModels = new Set(); // Track which models are actually installed
+let activeDownloads = new Set(); // Track models currently being downloaded
 
 // Make installedModels accessible globally for the chat dropdown
 window.installedModels = installedModels;
@@ -466,6 +467,9 @@ async function installModel(modelId) {
         installBtn.textContent = '⏳';
     }
     
+    // Track this download as active
+    activeDownloads.add(modelId);
+    
     try {
         const modelData = window.SERVER_MODELS[modelId];
         await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
@@ -473,6 +477,9 @@ async function installModel(modelId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_name: modelId, ...modelData })
         });
+        
+        // Download complete - remove from active downloads
+        activeDownloads.delete(modelId);
         
         // Refresh installed models and model status
         await fetchInstalledModels();
@@ -490,6 +497,9 @@ async function installModel(modelId) {
     } catch (error) {
         console.error('Error installing model:', error);
         showErrorBanner('Failed to install model: ' + error.message);
+        
+        // Remove from active downloads on error too
+        activeDownloads.delete(modelId);
         
         // Reset button state on error
         if (installBtn) {
@@ -667,8 +677,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     function startPolling() {
         if (!pollInterval) {
             pollInterval = setInterval(async () => {
-                // Only update if page is visible
-                if (document.visibilityState === 'visible') {
+                // Only update if page is visible AND no active downloads
+                // Skip polling during downloads to prevent false positives
+                if (document.visibilityState === 'visible' && activeDownloads.size === 0) {
                     await updateModelStatusIndicator();
                 }
             }, 15000); // Check every 15 seconds
@@ -736,12 +747,20 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                 btn.disabled = true;
                 btn.textContent = '⏳';
                 btn.classList.add('installing-btn');
+                
+                // Track this download as active
+                activeDownloads.add(mid);
+                
                 try {
                     await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: mid })
                     });
+                    
+                    // Download complete - remove from active downloads
+                    activeDownloads.delete(mid);
+                    
                     await refreshModelMgmtUI();
                     // Update chat dropdown too if loadModels function exists
                     if (typeof loadModels === 'function') {
@@ -751,6 +770,9 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                     btn.textContent = 'Error';
                     btn.disabled = false;
                     showErrorBanner(`Failed to install model: ${e.message}`);
+                    
+                    // Remove from active downloads on error too
+                    activeDownloads.delete(mid);
                 }
             };
             tdBtn.appendChild(btn);
