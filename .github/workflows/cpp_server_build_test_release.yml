@@ -338,70 +338,8 @@ jobs:
           
           Write-Host "Installation verification successful!" -ForegroundColor Green
 
-      - name: Debug environment before CLI tests
-        shell: PowerShell
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
-        run: |
-          Write-Host "=== Environment Diagnostics ===" -ForegroundColor Cyan
-          
-          Write-Host "`nCurrent user:" -ForegroundColor Yellow
-          whoami
-          
-          Write-Host "`nHuggingFace cache configuration:" -ForegroundColor Yellow
-          Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Green
-          Write-Host "LEMONADE_CACHE_DIR: $env:LEMONADE_CACHE_DIR" -ForegroundColor Green
-          
-          Write-Host "`nChecking HF_HOME directory:" -ForegroundColor Yellow
-          if (Test-Path $env:HF_HOME) {
-              Write-Host "HF_HOME exists: $env:HF_HOME" -ForegroundColor Green
-              $hubPath = Join-Path $env:HF_HOME "hub"
-              if (Test-Path $hubPath) {
-                  $modelCount = (Get-ChildItem $hubPath -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
-                  Write-Host "  - Contains $modelCount items in hub/" -ForegroundColor Gray
-              } else {
-                  Write-Host "  - No hub/ subdirectory yet" -ForegroundColor Gray
-              }
-          } else {
-              Write-Host "HF_HOME does not exist yet: $env:HF_HOME" -ForegroundColor Yellow
-          }
-          
-          Write-Host "`nOther potential HF cache locations:" -ForegroundColor Yellow
-          
-          # Check common HF cache locations
-          $hfCachePaths = @(
-              "$env:USERPROFILE\.cache\huggingface",
-              "$env:LOCALAPPDATA\.cache\huggingface",
-              "C:\windows\system32\config\systemprofile\.cache\huggingface"
-          )
-          
-          foreach ($path in $hfCachePaths) {
-              if (Test-Path $path) {
-                  Write-Host "Found HF cache at: $path" -ForegroundColor Green
-                  $hubPath = Join-Path $path "hub"
-                  if (Test-Path $hubPath) {
-                      $modelCount = (Get-ChildItem $hubPath -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
-                      Write-Host "  - Contains $modelCount items in hub/" -ForegroundColor Gray
-                  }
-              } else {
-                  Write-Host "No cache at: $path" -ForegroundColor Gray
-              }
-          }
-          
-          Write-Host "`nNetwork connectivity test:" -ForegroundColor Yellow
-          try {
-              $response = Invoke-WebRequest -Uri "https://huggingface.co" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
-              Write-Host "HuggingFace.co reachable (HTTP $($response.StatusCode))" -ForegroundColor Green
-          } catch {
-              Write-Host "HuggingFace.co NOT reachable: $_" -ForegroundColor Red
-          }
-          
-          Write-Host "`n=== End Diagnostics ===" -ForegroundColor Cyan
-
       - name: Test lemonade-router CLI
         shell: PowerShell
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
           
@@ -409,93 +347,12 @@ jobs:
           $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
           
           Write-Host "Testing lemonade-router.exe CLI..." -ForegroundColor Cyan
-          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Gray
           
           # Test --version flag
           Write-Host "`nTesting --version..." -ForegroundColor Yellow
           & $routerExe --version
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: lemonade-router --version failed!" -ForegroundColor Red
-              exit 1
-          }
-          Write-Host "--version: OK" -ForegroundColor Green
-          
-          # Test list command with detailed timeout tracking
-          Write-Host "`nTesting list command (with 120s timeout and progress tracking)..." -ForegroundColor Yellow
-          
-          # Start the list command as a background job
-          $listJob = Start-Job -ScriptBlock {
-              param($exe)
-              $startTime = Get-Date
-              Write-Output "Job started at: $startTime"
-              
-              & $exe list 2>&1 | ForEach-Object {
-                  $elapsed = [int]((Get-Date) - $startTime).TotalSeconds
-                  Write-Output "[$elapsed`s] $_"
-              }
-              
-              $exitCode = $LASTEXITCODE
-              $endTime = Get-Date
-              $duration = ($endTime - $startTime).TotalSeconds
-              Write-Output "Job finished at: $endTime (duration: $duration seconds)"
-              Write-Output "Exit code: $exitCode"
-              return $exitCode
-          } -ArgumentList $routerExe
-          
-          # Wait with progress updates
-          $timeout = 120
-          $elapsed = 0
-          $completed = $false
-          
-          while ($elapsed -lt $timeout) {
-              Start-Sleep -Seconds 5
-              $elapsed += 5
-              
-              # Check if job completed
-              if ($listJob.State -eq 'Completed') {
-                  $completed = $true
-                  break
-              }
-              
-              Write-Host "  ... waiting ($elapsed/$timeout seconds) - Job state: $($listJob.State)" -ForegroundColor Gray
-              
-              # Show any output received so far
-              $output = Receive-Job $listJob -Keep
-              if ($output) {
-                  $output | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-              }
-          }
-          
-          if (-not $completed) {
-              Write-Host "`nERROR: lemonade-router list TIMED OUT after $timeout seconds!" -ForegroundColor Red
-              Write-Host "This indicates the command is hanging, not just slow." -ForegroundColor Red
-              
-              # Get any output before killing
-              Write-Host "`nOutput received before timeout:" -ForegroundColor Yellow
-              Receive-Job $listJob | ForEach-Object { Write-Host $_ }
-              
-              Stop-Job $listJob
-              Remove-Job $listJob
-              
-              Write-Host "`nLikely causes:" -ForegroundColor Yellow
-              Write-Host "  1. Network hang trying to reach HuggingFace" -ForegroundColor Gray
-              Write-Host "  2. Huge cache directory causing timeout" -ForegroundColor Gray
-              Write-Host "  3. Permissions issue accessing cache" -ForegroundColor Gray
-              Write-Host "  4. Deadlock in model enumeration code" -ForegroundColor Gray
-              
-              exit 1
-          }
-          
-          # Job completed - get results
-          $output = Receive-Job $listJob
-          $result = $output[-1]  # Last line should be the exit code
-          Remove-Job $listJob
-          
-          Write-Host "`nCommand output:" -ForegroundColor Yellow
-          $output | ForEach-Object { Write-Host $_ }
-          
-          if ($result -ne 0) {
-              Write-Host "`nERROR: lemonade-router list failed with exit code: $result" -ForegroundColor Red
               exit 1
           }
           
