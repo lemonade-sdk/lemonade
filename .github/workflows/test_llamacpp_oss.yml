@@ -6,7 +6,7 @@ name: Test Lemonade with Llamacpp 🌩️
 on:
   push:
     branches: ["main"]
-  pull_request:
+  # pull_request:
   workflow_dispatch:
   merge_group:
 
