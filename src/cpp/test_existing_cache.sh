@@ -6,9 +6,9 @@ echo "Testing lemon.cpp with Existing HF Cache"
 echo "========================================="
 echo ""
 
-# Check if lemonade binary exists
-if [ ! -f "./lemonade" ]; then
-    echo "Error: lemonade binary not found"
+# Check if lemonade-router binary exists
+if [ ! -f "./lemonade-router" ]; then
+    echo "Error: lemonade-router binary not found"
     echo "Please build first: cd build && cmake --build ."
     exit 1
 fi
@@ -28,13 +28,13 @@ else
 fi
 
 echo ""
-echo "2. Testing lemonade list command..."
+echo "2. Testing lemonade-router list command..."
 echo "   This should detect your existing downloaded models"
 echo ""
-./lemonade list
+./lemonade-router list
 
 echo ""
-echo "3. Check if lemonade detected any downloaded models..."
+echo "3. Check if lemonade-router detected any downloaded models..."
 echo "   Look for 'Yes' in the Downloaded column above"
 echo ""
 
@@ -54,7 +54,7 @@ echo "Test Complete"
 echo "========================================="
 echo ""
 echo "VERIFICATION CHECKLIST:"
-echo "[ ] Does 'lemonade list' run without errors?"
+echo "[ ] Does 'lemonade-router list' run without errors?"
 echo "[ ] Does it show models you've already downloaded?"
 echo "[ ] Are the models marked with 'Yes' in Downloaded column?"
 echo ""

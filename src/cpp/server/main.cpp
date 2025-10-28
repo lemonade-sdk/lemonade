@@ -64,14 +64,14 @@ std::pair<int, int> get_server_info() {
         try {
             int port = std::stoi(local_addr.substr(colon_pos + 1));
             
-            // Check if this PID is lemonade.exe
+            // Check if this PID is lemonade-router.exe
             HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
             if (hProcess) {
                 char process_name[MAX_PATH];
                 DWORD size = MAX_PATH;
                 if (QueryFullProcessImageNameA(hProcess, 0, process_name, &size)) {
                     std::string proc_name(process_name);
-                    if (proc_name.find("lemonade.exe") != std::string::npos) {
+                    if (proc_name.find("lemonade-router.exe") != std::string::npos) {
                         CloseHandle(hProcess);
                         _pclose(pipe);
                         return {pid, port};

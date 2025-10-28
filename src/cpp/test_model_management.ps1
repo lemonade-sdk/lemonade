@@ -33,7 +33,7 @@ Write-Host ""
 
 # Test 1: Binary exists and runs
 Write-Host "Test 1: Check lemonade binary..."
-if (Test-Path ".\lemonade.exe") {
+if (Test-Path ".\lemonade-router.exe") {
     Write-Host "✓ PASS: lemonade binary found" -ForegroundColor Green
     $TestsPassed++
 } else {
@@ -48,7 +48,7 @@ if (Test-Path ".\lemonade.exe") {
 Write-Host ""
 Write-Host "Test 2: Version check..."
 try {
-    $version = & .\lemonade.exe --version 2>&1
+    $version = & .\lemonade-router.exe --version 2>&1
     Write-Host "✓ PASS: Version: $version" -ForegroundColor Green
     $TestsPassed++
 } catch {
@@ -60,7 +60,7 @@ try {
 Write-Host ""
 Write-Host "Test 3: List available models..."
 try {
-    $models = & .\lemonade.exe list 2>&1
+    $models = & .\lemonade-router.exe list 2>&1
     Write-Host "✓ PASS: Can list models" -ForegroundColor Green
     Write-Host "Sample models:"
     $models | Select-Object -First 5 | ForEach-Object { Write-Host $_ }
@@ -75,7 +75,7 @@ Write-Host ""
 Write-Host "Test 4: Download model (Qwen2.5-0.5B-Instruct-CPU)..." -ForegroundColor Cyan
 Write-Host "This tests the critical HF API integration..." -ForegroundColor Cyan
 try {
-    $output = & .\lemonade.exe pull Qwen2.5-0.5B-Instruct-CPU 2>&1
+    $output = & .\lemonade-router.exe pull Qwen2.5-0.5B-Instruct-CPU 2>&1
     Write-Host $output
     Write-Host "✓ PASS: Model download completed" -ForegroundColor Green
     $TestsPassed++
@@ -125,7 +125,7 @@ if ($ModelDirs) {
 Write-Host ""
 Write-Host "Test 7: Verify model shows as downloaded..."
 try {
-    $listOutput = & .\lemonade.exe list 2>&1 | Out-String
+    $listOutput = & .\lemonade-router.exe list 2>&1 | Out-String
     if ($listOutput -match "Yes.*Qwen2.5-0.5B-Instruct-CPU") {
         Write-Host "✓ PASS: Model marked as downloaded" -ForegroundColor Green
         $TestsPassed++
@@ -140,7 +140,7 @@ try {
 Write-Host ""
 Write-Host "Test 8: Delete model..."
 try {
-    & .\lemonade.exe delete Qwen2.5-0.5B-Instruct-CPU 2>&1 | Out-Null
+    & .\lemonade-router.exe delete Qwen2.5-0.5B-Instruct-CPU 2>&1 | Out-Null
     Write-Host "✓ PASS: Model deleted" -ForegroundColor Green
     $TestsPassed++
 } catch {
@@ -165,7 +165,7 @@ Write-Host ""
 Write-Host "Test 10: Test offline mode..."
 $env:LEMONADE_OFFLINE = "1"
 try {
-    $output = & .\lemonade.exe pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | Out-String
+    $output = & .\lemonade-router.exe pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | Out-String
     if ($output -match "Offline mode|skipping") {
         Write-Host "✓ PASS: Offline mode respected" -ForegroundColor Green
         $TestsPassed++
@@ -181,7 +181,7 @@ Remove-Item Env:\LEMONADE_OFFLINE
 Write-Host ""
 Write-Host "Test 11: Register custom user model..."
 try {
-    & .\lemonade.exe pull user.TestModel --checkpoint test/model --recipe llamacpp 2>&1 | Out-Null
+    & .\lemonade-router.exe pull user.TestModel --checkpoint test/model --recipe llamacpp 2>&1 | Out-Null
     Write-Host "✓ PASS: User model registered" -ForegroundColor Green
     $TestsPassed++
     

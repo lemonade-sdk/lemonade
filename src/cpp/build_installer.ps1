@@ -1,5 +1,5 @@
 # Build Lemonade Server Beta Installer
-# This script assumes CMake has already built lemonade.exe and lemonade-server-beta.exe in build\Release
+# This script assumes CMake has already built lemonade-router.exe and lemonade-server-beta.exe in build\Release
 
 Write-Host "Building Lemonade Server Beta Installer..." -ForegroundColor Cyan
 
@@ -13,7 +13,7 @@ if (-not (Test-Path $nsisPath)) {
 
 # Check if executables exist
 $trayExe = "build\Release\lemonade-server-beta.exe"
-$serverExe = "build\Release\lemonade.exe"
+$serverExe = "build\Release\lemonade-router.exe"
 
 if (-not (Test-Path $trayExe)) {
     Write-Host "ERROR: $trayExe not found!" -ForegroundColor Red
@@ -31,7 +31,7 @@ if (-not (Test-Path $serverExe)) {
 }
 
 Write-Host "Found lemonade-server-beta.exe" -ForegroundColor Green
-Write-Host "Found lemonade.exe" -ForegroundColor Green
+Write-Host "Found lemonade-router.exe" -ForegroundColor Green
 
 # Check if resources directory exists
 $resourcesDir = "build\Release\resources"

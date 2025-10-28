@@ -72,7 +72,7 @@ cmake --build . --config Release
 
 **Windows:**
 - Use Visual Studio 2019+ or MinGW-w64
-- Will build `lemonade.exe`
+- Will build `lemonade-router.exe`
 
 **Ubuntu:**
 - Install build-essential: `sudo apt install build-essential cmake`

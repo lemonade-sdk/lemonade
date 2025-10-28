@@ -250,7 +250,7 @@ bool TrayApp::find_server_binary() {
     std::vector<std::string> search_paths;
     
 #ifdef _WIN32
-    std::string binary_name = "lemonade.exe";
+    std::string binary_name = "lemonade-router.exe";
     
     // Get the directory where this executable is located
     char exe_path_buf[MAX_PATH];

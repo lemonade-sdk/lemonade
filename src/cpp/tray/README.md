@@ -206,10 +206,10 @@ After building, test the application:
 cd build
 
 # Test with tray (Windows example)
-./Release/lemonade-server-beta.exe --server-binary ../../lemonade.exe
+./Release/lemonade-server-beta.exe --server-binary ../../lemonade-router.exe
 
 # Test without tray
-./Release/lemonade-server-beta.exe --no-tray --server-binary ../../lemonade.exe
+./Release/lemonade-server-beta.exe --no-tray --server-binary ../../lemonade-router.exe
 ```
 
 Look for:
@@ -222,7 +222,7 @@ Look for:
 ## Integration with Installer
 
 The installer should:
-1. Copy both `lemonade.exe` and `lemonade-server-beta.exe` to installation directory
+1. Copy both `lemonade-router.exe` and `lemonade-server-beta.exe` to installation directory
 2. Create Start Menu shortcut for `lemonade-server-beta.exe`
 3. Optionally create Desktop shortcut
 4. Add installation directory to PATH

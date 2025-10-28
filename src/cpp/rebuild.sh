@@ -4,7 +4,7 @@
 echo "Checking for running server..."
 
 # Try to stop the server if it's running
-./build/lemonade stop 2>/dev/null
+./build/lemonade-router stop 2>/dev/null
 
 echo "Building lemon.cpp..."
 
@@ -17,7 +17,7 @@ cd ..
 if [ $BUILD_RESULT -eq 0 ]; then
     echo -e "\nBuild successful! ✓"
     echo -e "\nYou can now run:"
-    echo "  ./build/lemonade serve"
+    echo "  ./build/lemonade-router serve"
 else
     echo -e "\nBuild failed! ✗"
     exit $BUILD_RESULT

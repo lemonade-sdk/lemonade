@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Platform-specific configurations
 if(WIN32)
-    set(EXECUTABLE_NAME "lemonade")
+    set(EXECUTABLE_NAME "lemonade-router")
     # Set Windows target version to Windows 10 for cpp-httplib v0.26.0
     add_compile_definitions(_WIN32_WINNT=0x0A00)
     
@@ -32,7 +32,7 @@ if(WIN32)
         )
     endif()
 else()
-    set(EXECUTABLE_NAME "lemonade")
+    set(EXECUTABLE_NAME "lemonade-router")
 endif()
 
 # Enable cpp-httplib thread pool with 8 threads

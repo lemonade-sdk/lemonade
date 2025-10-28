@@ -90,7 +90,7 @@ lldb ./lemonade
 
 ## Build Output
 
-- **Windows**: `build/Release/lemonade.exe` or `build/Debug/lemonade.exe`
+- **Windows**: `build/Release/lemonade-router.exe` or `build/Debug/lemonade-router.exe`
 - **Linux/macOS**: `build/lemonade`
 
 ## Dependencies (auto-downloaded)
@@ -108,7 +108,7 @@ Note: These will be downloaded on first build and cached.
 ### Windows
 
 - If using Visual Studio, open "x64 Native Tools Command Prompt"
-- The executable will be in `build/Release/lemonade.exe`
+- The executable will be in `build/Release/lemonade-router.exe`
 - WebSocket library may need additional configuration
 
 ### Ubuntu/Linux

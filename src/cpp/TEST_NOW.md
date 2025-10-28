@@ -34,7 +34,7 @@ cmake ..
 # Build
 cmake --build . --config Release
 
-# On Windows, the binary will be in build/Release/lemonade.exe
+# On Windows, the binary will be in build/Release/lemonade-router.exe
 # On Linux/Mac, it will be in build/lemonade
 ```
 
@@ -60,7 +60,7 @@ chmod +x test_existing_cache.sh
 ./lemonade list
 
 # or on Windows
-.\build\Release\lemonade.exe list
+.\build\Release\lemonade-router.exe list
 ```
 
 **Expected**: You should see a table with your models, and the "Downloaded" column should show "Yes" for models in your cache.

@@ -40,7 +40,7 @@ The `lemon.cpp` source code is located in `src\cpp`.
 
 Building the `lemon.cpp` project with `cmake` will result in a `lemonade` CLI, which should implement all of the same commands and arguments as the Python `lemonade-server-dev`.
 
-`lemon.cpp` should work on Windows, Ubuntu, and macOS. On Windows, the executable should be named `lemonade.exe`.
+`lemon.cpp` should work on Windows, Ubuntu, and macOS. On Windows, the executable should be named `lemonade-router.exe`.
 
 ## WrappedServer
 
@@ -428,7 +428,7 @@ FetchContent_Declare(CLI11
 
 # Platform-specific configurations
 if(WIN32)
-    set(EXECUTABLE_NAME "lemonade.exe")
+    set(EXECUTABLE_NAME "lemonade-router.exe")
 else()
     set(EXECUTABLE_NAME "lemonade")
 endif()
@@ -539,8 +539,8 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           # Use lemon.cpp instead of Python implementation
-          .\src\cpp\build\Release\lemonade.exe pull llama3.2:1b
-          python test/server_flm.py --server-binary .\src\cpp\build\Release\lemonade.exe
+          .\src\cpp\build\Release\lemonade-router.exe pull llama3.2:1b
+          python test/server_flm.py --server-binary .\src\cpp\build\Release\lemonade-router.exe
 ```
 
 ##### 2. test_lemon_cpp_llamacpp.yml (GPU Testing)
@@ -597,8 +597,8 @@ jobs:
         shell: PowerShell
         run: |
           # Test with C++ server instead of Python
-          .\src\cpp\build\Release\lemonade.exe pull unsloth/Qwen3-0.6B-GGUF:Q4_0
-          conda run -p .\test-env python test/server_llamacpp.py ${{ matrix.backend }} --server-binary .\src\cpp\build\Release\lemonade.exe
+          .\src\cpp\build\Release\lemonade-router.exe pull unsloth/Qwen3-0.6B-GGUF:Q4_0
+          conda run -p .\test-env python test/server_llamacpp.py ${{ matrix.backend }} --server-binary .\src\cpp\build\Release\lemonade-router.exe
           
   test-llamacpp-ubuntu:
     strategy:

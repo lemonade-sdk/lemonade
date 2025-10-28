@@ -66,7 +66,7 @@ SectionIn RO ; Read only, always installed
   folder_in_use:
     ; Rename failed, folder is in use
     ${IfNot} ${Silent}
-      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, right-click the tray icon and click 'Quit'$\n3. End lemonade-server-beta.exe and lemonade.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
+      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, right-click the tray icon and click 'Quit'$\n3. End lemonade-server-beta.exe and lemonade-router.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
     ${EndIf}
     Quit
 
@@ -100,13 +100,13 @@ SectionIn RO ; Read only, always installed
     File "build\Release\lemonade-server-beta.exe"
     DetailPrint "- Installed Lemonade Server tray application"
     
-    File "build\Release\lemonade.exe"
+    File "build\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
     
     File "build\Release\zstd.dll"
     DetailPrint "- Installed required library: zstd.dll"
 
-    ; Copy resources (icon, etc.) to bin directory so lemonade.exe can find them
+    ; Copy resources (icon, etc.) to bin directory so lemonade-router.exe can find them
     ; The server looks for resources relative to the executable directory
     DetailPrint "Installing application resources..."
     File /r "build\Release\resources"
@@ -331,7 +331,7 @@ Section "Uninstall"
 
   ; Remove files
   Delete "$INSTDIR\bin\lemonade-server-beta.exe"
-  Delete "$INSTDIR\bin\lemonade.exe"
+  Delete "$INSTDIR\bin\lemonade-router.exe"
   Delete "$INSTDIR\bin\zstd.dll"
   Delete "$INSTDIR\Uninstall.exe"
 

@@ -40,12 +40,12 @@ echo "Test Cache Directory: $TEST_CACHE"
 echo ""
 
 # Test 1: Binary exists and runs
-echo "Test 1: Check lemonade binary..."
-if [ -f "./lemonade" ]; then
-    echo -e "${GREEN}✓ PASS${NC}: lemonade binary found"
+echo "Test 1: Check lemonade-router binary..."
+if [ -f "./lemonade-router" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: lemonade-router binary found"
     ((TESTS_PASSED++))
 else
-    echo -e "${RED}✗ FAIL${NC}: lemonade binary not found"
+    echo -e "${RED}✗ FAIL${NC}: lemonade-router binary not found"
     echo "Please build first: cd build && cmake --build ."
     ((TESTS_FAILED++))
     exit 1
@@ -54,8 +54,8 @@ fi
 # Test 2: Version check
 echo ""
 echo "Test 2: Version check..."
-if ./lemonade --version > /dev/null 2>&1; then
-    VERSION=$(./lemonade --version)
+if ./lemonade-router --version > /dev/null 2>&1; then
+    VERSION=$(./lemonade-router --version)
     echo -e "${GREEN}✓ PASS${NC}: Version: $VERSION"
     ((TESTS_PASSED++))
 else
@@ -66,10 +66,10 @@ fi
 # Test 3: List models (without downloads)
 echo ""
 echo "Test 3: List available models..."
-if ./lemonade list > /dev/null 2>&1; then
+if ./lemonade-router list > /dev/null 2>&1; then
     echo -e "${GREEN}✓ PASS${NC}: Can list models"
     echo "Sample models:"
-    ./lemonade list | head -5
+    ./lemonade-router list | head -5
     ((TESTS_PASSED++))
 else
     echo -e "${RED}✗ FAIL${NC}: Failed to list models"
@@ -80,7 +80,7 @@ fi
 echo ""
 echo "Test 4: Download model (Qwen2.5-0.5B-Instruct-CPU)..."
 echo "This tests the critical HF API integration..."
-if ./lemonade pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | tee /tmp/download_log.txt; then
+if ./lemonade-router pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | tee /tmp/download_log.txt; then
     echo -e "${GREEN}✓ PASS${NC}: Model download completed"
     ((TESTS_PASSED++))
 else
@@ -126,7 +126,7 @@ fi
 # Test 7: List shows downloaded model
 echo ""
 echo "Test 7: Verify model shows as downloaded..."
-if ./lemonade list | grep -q "Yes.*Qwen2.5-0.5B-Instruct-CPU"; then
+if ./lemonade-router list | grep -q "Yes.*Qwen2.5-0.5B-Instruct-CPU"; then
     echo -e "${GREEN}✓ PASS${NC}: Model marked as downloaded"
     ((TESTS_PASSED++))
 else
@@ -137,7 +137,7 @@ fi
 # Test 8: Delete model
 echo ""
 echo "Test 8: Delete model..."
-if ./lemonade delete Qwen2.5-0.5B-Instruct-CPU 2>&1; then
+if ./lemonade-router delete Qwen2.5-0.5B-Instruct-CPU 2>&1; then
     echo -e "${GREEN}✓ PASS${NC}: Model deleted"
     ((TESTS_PASSED++))
 else
@@ -160,7 +160,7 @@ fi
 echo ""
 echo "Test 10: Test offline mode..."
 export LEMONADE_OFFLINE=1
-if ./lemonade pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | grep -q "Offline mode\|skipping"; then
+if ./lemonade-router pull Qwen2.5-0.5B-Instruct-CPU 2>&1 | grep -q "Offline mode\|skipping"; then
     echo -e "${GREEN}✓ PASS${NC}: Offline mode respected"
     ((TESTS_PASSED++))
 else
@@ -171,7 +171,7 @@ unset LEMONADE_OFFLINE
 # Test 11: User model registration
 echo ""
 echo "Test 11: Register custom user model..."
-if ./lemonade pull user.TestModel --checkpoint test/model --recipe llamacpp 2>&1; then
+if ./lemonade-router pull user.TestModel --checkpoint test/model --recipe llamacpp 2>&1; then
     echo -e "${GREEN}✓ PASS${NC}: User model registered"
     ((TESTS_PASSED++))
     

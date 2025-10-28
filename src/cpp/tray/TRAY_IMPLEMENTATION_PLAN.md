@@ -37,7 +37,7 @@ src/cpp/
 │   ├── include/
 │   │   └── lemon_tray/
 │   │       ├── tray_app.h          # Main tray application class
-│   │       ├── server_manager.h    # Manages lemonade.exe process
+│   │       ├── server_manager.h    # Manages lemonade-router.exe process
 │   │       ├── menu_builder.h      # Builds context menu
 │   │       ├── version_checker.h   # Background version checking
 │   │       ├── model_monitor.h     # Monitors loaded models

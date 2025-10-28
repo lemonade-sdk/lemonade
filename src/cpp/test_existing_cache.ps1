@@ -6,8 +6,8 @@ Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Check if lemonade binary exists
-if (-not (Test-Path ".\lemonade.exe")) {
-    Write-Host "Error: lemonade.exe not found" -ForegroundColor Red
+if (-not (Test-Path ".\lemonade-router.exe")) {
+    Write-Host "Error: lemonade-router.exe not found" -ForegroundColor Red
     Write-Host "Please build first in build\Release\" -ForegroundColor Yellow
     exit 1
 }
@@ -31,7 +31,7 @@ Write-Host ""
 Write-Host "2. Testing lemonade list command..."
 Write-Host "   This should detect your existing downloaded models"
 Write-Host ""
-& .\lemonade.exe list
+& .\lemonade-router.exe list
 
 Write-Host ""
 Write-Host "3. Check if lemonade detected any downloaded models..."

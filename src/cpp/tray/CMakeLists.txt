@@ -112,7 +112,7 @@ target_link_libraries(lemonade-server-beta PRIVATE
 )
 
 # Set output directory to match parent build directory
-# This ensures both lemonade.exe and lemonade-server-beta.exe are in the same folder
+# This ensures both lemonade-router.exe and lemonade-server-beta.exe are in the same folder
 set_target_properties(lemonade-server-beta PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
