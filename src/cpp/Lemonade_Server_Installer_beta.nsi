@@ -3,6 +3,11 @@
 ; Request user rights only (no admin)
 RequestExecutionLevel user
 
+; Compression settings - use LZMA with solid compression for better compression ratio
+SetCompressor /SOLID lzma
+SetCompressorDictSize 32
+SetDatablockOptimize on
+
 ; Define main variables
 Name "Lemonade Server Beta"
 OutFile "Lemonade_Server_Installer_beta.exe"
@@ -27,10 +32,16 @@ Section "Install Lemonade Server Beta" SEC01
 SectionIn RO ; Read only, always installed
   DetailPrint "Installing Lemonade Server Beta..."
 
-  ; Stop any running instances
-  DetailPrint "Stopping any running Lemonade Server instances..."
-  nsExec::Exec 'taskkill /F /IM lemonade-server-beta.exe /IM lemonade.exe'
-  Sleep 1000  ; Wait a second for processes to terminate
+  ; Stop any running instances gracefully
+  DetailPrint "Checking for running Lemonade Server instances..."
+  
+  ; Try to find and close the window gracefully instead of force-killing
+  FindWindow $0 "" "Lemonade Server Beta"
+  ${If} $0 != 0
+    DetailPrint "Requesting Lemonade Server to close..."
+    SendMessage $0 ${WM_CLOSE} 0 0
+    Sleep 2000  ; Give it time to close gracefully
+  ${EndIf}
 
   ; Check if directory exists before proceeding
   IfFileExists "$INSTDIR\*.*" 0 continue_install
@@ -85,20 +96,24 @@ SectionIn RO ; Read only, always installed
     SetOutPath "$INSTDIR\bin"
 
     ; Copy the executables from the build directory
+    DetailPrint "Installing application files..."
     File "build\Release\lemonade-server-beta.exe"
-    File "build\Release\lemonade.exe"
-    File "build\Release\zstd.dll"
+    DetailPrint "- Installed Lemonade Server tray application"
     
-    DetailPrint "- Copied lemonade-server-beta.exe, lemonade.exe, and zstd.dll"
+    File "build\Release\lemonade.exe"
+    DetailPrint "- Installed Lemonade AI Server engine"
+    
+    File "build\Release\zstd.dll"
+    DetailPrint "- Installed required library: zstd.dll"
 
     ; Copy resources (icon, etc.) to bin directory so lemonade.exe can find them
     ; The server looks for resources relative to the executable directory
+    DetailPrint "Installing application resources..."
     File /r "build\Release\resources"
-    
-    DetailPrint "- Copied resources"
+    DetailPrint "- Installed web UI and configuration files"
 
-    ; Add bin folder to user PATH using registry directly (less suspicious than PowerShell)
-    DetailPrint "- Adding bin directory to user PATH..."
+    ; Add bin folder to user PATH using registry directly
+    DetailPrint "Configuring environment..."
     
     ; Read current PATH from registry
     ReadRegStr $0 HKCU "Environment" "Path"
@@ -117,18 +132,25 @@ SectionIn RO ; Read only, always installed
     
     ; Write back to registry
     WriteRegExpandStr HKCU "Environment" "Path" $0
+    DetailPrint "- Added installation directory to user PATH"
+    Goto path_done
     
     skip_path_add:
+    DetailPrint "- Installation directory already in PATH"
     
+    path_done:
     ; Notify Windows that environment variables have changed
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
 
     ; Create Start Menu shortcuts
+    DetailPrint "Creating shortcuts..."
     CreateDirectory "$SMPROGRAMS\Lemonade Server Beta"
     CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-server-beta.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
     CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+    DetailPrint "- Created Start Menu shortcuts"
 
     ; Write uninstaller
+    DetailPrint "Registering uninstaller..."
     WriteUninstaller "$INSTDIR\Uninstall.exe"
     
     ; Add uninstall information to Add/Remove Programs
@@ -141,8 +163,10 @@ SectionIn RO ; Read only, always installed
     WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
     WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
     WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
+    DetailPrint "- Registered with Windows Programs and Features"
 
-    DetailPrint "*** INSTALLATION COMPLETED ***"
+    DetailPrint "-------------------------------------------"
+    DetailPrint "*** INSTALLATION COMPLETED SUCCESSFULLY ***"
 SectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
@@ -298,9 +322,12 @@ FunctionEnd
 
 ; Uninstaller Section
 Section "Uninstall"
-  ; Stop any running instances
-  nsExec::Exec 'taskkill /F /IM lemonade-server-beta.exe /IM lemonade.exe'
-  Sleep 1000
+  ; Stop any running instances gracefully
+  FindWindow $0 "" "Lemonade Server Beta"
+  ${If} $0 != 0
+    SendMessage $0 ${WM_CLOSE} 0 0
+    Sleep 2000  ; Give it time to close gracefully
+  ${EndIf}
 
   ; Remove files
   Delete "$INSTDIR\bin\lemonade-server-beta.exe"

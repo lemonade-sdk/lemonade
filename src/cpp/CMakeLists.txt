@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Use static runtime library on Windows to avoid DLL dependencies
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 project(lemon_cpp VERSION 1.0.0)
 
 # C++ Standard
@@ -10,6 +16,21 @@ if(WIN32)
     set(EXECUTABLE_NAME "lemonade")
     # Set Windows target version to Windows 10 for cpp-httplib v0.26.0
     add_compile_definitions(_WIN32_WINNT=0x0A00)
+    
+    # Add security-hardening compiler flags for MSVC
+    if(MSVC)
+        # Control Flow Guard - prevents control flow hijacking
+        add_compile_options(/guard:cf)
+        # Buffer Security Check - stack buffer overflow detection
+        add_compile_options(/GS)
+        
+        # Linker security flags
+        add_link_options(
+            /DYNAMICBASE      # Address Space Layout Randomization (ASLR)
+            /NXCOMPAT         # Data Execution Prevention (DEP)
+            /GUARD:CF         # Control Flow Guard
+        )
+    endif()
 else()
     set(EXECUTABLE_NAME "lemonade")
 endif()
@@ -49,6 +70,7 @@ FetchContent_Declare(CLI11
 set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 set(CURL_STATICLIB ON CACHE INTERNAL "")
+set(CURL_STATIC_CRT ON CACHE INTERNAL "")  # Use static runtime on Windows
 set(HTTP_ONLY ON CACHE INTERNAL "")
 set(BUILD_TESTING OFF CACHE INTERNAL "")
 set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
@@ -100,6 +122,11 @@ set(SOURCES
     server/backends/ryzenaiserver.cpp
 )
 
+# Add version resource file on Windows
+if(WIN32)
+    list(APPEND SOURCES server/version.rc)
+endif()
+
 # Create executable
 add_executable(${EXECUTABLE_NAME} ${SOURCES})
 
@@ -114,6 +141,13 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE
 # Platform-specific linking
 if(WIN32)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE ws2_32 wsock32 wbemuuid ole32 oleaut32)
+    
+    # Embed manifest file
+    if(MSVC)
+        set_target_properties(${EXECUTABLE_NAME} PROPERTIES
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest"
+        )
+    endif()
 endif()
 
 # Copy resources at build time to both the build directory and the Release directory

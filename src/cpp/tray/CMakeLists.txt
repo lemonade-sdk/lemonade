@@ -81,6 +81,11 @@ set(COMMON_SOURCES
     platform/tray_factory.cpp
 )
 
+# Add version resource file on Windows
+if(WIN32)
+    list(APPEND COMMON_SOURCES version.rc)
+endif()
+
 # Create executable as Windows GUI app (no console window)
 if(WIN32)
     add_executable(lemonade-server-beta WIN32
@@ -126,6 +131,13 @@ if(WIN32)
     target_link_libraries(lemonade-server-beta PRIVATE
         ws2_32  # Winsock for future HTTP client
     )
+    
+    # Embed manifest file
+    if(MSVC)
+        set_target_properties(lemonade-server-beta PROPERTIES
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-beta.manifest"
+        )
+    endif()
 endif()
 
 if(UNIX AND NOT APPLE)
