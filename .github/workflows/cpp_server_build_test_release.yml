@@ -23,6 +23,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          # Check if CMake is already installed
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+          
+          if (-not $cmakeInstalled) {
+              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+              
+              # Download CMake installer
+              $cmakeVersion = "3.28.1"
+              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+              $cmakeInstaller = "cmake-installer.msi"
+              
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              
+              # Install CMake silently
+              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+              
+              # Add CMake to PATH for this session
+              $env:PATH = "C:\Program Files\CMake\bin;$env:PATH"
+              
+              # Verify installation
+              cmake --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+              
+              Write-Host "CMake installed successfully!" -ForegroundColor Green
+          } else {
+              Write-Host "CMake is already installed:" -ForegroundColor Green
+              cmake --version
+          }
+
       - name: Install NSIS
         shell: PowerShell
         run: |
@@ -105,6 +140,41 @@ jobs:
     runs-on: [rai-160-sdk, Windows]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          # Check if CMake is already installed
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+          
+          if (-not $cmakeInstalled) {
+              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+              
+              # Download CMake installer
+              $cmakeVersion = "3.28.1"
+              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+              $cmakeInstaller = "cmake-installer.msi"
+              
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              
+              # Install CMake silently
+              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+              
+              # Add CMake to PATH for this session
+              $env:PATH = "C:\Program Files\CMake\bin;$env:PATH"
+              
+              # Verify installation
+              cmake --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+              
+              Write-Host "CMake installed successfully!" -ForegroundColor Green
+          } else {
+              Write-Host "CMake is already installed:" -ForegroundColor Green
+              cmake --version
+          }
 
       - name: Build RyzenAI Serve with CMake
         shell: PowerShell
