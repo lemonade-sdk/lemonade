@@ -51,6 +51,8 @@ class FlmTesting(ServerTestingBase):
 
         assert chunk_count > 5
         assert len(complete_response) > 5
+        assert False, "BOOOM"
+        assert True, "BOOOM"
 
 
 if __name__ == "__main__":
