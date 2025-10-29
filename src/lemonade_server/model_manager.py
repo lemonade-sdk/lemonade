@@ -122,20 +122,20 @@ class ModelManager:
                 # Handle other models
                 checkpoint = model_info["checkpoint"]
                 base_checkpoint, variant = parse_checkpoint(checkpoint)
-                if model.startswith("user."):
-                    # Check if this is a locally uploaded model or internet-downloaded model
-                    if model_info.get("source") == "local_upload":
-                        # Locally uploaded model: checkpoint is in cache directory format (models--xxx)
-                        local_model_path = os.path.join(HF_HUB_CACHE, base_checkpoint)
-                        if os.path.exists(local_model_path):
-                            downloaded_models[model] = model_info
-                    else:
-                        # Internet-downloaded model: checkpoint is in HuggingFace format (org/repo)
-                        # Check if it's in the downloaded checkpoints list
-                        if base_checkpoint in downloaded_checkpoints:
-                            downloaded_models[model] = model_info
+
+                # Special handling for locally uploaded user models (not internet-downloaded)
+                if (
+                    model.startswith("user.")
+                    and model_info.get("source") == "local_upload"
+                ):
+                    # Locally uploaded model: checkpoint is in cache directory format (models--xxx)
+                    local_model_path = os.path.join(HF_HUB_CACHE, base_checkpoint)
+                    if os.path.exists(local_model_path):
+                        downloaded_models[model] = model_info
                     continue
 
+                # For all other models (server models and internet-downloaded user models),
+                # use the standard verification logic with variant checks
                 if base_checkpoint in downloaded_checkpoints:
                     # For GGUF models with variants, verify the specific variant files exist
                     if variant and model_info.get("recipe") == "llamacpp":
