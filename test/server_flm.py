@@ -44,15 +44,17 @@ class FlmTesting(ServerTestingBase):
         complete_response = ""
         chunk_count = 0
         for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content is not None:
+            if (
+                chunk.choices
+                and chunk.choices[0].delta
+                and chunk.choices[0].delta.content is not None
+            ):
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
 
         assert chunk_count > 5
         assert len(complete_response) > 5
-        assert False, "BOOOM"
-        assert True, "BOOOM"
 
 
 if __name__ == "__main__":
