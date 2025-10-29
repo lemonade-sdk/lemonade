@@ -41,6 +41,7 @@ jobs:
           python -m pip check
           pip install -e .[dev,oga-cpu]
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
+          lemonade-server-dev pull Llama-3.2-1B-Instruct-CPU
       - name: Run server tests (unit tests)
         shell: bash -el {0}
         env:
