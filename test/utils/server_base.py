@@ -286,9 +286,12 @@ def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=
         test_suite = test_loader.loadTestsFromTestCase(test_class)
         # Use verbosity=2 to show test names, buffer=False to see output in real-time,
         # and failfast=True to stop on first failure and show the error immediately
-        unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True).run(
+        result = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True).run(
             test_suite
         )
+
+        # Set exit code based on test results
+        sys.exit(0 if result.wasSuccessful() else 1)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
