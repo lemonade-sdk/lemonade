@@ -7,12 +7,12 @@ import logging
 import platform
 import tempfile
 import traceback
-from typing import Optional, Union
+from typing import Optional, Union, List
 import json
 from pathlib import Path
 import os
-
-from fastapi import FastAPI, HTTPException, status, Request, WebSocket
+import shutil
+from fastapi import FastAPI, HTTPException, status, Request, WebSocket, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -346,6 +346,7 @@ class Server:
             self.app.post(f"{prefix}/responses")(self.responses)
             self.app.post(f"{prefix}/log-level")(self.set_log_level)
             self.app.websocket(f"{prefix}/logs/ws")(self.logs_ws)
+            self.app.post(f"{prefix}/add-local-model")(self.add_local_model)
 
             # OpenAI-compatible routes
             self.app.post(f"{prefix}/chat/completions")(self.chat_completions)
@@ -363,6 +364,178 @@ class Server:
             )
             self.app.post(f"{prefix}/migration/cleanup")(
                 self.cleanup_incompatible_models
+            )
+
+    async def add_local_model(
+        self,
+        model_name: str = Form(...),
+        checkpoint: str = Form(""),
+        recipe: str = Form(...),
+        reasoning: bool = Form(False),
+        vision: bool = Form(False),
+        mmproj: str = Form(None),
+        model_files: List[UploadFile] = None,
+    ):
+        from huggingface_hub.constants import HF_HUB_CACHE
+        from lemonade.tools.llamacpp.utils import parse_checkpoint
+
+        # Upload and register a local model from files.
+        try:
+            if not model_files:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No model files provided for upload",
+                )
+
+            if not model_name.startswith("user."):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Model name must start with 'user.'",
+                )
+
+            valid_recipes = ["llamacpp", "oga-npu", "oga-hybrid", "oga-cpu"]
+            if recipe not in valid_recipes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid recipe. Must be one of: {', '.join(valid_recipes)}",
+                )
+
+            if recipe == "llamacpp" and not any(
+                f.filename.lower().endswith(".gguf") for f in model_files
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="At least one .gguf file is required for llamacpp",
+                )
+
+            # Check if model name already exists
+            if model_name in ModelManager().supported_models:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Model name '{model_name}' already exists. "
+                        "Please use a different name."
+                    ),
+                )
+
+            model_name_clean = model_name.replace("user.", "")
+
+            # Files are saved to models--{model_name_clean}
+            # Note: This is based on the user's custom model name, NOT the checkpoint field
+            repo_cache_name = model_name_clean.replace("/", "--")
+            snapshot_path = os.path.join(HF_HUB_CACHE, f"models--{repo_cache_name}")
+            os.makedirs(snapshot_path, exist_ok=True)
+
+            # Extract variant from checkpoint field if provided
+            # checkpoint field format: "folder:variant" or just "folder"
+            variant = None
+            if checkpoint and ":" in checkpoint:
+                _, variant = parse_checkpoint(checkpoint)
+                # variant now contains just the variant[can be with or without the
+                # .gguf extension] filename (e.g., "LFM2-VL-1.6B-F16 or LFM2-VL-1.6B-F16.gguf")
+
+            # Save uploaded files, preserving folder structure
+            for file in model_files:
+                relative_path = file.filename
+                path_parts = relative_path.split("/")
+
+                if len(path_parts) > 1:
+                    internal_path = "/".join(path_parts[1:])
+                    file_path = os.path.join(snapshot_path, internal_path)
+                else:
+                    file_path = os.path.join(snapshot_path, path_parts[0])
+
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+
+            # Resolve actual file paths after upload (for faster loading later)
+            resolved_checkpoint = None
+            resolved_mmproj = None
+
+            # For OGA models, find genai_config.json
+            if recipe.startswith("oga-"):
+                for root, _, files in os.walk(snapshot_path):
+                    if "genai_config.json" in files:
+                        resolved_checkpoint = root
+                        break
+                if not resolved_checkpoint:
+                    resolved_checkpoint = snapshot_path
+
+            # For llamacpp models, find the GGUF file
+            elif recipe == "llamacpp":
+                gguf_file_found = None
+
+                # If variant is specified, look for that specific file
+                if variant:
+                    search_term = (
+                        variant if variant.endswith(".gguf") else f"{variant}.gguf"
+                    )
+                    for root, _, files in os.walk(snapshot_path):
+                        if search_term in files:
+                            gguf_file_found = os.path.join(root, search_term)
+                            break
+
+                # If no variant or variant not found, search for any .gguf file (excluding mmproj)
+                if not gguf_file_found:
+                    for root, _, files in os.walk(snapshot_path):
+                        gguf_files = [
+                            f
+                            for f in files
+                            if f.endswith(".gguf") and "mmproj" not in f.lower()
+                        ]
+                        if gguf_files:
+                            gguf_file_found = os.path.join(root, gguf_files[0])
+                            break
+
+                resolved_checkpoint = (
+                    gguf_file_found if gguf_file_found else snapshot_path
+                )
+
+            # Search for mmproj file if provided
+            if mmproj:
+                for root, _, files in os.walk(snapshot_path):
+                    if mmproj in files:
+                        resolved_mmproj = os.path.join(root, mmproj)
+                        break
+
+            # Build checkpoint for registration
+            # For llamacpp with resolved path, store the full path relative to HF_HUB_CACHE
+            if resolved_checkpoint:
+                # Store as relative path from HF_HUB_CACHE for portability
+                checkpoint_to_register = os.path.relpath(
+                    resolved_checkpoint, HF_HUB_CACHE
+                )
+            elif variant:
+                checkpoint_to_register = f"models--{repo_cache_name}:{variant}"
+            else:
+                checkpoint_to_register = f"models--{repo_cache_name}"
+
+            # Register the model
+            ModelManager().register_local_model(
+                model_name=model_name,
+                checkpoint=checkpoint_to_register,
+                recipe=recipe,
+                reasoning=reasoning,
+                vision=vision,
+                mmproj=resolved_mmproj if resolved_mmproj else mmproj,
+                snapshot_path=snapshot_path,
+            )
+
+            # Refresh local models
+            self.local_models = ModelManager().downloaded_models_enabled
+
+            return {
+                "status": "success",
+                "message": f"Model {model_name} uploaded and registered successfully",
+            }
+        except Exception as e:
+            if os.path.exists(checkpoint_to_register):
+                shutil.rmtree(checkpoint_to_register)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload model: {str(e)}",
             )
 
     async def set_log_level(self, config: LogLevelConfig):
@@ -836,6 +1009,11 @@ class Server:
 
                 # Keep track of the full response for tool call extraction
                 full_response = ""
+
+                # Track whether we're still in the thinking phase (before </think> tag)
+                in_thinking_phase = self.llm_loaded.reasoning
+                reasoning_buffer = ""  # Accumulate reasoning tokens to detect </think>
+
                 try:
                     async for token in self._generate_tokens(**generation_args):
                         # Handle client disconnect: stop generation and exit
@@ -874,7 +1052,53 @@ class Server:
                                     )
                                 )
 
-                        # Create a ChatCompletionChunk
+                        # Create a ChatCompletionChunk with reasoning_content support
+                        # If we're in reasoning mode and haven't seen </think> yet,
+                        # send tokens as reasoning_content instead of content
+                        delta_content = None
+                        delta_reasoning = None
+
+                        if reasoning_first_token:
+                            # First token - include opening tag in reasoning
+                            delta_reasoning = "<think>" + token
+                            reasoning_first_token = False
+                            reasoning_buffer = token
+                        elif in_thinking_phase:
+                            # Still in thinking phase - accumulate and check for </think>
+                            reasoning_buffer += token
+
+                            # Check if we've seen the closing tag
+                            if "</think>" in reasoning_buffer:
+                                # Split at the closing tag
+                                before_close, after_close = reasoning_buffer.split(
+                                    "</think>", 1
+                                )
+
+                                # Send everything before + closing tag as reasoning
+                                if before_close or not reasoning_buffer.startswith(
+                                    "</think>"
+                                ):
+                                    delta_reasoning = before_close + "</think>"
+                                else:
+                                    delta_reasoning = "</think>"
+
+                                # Everything after goes to content (will be sent in next iteration)
+                                # For now, mark that we've exited thinking phase
+                                in_thinking_phase = False
+
+                                # If there's content after </think>, we need to send it too
+                                # But we send it in the current chunk as regular content
+                                if after_close:
+                                    # We have both reasoning and content in this token
+                                    # Send reasoning first, content will accumulate
+                                    delta_content = after_close
+                            else:
+                                # Still accumulating thinking, send as reasoning_content
+                                delta_reasoning = token
+                        else:
+                            # Normal content (after thinking phase ended)
+                            delta_content = token
+
                         chunk = ChatCompletionChunk.model_construct(
                             id="0",
                             object="chat.completion.chunk",
@@ -884,11 +1108,8 @@ class Server:
                                 Choice.model_construct(
                                     index=0,
                                     delta=ChoiceDelta(
-                                        content=(
-                                            "<think>" + token
-                                            if reasoning_first_token
-                                            else token
-                                        ),
+                                        content=delta_content,
+                                        reasoning_content=delta_reasoning,
                                         function_call=None,
                                         role="assistant",
                                         tool_calls=openai_tool_calls,
@@ -901,7 +1122,6 @@ class Server:
                         )
 
                         # Format as SSE
-                        reasoning_first_token = False
                         yield f"data: {chunk.model_dump_json()}\n\n".encode("utf-8")
 
                     # Send the [DONE] marker only if still connected
@@ -1599,9 +1819,10 @@ class Server:
         Load a registered LLM into system memory. Install the model first, if needed.
             config: the information required to load the model
         """
+        from huggingface_hub.constants import HF_HUB_CACHE
+
         try:
             await self._load_lock.acquire()
-
             # Acquire all generate locks
             for _ in range(self.max_concurrent_generations):
                 await self._generate_semaphore.acquire()
@@ -1625,6 +1846,38 @@ class Server:
 
                 # Get additional properties from the model registry
                 config_to_use = LoadConfig(**supported_models[config.model_name])
+
+            # For locally uploaded models, convert the relative checkpoint path to absolute path
+            model_source = supported_models.get(config.model_name, {}).get(
+                "source", None
+            )
+            if (
+                model_source == "local_upload"
+                and config_to_use.checkpoint
+                and not config_to_use.recipe.startswith("hf-")
+            ):
+                # Check if checkpoint is a relative path (stored during upload)
+                if not os.path.isabs(config_to_use.checkpoint):
+                    # Convert relative path to absolute by joining with HF_HUB_CACHE
+                    absolute_checkpoint = os.path.join(
+                        HF_HUB_CACHE, config_to_use.checkpoint
+                    )
+                    if os.path.exists(absolute_checkpoint):
+                        config_to_use.checkpoint = absolute_checkpoint
+                    else:
+                        logging.warning(
+                            f"Checkpoint path does not exist: {absolute_checkpoint}"
+                        )
+
+                # Also resolve mmproj path if present
+                if config_to_use.mmproj and not os.path.isabs(config_to_use.mmproj):
+                    absolute_mmproj = os.path.join(HF_HUB_CACHE, config_to_use.mmproj)
+                    if os.path.exists(absolute_mmproj):
+                        config_to_use.mmproj = absolute_mmproj
+                    else:
+                        logging.warning(
+                            f"MMProj path does not exist: {absolute_mmproj}"
+                        )
 
             # Caching mechanism: if the checkpoint is already loaded there is nothing else to do
             if (

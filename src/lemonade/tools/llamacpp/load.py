@@ -97,6 +97,7 @@ class LoadLlamaCpp(FirstTool):
             get_llama_installed_version,
             parse_checkpoint,
             download_gguf,
+            resolve_local_gguf_model,
             get_local_checkpoint_path,
             LlamaCppTokenizerAdapter,
             LlamaCppAdapter,
@@ -169,8 +170,16 @@ class LoadLlamaCpp(FirstTool):
                     )
 
             else:
+                # First, try to resolve from local cache to avoid unnecessary downloads
+                base_checkpoint, variant = parse_checkpoint(checkpoint)
+                snapshot_files = resolve_local_gguf_model(
+                    base_checkpoint, variant, None
+                )
 
-                snapshot_files = download_gguf(checkpoint)
+                # If not found locally, download from internet
+                if not snapshot_files:
+                    snapshot_files = download_gguf(checkpoint)
+
                 full_model_path = snapshot_files["variant"]
                 model_to_use = os.path.basename(full_model_path)
 
