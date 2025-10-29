@@ -6,7 +6,7 @@ on:
     tags:
       - v*
       - RC*
-  # pull_request:
+  pull_request:
   merge_group:
 
 jobs:

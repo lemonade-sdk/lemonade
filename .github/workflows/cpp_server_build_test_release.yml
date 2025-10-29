@@ -685,8 +685,8 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub
+          # Install test dependencies
+          conda run -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM tests with C++ server
@@ -758,8 +758,8 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub numpy
+          # Install test dependencies
+          conda run -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp Vulkan tests with C++ server
@@ -831,8 +831,8 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub numpy
+          # Install test dependencies
+          conda run -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp ROCm tests with C++ server
@@ -904,8 +904,8 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          # Install test dependencies (required by utils/server_base.py)
-          conda run -p .\test-env pip install requests pytest psutil httpx openai huggingface_hub
+          # Install test dependencies
+          conda run -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run general server tests with C++ server
