@@ -61,21 +61,40 @@ cmake --build . --config Release
 - **Linux/macOS:** `build/lemonade-router` and `build/lemonade-server-beta`
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry)
 
+### RyzenAI Serve Dependency
+
+The `lemonade-router` server has a runtime dependency on `ryzenai-serve` for NPU model inference. This dependency can be fulfilled in two ways:
+
+1. **Development builds:** Build `ryzenai-serve` from source in the same repository:
+   ```bash
+   # Build ryzenai-serve
+   cd src/ryzenai-serve
+   mkdir build && cd build
+   cmake .. -G "Visual Studio 17 2022"
+   cmake --build . --config Release
+   
+   # The executable will be at: src/ryzenai-serve/build/bin/Release/ryzenai-serve.exe
+   ```
+
+2. **Runtime download:** For end users, `lemonade-router` will automatically download the `ryzenai-serve` executable from GitHub releases as needed when attempting to run NPU models.
+
 ### Platform-Specific Notes
 
 **Windows:**
 - The build uses static linking to minimize DLL dependencies
 - `zstd.dll` is automatically copied from your system PATH if available (provided by Miniforge/Miniconda)
-- If zstd.dll is not found, the build will complete but you may need to install Miniforge
+- If zstd.dll is not found, the build will complete but the user will need to install Miniforge
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
 - System tray requires GTK3 and libappindicator3
 - Different desktop environments may have varying tray support
+- ⚠️ **Note:** Linux build is currently a stub implementation and not fully functional
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
+- ⚠️ **Note:** macOS build is currently a stub implementation and not fully functional
 
 ## Building the Windows Installer
 
