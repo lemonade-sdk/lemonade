@@ -33,37 +33,6 @@ InferenceEngine::InferenceEngine(const std::string& model_path, const std::strin
     // Detect Ryzen AI version and load config
     loadRaiConfig();
     
-    // Determine actual execution mode
-    if (execution_mode_ == "auto") {
-        // Try to detect from genai_config.json
-        std::string config_path = model_path_ + "/genai_config.json";
-        if (fs::exists(config_path)) {
-            std::ifstream file(config_path);
-            json config = json::parse(file);
-            
-            // Check if model has hybrid support
-            if (config.contains("model") && config["model"].contains("decoder") &&
-                config["model"]["decoder"].contains("session_options")) {
-                auto session_opts = config["model"]["decoder"]["session_options"];
-                if (session_opts.contains("custom_ops_library")) {
-                    std::string custom_ops = session_opts["custom_ops_library"];
-                    if (custom_ops.find("onnx_custom_ops") != std::string::npos) {
-                        execution_mode_ = "hybrid";
-                    } else if (custom_ops.find("vitis_ai") != std::string::npos) {
-                        execution_mode_ = "npu";
-                    }
-                }
-            }
-        }
-        
-        // Default to NPU if couldn't determine
-        if (execution_mode_ == "auto") {
-            execution_mode_ = "npu";
-        }
-        
-        std::cout << "[InferenceEngine] Auto-detected execution mode: " << execution_mode_ << std::endl;
-    }
-    
     // Setup execution provider
     setupExecutionProvider();
     

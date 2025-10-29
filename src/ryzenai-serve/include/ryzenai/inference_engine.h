@@ -57,7 +57,7 @@ private:
     
     std::string model_path_;
     std::string model_name_;
-    std::string execution_mode_;  // "npu", "hybrid", "cpu", or "auto"
+    std::string execution_mode_;  // "npu", "hybrid", or "cpu"
     std::string ryzenai_version_;
     std::string chat_template_;  // Chat template from tokenizer_config.json
     int max_prompt_length_ = 2048;  // Default, overridden by rai_config.json

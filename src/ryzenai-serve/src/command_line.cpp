@@ -35,8 +35,8 @@ CommandLineArgs CommandLineParser::parse(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 args.mode = argv[++i];
                 // Validate mode
-                if (args.mode != "auto" && args.mode != "npu" && args.mode != "hybrid" && args.mode != "cpu") {
-                    throw std::runtime_error("Invalid mode: " + args.mode + " (must be auto, npu, hybrid, or cpu)");
+                if (args.mode != "npu" && args.mode != "hybrid" && args.mode != "cpu") {
+                    throw std::runtime_error("Invalid mode: " + args.mode + " (must be npu, hybrid, or cpu)");
                 }
             } else {
                 throw std::runtime_error("Missing value for --mode");
@@ -79,7 +79,7 @@ void CommandLineParser::printUsage(const char* program_name) {
     std::cout << "Optional Arguments:\n";
     std::cout << "  --host HOST               Host to bind to (default: 127.0.0.1)\n";
     std::cout << "  -p, --port PORT           Port to listen on (default: 8080)\n";
-    std::cout << "  --mode MODE               Execution mode: auto|npu|hybrid|cpu (default: auto)\n";
+    std::cout << "  --mode MODE               Execution mode: npu|hybrid|cpu (default: hybrid)\n";
     std::cout << "  -c, --ctx-size SIZE       Context size (default: 2048)\n";
     std::cout << "  -t, --threads NUM         Number of threads (default: 4)\n";
     std::cout << "  -v, --verbose             Enable verbose output\n";
