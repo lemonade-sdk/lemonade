@@ -981,5 +981,4 @@ jobs:
             Lemonade_Server_Installer_beta.exe
             ryzenai-serve.zip
           fail_on_unmatched_files: true
-          generate_release_notes: true
 
