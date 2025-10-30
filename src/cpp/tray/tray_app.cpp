@@ -33,6 +33,61 @@ namespace lemon_tray {
         std::cout << "DEBUG: " << msg << std::endl; \
     }
 
+#ifdef _WIN32
+// Helper function to show a simple Windows notification without tray
+static void show_simple_notification(const std::string& title, const std::string& message) {
+    // Convert UTF-8 to wide string
+    auto utf8_to_wstring = [](const std::string& str) -> std::wstring {
+        if (str.empty()) return std::wstring();
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+        std::wstring result(size_needed, 0);
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], size_needed);
+        if (!result.empty() && result.back() == L'\0') {
+            result.pop_back();
+        }
+        return result;
+    };
+    
+    // Create a temporary window class and window for the notification
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = L"LemonadeNotifyClass";
+    RegisterClassW(&wc);
+    
+    HWND hwnd = CreateWindowW(L"LemonadeNotifyClass", L"", 0, 0, 0, 0, 0, nullptr, nullptr, wc.hInstance, nullptr);
+    
+    if (hwnd) {
+        NOTIFYICONDATAW nid = {};
+        nid.cbSize = sizeof(nid);
+        nid.hWnd = hwnd;
+        nid.uID = 1;
+        nid.uFlags = NIF_INFO | NIF_ICON;
+        nid.dwInfoFlags = NIIF_INFO;
+        
+        // Use default icon
+        nid.hIcon = LoadIcon(nullptr, IDI_INFORMATION);
+        
+        std::wstring title_wide = utf8_to_wstring(title);
+        std::wstring message_wide = utf8_to_wstring(message);
+        
+        wcsncpy_s(nid.szInfoTitle, title_wide.c_str(), _TRUNCATE);
+        wcsncpy_s(nid.szInfo, message_wide.c_str(), _TRUNCATE);
+        wcsncpy_s(nid.szTip, L"Lemonade Server", _TRUNCATE);
+        
+        // Add the icon and show notification
+        Shell_NotifyIconW(NIM_ADD, &nid);
+        
+        // Keep it displayed briefly then clean up
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        Shell_NotifyIconW(NIM_DELETE, &nid);
+        
+        DestroyWindow(hwnd);
+    }
+    UnregisterClassW(L"LemonadeNotifyClass", GetModuleHandle(nullptr));
+}
+#endif
+
 // Global pointer to the current TrayApp instance for signal handling
 static TrayApp* g_tray_app_instance = nullptr;
 
@@ -143,6 +198,9 @@ int TrayApp::run() {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("ServerBeta")) {
+#ifdef _WIN32
+            show_simple_notification("Server Already Running", "Lemonade Server is already running");
+#endif
             std::cerr << "Error: Another instance of lemonade-server-beta serve/run is already running.\n"
                       << "Only one persistent server can run at a time.\n\n"
                       << "To check server status: lemonade-server-beta status\n"
