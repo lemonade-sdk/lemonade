@@ -906,17 +906,23 @@ Menu TrayApp::create_menu() {
     Menu menu;
     
     // Status display
-    std::string loaded = get_loaded_model();
-    if (!loaded.empty()) {
-        menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
-        menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+    if (is_loading_model_) {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(loading_mutex_));
+        menu.add_item(MenuItem::Action("Loading: " + loading_model_name_ + "...", nullptr, false));
     } else {
-        menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
+        std::string loaded = get_loaded_model();
+        if (!loaded.empty()) {
+            menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
+            menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+        } else {
+            menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
+        }
     }
     
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
     auto models = get_downloaded_models();
+    std::string current_loaded = get_loaded_model();
     if (models.empty()) {
         load_submenu->add_item(MenuItem::Action(
             "No models available: Use the Model Manager",
@@ -925,7 +931,7 @@ Menu TrayApp::create_menu() {
         ));
     } else {
         for (const auto& model : models) {
-            bool is_loaded = (model.id == loaded);
+            bool is_loaded = (model.id == current_loaded);
             load_submenu->add_item(MenuItem::Checkable(
                 model.id,
                 [this, model]() { on_load_model(model.id); },
@@ -983,14 +989,63 @@ Menu TrayApp::create_menu() {
 // Menu action implementations
 
 void TrayApp::on_load_model(const std::string& model_name) {
-    std::cout << "Loading model: " << model_name << std::endl;
-    if (server_manager_->load_model(model_name)) {
-        loaded_model_ = model_name;
-        build_menu();
+    // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
+    // when build_menu() destroys the old menu (which destroys the lambda that captured the model)
+    std::string model_name_copy = model_name;
+    
+    // Don't start a new load if one is already in progress
+    if (is_loading_model_) {
+        show_notification("Model Loading", "A model is already being loaded. Please wait.");
+        return;
     }
+    
+    std::cout << "Loading model: '" << model_name_copy << "' (length: " << model_name_copy.length() << ")" << std::endl;
+    std::cout.flush();
+    
+    // Set loading state
+    {
+        std::lock_guard<std::mutex> lock(loading_mutex_);
+        is_loading_model_ = true;
+        loading_model_name_ = model_name_copy;
+    }
+    
+    // Update menu to show loading status
+    build_menu();
+    
+    // Launch background thread to perform the load
+    std::thread([this, model_name_copy]() {
+        std::cout << "Background thread: Loading model: '" << model_name_copy << "' (length: " << model_name_copy.length() << ")" << std::endl;
+        std::cout.flush();
+        
+        bool success = server_manager_->load_model(model_name_copy);
+        
+        // Update state after load completes
+        {
+            std::lock_guard<std::mutex> lock(loading_mutex_);
+            is_loading_model_ = false;
+            if (success) {
+                loaded_model_ = model_name_copy;
+            }
+        }
+        
+        // Update menu to show new status
+        build_menu();
+        
+        if (success) {
+            show_notification("Model Loaded", "Successfully loaded " + model_name_copy);
+        } else {
+            show_notification("Load Failed", "Failed to load " + model_name_copy);
+        }
+    }).detach();
 }
 
 void TrayApp::on_unload_model() {
+    // Don't allow unload while a model is loading
+    if (is_loading_model_) {
+        show_notification("Model Loading", "Please wait for the current model to finish loading.");
+        return;
+    }
+    
     std::cout << "Unloading model" << std::endl;
     if (server_manager_->unload_model()) {
         loaded_model_.clear();
@@ -1203,8 +1258,6 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
         // Parse the models JSON response
         // Expected format: {"data": [{"id": "...", "checkpoint": "...", "recipe": "..."}], "object": "list"}
         if (models_json.contains("data") && models_json["data"].is_array()) {
-            std::cout << "DEBUG: Found " << models_json["data"].size() << " models from server" << std::endl;
-            
             for (const auto& model : models_json["data"]) {
                 ModelInfo info;
                 info.id = model.value("id", "");
@@ -1212,7 +1265,6 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
                 info.recipe = model.value("recipe", "");
                 
                 if (!info.id.empty()) {
-                    std::cout << "DEBUG: Added model: " << info.id << std::endl;
                     models.push_back(info);
                 }
             }

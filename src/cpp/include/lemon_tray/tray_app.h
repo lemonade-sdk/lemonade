@@ -7,6 +7,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 namespace lemon_tray {
 
@@ -97,6 +98,11 @@ private:
     std::string loaded_model_;
     std::vector<ModelInfo> downloaded_models_;
     bool should_exit_;
+    
+    // Model loading state
+    std::atomic<bool> is_loading_model_{false};
+    std::string loading_model_name_;
+    std::mutex loading_mutex_;
     
     // Version info
     std::string current_version_;

@@ -322,6 +322,9 @@ void WindowsTray::show_notification(
     const std::string& message,
     NotificationType type)
 {
+    // Store the title to handle clicks appropriately
+    last_notification_title_ = title;
+    
     nid_.uFlags = NIF_INFO;
     
     std::wstring title_wide = utf8_to_wstring(title);
@@ -462,13 +465,18 @@ void WindowsTray::on_tray_icon(LPARAM lparam) {
             break;
             
         case NIN_BALLOONUSERCLICK:
-            std::cout << "DEBUG: User clicked balloon notification (showing menu)" << std::endl;
-            // Trigger menu update callback if set (to refresh server state)
-            if (menu_update_callback_) {
-                std::cout << "DEBUG: Calling menu update callback..." << std::endl;
-                menu_update_callback_();
+            // Model loading notifications should just dismiss (not open menu)
+            if (last_notification_title_ == "Model Loaded" || 
+                last_notification_title_ == "Load Failed") {
+                // Just let it dismiss (do nothing)
+            } else {
+                // Other notifications (like "Server Started") open the menu
+                // Trigger menu update callback if set (to refresh server state)
+                if (menu_update_callback_) {
+                    menu_update_callback_();
+                }
+                show_context_menu();
             }
-            show_context_menu();
             break;
             
         case NIN_POPUPOPEN:

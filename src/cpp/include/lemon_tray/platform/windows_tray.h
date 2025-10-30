@@ -69,6 +69,7 @@ private:
     NOTIFYICONDATAW nid_;
     HMENU hmenu_;
     HICON notification_icon_;  // Icon used for notifications
+    std::string last_notification_title_;  // Track last notification for click handling
     std::atomic<bool> should_exit_;
     std::function<void()> ready_callback_;
     std::function<void()> menu_update_callback_;
