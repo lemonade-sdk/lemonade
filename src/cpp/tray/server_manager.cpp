@@ -4,6 +4,12 @@
 #include <thread>
 #include <chrono>
 
+// Helper macro for debug logging
+#define DEBUG_LOG(mgr, msg) \
+    if ((mgr)->log_level_ == "debug") { \
+        std::cout << "DEBUG: " << msg << std::endl; \
+    }
+
 #ifdef _WIN32
 // Critical: Define _WINSOCKAPI_ FIRST to prevent winsock.h from being included
 // This MUST come before any Windows headers
@@ -57,10 +63,11 @@ bool ServerManager::start_server(
     const std::string& server_binary_path,
     int port,
     int ctx_size,
-    const std::string& log_file)
+    const std::string& log_file,
+    const std::string& log_level)
 {
     if (is_server_running()) {
-        std::cout << "Server is already running" << std::endl;
+        DEBUG_LOG(this, "Server is already running");
         return true;
     }
     
@@ -68,6 +75,7 @@ bool ServerManager::start_server(
     port_ = port;
     ctx_size_ = ctx_size;
     log_file_ = log_file;
+    log_level_ = log_level;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -75,23 +83,23 @@ bool ServerManager::start_server(
     }
     
     // Wait for server to be ready (check health endpoint)
-    std::cout << "Waiting for server to start..." << std::endl;
-    std::cout << "DEBUG: Will check health at: http://localhost:" << port_ << "/api/v1/health" << std::endl;
+    DEBUG_LOG(this, "Waiting for server to start...");
+    DEBUG_LOG(this, "Will check health at: http://localhost:" << port_ << "/api/v1/health");
     
     for (int i = 0; i < 30; ++i) {  // Wait up to 30 seconds
-        std::cout << "DEBUG: Health check attempt " << (i+1) << "/30..." << std::endl;
+        DEBUG_LOG(this, "Health check attempt " << (i+1) << "/30...");
         std::this_thread::sleep_for(std::chrono::seconds(1));
         try {
-            std::cout << "DEBUG: Making HTTP request..." << std::endl;
+            DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
-            std::cout << "DEBUG: Health check succeeded!" << std::endl;
-            std::cout << "Server started successfully!" << std::endl;
+            DEBUG_LOG(this, "Health check succeeded!");
+            DEBUG_LOG(this, "Server started successfully!");
             server_started_ = true;
             return true;
         } catch (const std::exception& e) {
-            std::cout << "DEBUG: Health check failed: " << e.what() << std::endl;
+            DEBUG_LOG(this, "Health check failed: " << e.what());
         } catch (...) {
-            std::cout << "DEBUG: Health check failed with unknown error" << std::endl;
+            DEBUG_LOG(this, "Health check failed with unknown error");
         }
     }
     
@@ -105,7 +113,7 @@ bool ServerManager::stop_server() {
         return true;
     }
     
-    std::cout << "Stopping server..." << std::endl;
+    DEBUG_LOG(this, "Stopping server...");
     
     // Try graceful shutdown first via API
     try {
@@ -130,14 +138,14 @@ bool ServerManager::stop_server() {
     }
 #endif
     
-    std::cout << "Server stopped" << std::endl;
+    DEBUG_LOG(this, "Server stopped");
     return true;
 }
 
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_);
+    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -258,9 +266,9 @@ bool ServerManager::spawn_process() {
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
-    cmdline += " --log-level debug";  // Always use debug logging
+    cmdline += " --log-level debug";  // Always use debug logging for router
     
-    std::cout << "Starting server: " << cmdline << std::endl;
+    DEBUG_LOG(this, "Starting server: " << cmdline);
     
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
@@ -268,7 +276,7 @@ bool ServerManager::spawn_process() {
     // Redirect stdout/stderr to log file if specified
     HANDLE log_handle = INVALID_HANDLE_VALUE;
     if (!log_file_.empty()) {
-        std::cout << "Redirecting output to: " << log_file_ << std::endl;
+        DEBUG_LOG(this, "Redirecting output to: " << log_file_);
         
         SECURITY_ATTRIBUTES sa = {};
         sa.nLength = sizeof(sa);
@@ -309,7 +317,7 @@ bool ServerManager::spawn_process() {
     size_t last_slash = server_binary_path_.find_last_of("/\\");
     if (last_slash != std::string::npos) {
         working_dir = server_binary_path_.substr(0, last_slash);
-        std::cout << "Setting working directory to: " << working_dir << std::endl;
+        DEBUG_LOG(this, "Setting working directory to: " << working_dir);
     }
     
     // Create process

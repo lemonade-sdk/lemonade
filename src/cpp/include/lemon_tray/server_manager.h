@@ -44,7 +44,8 @@ public:
         const std::string& server_binary_path,
         int port,
         int ctx_size,
-        const std::string& log_file
+        const std::string& log_file,
+        const std::string& log_level = "info"
     );
     
     bool stop_server();
@@ -65,6 +66,13 @@ public:
     bool load_model(const std::string& model_name);
     bool unload_model();
     
+    // HTTP communication (public for custom requests)
+    std::string make_http_request(
+        const std::string& endpoint,
+        const std::string& method = "GET",
+        const std::string& body = ""
+    );
+    
     // Utility
     std::string get_base_url() const;
     
@@ -74,17 +82,11 @@ private:
     bool terminate_process();
     bool is_process_alive() const;
     
-    // HTTP communication
-    std::string make_http_request(
-        const std::string& endpoint,
-        const std::string& method = "GET",
-        const std::string& body = ""
-    );
-    
     // Member variables
     pid_t server_pid_;
     std::string server_binary_path_;
     std::string log_file_;
+    std::string log_level_;
     int port_;
     int ctx_size_;
     std::atomic<bool> server_started_;

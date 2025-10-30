@@ -479,17 +479,18 @@ bool TrayApp::start_ephemeral_server(int port) {
         server_manager_ = std::make_unique<ServerManager>();
     }
     
-    std::cout << "[INFO] Starting ephemeral server on port " << port << "..." << std::endl;
+    DEBUG_LOG(this, "Starting ephemeral server on port " << port << "...");
     
     bool success = server_manager_->start_server(
         config_.server_binary,
         port,
         config_.ctx_size,
-        config_.log_file.empty() ? "" : config_.log_file
+        config_.log_file.empty() ? "" : config_.log_file,
+        config_.log_level  // Pass log level to ServerManager
     );
     
     if (!success) {
-        std::cerr << "[ERROR] Failed to start ephemeral server" << std::endl;
+        std::cerr << "Failed to start ephemeral server" << std::endl;
         return false;
     }
     
@@ -498,7 +499,7 @@ bool TrayApp::start_ephemeral_server(int port) {
 
 // Command: list
 int TrayApp::execute_list_command() {
-    std::cout << "Listing available models..." << std::endl;
+    DEBUG_LOG(this, "Listing available models...");
     
     // Check if server is running
     auto [pid, running_port] = get_server_info();
@@ -512,13 +513,16 @@ int TrayApp::execute_list_command() {
         }
     }
     
-    // Get models from server
+    // Get models from server with show_all=true to include download status
     try {
         if (!server_manager_) {
             server_manager_ = std::make_unique<ServerManager>();
         }
+        server_manager_->set_port(port);  // Use the detected or configured port
         
-        auto models_json = server_manager_->get_models();
+        // Request with show_all=true to get download status
+        std::string response = server_manager_->make_http_request("/api/v1/models?show_all=true");
+        auto models_json = nlohmann::json::parse(response);
         
         if (!models_json.contains("data") || !models_json["data"].is_array()) {
             std::cerr << "Invalid response format from server" << std::endl;
@@ -534,8 +538,8 @@ int TrayApp::execute_list_command() {
         
         for (const auto& model : models_json["data"]) {
             std::string name = model.value("id", "unknown");
-            // TODO: Check if downloaded
-            std::string downloaded = "?";
+            bool is_downloaded = model.value("downloaded", false);
+            std::string downloaded = is_downloaded ? "Yes" : "No";
             std::string details = model.value("recipe", "-");
             
             std::cout << std::left << std::setw(40) << name
@@ -553,6 +557,7 @@ int TrayApp::execute_list_command() {
     
     // Stop ephemeral server
     if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
         stop_server();
     }
     
@@ -563,7 +568,7 @@ int TrayApp::execute_list_command() {
 int TrayApp::execute_pull_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server-beta pull <model_name>" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--mmproj MMPROJ]" << std::endl;
         return 1;
     }
     
@@ -582,11 +587,57 @@ int TrayApp::execute_pull_command() {
         }
     }
     
-    // TODO: Implement pull via API
-    std::cout << "Pull functionality will be implemented via API endpoint" << std::endl;
+    // Pull model via API with optional parameters
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        server_manager_->set_port(port);  // Use the detected or configured port
+        
+        // Build request body with all optional parameters
+        nlohmann::json request_body = {{"model", model_name}};
+        
+        // Parse optional arguments from config_.command_args (starting at index 1)
+        for (size_t i = 1; i < config_.command_args.size(); ++i) {
+            const auto& arg = config_.command_args[i];
+            
+            if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
+                request_body["checkpoint"] = config_.command_args[++i];
+            } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
+                request_body["recipe"] = config_.command_args[++i];
+            } else if (arg == "--reasoning") {
+                request_body["reasoning"] = true;
+            } else if (arg == "--vision") {
+                request_body["vision"] = true;
+            } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
+                request_body["mmproj"] = config_.command_args[++i];
+            }
+        }
+        
+        std::string response = server_manager_->make_http_request(
+            "/api/v1/pull", 
+            "POST", 
+            request_body.dump()
+        );
+        
+        auto response_json = nlohmann::json::parse(response);
+        if (response_json.value("status", "") == "success") {
+            std::cout << "Model pulled successfully: " << model_name << std::endl;
+        } else {
+            std::cerr << "Failed to pull model" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error pulling model: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
     
     // Stop ephemeral server
     if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
         stop_server();
     }
     
@@ -616,11 +667,38 @@ int TrayApp::execute_delete_command() {
         }
     }
     
-    // TODO: Implement delete via API
-    std::cout << "Delete functionality will be implemented via API endpoint" << std::endl;
+    // Delete model via API
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        server_manager_->set_port(port);  // Use the detected or configured port
+        
+        nlohmann::json request_body = {{"model", model_name}};
+        std::string response = server_manager_->make_http_request(
+            "/api/v1/delete", 
+            "POST", 
+            request_body.dump()
+        );
+        
+        auto response_json = nlohmann::json::parse(response);
+        if (response_json.value("status", "") == "success") {
+            std::cout << "Model deleted successfully: " << model_name << std::endl;
+        } else {
+            std::cerr << "Failed to delete model" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error deleting model: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
     
     // Stop ephemeral server
     if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
         stop_server();
     }
     
@@ -780,14 +858,15 @@ bool TrayApp::start_server() {
         // Unix: /tmp/lemonade-server.log or ~/.lemonade/server.log
         config_.log_file = "/tmp/lemonade-server.log";
         #endif
-        std::cout << "Using default log file: " << config_.log_file << std::endl;
+        DEBUG_LOG(this, "Using default log file: " << config_.log_file);
     }
     
     return server_manager_->start_server(
         config_.server_binary,
         config_.port,
         config_.ctx_size,
-        config_.log_file
+        config_.log_file,
+        config_.log_level  // Pass log level to ServerManager
     );
 }
 
@@ -973,7 +1052,7 @@ void TrayApp::shutdown() {
     
     // Only print shutdown message if we actually have something to shutdown
     if (server_manager_ || tray_) {
-        std::cout << "Shutting down gracefully..." << std::endl;
+        DEBUG_LOG(this, "Shutting down gracefully...");
     }
     
     // Stop the server
