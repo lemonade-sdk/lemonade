@@ -105,6 +105,9 @@ public:
     
     // Set callback for when ready
     virtual void set_ready_callback(std::function<void()> callback) = 0;
+    
+    // Set log level for debug logging
+    virtual void set_log_level(const std::string& log_level) = 0;
 };
 
 // Factory function to create platform-specific tray

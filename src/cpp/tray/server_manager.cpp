@@ -96,7 +96,7 @@ bool ServerManager::start_server(
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
             DEBUG_LOG(this, "Health check succeeded!");
-            DEBUG_LOG(this, "Server started successfully!");
+            std::cout << "Server started on port " << port_ << std::endl;
             server_started_ = true;
             return true;
         } catch (const std::exception& e) {
@@ -206,8 +206,8 @@ bool ServerManager::load_model(const std::string& model_name) {
         std::string body = "{\"model_name\": \"" + model_name + "\"}";
         
         // Model loading can take a long time, so use extended timeout
-        std::cout << "DEBUG: Loading model with extended timeout..." << std::endl;
-        std::cout << "DEBUG: Request body: " << body << std::endl;
+        DEBUG_LOG(this, "Loading model with extended timeout...");
+        DEBUG_LOG(this, "Request body: " << body);
         
         httplib::Client cli("127.0.0.1", port_);
         cli.set_connection_timeout(10, 0);   // 10 second connection timeout
@@ -216,12 +216,12 @@ bool ServerManager::load_model(const std::string& model_name) {
         auto res = cli.Post("/api/v1/load", body, "application/json");
         
         if (!res) {
-            std::cout << "DEBUG: Load request connection error: " << static_cast<int>(res.error()) << std::endl;
+            DEBUG_LOG(this, "Load request connection error: " << static_cast<int>(res.error()));
             return false;
         }
         
-        std::cout << "DEBUG: Load request status: " << res->status << std::endl;
-        std::cout << "DEBUG: Response body: " << res->body << std::endl;
+        DEBUG_LOG(this, "Load request status: " << res->status);
+        DEBUG_LOG(this, "Response body: " << res->body);
         
         if (res->status >= 200 && res->status < 300) {
             return true;
@@ -245,7 +245,7 @@ bool ServerManager::unload_model() {
         auto res = cli.Post("/api/v1/unload", "", "application/json");
         
         if (!res) {
-            std::cout << "DEBUG: Unload request connection error: " << static_cast<int>(res.error()) << std::endl;
+            DEBUG_LOG(this, "Unload request connection error: " << static_cast<int>(res.error()));
             return false;
         }
         

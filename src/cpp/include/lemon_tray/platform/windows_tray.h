@@ -35,11 +35,15 @@ public:
     void set_icon(const std::string& icon_path) override;
     void set_tooltip(const std::string& tooltip) override;
     void set_ready_callback(std::function<void()> callback) override;
+    void set_log_level(const std::string& log_level) override;
     
     // Set callback for when menu needs updating (e.g., before showing)
     void set_menu_update_callback(std::function<void()> callback) {
         menu_update_callback_ = callback;
     }
+    
+    // Check if debug logging is enabled
+    bool is_debug() const { return log_level_ == "debug" || log_level_ == "trace"; }
     
 private:
     // Windows-specific methods
@@ -64,6 +68,7 @@ private:
     std::string app_name_;
     std::string icon_path_;
     std::string tooltip_;
+    std::string log_level_;
     HWND hwnd_;
     HINSTANCE hinst_;
     NOTIFYICONDATAW nid_;

@@ -199,6 +199,9 @@ int TrayApp::run() {
     
     DEBUG_LOG(this, "Tray created successfully");
     
+    // Set log level for the tray
+    tray_->set_log_level(config_.log_level);
+    
     // Set ready callback
     DEBUG_LOG(this, "Setting ready callback...");
     tray_->set_ready_callback([this]() {
@@ -218,29 +221,29 @@ int TrayApp::run() {
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
     std::string icon_path = "resources/static/favicon.ico";
-    std::cout << "DEBUG: Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
+    DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
     
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(config_.server_binary).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
-        std::cout << "DEBUG: Icon not found, trying: " << icon_path << std::endl;
+        DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
         
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
-            std::cout << "DEBUG: Icon not found, trying fallback: " << icon_path << std::endl;
+            DEBUG_LOG(this, "Icon not found, trying fallback: " << icon_path);
         }
     }
     
     if (fs::exists(icon_path)) {
-        std::cout << "DEBUG: Icon found at: " << icon_path << std::endl;
+        DEBUG_LOG(this, "Icon found at: " << icon_path);
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
     
     // Initialize tray
-    std::cout << "DEBUG: Initializing tray with icon: " << icon_path << std::endl;
+    DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
     if (!tray_->initialize("Lemonade Server", icon_path)) {
         std::cerr << "Error: Failed to initialize tray" << std::endl;
         return 1;
@@ -902,12 +905,14 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
+    // Get loaded model once and cache it to avoid redundant health checks
+    std::string loaded = is_loading_model_ ? "" : get_loaded_model();
+    
     // Status display
     if (is_loading_model_) {
         std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(loading_mutex_));
         menu.add_item(MenuItem::Action("Loading: " + loading_model_name_ + "...", nullptr, false));
     } else {
-        std::string loaded = get_loaded_model();
         if (!loaded.empty()) {
             menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
             menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
@@ -919,7 +924,8 @@ Menu TrayApp::create_menu() {
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
     auto models = get_downloaded_models();
-    std::string current_loaded = get_loaded_model();
+    // Reuse cached value instead of calling get_loaded_model() again
+    std::string current_loaded = loaded;
     if (models.empty()) {
         load_submenu->add_item(MenuItem::Action(
             "No models available: Use the Model Manager",
