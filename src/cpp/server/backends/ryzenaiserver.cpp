@@ -341,12 +341,13 @@ void RyzenAIServer::load(const std::string& model_name,
     
     std::cout << "[RyzenAI-Serve] Starting ryzenai-serve..." << std::endl;
     
-    // Start the process
+    // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(
         ryzenai_serve_path,
         args,
         "",
-        is_debug()
+        is_debug(),
+        true
     );
     
     if (!utils::ProcessManager::is_running(process_handle_)) {
