@@ -7,6 +7,7 @@
 
 #include <string>
 #include <memory>
+#include <mutex>
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
@@ -69,6 +70,9 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     
     bool running_;
+    
+    // Mutex to serialize load/unload operations and prevent race conditions
+    mutable std::mutex load_operation_mutex_;
 };
 
 } // namespace lemon

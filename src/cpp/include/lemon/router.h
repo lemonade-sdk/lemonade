@@ -2,7 +2,7 @@
 
 #include <string>
 #include <memory>
-#include <mutex>
+#include <shared_mutex>
 #include <nlohmann/json.hpp>
 #include "wrapped_server.h"
 
@@ -28,13 +28,13 @@ public:
     // Unload the currently loaded model
     void unload_model();
     
-    // Get the currently loaded model info
-    std::string get_loaded_model() const { return loaded_model_; }
-    std::string get_loaded_checkpoint() const { return loaded_checkpoint_; }
-    std::string get_loaded_recipe() const { return loaded_recipe_; }
+    // Get the currently loaded model info (thread-safe)
+    std::string get_loaded_model() const;
+    std::string get_loaded_checkpoint() const;
+    std::string get_loaded_recipe() const;
     
-    // Check if a model is loaded
-    bool is_model_loaded() const { return wrapped_server_ != nullptr; }
+    // Check if a model is loaded (thread-safe)
+    bool is_model_loaded() const;
     
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
@@ -60,7 +60,10 @@ private:
     std::string llamacpp_backend_;
     std::string log_level_;
     
-    mutable std::mutex load_mutex_;  // Serialize load_model() calls
+    mutable std::shared_mutex load_mutex_;  // Reader-writer lock: readers can read concurrently, writers are exclusive
+    
+    // Internal helper that does the actual unload work (assumes write lock is already held)
+    void unload_model_impl();
 };
 
 } // namespace lemon

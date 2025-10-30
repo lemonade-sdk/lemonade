@@ -133,7 +133,14 @@ void Server::setup_routes() {
     });
     
     register_post("unload", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_unload(req, res);
+        try {
+            handle_unload(req, res);
+        } catch (const std::exception& e) {
+            std::cerr << "[Server] Exception in unload handler wrapper: " << e.what() << std::endl;
+            res.status = 500;
+            nlohmann::json error = {{"error", e.what()}};
+            res.set_content(error.dump(), "application/json");
+        }
     });
     
     register_post("delete", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1057,6 +1064,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     auto thread_id = std::this_thread::get_id();
     std::cout << "[Server DEBUG] ===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
     std::cout.flush();
+    
+    // Serialize all load/unload operations to prevent race conditions
+    // This ensures only one load/unload operation happens at a time
+    std::lock_guard<std::mutex> lock(load_operation_mutex_);
+    
     try {
         auto request_json = nlohmann::json::parse(req.body);
         std::string model_name = request_json["model_name"];
@@ -1129,12 +1141,27 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 }
 
 void Server::handle_unload(const httplib::Request& req, httplib::Response& res) {
+    // Serialize all load/unload operations to prevent race conditions
+    // This ensures only one load/unload operation happens at a time
+    std::lock_guard<std::mutex> lock(load_operation_mutex_);
+    
     try {
         std::cout << "[Server] Unload request received" << std::endl;
         std::cout << "[Server] Request method: " << req.method << ", body length: " << req.body.length() << std::endl;
         std::cout << "[Server] Content-Type: " << req.get_header_value("Content-Type") << std::endl;
         
-        // Unload doesn't need any request body
+        // Unload doesn't need any request body - accept empty body or empty JSON object
+        // If body is provided and not empty, try to parse it (for compatibility)
+        if (!req.body.empty()) {
+            try {
+                auto request_json = nlohmann::json::parse(req.body);
+                // Body is optional, so we just ignore any fields if present
+            } catch (const nlohmann::json::parse_error& e) {
+                // If body is malformed JSON, that's fine - unload doesn't require body
+                std::cout << "[Server] Note: Request body is not valid JSON, but unload doesn't require body" << std::endl;
+            }
+        }
+        
         router_->unload_model();
         
         std::cout << "[Server] Model unloaded successfully" << std::endl;
