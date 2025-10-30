@@ -7,6 +7,7 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
 - **lemonade-server-beta.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
 - **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server-beta.exe serve`
+- **lemonade-log-viewer.exe** (Windows only) - Log file viewer with live tail support and installer-friendly file sharing
 
 ## Building from Source
 
@@ -62,6 +63,7 @@ cmake --build . --config Release
   - `build/Release/lemonade-router.exe` - HTTP server
   - `build/Release/lemonade-server-beta.exe` - Console CLI client
   - `build/Release/lemonade-tray.exe` - GUI tray launcher
+  - `build/Release/lemonade-log-viewer.exe` - Log file viewer
 - **Linux/macOS:** 
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server-beta` - Console CLI client
@@ -130,6 +132,7 @@ Creates `Lemonade_Server_Installer_beta.exe` which:
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Gracefully stops running server before install/uninstall
+- Includes all executables (router, server-beta, tray, log-viewer)
 - Includes uninstaller
 
 **Installation Process:**
@@ -180,7 +183,9 @@ src/cpp/
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
-    ├── main.cpp                # Tray entry point
+    ├── main.cpp                # Tray entry point (lemonade-server-beta)
+    ├── tray_launcher.cpp       # GUI launcher (lemonade-tray)
+    ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
     ├── server_manager.cpp      # Manages lemonade-router process
     ├── tray_app.cpp            # Main tray application logic
     └── platform/               # Platform-specific implementations
@@ -360,6 +365,7 @@ The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 - Load/unload models via menu
 - Change server port and context size
 - Open web UI, documentation, and logs
+- "Show Logs" opens log viewer with historical and live logs
 - Background model monitoring
 - Click balloon notifications to open menu
 - Quit option
@@ -368,6 +374,23 @@ The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 - Displays as "Lemonade Local LLM Server" in Task Manager
 - Shows large lemon icon in notification balloons
 - Single-instance protection prevents multiple tray apps
+
+### Logging and Console Output
+
+When running `lemonade-server-beta.exe serve`:
+- **Console Output:** Router logs are streamed to the terminal in real-time via a background tail thread
+- **Log File:** All logs are written to a persistent log file (default: `%TEMP%\lemonade-server.log`)
+- **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`
+  - Displays last 100KB of historical logs
+  - Live tails new content as it's written
+  - Automatically closes when server stops
+  - Uses shared file access (won't block installer)
+
+**Log Viewer Features:**
+- Cross-platform tail implementation
+- Parent process monitoring for auto-cleanup
+- Installer-friendly (FILE_SHARE_DELETE on Windows)
+- Real-time updates with minimal latency (100ms polling)
 
 ## Testing
 
