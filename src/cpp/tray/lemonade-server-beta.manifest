@@ -6,7 +6,7 @@
     name="AMD.LemonadeServerBeta"
     type="win32"
   />
-  <description>Lemonade Server Beta - Tray Application</description>
+  <description>Lemonade Server Beta</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>

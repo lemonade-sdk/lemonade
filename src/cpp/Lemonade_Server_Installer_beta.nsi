@@ -97,8 +97,11 @@ SectionIn RO ; Read only, always installed
 
     ; Copy the executables from the build directory
     DetailPrint "Installing application files..."
-    File "build\Release\lemonade-server-beta.exe"
+    File "build\Release\lemonade-tray.exe"
     DetailPrint "- Installed Lemonade Server tray application"
+    
+    File "build\Release\lemonade-server-beta.exe"
+    DetailPrint "- Installed Lemonade Server CLI client"
     
     File "build\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
@@ -145,7 +148,7 @@ SectionIn RO ; Read only, always installed
     ; Create Start Menu shortcuts
     DetailPrint "Creating shortcuts..."
     CreateDirectory "$SMPROGRAMS\Lemonade Server Beta"
-    CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-server-beta.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+    CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
     CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
     DetailPrint "- Created Start Menu shortcuts"
 
@@ -171,19 +174,19 @@ SectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
-    CreateShortcut "$DESKTOP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-server-beta.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+    CreateShortcut "$DESKTOP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
   ${EndIf}
 SectionEnd
 
 Function RunServer
-  Exec '"$INSTDIR\bin\lemonade-server-beta.exe"'
+  Exec '"$INSTDIR\bin\lemonade-tray.exe"'
 FunctionEnd
 
 Function AddToStartup
   ; Delete existing shortcut if it exists
   Delete "$SMSTARTUP\Lemonade Server Beta.lnk"
   ; Create shortcut in the startup folder
-  CreateShortcut "$SMSTARTUP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-server-beta.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+  CreateShortcut "$SMSTARTUP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
 FunctionEnd
 
 ; Finish Page settings
@@ -329,11 +332,12 @@ Section "Uninstall"
     Sleep 2000  ; Give it time to close gracefully
   ${EndIf}
 
-  ; Remove files
-  Delete "$INSTDIR\bin\lemonade-server-beta.exe"
-  Delete "$INSTDIR\bin\lemonade-router.exe"
-  Delete "$INSTDIR\bin\zstd.dll"
-  Delete "$INSTDIR\Uninstall.exe"
+    ; Remove files
+    Delete "$INSTDIR\bin\lemonade-tray.exe"
+    Delete "$INSTDIR\bin\lemonade-server-beta.exe"
+    Delete "$INSTDIR\bin\lemonade-router.exe"
+    Delete "$INSTDIR\bin\zstd.dll"
+    Delete "$INSTDIR\Uninstall.exe"
 
   ; Remove directories
   RMDir /r "$INSTDIR\bin\resources"

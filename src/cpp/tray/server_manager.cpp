@@ -255,9 +255,10 @@ std::string ServerManager::get_base_url() const {
 
 bool ServerManager::spawn_process() {
     // Build command line (server doesn't support --log-file, so we'll redirect stdout/stderr)
-    std::string cmdline = "\"" + server_binary_path_ + "\" serve";
+    std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
+    cmdline += " --log-level debug";  // Always use debug logging
     
     std::cout << "Starting server: " << cmdline << std::endl;
     
@@ -387,13 +388,14 @@ bool ServerManager::spawn_process() {
         
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
-        args.push_back("serve");
         args.push_back("--port");
         std::string port_str = std::to_string(port_);
         args.push_back(port_str.c_str());
         args.push_back("--ctx-size");
         std::string ctx_str = std::to_string(ctx_size_);
         args.push_back(ctx_str.c_str());
+        args.push_back("--log-level");
+        args.push_back("debug");  // Always use debug logging
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));

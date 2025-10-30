@@ -86,38 +86,52 @@ if(WIN32)
     list(APPEND COMMON_SOURCES version.rc)
 endif()
 
-# Create executable as Windows GUI app (no console window)
-if(WIN32)
-    add_executable(lemonade-server-beta WIN32
-        ${COMMON_SOURCES}
-        ${PLATFORM_SOURCES}
-    )
-else()
-    add_executable(lemonade-server-beta
-        ${COMMON_SOURCES}
-        ${PLATFORM_SOURCES}
-    )
-endif()
+# ============================================================
+# lemonade-server-beta.exe - Console CLI client
+# ============================================================
+add_executable(lemonade-server-beta
+    ${COMMON_SOURCES}
+    ${PLATFORM_SOURCES}
+)
 
-# Include directories (use parent's unified include directory)
 target_include_directories(lemonade-server-beta PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-# Link libraries
 target_link_libraries(lemonade-server-beta PRIVATE
     nlohmann_json::nlohmann_json
     httplib::httplib
     ${PLATFORM_LIBS}
 )
 
-# Set output directory to match parent build directory
-# This ensures both lemonade-router.exe and lemonade-server-beta.exe are in the same folder
 set_target_properties(lemonade-server-beta PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
 )
+
+# ============================================================
+# lemonade-tray.exe - GUI tray launcher (Windows only)
+# ============================================================
+if(WIN32)
+    add_executable(lemonade-tray WIN32
+        tray_launcher.cpp
+    )
+    
+    # Add version resource for tray launcher
+    target_sources(lemonade-tray PRIVATE version.rc)
+    
+    target_link_libraries(lemonade-tray PRIVATE
+        user32
+        shell32
+    )
+    
+    set_target_properties(lemonade-tray PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    )
+endif()
 
 # Platform-specific settings
 if(WIN32)

@@ -1,6 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #include <iostream>
+#include <iomanip>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
@@ -52,8 +53,7 @@ void signal_handler(int signal) {
 #endif
 
 TrayApp::TrayApp(int argc, char* argv[])
-    : debug_logs_enabled_(false)
-    , current_version_("1.0.0")  // TODO: Load from version file
+    : current_version_("1.0.0")  // TODO: Load from version file
     , should_exit_(false)
 {
     parse_arguments(argc, argv);
@@ -68,28 +68,42 @@ TrayApp::TrayApp(int argc, char* argv[])
         exit(0);
     }
     
-    // Set up signal handlers
-    g_tray_app_instance = this;
-    
+    // Only set up signal handlers if we're actually going to run a command
+    // (not for help/version which exit immediately)
+    if (!config_.command.empty()) {
+        g_tray_app_instance = this;
+        
 #ifdef _WIN32
-    SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
+        SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
 #else
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+        signal(SIGINT, signal_handler);
+        signal(SIGTERM, signal_handler);
 #endif
-    
-    std::cout << "DEBUG: Signal handlers installed" << std::endl;
+        
+        std::cout << "DEBUG: Signal handlers installed" << std::endl;
+    }
 }
 
 TrayApp::~TrayApp() {
-    shutdown();
+    // Only shutdown if we actually started something
+    if (server_manager_ || !config_.command.empty()) {
+        shutdown();
+    }
     g_tray_app_instance = nullptr;
 }
 
 int TrayApp::run() {
-    std::cout << "DEBUG: TrayApp::run() starting..." << std::endl;
+    // Check if no command was provided
+    if (config_.command.empty()) {
+        std::cerr << "Error: No command specified\n" << std::endl;
+        print_usage();
+        return 1;
+    }
     
-    // Find server binary if not specified
+    std::cout << "DEBUG: TrayApp::run() starting..." << std::endl;
+    std::cout << "DEBUG: Command: " << config_.command << std::endl;
+    
+    // Find server binary if not specified (needed for most commands)
     if (config_.server_binary.empty()) {
         std::cout << "DEBUG: Searching for server binary..." << std::endl;
         if (!find_server_binary()) {
@@ -100,6 +114,27 @@ int TrayApp::run() {
     }
     
     std::cout << "DEBUG: Using server binary: " << config_.server_binary << std::endl;
+    
+    // Handle commands
+    if (config_.command == "list") {
+        return execute_list_command();
+    } else if (config_.command == "pull") {
+        return execute_pull_command();
+    } else if (config_.command == "delete") {
+        return execute_delete_command();
+    } else if (config_.command == "run") {
+        return execute_run_command();
+    } else if (config_.command == "status") {
+        return execute_status_command();
+    } else if (config_.command == "stop") {
+        return execute_stop_command();
+    } else if (config_.command == "serve") {
+        // Continue to serve logic below
+    } else {
+        std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
+        print_usage();
+        return 1;
+    }
     
     // Create server manager
     std::cout << "DEBUG: Creating server manager..." << std::endl;
@@ -200,45 +235,66 @@ int TrayApp::run() {
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {
+    // First check for --help or --version flags
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
         if (arg == "--help" || arg == "-h") {
             config_.show_help = true;
+            return;
         } else if (arg == "--version" || arg == "-v") {
             config_.show_version = true;
-        } else if (arg == "--no-tray") {
-            config_.no_tray = true;
-        } else if (arg == "--port" && i + 1 < argc) {
-            config_.port = std::stoi(argv[++i]);
-        } else if (arg == "--ctx-size" && i + 1 < argc) {
-            config_.ctx_size = std::stoi(argv[++i]);
-        } else if (arg == "--log-file" && i + 1 < argc) {
-            config_.log_file = argv[++i];
-        } else if (arg == "--log-level" && i + 1 < argc) {
-            config_.log_level = argv[++i];
-        } else if (arg == "--server-binary" && i + 1 < argc) {
-            config_.server_binary = argv[++i];
+            return;
         }
     }
+    
+    // Check if there's a command (non-flag argument)
+    if (argc > 1 && argv[1][0] != '-') {
+        config_.command = argv[1];
+        
+        // Collect remaining arguments as command args
+        for (int i = 2; i < argc; ++i) {
+            config_.command_args.push_back(argv[i]);
+        }
+        return;
+    }
+    
+    // No command provided - this is an error
+    if (argc == 1) {
+        config_.command = "";  // Empty command signals error
+        return;
+    }
+    
+    // If we get here, we have flags but no command - also an error
+    config_.command = "";
 }
 
 void TrayApp::print_usage() {
-    std::cout << "lemonade-server-beta - Lemonade Server Tray Application\n\n";
-    std::cout << "Usage: lemonade-server-beta [options]\n\n";
-    std::cout << "Options:\n";
+    std::cout << "lemonade-server-beta - Lemonade Server Beta\n\n";
+    std::cout << "Usage: lemonade-server-beta <command> [options]\n\n";
+    std::cout << "Commands:\n";
+    std::cout << "  serve                    Start the server (default if no command specified)\n";
+    std::cout << "  list                     List available models\n";
+    std::cout << "  pull <model>             Download a model\n";
+    std::cout << "  delete <model>           Delete a model\n";
+    std::cout << "  run <model>              Run a model (starts server if needed)\n";
+    std::cout << "  status                   Check server status\n";
+    std::cout << "  stop                     Stop the server\n\n";
+    std::cout << "Serve Options:\n";
     std::cout << "  --port PORT              Server port (default: 8000)\n";
+    std::cout << "  --host HOST              Server host (default: localhost)\n";
     std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
     std::cout << "  --log-file PATH          Log file path\n";
-    std::cout << "  --log-level LEVEL        Log level: debug, info, warning, error\n";
-    std::cout << "  --server-binary PATH     Path to lemonade server binary\n";
+    std::cout << "  --server-binary PATH     Path to lemonade-router binary\n";
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
     std::cout << "  --help, -h               Show this help message\n";
     std::cout << "  --version, -v            Show version\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  lemonade-server-beta                    # Start with tray\n";
-    std::cout << "  lemonade-server-beta --port 8080        # Start on custom port\n";
-    std::cout << "  lemonade-server-beta --no-tray          # Start without tray\n";
+    std::cout << "  lemonade-server-beta serve                        # Start server with tray\n";
+    std::cout << "  lemonade-server-beta serve --port 8080            # Start on custom port\n";
+    std::cout << "  lemonade-server-beta serve --no-tray              # Start without tray\n";
+    std::cout << "  lemonade-server-beta list                         # List models\n";
+    std::cout << "  lemonade-server-beta pull Llama-3.2-1B-Instruct-CPU   # Download a model\n";
+    std::cout << "  lemonade-server-beta run Llama-3.2-1B-Instruct-CPU    # Run a model\n";
 }
 
 void TrayApp::print_version() {
@@ -301,6 +357,291 @@ bool TrayApp::find_server_binary() {
 bool TrayApp::setup_logging() {
     // TODO: Implement logging setup
     return true;
+}
+
+// Helper: Check if server is running on a specific port
+bool TrayApp::is_server_running_on_port(int port) {
+    try {
+        auto health = server_manager_->get_health();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Helper: Wait for server to be ready
+bool TrayApp::wait_for_server_ready(int port, int timeout_seconds) {
+    auto server_mgr = std::make_unique<ServerManager>();
+    for (int i = 0; i < timeout_seconds * 10; ++i) {
+        try {
+            auto health = server_mgr->get_health();
+            return true;
+        } catch (...) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    return false;
+}
+
+// Helper: Get server info (returns {pid, port} or {0, 0} if not found)
+std::pair<int, int> TrayApp::get_server_info() {
+    // Try to connect to common ports
+    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
+        try {
+            ServerManager temp_mgr;
+            auto health = temp_mgr.get_health();
+            return {0, port};  // Found a running server
+        } catch (...) {
+            // Not running on this port
+        }
+    }
+    return {0, 0};
+}
+
+// Helper: Start ephemeral server
+bool TrayApp::start_ephemeral_server(int port) {
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>();
+    }
+    
+    std::cout << "[INFO] Starting ephemeral server on port " << port << "..." << std::endl;
+    
+    bool success = server_manager_->start_server(
+        config_.server_binary,
+        port,
+        config_.ctx_size,
+        config_.log_file.empty() ? "" : config_.log_file
+    );
+    
+    if (!success) {
+        std::cerr << "[ERROR] Failed to start ephemeral server" << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+// Command: list
+int TrayApp::execute_list_command() {
+    std::cout << "Listing available models..." << std::endl;
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // Get models from server
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        
+        auto models_json = server_manager_->get_models();
+        
+        if (!models_json.contains("data") || !models_json["data"].is_array()) {
+            std::cerr << "Invalid response format from server" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+        // Print models in a nice table format
+        std::cout << std::left << std::setw(40) << "Model Name"
+                  << std::setw(12) << "Downloaded"
+                  << "Details" << std::endl;
+        std::cout << std::string(100, '-') << std::endl;
+        
+        for (const auto& model : models_json["data"]) {
+            std::string name = model.value("id", "unknown");
+            // TODO: Check if downloaded
+            std::string downloaded = "?";
+            std::string details = model.value("recipe", "-");
+            
+            std::cout << std::left << std::setw(40) << name
+                      << std::setw(12) << downloaded
+                      << details << std::endl;
+        }
+        
+        std::cout << std::string(100, '-') << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing models: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: pull
+int TrayApp::execute_pull_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta pull <model_name>" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Pulling model: " << model_name << std::endl;
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // TODO: Implement pull via API
+    std::cout << "Pull functionality will be implemented via API endpoint" << std::endl;
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: delete
+int TrayApp::execute_delete_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta delete <model_name>" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Deleting model: " << model_name << std::endl;
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // TODO: Implement delete via API
+    std::cout << "Delete functionality will be implemented via API endpoint" << std::endl;
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: run
+int TrayApp::execute_run_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta run <model_name>" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Running model: " << model_name << std::endl;
+    
+    // Check if server is already running
+    auto [pid, running_port] = get_server_info();
+    if (running_port != 0) {
+        std::cout << "Server is already running on port " << running_port << std::endl;
+        // TODO: Load the model and open browser
+        return 0;
+    }
+    
+    // Start persistent server (with tray)
+    std::cout << "Starting server..." << std::endl;
+    if (!start_server()) {
+        std::cerr << "Failed to start server" << std::endl;
+        return 1;
+    }
+    
+    // Load the model
+    std::cout << "Loading model " << model_name << "..." << std::endl;
+    if (server_manager_->load_model(model_name)) {
+        std::cout << "Model loaded successfully!" << std::endl;
+        // TODO: Open browser to chat interface
+        std::string url = "http://localhost:" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
+        std::cout << "You can now chat with " << model_name << " at " << url << std::endl;
+        open_url(url);
+    } else {
+        std::cerr << "Failed to load model" << std::endl;
+    }
+    
+    // If no-tray mode, wait for server
+    if (config_.no_tray) {
+        std::cout << "Server running in foreground mode (no tray)" << std::endl;
+        std::cout << "Press Ctrl+C to stop" << std::endl;
+        
+        while (server_manager_->is_server_running()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    } else {
+        // Start tray interface
+        return TrayApp::run();  // This will show the tray
+    }
+    
+    return 0;
+}
+
+// Command: status
+int TrayApp::execute_status_command() {
+    auto [pid, port] = get_server_info();
+    
+    if (port != 0) {
+        std::cout << "Server is running on port " << port << std::endl;
+        return 0;
+    } else {
+        std::cout << "Server is not running" << std::endl;
+        return 1;
+    }
+}
+
+// Command: stop
+int TrayApp::execute_stop_command() {
+    auto [pid, port] = get_server_info();
+    
+    if (port == 0) {
+        std::cout << "Lemonade Server is not running" << std::endl;
+        return 0;
+    }
+    
+    std::cout << "Stopping server on port " << port << "..." << std::endl;
+    
+    // Create a temporary server manager to stop the server
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>();
+    }
+    
+    if (server_manager_->stop_server()) {
+        std::cout << "Lemonade Server stopped successfully." << std::endl;
+        return 0;
+    } else {
+        std::cerr << "Failed to stop server" << std::endl;
+        return 1;
+    }
 }
 
 bool TrayApp::start_server() {
@@ -414,16 +755,8 @@ Menu TrayApp::create_menu() {
     menu.add_item(MenuItem::Action("LLM Chat", [this]() { on_open_llm_chat(); }));
     menu.add_item(MenuItem::Action("Model Manager", [this]() { on_open_model_manager(); }));
     
-    // Logs submenu
-    auto logs_submenu = std::make_shared<Menu>();
-    logs_submenu->add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
-    logs_submenu->add_separator();
-    logs_submenu->add_item(MenuItem::Checkable(
-        "Enable Debug Logs",
-        [this]() { on_toggle_debug_logs(); },
-        debug_logs_enabled_
-    ));
-    menu.add_item(MenuItem::Submenu("Logs", logs_submenu));
+    // Logs menu item (simplified - always debug logs now)
+    menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
     
     menu.add_separator();
     menu.add_item(MenuItem::Action("Quit Lemonade", [this]() { on_quit(); }));
@@ -467,14 +800,6 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
         ? std::to_string(new_ctx_size / 1024) + "K"
         : std::to_string(new_ctx_size);
     show_notification("Context Size Changed", "Lemonade Server context size is now " + label);
-}
-
-void TrayApp::on_toggle_debug_logs() {
-    debug_logs_enabled_ = !debug_logs_enabled_;
-    LogLevel level = debug_logs_enabled_ ? LogLevel::DEBUG : LogLevel::INFO;
-    server_manager_->set_log_level(level);
-    build_menu();
-    show_notification("Debug Logs", debug_logs_enabled_ ? "Debug logs enabled" : "Debug logs disabled");
 }
 
 void TrayApp::on_show_logs() {
@@ -528,10 +853,15 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    std::cout << "Shutting down gracefully..." << std::endl;
+    // Only print shutdown message if we actually have something to shutdown
+    if (server_manager_ || tray_) {
+        std::cout << "Shutting down gracefully..." << std::endl;
+    }
     
     // Stop the server
-    stop_server();
+    if (server_manager_) {
+        stop_server();
+    }
     
     // Stop the tray
     if (tray_) {

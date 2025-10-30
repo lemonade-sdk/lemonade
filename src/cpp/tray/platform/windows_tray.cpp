@@ -51,6 +51,7 @@ WindowsTray::WindowsTray()
     : hwnd_(nullptr)
     , hinst_(GetModuleHandle(nullptr))
     , hmenu_(nullptr)
+    , notification_icon_(nullptr)
     , should_exit_(false)
     , next_menu_id_(MENU_ID_START)
 {
@@ -160,7 +161,7 @@ bool WindowsTray::add_tray_icon() {
         icon_path_.c_str(),
         IMAGE_ICON,
         0, 0,
-        LR_LOADFROMFILE | LR_DEFAULTSIZE
+        LR_LOADFROMFILE | LR_DEFAULTSIZE | LR_SHARED
     );
     
     if (!nid_.hIcon) {
@@ -168,6 +169,9 @@ bool WindowsTray::add_tray_icon() {
         // Use default application icon as fallback
         nid_.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     }
+    
+    // Store the icon for use in notifications
+    notification_icon_ = nid_.hIcon;
     
     // Set tooltip
     std::wstring tooltip_wide = utf8_to_wstring(tooltip_);
@@ -326,21 +330,10 @@ void WindowsTray::show_notification(
     wcsncpy_s(nid_.szInfoTitle, title_wide.c_str(), _TRUNCATE);
     wcsncpy_s(nid_.szInfo, message_wide.c_str(), _TRUNCATE);
     
-    // Set icon based on notification type
-    switch (type) {
-        case NotificationType::INFO:
-            nid_.dwInfoFlags = NIIF_INFO;
-            break;
-        case NotificationType::WARNING:
-            nid_.dwInfoFlags = NIIF_WARNING;
-            break;
-        case NotificationType::ERROR:
-            nid_.dwInfoFlags = NIIF_ERROR;
-            break;
-        case NotificationType::SUCCESS:
-            nid_.dwInfoFlags = NIIF_INFO;  // Windows doesn't have a success icon
-            break;
-    }
+    // Use custom icon (big lemon icon) for all notifications
+    // NIIF_USER shows the large icon in the notification
+    nid_.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON;
+    nid_.hBalloonIcon = notification_icon_;
     
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
     
@@ -440,8 +433,13 @@ void WindowsTray::on_tray_icon(LPARAM lparam) {
             break;
             
         case WM_LBUTTONUP:
-            std::cout << "DEBUG: Left-click detected" << std::endl;
-            // Could add left-click action here if desired
+            std::cout << "DEBUG: Left-click detected (showing menu)" << std::endl;
+            // Trigger menu update callback if set (to refresh server state)
+            if (menu_update_callback_) {
+                std::cout << "DEBUG: Calling menu update callback..." << std::endl;
+                menu_update_callback_();
+            }
+            show_context_menu();
             break;
             
         case WM_LBUTTONDBLCLK:
