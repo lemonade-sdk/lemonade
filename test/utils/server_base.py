@@ -221,6 +221,9 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         if os.name == "nt":
             cmd.append("--no-tray")
 
+        # Add debug logging for CI environments
+        cmd.extend(["--log-level", "debug"])
+
         # Add llamacpp backend option if specified
         if self.llamacpp_backend:
             cmd.extend(["--llamacpp", self.llamacpp_backend])

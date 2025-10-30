@@ -32,15 +32,26 @@ Section "Install Lemonade Server Beta" SEC01
 SectionIn RO ; Read only, always installed
   DetailPrint "Installing Lemonade Server Beta..."
 
-  ; Stop any running instances gracefully
+  ; Stop any running instances gracefully using the stop command
   DetailPrint "Checking for running Lemonade Server instances..."
   
-  ; Try to find and close the window gracefully instead of force-killing
+  ; First try to use existing installation's stop command if it exists
+  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server-beta.exe"
+    DetailPrint "Stopping server using lemonade-server-beta.exe stop..."
+    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server-beta.exe" stop'
+    Pop $0 ; Get return value
+    DetailPrint "Stop command returned: $0"
+    Sleep 2000  ; Give it time to fully shut down
+  ${Else}
+    DetailPrint "No existing installation found to stop"
+  ${EndIf}
+  
+  ; Fallback: Also try to close the tray window directly if it's still open
   FindWindow $0 "" "Lemonade Server Beta"
   ${If} $0 != 0
-    DetailPrint "Requesting Lemonade Server to close..."
+    DetailPrint "Tray window still open, sending close message..."
     SendMessage $0 ${WM_CLOSE} 0 0
-    Sleep 2000  ; Give it time to close gracefully
+    Sleep 1000
   ${EndIf}
 
   ; Check if directory exists before proceeding
@@ -325,11 +336,21 @@ FunctionEnd
 
 ; Uninstaller Section
 Section "Uninstall"
-  ; Stop any running instances gracefully
+  ; Stop any running instances gracefully using the stop command
+  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server-beta.exe"
+    DetailPrint "Stopping server using lemonade-server-beta.exe stop..."
+    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server-beta.exe" stop'
+    Pop $0 ; Get return value
+    DetailPrint "Stop command returned: $0"
+    Sleep 2000  ; Give it time to fully shut down
+  ${EndIf}
+  
+  ; Fallback: Also try to close the tray window directly if it's still open
   FindWindow $0 "" "Lemonade Server Beta"
   ${If} $0 != 0
+    DetailPrint "Tray window still open, sending close message..."
     SendMessage $0 ${WM_CLOSE} 0 0
-    Sleep 2000  ; Give it time to close gracefully
+    Sleep 1000
   ${EndIf}
 
     ; Remove files
