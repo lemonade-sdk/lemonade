@@ -48,6 +48,7 @@ ServerManager::ServerManager()
     : server_pid_(0)
     , port_(8000)
     , ctx_size_(4096)
+    , show_console_(false)
     , server_started_(false)
 #ifdef _WIN32
     , process_handle_(nullptr)
@@ -64,7 +65,8 @@ bool ServerManager::start_server(
     int port,
     int ctx_size,
     const std::string& log_file,
-    const std::string& log_level)
+    const std::string& log_level,
+    bool show_console)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -76,6 +78,7 @@ bool ServerManager::start_server(
     ctx_size_ = ctx_size;
     log_file_ = log_file;
     log_level_ = log_level;
+    show_console_ = show_console;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -274,6 +277,7 @@ bool ServerManager::spawn_process() {
     si.cb = sizeof(si);
     
     // Redirect stdout/stderr to log file if specified
+    // Note: When show_console_ is true, the parent process will tail the log file
     HANDLE log_handle = INVALID_HANDLE_VALUE;
     if (!log_file_.empty()) {
         DEBUG_LOG(this, "Redirecting output to: " << log_file_);
@@ -327,7 +331,7 @@ bool ServerManager::spawn_process() {
         nullptr,
         nullptr,
         TRUE,  // Inherit handles so log file redirection works
-        CREATE_NO_WINDOW,  // Don't create console window
+        show_console_ ? 0 : CREATE_NO_WINDOW,  // Show console if requested
         nullptr,
         working_dir.empty() ? nullptr : working_dir.c_str(),  // Set working directory
         &si,

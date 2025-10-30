@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
 
 namespace lemon_tray {
 
@@ -99,6 +101,19 @@ private:
     // Version info
     std::string current_version_;
     std::string latest_version_;
+    
+    // Log viewer process tracking
+#ifdef _WIN32
+    HANDLE log_viewer_process_ = nullptr;
+#else
+    pid_t log_viewer_pid_ = 0;
+#endif
+
+    // Log tail thread for console output (when show_console is true)
+    std::atomic<bool> stop_tail_thread_{false};
+    std::thread log_tail_thread_;
+    
+    void tail_log_to_console();
 };
 
 } // namespace lemon_tray

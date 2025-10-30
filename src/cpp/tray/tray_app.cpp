@@ -821,10 +821,14 @@ int TrayApp::execute_stop_command() {
         }
         CloseHandle(snapshot);
     }
+    
+    // Note: log-viewer.exe auto-exits when parent process dies, no need to explicitly kill it
 #else
     // Unix: Kill processes by name
     system("pkill -f lemonade-router");
     system("pkill -f 'lemonade-server-beta.*serve'");
+    // Kill log viewer processes
+    system("pkill -f 'tail -f.*lemonade-server.log'");
 #endif
     
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -861,16 +865,31 @@ bool TrayApp::start_server() {
         DEBUG_LOG(this, "Using default log file: " << config_.log_file);
     }
     
-    return server_manager_->start_server(
+    bool success = server_manager_->start_server(
         config_.server_binary,
         config_.port,
         config_.ctx_size,
         config_.log_file,
-        config_.log_level  // Pass log level to ServerManager
+        config_.log_level,  // Pass log level to ServerManager
+        true                // Always show console output for serve command
     );
+    
+    // Start log tail thread to show logs in console
+    if (success) {
+        stop_tail_thread_ = false;
+        log_tail_thread_ = std::thread(&TrayApp::tail_log_to_console, this);
+    }
+    
+    return success;
 }
 
 void TrayApp::stop_server() {
+    // Stop log tail thread
+    if (log_tail_thread_.joinable()) {
+        stop_tail_thread_ = true;
+        log_tail_thread_.join();
+    }
+    
     if (server_manager_) {
         server_manager_->stop_server();
     }
@@ -1006,18 +1025,80 @@ void TrayApp::on_show_logs() {
     }
     
 #ifdef _WIN32
-    // Open new PowerShell window with tail-like command
-    // Use Start-Process to open a new window that stays open
-    std::string cmd = "powershell -Command \"Start-Process powershell -ArgumentList '-NoExit','-Command',\\\"Get-Content -Wait '" + config_.log_file + "'\\\"\"";
-    system(cmd.c_str());
+    // Close existing log viewer if any
+    if (log_viewer_process_) {
+        TerminateProcess(log_viewer_process_, 0);
+        CloseHandle(log_viewer_process_);
+        log_viewer_process_ = nullptr;
+    }
+    
+    // Find lemonade-log-viewer.exe in the same directory as this executable
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    std::string exeDir = exePath;
+    size_t lastSlash = exeDir.find_last_of("\\/");
+    if (lastSlash != std::string::npos) {
+        exeDir = exeDir.substr(0, lastSlash);
+    }
+    
+    std::string logViewerPath = exeDir + "\\lemonade-log-viewer.exe";
+    std::string cmd = "\"" + logViewerPath + "\" \"" + config_.log_file + "\"";
+    
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    
+    if (CreateProcessA(
+        nullptr,
+        const_cast<char*>(cmd.c_str()),
+        nullptr,
+        nullptr,
+        FALSE,
+        CREATE_NEW_CONSOLE,
+        nullptr,
+        nullptr,
+        &si,
+        &pi))
+    {
+        log_viewer_process_ = pi.hProcess;
+        CloseHandle(pi.hThread);
+    } else {
+        show_notification("Error", "Failed to open log viewer");
+    }
 #elif defined(__APPLE__)
-    // Open Terminal.app with tail command
-    std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + config_.log_file + "\"'";
-    system(cmd.c_str());
+    // Kill existing log viewer if any
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+    
+    // Fork and open Terminal.app with tail command
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + config_.log_file + "\"'";
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        exit(0);
+    } else if (pid > 0) {
+        log_viewer_pid_ = pid;
+    }
 #else
-    // Linux: try gnome-terminal or xterm
-    std::string cmd = "gnome-terminal -- tail -f '" + config_.log_file + "' || xterm -e tail -f '" + config_.log_file + "'";
-    system(cmd.c_str());
+    // Kill existing log viewer if any
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+    
+    // Fork and open gnome-terminal or xterm
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        std::string cmd = "gnome-terminal -- tail -f '" + config_.log_file + "' || xterm -e tail -f '" + config_.log_file + "'";
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        exit(0);
+    } else if (pid > 0) {
+        log_viewer_pid_ = pid;
+    }
 #endif
 }
 
@@ -1054,6 +1135,20 @@ void TrayApp::shutdown() {
     if (server_manager_ || tray_) {
         DEBUG_LOG(this, "Shutting down gracefully...");
     }
+    
+    // Close log viewer if open
+#ifdef _WIN32
+    if (log_viewer_process_) {
+        TerminateProcess(log_viewer_process_, 0);
+        CloseHandle(log_viewer_process_);
+        log_viewer_process_ = nullptr;
+    }
+#else
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+#endif
     
     // Stop the server
     if (server_manager_) {
@@ -1130,6 +1225,100 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
         std::cerr << "Failed to get models: " << e.what() << std::endl;
         return {};
     }
+}
+
+void TrayApp::tail_log_to_console() {
+    // Wait a bit for the log file to be created
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+#ifdef _WIN32
+    HANDLE hFile = CreateFileA(
+        config_.log_file.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return;  // Can't open log file, silently exit
+    }
+    
+    // Seek to end of file
+    DWORD currentPos = SetFilePointer(hFile, 0, nullptr, FILE_END);
+    
+    std::vector<char> buffer(4096);
+    
+    while (!stop_tail_thread_) {
+        // Check if file has grown
+        DWORD currentFileSize = GetFileSize(hFile, nullptr);
+        if (currentFileSize != INVALID_FILE_SIZE && currentFileSize > currentPos) {
+            // File has new data
+            SetFilePointer(hFile, currentPos, nullptr, FILE_BEGIN);
+            
+            DWORD bytesToRead = currentFileSize - currentPos;
+            DWORD bytesRead = 0;
+            
+            while (bytesToRead > 0 && !stop_tail_thread_) {
+                DWORD chunkSize = (bytesToRead > buffer.size()) ? buffer.size() : bytesToRead;
+                if (ReadFile(hFile, buffer.data(), chunkSize, &bytesRead, nullptr) && bytesRead > 0) {
+                    std::cout.write(buffer.data(), bytesRead);
+                    std::cout.flush();
+                    currentPos += bytesRead;
+                    bytesToRead -= bytesRead;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // Sleep before next check
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    CloseHandle(hFile);
+#else
+    // Unix implementation (similar logic using FILE*)
+    FILE* fp = fopen(config_.log_file.c_str(), "r");
+    if (!fp) {
+        return;
+    }
+    
+    // Seek to end
+    fseek(fp, 0, SEEK_END);
+    long currentPos = ftell(fp);
+    
+    char buffer[4096];
+    
+    while (!stop_tail_thread_) {
+        fseek(fp, 0, SEEK_END);
+        long fileSize = ftell(fp);
+        
+        if (fileSize > currentPos) {
+            fseek(fp, currentPos, SEEK_SET);
+            size_t bytesToRead = fileSize - currentPos;
+            
+            while (bytesToRead > 0 && !stop_tail_thread_) {
+                size_t chunkSize = (bytesToRead > sizeof(buffer)) ? sizeof(buffer) : bytesToRead;
+                size_t bytesRead = fread(buffer, 1, chunkSize, fp);
+                if (bytesRead > 0) {
+                    std::cout.write(buffer, bytesRead);
+                    std::cout.flush();
+                    currentPos += bytesRead;
+                    bytesToRead -= bytesRead;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    fclose(fp);
+#endif
 }
 
 } // namespace lemon_tray

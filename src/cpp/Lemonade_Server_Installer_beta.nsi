@@ -110,6 +110,8 @@ SectionIn RO ; Read only, always installed
     DetailPrint "Installing application files..."
     File "build\Release\lemonade-tray.exe"
     DetailPrint "- Installed Lemonade Server tray application"
+    File "build\Release\lemonade-log-viewer.exe"
+    DetailPrint "- Installed log viewer"
     
     File "build\Release\lemonade-server-beta.exe"
     DetailPrint "- Installed Lemonade Server CLI client"
@@ -357,6 +359,7 @@ Section "Uninstall"
     Delete "$INSTDIR\bin\lemonade-tray.exe"
     Delete "$INSTDIR\bin\lemonade-server-beta.exe"
     Delete "$INSTDIR\bin\lemonade-router.exe"
+    Delete "$INSTDIR\bin\lemonade-log-viewer.exe"
     Delete "$INSTDIR\bin\zstd.dll"
     Delete "$INSTDIR\Uninstall.exe"
 

@@ -45,7 +45,8 @@ public:
         int port,
         int ctx_size,
         const std::string& log_file,
-        const std::string& log_level = "info"
+        const std::string& log_level = "info",
+        bool show_console = false
     );
     
     bool stop_server();
@@ -89,6 +90,7 @@ private:
     std::string log_level_;
     int port_;
     int ctx_size_;
+    bool show_console_;
     std::atomic<bool> server_started_;
     
 #ifdef _WIN32
