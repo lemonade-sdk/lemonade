@@ -115,6 +115,11 @@ jobs:
               exit 1
           }
           
+          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
           Write-Host "C++ build successful!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
@@ -371,7 +376,8 @@ jobs:
           # Check for key binaries
           $expectedBinaries = @(
               "bin\lemonade-router.exe",
-              "bin\lemonade-server-beta.exe"
+              "bin\lemonade-server-beta.exe",
+              "bin\lemonade-tray.exe"
           )
           
           $missingItems = @()
@@ -422,13 +428,13 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
           Write-Host "Downloading Llama-3.2-1B-Instruct-Hybrid model..." -ForegroundColor Cyan
           Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Gray
           
-          # Download a hybrid model for testing
-          & $routerExe pull Llama-3.2-1B-Instruct-Hybrid
+          # Download a hybrid model for testing (use lemonade-server-beta.exe for commands)
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-Hybrid
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Failed to download model!" -ForegroundColor Red
               exit 1
@@ -501,8 +507,8 @@ jobs:
           $stdoutLog = "$env:TEMP\lemonade-router-stdout.log"
           $stderrLog = "$env:TEMP\lemonade-router-stderr.log"
           
-          # Start the server in the background with output redirection
-          $serverProcess = Start-Process -FilePath $routerExe -ArgumentList "serve" -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+          # Start the server in the background with output redirection (no 'serve' argument - router just starts directly)
+          $serverProcess = Start-Process -FilePath $routerExe -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
           
           Write-Host "Server output will be logged to:" -ForegroundColor Cyan
           Write-Host "  STDOUT: $stdoutLog" -ForegroundColor Gray
@@ -697,11 +703,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_flm_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running FLM tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_flm.py --server-binary $routerExe
+          conda run -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -770,11 +776,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_vulkan_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running Llamacpp Vulkan tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
+          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -843,11 +849,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_rocm_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running Llamacpp ROCm tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
+          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -916,11 +922,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running general server tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server.py --server-binary $routerExe
+          conda run -p .\test-env python test/server.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
