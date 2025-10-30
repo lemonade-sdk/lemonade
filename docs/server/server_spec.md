@@ -320,19 +320,27 @@ For a full list of event types, see the [API reference for streaming](https://pl
 
 Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
 
-This [list](./server_models.md) is curated based on what works best for Ryzen AI Hybrid. Only models available locally are shown.
+By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
 #### Parameters
 
-This endpoint does not take any parameters.
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `show_all` | No | If set to `true`, returns all models from the catalog with additional fields (`name`, `downloaded`, `labels`). Used by the CLI `list` command. Defaults to `false`. |
 
 #### Example request
 
 ```bash
+# Show only downloaded models (OpenAI-compatible)
 curl http://localhost:8000/api/v1/models
+
+# Show all models with download status (CLI usage)
+curl http://localhost:8000/api/v1/models?show_all=true
 ```
 
 #### Response format
+
+Default response (only downloaded models):
 
 ```json
 {
@@ -353,7 +361,39 @@ curl http://localhost:8000/api/v1/models
       "owned_by": "lemonade",
       "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
       "recipe": "oga-hybrid"
+    }
+  ]
+}
+```
+
+With `show_all=true` (includes all models with additional fields):
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "Qwen2.5-0.5B-Instruct-CPU",
+      "object": "model",
+      "created": 1744173590,
+      "owned_by": "lemonade",
+      "name": "Qwen2.5-0.5B-Instruct-CPU",
+      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
+      "recipe": "oga-cpu",
+      "downloaded": true,
+      "labels": ["hot", "cpu"]
     },
+    {
+      "id": "Llama-3.2-1B-Instruct-Hybrid",
+      "object": "model",
+      "created": 1744173590,
+      "owned_by": "lemonade",
+      "name": "Llama-3.2-1B-Instruct-Hybrid",
+      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+      "recipe": "oga-hybrid",
+      "downloaded": false,
+      "labels": ["hot", "hybrid"]
+    }
   ]
 }
 ```

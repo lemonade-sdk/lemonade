@@ -207,6 +207,11 @@ async function loadModelStandardized(modelId, options = {}) {
     // Store original states for restoration on error
     const originalStatusText = document.getElementById('model-status-text')?.textContent || '';
     
+    // Track this load operation as active to prevent polling interference
+    if (window.activeOperations) {
+        window.activeOperations.add(modelId);
+    }
+    
     try {
         // Update load button if provided
         if (loadButton) {
@@ -311,6 +316,11 @@ async function loadModelStandardized(modelId, options = {}) {
             onSuccess(modelId);
         }
         
+        // Remove from active operations on success
+        if (window.activeOperations) {
+            window.activeOperations.delete(modelId);
+        }
+        
         return true;
         
     } catch (error) {
@@ -357,6 +367,11 @@ async function loadModelStandardized(modelId, options = {}) {
         }
         // Always show error banner to ensure user sees the error
         showErrorBanner('Failed to load model: ' + error.message);
+        
+        // Remove from active operations on error too
+        if (window.activeOperations) {
+            window.activeOperations.delete(modelId);
+        }
         
         return false;
     }
