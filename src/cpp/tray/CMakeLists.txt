@@ -146,9 +146,10 @@ if(WIN32)
         _UNICODE
     )
     
-    # Link with threading library
+    # Link with networking and system libraries
     target_link_libraries(lemonade-server-beta PRIVATE
-        ws2_32  # Winsock for future HTTP client
+        ws2_32     # Winsock
+        iphlpapi   # IP Helper API for network connection enumeration
     )
     
     # Embed manifest file

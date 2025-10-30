@@ -127,9 +127,15 @@ cd src\cpp
 Creates `Lemonade_Server_Installer_beta.exe` which:
 - Installs to `%LOCALAPPDATA%\lemonade_server_beta\`
 - Adds `bin\` folder to user PATH
-- Creates Start Menu shortcuts
+- Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
+- Gracefully stops running server before install/uninstall
 - Includes uninstaller
+
+**Installation Process:**
+- Automatically detects and stops running Lemonade instances using `lemonade-server-beta.exe stop`
+- Prevents "files in use" errors during installation
+- Works gracefully on fresh installs (no existing installation)
 
 ## Code Structure
 
@@ -241,6 +247,12 @@ The client automatically:
 - Cleans up ephemeral servers after command completion
 - Manages persistent servers with proper lifecycle handling
 
+**Single-Instance Protection:**
+- Each component (`lemonade-router`, `lemonade-server-beta serve`, `lemonade-tray`) enforces single-instance using system-wide mutexes
+- Only the `serve` command is blocked when a server is running
+- Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
+- Provides clear error messages with suggestions when blocked
+
 ### Dependencies
 
 All dependencies are automatically fetched by CMake via FetchContent:
@@ -316,9 +328,12 @@ The `lemonade-server-beta` executable is the command-line interface for terminal
 - `--port PORT` - Server port (default: 8000)
 - `--host HOST` - Server host (default: localhost)
 - `--ctx-size SIZE` - Context size (default: 4096)
+- `--log-level LEVEL` - Logging verbosity: info, debug (default: info)
 - `--log-file PATH` - Custom log file location
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
+
+**Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server-beta` commands to see client-side debug output.
 
 ### lemonade-tray.exe (GUI Tray Launcher - Windows Only)
 
@@ -327,6 +342,7 @@ The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 - Automatically runs `lemonade-server-beta.exe serve` in tray mode
 - Zero console windows or CLI interface
 - Perfect for non-technical users
+- Single-instance protection: shows friendly message if already running
 
 **What it does:**
 1. Finds `lemonade-server-beta.exe` in the same directory
@@ -340,11 +356,18 @@ The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 - Any GUI/point-and-click scenario
 
 **System Tray Features (when running):**
+- Left-click or right-click icon to show menu
 - Load/unload models via menu
 - Change server port and context size
 - Open web UI, documentation, and logs
 - Background model monitoring
+- Click balloon notifications to open menu
 - Quit option
+
+**UI Improvements:**
+- Displays as "Lemonade Local LLM Server" in Task Manager
+- Shows large lemon icon in notification balloons
+- Single-instance protection prevents multiple tray apps
 
 ## Testing
 

@@ -6,7 +6,7 @@
     name="AMD.LemonadeServer"
     type="win32"
   />
-  <description>Lemonade Local LLM Server</description>
+  <description>lemonade-router.exe</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>

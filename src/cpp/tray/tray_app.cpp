@@ -11,8 +11,13 @@
 #include <csignal>
 
 #ifdef _WIN32
+#include <winsock2.h>  // Must come before windows.h
 #include <windows.h>
 #include <shellapi.h>
+#include <iphlpapi.h>
+#include <tlhelp32.h>
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
 #else
 #include <cstdlib>
 #include <unistd.h>  // for readlink
@@ -415,17 +420,57 @@ bool TrayApp::wait_for_server_ready(int port, int timeout_seconds) {
 
 // Helper: Get server info (returns {pid, port} or {0, 0} if not found)
 std::pair<int, int> TrayApp::get_server_info() {
-    // Try to connect to common ports
-    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
-        try {
-            ServerManager temp_mgr;
-            auto health = temp_mgr.get_health();
-            return {0, port};  // Found a running server
-        } catch (...) {
-            // Not running on this port
+    // Query OS for listening TCP connections and find lemonade-router.exe
+#ifdef _WIN32
+    // Windows: Use GetExtendedTcpTable to find listening connections
+    DWORD size = 0;
+    GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
+    
+    std::vector<BYTE> buffer(size);
+    PMIB_TCPTABLE_OWNER_PID pTcpTable = reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buffer.data());
+    
+    if (GetExtendedTcpTable(pTcpTable, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR) {
+        for (DWORD i = 0; i < pTcpTable->dwNumEntries; i++) {
+            DWORD pid = pTcpTable->table[i].dwOwningPid;
+            int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
+            
+            // Check if this PID is lemonade-router.exe
+            HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (hProcess) {
+                WCHAR processName[MAX_PATH];
+                DWORD size = MAX_PATH;
+                if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
+                    std::wstring fullPath(processName);
+                    std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
+                    
+                    if (exeName == L"lemonade-router.exe") {
+                        CloseHandle(hProcess);
+                        return {static_cast<int>(pid), port};
+                    }
+                }
+                CloseHandle(hProcess);
+            }
         }
     }
-    return {0, 0};
+#else
+    // Unix: Parse netstat or use similar approach
+    // For now, check common ports as fallback
+    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
+        try {
+            httplib::Client cli("127.0.0.1", port);
+            cli.set_connection_timeout(0, 200000);
+            cli.set_read_timeout(0, 300000);
+            
+            auto res = cli.Get("/api/v1/health");
+            if (res && res->status == 200) {
+                return {0, port};
+            }
+        } catch (...) {
+        }
+    }
+#endif
+    
+    return {0, 0};  // Server not found
 }
 
 // Helper: Start ephemeral server
