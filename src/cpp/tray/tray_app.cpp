@@ -1,5 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#include <lemon/single_instance.h>
+#include <httplib.h>
 #include <iostream>
 #include <iomanip>
 #include <filesystem>
@@ -19,6 +21,12 @@
 namespace fs = std::filesystem;
 
 namespace lemon_tray {
+
+// Helper macro for debug logging
+#define DEBUG_LOG(app, msg) \
+    if ((app)->config_.log_level == "debug") { \
+        std::cout << "DEBUG: " << msg << std::endl; \
+    }
 
 // Global pointer to the current TrayApp instance for signal handling
 static TrayApp* g_tray_app_instance = nullptr;
@@ -80,7 +88,7 @@ TrayApp::TrayApp(int argc, char* argv[])
         signal(SIGTERM, signal_handler);
 #endif
         
-        std::cout << "DEBUG: Signal handlers installed" << std::endl;
+        DEBUG_LOG(this, "Signal handlers installed");
     }
 }
 
@@ -100,12 +108,12 @@ int TrayApp::run() {
         return 1;
     }
     
-    std::cout << "DEBUG: TrayApp::run() starting..." << std::endl;
-    std::cout << "DEBUG: Command: " << config_.command << std::endl;
+    DEBUG_LOG(this, "TrayApp::run() starting...");
+    DEBUG_LOG(this, "Command: " << config_.command);
     
     // Find server binary if not specified (needed for most commands)
     if (config_.server_binary.empty()) {
-        std::cout << "DEBUG: Searching for server binary..." << std::endl;
+        DEBUG_LOG(this, "Searching for server binary...");
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade server binary" << std::endl;
             std::cerr << "Please specify --server-binary path" << std::endl;
@@ -113,7 +121,7 @@ int TrayApp::run() {
         }
     }
     
-    std::cout << "DEBUG: Using server binary: " << config_.server_binary << std::endl;
+    DEBUG_LOG(this, "Using server binary: " << config_.server_binary);
     
     // Handle commands
     if (config_.command == "list") {
@@ -129,6 +137,15 @@ int TrayApp::run() {
     } else if (config_.command == "stop") {
         return execute_stop_command();
     } else if (config_.command == "serve") {
+        // Check for single instance - only for 'serve' command
+        // Other commands (status, list, pull, delete, stop) can run alongside a server
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("ServerBeta")) {
+            std::cerr << "Error: Another instance of lemonade-server-beta serve is already running.\n"
+                      << "Only one persistent server can run at a time.\n\n"
+                      << "To check server status: lemonade-server-beta status\n"
+                      << "To stop the server: lemonade-server-beta stop\n" << std::endl;
+            return 1;
+        }
         // Continue to serve logic below
     } else {
         std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
@@ -137,17 +154,17 @@ int TrayApp::run() {
     }
     
     // Create server manager
-    std::cout << "DEBUG: Creating server manager..." << std::endl;
+    DEBUG_LOG(this, "Creating server manager...");
     server_manager_ = std::make_unique<ServerManager>();
     
     // Start server
-    std::cout << "DEBUG: Starting server..." << std::endl;
+    DEBUG_LOG(this, "Starting server...");
     if (!start_server()) {
         std::cerr << "Error: Failed to start server" << std::endl;
         return 1;
     }
     
-    std::cout << "DEBUG: Server started successfully!" << std::endl;
+    DEBUG_LOG(this, "Server started successfully!");
     
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
@@ -162,7 +179,6 @@ int TrayApp::run() {
         return 0;
     }
     
-    std::cout << "DEBUG: Creating tray application..." << std::endl;
     // Create tray application
     tray_ = create_tray();
     if (!tray_) {
@@ -170,26 +186,26 @@ int TrayApp::run() {
         return 1;
     }
     
-    std::cout << "DEBUG: Tray created successfully" << std::endl;
+    DEBUG_LOG(this, "Tray created successfully");
     
     // Set ready callback
-    std::cout << "DEBUG: Setting ready callback..." << std::endl;
+    DEBUG_LOG(this, "Setting ready callback...");
     tray_->set_ready_callback([this]() {
-        std::cout << "DEBUG: Ready callback triggered!" << std::endl;
+        DEBUG_LOG(this, "Ready callback triggered!");
         show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
     });
     
     // Set menu update callback to refresh state before showing menu
-    std::cout << "DEBUG: Setting menu update callback..." << std::endl;
+    DEBUG_LOG(this, "Setting menu update callback...");
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
-            std::cout << "DEBUG: Refreshing menu state from server..." << std::endl;
+            DEBUG_LOG(this, "Refreshing menu state from server...");
             build_menu();
         });
     }
     
     // Find icon path (matching the CMake resources structure)
-    std::cout << "DEBUG: Searching for icon..." << std::endl;
+    DEBUG_LOG(this, "Searching for icon...");
     std::string icon_path = "resources/static/favicon.ico";
     std::cout << "DEBUG: Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
     
@@ -219,18 +235,18 @@ int TrayApp::run() {
         return 1;
     }
     
-    std::cout << "DEBUG: Tray initialized successfully" << std::endl;
+    DEBUG_LOG(this, "Tray initialized successfully");
     
     // Build initial menu
-    std::cout << "DEBUG: Building menu..." << std::endl;
+    DEBUG_LOG(this, "Building menu...");
     build_menu();
-    std::cout << "DEBUG: Menu built successfully" << std::endl;
+    DEBUG_LOG(this, "Menu built successfully");
     
-    std::cout << "DEBUG: Menu built, entering event loop..." << std::endl;
+    DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
     tray_->run();
     
-    std::cout << "DEBUG: Event loop exited" << std::endl;
+    DEBUG_LOG(this, "Event loop exited");
     return 0;
 }
 
@@ -251,9 +267,23 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
     if (argc > 1 && argv[1][0] != '-') {
         config_.command = argv[1];
         
-        // Collect remaining arguments as command args
+        // Parse remaining arguments (both command args and options)
         for (int i = 2; i < argc; ++i) {
-            config_.command_args.push_back(argv[i]);
+            std::string arg = argv[i];
+            if (arg == "--log-level" && i + 1 < argc) {
+                config_.log_level = argv[++i];
+            } else if (arg == "--port" && i + 1 < argc) {
+                config_.port = std::stoi(argv[++i]);
+            } else if (arg == "--ctx-size" && i + 1 < argc) {
+                config_.ctx_size = std::stoi(argv[++i]);
+            } else if (arg == "--server-binary" && i + 1 < argc) {
+                config_.server_binary = argv[++i];
+            } else if (arg == "--no-tray") {
+                config_.no_tray = true;
+            } else {
+                // It's a command argument (like model name)
+                config_.command_args.push_back(arg);
+            }
         }
         return;
     }
@@ -346,7 +376,7 @@ bool TrayApp::find_server_binary() {
     for (const auto& path : search_paths) {
         if (fs::exists(path)) {
             config_.server_binary = fs::absolute(path).string();
-            std::cout << "Found server binary: " << config_.server_binary << std::endl;
+            DEBUG_LOG(this, "Found server binary: " << config_.server_binary);
             return true;
         }
     }
@@ -630,18 +660,61 @@ int TrayApp::execute_stop_command() {
     
     std::cout << "Stopping server on port " << port << "..." << std::endl;
     
-    // Create a temporary server manager to stop the server
-    if (!server_manager_) {
-        server_manager_ = std::make_unique<ServerManager>();
+    // Try graceful shutdown via API
+    try {
+        httplib::Client client("127.0.0.1", port);
+        client.set_connection_timeout(2, 0);
+        client.set_read_timeout(2, 0);
+        
+        auto res = client.Post("/api/v1/halt");
+        
+        if (res && (res->status == 200 || res->status == 204)) {
+            // Wait a moment for server to shut down
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    } catch (...) {
+        // API call failed, try force kill below
     }
     
-    if (server_manager_->stop_server()) {
+    // Kill any remaining lemonade-server-beta.exe and lemonade-router.exe processes
+    // This handles both the router and the tray app
+#ifdef _WIN32
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(pe32);
+        
+        if (Process32FirstW(snapshot, &pe32)) {
+            do {
+                std::wstring process_name(pe32.szExeFile);
+                if (process_name == L"lemonade-router.exe" || process_name == L"lemonade-server-beta.exe") {
+                    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+                    if (hProcess) {
+                        TerminateProcess(hProcess, 0);
+                        CloseHandle(hProcess);
+                    }
+                }
+            } while (Process32NextW(snapshot, &pe32));
+        }
+        CloseHandle(snapshot);
+    }
+#else
+    // Unix: Kill processes by name
+    system("pkill -f lemonade-router");
+    system("pkill -f 'lemonade-server-beta.*serve'");
+#endif
+    
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+    // Verify it stopped
+    auto [check_pid, check_port] = get_server_info();
+    if (check_port == 0) {
         std::cout << "Lemonade Server stopped successfully." << std::endl;
         return 0;
-    } else {
-        std::cerr << "Failed to stop server" << std::endl;
-        return 1;
     }
+    
+    std::cerr << "Failed to stop server" << std::endl;
+    return 1;
 }
 
 bool TrayApp::start_server() {
@@ -925,7 +998,7 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
                 }
             }
         } else {
-            std::cout << "DEBUG: No 'data' array in models response" << std::endl;
+            DEBUG_LOG(this, "No 'data' array in models response");
         }
         
         return models;
@@ -936,4 +1009,5 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
 }
 
 } // namespace lemon_tray
+
 

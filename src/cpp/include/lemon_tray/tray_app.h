@@ -13,7 +13,7 @@ struct AppConfig {
     int port = 8000;
     int ctx_size = 4096;
     std::string log_file;
-    std::string log_level = "debug";  // Always debug
+    std::string log_level = "info";  // Default to info, can be set to debug
     std::string server_binary;
     bool no_tray = false;
     bool show_help = false;

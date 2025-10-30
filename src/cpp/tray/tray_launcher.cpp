@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <string>
 #include <filesystem>
+#include <lemon/single_instance.h>
 
 namespace fs = std::filesystem;
 
@@ -72,6 +73,20 @@ bool launch_server_beta() {
 
 // Windows GUI entry point
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+    // Check for single instance
+    if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+        // Try to activate the existing tray instance
+        // Note: The actual tray window is created by lemonade-server-beta.exe, not this launcher
+        lemon::SingleInstance::ActivateExistingInstance("Lemonade Server Beta");
+        
+        MessageBoxW(NULL, 
+            L"Lemonade Server Beta is already running.\n\n"
+            L"Check your system tray for the lemon icon.",
+            L"Lemonade Server Beta",
+            MB_OK | MB_ICONINFORMATION);
+        return 0;
+    }
+    
     // Simply launch lemonade-server-beta.exe serve and exit
     if (launch_server_beta()) {
         return 0;  // Success

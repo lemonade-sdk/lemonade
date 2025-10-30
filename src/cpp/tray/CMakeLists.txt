@@ -121,6 +121,11 @@ if(WIN32)
     # Add version resource for tray launcher
     target_sources(lemonade-tray PRIVATE version.rc)
     
+    # Include directories for single_instance.h
+    target_include_directories(lemonade-tray PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    
     target_link_libraries(lemonade-tray PRIVATE
         user32
         shell32

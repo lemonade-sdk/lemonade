@@ -437,7 +437,7 @@ std::string ServerManager::make_http_request(
     const std::string& method,
     const std::string& body)
 {
-    std::cout << "DEBUG: HTTP " << method << " http://127.0.0.1:" << port_ << endpoint << std::endl;
+    // Debug logging removed - too verbose for normal operations
     
     // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
     httplib::Client cli("127.0.0.1", port_);
@@ -456,17 +456,13 @@ std::string ServerManager::make_http_request(
     
     if (!res) {
         auto err = res.error();
-        std::cout << "DEBUG: HTTP connection error code: " << static_cast<int>(err) << std::endl;
         throw std::runtime_error("HTTP request failed: connection error");
     }
-    
-    std::cout << "DEBUG: HTTP response status: " << res->status << std::endl;
     
     if (res->status != 200) {
         throw std::runtime_error("HTTP request failed with status: " + std::to_string(res->status));
     }
     
-    std::cout << "DEBUG: HTTP response body length: " << res->body.size() << std::endl;
     return res->body;
 }
 
