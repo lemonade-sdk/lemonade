@@ -71,7 +71,8 @@ public:
     std::string make_http_request(
         const std::string& endpoint,
         const std::string& method = "GET",
-        const std::string& body = ""
+        const std::string& body = "",
+        int timeout_seconds = 5
     );
     
     // Utility

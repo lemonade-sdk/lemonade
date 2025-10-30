@@ -211,7 +211,7 @@ bool ServerManager::load_model(const std::string& model_name) {
         
         httplib::Client cli("127.0.0.1", port_);
         cli.set_connection_timeout(10, 0);   // 10 second connection timeout
-        cli.set_read_timeout(120, 0);        // 120 second read timeout (model loading can be slow)
+        cli.set_read_timeout(240, 0);        // 240 second (4 minute) read timeout for large models
         
         auto res = cli.Post("/api/v1/load", body, "application/json");
         
@@ -447,14 +447,15 @@ bool ServerManager::is_process_alive() const {
 std::string ServerManager::make_http_request(
     const std::string& endpoint,
     const std::string& method,
-    const std::string& body)
+    const std::string& body,
+    int timeout_seconds)
 {
     // Debug logging removed - too verbose for normal operations
     
     // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
     httplib::Client cli("127.0.0.1", port_);
-    cli.set_connection_timeout(2, 0);  // 2 second timeout (increased from 1)
-    cli.set_read_timeout(5, 0);        // 5 second read timeout
+    cli.set_connection_timeout(10, 0);  // 10 second connection timeout
+    cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
     
     httplib::Result res;
     

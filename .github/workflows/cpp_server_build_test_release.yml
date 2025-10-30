@@ -692,7 +692,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM tests with C++ server
@@ -707,7 +707,7 @@ jobs:
           
           Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -765,7 +765,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp Vulkan tests with C++ server
@@ -780,7 +780,7 @@ jobs:
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -838,7 +838,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp ROCm tests with C++ server
@@ -853,7 +853,7 @@ jobs:
           
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -911,7 +911,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run general server tests with C++ server
@@ -926,7 +926,7 @@ jobs:
           
           Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
