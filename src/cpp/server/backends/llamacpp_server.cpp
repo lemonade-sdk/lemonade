@@ -11,6 +11,7 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <vector>
 #include <cstdlib>
 
 #ifdef _WIN32
@@ -589,19 +590,86 @@ std::string LlamaCppServer::find_gguf_file(const std::string& checkpoint) {
     if (fs::exists(model_cache_path)) {
         std::cout << "[LlamaCpp] Cache directory exists, searching for .gguf files..." << std::endl;
         
+        std::vector<std::string> gguf_files;
+        std::vector<std::string> sharded_files;
+        
+        // Collect all GGUF files (excluding mmproj)
         for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
+                std::string lower_filename = filename;
+                std::transform(lower_filename.begin(), lower_filename.end(), lower_filename.begin(), ::tolower);
+                
+                // Skip mmproj files
+                if (lower_filename.find("mmproj") != std::string::npos) {
+                    continue;
+                }
+                
                 if (filename.find(".gguf") != std::string::npos) {
                     std::cout << "[LlamaCpp] Found GGUF: " << filename << std::endl;
                     
-                    if (variant.empty() || filename.find(variant) != std::string::npos) {
-                        std::cout << "[LlamaCpp] Matches variant! Using: " << entry.path().string() << std::endl;
-                        return entry.path().string();
+                    // Check if this is a sharded file (pattern: *-00001-of-*.gguf or similar)
+                    // Look for pattern like: *-00001-of-00003.gguf, *-00002-of-00003.gguf, etc.
+                    std::regex shard_pattern(R"(-\d{5}-of-\d{5}\.gguf$)");
+                    if (std::regex_search(filename, shard_pattern)) {
+                        sharded_files.push_back(entry.path().string());
                     } else {
-                        std::cout << "[LlamaCpp] Doesn't match variant '" << variant << "'" << std::endl;
+                        gguf_files.push_back(entry.path().string());
                     }
                 }
+            }
+        }
+        
+        // Handle variant matching
+        bool variant_is_wildcard = (variant == "*" || variant.empty());
+        
+        if (!variant_is_wildcard && !variant.empty()) {
+            // Try exact match first (variant might be full filename)
+            std::string search_term = variant;
+            if (search_term.find(".gguf") == std::string::npos) {
+                search_term += ".gguf";
+            }
+            
+            // Check non-sharded files first
+            for (const auto& file_path : gguf_files) {
+                std::string filename = fs::path(file_path).filename().string();
+                if (filename == search_term) {
+                    std::cout << "[LlamaCpp] Exact variant match! Using: " << file_path << std::endl;
+                    return file_path;
+                }
+            }
+            
+            // Check if variant matches a sharded file pattern
+            // Variant might be something like "mxfp4" and we need to find "*-mxfp4-00001-of-*.gguf"
+            std::string variant_lower = variant;
+            std::transform(variant_lower.begin(), variant_lower.end(), variant_lower.begin(), ::tolower);
+            
+            for (const auto& file_path : sharded_files) {
+                std::string filename = fs::path(file_path).filename().string();
+                std::string filename_lower = filename;
+                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+                
+                // Check if variant appears in filename (case insensitive)
+                if (filename_lower.find(variant_lower) != std::string::npos) {
+                    std::cout << "[LlamaCpp] Variant matches sharded file! Using: " << file_path << std::endl;
+                    return file_path;
+                }
+            }
+            
+            std::cout << "[LlamaCpp] Doesn't match variant '" << variant << "'" << std::endl;
+        } else {
+            // Wildcard or no variant specified - use first available file
+            // Prefer non-sharded files, but if only sharded files exist, use first shard
+            if (!gguf_files.empty()) {
+                // Sort for consistent ordering
+                std::sort(gguf_files.begin(), gguf_files.end());
+                std::cout << "[LlamaCpp] Using first GGUF file: " << gguf_files[0] << std::endl;
+                return gguf_files[0];
+            } else if (!sharded_files.empty()) {
+                // Sort sharded files to ensure consistent ordering (first shard will be first)
+                std::sort(sharded_files.begin(), sharded_files.end());
+                std::cout << "[LlamaCpp] Found sharded model, using first shard: " << sharded_files[0] << std::endl;
+                return sharded_files[0];
             }
         }
         

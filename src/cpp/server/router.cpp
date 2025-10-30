@@ -28,23 +28,22 @@ void Router::load_model(const std::string& model_name,
                        bool do_not_upgrade,
                        const std::vector<std::string>& labels) {
     
-    // Serialize load_model() calls to prevent race conditions
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    
     std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
     
-    try {
-        // Unload any existing model
+    // Acquire exclusive write lock for initial setup (unload, create wrapped_server_)
+    {
+        std::unique_lock<std::shared_mutex> lock(load_mutex_);
+        
+        // Unload any existing model (use internal helper since we already hold the mutex)
         if (wrapped_server_) {
             std::cout << "[Router] Unloading previous model..." << std::endl;
-            unload_model();
+            unload_model_impl();
         }
         
-        // Determine which backend to use based on recipe
+        // Determine which backend to use based on recipe and create wrapped_server_
         if (recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             wrapped_server_ = std::make_unique<backends::FastFlowLMServer>(log_level_);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Serve backend: " << recipe << std::endl;
             
@@ -105,29 +104,55 @@ void Router::load_model(const std::string& model_name,
             ryzenai_server->set_model_path(model_path);
             ryzenai_server->set_execution_mode(backend_mode);
             wrapped_server_.reset(ryzenai_server);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         } else {
             std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
             wrapped_server_ = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
+        }
+    } // Release lock before long-running load operation
+    
+    // Call wrapped_server_->load() WITHOUT holding the lock
+    // This allows readers (health checks) to proceed concurrently
+    // The load operation can take many seconds (waiting for backend server to start)
+    try {
+        if (recipe == "flm") {
+            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+        } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai") {
+            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+        } else {
             wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
         }
         
-        loaded_model_ = model_name;
-        loaded_checkpoint_ = checkpoint;
-        loaded_recipe_ = recipe;
-        unload_called_ = false;  // Reset unload flag for newly loaded model
+        // Re-acquire lock briefly to update final state
+        {
+            std::unique_lock<std::shared_mutex> lock(load_mutex_);
+            loaded_model_ = model_name;
+            loaded_checkpoint_ = checkpoint;
+            loaded_recipe_ = recipe;
+            unload_called_ = false;  // Reset unload flag for newly loaded model
+        }
         
         std::cout << "[Router] Model loaded successfully" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[Router ERROR] Failed to load model: " << e.what() << std::endl;
-        if (wrapped_server_) {
-            wrapped_server_.reset();
+        // Clean up on error
+        {
+            std::unique_lock<std::shared_mutex> lock(load_mutex_);
+            if (wrapped_server_) {
+                wrapped_server_.reset();
+            }
         }
         throw;  // Re-throw to propagate up
     }
 }
 
 void Router::unload_model() {
+    // Acquire exclusive write lock for load/unload operations
+    std::unique_lock<std::shared_mutex> lock(load_mutex_);
+    unload_model_impl();
+}
+
+void Router::unload_model_impl() {
+    // Internal implementation - assumes write lock (unique_lock) is already held by caller
     std::cout << "[Router] Unload model called" << std::endl;
     if (wrapped_server_ && !unload_called_) {
         std::cout << "[Router] Calling wrapped_server->unload()" << std::endl;
@@ -143,6 +168,30 @@ void Router::unload_model() {
     } else {
         std::cout << "[Router] No wrapped server to unload" << std::endl;
     }
+}
+
+std::string Router::get_loaded_model() const {
+    // Acquire shared read lock - allows concurrent reads but blocks during writes
+    std::shared_lock<std::shared_mutex> lock(load_mutex_);
+    return loaded_model_;
+}
+
+std::string Router::get_loaded_checkpoint() const {
+    // Acquire shared read lock - allows concurrent reads but blocks during writes
+    std::shared_lock<std::shared_mutex> lock(load_mutex_);
+    return loaded_checkpoint_;
+}
+
+std::string Router::get_loaded_recipe() const {
+    // Acquire shared read lock - allows concurrent reads but blocks during writes
+    std::shared_lock<std::shared_mutex> lock(load_mutex_);
+    return loaded_recipe_;
+}
+
+bool Router::is_model_loaded() const {
+    // Acquire shared read lock - allows concurrent reads but blocks during writes
+    std::shared_lock<std::shared_mutex> lock(load_mutex_);
+    return wrapped_server_ != nullptr;
 }
 
 std::string Router::get_backend_address() const {
