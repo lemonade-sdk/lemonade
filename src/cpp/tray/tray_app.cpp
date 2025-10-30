@@ -116,12 +116,12 @@ int TrayApp::run() {
     DEBUG_LOG(this, "TrayApp::run() starting...");
     DEBUG_LOG(this, "Command: " << config_.command);
     
-    // Find server binary if not specified (needed for most commands)
+    // Find server binary automatically (needed for most commands)
     if (config_.server_binary.empty()) {
         DEBUG_LOG(this, "Searching for server binary...");
         if (!find_server_binary()) {
-            std::cerr << "Error: Could not find lemonade server binary" << std::endl;
-            std::cerr << "Please specify --server-binary path" << std::endl;
+            std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
+            std::cerr << "Please ensure lemonade-router.exe is in the same directory" << std::endl;
             return 1;
         }
     }
@@ -290,8 +290,6 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.port = std::stoi(argv[++i]);
             } else if (arg == "--ctx-size" && i + 1 < argc) {
                 config_.ctx_size = std::stoi(argv[++i]);
-            } else if (arg == "--server-binary" && i + 1 < argc) {
-                config_.server_binary = argv[++i];
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
             } else {
@@ -328,17 +326,10 @@ void TrayApp::print_usage() {
     std::cout << "  --host HOST              Server host (default: localhost)\n";
     std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
     std::cout << "  --log-file PATH          Log file path\n";
-    std::cout << "  --server-binary PATH     Path to lemonade-router binary\n";
+    std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
     std::cout << "  --help, -h               Show this help message\n";
-    std::cout << "  --version, -v            Show version\n\n";
-    std::cout << "Examples:\n";
-    std::cout << "  lemonade-server-beta serve                        # Start server with tray\n";
-    std::cout << "  lemonade-server-beta serve --port 8080            # Start on custom port\n";
-    std::cout << "  lemonade-server-beta serve --no-tray              # Start without tray\n";
-    std::cout << "  lemonade-server-beta list                         # List models\n";
-    std::cout << "  lemonade-server-beta pull Llama-3.2-1B-Instruct-CPU   # Download a model\n";
-    std::cout << "  lemonade-server-beta run Llama-3.2-1B-Instruct-CPU    # Run a model\n";
+    std::cout << "  --version, -v            Show version\n";
 }
 
 void TrayApp::print_version() {
