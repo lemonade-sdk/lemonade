@@ -6,11 +6,16 @@ import os
 import logging
 import subprocess
 import tempfile
+import threading
 import time
 from typing import List, Optional
+from openai import OpenAI
 
 import requests
 from packaging.version import Version, InvalidVersion
+from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
+from lemonade.tools.server.utils.port import find_free_port
+from lemonade.tools.llamacpp.utils import monitor_process_memory
 
 
 def get_flm_latest_version() -> Optional[str]:
@@ -226,7 +231,9 @@ def install_flm():
                 pass  # Ignore cleanup errors
 
 
-def download_flm_model(config_checkpoint, _=None, do_not_upgrade=False) -> dict:
+def download_flm_model(
+    config_checkpoint, _=None, do_not_upgrade=False, capture_output=False
+) -> dict:
     """
     Downloads the FLM model for the given configuration.
 
@@ -243,7 +250,7 @@ def download_flm_model(config_checkpoint, _=None, do_not_upgrade=False) -> dict:
     else:
         command = ["flm", "pull", f"{config_checkpoint}", "--force"]
 
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, capture_output=capture_output)
 
 
 def get_flm_installed_models() -> List[str]:
@@ -301,3 +308,150 @@ def is_flm_available() -> bool:
     return current_version is not None and Version(current_version) == Version(
         latest_version
     )
+
+
+class FLMTokenizerAdapter(PassthroughTokenizer):
+    pass
+
+
+class FLMAdapter(ModelAdapter):
+    def __init__(
+        self,
+        model,
+        state=None,
+    ):
+        super().__init__()
+
+        self.model = model
+        self.state = state
+        self.server_process = None
+        self.server_port = None
+
+    def __del__(self):
+        self.stop_server()
+
+    def download(self, force=False):
+        """
+        Download the FLM model (if not already downloaded or if force flag is set).
+        """
+        try:
+            download_flm_model(
+                self.model, None, do_not_upgrade=(not force), capture_output=True
+            )
+        except Exception as e:
+            error_msg = f"Failed to download FLM model: {str(e)}\n"
+            error_msg += "Run 'flm list' to see list of valid FLM models."
+            raise Exception(error_msg)
+
+    def generate(
+        self,
+        input_ids: str,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
+        save_max_memory_used: bool = False,
+        **kwargs,  # pylint: disable=unused-argument
+    ):
+        """
+        Pass a text prompt into the FLM inference CLI.
+
+        The input_ids arg here should receive the original text that
+        would normally be encoded by a tokenizer.
+
+        Args:
+            input_ids: The input text prompt
+            temperature: Temperature for sampling (0.0 = greedy)
+            top_p: Top-p sampling threshold
+            **kwargs: Additional arguments (ignored)
+
+        Returns:
+            List containing a single string with the generated text, or raw output if
+            return_raw=True
+        """
+
+        # Start memory monitoring in a separate thread
+        if save_max_memory_used:
+            memory_data = {}
+            monitor_thread = threading.Thread(
+                target=monitor_process_memory,
+                args=(self.server_process.pid, memory_data),
+                daemon=True,
+            )
+            monitor_thread.start()
+
+        prompt = input_ids
+        response = self.send_request_to_server(prompt)
+
+        # Wait for monitor thread to finish and write peak_wset
+        if save_max_memory_used:
+            monitor_thread.join(timeout=2)
+            self.peak_wset = memory_data.get("peak_wset", None)
+
+        return response
+
+    def start_server(self, ctx_len=None, timeout=30):
+        """
+        Start the FLM server and save the process and port.
+        """
+        port = find_free_port()
+        cmd = ["flm", "serve", self.model, "--port", str(port)]
+        if ctx_len:
+            cmd.extend(["--ctx-len", str(ctx_len)])
+        self.server_process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+        )
+
+        # Wait for server to start
+        server_ready = False
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            line = self.server_process.stdout.readline()
+            if not line:
+                break
+            line = line.strip()
+            if "WebServer started on port" in line:
+                try:
+                    self.server_port = int(line.split("port")[1].split()[0])
+                    server_ready = True
+                    break
+                except Exception as e:
+                    self.server_process.terminate()
+                    self.server_process = None
+                    raise Exception(
+                        f"Failed to parse FLM server port from line: {line}"
+                    )
+
+        if not server_ready or self.server_port is None:
+            self.stop_server()
+            raise Exception(f"Server failed to start within {timeout} seconds")
+
+    def stop_server(self):
+        if self.server_process:
+            self.server_process.terminate()
+            self.server_process = None
+        self.server_port = None
+
+    def send_request_to_server(self, prompt) -> str:
+        """
+        Send prompt to the FLM server using the OpenAI client and return text result.
+        """
+        client = None
+        try:
+
+            # Connect to local FastFlowLM server using detected port
+            client = OpenAI(
+                base_url=f"http://localhost:{self.server_port}/v1",  # FastFlowLM's local API endpoint
+                api_key="flm",  # Dummy key (FastFlowLM doesn't require authentication)
+            )
+
+            # Use the passed input_str in the messages payload
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.9,
+                top_p=0.95,
+                # presence_penalty=0.5,
+            )
+            result = response.choices[0].message.content
+            return result
+        except Exception as e:
+            raise Exception(f"Error during processing prompt with FLM server: {e}")
