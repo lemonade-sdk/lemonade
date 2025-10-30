@@ -45,6 +45,16 @@ MODELS_UNDER_TEST = [
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
+# Global variable for server binary (can be overridden via --server-binary)
+SERVER_BINARY = "lemonade-server-dev"
+
+
+def is_cpp_server():
+    """Check if we're testing the C++ server instead of Python."""
+    return "lemonade-router.exe" in SERVER_BINARY or (
+        SERVER_BINARY != "lemonade-server-dev" and not SERVER_BINARY.endswith(".py")
+    )
+
 
 def stop_lemonade():
     """
@@ -54,7 +64,7 @@ def stop_lemonade():
     print("\n=== Stopping Lemonade ===")
 
     result = subprocess.run(
-        ["lemonade-server-dev", "stop"],
+        [SERVER_BINARY, "stop"],
         capture_output=True,
         text=True,
     )
@@ -63,11 +73,24 @@ def stop_lemonade():
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Test lemonade server")
+    parser = argparse.ArgumentParser(description="Test lemonade server", add_help=False)
     parser.add_argument(
         "--offline", action="store_true", help="Run tests in offline mode"
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--server-binary",
+        type=str,
+        default="lemonade-server-dev",
+        help="Path to server binary (default: lemonade-server-dev)",
+    )
+    # Use parse_known_args to ignore unknown arguments (like positional 'backend' in server_llamacpp.py)
+    args, unknown = parser.parse_known_args()
+
+    # Update global SERVER_BINARY
+    global SERVER_BINARY
+    SERVER_BINARY = args.server_binary
+
+    return args
 
 
 @contextlib.contextmanager
@@ -148,10 +171,10 @@ def ensure_model_is_cached():
     Make sure the test model is downloaded and cached locally before running in offline mode.
     """
     try:
-        # Call lemonade-server-dev pull to download the model
+        # Call server binary pull to download the model
         for model_name in MODELS_UNDER_TEST:
             subprocess.run(
-                ["lemonade-server-dev", "pull", model_name],
+                [SERVER_BINARY, "pull", model_name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True,
@@ -181,14 +204,14 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Who won the world series in 2020?"},
             {"role": "assistant", "content": "The LA Dodgers won in 2020."},
-            {"role": "user", "content": "In which state was it played?"},
+            {"role": "user", "content": "What was the best play?"},
         ]
 
         # Ensure we stop lemonade
         stop_lemonade()
 
         # Build the command to start the server
-        cmd = ["lemonade-server-dev", "serve"]
+        cmd = [SERVER_BINARY, "serve"]
 
         # Add --no-tray option on Windows
         if os.name == "nt":
@@ -208,19 +231,20 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         )
 
         # Print stdout and stderr in real-time
-        def print_output():
-            while True:
-                stdout = lemonade_process.stdout.readline()
-                stderr = lemonade_process.stderr.readline()
-                if stdout:
-                    print(f"[stdout] {stdout.strip()}")
-                if stderr:
-                    print(f"[stderr] {stderr.strip()}")
-                if not stdout and not stderr and lemonade_process.poll() is not None:
-                    break
+        # Use separate threads for stdout and stderr to prevent blocking
+        def print_stdout():
+            for line in lemonade_process.stdout:
+                print(f"[stdout] {line.strip()}")
 
-        output_thread = Thread(target=print_output, daemon=True)
-        output_thread.start()
+        def print_stderr():
+            for line in lemonade_process.stderr:
+                print(f"[stderr] {line.strip()}")
+
+        # Start output threads
+        stdout_thread = Thread(target=print_stdout, daemon=True)
+        stderr_thread = Thread(target=print_stderr, daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
 
         # Wait for the server to start by checking port 8000
         start_time = time.time()
@@ -253,9 +277,11 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
 
 def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
     """Utility function to run server tests with a given test class."""
-    # If offline parameter is not provided, use argparse to get it
+    # Always parse args to set SERVER_BINARY global
+    args = parse_args()
+
+    # If offline parameter is not provided, use parsed value
     if offline is None:
-        args = parse_args()
         offline = args.offline
 
     if offline:

@@ -64,9 +64,12 @@ class Testing(ServerTestingBase):
             "system-info",
         ]
 
+        # Use a session for connection pooling to avoid per-request connection overhead
+        session = requests.Session()
+
         # Ensure that we get a 404 error when the endpoint is not registered
         url = f"http://localhost:{PORT}/api/v0/nonexistent"
-        response = requests.head(url, timeout=60)
+        response = session.head(url, timeout=60)
         assert response.status_code == 404
 
         # Check that all endpoints are properly registered on both v0 and v1
@@ -74,10 +77,12 @@ class Testing(ServerTestingBase):
         for endpoint in valid_endpoints:
             for version in ["v0", "v1"]:
                 url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
-                response = requests.head(url, timeout=60)
+                response = session.head(url, timeout=60)
                 assert (
                     response.status_code != 404
                 ), f"Endpoint {endpoint} is not registered on {version}"
+
+        session.close()
 
     # Endpoint: /api/v1/chat/completions
     def test_001_test_chat_completion(self):
@@ -326,7 +331,7 @@ class Testing(ServerTestingBase):
 
     # Test simultaneous load requests
     async def test_011_test_simultaneous_load_requests(self):
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
             first_model = "Qwen2.5-0.5B-Instruct-CPU"
             second_model = "Llama-3.2-1B-Instruct-CPU"
 
@@ -353,13 +358,16 @@ class Testing(ServerTestingBase):
             assert responses[0].status_code == 200
             assert responses[1].status_code == 200
 
-            # Verify the final loaded model is the second one
+            # Verify the final loaded model is one of the two we requested
+            # (The order is non-deterministic with concurrent requests, but
+            # the mutex ensures no corruption and one of them wins)
             health_response = await client.get("/health")
             assert health_response.status_code == 200
             health_data = health_response.json()
-            assert health_data["model_loaded"] == second_model, health_data[
-                "model_loaded"
-            ]
+            assert health_data["model_loaded"] in [first_model, second_model], (
+                f"Expected one of [{first_model}, {second_model}], "
+                f"got {health_data['model_loaded']}"
+            )
 
     # Test load by model name
     async def test_012_test_load_by_name(self):
@@ -382,16 +390,18 @@ class Testing(ServerTestingBase):
                 "/delete", json={"model_name": "user.Qwen2.5-0.5B-HF-CPU"}
             )
 
+            custom_model_name = "user.Qwen2.5-Coder-0.5B-Instruct-GGUF"
+
             load_response = await client.post(
                 "/pull",
                 json={
-                    "model_name": "user.Qwen2.5-0.5B-HF-CPU",
-                    "checkpoint": "Qwen/Qwen2.5-0.5B",
-                    "recipe": "hf-cpu",
+                    "model_name": custom_model_name,
+                    "checkpoint": "unsloth/Qwen2.5-Coder-0.5B-Instruct-GGUF:Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf",
+                    "recipe": "llamacpp",
                 },
             )
 
-            assert load_response.status_code == 200
+            assert load_response.status_code == 200, load_response.content
 
             # Verify the model loaded
             health_response = await client.get("/health")
@@ -404,7 +414,7 @@ class Testing(ServerTestingBase):
             )
 
             completion = client.completions.create(
-                model="user.Qwen2.5-0.5B-HF-CPU",
+                model=custom_model_name,
                 prompt="Hello, how are you?",
                 stream=False,
                 max_tokens=10,
