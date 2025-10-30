@@ -135,23 +135,21 @@ int TrayApp::run() {
         return execute_pull_command();
     } else if (config_.command == "delete") {
         return execute_delete_command();
-    } else if (config_.command == "run") {
-        return execute_run_command();
     } else if (config_.command == "status") {
         return execute_status_command();
     } else if (config_.command == "stop") {
         return execute_stop_command();
-    } else if (config_.command == "serve") {
-        // Check for single instance - only for 'serve' command
+    } else if (config_.command == "serve" || config_.command == "run") {
+        // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("ServerBeta")) {
-            std::cerr << "Error: Another instance of lemonade-server-beta serve is already running.\n"
+            std::cerr << "Error: Another instance of lemonade-server-beta serve/run is already running.\n"
                       << "Only one persistent server can run at a time.\n\n"
                       << "To check server status: lemonade-server-beta status\n"
                       << "To stop the server: lemonade-server-beta stop\n" << std::endl;
             return 1;
         }
-        // Continue to serve logic below
+        // Continue to server initialization below
     } else {
         std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
         print_usage();
@@ -170,6 +168,14 @@ int TrayApp::run() {
     }
     
     DEBUG_LOG(this, "Server started successfully!");
+    
+    // If this is the 'run' command, load the model and open browser
+    if (config_.command == "run") {
+        int result = execute_run_command();
+        if (result != 0) {
+            return result;
+        }
+    }
     
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
@@ -716,18 +722,17 @@ int TrayApp::execute_run_command() {
     std::string model_name = config_.command_args[0];
     std::cout << "Running model: " << model_name << std::endl;
     
-    // Check if server is already running
-    auto [pid, running_port] = get_server_info();
-    if (running_port != 0) {
-        std::cout << "Server is already running on port " << running_port << std::endl;
-        // TODO: Load the model and open browser
-        return 0;
-    }
+    // The run command will:
+    // 1. Start server (handled by main run() after this returns)
+    // 2. Wait for server to be ready
+    // 3. Load the model
+    // 4. Open browser
+    // 5. Show tray (handled by main run() after this returns)
     
-    // Start persistent server (with tray)
-    std::cout << "Starting server..." << std::endl;
-    if (!start_server()) {
-        std::cerr << "Failed to start server" << std::endl;
+    // Wait for server to be ready
+    std::cout << "Waiting for server to be ready..." << std::endl;
+    if (!wait_for_server_ready(config_.port, 30)) {
+        std::cerr << "Server did not become ready in time" << std::endl;
         return 1;
     }
     
@@ -735,27 +740,17 @@ int TrayApp::execute_run_command() {
     std::cout << "Loading model " << model_name << "..." << std::endl;
     if (server_manager_->load_model(model_name)) {
         std::cout << "Model loaded successfully!" << std::endl;
-        // TODO: Open browser to chat interface
+        
+        // Open browser to chat interface
         std::string url = "http://localhost:" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
-        std::cout << "You can now chat with " << model_name << " at " << url << std::endl;
+        std::cout << "Opening browser: " << url << std::endl;
         open_url(url);
     } else {
         std::cerr << "Failed to load model" << std::endl;
+        return 1;
     }
     
-    // If no-tray mode, wait for server
-    if (config_.no_tray) {
-        std::cout << "Server running in foreground mode (no tray)" << std::endl;
-        std::cout << "Press Ctrl+C to stop" << std::endl;
-        
-        while (server_manager_->is_server_running()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-    } else {
-        // Start tray interface
-        return TrayApp::run();  // This will show the tray
-    }
-    
+    // Return success - main run() will continue to tray initialization or wait loop
     return 0;
 }
 
