@@ -115,6 +115,11 @@ jobs:
               exit 1
           }
           
+          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
           Write-Host "C++ build successful!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
@@ -338,18 +343,36 @@ jobs:
           Write-Host "`nCopying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
           Copy-Item -Path "ryzenai-serve-files\*" -Destination $ryzenaiDir -Recurse -Force
           
-          # Verify ryzenai-serve.exe exists
+          # Force filesystem sync and wait
+          Start-Sleep -Seconds 2
+          
+          # Retry logic for verification
           $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-serve.exe"
-          if (Test-Path $ryzenaiExe) {
-              Write-Host "[OK] ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
-              
-              # List a few files to confirm
-              $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
-              Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
-          } else {
-              Write-Host "ERROR: ryzenai-serve.exe not found!" -ForegroundColor Red
+          $maxRetries = 5
+          $retryCount = 0
+          $found = $false
+          
+          while (-not $found -and $retryCount -lt $maxRetries) {
+              if (Test-Path $ryzenaiExe) {
+                  $found = $true
+                  Write-Host "[OK] ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
+                  
+                  # List a few files to confirm
+                  $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
+                  Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
+              } else {
+                  $retryCount++
+                  Write-Host "Attempt ${retryCount}/${maxRetries}: ryzenai-serve.exe not found yet, waiting..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds 1
+              }
+          }
+          
+          if (-not $found) {
+              Write-Host "ERROR: ryzenai-serve.exe not found after ${maxRetries} attempts!" -ForegroundColor Red
               Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
               Get-ChildItem $ryzenaiDir | Format-Table Name, Length
+              Write-Host "`nContents of source directory:" -ForegroundColor Yellow
+              Get-ChildItem "ryzenai-serve-files" | Format-Table Name, Length
               exit 1
           }
 
@@ -371,7 +394,8 @@ jobs:
           # Check for key binaries
           $expectedBinaries = @(
               "bin\lemonade-router.exe",
-              "bin\lemonade-server-beta.exe"
+              "bin\lemonade-server-beta.exe",
+              "bin\lemonade-tray.exe"
           )
           
           $missingItems = @()
@@ -396,6 +420,8 @@ jobs:
 
       - name: Test lemonade-router CLI
         shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
           
@@ -422,13 +448,13 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
           Write-Host "Downloading Llama-3.2-1B-Instruct-Hybrid model..." -ForegroundColor Cyan
           Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Gray
           
-          # Download a hybrid model for testing
-          & $routerExe pull Llama-3.2-1B-Instruct-Hybrid
+          # Download a hybrid model for testing (use lemonade-server-beta.exe for commands)
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-Hybrid
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Failed to download model!" -ForegroundColor Red
               exit 1
@@ -501,8 +527,8 @@ jobs:
           $stdoutLog = "$env:TEMP\lemonade-router-stdout.log"
           $stderrLog = "$env:TEMP\lemonade-router-stderr.log"
           
-          # Start the server in the background with output redirection
-          $serverProcess = Start-Process -FilePath $routerExe -ArgumentList "serve" -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+          # Start the server in the background with output redirection (no 'serve' argument - router just starts directly)
+          $serverProcess = Start-Process -FilePath $routerExe -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
           
           Write-Host "Server output will be logged to:" -ForegroundColor Cyan
           Write-Host "  STDOUT: $stdoutLog" -ForegroundColor Gray
@@ -685,8 +711,12 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM tests with C++ server
@@ -697,11 +727,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_flm_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running FLM tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_flm.py --server-binary $routerExe
+          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -758,8 +789,12 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp Vulkan tests with C++ server
@@ -770,11 +805,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_vulkan_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running Llamacpp Vulkan tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py vulkan --server-binary $routerExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -831,8 +867,12 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Llamacpp ROCm tests with C++ server
@@ -843,11 +883,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_rocm_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running Llamacpp ROCm tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server_llamacpp.py rocm --server-binary $routerExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -904,8 +945,12 @@ jobs:
           conda create -p .\test-env python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
           # Install test dependencies
-          conda run -p .\test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run general server tests with C++ server
@@ -916,11 +961,30 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
-          Write-Host "Running general server tests with C++ server binary: $routerExe" -ForegroundColor Cyan
+          Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
           
-          conda run -p .\test-env python test/server.py --server-binary $routerExe
+          # Pre-download models used in the simultaneous load test
+          # This ensures models are cached and prevents download timing issues
+          & $serverBetaExe pull Qwen2.5-0.5B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Qwen2.5-0.5B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Llama-3.2-1B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          Write-Host "Test models pre-downloaded successfully!" -ForegroundColor Green
+          
+          Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+          
+          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -981,5 +1045,4 @@ jobs:
             Lemonade_Server_Installer_beta.exe
             ryzenai-serve.zip
           fail_on_unmatched_files: true
-          generate_release_notes: true
 

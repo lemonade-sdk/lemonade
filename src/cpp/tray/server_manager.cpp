@@ -4,6 +4,12 @@
 #include <thread>
 #include <chrono>
 
+// Helper macro for debug logging
+#define DEBUG_LOG(mgr, msg) \
+    if ((mgr)->log_level_ == "debug") { \
+        std::cout << "DEBUG: " << msg << std::endl; \
+    }
+
 #ifdef _WIN32
 // Critical: Define _WINSOCKAPI_ FIRST to prevent winsock.h from being included
 // This MUST come before any Windows headers
@@ -42,6 +48,7 @@ ServerManager::ServerManager()
     : server_pid_(0)
     , port_(8000)
     , ctx_size_(4096)
+    , show_console_(false)
     , server_started_(false)
 #ifdef _WIN32
     , process_handle_(nullptr)
@@ -57,10 +64,12 @@ bool ServerManager::start_server(
     const std::string& server_binary_path,
     int port,
     int ctx_size,
-    const std::string& log_file)
+    const std::string& log_file,
+    const std::string& log_level,
+    bool show_console)
 {
     if (is_server_running()) {
-        std::cout << "Server is already running" << std::endl;
+        DEBUG_LOG(this, "Server is already running");
         return true;
     }
     
@@ -68,6 +77,8 @@ bool ServerManager::start_server(
     port_ = port;
     ctx_size_ = ctx_size;
     log_file_ = log_file;
+    log_level_ = log_level;
+    show_console_ = show_console;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -75,23 +86,23 @@ bool ServerManager::start_server(
     }
     
     // Wait for server to be ready (check health endpoint)
-    std::cout << "Waiting for server to start..." << std::endl;
-    std::cout << "DEBUG: Will check health at: http://localhost:" << port_ << "/api/v1/health" << std::endl;
+    DEBUG_LOG(this, "Waiting for server to start...");
+    DEBUG_LOG(this, "Will check health at: http://localhost:" << port_ << "/api/v1/health");
     
     for (int i = 0; i < 30; ++i) {  // Wait up to 30 seconds
-        std::cout << "DEBUG: Health check attempt " << (i+1) << "/30..." << std::endl;
+        DEBUG_LOG(this, "Health check attempt " << (i+1) << "/30...");
         std::this_thread::sleep_for(std::chrono::seconds(1));
         try {
-            std::cout << "DEBUG: Making HTTP request..." << std::endl;
+            DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
-            std::cout << "DEBUG: Health check succeeded!" << std::endl;
-            std::cout << "Server started successfully!" << std::endl;
+            DEBUG_LOG(this, "Health check succeeded!");
+            std::cout << "Server started on port " << port_ << std::endl;
             server_started_ = true;
             return true;
         } catch (const std::exception& e) {
-            std::cout << "DEBUG: Health check failed: " << e.what() << std::endl;
+            DEBUG_LOG(this, "Health check failed: " << e.what());
         } catch (...) {
-            std::cout << "DEBUG: Health check failed with unknown error" << std::endl;
+            DEBUG_LOG(this, "Health check failed with unknown error");
         }
     }
     
@@ -105,7 +116,7 @@ bool ServerManager::stop_server() {
         return true;
     }
     
-    std::cout << "Stopping server..." << std::endl;
+    DEBUG_LOG(this, "Stopping server...");
     
     // Try graceful shutdown first via API
     try {
@@ -130,14 +141,14 @@ bool ServerManager::stop_server() {
     }
 #endif
     
-    std::cout << "Server stopped" << std::endl;
+    DEBUG_LOG(this, "Server stopped");
     return true;
 }
 
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_);
+    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -195,22 +206,22 @@ bool ServerManager::load_model(const std::string& model_name) {
         std::string body = "{\"model_name\": \"" + model_name + "\"}";
         
         // Model loading can take a long time, so use extended timeout
-        std::cout << "DEBUG: Loading model with extended timeout..." << std::endl;
-        std::cout << "DEBUG: Request body: " << body << std::endl;
+        DEBUG_LOG(this, "Loading model with extended timeout...");
+        DEBUG_LOG(this, "Request body: " << body);
         
         httplib::Client cli("127.0.0.1", port_);
         cli.set_connection_timeout(10, 0);   // 10 second connection timeout
-        cli.set_read_timeout(120, 0);        // 120 second read timeout (model loading can be slow)
+        cli.set_read_timeout(240, 0);        // 240 second (4 minute) read timeout for large models
         
         auto res = cli.Post("/api/v1/load", body, "application/json");
         
         if (!res) {
-            std::cout << "DEBUG: Load request connection error: " << static_cast<int>(res.error()) << std::endl;
+            DEBUG_LOG(this, "Load request connection error: " << static_cast<int>(res.error()));
             return false;
         }
         
-        std::cout << "DEBUG: Load request status: " << res->status << std::endl;
-        std::cout << "DEBUG: Response body: " << res->body << std::endl;
+        DEBUG_LOG(this, "Load request status: " << res->status);
+        DEBUG_LOG(this, "Response body: " << res->body);
         
         if (res->status >= 200 && res->status < 300) {
             return true;
@@ -234,7 +245,7 @@ bool ServerManager::unload_model() {
         auto res = cli.Post("/api/v1/unload", "", "application/json");
         
         if (!res) {
-            std::cout << "DEBUG: Unload request connection error: " << static_cast<int>(res.error()) << std::endl;
+            DEBUG_LOG(this, "Unload request connection error: " << static_cast<int>(res.error()));
             return false;
         }
         
@@ -255,19 +266,21 @@ std::string ServerManager::get_base_url() const {
 
 bool ServerManager::spawn_process() {
     // Build command line (server doesn't support --log-file, so we'll redirect stdout/stderr)
-    std::string cmdline = "\"" + server_binary_path_ + "\" serve";
+    std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
+    cmdline += " --log-level debug";  // Always use debug logging for router
     
-    std::cout << "Starting server: " << cmdline << std::endl;
+    DEBUG_LOG(this, "Starting server: " << cmdline);
     
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     
     // Redirect stdout/stderr to log file if specified
+    // Note: When show_console_ is true, the parent process will tail the log file
     HANDLE log_handle = INVALID_HANDLE_VALUE;
     if (!log_file_.empty()) {
-        std::cout << "Redirecting output to: " << log_file_ << std::endl;
+        DEBUG_LOG(this, "Redirecting output to: " << log_file_);
         
         SECURITY_ATTRIBUTES sa = {};
         sa.nLength = sizeof(sa);
@@ -308,7 +321,7 @@ bool ServerManager::spawn_process() {
     size_t last_slash = server_binary_path_.find_last_of("/\\");
     if (last_slash != std::string::npos) {
         working_dir = server_binary_path_.substr(0, last_slash);
-        std::cout << "Setting working directory to: " << working_dir << std::endl;
+        DEBUG_LOG(this, "Setting working directory to: " << working_dir);
     }
     
     // Create process
@@ -318,7 +331,7 @@ bool ServerManager::spawn_process() {
         nullptr,
         nullptr,
         TRUE,  // Inherit handles so log file redirection works
-        CREATE_NO_WINDOW,  // Don't create console window
+        show_console_ ? 0 : CREATE_NO_WINDOW,  // Show console if requested
         nullptr,
         working_dir.empty() ? nullptr : working_dir.c_str(),  // Set working directory
         &si,
@@ -387,13 +400,14 @@ bool ServerManager::spawn_process() {
         
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
-        args.push_back("serve");
         args.push_back("--port");
         std::string port_str = std::to_string(port_);
         args.push_back(port_str.c_str());
         args.push_back("--ctx-size");
         std::string ctx_str = std::to_string(ctx_size_);
         args.push_back(ctx_str.c_str());
+        args.push_back("--log-level");
+        args.push_back("debug");  // Always use debug logging
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));
@@ -433,14 +447,15 @@ bool ServerManager::is_process_alive() const {
 std::string ServerManager::make_http_request(
     const std::string& endpoint,
     const std::string& method,
-    const std::string& body)
+    const std::string& body,
+    int timeout_seconds)
 {
-    std::cout << "DEBUG: HTTP " << method << " http://127.0.0.1:" << port_ << endpoint << std::endl;
+    // Debug logging removed - too verbose for normal operations
     
     // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
     httplib::Client cli("127.0.0.1", port_);
-    cli.set_connection_timeout(2, 0);  // 2 second timeout (increased from 1)
-    cli.set_read_timeout(5, 0);        // 5 second read timeout
+    cli.set_connection_timeout(10, 0);  // 10 second connection timeout
+    cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
     
     httplib::Result res;
     
@@ -454,17 +469,13 @@ std::string ServerManager::make_http_request(
     
     if (!res) {
         auto err = res.error();
-        std::cout << "DEBUG: HTTP connection error code: " << static_cast<int>(err) << std::endl;
         throw std::runtime_error("HTTP request failed: connection error");
     }
-    
-    std::cout << "DEBUG: HTTP response status: " << res->status << std::endl;
     
     if (res->status != 200) {
         throw std::runtime_error("HTTP request failed with status: " + std::to_string(res->status));
     }
     
-    std::cout << "DEBUG: HTTP response body length: " << res->body.size() << std::endl;
     return res->body;
 }
 
