@@ -101,9 +101,25 @@ void Router::load_model(const std::string& model_name,
             cache_repo_name = "models--" + cache_repo_name;
             
             // Get HF cache directory
-            const char* userprofile = std::getenv("USERPROFILE");
-            if (userprofile) {
-                std::string hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+            std::string hf_cache;
+            const char* hf_home_env = std::getenv("HF_HOME");
+            if (hf_home_env) {
+                hf_cache = std::string(hf_home_env) + "\\hub";
+            } else {
+#ifdef _WIN32
+                const char* userprofile = std::getenv("USERPROFILE");
+                if (userprofile) {
+                    hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+                }
+#else
+                const char* home = std::getenv("HOME");
+                if (home) {
+                    hf_cache = std::string(home) + "/.cache/huggingface/hub";
+                }
+#endif
+            }
+            
+            if (!hf_cache.empty()) {
                 model_path = hf_cache + "\\" + cache_repo_name;
                 
                 // Find the snapshot directory (usually there's only one)
