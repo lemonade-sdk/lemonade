@@ -41,36 +41,16 @@ elseif(APPLE)
     )
     
 elseif(UNIX)  # Linux
-    find_package(PkgConfig REQUIRED)
+    # Linux builds are headless-only (no tray support)
+    # This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
+    message(STATUS "Linux build: Tray application disabled (headless mode only)")
+    message(STATUS "Use 'lemonade-server-beta serve --no-tray' to run server")
     
-    # Try to find GTK3 and libappindicator
-    pkg_check_modules(GTK3 gtk+-3.0)
-    pkg_check_modules(APPINDICATOR3 appindicator3-0.1)
-    pkg_check_modules(NOTIFY libnotify)
-    
-    if(GTK3_FOUND AND APPINDICATOR3_FOUND AND NOTIFY_FOUND)
-        set(PLATFORM_SOURCES
-            platform/linux_tray.cpp
-        )
-        
-        set(PLATFORM_LIBS
-            ${GTK3_LIBRARIES}
-            ${APPINDICATOR3_LIBRARIES}
-            ${NOTIFY_LIBRARIES}
-        )
-        
-        include_directories(
-            ${GTK3_INCLUDE_DIRS}
-            ${APPINDICATOR3_INCLUDE_DIRS}
-            ${NOTIFY_INCLUDE_DIRS}
-        )
-        
-        message(STATUS "Linux tray dependencies found")
-    else()
-        message(WARNING "Linux tray dependencies not found. Install with:")
-        message(WARNING "  sudo apt-get install libappindicator3-dev libgtk-3-dev libnotify-dev")
-        message(WARNING "The tray application will be built without Linux support.")
-    endif()
+    # Include stub Linux tray implementation (headless mode)
+    set(PLATFORM_SOURCES
+        platform/linux_tray.cpp
+    )
+    set(PLATFORM_LIBS "")
 endif()
 
 # Common sources
@@ -198,11 +178,8 @@ if(WIN32)
 elseif(APPLE)
     message(STATUS "macOS tray support: PARTIAL (stub)")
 elseif(UNIX)
-    if(GTK3_FOUND AND APPINDICATOR3_FOUND)
-        message(STATUS "Linux tray support: PARTIAL (stub)")
-    else()
-        message(STATUS "Linux tray support: NO (missing dependencies)")
-    endif()
+    message(STATUS "Linux tray support: HEADLESS ONLY (use --no-tray)")
+    message(STATUS "  No LGPL dependencies - permissively licensed only")
 endif()
 message(STATUS "===============================================")
 

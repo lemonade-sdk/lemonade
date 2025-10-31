@@ -176,7 +176,11 @@ int TrayApp::run() {
         DEBUG_LOG(this, "Searching for server binary...");
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
+#ifdef _WIN32
             std::cerr << "Please ensure lemonade-router.exe is in the same directory" << std::endl;
+#else
+            std::cerr << "Please ensure lemonade-router is in the same directory or in PATH" << std::endl;
+#endif
             return 1;
         }
     }
@@ -237,7 +241,6 @@ int TrayApp::run() {
     
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
-        std::cout << "Server running in foreground mode (no tray)" << std::endl;
         std::cout << "Press Ctrl+C to stop" << std::endl;
         
         // TODO: Set up signal handlers for Ctrl+C
@@ -267,14 +270,16 @@ int TrayApp::run() {
         show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
     });
     
-    // Set menu update callback to refresh state before showing menu
+    // Set menu update callback to refresh state before showing menu (Windows only)
     DEBUG_LOG(this, "Setting menu update callback...");
+#ifdef _WIN32
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
             DEBUG_LOG(this, "Refreshing menu state from server...");
             build_menu();
         });
     }
+#endif
     
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
@@ -385,7 +390,11 @@ void TrayApp::print_usage() {
     std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
     std::cout << "  --log-file PATH          Log file path\n";
     std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
+#if defined(__linux__) && !defined(__ANDROID__)
+    std::cout << "  --no-tray                Start server without tray (default on Linux)\n";
+#else
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
+#endif
     std::cout << "  --help, -h               Show this help message\n";
     std::cout << "  --version, -v            Show version\n";
 }
@@ -410,7 +419,7 @@ bool TrayApp::find_server_binary() {
         search_paths.push_back((exe_dir / binary_name).string());
     }
 #else
-    std::string binary_name = "lemonade";
+    std::string binary_name = "lemonade-router";
     
     // On Unix, try to get executable path
     char exe_path_buf[1024];

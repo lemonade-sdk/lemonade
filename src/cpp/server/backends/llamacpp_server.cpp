@@ -106,42 +106,44 @@ static std::string identify_rocm_arch() {
     return "gfx110X";
 }
 
-// Helper to get the cache directory
-static std::string get_cache_dir() {
+// Helper to get the base directory for all lemonade data
+// Everything centralized in one location
+static std::string get_base_dir() {
     // Check environment variable first
-    const char* cache_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_env) {
-        return std::string(cache_env);
+    const char* base_env = std::getenv("LEMONADE_BASE_DIR");
+    if (base_env) {
+        return std::string(base_env);
     }
     
-    // Default cache directory
 #ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
+    // Windows: use AppData
+    const char* appdata = std::getenv("LOCALAPPDATA");
+    if (appdata) {
+        return std::string(appdata) + "\\lemonade";
     }
-    return "C:\\.cache\\lemonade";
+    return "C:\\lemonade";
 #else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
+    // Linux: use installed location or fallback to /tmp
+    // This will be /usr/local/share/lemonade-server after install
+    if (fs::exists("/usr/local/share/lemonade-server")) {
+        return "/usr/local/share/lemonade-server";
     }
-    return "/tmp/.cache/lemonade";
+    if (fs::exists("/usr/share/lemonade-server")) {
+        return "/usr/share/lemonade-server";
+    }
+    // Fallback for dev builds
+    return "/tmp/lemonade";
 #endif
 }
 
+// Helper to get the cache directory (for model downloads)
+static std::string get_cache_dir() {
+    return (fs::path(get_base_dir()) / "cache").string();
+}
+
 // Helper to get the install directory for llama-server
-// Matches Python: {executable_dir}/{backend}/llama_server/
 static std::string get_install_directory(const std::string& backend) {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-#else
-    fs::path exe_dir = fs::current_path();
-#endif
-    
-    return (exe_dir / backend / "llama_server").string();
+    return (fs::path(get_base_dir()) / "llama" / backend).string();
 }
 
 // Helper to extract ZIP files (Windows/Linux built-in tools)
@@ -261,15 +263,10 @@ void LlamaCppServer::install(const std::string& backend) {
         std::string url = "https://github.com/" + repo + "/releases/download/" + 
                          expected_version + "/" + filename;
         
-        // Download ZIP right next to the .exe
-#ifdef _WIN32
-        char exe_path[MAX_PATH];
-        GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-#else
-        fs::path exe_dir = fs::current_path();
-#endif
-        std::string zip_path = (exe_dir / filename).string();
+        // Download ZIP to cache directory (user-writable location)
+        fs::path cache_dir = get_cache_dir();
+        fs::create_directories(cache_dir);
+        std::string zip_path = (cache_dir / filename).string();
         
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
         std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
