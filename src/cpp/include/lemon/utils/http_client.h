@@ -69,7 +69,8 @@ inline ProgressCallback create_throttled_progress_callback() {
             
             // Print if it's been more than 1 second, or if download just completed
             if (elapsed.count() >= 1000 || (is_complete && !*printed_final)) {
-                int percent = static_cast<int>((current * 100) / total);
+                // Always show 100% when complete (avoid 99% due to rounding)
+                int percent = is_complete ? 100 : static_cast<int>((current * 100) / total);
                 double mb_current = current / (1024.0 * 1024.0);
                 double mb_total = total / (1024.0 * 1024.0);
                 std::cout << "\r  Progress: " << percent << "% (" 

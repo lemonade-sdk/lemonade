@@ -141,8 +141,8 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     std::cout << std::endl;
     
-    // Start the flm serve process
-    process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
+    // Start the flm serve process (filter health check spam)
+    process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true);
     std::cout << "[ProcessManager] Process started successfully" << std::endl;
     
     // Wait for flm-server to be ready

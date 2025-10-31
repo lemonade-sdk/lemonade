@@ -14,7 +14,7 @@ BEGIN
         BLOCK "040904E4"
         BEGIN
             VALUE "CompanyName", "AMD"
-            VALUE "FileDescription", "Lemonade Server Beta - Tray Application"
+            VALUE "FileDescription", "Lemonade Server Beta"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "lemonade-server-beta"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"

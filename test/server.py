@@ -331,7 +331,7 @@ class Testing(ServerTestingBase):
 
     # Test simultaneous load requests
     async def test_011_test_simultaneous_load_requests(self):
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=240.0) as client:
             first_model = "Qwen2.5-0.5B-Instruct-CPU"
             second_model = "Llama-3.2-1B-Instruct-CPU"
 

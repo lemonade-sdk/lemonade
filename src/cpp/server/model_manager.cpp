@@ -799,9 +799,13 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
     
-    // If already downloaded and do_not_upgrade, skip
+    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely
+    // This prevents unnecessary HuggingFace API queries when we just want to use cached models
+    // The do_not_upgrade flag means:
+    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
+    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
     if (do_not_upgrade && is_model_downloaded(model_name)) {
-        std::cout << "Model already downloaded, skipping" << std::endl;
+        std::cout << "[ModelManager] Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
         return;
     }
     
@@ -823,6 +827,19 @@ void ModelManager::download_model(const std::string& model_name,
     }
 }
 
+// Download model files from HuggingFace
+// =====================================
+// IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
+// file list, then downloads any missing files. It does NOT check do_not_upgrade.
+//
+// The caller (download_model) is responsible for checking do_not_upgrade and
+// calling is_model_downloaded() before invoking this function.
+//
+// Download capabilities by backend:
+//   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
+//   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
+//   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
+//   - ryzenai-serve backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_huggingface(const std::string& repo_id,
                                             const std::string& variant,
                                             const std::string& mmproj) {
@@ -873,7 +890,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
     
-    // List files in repository
+    // Query HuggingFace API to get list of all files in the repository
+    // NOTE: This API call happens EVERY time this function is called, regardless of
+    // whether files are cached. The do_not_upgrade check should happen in the caller
+    // (download_model) to avoid this API call when using cached models.
     std::string api_url = "https://huggingface.co/api/models/" + repo_id;
     
     try {
@@ -968,7 +988,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             );
             
             if (success) {
-                std::cout << "\n[ModelManager] ✓ Downloaded: " << filename << std::endl;
+                std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
             } else {
                 throw std::runtime_error("Failed to download file: " + filename);
             }

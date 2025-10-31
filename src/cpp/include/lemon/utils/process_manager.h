@@ -20,7 +20,8 @@ public:
         const std::string& executable,
         const std::vector<std::string>& args,
         const std::string& working_dir = "",
-        bool inherit_output = false);
+        bool inherit_output = false,
+        bool filter_health_logs = false);
     
     // Stop a process
     static void stop_process(ProcessHandle handle);
