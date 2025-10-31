@@ -267,6 +267,77 @@ jobs:
             src/ryzenai-serve/build/bin/Release/*.pdb
           retention-days: 7
 
+  build-lemonade-server-deb:
+    name: Build Lemonade Server .deb Package
+    runs-on: [stx, Linux]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential cmake libcurl4-openssl-dev pkg-config
+
+      - name: Build C++ Server with CMake
+        run: |
+          set -e
+          
+          echo "Building lemonade-router and lemonade-server-beta for Linux..."
+          
+          cd src/cpp
+          
+          # Create build directory
+          rm -rf build
+          mkdir build
+          cd build
+          
+          # Configure
+          cmake ..
+          
+          # Build
+          cmake --build . --config Release -j$(nproc)
+          
+          # Verify binaries exist
+          if [ ! -f "lemonade-router" ]; then
+              echo "ERROR: lemonade-router not found!"
+              exit 1
+          fi
+          
+          if [ ! -f "lemonade-server-beta" ]; then
+              echo "ERROR: lemonade-server-beta not found!"
+              exit 1
+          fi
+          
+          echo "C++ build successful!"
+
+      - name: Build .deb package
+        run: |
+          set -e
+          
+          cd src/cpp/build
+          
+          # Create .deb package
+          cpack
+          
+          # Verify package was created
+          if [ ! -f "lemonade-server-1.0.0-Linux.deb" ]; then
+              echo "ERROR: .deb package not created!"
+              exit 1
+          fi
+          
+          echo ".deb package created successfully!"
+          ls -lh lemonade-server-1.0.0-Linux.deb
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: src/cpp/build/lemonade-server-1.0.0-Linux.deb
+          retention-days: 7
+
   # ========================================================================
   # TEST JOBS - Run on stx-halo + Windows workers
   # ========================================================================
@@ -1002,6 +1073,174 @@ jobs:
               Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
           }
 
+  test-deb-llamacpp-vulkan:
+    name: Test .deb Package with Llamacpp (Vulkan)
+    runs-on: [stx, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Install .deb package
+        run: |
+          echo "Installing lemonade-server .deb package..."
+          sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+          
+          # Install dependencies if needed
+          sudo apt-get install -f -y
+          
+          echo "Installation complete!"
+
+      - name: Verify installation
+        run: |
+          echo "Verifying installation..."
+          
+          # Check binaries
+          which lemonade-router
+          which lemonade-server-beta
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Installation verified!"
+
+      - name: Create Python test environment
+        run: |
+          # Install miniconda if not available
+          if ! command -v conda &> /dev/null; then
+              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+              bash miniconda.sh -b -p $HOME/miniconda
+              export PATH="$HOME/miniconda/bin:$PATH"
+              conda init bash
+              source ~/.bashrc
+          fi
+          
+          # Create test environment
+          conda create -p ./test-env python=3.10 -y
+          
+          # Install test dependencies
+          conda run -p ./test-env pip install -r test/requirements.txt
+
+      - name: Run Llamacpp Vulkan tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Running Llamacpp Vulkan tests with .deb installation..."
+          echo "HF_HOME: $HF_HOME"
+          
+          conda run -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server-beta
+          
+          echo "Llamacpp Vulkan tests PASSED!"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Stop any running servers
+          lemonade-server-beta stop || true
+          pkill -f lemonade || true
+          
+          # Uninstall package
+          sudo dpkg -r lemonade-server || true
+
+  test-deb-llamacpp-rocm:
+    name: Test .deb Package with Llamacpp (ROCm)
+    runs-on: [stx-halo, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Install .deb package
+        run: |
+          echo "Installing lemonade-server .deb package..."
+          sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+          
+          # Install dependencies if needed
+          sudo apt-get install -f -y
+          
+          echo "Installation complete!"
+
+      - name: Verify installation
+        run: |
+          echo "Verifying installation..."
+          
+          # Check binaries
+          which lemonade-router
+          which lemonade-server-beta
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Installation verified!"
+
+      - name: Create Python test environment
+        run: |
+          # Install miniconda if not available
+          if ! command -v conda &> /dev/null; then
+              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+              bash miniconda.sh -b -p $HOME/miniconda
+              export PATH="$HOME/miniconda/bin:$PATH"
+              conda init bash
+              source ~/.bashrc
+          fi
+          
+          # Create test environment
+          conda create -p ./test-env python=3.10 -y
+          
+          # Install test dependencies
+          conda run -p ./test-env pip install -r test/requirements.txt
+
+      - name: Run Llamacpp ROCm tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Running Llamacpp ROCm tests with .deb installation..."
+          echo "HF_HOME: $HF_HOME"
+          
+          conda run -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
+          
+          echo "Llamacpp ROCm tests PASSED!"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Stop any running servers
+          lemonade-server-beta stop || true
+          pkill -f lemonade || true
+          
+          # Uninstall package
+          sudo dpkg -r lemonade-server || true
+
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
@@ -1011,18 +1250,27 @@ jobs:
     runs-on: ubuntu-latest
     needs: 
       - build-lemonade-server-installer
+      - build-lemonade-server-deb
       - build-ryzenai-serve
       - test-installer-basic
       - test-flm-integration
       - test-llamacpp-vulkan
       - test-llamacpp-rocm
       - test-general-server
+      - test-deb-llamacpp-vulkan
+      - test-deb-llamacpp-rocm
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Download Lemonade Server Installer
+      - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
           name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Download Lemonade Server .deb Package (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
           path: .
 
       - name: Download RyzenAI Serve Package
@@ -1038,11 +1286,19 @@ jobs:
           cd ..
           ls -lh ryzenai-serve.zip
 
+      - name: Verify release artifacts
+        run: |
+          echo "Release artifacts:"
+          ls -lh Lemonade_Server_Installer_beta.exe
+          ls -lh lemonade-server-1.0.0-Linux.deb
+          ls -lh ryzenai-serve.zip
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             Lemonade_Server_Installer_beta.exe
+            lemonade-server-1.0.0-Linux.deb
             ryzenai-serve.zip
           fail_on_unmatched_files: true
 
