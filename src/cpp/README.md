@@ -101,6 +101,12 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-serve` for NPU
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
+- PID file system (`/tmp/lemonade-router.pid`) for reliable process management
+- Proper graceful shutdown - all child processes cleaned up correctly
+- File locations:
+  - Installed binaries: `/usr/local/bin/`
+  - llama.cpp downloads: `~/.cache/huggingface/` (follows HF conventions)
+  - llama-server binaries: `/usr/local/share/lemonade-server/llama/` (from .deb) or next to binary (dev builds)
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -165,6 +171,7 @@ Creates `lemonade-server-1.0.0-Linux.deb` which:
 - Creates desktop entry in `/usr/local/share/applications/`
 - Declares dependencies: libcurl4, libssl3, libz1
 - Package size: ~2.2 MB (clean, runtime-only package)
+- Includes postinst script that creates writable `/usr/local/share/lemonade-server/llama/` directory
 
 **Installation:**
 
@@ -312,6 +319,10 @@ The client automatically:
 - Only the `serve` command is blocked when a server is running
 - Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
 - Provides clear error messages with suggestions when blocked
+- **Linux-specific:** Uses PID file (`/tmp/lemonade-router.pid`) for efficient server discovery and port detection
+  - Avoids port scanning, finds exact server PID and port instantly
+  - Validated on read (checks if process is still alive)
+  - Automatically cleaned up on graceful shutdown
 
 ### Dependencies
 
