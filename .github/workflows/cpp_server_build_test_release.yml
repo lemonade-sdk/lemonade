@@ -269,7 +269,7 @@ jobs:
 
   build-lemonade-server-deb:
     name: Build Lemonade Server .deb Package
-    runs-on: [stx, Linux]
+    runs-on: [cmake, Linux]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1095,40 +1095,39 @@ jobs:
           name: lemonade-server-deb
           path: .
 
-      - name: Install .deb package
+      - name: Extract .deb package (no sudo needed)
         run: |
-          echo "Installing lemonade-server .deb package..."
-          sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+          echo "Extracting .deb package..."
           
-          # Install dependencies if needed
-          sudo apt-get install -f -y
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x lemonade-server-1.0.0-Linux.deb ./deb-extract
           
-          echo "Installation complete!"
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable in the extracted location
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
 
-      - name: Verify installation
+      - name: Verify binaries work
         run: |
-          echo "Verifying installation..."
-          
-          # Check binaries
-          which lemonade-router
-          which lemonade-server-beta
+          echo "Verifying binaries..."
           
           # Test version
           lemonade-router --version
           lemonade-server-beta --version
           
-          echo "Installation verified!"
+          echo "Binaries verified!"
 
       - name: Create Python test environment
         run: |
-          # Install miniconda if not available
-          if ! command -v conda &> /dev/null; then
-              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-              bash miniconda.sh -b -p $HOME/miniconda
-              export PATH="$HOME/miniconda/bin:$PATH"
-              conda init bash
-              source ~/.bashrc
-          fi
           
           # Create test environment
           conda create -p ./test-env python=3.10 -y
@@ -1153,9 +1152,7 @@ jobs:
           # Stop any running servers
           lemonade-server-beta stop || true
           pkill -f lemonade || true
-          
-          # Uninstall package
-          sudo dpkg -r lemonade-server || true
+          pkill -f llama-server || true
 
   test-deb-llamacpp-rocm:
     name: Test .deb Package with Llamacpp (ROCm)
@@ -1179,41 +1176,40 @@ jobs:
           name: lemonade-server-deb
           path: .
 
-      - name: Install .deb package
+      - name: Extract .deb package (no sudo needed)
         run: |
-          echo "Installing lemonade-server .deb package..."
-          sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+          echo "Extracting .deb package..."
           
-          # Install dependencies if needed
-          sudo apt-get install -f -y
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x lemonade-server-1.0.0-Linux.deb ./deb-extract
           
-          echo "Installation complete!"
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable in the extracted location
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
 
-      - name: Verify installation
+      - name: Verify binaries work
         run: |
-          echo "Verifying installation..."
-          
-          # Check binaries
-          which lemonade-router
-          which lemonade-server-beta
+          echo "Verifying binaries..."
           
           # Test version
           lemonade-router --version
           lemonade-server-beta --version
           
-          echo "Installation verified!"
+          echo "Binaries verified!"
 
       - name: Create Python test environment
         run: |
-          # Install miniconda if not available
-          if ! command -v conda &> /dev/null; then
-              wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-              bash miniconda.sh -b -p $HOME/miniconda
-              export PATH="$HOME/miniconda/bin:$PATH"
-              conda init bash
-              source ~/.bashrc
-          fi
-          
+
           # Create test environment
           conda create -p ./test-env python=3.10 -y
           
@@ -1237,9 +1233,7 @@ jobs:
           # Stop any running servers
           lemonade-server-beta stop || true
           pkill -f lemonade || true
-          
-          # Uninstall package
-          sudo dpkg -r lemonade-server || true
+          pkill -f llama-server || true
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
