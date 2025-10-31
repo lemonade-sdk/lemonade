@@ -726,8 +726,9 @@ jobs:
           $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
           Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env --env HF_HOME=$env:HF_HOME python test/server_flm.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -799,8 +800,9 @@ jobs:
           $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env --env HF_HOME=$env:HF_HOME python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -872,8 +874,9 @@ jobs:
           $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env --env HF_HOME=$env:HF_HOME python test/server_llamacpp.py rocm --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -963,8 +966,9 @@ jobs:
           Write-Host "Test models pre-downloaded successfully!" -ForegroundColor Green
           
           Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env --env HF_HOME=$env:HF_HOME python test/server.py --server-binary $serverBetaExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
