@@ -348,6 +348,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.port = std::stoi(argv[++i]);
             } else if (arg == "--ctx-size" && i + 1 < argc) {
                 config_.ctx_size = std::stoi(argv[++i]);
+            } else if (arg == "--llamacpp" && i + 1 < argc) {
+                config_.llamacpp_backend = argv[++i];
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
             } else {
@@ -383,6 +385,7 @@ void TrayApp::print_usage() {
     std::cout << "  --port PORT              Server port (default: 8000)\n";
     std::cout << "  --host HOST              Server host (default: localhost)\n";
     std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
+    std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
     std::cout << "  --log-file PATH          Log file path\n";
     std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
@@ -544,7 +547,8 @@ bool TrayApp::start_ephemeral_server(int port) {
         port,
         config_.ctx_size,
         config_.log_file.empty() ? "" : config_.log_file,
-        config_.log_level  // Pass log level to ServerManager
+        config_.log_level,  // Pass log level to ServerManager
+        config_.llamacpp_backend  // Pass llamacpp backend to ServerManager
     );
     
     if (!success) {
@@ -920,6 +924,7 @@ bool TrayApp::start_server() {
         config_.ctx_size,
         config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
+        config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
         true                // Always show console output for serve command
     );
     
