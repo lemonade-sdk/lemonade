@@ -354,6 +354,62 @@ bool Server::is_running() const {
     return running_;
 }
 
+// Helper function for auto-loading models on inference and load endpoints
+// ========================================================================
+// This function is called by:
+//   - handle_chat_completions() - /chat/completions endpoint
+//   - handle_completions() - /completions endpoint  
+//   - handle_load() - /load endpoint
+//
+// Behavior:
+//   1. If model is already loaded: Return immediately (no-op)
+//   2. If model is not downloaded: Download it (first-time use)
+//   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
+//
+// Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
+void Server::auto_load_model_if_needed(const std::string& requested_model) {
+    std::string loaded_model = router_->get_loaded_model();
+    
+    // Early return if already loaded
+    if (loaded_model == requested_model) {
+        std::cout << "[Server] Model already loaded: " << requested_model << std::endl;
+        return;
+    }
+    
+    // Log the auto-loading action
+    if (!loaded_model.empty()) {
+        std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+    } else {
+        std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+    }
+    
+    // Get model info
+    if (!model_manager_->model_exists(requested_model)) {
+        throw std::runtime_error("Model not found: " + requested_model);
+    }
+    
+    auto info = model_manager_->get_model_info(requested_model);
+    
+    // Download model if not cached (first-time use)
+    // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
+    // This means:
+    //   - If model is NOT downloaded: Download it from HuggingFace
+    //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
+    // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
+    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+        std::cout << "[Server] Model not cached, downloading from Hugging Face..." << std::endl;
+        std::cout << "[Server] This may take several minutes for large models." << std::endl;
+        model_manager_->download_model(requested_model, "", "", false, false, "", true);
+        std::cout << "[Server] Model download complete: " << requested_model << std::endl;
+    }
+    
+    // Load model with do_not_upgrade=true
+    // For FLM models: FastFlowLMServer will handle download internally if needed
+    // For non-FLM models: Model should already be cached at this point
+    router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
+    std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+}
+
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
     if (req.method == "HEAD") {
@@ -467,39 +523,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached (only for non-FLM models)
-                // FLM models are downloaded by FastFlowLMServer using 'flm pull'
-                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model (will auto-download FLM models if needed)
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                return;
             }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
@@ -640,38 +670,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached (only for non-FLM models)
-                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                return;
             }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
@@ -1063,60 +1068,32 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         
         std::cout << "[Server] Loading model: " << model_name << std::endl;
         
-        // Check if a different model is already loaded
+        // Check if model is already loaded (early return optimization)
         std::string loaded_model = router_->get_loaded_model();
-        if (!loaded_model.empty() && loaded_model != model_name) {
-            std::cout << "[Server] Unloading current model: " << loaded_model << std::endl;
-            router_->unload_model();
-        } else if (loaded_model == model_name) {
+        if (loaded_model == model_name) {
             std::cout << "[Server] Model already loaded: " << model_name << std::endl;
+            auto info = model_manager_->get_model_info(model_name);
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
+                {"checkpoint", info.checkpoint},
+                {"recipe", info.recipe},
                 {"message", "Model already loaded"}
             };
             res.set_content(response.dump(), "application/json");
             return;
         }
         
-        // Look up model info from registry if not provided
-        std::string checkpoint = request_json.value("checkpoint", "");
-        std::string recipe = request_json.value("recipe", "");
-        std::vector<std::string> labels;
+        // Use helper function to handle loading (download outside mutex, no race conditions)
+        auto_load_model_if_needed(model_name);
         
-        if (checkpoint.empty()) {
-            // Get model info from model manager
-            if (!model_manager_->model_exists(model_name)) {
-                std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
-                res.status = 404;
-                res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                return;
-            }
-            
-            auto info = model_manager_->get_model_info(model_name);
-            checkpoint = info.checkpoint;
-            recipe = info.recipe;
-            labels = info.labels;
-        }
-        
-        // Auto-download if not cached (only for non-FLM models)
-        // FLM models are downloaded by FastFlowLMServer using 'flm pull'
-        if (recipe != "flm" && !model_manager_->is_model_downloaded(model_name)) {
-            std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-            model_manager_->download_model(model_name);
-        }
-        
-        // Load the model (will auto-download FLM models if needed)
-        // Use do_not_upgrade=true to avoid forcing re-download with --force
-        router_->load_model(model_name, checkpoint, recipe, true, labels);
-        
-        std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
-        
+        // Get model info for response
+        auto info = model_manager_->get_model_info(model_name);
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
-            {"checkpoint", checkpoint},
-            {"recipe", recipe}
+            {"checkpoint", info.checkpoint},
+            {"recipe", info.recipe}
         };
         res.set_content(response.dump(), "application/json");
         
