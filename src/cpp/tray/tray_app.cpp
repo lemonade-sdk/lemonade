@@ -4,6 +4,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
@@ -520,20 +521,20 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
     }
 #else
-    // Unix: Parse netstat or use similar approach
-    // For now, check common ports as fallback
-    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
-        try {
-            httplib::Client cli("127.0.0.1", port);
-            cli.set_connection_timeout(0, 200000);
-            cli.set_read_timeout(0, 300000);
-            
-            auto res = cli.Get("/api/v1/health");
-            if (res && res->status == 200) {
-                return {0, port};
-            }
-        } catch (...) {
+    // Unix: Read from PID file
+    std::ifstream pid_file("/tmp/lemonade-router.pid");
+    if (pid_file.is_open()) {
+        int pid, port;
+        pid_file >> pid >> port;
+        pid_file.close();
+        
+        // Verify the PID is still alive
+        if (kill(pid, 0) == 0) {
+            return {pid, port};
         }
+        
+        // Stale PID file, remove it
+        remove("/tmp/lemonade-router.pid");
     }
 #endif
     
@@ -885,6 +886,8 @@ int TrayApp::execute_stop_command() {
     // Unix: Kill processes by name
     system("pkill -f lemonade-router");
     system("pkill -f 'lemonade-server-beta.*serve'");
+    // Kill llama-server child processes (launched by lemonade-router)
+    system("pkill -f 'llama-server.*--port'");
     // Kill log viewer processes
     system("pkill -f 'tail -f.*lemonade-server.log'");
 #endif
