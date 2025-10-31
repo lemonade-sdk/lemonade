@@ -211,23 +211,26 @@ std::string ModelManager::get_cache_dir() {
         return std::string(cache_env);
     }
     
-    // Use centralized base directory
+    // Use HuggingFace cache directory (standard HF behavior)
+    // Check HF_HOME first
+    const char* hf_home = std::getenv("HF_HOME");
+    if (hf_home) {
+        return std::string(hf_home);
+    }
+    
+    // Default to ~/.cache/huggingface/hub
 #ifdef _WIN32
-    const char* appdata = std::getenv("LOCALAPPDATA");
-    if (appdata) {
-        return std::string(appdata) + "\\lemonade\\cache";
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile) {
+        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\lemonade\\cache";
+    return "C:\\.cache\\huggingface\\hub";
 #else
-    // Linux: use installed location
-    if (fs::exists("/usr/local/share/lemonade-server")) {
-        return "/usr/local/share/lemonade-server/cache";
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/huggingface/hub";
     }
-    if (fs::exists("/usr/share/lemonade-server")) {
-        return "/usr/share/lemonade-server/cache";
-    }
-    // Fallback for dev builds
-    return "/tmp/lemonade/cache";
+    return "/tmp/.cache/huggingface/hub";
 #endif
 }
 
