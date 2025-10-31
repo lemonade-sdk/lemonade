@@ -235,6 +235,7 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=os.environ.copy(),
         )
 
         # Print stdout and stderr in real-time

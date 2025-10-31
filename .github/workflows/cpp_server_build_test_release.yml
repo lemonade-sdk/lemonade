@@ -362,13 +362,13 @@ jobs:
                   Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
               } else {
                   $retryCount++
-                  Write-Host "Attempt $retryCount/$maxRetries: ryzenai-serve.exe not found yet, waiting..." -ForegroundColor Yellow
+                  Write-Host "Attempt ${retryCount}/${maxRetries}: ryzenai-serve.exe not found yet, waiting..." -ForegroundColor Yellow
                   Start-Sleep -Seconds 1
               }
           }
           
           if (-not $found) {
-              Write-Host "ERROR: ryzenai-serve.exe not found after $maxRetries attempts!" -ForegroundColor Red
+              Write-Host "ERROR: ryzenai-serve.exe not found after ${maxRetries} attempts!" -ForegroundColor Red
               Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
               Get-ChildItem $ryzenaiDir | Format-Table Name, Length
               Write-Host "`nContents of source directory:" -ForegroundColor Yellow
@@ -420,6 +420,8 @@ jobs:
 
       - name: Test lemonade-router CLI
         shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
           
