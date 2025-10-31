@@ -3,8 +3,11 @@ import os
 import platform
 import shutil
 import sys
+import threading
+import time
 import zipfile
 from typing import Optional
+import psutil
 import subprocess
 import requests
 import lemonade.common.build as build
@@ -769,6 +772,37 @@ def download_gguf(
     }
 
 
+# Function to read a stream (stdout or stderr) into a list
+def stream_reader(stream, output_list):
+    for line in iter(stream.readline, b""):
+        decoded_line = line.decode().rstrip()
+        output_list.append(decoded_line)
+    stream.close()
+
+
+def monitor_process_memory(pid, memory_data, interval=0.5):
+    """Monitor memory usage of a process in a separate thread."""
+
+    try:
+        is_windows = platform.system() == "Windows"
+        if is_windows:
+            # We can only collect peak_wset in Windows
+            process = psutil.Process(pid)
+            while process.is_running():
+                try:
+                    mem_info = process.memory_info()
+                    peak_wset = mem_info.peak_wset
+                    if peak_wset is not None:
+                        memory_data["peak_wset"] = peak_wset
+                except psutil.NoSuchProcess:
+                    break
+                time.sleep(interval)
+    except Exception as e:
+        print(f"Error monitoring process: {e}")
+
+    return memory_data
+
+
 class LlamaCppTokenizerAdapter(PassthroughTokenizer):
     pass
 
@@ -810,6 +844,7 @@ class LlamaCppAdapter(ModelAdapter):
         top_p: float = 0.95,
         top_k: int = 40,
         return_raw: bool = False,
+        save_max_memory_used: bool = False,
         **kwargs,  # pylint: disable=unused-argument
     ):
         """
@@ -917,7 +952,18 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            raw_output, stderr = process.communicate(timeout=600)
+            # Start memory monitoring in a separate thread
+            if save_max_memory_used:
+                memory_data = {}
+                monitor_thread = threading.Thread(
+                    target=monitor_process_memory,
+                    args=(process.pid, memory_data),
+                    daemon=True,
+                )
+                monitor_thread.start()
+
+            # Communicate with the subprocess
+            stdout, stderr = process.communicate(timeout=600)
 
             # save llama-cli command output with performance info to state
             # (can be viewed in state.yaml file in cache)
@@ -931,10 +977,10 @@ class LlamaCppAdapter(ModelAdapter):
                 error_msg = f"llama.cpp failed with return code {process.returncode}.\n"
                 error_msg += f"Command: {' '.join(cmd)}\n"
                 error_msg += f"Error output:\n{stderr}\n"
-                error_msg += f"Standard output:\n{raw_output}"
+                error_msg += f"Standard output:\n{stdout}"
                 raise Exception(error_msg)
 
-            if raw_output is None:
+            if stdout is None:
                 raise Exception("No output received from llama.cpp process")
 
             # Parse information from llama.cpp output
@@ -965,14 +1011,19 @@ class LlamaCppAdapter(ModelAdapter):
                         else 0
                     )
 
+            # Wait for monitor thread to finish and write peak_wset
+            if save_max_memory_used:
+                monitor_thread.join(timeout=2)
+                self.peak_wset = memory_data.get("peak_wset", None)
+
             if return_raw:
-                return [raw_output, stderr]
+                return [stdout, stderr]
 
             # Find where the prompt ends and the generated text begins
             prompt_found = False
             output_text = ""
             prompt_first_line = prompt.split("\n")[0]
-            for line in raw_output.splitlines():
+            for line in stdout.splitlines():
                 if prompt_first_line in line:
                     prompt_found = True
                 if prompt_found:
@@ -983,7 +1034,7 @@ class LlamaCppAdapter(ModelAdapter):
                 raise Exception(
                     f"Could not find prompt '{prompt_first_line}' in llama.cpp output. "
                     "This usually means the model failed to process the prompt correctly.\n"
-                    f"Raw output:\n{raw_output}\n"
+                    f"Raw output:\n{stdout}\n"
                     f"Stderr:\n{stderr}"
                 )
 
@@ -995,7 +1046,7 @@ class LlamaCppAdapter(ModelAdapter):
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
 
-    def benchmark(self, prompts, iterations, output_tokens):
+    def benchmark(self, prompt, iterations, output_tokens):
         """
         Runs the llama-bench.exe tool to measure TTFT and TPS
         """
@@ -1006,7 +1057,7 @@ class LlamaCppAdapter(ModelAdapter):
             "-r",
             iterations,
             "-p",
-            ",".join([str(p) for p in prompts]),
+            str(prompt),
             "-n",
             output_tokens,
             "-t",
@@ -1049,11 +1100,23 @@ class LlamaCppAdapter(ModelAdapter):
                 env=env,
             )
 
-            raw_output, stderr = process.communicate(timeout=600)
+            # Start memory monitoring in a separate thread
+            save_max_memory_used = platform.system() == "Windows"
+            if save_max_memory_used:
+                memory_data = {}
+                monitor_thread = threading.Thread(
+                    target=monitor_process_memory,
+                    args=(process.pid, memory_data),
+                    daemon=True,
+                )
+                monitor_thread.start()
+
+            # Communicate with the subprocess
+            stdout, stderr = process.communicate(timeout=600)
 
             # save llama-bench command output with performance info to state
             # (can be viewed in state.yaml file in cache)
-            self.state.llama_bench_standard_output = raw_output.splitlines()
+            self.state.llama_bench_standard_output = stdout.splitlines()
 
             if process.returncode != 0:
                 error_msg = (
@@ -1061,40 +1124,52 @@ class LlamaCppAdapter(ModelAdapter):
                 )
                 error_msg += f"Command: {' '.join(cmd)}\n"
                 error_msg += f"Error output:\n{stderr}\n"
-                error_msg += f"Standard output:\n{raw_output}"
+                error_msg += f"Standard output:\n{stdout}"
                 raise Exception(error_msg)
 
-            if raw_output is None:
-                raise Exception("No output received from llama-bench.exe process")
+            if stdout is None:
+                error_msg = "No output received from llama-bench.exe process\n"
+                error_msg += f"Error output:\n{stderr}\n"
+                error_msg += f"Standard output:\n{stdout}"
+                raise Exception(error_msg)
 
             # Parse information from llama-bench.exe output
-            prompt_lengths = []
-            pp_tps = []
-            pp_tps_sd = []
+            prompt_length = None
+            pp_tps = None
+            pp_tps_sd = None
             tg_tps = None
             tg_tps_sd = None
 
-            for line in self.state.llama_bench_standard_output:
+            for line in stdout.splitlines():
                 # Parse TPS information
-                for p in prompts:
-                    if f"pp{p:d}" in line:
-                        parts = line.split("|")
-                        timings = parts[-2].strip().split(" ")
-                        prompt_lengths.append(p)
-                        pp_tps.append(float(timings[0]))
-                        pp_tps_sd.append(float(timings[-1]))
-                    if f"tg{output_tokens:d}" in line:
-                        parts = line.split("|")
-                        timings = parts[-2].strip().split(" ")
-                        tg_tps = float(timings[0])
-                        tg_tps_sd = float(timings[-1])
-
-            return prompt_lengths, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd
+                if f"pp{prompt:d}" in line:
+                    parts = line.split("|")
+                    timings = parts[-2].strip().split(" ")
+                    prompt_length = prompt
+                    pp_tps = float(timings[0])
+                    pp_tps_sd = float(timings[-1])
+                if f"tg{output_tokens:d}" in line:
+                    parts = line.split("|")
+                    timings = parts[-2].strip().split(" ")
+                    tg_tps = float(timings[0])
+                    tg_tps_sd = float(timings[-1])
 
         except Exception as e:
             error_msg = f"Failed to run llama-bench.exe command: {str(e)}\n"
             error_msg += f"Command: {' '.join(cmd)}"
             raise Exception(error_msg)
+
+        # Determine max memory used
+        if save_max_memory_used:
+            # Wait for monitor thread to finish
+            monitor_thread.join(timeout=2)
+
+            # Track memory usage concurrently
+            peak_wset = memory_data.get("peak_wset", None)
+        else:
+            peak_wset = None
+
+        return prompt_length, pp_tps, pp_tps_sd, tg_tps, tg_tps_sd, peak_wset
 
 
 def get_hip_devices():
