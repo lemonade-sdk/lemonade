@@ -942,6 +942,24 @@ jobs:
           $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
           $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
           
+          Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
+          
+          # Pre-download models used in the simultaneous load test
+          # This ensures models are cached and prevents download timing issues
+          & $serverBetaExe pull Qwen2.5-0.5B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Qwen2.5-0.5B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Llama-3.2-1B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          Write-Host "Test models pre-downloaded successfully!" -ForegroundColor Green
+          
           Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           
           conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
