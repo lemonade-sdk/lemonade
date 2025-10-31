@@ -70,6 +70,7 @@ class CompletionRequest(BaseModel):
     top_k: int | None = None
     top_p: float | None = None
     max_tokens: int | None = None
+    enable_thinking: bool | None = True
 
 
 class ChatCompletionRequest(BaseModel):
@@ -93,6 +94,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
     max_completion_tokens: int | None = None
     response_format: dict | None = None
+    enable_thinking: bool | None = True
 
 
 class EmbeddingsRequest(BaseModel):
@@ -132,6 +134,7 @@ class ResponsesRequest(BaseModel):
     top_k: int | None = None
     top_p: float | None = None
     stream: bool = False
+    enable_thinking: bool | None = True
 
 
 class PullConfig(LoadConfig):
