@@ -26,9 +26,9 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 
 **Linux (Ubuntu/Debian):**
 ```bash
-sudo apt install build-essential cmake libcurl4-openssl-dev
-# For tray application:
-sudo apt install libappindicator3-dev libgtk-3-dev libnotify-dev pkg-config
+sudo apt install build-essential cmake libcurl4-openssl-dev pkg-config
+# Note: Tray application is disabled on Linux (headless mode only)
+# This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
 
 **macOS:**
@@ -95,36 +95,47 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-serve` for NPU
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
-- System tray requires GTK3 and libappindicator3
-- Different desktop environments may have varying tray support
-- ⚠️ **Note:** Linux build is currently a stub implementation and not fully functional
+- Linux builds are headless-only (no tray application) by default
+- This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
+- Run server using: `lemonade-server-beta serve` (headless mode is automatic)
+- Fully functional for server operations and model management
+- Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
+- Clean .deb package with only runtime files (no development headers)
+- PID file system (`/tmp/lemonade-router.pid`) for reliable process management
+- Proper graceful shutdown - all child processes cleaned up correctly
+- File locations:
+  - Installed binaries: `/usr/local/bin/`
+  - llama.cpp downloads: `~/.cache/huggingface/` (follows HF conventions)
+  - llama-server binaries: `/usr/local/share/lemonade-server/llama/` (from .deb) or next to binary (dev builds)
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
 - ⚠️ **Note:** macOS build is currently a stub implementation and not fully functional
 
-## Building the Windows Installer
+## Building Installers
 
-### Prerequisites
+### Windows Installer (NSIS)
+
+**Prerequisites:**
 - NSIS 3.x installed at `C:\Program Files (x86)\NSIS\`
 - Completed C++ build (see above)
 
-### Building
+**Building:**
 
-**Using PowerShell script (recommended):**
+Using PowerShell script (recommended):
 ```powershell
 cd src\cpp
 .\build_installer.ps1
 ```
 
-**Manual build:**
+Manual build:
 ```powershell
 cd src\cpp
 "C:\Program Files (x86)\NSIS\makensis.exe" Lemonade_Server_Installer_beta.nsi
 ```
 
-### Installer Output
+**Installer Output:**
 
 Creates `Lemonade_Server_Installer_beta.exe` which:
 - Installs to `%LOCALAPPDATA%\lemonade_server_beta\`
@@ -139,6 +150,57 @@ Creates `Lemonade_Server_Installer_beta.exe` which:
 - Automatically detects and stops running Lemonade instances using `lemonade-server-beta.exe stop`
 - Prevents "files in use" errors during installation
 - Works gracefully on fresh installs (no existing installation)
+
+### Linux .deb Package (Debian/Ubuntu)
+
+**Prerequisites:**
+- Completed C++ build (see above)
+
+**Building:**
+
+```bash
+cd src/cpp/build
+cpack
+```
+
+**Package Output:**
+
+Creates `lemonade-server-1.0.0-Linux.deb` which:
+- Installs to `/usr/local/bin/` (executables)
+- Installs resources to `/usr/local/share/lemonade-server/`
+- Creates desktop entry in `/usr/local/share/applications/`
+- Declares dependencies: libcurl4, libssl3, libz1
+- Package size: ~2.2 MB (clean, runtime-only package)
+- Includes postinst script that creates writable `/usr/local/share/lemonade-server/llama/` directory
+
+**Installation:**
+
+```bash
+sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+
+# If dependencies are missing:
+sudo apt-get install -f
+```
+
+**Uninstallation:**
+
+```bash
+sudo dpkg -r lemonade-server
+```
+
+**Post-Installation:**
+
+The executables will be available in PATH:
+```bash
+lemonade-server-beta --help
+lemonade-router --help
+
+# Start server in headless mode:
+lemonade-server-beta serve --no-tray
+
+# Or just:
+lemonade-server-beta serve
+```
 
 ## Code Structure
 
@@ -257,6 +319,10 @@ The client automatically:
 - Only the `serve` command is blocked when a server is running
 - Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
 - Provides clear error messages with suggestions when blocked
+- **Linux-specific:** Uses PID file (`/tmp/lemonade-router.pid`) for efficient server discovery and port detection
+  - Avoids port scanning, finds exact server PID and port instantly
+  - Validated on read (checks if process is still alive)
+  - Automatically cleaned up on graceful shutdown
 
 ### Dependencies
 
@@ -319,10 +385,10 @@ The `lemonade-server-beta` executable is the command-line interface for terminal
 # Run a model (starts persistent server with tray and opens browser)
 ./lemonade-server-beta run Llama-3.2-1B-Instruct-CPU
 
-# Start persistent server with tray
+# Start persistent server (with tray on Windows/macOS, headless on Linux)
 ./lemonade-server-beta serve
 
-# Start persistent server without tray (headless)
+# Start persistent server without tray (headless mode, explicit on all platforms)
 ./lemonade-server-beta serve --no-tray
 
 # Start server with custom options

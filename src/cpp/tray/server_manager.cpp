@@ -1,6 +1,7 @@
 #include "lemon_tray/server_manager.h"
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <thread>
 #include <chrono>
 
@@ -98,6 +99,12 @@ bool ServerManager::start_server(
             DEBUG_LOG(this, "Health check succeeded!");
             std::cout << "Server started on port " << port_ << std::endl;
             server_started_ = true;
+            
+#ifndef _WIN32
+            // Write PID file on Linux for efficient server discovery
+            write_pid_file();
+#endif
+            
             return true;
         } catch (const std::exception& e) {
             DEBUG_LOG(this, "Health check failed: " << e.what());
@@ -139,6 +146,9 @@ bool ServerManager::stop_server() {
         CloseHandle(process_handle_);
         process_handle_ = nullptr;
     }
+#else
+    // Remove PID file on Linux
+    remove_pid_file();
 #endif
     
     DEBUG_LOG(this, "Server stopped");
@@ -426,9 +436,20 @@ bool ServerManager::terminate_process() {
     if (server_pid_ > 0) {
         kill(server_pid_, SIGTERM);
         
-        // Wait for process to exit
+        // Wait for process to exit gracefully (up to 5 seconds)
         int status;
-        waitpid(server_pid_, &status, WNOHANG);
+        for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
+            if (waitpid(server_pid_, &status, WNOHANG) > 0) {
+                // Process exited gracefully
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // If still alive after 5 seconds, force kill
+        std::cerr << "[ServerManager] Process did not exit gracefully, forcing termination..." << std::endl;
+        kill(server_pid_, SIGKILL);
+        waitpid(server_pid_, &status, 0);  // Block until process is dead
         
         return true;
     }
@@ -440,6 +461,26 @@ bool ServerManager::is_process_alive() const {
     
     // Send signal 0 to check if process exists
     return kill(server_pid_, 0) == 0;
+}
+
+void ServerManager::write_pid_file() {
+    std::string pid_file_path = "/tmp/lemonade-router.pid";
+    std::ofstream pid_file(pid_file_path);
+    if (pid_file.is_open()) {
+        pid_file << server_pid_ << "\n" << port_ << "\n";
+        pid_file.close();
+        DEBUG_LOG(this, "Wrote PID file: " << pid_file_path << " (PID: " << server_pid_ << ", Port: " << port_ << ")");
+    } else {
+        std::cerr << "[ServerManager] Warning: Failed to write PID file: " << pid_file_path << std::endl;
+    }
+}
+
+void ServerManager::remove_pid_file() {
+    std::string pid_file_path = "/tmp/lemonade-router.pid";
+    if (remove(pid_file_path.c_str()) == 0) {
+        DEBUG_LOG(this, "Removed PID file: " << pid_file_path);
+    }
+    // Silently ignore if file doesn't exist
 }
 
 #endif

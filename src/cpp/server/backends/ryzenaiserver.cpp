@@ -14,6 +14,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/stat.h>  // For chmod on Linux/macOS
 #endif
 
 namespace fs = std::filesystem;

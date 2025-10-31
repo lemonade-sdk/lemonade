@@ -247,11 +247,12 @@ bool HttpClient::download_file(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     
     // Progress tracking
+    ProgressData* prog_data = nullptr;
     if (callback) {
-        ProgressData prog_data;
-        prog_data.callback = callback;
+        prog_data = new ProgressData();
+        prog_data->callback = callback;
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &prog_data);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, prog_data);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
     
@@ -275,6 +276,11 @@ bool HttpClient::download_file(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     
     curl_easy_cleanup(curl);
+    
+    // Clean up progress data
+    if (prog_data) {
+        delete prog_data;
+    }
     
     if (res != CURLE_OK) {
         std::cerr << "CURL download error: " << curl_easy_strerror(res) << std::endl;
