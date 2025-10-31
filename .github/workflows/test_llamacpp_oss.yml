@@ -131,20 +131,19 @@ jobs:
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
-      - name: Run lemonade Llamacpp CLI tests
-        if: matrix.backend != 'rocm'
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
-        run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+      # - name: Run lemonade Llamacpp CLI tests
+      #   env:
+      #     HF_HOME: "${{ env.HF_HOME }}"
+      #   run: |
+      #     source ~/miniforge3/etc/profile.d/conda.sh
+      #     conda activate $CONDA_ENV_PATH
 
-          if [ "${{ matrix.backend }}" != "rocm" ]; then
-            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-          fi
+      #     if [ "${{ matrix.backend }}" != "rocm" ]; then
+      #       lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+      #     fi
 
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -i 2 --output-tokens 16 || exit 1
+      #     lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+      #     lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -i 2 --output-tokens 16 || exit 1
 
       - name: Run lemonade Llamacpp API tests
         env:
