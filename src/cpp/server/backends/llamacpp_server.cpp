@@ -423,8 +423,8 @@ void LlamaCppServer::load(const std::string& model_name,
     
     std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
     
-    // Start process (inherit output if debug logging enabled)
-    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug());
+    // Start process (inherit output if debug logging enabled, filter health check spam)
+    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true);
     
     // Wait for server to be ready
     if (!wait_for_ready()) {

@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <nlohmann/json.hpp>
 #include "wrapped_server.h"
 
@@ -60,7 +61,10 @@ private:
     std::string llamacpp_backend_;
     std::string log_level_;
     
-    mutable std::mutex load_mutex_;  // Serialize load_model() calls
+    // Concurrency control for load operations
+    mutable std::mutex load_mutex_;              // Protects loading state and wrapped_server_
+    bool is_loading_ = false;                    // True when a load operation is in progress
+    std::condition_variable load_cv_;            // Signals when load completes
 };
 
 } // namespace lemon

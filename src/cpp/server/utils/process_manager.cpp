@@ -3,6 +3,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <string>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -21,11 +22,54 @@
 namespace lemon {
 namespace utils {
 
+// Helper function to check if a line should be filtered
+static bool should_filter_line(const std::string& line) {
+    // Filter out health check requests (both /health and /v1/health)
+    return (line.find("GET /health") != std::string::npos ||
+            line.find("GET /v1/health") != std::string::npos);
+}
+
+#ifdef _WIN32
+// Thread function to read from pipe and filter output
+static DWORD WINAPI output_filter_thread(LPVOID param) {
+    HANDLE pipe = static_cast<HANDLE>(param);
+    char buffer[4096];
+    DWORD bytes_read;
+    std::string line_buffer;
+    
+    while (ReadFile(pipe, buffer, sizeof(buffer) - 1, &bytes_read, nullptr) && bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        line_buffer += buffer;
+        
+        // Process complete lines
+        size_t pos;
+        while ((pos = line_buffer.find('\n')) != std::string::npos) {
+            std::string line = line_buffer.substr(0, pos);
+            line_buffer = line_buffer.substr(pos + 1);
+            
+            // Only print if not a health check line
+            if (!should_filter_line(line)) {
+                std::cout << line << std::endl;
+            }
+        }
+    }
+    
+    // Print any remaining partial line
+    if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
+        std::cout << line_buffer << std::endl;
+    }
+    
+    CloseHandle(pipe);
+    return 0;
+}
+#endif
+
 ProcessHandle ProcessManager::start_process(
     const std::string& executable,
     const std::vector<std::string>& args,
     const std::string& working_dir,
-    bool inherit_output) {
+    bool inherit_output,
+    bool filter_health_logs) {
     
     ProcessHandle handle;
     handle.handle = nullptr;
@@ -44,8 +88,40 @@ ProcessHandle ProcessManager::start_process(
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
     
-    // If inherit_output is true, inherit stdout/stderr from parent
-    if (inherit_output) {
+    HANDLE stdout_read = nullptr;
+    HANDLE stdout_write = nullptr;
+    HANDLE stderr_read = nullptr;
+    HANDLE stderr_write = nullptr;
+    
+    // If inherit_output is true, either use pipes with filtering or direct inheritance
+    if (inherit_output && filter_health_logs) {
+        // Create pipes for stdout and stderr to filter output
+        SECURITY_ATTRIBUTES sa;
+        sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+        sa.bInheritHandle = TRUE;
+        sa.lpSecurityDescriptor = nullptr;
+        
+        if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+            throw std::runtime_error("Failed to create stdout pipe");
+        }
+        if (!CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
+            CloseHandle(stdout_read);
+            CloseHandle(stdout_write);
+            throw std::runtime_error("Failed to create stderr pipe");
+        }
+        
+        // Make sure the read handles are not inherited
+        SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
+        
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = stdout_write;
+        si.hStdError = stderr_write;
+        
+        std::cout << "[ProcessManager] Starting process with filtered output: " << cmdline << std::endl;
+    } else if (inherit_output) {
+        // Direct inheritance without filtering
         si.dwFlags |= STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
         si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -60,8 +136,8 @@ ProcessHandle ProcessManager::start_process(
         const_cast<char*>(cmdline.c_str()),
         nullptr,
         nullptr,
-        TRUE,  // Inherit handles when inherit_output is true
-        inherit_output ? 0 : CREATE_NO_WINDOW,  // Show window only in debug mode
+        TRUE,  // Inherit handles
+        (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
         nullptr,
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
@@ -81,10 +157,25 @@ ProcessHandle ProcessManager::start_process(
             nullptr
         );
         
+        if (stdout_write) CloseHandle(stdout_write);
+        if (stderr_write) CloseHandle(stderr_write);
+        if (stdout_read) CloseHandle(stdout_read);
+        if (stderr_read) CloseHandle(stderr_read);
+        
         std::string full_error = "Failed to start process '" + executable + 
                                 "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
         std::cerr << "[ProcessManager ERROR] " << full_error << std::endl;
         throw std::runtime_error(full_error);
+    }
+    
+    // Close write ends of pipes in parent process
+    if (stdout_write) CloseHandle(stdout_write);
+    if (stderr_write) CloseHandle(stderr_write);
+    
+    // Start filter threads if needed
+    if (inherit_output && filter_health_logs) {
+        CreateThread(nullptr, 0, output_filter_thread, stdout_read, 0, nullptr);
+        CreateThread(nullptr, 0, output_filter_thread, stderr_read, 0, nullptr);
     }
     
     std::cout << "[ProcessManager] Process started successfully, PID: " << pi.dwProcessId << std::endl;

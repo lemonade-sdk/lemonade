@@ -14,12 +14,12 @@ BEGIN
         BLOCK "040904E4"
         BEGIN
             VALUE "CompanyName", "AMD"
-            VALUE "FileDescription", "Lemonade AI Server - Local LLM serving"
+            VALUE "FileDescription", "lemonade-router.exe"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "lemonade"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
             VALUE "OriginalFilename", "lemonade-router.exe"
-            VALUE "ProductName", "Lemonade AI Server"
+            VALUE "ProductName", "lemonade-router.exe"
             VALUE "ProductVersion", "1.0.0.0"
             VALUE "Comments", "Local AI model serving with hardware acceleration"
         END

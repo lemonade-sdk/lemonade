@@ -28,28 +28,58 @@ void Router::load_model(const std::string& model_name,
                        bool do_not_upgrade,
                        const std::vector<std::string>& labels) {
     
-    // Serialize load_model() calls to prevent race conditions
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    // LOAD SERIALIZATION STRATEGY
+    // ============================
+    // POLICY: Only ONE load operation can execute at a time.
+    //
+    // Why: Concurrent loads create orphaned backend processes when both try to swap
+    // into wrapped_server_. The last one wins, but the first's process keeps running.
+    //
+    // Implementation:
+    //   1. Use is_loading_ flag to track if a load is in progress
+    //   2. Other threads wait on load_cv_ condition variable until load completes
+    //   3. Release lock during slow operations (backend startup) to allow:
+    //      - Health checks to read wrapped_server_
+    //      - Inference requests to use current model
+    //      - Stats/system-info queries
+    //   4. Waiting threads remain blocked on load_cv_ even when lock is released
+    //
+    // Result: Load operations are serialized (no orphaned processes), but the server
+    // remains responsive during loading.
+    
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    
+    // Wait if another thread is currently loading
+    // The condition variable will automatically release the lock while waiting,
+    // and re-acquire it when notified
+    while (is_loading_) {
+        std::cout << "[Router] Another load is in progress, waiting..." << std::endl;
+        load_cv_.wait(lock);
+    }
+    
+    // Mark that we're now loading (prevents concurrent loads)
+    is_loading_ = true;
     
     std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
     
     try {
-        // Unload any existing model
+        // Unload any existing model (quick operation, keep lock)
         if (wrapped_server_) {
             std::cout << "[Router] Unloading previous model..." << std::endl;
             unload_model();
         }
         
+        // Create the backend server object (quick operation)
+        std::unique_ptr<WrappedServer> new_server;
+        
         // Determine which backend to use based on recipe
         if (recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
-            wrapped_server_ = std::make_unique<backends::FastFlowLMServer>(log_level_);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+            new_server = std::make_unique<backends::FastFlowLMServer>(log_level_);
         } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Serve backend: " << recipe << std::endl;
             
             // RyzenAI-Serve needs the model path to be passed
-            // For now, we'll need to resolve the ONNX model path from the checkpoint
             // The checkpoint should be in the format: "microsoft/Phi-3-mini-4k-instruct-onnx"
             // and the model path should be in the HF cache
             std::string model_path = "";
@@ -71,9 +101,25 @@ void Router::load_model(const std::string& model_name,
             cache_repo_name = "models--" + cache_repo_name;
             
             // Get HF cache directory
-            const char* userprofile = std::getenv("USERPROFILE");
-            if (userprofile) {
-                std::string hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+            std::string hf_cache;
+            const char* hf_home_env = std::getenv("HF_HOME");
+            if (hf_home_env) {
+                hf_cache = std::string(hf_home_env) + "\\hub";
+            } else {
+#ifdef _WIN32
+                const char* userprofile = std::getenv("USERPROFILE");
+                if (userprofile) {
+                    hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+                }
+#else
+                const char* home = std::getenv("HOME");
+                if (home) {
+                    hf_cache = std::string(home) + "/.cache/huggingface/hub";
+                }
+#endif
+            }
+            
+            if (!hf_cache.empty()) {
                 model_path = hf_cache + "\\" + cache_repo_name;
                 
                 // Find the snapshot directory (usually there's only one)
@@ -104,22 +150,64 @@ void Router::load_model(const std::string& model_name,
             auto* ryzenai_server = new RyzenAIServer(model_name, 8080, log_level_ == "debug");
             ryzenai_server->set_model_path(model_path);
             ryzenai_server->set_execution_mode(backend_mode);
-            wrapped_server_.reset(ryzenai_server);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+            new_server.reset(ryzenai_server);
         } else {
             std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
-            wrapped_server_ = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
-            wrapped_server_->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+            new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
         }
         
+        // CRITICAL: Release the lock before the time-consuming backend startup
+        // ======================================================================
+        // Why we release the lock here:
+        //   - Backend startup (process creation + health checks) can take 30-60 seconds
+        //   - If we hold the lock, other operations would block:
+        //     * Health checks couldn't read wrapped_server_
+        //     * Inference requests couldn't use the current model
+        //     * Stats/system-info queries would hang
+        //
+        // Safety with is_loading_ flag:
+        //   - is_loading_=true prevents other threads from starting concurrent loads
+        //   - Threads waiting on load_cv_ will remain blocked even after lock is released
+        //   - Only after we set is_loading_=false and notify will waiting threads proceed
+        //   - This guarantees NO orphaned processes (loads are fully serialized)
+        lock.unlock();
+        
+        // Load the backend (start process, wait for ready) WITHOUT holding the mutex
+        // This is the time-consuming part that can take 30-60 seconds:
+        //   1. ProcessManager::start_process() - Launch llama-server/ryzenai-serve/flm
+        //   2. wait_for_ready() - Poll health endpoint until backend responds
+        std::cout << "[Router] Starting backend (this may take a moment)..." << std::endl;
+        new_server->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+        std::cout << "[Router] Backend started successfully" << std::endl;
+        
+        // Re-acquire the lock for the final state update
+        lock.lock();
+        
+        // Swap in the new server as the active backend
+        wrapped_server_ = std::move(new_server);
         loaded_model_ = model_name;
         loaded_checkpoint_ = checkpoint;
         loaded_recipe_ = recipe;
         unload_called_ = false;  // Reset unload flag for newly loaded model
         
+        // CRITICAL: Mark loading as complete and notify waiting threads
+        // Without this, threads waiting on load_cv_ would deadlock forever!
+        is_loading_ = false;
+        load_cv_.notify_all();  // Wake up all threads waiting to load
+        
         std::cout << "[Router] Model loaded successfully" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[Router ERROR] Failed to load model: " << e.what() << std::endl;
+        
+        // CRITICAL: Mark loading as complete even on error!
+        // If we don't do this, threads waiting on load_cv_ will deadlock forever.
+        // We need to re-acquire the lock if we don't currently hold it
+        if (!lock.owns_lock()) {
+            lock.lock();
+        }
+        is_loading_ = false;
+        load_cv_.notify_all();
+        
         if (wrapped_server_) {
             wrapped_server_.reset();
         }

@@ -1,6 +1,9 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#include <lemon/single_instance.h>
+#include <httplib.h>
 #include <iostream>
+#include <iomanip>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
@@ -8,8 +11,13 @@
 #include <csignal>
 
 #ifdef _WIN32
+#include <winsock2.h>  // Must come before windows.h
 #include <windows.h>
 #include <shellapi.h>
+#include <iphlpapi.h>
+#include <tlhelp32.h>
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
 #else
 #include <cstdlib>
 #include <unistd.h>  // for readlink
@@ -18,6 +26,67 @@
 namespace fs = std::filesystem;
 
 namespace lemon_tray {
+
+// Helper macro for debug logging
+#define DEBUG_LOG(app, msg) \
+    if ((app)->config_.log_level == "debug") { \
+        std::cout << "DEBUG: " << msg << std::endl; \
+    }
+
+#ifdef _WIN32
+// Helper function to show a simple Windows notification without tray
+static void show_simple_notification(const std::string& title, const std::string& message) {
+    // Convert UTF-8 to wide string
+    auto utf8_to_wstring = [](const std::string& str) -> std::wstring {
+        if (str.empty()) return std::wstring();
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+        std::wstring result(size_needed, 0);
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], size_needed);
+        if (!result.empty() && result.back() == L'\0') {
+            result.pop_back();
+        }
+        return result;
+    };
+    
+    // Create a temporary window class and window for the notification
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = L"LemonadeNotifyClass";
+    RegisterClassW(&wc);
+    
+    HWND hwnd = CreateWindowW(L"LemonadeNotifyClass", L"", 0, 0, 0, 0, 0, nullptr, nullptr, wc.hInstance, nullptr);
+    
+    if (hwnd) {
+        NOTIFYICONDATAW nid = {};
+        nid.cbSize = sizeof(nid);
+        nid.hWnd = hwnd;
+        nid.uID = 1;
+        nid.uFlags = NIF_INFO | NIF_ICON;
+        nid.dwInfoFlags = NIIF_INFO;
+        
+        // Use default icon
+        nid.hIcon = LoadIcon(nullptr, IDI_INFORMATION);
+        
+        std::wstring title_wide = utf8_to_wstring(title);
+        std::wstring message_wide = utf8_to_wstring(message);
+        
+        wcsncpy_s(nid.szInfoTitle, title_wide.c_str(), _TRUNCATE);
+        wcsncpy_s(nid.szInfo, message_wide.c_str(), _TRUNCATE);
+        wcsncpy_s(nid.szTip, L"Lemonade Server", _TRUNCATE);
+        
+        // Add the icon and show notification
+        Shell_NotifyIconW(NIM_ADD, &nid);
+        
+        // Keep it displayed briefly then clean up
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        Shell_NotifyIconW(NIM_DELETE, &nid);
+        
+        DestroyWindow(hwnd);
+    }
+    UnregisterClassW(L"LemonadeNotifyClass", GetModuleHandle(nullptr));
+}
+#endif
 
 // Global pointer to the current TrayApp instance for signal handling
 static TrayApp* g_tray_app_instance = nullptr;
@@ -52,8 +121,7 @@ void signal_handler(int signal) {
 #endif
 
 TrayApp::TrayApp(int argc, char* argv[])
-    : debug_logs_enabled_(false)
-    , current_version_("1.0.0")  // TODO: Load from version file
+    : current_version_("1.0.0")  // TODO: Load from version file
     , should_exit_(false)
 {
     parse_arguments(argc, argv);
@@ -68,51 +136,104 @@ TrayApp::TrayApp(int argc, char* argv[])
         exit(0);
     }
     
-    // Set up signal handlers
-    g_tray_app_instance = this;
-    
+    // Only set up signal handlers if we're actually going to run a command
+    // (not for help/version which exit immediately)
+    if (!config_.command.empty()) {
+        g_tray_app_instance = this;
+        
 #ifdef _WIN32
-    SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
+        SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
 #else
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+        signal(SIGINT, signal_handler);
+        signal(SIGTERM, signal_handler);
 #endif
-    
-    std::cout << "DEBUG: Signal handlers installed" << std::endl;
+        
+        DEBUG_LOG(this, "Signal handlers installed");
+    }
 }
 
 TrayApp::~TrayApp() {
-    shutdown();
+    // Only shutdown if we actually started something
+    if (server_manager_ || !config_.command.empty()) {
+        shutdown();
+    }
     g_tray_app_instance = nullptr;
 }
 
 int TrayApp::run() {
-    std::cout << "DEBUG: TrayApp::run() starting..." << std::endl;
+    // Check if no command was provided
+    if (config_.command.empty()) {
+        std::cerr << "Error: No command specified\n" << std::endl;
+        print_usage();
+        return 1;
+    }
     
-    // Find server binary if not specified
+    DEBUG_LOG(this, "TrayApp::run() starting...");
+    DEBUG_LOG(this, "Command: " << config_.command);
+    
+    // Find server binary automatically (needed for most commands)
     if (config_.server_binary.empty()) {
-        std::cout << "DEBUG: Searching for server binary..." << std::endl;
+        DEBUG_LOG(this, "Searching for server binary...");
         if (!find_server_binary()) {
-            std::cerr << "Error: Could not find lemonade server binary" << std::endl;
-            std::cerr << "Please specify --server-binary path" << std::endl;
+            std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
+            std::cerr << "Please ensure lemonade-router.exe is in the same directory" << std::endl;
             return 1;
         }
     }
     
-    std::cout << "DEBUG: Using server binary: " << config_.server_binary << std::endl;
+    DEBUG_LOG(this, "Using server binary: " << config_.server_binary);
+    
+    // Handle commands
+    if (config_.command == "list") {
+        return execute_list_command();
+    } else if (config_.command == "pull") {
+        return execute_pull_command();
+    } else if (config_.command == "delete") {
+        return execute_delete_command();
+    } else if (config_.command == "status") {
+        return execute_status_command();
+    } else if (config_.command == "stop") {
+        return execute_stop_command();
+    } else if (config_.command == "serve" || config_.command == "run") {
+        // Check for single instance - only for 'serve' and 'run' commands
+        // Other commands (status, list, pull, delete, stop) can run alongside a server
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("ServerBeta")) {
+#ifdef _WIN32
+            show_simple_notification("Server Already Running", "Lemonade Server is already running");
+#endif
+            std::cerr << "Error: Another instance of lemonade-server-beta serve/run is already running.\n"
+                      << "Only one persistent server can run at a time.\n\n"
+                      << "To check server status: lemonade-server-beta status\n"
+                      << "To stop the server: lemonade-server-beta stop\n" << std::endl;
+            return 1;
+        }
+        // Continue to server initialization below
+    } else {
+        std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
+        print_usage();
+        return 1;
+    }
     
     // Create server manager
-    std::cout << "DEBUG: Creating server manager..." << std::endl;
+    DEBUG_LOG(this, "Creating server manager...");
     server_manager_ = std::make_unique<ServerManager>();
     
     // Start server
-    std::cout << "DEBUG: Starting server..." << std::endl;
+    DEBUG_LOG(this, "Starting server...");
     if (!start_server()) {
         std::cerr << "Error: Failed to start server" << std::endl;
         return 1;
     }
     
-    std::cout << "DEBUG: Server started successfully!" << std::endl;
+    DEBUG_LOG(this, "Server started successfully!");
+    
+    // If this is the 'run' command, load the model and open browser
+    if (config_.command == "run") {
+        int result = execute_run_command();
+        if (result != 0) {
+            return result;
+        }
+    }
     
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
@@ -127,7 +248,6 @@ int TrayApp::run() {
         return 0;
     }
     
-    std::cout << "DEBUG: Creating tray application..." << std::endl;
     // Create tray application
     tray_ = create_tray();
     if (!tray_) {
@@ -135,110 +255,139 @@ int TrayApp::run() {
         return 1;
     }
     
-    std::cout << "DEBUG: Tray created successfully" << std::endl;
+    DEBUG_LOG(this, "Tray created successfully");
+    
+    // Set log level for the tray
+    tray_->set_log_level(config_.log_level);
     
     // Set ready callback
-    std::cout << "DEBUG: Setting ready callback..." << std::endl;
+    DEBUG_LOG(this, "Setting ready callback...");
     tray_->set_ready_callback([this]() {
-        std::cout << "DEBUG: Ready callback triggered!" << std::endl;
+        DEBUG_LOG(this, "Ready callback triggered!");
         show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
     });
     
     // Set menu update callback to refresh state before showing menu
-    std::cout << "DEBUG: Setting menu update callback..." << std::endl;
+    DEBUG_LOG(this, "Setting menu update callback...");
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
-            std::cout << "DEBUG: Refreshing menu state from server..." << std::endl;
+            DEBUG_LOG(this, "Refreshing menu state from server...");
             build_menu();
         });
     }
     
     // Find icon path (matching the CMake resources structure)
-    std::cout << "DEBUG: Searching for icon..." << std::endl;
+    DEBUG_LOG(this, "Searching for icon...");
     std::string icon_path = "resources/static/favicon.ico";
-    std::cout << "DEBUG: Checking icon at: " << fs::absolute(icon_path).string() << std::endl;
+    DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
     
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(config_.server_binary).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
-        std::cout << "DEBUG: Icon not found, trying: " << icon_path << std::endl;
+        DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
         
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
-            std::cout << "DEBUG: Icon not found, trying fallback: " << icon_path << std::endl;
+            DEBUG_LOG(this, "Icon not found, trying fallback: " << icon_path);
         }
     }
     
     if (fs::exists(icon_path)) {
-        std::cout << "DEBUG: Icon found at: " << icon_path << std::endl;
+        DEBUG_LOG(this, "Icon found at: " << icon_path);
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
     
     // Initialize tray
-    std::cout << "DEBUG: Initializing tray with icon: " << icon_path << std::endl;
+    DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);
     if (!tray_->initialize("Lemonade Server", icon_path)) {
         std::cerr << "Error: Failed to initialize tray" << std::endl;
         return 1;
     }
     
-    std::cout << "DEBUG: Tray initialized successfully" << std::endl;
+    DEBUG_LOG(this, "Tray initialized successfully");
     
     // Build initial menu
-    std::cout << "DEBUG: Building menu..." << std::endl;
+    DEBUG_LOG(this, "Building menu...");
     build_menu();
-    std::cout << "DEBUG: Menu built successfully" << std::endl;
+    DEBUG_LOG(this, "Menu built successfully");
     
-    std::cout << "DEBUG: Menu built, entering event loop..." << std::endl;
+    DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
     tray_->run();
     
-    std::cout << "DEBUG: Event loop exited" << std::endl;
+    DEBUG_LOG(this, "Event loop exited");
     return 0;
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {
+    // First check for --help or --version flags
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
         if (arg == "--help" || arg == "-h") {
             config_.show_help = true;
+            return;
         } else if (arg == "--version" || arg == "-v") {
             config_.show_version = true;
-        } else if (arg == "--no-tray") {
-            config_.no_tray = true;
-        } else if (arg == "--port" && i + 1 < argc) {
-            config_.port = std::stoi(argv[++i]);
-        } else if (arg == "--ctx-size" && i + 1 < argc) {
-            config_.ctx_size = std::stoi(argv[++i]);
-        } else if (arg == "--log-file" && i + 1 < argc) {
-            config_.log_file = argv[++i];
-        } else if (arg == "--log-level" && i + 1 < argc) {
-            config_.log_level = argv[++i];
-        } else if (arg == "--server-binary" && i + 1 < argc) {
-            config_.server_binary = argv[++i];
+            return;
         }
     }
+    
+    // Check if there's a command (non-flag argument)
+    if (argc > 1 && argv[1][0] != '-') {
+        config_.command = argv[1];
+        
+        // Parse remaining arguments (both command args and options)
+        for (int i = 2; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--log-level" && i + 1 < argc) {
+                config_.log_level = argv[++i];
+            } else if (arg == "--port" && i + 1 < argc) {
+                config_.port = std::stoi(argv[++i]);
+            } else if (arg == "--ctx-size" && i + 1 < argc) {
+                config_.ctx_size = std::stoi(argv[++i]);
+            } else if (arg == "--no-tray") {
+                config_.no_tray = true;
+            } else {
+                // It's a command argument (like model name)
+                config_.command_args.push_back(arg);
+            }
+        }
+        return;
+    }
+    
+    // No command provided - this is an error
+    if (argc == 1) {
+        config_.command = "";  // Empty command signals error
+        return;
+    }
+    
+    // If we get here, we have flags but no command - also an error
+    config_.command = "";
 }
 
 void TrayApp::print_usage() {
-    std::cout << "lemonade-server-beta - Lemonade Server Tray Application\n\n";
-    std::cout << "Usage: lemonade-server-beta [options]\n\n";
-    std::cout << "Options:\n";
+    std::cout << "lemonade-server-beta - Lemonade Server Beta\n\n";
+    std::cout << "Usage: lemonade-server-beta <command> [options]\n\n";
+    std::cout << "Commands:\n";
+    std::cout << "  serve                    Start the server (default if no command specified)\n";
+    std::cout << "  list                     List available models\n";
+    std::cout << "  pull <model>             Download a model\n";
+    std::cout << "  delete <model>           Delete a model\n";
+    std::cout << "  run <model>              Run a model (starts server if needed)\n";
+    std::cout << "  status                   Check server status\n";
+    std::cout << "  stop                     Stop the server\n\n";
+    std::cout << "Serve Options:\n";
     std::cout << "  --port PORT              Server port (default: 8000)\n";
+    std::cout << "  --host HOST              Server host (default: localhost)\n";
     std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
     std::cout << "  --log-file PATH          Log file path\n";
-    std::cout << "  --log-level LEVEL        Log level: debug, info, warning, error\n";
-    std::cout << "  --server-binary PATH     Path to lemonade server binary\n";
+    std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
     std::cout << "  --help, -h               Show this help message\n";
-    std::cout << "  --version, -v            Show version\n\n";
-    std::cout << "Examples:\n";
-    std::cout << "  lemonade-server-beta                    # Start with tray\n";
-    std::cout << "  lemonade-server-beta --port 8080        # Start on custom port\n";
-    std::cout << "  lemonade-server-beta --no-tray          # Start without tray\n";
+    std::cout << "  --version, -v            Show version\n";
 }
 
 void TrayApp::print_version() {
@@ -290,7 +439,7 @@ bool TrayApp::find_server_binary() {
     for (const auto& path : search_paths) {
         if (fs::exists(path)) {
             config_.server_binary = fs::absolute(path).string();
-            std::cout << "Found server binary: " << config_.server_binary << std::endl;
+            DEBUG_LOG(this, "Found server binary: " << config_.server_binary);
             return true;
         }
     }
@@ -301,6 +450,447 @@ bool TrayApp::find_server_binary() {
 bool TrayApp::setup_logging() {
     // TODO: Implement logging setup
     return true;
+}
+
+// Helper: Check if server is running on a specific port
+bool TrayApp::is_server_running_on_port(int port) {
+    try {
+        auto health = server_manager_->get_health();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Helper: Wait for server to be ready
+bool TrayApp::wait_for_server_ready(int port, int timeout_seconds) {
+    auto server_mgr = std::make_unique<ServerManager>();
+    for (int i = 0; i < timeout_seconds * 10; ++i) {
+        try {
+            auto health = server_mgr->get_health();
+            return true;
+        } catch (...) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    return false;
+}
+
+// Helper: Get server info (returns {pid, port} or {0, 0} if not found)
+std::pair<int, int> TrayApp::get_server_info() {
+    // Query OS for listening TCP connections and find lemonade-router.exe
+#ifdef _WIN32
+    // Windows: Use GetExtendedTcpTable to find listening connections
+    DWORD size = 0;
+    GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
+    
+    std::vector<BYTE> buffer(size);
+    PMIB_TCPTABLE_OWNER_PID pTcpTable = reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buffer.data());
+    
+    if (GetExtendedTcpTable(pTcpTable, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR) {
+        for (DWORD i = 0; i < pTcpTable->dwNumEntries; i++) {
+            DWORD pid = pTcpTable->table[i].dwOwningPid;
+            int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
+            
+            // Check if this PID is lemonade-router.exe
+            HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (hProcess) {
+                WCHAR processName[MAX_PATH];
+                DWORD size = MAX_PATH;
+                if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
+                    std::wstring fullPath(processName);
+                    std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
+                    
+                    if (exeName == L"lemonade-router.exe") {
+                        CloseHandle(hProcess);
+                        return {static_cast<int>(pid), port};
+                    }
+                }
+                CloseHandle(hProcess);
+            }
+        }
+    }
+#else
+    // Unix: Parse netstat or use similar approach
+    // For now, check common ports as fallback
+    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
+        try {
+            httplib::Client cli("127.0.0.1", port);
+            cli.set_connection_timeout(0, 200000);
+            cli.set_read_timeout(0, 300000);
+            
+            auto res = cli.Get("/api/v1/health");
+            if (res && res->status == 200) {
+                return {0, port};
+            }
+        } catch (...) {
+        }
+    }
+#endif
+    
+    return {0, 0};  // Server not found
+}
+
+// Helper: Start ephemeral server
+bool TrayApp::start_ephemeral_server(int port) {
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>();
+    }
+    
+    DEBUG_LOG(this, "Starting ephemeral server on port " << port << "...");
+    
+    bool success = server_manager_->start_server(
+        config_.server_binary,
+        port,
+        config_.ctx_size,
+        config_.log_file.empty() ? "" : config_.log_file,
+        config_.log_level  // Pass log level to ServerManager
+    );
+    
+    if (!success) {
+        std::cerr << "Failed to start ephemeral server" << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+// Command: list
+int TrayApp::execute_list_command() {
+    DEBUG_LOG(this, "Listing available models...");
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // Get models from server with show_all=true to include download status
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        server_manager_->set_port(port);  // Use the detected or configured port
+        
+        // Request with show_all=true to get download status
+        std::string response = server_manager_->make_http_request("/api/v1/models?show_all=true");
+        auto models_json = nlohmann::json::parse(response);
+        
+        if (!models_json.contains("data") || !models_json["data"].is_array()) {
+            std::cerr << "Invalid response format from server" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+        // Print models in a nice table format
+        std::cout << std::left << std::setw(40) << "Model Name"
+                  << std::setw(12) << "Downloaded"
+                  << "Details" << std::endl;
+        std::cout << std::string(100, '-') << std::endl;
+        
+        for (const auto& model : models_json["data"]) {
+            std::string name = model.value("id", "unknown");
+            bool is_downloaded = model.value("downloaded", false);
+            std::string downloaded = is_downloaded ? "Yes" : "No";
+            std::string details = model.value("recipe", "-");
+            
+            std::cout << std::left << std::setw(40) << name
+                      << std::setw(12) << downloaded
+                      << details << std::endl;
+        }
+        
+        std::cout << std::string(100, '-') << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing models: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: pull
+int TrayApp::execute_pull_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--mmproj MMPROJ]" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Pulling model: " << model_name << std::endl;
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // Pull model via API with optional parameters
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        server_manager_->set_port(port);  // Use the detected or configured port
+        
+        // Build request body with all optional parameters
+        nlohmann::json request_body = {{"model", model_name}};
+        
+        // Parse optional arguments from config_.command_args (starting at index 1)
+        for (size_t i = 1; i < config_.command_args.size(); ++i) {
+            const auto& arg = config_.command_args[i];
+            
+            if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
+                request_body["checkpoint"] = config_.command_args[++i];
+            } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
+                request_body["recipe"] = config_.command_args[++i];
+            } else if (arg == "--reasoning") {
+                request_body["reasoning"] = true;
+            } else if (arg == "--vision") {
+                request_body["vision"] = true;
+            } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
+                request_body["mmproj"] = config_.command_args[++i];
+            }
+        }
+        
+        // Use 2 hour timeout for pull - large models can take a very long time
+        std::string response = server_manager_->make_http_request(
+            "/api/v1/pull", 
+            "POST", 
+            request_body.dump(),
+            7200  // 2 hours
+        );
+        
+        auto response_json = nlohmann::json::parse(response);
+        if (response_json.value("status", "") == "success") {
+            std::cout << "Model pulled successfully: " << model_name << std::endl;
+        } else {
+            std::cerr << "Failed to pull model" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error pulling model: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: delete
+int TrayApp::execute_delete_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta delete <model_name>" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Deleting model: " << model_name << std::endl;
+    
+    // Check if server is running
+    auto [pid, running_port] = get_server_info();
+    bool server_was_running = (running_port != 0);
+    int port = server_was_running ? running_port : config_.port;
+    
+    // Start ephemeral server if needed
+    if (!server_was_running) {
+        if (!start_ephemeral_server(port)) {
+            return 1;
+        }
+    }
+    
+    // Delete model via API
+    try {
+        if (!server_manager_) {
+            server_manager_ = std::make_unique<ServerManager>();
+        }
+        server_manager_->set_port(port);  // Use the detected or configured port
+        
+        nlohmann::json request_body = {{"model", model_name}};
+        std::string response = server_manager_->make_http_request(
+            "/api/v1/delete", 
+            "POST", 
+            request_body.dump()
+        );
+        
+        auto response_json = nlohmann::json::parse(response);
+        if (response_json.value("status", "") == "success") {
+            std::cout << "Model deleted successfully: " << model_name << std::endl;
+        } else {
+            std::cerr << "Failed to delete model" << std::endl;
+            if (!server_was_running) stop_server();
+            return 1;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error deleting model: " << e.what() << std::endl;
+        if (!server_was_running) stop_server();
+        return 1;
+    }
+    
+    // Stop ephemeral server
+    if (!server_was_running) {
+        DEBUG_LOG(this, "Stopping ephemeral server...");
+        stop_server();
+    }
+    
+    return 0;
+}
+
+// Command: run
+int TrayApp::execute_run_command() {
+    if (config_.command_args.empty()) {
+        std::cerr << "Error: model name required" << std::endl;
+        std::cerr << "Usage: lemonade-server-beta run <model_name>" << std::endl;
+        return 1;
+    }
+    
+    std::string model_name = config_.command_args[0];
+    std::cout << "Running model: " << model_name << std::endl;
+    
+    // The run command will:
+    // 1. Start server (handled by main run() after this returns)
+    // 2. Wait for server to be ready
+    // 3. Load the model
+    // 4. Open browser
+    // 5. Show tray (handled by main run() after this returns)
+    
+    // Wait for server to be ready
+    std::cout << "Waiting for server to be ready..." << std::endl;
+    if (!wait_for_server_ready(config_.port, 30)) {
+        std::cerr << "Server did not become ready in time" << std::endl;
+        return 1;
+    }
+    
+    // Load the model
+    std::cout << "Loading model " << model_name << "..." << std::endl;
+    if (server_manager_->load_model(model_name)) {
+        std::cout << "Model loaded successfully!" << std::endl;
+        
+        // Open browser to chat interface
+        std::string url = "http://localhost:" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
+        std::cout << "Opening browser: " << url << std::endl;
+        open_url(url);
+    } else {
+        std::cerr << "Failed to load model" << std::endl;
+        return 1;
+    }
+    
+    // Return success - main run() will continue to tray initialization or wait loop
+    return 0;
+}
+
+// Command: status
+int TrayApp::execute_status_command() {
+    auto [pid, port] = get_server_info();
+    
+    if (port != 0) {
+        std::cout << "Server is running on port " << port << std::endl;
+        return 0;
+    } else {
+        std::cout << "Server is not running" << std::endl;
+        return 1;
+    }
+}
+
+// Command: stop
+int TrayApp::execute_stop_command() {
+    auto [pid, port] = get_server_info();
+    
+    if (port == 0) {
+        std::cout << "Lemonade Server is not running" << std::endl;
+        return 0;
+    }
+    
+    std::cout << "Stopping server on port " << port << "..." << std::endl;
+    
+    // Try graceful shutdown via API
+    try {
+        httplib::Client client("127.0.0.1", port);
+        client.set_connection_timeout(2, 0);
+        client.set_read_timeout(2, 0);
+        
+        auto res = client.Post("/api/v1/halt");
+        
+        if (res && (res->status == 200 || res->status == 204)) {
+            // Wait a moment for server to shut down
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    } catch (...) {
+        // API call failed, try force kill below
+    }
+    
+    // Kill any remaining lemonade-server-beta.exe and lemonade-router.exe processes
+    // This handles both the router and the tray app
+#ifdef _WIN32
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(pe32);
+        
+        if (Process32FirstW(snapshot, &pe32)) {
+            do {
+                std::wstring process_name(pe32.szExeFile);
+                if (process_name == L"lemonade-router.exe" || process_name == L"lemonade-server-beta.exe") {
+                    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+                    if (hProcess) {
+                        TerminateProcess(hProcess, 0);
+                        CloseHandle(hProcess);
+                    }
+                }
+            } while (Process32NextW(snapshot, &pe32));
+        }
+        CloseHandle(snapshot);
+    }
+    
+    // Note: log-viewer.exe auto-exits when parent process dies, no need to explicitly kill it
+#else
+    // Unix: Kill processes by name
+    system("pkill -f lemonade-router");
+    system("pkill -f 'lemonade-server-beta.*serve'");
+    // Kill log viewer processes
+    system("pkill -f 'tail -f.*lemonade-server.log'");
+#endif
+    
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+    // Verify it stopped
+    auto [check_pid, check_port] = get_server_info();
+    if (check_port == 0) {
+        std::cout << "Lemonade Server stopped successfully." << std::endl;
+        return 0;
+    }
+    
+    std::cerr << "Failed to stop server" << std::endl;
+    return 1;
 }
 
 bool TrayApp::start_server() {
@@ -321,18 +911,34 @@ bool TrayApp::start_server() {
         // Unix: /tmp/lemonade-server.log or ~/.lemonade/server.log
         config_.log_file = "/tmp/lemonade-server.log";
         #endif
-        std::cout << "Using default log file: " << config_.log_file << std::endl;
+        DEBUG_LOG(this, "Using default log file: " << config_.log_file);
     }
     
-    return server_manager_->start_server(
+    bool success = server_manager_->start_server(
         config_.server_binary,
         config_.port,
         config_.ctx_size,
-        config_.log_file
+        config_.log_file,
+        config_.log_level,  // Pass log level to ServerManager
+        true                // Always show console output for serve command
     );
+    
+    // Start log tail thread to show logs in console
+    if (success) {
+        stop_tail_thread_ = false;
+        log_tail_thread_ = std::thread(&TrayApp::tail_log_to_console, this);
+    }
+    
+    return success;
 }
 
 void TrayApp::stop_server() {
+    // Stop log tail thread
+    if (log_tail_thread_.joinable()) {
+        stop_tail_thread_ = true;
+        log_tail_thread_.join();
+    }
+    
     if (server_manager_) {
         server_manager_->stop_server();
     }
@@ -348,18 +954,27 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
+    // Get loaded model once and cache it to avoid redundant health checks
+    std::string loaded = is_loading_model_ ? "" : get_loaded_model();
+    
     // Status display
-    std::string loaded = get_loaded_model();
-    if (!loaded.empty()) {
-        menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
-        menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+    if (is_loading_model_) {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(loading_mutex_));
+        menu.add_item(MenuItem::Action("Loading: " + loading_model_name_ + "...", nullptr, false));
     } else {
-        menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
+        if (!loaded.empty()) {
+            menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
+            menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+        } else {
+            menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
+        }
     }
     
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
     auto models = get_downloaded_models();
+    // Reuse cached value instead of calling get_loaded_model() again
+    std::string current_loaded = loaded;
     if (models.empty()) {
         load_submenu->add_item(MenuItem::Action(
             "No models available: Use the Model Manager",
@@ -368,7 +983,7 @@ Menu TrayApp::create_menu() {
         ));
     } else {
         for (const auto& model : models) {
-            bool is_loaded = (model.id == loaded);
+            bool is_loaded = (model.id == current_loaded);
             load_submenu->add_item(MenuItem::Checkable(
                 model.id,
                 [this, model]() { on_load_model(model.id); },
@@ -414,16 +1029,8 @@ Menu TrayApp::create_menu() {
     menu.add_item(MenuItem::Action("LLM Chat", [this]() { on_open_llm_chat(); }));
     menu.add_item(MenuItem::Action("Model Manager", [this]() { on_open_model_manager(); }));
     
-    // Logs submenu
-    auto logs_submenu = std::make_shared<Menu>();
-    logs_submenu->add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
-    logs_submenu->add_separator();
-    logs_submenu->add_item(MenuItem::Checkable(
-        "Enable Debug Logs",
-        [this]() { on_toggle_debug_logs(); },
-        debug_logs_enabled_
-    ));
-    menu.add_item(MenuItem::Submenu("Logs", logs_submenu));
+    // Logs menu item (simplified - always debug logs now)
+    menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
     
     menu.add_separator();
     menu.add_item(MenuItem::Action("Quit Lemonade", [this]() { on_quit(); }));
@@ -434,14 +1041,63 @@ Menu TrayApp::create_menu() {
 // Menu action implementations
 
 void TrayApp::on_load_model(const std::string& model_name) {
-    std::cout << "Loading model: " << model_name << std::endl;
-    if (server_manager_->load_model(model_name)) {
-        loaded_model_ = model_name;
-        build_menu();
+    // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
+    // when build_menu() destroys the old menu (which destroys the lambda that captured the model)
+    std::string model_name_copy = model_name;
+    
+    // Don't start a new load if one is already in progress
+    if (is_loading_model_) {
+        show_notification("Model Loading", "A model is already being loaded. Please wait.");
+        return;
     }
+    
+    std::cout << "Loading model: '" << model_name_copy << "' (length: " << model_name_copy.length() << ")" << std::endl;
+    std::cout.flush();
+    
+    // Set loading state
+    {
+        std::lock_guard<std::mutex> lock(loading_mutex_);
+        is_loading_model_ = true;
+        loading_model_name_ = model_name_copy;
+    }
+    
+    // Update menu to show loading status
+    build_menu();
+    
+    // Launch background thread to perform the load
+    std::thread([this, model_name_copy]() {
+        std::cout << "Background thread: Loading model: '" << model_name_copy << "' (length: " << model_name_copy.length() << ")" << std::endl;
+        std::cout.flush();
+        
+        bool success = server_manager_->load_model(model_name_copy);
+        
+        // Update state after load completes
+        {
+            std::lock_guard<std::mutex> lock(loading_mutex_);
+            is_loading_model_ = false;
+            if (success) {
+                loaded_model_ = model_name_copy;
+            }
+        }
+        
+        // Update menu to show new status
+        build_menu();
+        
+        if (success) {
+            show_notification("Model Loaded", "Successfully loaded " + model_name_copy);
+        } else {
+            show_notification("Load Failed", "Failed to load " + model_name_copy);
+        }
+    }).detach();
 }
 
 void TrayApp::on_unload_model() {
+    // Don't allow unload while a model is loading
+    if (is_loading_model_) {
+        show_notification("Model Loading", "Please wait for the current model to finish loading.");
+        return;
+    }
+    
     std::cout << "Unloading model" << std::endl;
     if (server_manager_->unload_model()) {
         loaded_model_.clear();
@@ -469,14 +1125,6 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
     show_notification("Context Size Changed", "Lemonade Server context size is now " + label);
 }
 
-void TrayApp::on_toggle_debug_logs() {
-    debug_logs_enabled_ = !debug_logs_enabled_;
-    LogLevel level = debug_logs_enabled_ ? LogLevel::DEBUG : LogLevel::INFO;
-    server_manager_->set_log_level(level);
-    build_menu();
-    show_notification("Debug Logs", debug_logs_enabled_ ? "Debug logs enabled" : "Debug logs disabled");
-}
-
 void TrayApp::on_show_logs() {
     if (config_.log_file.empty()) {
         show_notification("Error", "No log file configured");
@@ -484,18 +1132,80 @@ void TrayApp::on_show_logs() {
     }
     
 #ifdef _WIN32
-    // Open new PowerShell window with tail-like command
-    // Use Start-Process to open a new window that stays open
-    std::string cmd = "powershell -Command \"Start-Process powershell -ArgumentList '-NoExit','-Command',\\\"Get-Content -Wait '" + config_.log_file + "'\\\"\"";
-    system(cmd.c_str());
+    // Close existing log viewer if any
+    if (log_viewer_process_) {
+        TerminateProcess(log_viewer_process_, 0);
+        CloseHandle(log_viewer_process_);
+        log_viewer_process_ = nullptr;
+    }
+    
+    // Find lemonade-log-viewer.exe in the same directory as this executable
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    std::string exeDir = exePath;
+    size_t lastSlash = exeDir.find_last_of("\\/");
+    if (lastSlash != std::string::npos) {
+        exeDir = exeDir.substr(0, lastSlash);
+    }
+    
+    std::string logViewerPath = exeDir + "\\lemonade-log-viewer.exe";
+    std::string cmd = "\"" + logViewerPath + "\" \"" + config_.log_file + "\"";
+    
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    
+    if (CreateProcessA(
+        nullptr,
+        const_cast<char*>(cmd.c_str()),
+        nullptr,
+        nullptr,
+        FALSE,
+        CREATE_NEW_CONSOLE,
+        nullptr,
+        nullptr,
+        &si,
+        &pi))
+    {
+        log_viewer_process_ = pi.hProcess;
+        CloseHandle(pi.hThread);
+    } else {
+        show_notification("Error", "Failed to open log viewer");
+    }
 #elif defined(__APPLE__)
-    // Open Terminal.app with tail command
-    std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + config_.log_file + "\"'";
-    system(cmd.c_str());
+    // Kill existing log viewer if any
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+    
+    // Fork and open Terminal.app with tail command
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + config_.log_file + "\"'";
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        exit(0);
+    } else if (pid > 0) {
+        log_viewer_pid_ = pid;
+    }
 #else
-    // Linux: try gnome-terminal or xterm
-    std::string cmd = "gnome-terminal -- tail -f '" + config_.log_file + "' || xterm -e tail -f '" + config_.log_file + "'";
-    system(cmd.c_str());
+    // Kill existing log viewer if any
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+    
+    // Fork and open gnome-terminal or xterm
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        std::string cmd = "gnome-terminal -- tail -f '" + config_.log_file + "' || xterm -e tail -f '" + config_.log_file + "'";
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        exit(0);
+    } else if (pid > 0) {
+        log_viewer_pid_ = pid;
+    }
 #endif
 }
 
@@ -528,10 +1238,29 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    std::cout << "Shutting down gracefully..." << std::endl;
+    // Only print shutdown message if we actually have something to shutdown
+    if (server_manager_ || tray_) {
+        DEBUG_LOG(this, "Shutting down gracefully...");
+    }
+    
+    // Close log viewer if open
+#ifdef _WIN32
+    if (log_viewer_process_) {
+        TerminateProcess(log_viewer_process_, 0);
+        CloseHandle(log_viewer_process_);
+        log_viewer_process_ = nullptr;
+    }
+#else
+    if (log_viewer_pid_ > 0) {
+        kill(log_viewer_pid_, SIGTERM);
+        log_viewer_pid_ = 0;
+    }
+#endif
     
     // Stop the server
-    stop_server();
+    if (server_manager_) {
+        stop_server();
+    }
     
     // Stop the tray
     if (tray_) {
@@ -581,8 +1310,6 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
         // Parse the models JSON response
         // Expected format: {"data": [{"id": "...", "checkpoint": "...", "recipe": "..."}], "object": "list"}
         if (models_json.contains("data") && models_json["data"].is_array()) {
-            std::cout << "DEBUG: Found " << models_json["data"].size() << " models from server" << std::endl;
-            
             for (const auto& model : models_json["data"]) {
                 ModelInfo info;
                 info.id = model.value("id", "");
@@ -590,12 +1317,11 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
                 info.recipe = model.value("recipe", "");
                 
                 if (!info.id.empty()) {
-                    std::cout << "DEBUG: Added model: " << info.id << std::endl;
                     models.push_back(info);
                 }
             }
         } else {
-            std::cout << "DEBUG: No 'data' array in models response" << std::endl;
+            DEBUG_LOG(this, "No 'data' array in models response");
         }
         
         return models;
@@ -605,5 +1331,100 @@ std::vector<ModelInfo> TrayApp::get_downloaded_models() {
     }
 }
 
+void TrayApp::tail_log_to_console() {
+    // Wait a bit for the log file to be created
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+#ifdef _WIN32
+    HANDLE hFile = CreateFileA(
+        config_.log_file.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+    
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return;  // Can't open log file, silently exit
+    }
+    
+    // Seek to end of file
+    DWORD currentPos = SetFilePointer(hFile, 0, nullptr, FILE_END);
+    
+    std::vector<char> buffer(4096);
+    
+    while (!stop_tail_thread_) {
+        // Check if file has grown
+        DWORD currentFileSize = GetFileSize(hFile, nullptr);
+        if (currentFileSize != INVALID_FILE_SIZE && currentFileSize > currentPos) {
+            // File has new data
+            SetFilePointer(hFile, currentPos, nullptr, FILE_BEGIN);
+            
+            DWORD bytesToRead = currentFileSize - currentPos;
+            DWORD bytesRead = 0;
+            
+            while (bytesToRead > 0 && !stop_tail_thread_) {
+                DWORD chunkSize = (bytesToRead > buffer.size()) ? buffer.size() : bytesToRead;
+                if (ReadFile(hFile, buffer.data(), chunkSize, &bytesRead, nullptr) && bytesRead > 0) {
+                    std::cout.write(buffer.data(), bytesRead);
+                    std::cout.flush();
+                    currentPos += bytesRead;
+                    bytesToRead -= bytesRead;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // Sleep before next check
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    CloseHandle(hFile);
+#else
+    // Unix implementation (similar logic using FILE*)
+    FILE* fp = fopen(config_.log_file.c_str(), "r");
+    if (!fp) {
+        return;
+    }
+    
+    // Seek to end
+    fseek(fp, 0, SEEK_END);
+    long currentPos = ftell(fp);
+    
+    char buffer[4096];
+    
+    while (!stop_tail_thread_) {
+        fseek(fp, 0, SEEK_END);
+        long fileSize = ftell(fp);
+        
+        if (fileSize > currentPos) {
+            fseek(fp, currentPos, SEEK_SET);
+            size_t bytesToRead = fileSize - currentPos;
+            
+            while (bytesToRead > 0 && !stop_tail_thread_) {
+                size_t chunkSize = (bytesToRead > sizeof(buffer)) ? sizeof(buffer) : bytesToRead;
+                size_t bytesRead = fread(buffer, 1, chunkSize, fp);
+                if (bytesRead > 0) {
+                    std::cout.write(buffer, bytesRead);
+                    std::cout.flush();
+                    currentPos += bytesRead;
+                    bytesToRead -= bytesRead;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    fclose(fp);
+#endif
+}
+
 } // namespace lemon_tray
+
 
