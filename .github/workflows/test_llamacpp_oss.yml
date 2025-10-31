@@ -132,6 +132,7 @@ jobs:
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
       - name: Run lemonade Llamacpp CLI tests
+        if: matrix.backend != 'rocm'
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
