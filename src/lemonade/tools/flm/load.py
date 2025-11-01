@@ -5,12 +5,14 @@ from lemonade.state import State
 from lemonade.tools import FirstTool
 from lemonade.cache import Keys
 
+DEFAULT_OUTPUT_TOKENS = 512
+
 
 class FLMLoad(FirstTool):
     unique_name = "flm-load"
 
     def __init__(self):
-        super().__init__(monitor_message="Loading FLM model")
+        super().__init__(monitor_message="Starting FLM server and loading FLM model")
 
         # self.status_stats = [
         #     Keys.DEVICE,
@@ -39,6 +41,14 @@ class FLMLoad(FirstTool):
             "for FLM is 512 and FLM automatically rounds up to the nearest power of 2.",
         )
 
+        parser.add_argument(
+            "--output-tokens",
+            required=False,
+            type=int,
+            default=DEFAULT_OUTPUT_TOKENS,
+            help=f"Maximum number of output tokens to generate (default: {DEFAULT_OUTPUT_TOKENS})",
+        )
+
         return parser
 
     def run(
@@ -47,6 +57,7 @@ class FLMLoad(FirstTool):
         input: str = "",
         force: bool = False,
         ctx_len: int = None,
+        output_tokens: int = DEFAULT_OUTPUT_TOKENS,
     ) -> State:
         """
         Load an FLM model
@@ -67,7 +78,7 @@ class FLMLoad(FirstTool):
         state.save_stat(Keys.CHECKPOINT, checkpoint)
 
         # Download the FLM model as needed
-        state.model = FLMAdapter(input, state)
+        state.model = FLMAdapter(input, output_tokens, state)
         state.model.download(force)
         state.tokenizer = FLMTokenizerAdapter()
 

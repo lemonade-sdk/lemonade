@@ -318,11 +318,15 @@ class FLMAdapter(ModelAdapter):
     def __init__(
         self,
         model,
+        output_tokens,
         state=None,
     ):
         super().__init__()
 
         self.model = model
+        self.output_tokens = (
+            output_tokens  # default value of max tokens to generate from a prompt
+        )
         self.state = state
         self.server_process = None
         self.server_port = None
@@ -346,6 +350,7 @@ class FLMAdapter(ModelAdapter):
     def generate(
         self,
         input_ids: str,
+        max_new_tokens: Optional[int] = None,
         temperature: float = 0.8,
         top_p: float = 0.95,
         save_max_memory_used: bool = False,
@@ -378,8 +383,15 @@ class FLMAdapter(ModelAdapter):
             )
             monitor_thread.start()
 
+        if max_new_tokens is None:
+            max_new_tokens = self.output_tokens
         prompt = input_ids
-        response = self.send_request_to_server(prompt)
+        response, usage = self.send_request_to_server(prompt, max_new_tokens)
+
+        self.response_tokens = getattr(usage, "completion_tokens", None)
+        self.prompt_tokens = getattr(usage, "prompt_tokens", None)
+        self.time_to_first_token = None  # TODO
+        self.tokens_per_second = None  # TODO
 
         # Wait for monitor thread to finish and write peak_wset
         if save_max_memory_used:
@@ -430,7 +442,7 @@ class FLMAdapter(ModelAdapter):
             self.server_process = None
         self.server_port = None
 
-    def send_request_to_server(self, prompt) -> str:
+    def send_request_to_server(self, prompt, max_new_tokens):
         """
         Send prompt to the FLM server using the OpenAI client and return text result.
         """
@@ -450,8 +462,10 @@ class FLMAdapter(ModelAdapter):
                 temperature=0.9,
                 top_p=0.95,
                 # presence_penalty=0.5,
+                max_tokens=max_new_tokens,
             )
             result = response.choices[0].message.content
-            return result
+            usage = response.usage
+            return result, usage
         except Exception as e:
             raise Exception(f"Error during processing prompt with FLM server: {e}")
