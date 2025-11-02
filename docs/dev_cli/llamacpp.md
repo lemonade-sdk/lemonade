@@ -61,8 +61,9 @@ lemonade -i <MODEL_CHECKPOINT:VARIANT> llamacpp-load llamacpp-bench
 The benchmark will measure and report:
 - Time to first token (prompt evaluation time)
 - Token generation speed (tokens per second)
+- Maximum memory used for each prompt by the external `llama-bench.exe` or `llama-cli.exe` application.  Note that the `Peak memory` reported in the status output is only for the `lemonade` execution.
 
-- By default, the `llamacpp-bench` tool will use the `llama-bench.exe` executable for benchmarking.  Use the 
+By default, the `llamacpp-bench` tool will use the `llama-bench.exe` executable for benchmarking.  Use the 
 `--cli` flag to use `llama-cli.exe`.  In this case, the bench tool will make multiple calls to the executable,
 one per sample, which will have lower overall performance.
 

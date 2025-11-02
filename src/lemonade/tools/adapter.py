@@ -10,11 +10,14 @@ class ModelAdapter(abc.ABC):
         """
         Self-benchmarking ModelAdapters can store their results in the
         tokens_per_second and time_to_first_token members.
+        ModelAdapters that run generate in a different process can store the
+        peak memory used (bytes) by that process in the peak_wset member.
         """
         self.tokens_per_second = None
         self.time_to_first_token = None
         self.prompt_tokens = None
         self.response_tokens = None
+        self.peak_wset = None
 
         self.type = "generic"
 
@@ -27,7 +30,9 @@ class ModelAdapter(abc.ABC):
         with recipe components, which themselves may not support a lot of arguments.
 
         The generate method should store prompt and response lengths (in tokens)
-        in the prompt_tokens and response_tokens members.
+        in the prompt_tokens and response_tokens members.  If a different process is used,
+        the generate method can also store the peak memory used by that process in the
+        peak_wset member.
         """
 
 
