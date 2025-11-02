@@ -1081,8 +1081,65 @@ void ModelManager::delete_model(const std::string& model_name) {
     
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        std::cout << "[ModelManager] Deleting FLM model (not yet implemented)" << std::endl;
-        // TODO: Call 'flm remove' command
+        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint << std::endl;
+        
+        // Validate checkpoint is not empty
+        if (info.checkpoint.empty()) {
+            throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
+        }
+        
+        // Find flm executable
+        std::string flm_path;
+#ifdef _WIN32
+        flm_path = "flm";
+#else
+        flm_path = "flm";
+#endif
+        
+        // Prepare arguments for 'flm remove' command
+        std::vector<std::string> args = {"remove", info.checkpoint};
+        
+        std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
+        for (const auto& arg : args) {
+            std::cout << " \"" << arg << "\"";
+        }
+        std::cout << std::endl;
+        
+        // Run flm remove command
+        auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
+        
+        // Wait for process to complete
+        int timeout_seconds = 60; // 1 minute timeout for removal
+        for (int i = 0; i < timeout_seconds * 10; ++i) {
+            if (!utils::ProcessManager::is_running(handle)) {
+                int exit_code = utils::ProcessManager::get_exit_code(handle);
+                if (exit_code != 0) {
+                    std::cerr << "[ModelManager ERROR] FLM remove failed with exit code: " << exit_code << std::endl;
+                    throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
+                }
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Check if process is still running (timeout)
+        if (utils::ProcessManager::is_running(handle)) {
+            std::cerr << "[ModelManager ERROR] FLM remove timed out" << std::endl;
+            throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove timed out");
+        }
+        
+        std::cout << "[ModelManager] ✓ Successfully deleted FLM model: " << model_name << std::endl;
+        
+        // Remove from user models if it's a user model
+        if (model_name.substr(0, 5) == "user.") {
+            std::string clean_name = model_name.substr(5);
+            json updated_user_models = user_models_;
+            updated_user_models.erase(clean_name);
+            save_user_models(updated_user_models);
+            user_models_ = updated_user_models;
+            std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
+        }
+        
         return;
     }
     
