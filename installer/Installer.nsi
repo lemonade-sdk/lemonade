@@ -141,19 +141,23 @@ SectionIn RO ; Read only, always installed
 
     DetailPrint "Set up Python"
     CreateDirectory "$INSTDIR\python"
-    ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.10.9/python-3.10.9-embed-amd64.zip"'
+    ExecWait 'curl -s -o "$INSTDIR\python\python.zip" "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"'
     ExecWait 'tar -xf "$INSTDIR\python\python.zip" -C "$INSTDIR\python"'
     ExecWait 'curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py'
     ExecWait '"$INSTDIR\python\python.exe" get-pip.py --no-warn-script-location'
-    
-    FileOpen $2 "$INSTDIR\python\python310._pth" a
+
+    FileOpen $2 "$INSTDIR\python\python312._pth" a
     FileSeek $2 0 END
+    FileWrite $2 "$\r$\nDLLs$\r$\n"
     FileWrite $2 "$\r$\nLib$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages\win32$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages\win32\lib$\r$\n"
     FileWrite $2 "$\r$\nLib\site-packages\Pythonwin$\r$\n"
     FileClose $2
+
+    DetailPrint "- Installing build tools (setuptools and wheel)..."
+    ExecWait '"$INSTDIR\python\python.exe" -m pip install setuptools wheel --no-warn-script-location'
 
     DetailPrint "-------------------------"
     DetailPrint "- Lemonade Installation -"
@@ -163,41 +167,29 @@ SectionIn RO ; Read only, always installed
 
 
     DetailPrint "- Installing $LEMONADE_SERVER_STRING..."
-    
-    ; Always install base CPU version first to ensure lemonade-server-dev.exe is available
-    ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
-    DetailPrint "- Base lemonade installation return code: $8"
-    
-    ; Check if base installation was successful
-    StrCmp $8 0 base_install_success base_install_failed
-    
-    base_install_success:
-      DetailPrint "- Base $LEMONADE_SERVER_STRING installation successful"
-      
-      ; If hybrid mode is selected, upgrade to hybrid
-      ${If} $HYBRID_SELECTED == "true"
-        DetailPrint "- Upgrading to hybrid mode..."
-                 ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
-        DetailPrint "- Hybrid upgrade return code: $8"
-        
-        ; Check if hybrid upgrade was successful
-        StrCmp $8 0 hybrid_upgrade_success hybrid_upgrade_failed
-        
-        hybrid_upgrade_success:
-          DetailPrint "- Hybrid mode upgrade successful"
-          Goto install_success
-          
-        hybrid_upgrade_failed:
-          DetailPrint "- Hybrid mode upgrade failed"
-          Goto install_failed
-      ${Else}
-        DetailPrint "- CPU-only installation completed"
-        Goto install_success
-      ${EndIf}
-      
-    base_install_failed:
-      DetailPrint "- Base $LEMONADE_SERVER_STRING installation failed"
-      Goto install_failed
+
+    ; Install with the appropriate extras based on selection
+    ; One-step install to avoid DLL conflicts with embedded Python
+    ${If} $HYBRID_SELECTED == "true"
+      DetailPrint "- Installing with hybrid mode (oga-ryzenai)..."
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple --no-warn-script-location' $8
+      DetailPrint "- Hybrid installation return code: $8"
+
+      ; Verify onnxruntime-genai-directml-ryzenai was installed
+      DetailPrint "- Verifying installed packages..."
+      nsExec::ExecToLog '"$INSTDIR\python\python.exe" -m pip list | findstr /i "onnxruntime"'
+
+      ; Try to import onnxruntime_genai to catch DLL errors early
+      DetailPrint "- Testing onnxruntime_genai import..."
+      nsExec::ExecToLog '"$INSTDIR\python\python.exe" -c "import onnxruntime_genai; print(f\"OGA version: {onnxruntime_genai.__version__}\")"'
+    ${Else}
+      DetailPrint "- Installing with CPU-only mode (oga-cpu)..."
+      ExecWait '"$INSTDIR\python\python.exe" -m pip install "$INSTDIR"[oga-cpu] --no-warn-script-location' $8
+      DetailPrint "- CPU installation return code: $8"
+    ${EndIf}
+
+    ; Check if installation was successful
+    StrCmp $8 0 install_success install_failed
 
     install_success:
       DetailPrint "- $LEMONADE_SERVER_STRING installation successful"
@@ -246,8 +238,12 @@ SubSection /e "Selected Models" ModelsSec
   SectionEnd
 
   Section "-Download Models" DownloadModels
-    ; Always download the Qwen2.5-0.5B model
-    nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
+    ; Download default model based on hybrid selection
+    ${If} $HYBRID_SELECTED == "true"
+      nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Llama-3.2-1B-Instruct-Hybrid'
+    ${Else}
+      nsExec::ExecToLog '$INSTDIR\python\Scripts\lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU'
+    ${EndIf}
   SectionEnd
 
 SubSectionEnd
