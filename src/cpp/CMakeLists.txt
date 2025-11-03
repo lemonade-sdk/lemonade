@@ -66,6 +66,17 @@ FetchContent_Declare(CLI11
     GIT_TAG v2.4.2
 )
 
+# zstd (BSD License) - required by httplib for compression
+FetchContent_Declare(zstd
+    GIT_REPOSITORY https://github.com/facebook/zstd.git
+    GIT_TAG v1.5.5
+    SOURCE_SUBDIR build/cmake
+)
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
 # libcurl (curl license - MIT/X derivate)
 set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
@@ -95,7 +106,7 @@ FetchContent_Declare(curl
 )
 
 # Make dependencies available
-FetchContent_MakeAvailable(json CLI11)
+FetchContent_MakeAvailable(json CLI11 zstd)
 
 # Fetch curl but prevent it from installing
 FetchContent_GetProperties(curl)
@@ -112,10 +123,6 @@ FetchContent_GetProperties(httplib)
 if(NOT httplib_POPULATED)
     FetchContent_Populate(httplib)
     set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
-    # Disable compression support to avoid additional dependencies
-    set(HTTPLIB_REQUIRE_ZLIB OFF CACHE BOOL "" FORCE)
-    set(HTTPLIB_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
-    set(HTTPLIB_REQUIRE_ZSTD OFF CACHE BOOL "" FORCE)
     add_subdirectory(${httplib_SOURCE_DIR} ${httplib_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
 
