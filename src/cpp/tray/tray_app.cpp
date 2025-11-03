@@ -894,9 +894,35 @@ int TrayApp::execute_stop_command() {
     system("pkill -f 'llama-server.*--port'");
     // Kill log viewer processes
     system("pkill -f 'tail -f.*lemonade-server.log'");
+    
+    // Wait for lock and PID files to be released (critical for clean restarts)
+    std::string lock_file = "/tmp/lemonade_ServerBeta.lock";
+    std::string pid_file = "/tmp/lemonade-router.pid";
+    
+    // Poll for up to 10 seconds for files to be released
+    bool files_released = false;
+    for (int i = 0; i < 100; i++) {  // 100 * 100ms = 10 seconds
+        bool lock_exists = fs::exists(lock_file);
+        bool pid_exists = fs::exists(pid_file);
+        
+        if (!lock_exists && !pid_exists) {
+            files_released = true;
+            break;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    if (!files_released) {
+        std::cerr << "Warning: Lock/PID files not released within timeout" << std::endl;
+    }
 #endif
     
+#ifndef _WIN32
+    // Unix: no additional sleep needed, we already waited for lock files
+#else
     std::this_thread::sleep_for(std::chrono::seconds(1));
+#endif
     
     // Verify it stopped
     auto [check_pid, check_port] = get_server_info();
