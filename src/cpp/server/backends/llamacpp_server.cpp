@@ -201,15 +201,6 @@ void LlamaCppServer::install(const std::string& backend) {
     std::string version_file = (fs::path(install_dir) / "version.txt").string();
     std::string backend_file = (fs::path(install_dir) / "backend.txt").string();
     
-    // Determine expected executable path based on platform
-    std::string exe_path;
-#ifdef _WIN32
-    exe_path = (fs::path(install_dir) / "llama-server.exe").string();
-#else
-    // On Linux/Mac, the zip extracts to build/bin/llama-server
-    exe_path = (fs::path(install_dir) / "build" / "bin" / "llama-server").string();
-#endif
-    
     // Get expected version
     std::string expected_version;
     if (backend_ == "rocm") {
@@ -221,7 +212,8 @@ void LlamaCppServer::install(const std::string& backend) {
     }
     
     // Check if already installed with correct version
-    bool needs_install = !fs::exists(exe_path);
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+    bool needs_install = exe_path.empty();
     
     if (!needs_install && fs::exists(version_file) && fs::exists(backend_file)) {
         std::ifstream vf(version_file);
@@ -331,10 +323,12 @@ void LlamaCppServer::install(const std::string& backend) {
             throw std::runtime_error("Failed to extract llama-server archive");
         }
         
-        // Verify extraction succeeded by checking if executable exists
-        if (!fs::exists(exe_path)) {
-            std::cerr << "[LlamaCpp] ERROR: Extraction completed but executable not found at: " << exe_path << std::endl;
-            std::cerr << "[LlamaCpp] This usually indicates a corrupted download. Cleaning up..." << std::endl;
+        // Verify extraction succeeded by finding the executable
+        exe_path = find_executable_in_install_dir(install_dir);
+        if (exe_path.empty()) {
+            std::cerr << "[LlamaCpp] ERROR: Extraction completed but executable not found in: " << install_dir << std::endl;
+            std::cerr << "[LlamaCpp] This usually indicates a corrupted download or unexpected archive structure." << std::endl;
+            std::cerr << "[LlamaCpp] Cleaning up..." << std::endl;
             // Clean up corrupted files
             fs::remove(zip_path);
             fs::remove_all(install_dir);
@@ -520,29 +514,51 @@ void LlamaCppServer::parse_telemetry(const std::string& line) {
     }
 }
 
-std::string LlamaCppServer::get_llama_server_path() {
-    // Check our install directory
-    std::string install_dir = get_install_directory(backend_);
+std::string LlamaCppServer::find_executable_in_install_dir(const std::string& install_dir) {
+    // Try multiple possible locations where llama-server might be extracted
+    std::vector<std::string> possible_paths;
     
 #ifdef _WIN32
-    std::string installed_path = (fs::path(install_dir) / "llama-server.exe").string();
+    // Windows: only one location
+    possible_paths.push_back((fs::path(install_dir) / "llama-server.exe").string());
 #else
-    // On Linux, check build/bin subdirectory first (extracted from official releases)
-    std::string installed_path = (fs::path(install_dir) / "build" / "bin" / "llama-server").string();
-    if (!fs::exists(installed_path)) {
-        // Check root of install directory (e.g., llama/rocm/llama-server)
-        installed_path = (fs::path(install_dir) / "llama-server").string();
-    }
+    // Linux/macOS: try multiple locations in order of likelihood
+    // 1. Official llama.cpp releases extract to build/bin/
+    possible_paths.push_back((fs::path(install_dir) / "build" / "bin" / "llama-server").string());
+    
+    // 2. ROCm builds may extract to root
+    possible_paths.push_back((fs::path(install_dir) / "llama-server").string());
+    
+    // 3. Some builds extract to bin/
+    possible_paths.push_back((fs::path(install_dir) / "bin" / "llama-server").string());
 #endif
     
-    if (fs::exists(installed_path)) {
-        return installed_path;
+    // Check each path and return the first one that exists
+    for (const auto& path : possible_paths) {
+        if (fs::exists(path)) {
+            return path;
+        }
+    }
+    
+    // Not found in any expected location
+    return "";
+}
+
+std::string LlamaCppServer::get_llama_server_path() {
+    std::string install_dir = get_install_directory(backend_);
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+    
+    if (!exe_path.empty()) {
+        return exe_path;
     }
     
     // If not found, throw error with helpful message
     throw std::runtime_error("llama-server not found in install directory: " + install_dir + 
-                           "\nExpected locations: " + install_dir + "/build/bin/llama-server or " + 
-                           install_dir + "/llama-server" +
+                           "\nExpected locations checked: " +
+                           "\n  - " + install_dir + "/llama-server.exe (Windows)" +
+                           "\n  - " + install_dir + "/build/bin/llama-server (official releases)" +
+                           "\n  - " + install_dir + "/llama-server (ROCm/custom builds)" +
+                           "\n  - " + install_dir + "/bin/llama-server" +
                            "\nThis may indicate a failed installation or corrupted download.");
 }
 
