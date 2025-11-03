@@ -2,7 +2,9 @@
 
 #include <string>
 #include <memory>
+#include <functional>
 #include <nlohmann/json.hpp>
+#include <httplib.h>
 #include "utils/process_manager.h"
 #include "server_capabilities.h"
 
@@ -74,6 +76,11 @@ public:
     virtual json completion(const json& request) override = 0;
     virtual json responses(const json& request) = 0;
     
+    // Forward streaming requests to the wrapped server (public for Router access)
+    void forward_streaming_request(const std::string& endpoint, 
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink);
+    
     // Get the server address
     std::string get_address() const {
         return get_base_url() + "/v1";
@@ -92,8 +99,11 @@ protected:
     // Parse telemetry from subprocess output
     virtual void parse_telemetry(const std::string& line) = 0;
     
-    // Common method to forward requests to the wrapped server
+    // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request);
+    
+    // Validate that the process is running (platform-agnostic check)
+    bool is_process_running() const;
     
     // Get the base URL for the wrapped server
     std::string get_base_url() const {

@@ -1,6 +1,7 @@
 #include <lemon/wrapped_server.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/http_client.h>
+#include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
 #include <thread>
 #include <chrono>
@@ -57,8 +58,16 @@ bool WrappedServer::wait_for_ready() {
     return false;
 }
 
+bool WrappedServer::is_process_running() const {
+#ifdef _WIN32
+    return process_handle_.handle != nullptr;
+#else
+    return process_handle_.pid > 0;
+#endif
+}
+
 json WrappedServer::forward_request(const std::string& endpoint, const json& request) {
-    if (!process_handle_.handle) {
+    if (!is_process_running()) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
     
@@ -90,6 +99,35 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
         }
     } catch (const std::exception& e) {
         return ErrorResponse::from_exception(NetworkException(e.what()));
+    }
+}
+
+void WrappedServer::forward_streaming_request(const std::string& endpoint, 
+                                              const std::string& request_body,
+                                              httplib::DataSink& sink) {
+    if (!is_process_running()) {
+        std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ + 
+                               "\",\"type\":\"model_not_loaded\"}}\n\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        return;
+    }
+    
+    std::string url = get_base_url() + endpoint;
+    
+    try {
+        // Use StreamingProxy to forward the SSE stream
+        StreamingProxy::forward_sse_stream(url, request_body, sink, nullptr);
+    } catch (const std::exception& e) {
+        // Log the error but don't crash the server
+        std::cerr << "[WrappedServer ERROR] Streaming request failed: " << e.what() << std::endl;
+        // Try to send error to client if possible
+        try {
+            std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) + 
+                                   "\",\"type\":\"streaming_error\"}}\n\n";
+            sink.write(error_msg.c_str(), error_msg.size());
+        } catch (...) {
+            // Sink might be closed, ignore
+        }
     }
 }
 
