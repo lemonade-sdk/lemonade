@@ -56,6 +56,7 @@ private:
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
+    void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
@@ -66,6 +67,7 @@ private:
     int ctx_size_;
     bool tray_;
     std::string llamacpp_backend_;
+    std::string log_file_path_;
     
     std::unique_ptr<httplib::Server> http_server_;
     std::unique_ptr<Router> router_;
