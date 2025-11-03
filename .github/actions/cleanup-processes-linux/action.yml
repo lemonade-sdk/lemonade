@@ -10,68 +10,83 @@ runs:
         echo "Cleaning up processes on Linux..."
         echo "========================================"
         
-        # Function to safely kill processes by name pattern
-        kill_processes_by_pattern() {
+        # Kill processes aggressively by pattern
+        kill_by_pattern() {
             local pattern=$1
             local description=$2
             
             echo ""
-            echo "Searching for $description processes..."
+            echo "Killing $description processes..."
             
-            # Find all matching processes
-            local pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+            # Find and kill in one shot with SIGKILL
+            pkill -9 -f "$pattern" 2>/dev/null && echo "  Killed processes matching: $pattern" || echo "  No $description processes found"
+        }
+        
+        # Kill by exact name (even more aggressive)
+        kill_by_exact_name() {
+            local name=$1
             
-            if [ -n "$pids" ]; then
-                local count=$(echo "$pids" | wc -l)
-                echo "Found $count $description process(es):"
-                
-                # Show process details
-                ps aux | grep -E "$pattern" | grep -v grep || true
-                
-                # Kill each process
-                echo "$pids" | while read -r pid; do
-                    if [ -n "$pid" ]; then
-                        # Try graceful kill first
-                        kill -15 "$pid" 2>/dev/null || true
-                        sleep 0.5
-                        
-                        # Force kill if still alive
-                        if kill -0 "$pid" 2>/dev/null; then
-                            kill -9 "$pid" 2>/dev/null || true
-                            echo "  Force killed PID: $pid"
-                        else
-                            echo "  Killed PID: $pid"
-                        fi
-                    fi
-                done
-            else
-                echo "No $description processes found."
+            if pgrep -x "$name" > /dev/null 2>&1; then
+                echo "Killing $name (exact match)..."
+                pkill -9 -x "$name"
+                sleep 0.5
+                # Verify it's dead
+                if pgrep -x "$name" > /dev/null 2>&1; then
+                    echo "  WARNING: $name still running after kill!"
+                else
+                    echo "  Successfully killed $name"
+                fi
             fi
         }
         
-        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-beta, etc.)
-        kill_processes_by_pattern "lemonade" "lemonade"
+        # Kill everything lemonade-related
+        kill_by_pattern "lemonade" "lemonade"
         
-        # Kill Python processes
-        kill_processes_by_pattern "python" "Python"
+        # Kill Python processes (this is aggressive - be careful!)
+        kill_by_pattern "python" "Python"
         
-        # Kill llama-server processes
-        kill_processes_by_pattern "llama-server" "llama-server"
-        kill_processes_by_pattern "llama" "llama"
+        # Kill llama processes
+        kill_by_pattern "llama-server" "llama-server"
+        kill_by_pattern "llama-cli" "llama-cli"
+        kill_by_pattern "llama-bench" "llama-bench"
         
         # Kill conda processes
-        kill_processes_by_pattern "conda" "conda"
+        kill_by_pattern "conda" "conda"
         
-        # Additional cleanup: kill by exact process name
-        for proc_name in lemonade-server lemonade-router lemonade-server-beta lemonade-server-dev lemonade-tray llama-server; do
-            if pgrep -x "$proc_name" > /dev/null 2>&1; then
-                echo "Killing $proc_name by exact name..."
-                pkill -9 -x "$proc_name" || true
-            fi
+        # Additional pass: kill by exact process names
+        echo ""
+        echo "Second pass: killing by exact name..."
+        for proc_name in lemonade-server lemonade-router lemonade-server-beta lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
+            kill_by_exact_name "$proc_name"
         done
         
-        # Wait a moment for processes to fully terminate
+        # Wait for processes to die
         sleep 2
+        
+        # FINAL VERIFICATION - show what's still alive
+        echo ""
+        echo "=== Verification: checking for remaining processes ==="
+        if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
+            echo "WARNING: Some processes still alive:"
+            ps aux | grep -E "lemonade|llama|conda" | grep -v grep | grep -v "cleanup-processes" || true
+            
+            # NUCLEAR OPTION: Kill them with extreme prejudice
+            echo "Using nuclear option..."
+            pkill -9 -f "lemonade" 2>/dev/null || true
+            pkill -9 -f "llama" 2>/dev/null || true
+            pkill -9 -f "conda" 2>/dev/null || true
+            sleep 1
+            
+            # Check again
+            if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
+                echo "ERROR: Processes STILL alive after nuclear option!"
+                ps aux | grep -E "lemonade|llama|conda" | grep -v grep || true
+            else
+                echo "Nuclear option successful"
+            fi
+        else
+            echo "All target processes terminated successfully"
+        fi
         
         # Clean up lock files and PID files
         echo ""
@@ -81,7 +96,7 @@ runs:
         rm -f /tmp/lemonade-router.pid 2>/dev/null || true
         echo "Lock and PID files cleaned."
         
-        # Clean up log files to avoid confusion between test runs
+        # Clean up log files
         echo ""
         echo "Cleaning up log files..."
         rm -f /tmp/lemonade*.log 2>/dev/null || true
@@ -89,7 +104,7 @@ runs:
         rm -f /tmp/lemonade-router*.log 2>/dev/null || true
         echo "Log files cleaned."
         
-        # Clean up lemonade installation directories
+        # Clean up installation directories
         echo ""
         echo "Cleaning up lemonade installation directories..."
         if [ -d "$HOME/.local/share/lemonade-server" ]; then
@@ -103,4 +118,3 @@ runs:
         echo "========================================"
         echo "Process cleanup complete!"
         echo "========================================"
-
