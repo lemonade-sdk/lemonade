@@ -90,6 +90,7 @@ jobs:
           conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 
   test-server-llamacpp-ubuntu:
+    if: false  # Temporarily disabled due to unkillable D-state processes with GPU drivers
     env:
       LEMONADE_CI_MODE: "True"
       CONDA_ENV_PATH: ./lemon-ci-env
@@ -130,9 +131,6 @@ jobs:
           pip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
-
-      - name: Check Vulkan availability (diagnostic)
-        uses: ./.github/actions/check-vulkan-linux
 
       - name: Run lemonade Llamacpp CLI tests
         env:

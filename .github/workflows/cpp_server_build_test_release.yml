@@ -1168,9 +1168,6 @@ jobs:
           # Install test dependencies
           conda run -p ./test-env pip install -r test/requirements.txt
 
-      - name: Check Vulkan availability (diagnostic)
-        uses: ./.github/actions/check-vulkan-linux
-
       - name: Run Llamacpp Vulkan tests
         env:
           HF_HOME: ${{ env.HF_HOME }}
@@ -1273,11 +1270,6 @@ jobs:
           
           # Install test dependencies
           conda run -p ./test-env pip install -r test/requirements.txt
-
-      - name: Check Vulkan/ROCm availability (diagnostic)
-        uses: ./.github/actions/check-vulkan-linux
-        with:
-          check-rocm: 'true'
 
       - name: Run Llamacpp ROCm tests
         env:
