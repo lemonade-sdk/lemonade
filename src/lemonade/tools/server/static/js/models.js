@@ -635,23 +635,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         unloadBtn.onclick = unloadModel;
     }
     
-    const modelSelect = document.getElementById('model-select');
-    if (modelSelect) {
-        modelSelect.addEventListener('change', async function() {
-            const modelId = this.value;
-            if (modelId) {
-                await loadModelStandardized(modelId, {
-                    onSuccess: (loadedModelId) => {
-                        console.log(`Model ${loadedModelId} loaded successfully`);
-                    },
-                    onError: (error, failedModelId) => {
-                        console.error(`Failed to load model ${failedModelId}:`, error);
-                        showErrorBanner('Failed to load model: ' + error.message);
-                    }
-                });
-            }
-        });
-    }
+    // Note: Model selection change listener is handled in chat.js to avoid duplicate load requests
     
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
