@@ -22,6 +22,7 @@ struct AppConfig {
     bool show_help = false;
     bool show_version = false;
     std::string host = "localhost";
+    std::string llamacpp_backend = "vulkan";  // Default to vulkan
     
     // For commands that take arguments
     std::vector<std::string> command_args;

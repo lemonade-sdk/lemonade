@@ -46,6 +46,7 @@ public:
         int ctx_size,
         const std::string& log_file,
         const std::string& log_level = "info",
+        const std::string& llamacpp_backend = "vulkan",
         bool show_console = false
     );
     
@@ -89,6 +90,7 @@ private:
     std::string server_binary_path_;
     std::string log_file_;
     std::string log_level_;
+    std::string llamacpp_backend_;
     int port_;
     int ctx_size_;
     bool show_console_;
