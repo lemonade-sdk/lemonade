@@ -1,10 +1,30 @@
 import argparse
 import os
+import platform
 import lemonade.common.printing as printing
 import lemonade.common.status as status
 from lemonade.state import State
 from lemonade.tools import FirstTool
 from lemonade.cache import Keys
+
+
+def _get_default_backend():
+    """
+    Get the default llamacpp backend based on the current platform.
+    Uses Metal for Apple Silicon Macs, Vulkan for everything else.
+    """
+    # Allow environment variable override
+    env_backend = os.getenv("LEMONADE_LLAMACPP")
+    if env_backend:
+        return env_backend
+
+    # Platform-specific defaults: use metal for Apple Silicon, vulkan for everything else
+    if platform.system() == "Darwin" and platform.machine().lower() in [
+        "arm64",
+        "aarch64",
+    ]:
+        return "metal"
+    return "vulkan"
 
 
 class LoadLlamaCpp(FirstTool):
@@ -65,11 +85,12 @@ class LoadLlamaCpp(FirstTool):
             help="Set this flag to indicate the model is a reasoning model",
         )
 
+        default_backend = _get_default_backend()
         parser.add_argument(
             "--backend",
-            choices=["vulkan", "rocm"],
-            default="vulkan",
-            help="Backend to use for llama.cpp (default: vulkan)",
+            choices=["vulkan", "rocm", "metal"],
+            default=default_backend,
+            help=f"Backend to use for llama.cpp (default: {default_backend})",
         )
 
         return parser
