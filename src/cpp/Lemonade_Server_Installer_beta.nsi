@@ -118,9 +118,6 @@ SectionIn RO ; Read only, always installed
     
     File "build\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
-    
-    File "build\Release\zstd.dll"
-    DetailPrint "- Installed required library: zstd.dll"
 
     ; Copy resources (icon, etc.) to bin directory so lemonade-router.exe can find them
     ; The server looks for resources relative to the executable directory
@@ -360,7 +357,6 @@ Section "Uninstall"
     Delete "$INSTDIR\bin\lemonade-server-beta.exe"
     Delete "$INSTDIR\bin\lemonade-router.exe"
     Delete "$INSTDIR\bin\lemonade-log-viewer.exe"
-    Delete "$INSTDIR\bin\zstd.dll"
     Delete "$INSTDIR\Uninstall.exe"
 
   ; Remove directories

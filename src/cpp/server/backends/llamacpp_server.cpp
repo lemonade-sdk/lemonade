@@ -17,6 +17,7 @@
 #include <windows.h>
 #else
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -106,42 +107,68 @@ static std::string identify_rocm_arch() {
     return "gfx110X";
 }
 
-// Helper to get the cache directory
-static std::string get_cache_dir() {
-    // Check environment variable first
-    const char* cache_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_env) {
-        return std::string(cache_env);
-    }
-    
-    // Default cache directory
-#ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
-    }
-    return "C:\\.cache\\lemonade";
-#else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
-    }
-    return "/tmp/.cache/lemonade";
-#endif
-}
-
-// Helper to get the install directory for llama-server
-// Matches Python: {executable_dir}/{backend}/llama_server/
-static std::string get_install_directory(const std::string& backend) {
+// Helper to get the directory where llama binaries should be installed
+// Policy: Next to the executable for both dev builds and installed binaries
+static std::string get_llama_base_dir() {
 #ifdef _WIN32
     char exe_path[MAX_PATH];
     GetModuleFileNameA(NULL, exe_path, MAX_PATH);
     fs::path exe_dir = fs::path(exe_path).parent_path();
+    return exe_dir.string();
 #else
-    fs::path exe_dir = fs::current_path();
+    // Get the actual executable location
+    char exe_path[1024];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        fs::path exe_dir = fs::path(exe_path).parent_path();
+        
+        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
+        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
+            if (fs::exists("/usr/local/share/lemonade-server")) {
+                return "/usr/local/share/lemonade-server";
+            }
+            if (fs::exists("/usr/share/lemonade-server")) {
+                return "/usr/share/lemonade-server";
+            }
+        }
+        
+        // Otherwise (dev builds), use the exe directory
+        return exe_dir.string();
+    }
+    return ".";
 #endif
+}
+
+// Helper to get the install directory for llama-server binaries
+// Policy: Put in llama/{backend}/ next to the executable
+static std::string get_install_directory(const std::string& backend) {
+    return (fs::path(get_llama_base_dir()) / "llama" / backend).string();
+}
+
+// Helper to get HuggingFace cache directory
+// Policy: Use HF_HOME or default to ~/.cache/huggingface (standard HF behavior)
+static std::string get_hf_cache_dir() {
+    // Check HF_HOME first
+    const char* hf_home = std::getenv("HF_HOME");
+    if (hf_home) {
+        return std::string(hf_home);
+    }
     
-    return (exe_dir / backend / "llama_server").string();
+    // Default to ~/.cache/huggingface
+#ifdef _WIN32
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile) {
+        return std::string(userprofile) + "\\.cache\\huggingface";
+    }
+    return "C:\\.cache\\huggingface";
+#else
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/huggingface";
+    }
+    return "/tmp/.cache/huggingface";
+#endif
 }
 
 // Helper to extract ZIP files (Windows/Linux built-in tools)
@@ -173,17 +200,6 @@ void LlamaCppServer::install(const std::string& backend) {
     std::string install_dir = get_install_directory(backend_.empty() ? backend : backend_);
     std::string version_file = (fs::path(install_dir) / "version.txt").string();
     std::string backend_file = (fs::path(install_dir) / "backend.txt").string();
-    std::string exe_path = (fs::path(install_dir) / "llama-server.exe").string();
-    
-#ifndef _WIN32
-    // On Linux, check build/bin subdirectory
-    std::string linux_exe = (fs::path(install_dir) / "build" / "bin" / "llama-server").string();
-    if (fs::exists(linux_exe)) {
-        exe_path = linux_exe;
-    } else {
-        exe_path = (fs::path(install_dir) / "llama-server").string();
-    }
-#endif
     
     // Get expected version
     std::string expected_version;
@@ -196,7 +212,8 @@ void LlamaCppServer::install(const std::string& backend) {
     }
     
     // Check if already installed with correct version
-    bool needs_install = !fs::exists(exe_path);
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+    bool needs_install = exe_path.empty();
     
     if (!needs_install && fs::exists(version_file) && fs::exists(backend_file)) {
         std::ifstream vf(version_file);
@@ -261,15 +278,10 @@ void LlamaCppServer::install(const std::string& backend) {
         std::string url = "https://github.com/" + repo + "/releases/download/" + 
                          expected_version + "/" + filename;
         
-        // Download ZIP right next to the .exe
-#ifdef _WIN32
-        char exe_path[MAX_PATH];
-        GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-#else
-        fs::path exe_dir = fs::current_path();
-#endif
-        std::string zip_path = (exe_dir / filename).string();
+        // Download ZIP to HuggingFace cache directory (follows HF conventions)
+        fs::path cache_dir = get_hf_cache_dir();
+        fs::create_directories(cache_dir);
+        std::string zip_path = (cache_dir / filename).string();
         
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
         std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
@@ -311,10 +323,12 @@ void LlamaCppServer::install(const std::string& backend) {
             throw std::runtime_error("Failed to extract llama-server archive");
         }
         
-        // Verify extraction succeeded by checking if executable exists
-        if (!fs::exists(exe_path)) {
-            std::cerr << "[LlamaCpp] ERROR: Extraction completed but executable not found at: " << exe_path << std::endl;
-            std::cerr << "[LlamaCpp] This usually indicates a corrupted download. Cleaning up..." << std::endl;
+        // Verify extraction succeeded by finding the executable
+        exe_path = find_executable_in_install_dir(install_dir);
+        if (exe_path.empty()) {
+            std::cerr << "[LlamaCpp] ERROR: Extraction completed but executable not found in: " << install_dir << std::endl;
+            std::cerr << "[LlamaCpp] This usually indicates a corrupted download or unexpected archive structure." << std::endl;
+            std::cerr << "[LlamaCpp] Cleaning up..." << std::endl;
             // Clean up corrupted files
             fs::remove(zip_path);
             fs::remove_all(install_dir);
@@ -423,8 +437,27 @@ void LlamaCppServer::load(const std::string& model_name,
     
     std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
     
+    // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
+    std::vector<std::pair<std::string, std::string>> env_vars;
+#ifndef _WIN32
+    if (backend_ == "rocm") {
+        // Get the directory containing the executable (where ROCm .so files are)
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+        
+        // Preserve existing LD_LIBRARY_PATH if it exists
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+        std::cout << "[LlamaCpp] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+    
     // Start process (inherit output if debug logging enabled, filter health check spam)
-    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true);
+    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true, env_vars);
     
     // Wait for server to be ready
     if (!wait_for_ready()) {
@@ -438,7 +471,11 @@ void LlamaCppServer::load(const std::string& model_name,
 
 void LlamaCppServer::unload() {
     std::cout << "[LlamaCpp] Unloading model..." << std::endl;
+#ifdef _WIN32
     if (process_handle_.handle) {
+#else
+    if (process_handle_.pid > 0) {
+#endif
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
@@ -496,48 +533,52 @@ void LlamaCppServer::parse_telemetry(const std::string& line) {
     }
 }
 
-std::string LlamaCppServer::get_llama_server_path() {
-    // Check our install directory first
-    std::string install_dir = get_install_directory(backend_);
+std::string LlamaCppServer::find_executable_in_install_dir(const std::string& install_dir) {
+    // Try multiple possible locations where llama-server might be extracted
+    std::vector<std::string> possible_paths;
     
 #ifdef _WIN32
-    std::string installed_path = (fs::path(install_dir) / "llama-server.exe").string();
+    // Windows: only one location
+    possible_paths.push_back((fs::path(install_dir) / "llama-server.exe").string());
 #else
-    // On Linux, check build/bin subdirectory first
-    std::string installed_path = (fs::path(install_dir) / "build" / "bin" / "llama-server").string();
-    if (!fs::exists(installed_path)) {
-        installed_path = (fs::path(install_dir) / "llama-server").string();
-    }
+    // Linux/macOS: try multiple locations in order of likelihood
+    // 1. Official llama.cpp releases extract to build/bin/
+    possible_paths.push_back((fs::path(install_dir) / "build" / "bin" / "llama-server").string());
+    
+    // 2. ROCm builds may extract to root
+    possible_paths.push_back((fs::path(install_dir) / "llama-server").string());
+    
+    // 3. Some builds extract to bin/
+    possible_paths.push_back((fs::path(install_dir) / "bin" / "llama-server").string());
 #endif
     
-    if (fs::exists(installed_path)) {
-        return installed_path;
-    }
-    
-    // Fallback: check common installation paths
-#ifdef _WIN32
-    std::vector<std::string> paths = {
-        "llama-server.exe",
-        "C:\\Program Files\\llama.cpp\\llama-server.exe",
-        "C:\\llama.cpp\\llama-server.exe"
-    };
-#else
-    std::vector<std::string> paths = {
-        "llama-server",
-        "/usr/local/bin/llama-server",
-        "/usr/bin/llama-server",
-        "~/.local/bin/llama-server"
-    };
-#endif
-    
-    for (const auto& path : paths) {
+    // Check each path and return the first one that exists
+    for (const auto& path : possible_paths) {
         if (fs::exists(path)) {
             return path;
         }
     }
     
-    // Return executable name to try PATH (will fail in start_process with good error)
-    return "llama-server";
+    // Not found in any expected location
+    return "";
+}
+
+std::string LlamaCppServer::get_llama_server_path() {
+    std::string install_dir = get_install_directory(backend_);
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+    
+    if (!exe_path.empty()) {
+        return exe_path;
+    }
+    
+    // If not found, throw error with helpful message
+    throw std::runtime_error("llama-server not found in install directory: " + install_dir + 
+                           "\nExpected locations checked: " +
+                           "\n  - " + install_dir + "/llama-server.exe (Windows)" +
+                           "\n  - " + install_dir + "/build/bin/llama-server (official releases)" +
+                           "\n  - " + install_dir + "/llama-server (ROCm/custom builds)" +
+                           "\n  - " + install_dir + "/bin/llama-server" +
+                           "\nThis may indicate a failed installation or corrupted download.");
 }
 
 std::string LlamaCppServer::find_gguf_file(const std::string& checkpoint) {

@@ -25,14 +25,14 @@ public:
     void set_icon(const std::string& icon_path) override;
     void set_tooltip(const std::string& tooltip) override;
     void set_ready_callback(std::function<void()> callback) override;
+    void set_log_level(const std::string& log_level) override;
     
 private:
-    // TODO: Add Linux-specific implementation details
-    // Will use libappindicator3 and GTK+
-    void* indicator_; // AppIndicator pointer
-    void* gtk_menu_;  // GtkMenu pointer
+    // Headless implementation - no GUI dependencies
+    // Linux tray support disabled to avoid LGPL dependencies
     std::string app_name_;
     std::string icon_path_;
+    std::string log_level_;
     std::function<void()> ready_callback_;
     bool should_exit_;
 };

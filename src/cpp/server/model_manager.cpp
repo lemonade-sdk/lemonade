@@ -211,19 +211,26 @@ std::string ModelManager::get_cache_dir() {
         return std::string(cache_env);
     }
     
-    // Default cache directory
+    // Use HuggingFace cache directory (standard HF behavior)
+    // Check HF_HOME first
+    const char* hf_home = std::getenv("HF_HOME");
+    if (hf_home) {
+        return std::string(hf_home);
+    }
+    
+    // Default to ~/.cache/huggingface/hub
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
+        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\.cache\\lemonade";
+    return "C:\\.cache\\huggingface\\hub";
 #else
     const char* home = std::getenv("HOME");
     if (home) {
-        return std::string(home) + "/.cache/lemonade";
+        return std::string(home) + "/.cache/huggingface/hub";
     }
-    return "/tmp/lemonade";
+    return "/tmp/.cache/huggingface/hub";
 #endif
 }
 
