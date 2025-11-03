@@ -10,7 +10,10 @@ CompletionRequest CompletionRequest::fromJSON(const json& j) {
         req.prompt = j["prompt"];
     }
     
-    if (j.contains("max_tokens")) {
+    // Support both max_tokens and max_completion_tokens (OpenAI API compatibility)
+    if (j.contains("max_completion_tokens")) {
+        req.max_tokens = j["max_completion_tokens"];
+    } else if (j.contains("max_tokens")) {
         req.max_tokens = j["max_tokens"];
     }
     
@@ -68,7 +71,10 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
         }
     }
     
-    if (j.contains("max_tokens")) {
+    // Support both max_tokens and max_completion_tokens (OpenAI API compatibility)
+    if (j.contains("max_completion_tokens")) {
+        req.max_tokens = j["max_completion_tokens"];
+    } else if (j.contains("max_tokens")) {
         req.max_tokens = j["max_tokens"];
     }
     

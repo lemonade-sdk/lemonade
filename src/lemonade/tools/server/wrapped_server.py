@@ -161,6 +161,7 @@ class WrappedServer(ABC):
         if endpoint_type == "chat":
             chat_specific_params = {
                 "messages",
+                "max_completion_tokens",
                 "top_logprobs",
                 "response_format",
                 "service_tier",
