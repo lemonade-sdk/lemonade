@@ -585,31 +585,104 @@ std::string LlamaCppServer::find_gguf_file(const std::string& checkpoint) {
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     std::cout << "[LlamaCpp] Searching in: " << model_cache_path << std::endl;
     
-    // Find GGUF file matching variant
-    if (fs::exists(model_cache_path)) {
-        std::cout << "[LlamaCpp] Cache directory exists, searching for .gguf files..." << std::endl;
-        
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".gguf") != std::string::npos) {
-                    std::cout << "[LlamaCpp] Found GGUF: " << filename << std::endl;
-                    
-                    if (variant.empty() || filename.find(variant) != std::string::npos) {
-                        std::cout << "[LlamaCpp] Matches variant! Using: " << entry.path().string() << std::endl;
-                        return entry.path().string();
-                    } else {
-                        std::cout << "[LlamaCpp] Doesn't match variant '" << variant << "'" << std::endl;
-                    }
-                }
-            }
-        }
-        
-        std::cout << "[LlamaCpp] No matching GGUF file found" << std::endl;
-    } else {
+    // Find all GGUF files (excluding mmproj)
+    if (!fs::exists(model_cache_path)) {
         std::cout << "[LlamaCpp] Cache directory does not exist: " << model_cache_path << std::endl;
+        return "";
     }
     
+    std::cout << "[LlamaCpp] Cache directory exists, searching for .gguf files..." << std::endl;
+    
+    // Collect all GGUF files (exclude mmproj files)
+    std::vector<std::string> all_gguf_files;
+    for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+        if (entry.is_regular_file()) {
+            std::string filename = entry.path().filename().string();
+            std::string filename_lower = filename;
+            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+            
+            if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
+                all_gguf_files.push_back(entry.path().string());
+            }
+        }
+    }
+    
+    if (all_gguf_files.empty()) {
+        std::cout << "[LlamaCpp] No GGUF files found in cache" << std::endl;
+        return "";
+    }
+    
+    // Sort files for consistent ordering (important for sharded models)
+    std::sort(all_gguf_files.begin(), all_gguf_files.end());
+    
+    // Case 0: Wildcard (*) - return first file (llama-server will auto-load shards)
+    if (variant == "*") {
+        std::cout << "[LlamaCpp] Wildcard variant detected, using first file from " << all_gguf_files.size() << " files" << std::endl;
+        std::cout << "[LlamaCpp] Using: " << all_gguf_files[0] << std::endl;
+        return all_gguf_files[0];
+    }
+    
+    // Case 2: Empty variant - return first file
+    if (variant.empty()) {
+        std::cout << "[LlamaCpp] No variant specified, using first file" << std::endl;
+        std::cout << "[LlamaCpp] Using: " << all_gguf_files[0] << std::endl;
+        return all_gguf_files[0];
+    }
+    
+    // Case 1: Exact filename match (variant ends with .gguf)
+    if (variant.find(".gguf") != std::string::npos) {
+        for (const auto& filepath : all_gguf_files) {
+            std::string filename = fs::path(filepath).filename().string();
+            if (filename == variant) {
+                std::cout << "[LlamaCpp] Exact filename match: " << filepath << std::endl;
+                return filepath;
+            }
+        }
+        std::cout << "[LlamaCpp] Exact filename '" << variant << "' not found" << std::endl;
+        return "";
+    }
+    
+    // Case 3: Files ending with {variant}.gguf (case insensitive)
+    std::string variant_lower = variant;
+    std::transform(variant_lower.begin(), variant_lower.end(), variant_lower.begin(), ::tolower);
+    std::string suffix = variant_lower + ".gguf";
+    
+    std::vector<std::string> matching_files;
+    for (const auto& filepath : all_gguf_files) {
+        std::string filename = fs::path(filepath).filename().string();
+        std::string filename_lower = filename;
+        std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+        
+        if (filename_lower.size() >= suffix.size() &&
+            filename_lower.substr(filename_lower.size() - suffix.size()) == suffix) {
+            matching_files.push_back(filepath);
+        }
+    }
+    
+    if (matching_files.size() == 1) {
+        std::cout << "[LlamaCpp] Found file ending with '" << variant << ".gguf': " << matching_files[0] << std::endl;
+        return matching_files[0];
+    } else if (matching_files.size() > 1) {
+        std::cout << "[LlamaCpp] Multiple files ending with '" << variant << ".gguf' found, using first" << std::endl;
+        return matching_files[0];
+    }
+    
+    // Case 4: Folder-based sharding (files in variant/ folder)
+    std::string folder_prefix_lower = variant_lower + "/";
+    
+    for (const auto& filepath : all_gguf_files) {
+        // Get relative path from model cache path
+        std::string relative_path = filepath.substr(model_cache_path.length());
+        std::string relative_lower = relative_path;
+        std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
+        
+        if (relative_lower.find(folder_prefix_lower) != std::string::npos) {
+            std::cout << "[LlamaCpp] Found sharded file in folder '" << variant << "': " << filepath << std::endl;
+            return filepath;
+        }
+    }
+    
+    std::cout << "[LlamaCpp] No matching GGUF file found for variant '" << variant << "'" << std::endl;
     return "";
 }
 

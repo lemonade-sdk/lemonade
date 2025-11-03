@@ -173,7 +173,7 @@ bool FastFlowLMServer::wait_for_ready() {
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
-    const int max_attempts = 60;  // 60 seconds timeout
+    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
