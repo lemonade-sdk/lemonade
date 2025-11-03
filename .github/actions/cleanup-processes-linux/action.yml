@@ -1,0 +1,106 @@
+name: 'Cleanup Processes (Linux)'
+description: 'Kill all lemonade, Python, llama-server, and conda processes on Linux'
+runs:
+  using: "composite"
+  steps:
+    - name: Kill zombie processes
+      shell: bash
+      run: |
+        echo "========================================"
+        echo "Cleaning up processes on Linux..."
+        echo "========================================"
+        
+        # Function to safely kill processes by name pattern
+        kill_processes_by_pattern() {
+            local pattern=$1
+            local description=$2
+            
+            echo ""
+            echo "Searching for $description processes..."
+            
+            # Find all matching processes
+            local pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+            
+            if [ -n "$pids" ]; then
+                local count=$(echo "$pids" | wc -l)
+                echo "Found $count $description process(es):"
+                
+                # Show process details
+                ps aux | grep -E "$pattern" | grep -v grep || true
+                
+                # Kill each process
+                echo "$pids" | while read -r pid; do
+                    if [ -n "$pid" ]; then
+                        # Try graceful kill first
+                        kill -15 "$pid" 2>/dev/null || true
+                        sleep 0.5
+                        
+                        # Force kill if still alive
+                        if kill -0 "$pid" 2>/dev/null; then
+                            kill -9 "$pid" 2>/dev/null || true
+                            echo "  Force killed PID: $pid"
+                        else
+                            echo "  Killed PID: $pid"
+                        fi
+                    fi
+                done
+            else
+                echo "No $description processes found."
+            fi
+        }
+        
+        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-beta, etc.)
+        kill_processes_by_pattern "lemonade" "lemonade"
+        
+        # Kill Python processes
+        kill_processes_by_pattern "python" "Python"
+        
+        # Kill llama-server processes
+        kill_processes_by_pattern "llama-server" "llama-server"
+        kill_processes_by_pattern "llama" "llama"
+        
+        # Kill conda processes
+        kill_processes_by_pattern "conda" "conda"
+        
+        # Additional cleanup: kill by exact process name
+        for proc_name in lemonade-server lemonade-router lemonade-server-beta lemonade-server-dev lemonade-tray llama-server; do
+            if pgrep -x "$proc_name" > /dev/null 2>&1; then
+                echo "Killing $proc_name by exact name..."
+                pkill -9 -x "$proc_name" || true
+            fi
+        done
+        
+        # Wait a moment for processes to fully terminate
+        sleep 2
+        
+        # Clean up lock files and PID files
+        echo ""
+        echo "Cleaning up lock and PID files..."
+        rm -f /tmp/lemonade*.lock 2>/dev/null || true
+        rm -f /tmp/lemonade*.pid 2>/dev/null || true
+        rm -f /tmp/lemonade-router.pid 2>/dev/null || true
+        echo "Lock and PID files cleaned."
+        
+        # Clean up log files to avoid confusion between test runs
+        echo ""
+        echo "Cleaning up log files..."
+        rm -f /tmp/lemonade*.log 2>/dev/null || true
+        rm -f /tmp/lemonade-server*.log 2>/dev/null || true
+        rm -f /tmp/lemonade-router*.log 2>/dev/null || true
+        echo "Log files cleaned."
+        
+        # Clean up lemonade installation directories
+        echo ""
+        echo "Cleaning up lemonade installation directories..."
+        if [ -d "$HOME/.local/share/lemonade-server" ]; then
+            rm -rf "$HOME/.local/share/lemonade-server" 2>/dev/null || true
+            echo "Removed: $HOME/.local/share/lemonade-server"
+        else
+            echo "No lemonade-server directory found in ~/.local/share/"
+        fi
+        
+        echo ""
+        echo "========================================"
+        echo "Process cleanup complete!"
+        echo "========================================"
+

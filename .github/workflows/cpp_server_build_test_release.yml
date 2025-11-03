@@ -156,6 +156,9 @@ jobs:
           clean: true
           fetch-depth: 0
 
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
       - name: Install CMake if not available
         shell: PowerShell
         run: |
@@ -402,18 +405,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set HF_HOME environment variable
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
         shell: PowerShell
         run: |
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
-
-      - name: Clean up any existing processes
-        shell: PowerShell
-        run: |
-          # Run initial cleanup with strict error handling and log cleanup
-          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Initial Cleanup" -FailOnError $true -CleanLogs $true
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
@@ -426,12 +430,10 @@ jobs:
         run: |
           Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          
           # Run installer silently
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           
-          Write-Host "Installation complete!" -ForegroundColor Green
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Download RyzenAI Serve artifact
         uses: actions/download-artifact@v4
@@ -451,8 +453,7 @@ jobs:
               Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
           }
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $ryzenaiDir = Join-Path $installPath "bin\ryzenai-serve"
+          $ryzenaiDir = Join-Path $env:LEMONADE_INSTALL_PATH "bin\ryzenai-serve"
           
           # Create ryzenai-serve directory
           New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
@@ -499,13 +500,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          
-          Write-Host "Verifying installation at: $installPath" -ForegroundColor Cyan
+          Write-Host "Verifying installation at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Cyan
           
           # Check if installation directory exists
-          if (-not (Test-Path $installPath)) {
-              Write-Host "ERROR: Installation directory not found at $installPath" -ForegroundColor Red
+          if (-not (Test-Path $env:LEMONADE_INSTALL_PATH)) {
+              Write-Host "ERROR: Installation directory not found at $env:LEMONADE_INSTALL_PATH" -ForegroundColor Red
               exit 1
           }
           
@@ -518,7 +517,7 @@ jobs:
           
           $missingItems = @()
           foreach ($item in $expectedBinaries) {
-              $fullPath = Join-Path $installPath $item
+              $fullPath = Join-Path $env:LEMONADE_INSTALL_PATH $item
               if (-not (Test-Path $fullPath)) {
                   $missingItems += $item
               } else {
@@ -543,8 +542,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $routerExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-router.exe"
           
           Write-Host "Testing lemonade-router.exe CLI..." -ForegroundColor Cyan
           
@@ -565,8 +563,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
           
           Write-Host "Downloading Llama-3.2-1B-Instruct-Hybrid model..." -ForegroundColor Cyan
           Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Gray
@@ -636,8 +633,7 @@ jobs:
               Write-Host "=== End Server Diagnostics ===" -ForegroundColor Yellow
           }
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          $routerExe = Join-Path $installPath "bin\lemonade-router.exe"
+          $routerExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-router.exe"
           
           Write-Host "Starting C++ server for endpoint testing..." -ForegroundColor Cyan
           
@@ -774,20 +770,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: PowerShell
-        run: |
-          # Run cleanup with strict error handling but preserve logs for analysis
-          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Test Cleanup" -FailOnError $false -CleanLogs $false
-          
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_test"
-          
-          # Kill any running processes
-          Get-Process | Where-Object { $_.Path -like "$installPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          
-          # Remove installation
-          if (Test-Path $installPath) {
-              Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
-          }
+        uses: ./.github/actions/cleanup-processes-windows
 
   test-flm-integration:
     name: Test C++ Server with FLM
@@ -801,12 +784,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set HF_HOME environment variable
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
         shell: PowerShell
         run: |
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
@@ -817,8 +807,8 @@ jobs:
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_flm_test"
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -844,8 +834,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_flm_test"
-          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
           
           Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -860,13 +849,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: PowerShell
-        run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_flm_test"
-          Get-Process | Where-Object { $_.Path -like "$installPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (Test-Path $installPath) {
-              Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
-          }
+        uses: ./.github/actions/cleanup-processes-windows
 
   test-llamacpp-vulkan:
     name: Test C++ Server with Llamacpp (Vulkan)
@@ -880,12 +863,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set HF_HOME environment variable
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
         shell: PowerShell
         run: |
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
@@ -896,8 +886,8 @@ jobs:
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_vulkan_test"
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -922,8 +912,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_vulkan_test"
-          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -938,13 +927,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: PowerShell
-        run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_vulkan_test"
-          Get-Process | Where-Object { $_.Path -like "$installPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (Test-Path $installPath) {
-              Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
-          }
+        uses: ./.github/actions/cleanup-processes-windows
 
   test-llamacpp-rocm:
     name: Test C++ Server with Llamacpp (ROCm)
@@ -958,12 +941,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set HF_HOME environment variable
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
         shell: PowerShell
         run: |
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
@@ -974,8 +964,8 @@ jobs:
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_rocm_test"
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1000,8 +990,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_rocm_test"
-          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
           
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -1016,13 +1005,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: PowerShell
-        run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_rocm_test"
-          Get-Process | Where-Object { $_.Path -like "$installPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (Test-Path $installPath) {
-              Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
-          }
+        uses: ./.github/actions/cleanup-processes-windows
 
   test-general-server:
     name: Test C++ Server - General Tests
@@ -1036,12 +1019,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set HF_HOME environment variable
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
         shell: PowerShell
         run: |
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
@@ -1052,8 +1042,8 @@ jobs:
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$installPath" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1078,8 +1068,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
-          $serverBetaExe = Join-Path $installPath "bin\lemonade-server-beta.exe"
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
           
           Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
           
@@ -1112,13 +1101,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        shell: PowerShell
-        run: |
-          $installPath = "C:\Users\nimbys\AppData\Local\lemonade_server_cpp_general_test"
-          Get-Process | Where-Object { $_.Path -like "$installPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-          if (Test-Path $installPath) {
-              Remove-Item -Recurse -Force $installPath -ErrorAction SilentlyContinue
-          }
+        uses: ./.github/actions/cleanup-processes-windows
 
   test-deb-llamacpp-vulkan:
     name: Test .deb Package with Llamacpp (Vulkan)
@@ -1130,6 +1113,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
 
       - name: Set HF_HOME environment variable
         run: |
@@ -1218,11 +1204,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          # Stop any running servers
-          lemonade-server-beta stop || true
-          pkill -f lemonade || true
-          pkill -f llama-server || true
+        uses: ./.github/actions/cleanup-processes-linux
 
   test-deb-llamacpp-rocm:
     name: Test .deb Package with Llamacpp (ROCm)
@@ -1234,6 +1216,9 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
 
       - name: Set HF_HOME environment variable
         run: |
@@ -1326,11 +1311,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          # Stop any running servers
-          lemonade-server-beta stop || true
-          pkill -f lemonade || true
-          pkill -f llama-server || true
+        uses: ./.github/actions/cleanup-processes-linux
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
