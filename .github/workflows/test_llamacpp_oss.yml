@@ -132,39 +132,7 @@ jobs:
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
       - name: Check Vulkan availability (diagnostic)
-        run: |
-          echo "=== Vulkan Diagnostic Information ==="
-          
-          # Check if vulkaninfo is available
-          if command -v vulkaninfo &> /dev/null; then
-              echo "vulkaninfo found, running diagnostic..."
-              vulkaninfo --summary || echo "vulkaninfo failed with exit code $?"
-          else
-              echo "WARNING: vulkaninfo not found on system"
-              echo "Vulkan tests may fail or hang if drivers are not properly installed"
-          fi
-          
-          # Check for Vulkan ICD files
-          echo ""
-          echo "=== Checking for Vulkan ICD loader files ==="
-          if [ -d "/etc/vulkan/icd.d" ]; then
-              echo "ICD directory exists:"
-              ls -la /etc/vulkan/icd.d/ || echo "Cannot list ICD directory"
-          else
-              echo "WARNING: /etc/vulkan/icd.d directory not found"
-          fi
-          
-          # Check for GPU devices
-          echo ""
-          echo "=== Checking for GPU devices ==="
-          if command -v lspci &> /dev/null; then
-              echo "VGA/Display controllers:"
-              lspci | grep -i "vga\|3d\|display" || echo "No GPU devices found"
-          else
-              echo "lspci not available"
-          fi
-          
-          echo "=== End Vulkan Diagnostic ==="
+        uses: ./.github/actions/check-vulkan-linux
 
       - name: Run lemonade Llamacpp CLI tests
         env:
