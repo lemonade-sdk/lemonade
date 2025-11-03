@@ -458,7 +458,11 @@ void LlamaCppServer::load(const std::string& model_name,
 
 void LlamaCppServer::unload() {
     std::cout << "[LlamaCpp] Unloading model..." << std::endl;
+#ifdef _WIN32
     if (process_handle_.handle) {
+#else
+    if (process_handle_.pid > 0) {
+#endif
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;

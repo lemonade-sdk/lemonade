@@ -110,6 +110,10 @@ if(TARGET libzstd_static AND NOT TARGET zstd::libzstd)
     add_library(zstd::libzstd ALIAS libzstd_static)
 endif()
 
+# Prevent httplib from searching for system zstd (we're providing it via FetchContent)
+set(ZSTD_FOUND TRUE CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+
 # Fetch curl but prevent it from installing
 FetchContent_GetProperties(curl)
 if(NOT curl_POPULATED)

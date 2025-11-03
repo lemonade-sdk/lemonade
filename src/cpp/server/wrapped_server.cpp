@@ -58,9 +58,15 @@ bool WrappedServer::wait_for_ready() {
 }
 
 json WrappedServer::forward_request(const std::string& endpoint, const json& request) {
+#ifdef _WIN32
     if (!process_handle_.handle) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
+#else
+    if (process_handle_.pid <= 0) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+#endif
     
     std::string url = get_base_url() + endpoint;
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};

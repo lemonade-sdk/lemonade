@@ -158,7 +158,11 @@ void FastFlowLMServer::load(const std::string& model_name,
 
 void FastFlowLMServer::unload() {
     std::cout << "[FastFlowLM] Unloading model..." << std::endl;
+#ifdef _WIN32
     if (is_loaded_ && process_handle_.handle) {
+#else
+    if (is_loaded_ && process_handle_.pid > 0) {
+#endif
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;

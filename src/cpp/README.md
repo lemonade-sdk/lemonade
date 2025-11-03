@@ -21,7 +21,6 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 
 **Windows:**
 - Visual Studio 2019 or later
-- Miniforge or Miniconda (provides zstd.dll dependency)
 - NSIS 3.x (only required for building the installer)
 
 **Linux (Ubuntu/Debian):**
@@ -90,8 +89,7 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-serve` for NPU
 
 **Windows:**
 - The build uses static linking to minimize DLL dependencies
-- `zstd.dll` is automatically copied from your system PATH if available (provided by Miniforge/Miniconda)
-- If zstd.dll is not found, the build will complete but the user will need to install Miniforge
+- All dependencies are built from source (no external DLL requirements)
 - Security features enabled: Control Flow Guard, ASLR, DEP
 
 **Linux:**
@@ -332,6 +330,7 @@ All dependencies are automatically fetched by CMake via FetchContent:
 - **nlohmann/json** (v3.11.3) - JSON parsing and serialization [MIT License]
 - **CLI11** (v2.4.2) - Command-line argument parsing [BSD 3-Clause]
 - **libcurl** (8.5.0) - HTTP client for model downloads [curl license]
+- **zstd** (v1.5.5) - Compression library for HTTP [BSD License]
 
 Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on macOS, OpenSSL on Linux).
 
