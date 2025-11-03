@@ -108,6 +108,12 @@ FetchContent_Declare(curl
 # Make dependencies available
 FetchContent_MakeAvailable(json CLI11 zstd)
 
+# Create alias for httplib compatibility
+# httplib expects zstd::libzstd but FetchContent builds libzstd_static
+if(TARGET libzstd_static AND NOT TARGET zstd::libzstd)
+    add_library(zstd::libzstd ALIAS libzstd_static)
+endif()
+
 # Fetch curl but prevent it from installing
 FetchContent_GetProperties(curl)
 if(NOT curl_POPULATED)
