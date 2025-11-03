@@ -437,8 +437,27 @@ void LlamaCppServer::load(const std::string& model_name,
     
     std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
     
+    // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
+    std::vector<std::pair<std::string, std::string>> env_vars;
+#ifndef _WIN32
+    if (backend_ == "rocm") {
+        // Get the directory containing the executable (where ROCm .so files are)
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+        
+        // Preserve existing LD_LIBRARY_PATH if it exists
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+        std::cout << "[LlamaCpp] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+    
     // Start process (inherit output if debug logging enabled, filter health check spam)
-    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true);
+    process_handle_ = ProcessManager::start_process(executable, args, "", is_debug(), true, env_vars);
     
     // Wait for server to be ready
     if (!wait_for_ready()) {
