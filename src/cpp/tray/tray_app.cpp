@@ -852,7 +852,7 @@ int TrayApp::execute_stop_command() {
         client.set_connection_timeout(2, 0);
         client.set_read_timeout(2, 0);
         
-        auto res = client.Post("/api/v1/halt");
+        auto res = client.Get("/api/v1/halt");
         
         if (res && (res->status == 200 || res->status == 204)) {
             // Wait a moment for server to shut down

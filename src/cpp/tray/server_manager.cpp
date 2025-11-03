@@ -129,7 +129,7 @@ bool ServerManager::stop_server() {
     
     // Try graceful shutdown first via API
     try {
-        make_http_request("/api/v1/halt", "POST");
+        make_http_request("/api/v1/halt", "GET");
         std::this_thread::sleep_for(std::chrono::seconds(2));
     } catch (...) {
         // API call failed, proceed to force termination

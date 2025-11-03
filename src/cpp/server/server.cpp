@@ -173,9 +173,9 @@ void Server::setup_routes() {
         handle_logs_stream(req, res);
     });
     
-    // Halt endpoint (same as shutdown for compatibility)
-    register_post("halt", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_shutdown(req, res);
+    // Halt endpoint - GET method to match Python server behavior
+    register_get("halt", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_halt(req, res);
     });
     
     // Internal shutdown endpoint (not part of public API)
@@ -1368,6 +1368,15 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+void Server::handle_halt(const httplib::Request& req, httplib::Response& res) {
+    std::cout << "[Server] Halt generation request received" << std::endl;
+    
+    // Return success response immediately
+    // Note: Actual halting happens when the client disconnects from the streaming endpoint
+    nlohmann::json response = {{"terminated", true}};
+    res.set_content(response.dump(), "application/json");
 }
 
 void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res) {

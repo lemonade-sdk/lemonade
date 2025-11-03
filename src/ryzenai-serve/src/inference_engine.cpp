@@ -477,7 +477,12 @@ void InferenceEngine::streamComplete(const std::string& prompt,
                 
                 accumulated_output += token_str;
                 bool is_final = generator->IsDone();
-                callback(token_str, is_final);
+                
+                // Call callback and check if we should continue
+                if (!callback(token_str, is_final)) {
+                    std::cout << "[InferenceEngine] Generation aborted by callback (client disconnected)" << std::endl;
+                    break;
+                }
             }
             
             token_count++;

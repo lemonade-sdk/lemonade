@@ -81,6 +81,59 @@ runs:
             if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
                 echo "ERROR: Processes STILL alive after nuclear option!"
                 ps aux | grep -E "lemonade|llama|conda" | grep -v grep || true
+                
+                # Check if processes are in D-state (uninterruptible sleep)
+                echo ""
+                echo "Checking for D-state processes (GPU driver issue)..."
+                D_STATE_FOUND=false
+                for pid in $(pgrep -f "lemonade|llama|conda" 2>/dev/null); do
+                    state=$(ps -o state= -p $pid 2>/dev/null | tr -d ' ')
+                    if [ "$state" = "D" ]; then
+                        echo "  Process $pid is in D-state (uninterruptible sleep)"
+                        # Show what it's waiting on
+                        wchan=$(cat /proc/$pid/wchan 2>/dev/null || echo "unknown")
+                        echo "    Waiting on: $wchan"
+                        D_STATE_FOUND=true
+                    fi
+                done
+                
+                # If D-state processes found, try GPU driver restart
+                if [ "$D_STATE_FOUND" = "true" ]; then
+                    echo ""
+                    echo "D-state processes detected - attempting GPU driver restart..."
+                    
+                    # Check if amdgpu module is loaded
+                    if lsmod | grep -q "amdgpu"; then
+                        echo "AMD GPU driver detected, attempting restart..."
+                        
+                        # Try to unload and reload amdgpu module
+                        if sudo -n modprobe -r amdgpu 2>/dev/null; then
+                            echo "  Unloaded amdgpu module"
+                            sleep 2
+                            if sudo -n modprobe amdgpu 2>/dev/null; then
+                                echo "  Reloaded amdgpu module"
+                                sleep 2
+                                
+                                # Check if processes are now gone
+                                if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
+                                    echo "  WARNING: Processes still alive after driver restart"
+                                else
+                                    echo "  SUCCESS: Driver restart cleared stuck processes"
+                                fi
+                            else
+                                echo "  ERROR: Failed to reload amdgpu module"
+                            fi
+                        else
+                            echo "  WARNING: Unable to restart GPU driver (requires sudo privileges)"
+                            echo "  This may require a system reboot to clear D-state processes"
+                        fi
+                    else
+                        echo "  No AMD GPU driver loaded, or different GPU vendor"
+                        echo "  D-state processes may require system reboot"
+                    fi
+                else
+                    echo "No D-state processes found - processes may be stuck for other reasons"
+                fi
             else
                 echo "Nuclear option successful"
             fi

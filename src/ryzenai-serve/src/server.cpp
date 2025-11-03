@@ -221,7 +221,7 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                     try {
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count](const std::string& token, bool is_final) {
+                            [&sink, model_id, &token_count](const std::string& token, bool is_final) -> bool {
                                 // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
                                 // causes a crash. This appears to be a memory allocation issue between
                                 // the JSON library and the callback context (not related to OGA itself).
@@ -260,9 +260,10 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                                 std::string chunk_str = "data: " + chunk_json + "\n\n";
                                 
                                 if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
-                                    return; // Client disconnected
+                                    return false; // Client disconnected - stop generation
                                 }
                                 token_count++;
+                                return true; // Continue generation
                             }
                         );
                         
@@ -405,7 +406,7 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                         
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count, &full_response](const std::string& token, bool is_final) {
+                            [&sink, model_id, &token_count, &full_response](const std::string& token, bool is_final) -> bool {
                                 // Accumulate for tool call extraction
                                 full_response += token;
                                 
@@ -447,9 +448,10 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                                 std::string chunk_str = "data: " + chunk_json + "\n\n";
                                 
                                 if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
-                                    return; // Client disconnected
+                                    return false; // Client disconnected - stop generation
                                 }
                                 token_count++;
+                                return true; // Continue generation
                             }
                         );
                         
@@ -683,7 +685,7 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
                         
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, &full_response](const std::string& token, bool is_final) {
+                            [&sink, &full_response](const std::string& token, bool is_final) -> bool {
                                 // Escape special characters for JSON
                                 std::string escaped_token = token;
                                 size_t pos = 0;
@@ -718,8 +720,9 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
                                 
                                 if (!sink.write(delta_event.c_str(), delta_event.size())) {
                                     std::cout << "[Server] Client disconnected during streaming" << std::endl;
-                                    return; // Client disconnected
+                                    return false; // Client disconnected - stop generation
                                 }
+                                return true; // Continue generation
                             }
                         );
                         

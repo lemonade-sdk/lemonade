@@ -73,7 +73,8 @@ struct GenerationParams {
 };
 
 // Token generation callback for streaming
-using StreamCallback = std::function<void(const std::string& token, bool is_final)>;
+// Return true to continue generation, false to abort
+using StreamCallback = std::function<bool(const std::string& token, bool is_final)>;
 
 } // namespace ryzenai
 
