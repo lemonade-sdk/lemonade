@@ -517,15 +517,16 @@ void LlamaCppServer::parse_telemetry(const std::string& line) {
 }
 
 std::string LlamaCppServer::get_llama_server_path() {
-    // Check our install directory first
+    // Check our install directory
     std::string install_dir = get_install_directory(backend_);
     
 #ifdef _WIN32
     std::string installed_path = (fs::path(install_dir) / "llama-server.exe").string();
 #else
-    // On Linux, check build/bin subdirectory first
+    // On Linux, check build/bin subdirectory first (extracted from official releases)
     std::string installed_path = (fs::path(install_dir) / "build" / "bin" / "llama-server").string();
     if (!fs::exists(installed_path)) {
+        // Check root of install directory (e.g., llama/rocm/llama-server)
         installed_path = (fs::path(install_dir) / "llama-server").string();
     }
 #endif
@@ -534,30 +535,11 @@ std::string LlamaCppServer::get_llama_server_path() {
         return installed_path;
     }
     
-    // Fallback: check common installation paths
-#ifdef _WIN32
-    std::vector<std::string> paths = {
-        "llama-server.exe",
-        "C:\\Program Files\\llama.cpp\\llama-server.exe",
-        "C:\\llama.cpp\\llama-server.exe"
-    };
-#else
-    std::vector<std::string> paths = {
-        "llama-server",
-        "/usr/local/bin/llama-server",
-        "/usr/bin/llama-server",
-        "~/.local/bin/llama-server"
-    };
-#endif
-    
-    for (const auto& path : paths) {
-        if (fs::exists(path)) {
-            return path;
-        }
-    }
-    
-    // Return executable name to try PATH (will fail in start_process with good error)
-    return "llama-server";
+    // If not found, throw error with helpful message
+    throw std::runtime_error("llama-server not found in install directory: " + install_dir + 
+                           "\nExpected locations: " + install_dir + "/build/bin/llama-server or " + 
+                           install_dir + "/llama-server" +
+                           "\nThis may indicate a failed installation or corrupted download.");
 }
 
 std::string LlamaCppServer::find_gguf_file(const std::string& checkpoint) {
