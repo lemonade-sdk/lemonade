@@ -21,6 +21,17 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), running_(false) {
     
+    // Detect log file path (same location as tray uses)
+    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
+    // This server only READS from the file for the SSE streaming endpoint
+#ifdef _WIN32
+    char temp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_path);
+    log_file_path_ = std::string(temp_path) + "lemonade-server.log";
+#else
+    log_file_path_ = "/tmp/lemonade-server.log";
+#endif
+    
     http_server_ = std::make_unique<httplib::Server>();
     
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
@@ -155,6 +166,11 @@ void Server::setup_routes() {
     
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
+    });
+    
+    // Log streaming endpoint (SSE)
+    register_get("logs/stream", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_logs_stream(req, res);
     });
     
     // Halt endpoint (same as shutdown for compatibility)
@@ -429,6 +445,12 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     
     response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : loaded_checkpoint;
     response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : loaded_model;
+    
+    // Add log streaming support information
+    response["log_streaming"] = {
+        {"sse", true},
+        {"websocket", false}  // WebSocket support not yet implemented
+    };
     
     res.set_content(response.dump(), "application/json");
     std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: " << thread_id << ") =====" << std::endl;
@@ -1354,6 +1376,101 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         stop();
     }).detach();
+}
+
+void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
+    // Check if log file exists
+    if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
+        std::cerr << "[Server] Log file not found: " << log_file_path_ << std::endl;
+        std::cerr << "[Server] Note: Log streaming only works when server is launched via tray/ServerManager" << std::endl;
+        res.status = 404;
+        nlohmann::json error = {
+            {"error", "Log file not found. Log streaming requires server to be launched via tray application."},
+            {"path", log_file_path_},
+            {"note", "When running directly, logs appear in console instead."}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    
+    std::cout << "[Server] Starting log stream for: " << log_file_path_ << std::endl;
+    
+    // Set SSE headers
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    
+    // Use chunked streaming
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [this](size_t offset, httplib::DataSink& sink) {
+            // Thread-local state for this connection
+            static thread_local std::unique_ptr<std::ifstream> log_stream;
+            static thread_local std::streampos last_pos = 0;
+            
+            if (offset == 0) {
+                // First call: open file and read from beginning
+                log_stream = std::make_unique<std::ifstream>(
+                    log_file_path_, 
+                    std::ios::in
+                );
+                
+                if (!log_stream->is_open()) {
+                    std::cerr << "[Server] Failed to open log file for streaming" << std::endl;
+                    return false;
+                }
+                
+                // Start from beginning
+                log_stream->seekg(0, std::ios::beg);
+                last_pos = 0;
+                
+                std::cout << "[Server] Log stream connection opened" << std::endl;
+            }
+            
+            // Seek to last known position
+            log_stream->seekg(last_pos);
+            
+            std::string line;
+            bool sent_data = false;
+            int lines_sent = 0;
+            
+            // Read and send new lines
+            while (std::getline(*log_stream, line)) {
+                // Format as SSE: "data: <line>\n\n"
+                std::string sse_msg = "data: " + line + "\n\n";
+                
+                if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
+                    std::cout << "[Server] Log stream client disconnected" << std::endl;
+                    return false;  // Client disconnected
+                }
+                
+                sent_data = true;
+                lines_sent++;
+                
+                // CRITICAL: Update position after each successful line read
+                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
+                last_pos = log_stream->tellg();
+            }
+            
+            // Clear EOF and any other error flags so we can continue reading on next poll
+            log_stream->clear();
+            
+            // Send heartbeat if no data (keeps connection alive)
+            if (!sent_data) {
+                const char* heartbeat = ": heartbeat\n\n";
+                if (!sink.write(heartbeat, strlen(heartbeat))) {
+                    std::cout << "[Server] Log stream client disconnected during heartbeat" << std::endl;
+                    return false;
+                }
+            }
+            
+            // Sleep briefly before next poll
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            
+            return true;  // Keep streaming
+        }
+    );
 }
 
 } // namespace lemon
