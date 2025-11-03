@@ -66,6 +66,7 @@ bool ServerManager::start_server(
     int ctx_size,
     const std::string& log_file,
     const std::string& log_level,
+    const std::string& llamacpp_backend,
     bool show_console)
 {
     if (is_server_running()) {
@@ -78,6 +79,7 @@ bool ServerManager::start_server(
     ctx_size_ = ctx_size;
     log_file_ = log_file;
     log_level_ = log_level;
+    llamacpp_backend_ = llamacpp_backend;
     show_console_ = show_console;
     
     if (!spawn_process()) {
@@ -148,7 +150,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_);
+    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -269,6 +271,7 @@ bool ServerManager::spawn_process() {
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
+    cmdline += " --llamacpp " + llamacpp_backend_;
     cmdline += " --log-level debug";  // Always use debug logging for router
     
     DEBUG_LOG(this, "Starting server: " << cmdline);
@@ -406,6 +409,8 @@ bool ServerManager::spawn_process() {
         args.push_back("--ctx-size");
         std::string ctx_str = std::to_string(ctx_size_);
         args.push_back(ctx_str.c_str());
+        args.push_back("--llamacpp");
+        args.push_back(llamacpp_backend_.c_str());
         args.push_back("--log-level");
         args.push_back("debug");  // Always use debug logging
         args.push_back(nullptr);
