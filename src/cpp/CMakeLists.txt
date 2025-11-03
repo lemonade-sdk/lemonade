@@ -232,18 +232,6 @@ if(UNIX AND NOT APPLE)
         DESTINATION share/lemonade-server/resources
     )
     
-    # Create desktop entry for easy launching
-    configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../lemonade-server.desktop.in
-        ${CMAKE_CURRENT_BINARY_DIR}/lemonade-server.desktop
-        @ONLY
-    )
-    
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/lemonade-server.desktop
-        DESTINATION share/applications
-        OPTIONAL
-    )
-    
     # Post-install script to make directories writable
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
     
