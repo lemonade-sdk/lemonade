@@ -92,8 +92,8 @@ bool ServerManager::start_server(
     DEBUG_LOG(this, "Waiting for server to start...");
     DEBUG_LOG(this, "Will check health at: http://localhost:" << port_ << "/api/v1/health");
     
-    for (int i = 0; i < 30; ++i) {  // Wait up to 30 seconds
-        DEBUG_LOG(this, "Health check attempt " << (i+1) << "/30...");
+    for (int i = 0; i < 5; ++i) {  // Wait up to 5 seconds
+        DEBUG_LOG(this, "Health check attempt " << (i+1) << "/5...");
         std::this_thread::sleep_for(std::chrono::seconds(1));
         try {
             DEBUG_LOG(this, "Making HTTP request...");

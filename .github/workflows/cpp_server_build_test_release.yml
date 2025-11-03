@@ -1193,6 +1193,29 @@ jobs:
           
           echo "Llamacpp Vulkan tests PASSED!"
 
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+
       - name: Cleanup
         if: always()
         run: |
@@ -1273,6 +1296,33 @@ jobs:
           conda run -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
           
           echo "Llamacpp ROCm tests PASSED!"
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+          
+          echo ""
+          echo "=== Check for llama-server processes ==="
+          ps aux | grep -E "llama-server|lemonade" | grep -v grep || echo "No lemonade/llama-server processes found"
 
       - name: Cleanup
         if: always()
