@@ -84,11 +84,14 @@ target_link_libraries(lemonade-server-beta PRIVATE
     ${PLATFORM_LIBS}
 )
 
-# On Windows, use separate Debug/Release subdirectories (multi-config generator)
-# On Linux/Mac, binaries go directly to CMAKE_BINARY_DIR (single-config generator)
+# Set output directory to build root for all platforms
+# Windows uses Debug/Release subdirectories (multi-config generator)
+# Linux/Mac go directly to CMAKE_BINARY_DIR (single-config generator)
+set_target_properties(lemonade-server-beta PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
 if(WIN32)
     set_target_properties(lemonade-server-beta PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
     )
