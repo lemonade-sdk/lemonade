@@ -324,22 +324,30 @@ jobs:
           echo "Building binaries..."
           cmake --build . -j$(nproc)
           
-          # List build output for debugging
-          echo "Build output contents:"
-          ls -lh
-          
           # Verify binaries exist
           if [ ! -f "lemonade-router" ]; then
               echo "ERROR: lemonade-router not found!"
-              ls -lR .
+              echo "Looking for binaries in common locations:"
+              find . -maxdepth 2 -name "lemonade-router" -o -name "lemonade-server-beta" 2>/dev/null || true
+              echo "Contents of build directory:"
+              ls -lh . 2>/dev/null || true
+              echo "Contents of tray subdirectory:"
+              ls -lh ./tray 2>/dev/null || true
               exit 1
           fi
           
           if [ ! -f "lemonade-server-beta" ]; then
               echo "ERROR: lemonade-server-beta not found!"
-              ls -lR .
+              echo "Looking for binaries in common locations:"
+              find . -maxdepth 2 -name "lemonade-router" -o -name "lemonade-server-beta" 2>/dev/null || true
+              echo "Contents of build directory:"
+              ls -lh . 2>/dev/null || true
+              echo "Contents of tray subdirectory:"
+              ls -lh ./tray 2>/dev/null || true
               exit 1
           fi
+          
+          echo "✓ Binaries found successfully"
           
           echo "Verifying binary executability..."
           ./lemonade-router --version
