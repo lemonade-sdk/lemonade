@@ -19,7 +19,7 @@ jobs:
   
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
-    runs-on: [rai-160-sdk, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
