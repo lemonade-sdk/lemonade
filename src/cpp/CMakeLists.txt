@@ -112,6 +112,10 @@ FetchContent_GetProperties(httplib)
 if(NOT httplib_POPULATED)
     FetchContent_Populate(httplib)
     set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
+    # Disable compression support to avoid additional dependencies
+    set(HTTPLIB_REQUIRE_ZLIB OFF CACHE BOOL "" FORCE)
+    set(HTTPLIB_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
+    set(HTTPLIB_REQUIRE_ZSTD OFF CACHE BOOL "" FORCE)
     add_subdirectory(${httplib_SOURCE_DIR} ${httplib_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
 
