@@ -38,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+      
       - name: Download and Install Miniforge
         shell: PowerShell
         if: ${{ inputs.setup }}
@@ -63,9 +66,6 @@ jobs:
       - name: Create conda environment
         shell: PowerShell
         run: |
-          # Make sure the system-level python is clean
-          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force 
-          
           $ErrorActionPreference = "Stop"
 
           # Keep conda up-to-date since they can apparently break things on the server side

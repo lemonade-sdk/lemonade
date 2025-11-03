@@ -18,7 +18,12 @@ struct AppConfig {
     std::string log_file;
     std::string log_level = "info";  // Default to info, can be set to debug
     std::string server_binary;
+    // Default to headless mode on Linux (no tray support), tray mode on other platforms
+#if defined(__linux__) && !defined(__ANDROID__)
+    bool no_tray = true;
+#else
     bool no_tray = false;
+#endif
     bool show_help = false;
     bool show_version = false;
     std::string host = "localhost";

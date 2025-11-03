@@ -298,5 +298,32 @@ json Router::get_stats() const {
     return wrapped_server_->get_telemetry().to_json();
 }
 
+void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
+    if (!wrapped_server_) {
+        std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        return;
+    }
+    wrapped_server_->forward_streaming_request("/v1/chat/completions", request_body, sink);
+}
+
+void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink) {
+    if (!wrapped_server_) {
+        std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        return;
+    }
+    wrapped_server_->forward_streaming_request("/v1/completions", request_body, sink);
+}
+
+void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
+    if (!wrapped_server_) {
+        std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        return;
+    }
+    wrapped_server_->forward_streaming_request("/v1/responses", request_body, sink);
+}
+
 } // namespace lemon
 

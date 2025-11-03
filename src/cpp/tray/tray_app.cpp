@@ -4,6 +4,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
@@ -176,7 +177,11 @@ int TrayApp::run() {
         DEBUG_LOG(this, "Searching for server binary...");
         if (!find_server_binary()) {
             std::cerr << "Error: Could not find lemonade-router binary" << std::endl;
+#ifdef _WIN32
             std::cerr << "Please ensure lemonade-router.exe is in the same directory" << std::endl;
+#else
+            std::cerr << "Please ensure lemonade-router is in the same directory or in PATH" << std::endl;
+#endif
             return 1;
         }
     }
@@ -237,7 +242,6 @@ int TrayApp::run() {
     
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
-        std::cout << "Server running in foreground mode (no tray)" << std::endl;
         std::cout << "Press Ctrl+C to stop" << std::endl;
         
         // TODO: Set up signal handlers for Ctrl+C
@@ -267,14 +271,16 @@ int TrayApp::run() {
         show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
     });
     
-    // Set menu update callback to refresh state before showing menu
+    // Set menu update callback to refresh state before showing menu (Windows only)
     DEBUG_LOG(this, "Setting menu update callback...");
+#ifdef _WIN32
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
             DEBUG_LOG(this, "Refreshing menu state from server...");
             build_menu();
         });
     }
+#endif
     
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
@@ -388,7 +394,11 @@ void TrayApp::print_usage() {
     std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
     std::cout << "  --log-file PATH          Log file path\n";
     std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
+#if defined(__linux__) && !defined(__ANDROID__)
+    std::cout << "  --no-tray                Start server without tray (default on Linux)\n";
+#else
     std::cout << "  --no-tray                Start server without tray (headless mode)\n";
+#endif
     std::cout << "  --help, -h               Show this help message\n";
     std::cout << "  --version, -v            Show version\n";
 }
@@ -413,7 +423,7 @@ bool TrayApp::find_server_binary() {
         search_paths.push_back((exe_dir / binary_name).string());
     }
 #else
-    std::string binary_name = "lemonade";
+    std::string binary_name = "lemonade-router";
     
     // On Unix, try to get executable path
     char exe_path_buf[1024];
@@ -514,20 +524,20 @@ std::pair<int, int> TrayApp::get_server_info() {
         }
     }
 #else
-    // Unix: Parse netstat or use similar approach
-    // For now, check common ports as fallback
-    for (int port : {8000, 8001, 8002, 8003, 8020, 8040, 8060, 8080}) {
-        try {
-            httplib::Client cli("127.0.0.1", port);
-            cli.set_connection_timeout(0, 200000);
-            cli.set_read_timeout(0, 300000);
-            
-            auto res = cli.Get("/api/v1/health");
-            if (res && res->status == 200) {
-                return {0, port};
-            }
-        } catch (...) {
+    // Unix: Read from PID file
+    std::ifstream pid_file("/tmp/lemonade-router.pid");
+    if (pid_file.is_open()) {
+        int pid, port;
+        pid_file >> pid >> port;
+        pid_file.close();
+        
+        // Verify the PID is still alive
+        if (kill(pid, 0) == 0) {
+            return {pid, port};
         }
+        
+        // Stale PID file, remove it
+        remove("/tmp/lemonade-router.pid");
     }
 #endif
     
@@ -880,11 +890,39 @@ int TrayApp::execute_stop_command() {
     // Unix: Kill processes by name
     system("pkill -f lemonade-router");
     system("pkill -f 'lemonade-server-beta.*serve'");
+    // Kill llama-server child processes (launched by lemonade-router)
+    system("pkill -f 'llama-server.*--port'");
     // Kill log viewer processes
     system("pkill -f 'tail -f.*lemonade-server.log'");
+    
+    // Wait for lock and PID files to be released (critical for clean restarts)
+    std::string lock_file = "/tmp/lemonade_ServerBeta.lock";
+    std::string pid_file = "/tmp/lemonade-router.pid";
+    
+    // Poll for up to 10 seconds for files to be released
+    bool files_released = false;
+    for (int i = 0; i < 100; i++) {  // 100 * 100ms = 10 seconds
+        bool lock_exists = fs::exists(lock_file);
+        bool pid_exists = fs::exists(pid_file);
+        
+        if (!lock_exists && !pid_exists) {
+            files_released = true;
+            break;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    if (!files_released) {
+        std::cerr << "Warning: Lock/PID files not released within timeout" << std::endl;
+    }
 #endif
     
+#ifndef _WIN32
+    // Unix: no additional sleep needed, we already waited for lock files
+#else
     std::this_thread::sleep_for(std::chrono::seconds(1));
+#endif
     
     // Verify it stopped
     auto [check_pid, check_port] = get_server_info();
