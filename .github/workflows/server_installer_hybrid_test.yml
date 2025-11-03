@@ -15,11 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clean up any existing processes
-        shell: PowerShell
-        run: |
-          # Run initial cleanup with strict error handling and log cleanup
-          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Initial Cleanup" -FailOnError $true -CleanLogs $true
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
 
       - name: Install NSIS
         shell: PowerShell
@@ -335,10 +332,7 @@ jobs:
           }
 
       - name: Final cleanup
-        shell: PowerShell
         if: always()
-        run: |
-          # Run final cleanup with strict error handling but preserve logs for analysis
-          & ".\.github\scripts\cleanup-lemonade.ps1" -Context "Final Cleanup" -FailOnError $true -CleanLogs $false
+        uses: ./.github/actions/cleanup-processes-windows
 
           

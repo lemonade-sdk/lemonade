@@ -44,6 +44,7 @@ protected:
 private:
     std::string get_llama_server_path();
     std::string find_gguf_file(const std::string& checkpoint);
+    std::string find_executable_in_install_dir(const std::string& install_dir);
     
     std::string backend_;  // vulkan, rocm, metal
     std::string model_path_;

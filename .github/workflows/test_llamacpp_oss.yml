@@ -42,11 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cleanup Python
-        shell: PowerShell
-        run: |
-          # Make sure the system-level python is clean
-          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
 
       - name: Set up Conda environment
         run: |
@@ -93,6 +90,7 @@ jobs:
           conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 
   test-server-llamacpp-ubuntu:
+    if: false  # Temporarily disabled due to unkillable D-state processes with GPU drivers
     env:
       LEMONADE_CI_MODE: "True"
       CONDA_ENV_PATH: ./lemon-ci-env
@@ -114,6 +112,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
 
       - name: Set up Conda environment
         run: |
@@ -174,6 +175,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
 
       - name: Setup Miniconda
         uses: conda-incubator/setup-miniconda@v3

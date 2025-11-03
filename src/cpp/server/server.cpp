@@ -443,8 +443,8 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
-    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : loaded_checkpoint;
-    response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : loaded_model;
+    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
+    response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
     
     // Add log streaming support information
     response["log_streaming"] = {
@@ -563,21 +563,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
+        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        std::string request_body = req.body;
+        if (router_->get_loaded_recipe() == "flm") {
+            auto request_json_copy = request_json;
+            request_json_copy["model"] = router_->get_loaded_checkpoint();
+            request_body = request_json_copy.dump();
+            if (!is_streaming) {
+                request_json = request_json_copy;  // Update for non-streaming path too
+            }
+        }
+        
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/chat/completions";
-                
-                // FLM requires the checkpoint name in the request, not the Lemonade model name
-                std::string request_body = req.body;
-                if (router_->get_loaded_recipe() == "flm") {
-                    auto request_json_copy = request_json;
-                    request_json_copy["model"] = router_->get_loaded_checkpoint();
-                    request_body = request_json_copy.dump();
-                }
-                
                 // Log the HTTP request
-                std::cout << "[Server] POST " << backend_url << " - Streaming" << std::endl;
+                std::cout << "[Server] POST /api/v1/chat/completions - Streaming" << std::endl;
                 
                 // Set up streaming response with SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -588,20 +588,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [backend_url, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         // For chunked responses, offset tracks bytes sent so far
                         // We only want to stream once when offset is 0
                         if (offset > 0) {
                             return false; // We're done after the first call
                         }
                         
-                        // Use our StreamingProxy to handle all the complexity
-                        StreamingProxy::forward_sse_stream(
-                            backend_url,
-                            request_body,
-                            sink,
-                            nullptr // Telemetry is printed automatically
-                        );
+                        // Use unified Router path for streaming
+                        router_->chat_completion_stream(request_body, sink);
                         
                         // Return false to indicate we're done streaming
                         return false;
@@ -613,11 +608,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
             }
         } else {
-            // Forward to router for non-streaming
-            std::string backend_url = router_->get_backend_address() + "/chat/completions";
-            
             // Log the HTTP request
-            std::cout << "[Server] POST " << backend_url << " - ";
+            std::cout << "[Server] POST /api/v1/chat/completions - ";
             
             auto response = router_->chat_completion(request_json);
             
@@ -710,18 +702,21 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
+        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        std::string request_body = req.body;
+        if (router_->get_loaded_recipe() == "flm") {
+            auto request_json_copy = request_json;
+            request_json_copy["model"] = router_->get_loaded_checkpoint();
+            request_body = request_json_copy.dump();
+            if (!is_streaming) {
+                request_json = request_json_copy;  // Update for non-streaming path too
+            }
+        }
+        
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/completions";
-                
-                // FLM requires the checkpoint name in the request, not the Lemonade model name
-                std::string request_body = req.body;
-                if (router_->get_loaded_recipe() == "flm") {
-                    auto request_json_copy = request_json;
-                    request_json_copy["model"] = router_->get_loaded_checkpoint();
-                    request_body = request_json_copy.dump();
-                }
+                // Log the HTTP request
+                std::cout << "[Server] POST /api/v1/completions - Streaming" << std::endl;
                 
                 // Set up SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -729,18 +724,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
                 
-                // Use atomic flag to ensure content provider is called only once
-                auto stream_started = std::make_shared<std::atomic<bool>>(false);
-                
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, backend_url, request_body, stream_started](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0 || stream_started->exchange(true)) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                        if (offset > 0) {
                             return false; // Already sent everything
                         }
                         
-                        // Forward the streaming request
-                        StreamingProxy::forward_sse_stream(backend_url, request_body, sink);
+                        // Use unified Router path for streaming
+                        router_->completion_stream(request_body, sink);
                         
                         return false; // Signal completion
                     }
@@ -987,10 +979,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/responses";
-                
-                std::cout << "[Server] POST " << backend_url << " - Streaming (Responses API)" << std::endl;
+                std::cout << "[Server] POST /api/v1/responses - Streaming" << std::endl;
                 
                 // Set up streaming response with SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -1001,18 +990,13 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [backend_url, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
                         
-                        // Use StreamingProxy to forward the SSE stream
-                        StreamingProxy::forward_sse_stream(
-                            backend_url,
-                            request_body,
-                            sink,
-                            nullptr
-                        );
+                        // Use unified Router path for streaming
+                        router_->responses_stream(request_body, sink);
                         
                         return false;
                     }
@@ -1023,10 +1007,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
             }
         } else {
-            // Forward to backend for non-streaming
-            std::string backend_url = router_->get_backend_address() + "/responses";
-            
-            std::cout << "[Server] POST " << backend_url << " - Non-streaming (Responses API)" << std::endl;
+            std::cout << "[Server] POST /api/v1/responses - Non-streaming" << std::endl;
             
             auto response = router_->responses(request_json);
             

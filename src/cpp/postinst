@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Create the llama directory and make it writable
+# This ensures that llama.cpp can be installed to the application directory
+
+INSTALL_DIR="/usr/local/share/lemonade-server"
+LLAMA_DIR="${INSTALL_DIR}/llama"
+
+# Create directory if it doesn't exist
+mkdir -p "$LLAMA_DIR"
+
+# Always set correct permissions (even if directory already existed)
+chmod 777 "$LLAMA_DIR"
+
+exit 0

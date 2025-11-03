@@ -3,89 +3,69 @@
 #include "lemon_tray/platform/linux_tray.h"
 #include <iostream>
 
-// TODO: Include GTK and libappindicator headers
-// #include <gtk/gtk.h>
-// #include <libappindicator/app-indicator.h>
-// #include <libnotify/notify.h>
+// Headless stub implementation for Linux
+// This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
+// Users should run with --no-tray flag on Linux
 
 namespace lemon_tray {
 
 LinuxTray::LinuxTray()
-    : indicator_(nullptr)
-    , gtk_menu_(nullptr)
-    , should_exit_(false)
+    : should_exit_(false)
+    , log_level_("info")
 {
-    // TODO: Initialize GTK
-    // gtk_init(nullptr, nullptr);
+    // Headless mode - no initialization needed
 }
 
 LinuxTray::~LinuxTray() {
-    // TODO: Clean up GTK and AppIndicator objects
+    // Headless mode - no cleanup needed
 }
 
 bool LinuxTray::initialize(const std::string& app_name, const std::string& icon_path) {
     app_name_ = app_name;
     icon_path_ = icon_path;
     
-    std::cout << "[Linux Tray] TODO: Initialize system tray" << std::endl;
-    std::cout << "[Linux Tray] App name: " << app_name << std::endl;
-    std::cout << "[Linux Tray] Icon path: " << icon_path << std::endl;
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - tray not supported on Linux" << std::endl;
+        std::cout << "[Linux Tray] Please use --no-tray flag to run in headless mode" << std::endl;
+    }
     
-    // TODO: Implement using libappindicator3
-    /*
-    indicator_ = app_indicator_new(
-        "lemonade-server",
-        icon_path.c_str(),
-        APP_INDICATOR_CATEGORY_APPLICATION_STATUS
-    );
-    app_indicator_set_status(indicator_, APP_INDICATOR_STATUS_ACTIVE);
-    app_indicator_set_title(indicator_, app_name.c_str());
-    */
-    
+    // Call ready callback immediately since there's no UI to initialize
     if (ready_callback_) {
         ready_callback_();
     }
     
-    return false; // Not implemented yet
+    // Return false to indicate tray is not available
+    // This will cause the app to fall back to --no-tray behavior
+    return false;
 }
 
 void LinuxTray::run() {
-    std::cout << "[Linux Tray] TODO: Run GTK main loop" << std::endl;
-    // TODO: gtk_main();
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - no event loop to run" << std::endl;
+    }
+    // No-op in headless mode
 }
 
 void LinuxTray::stop() {
-    std::cout << "[Linux Tray] TODO: Stop GTK main loop" << std::endl;
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - stopping" << std::endl;
+    }
     should_exit_ = true;
-    // TODO: gtk_main_quit();
 }
 
 void LinuxTray::set_menu(const Menu& menu) {
-    std::cout << "[Linux Tray] TODO: Set menu with " << menu.items.size() << " items" << std::endl;
-    
-    // TODO: Build GtkMenu from Menu structure
-    /*
-    GtkWidget *gtk_menu = gtk_menu_new();
-    
-    for (const auto& item : menu.items) {
-        GtkWidget *menu_item;
-        if (item.is_separator) {
-            menu_item = gtk_separator_menu_item_new();
-        } else {
-            menu_item = gtk_menu_item_new_with_label(item.text.c_str());
-            // Connect callback
-        }
-        gtk_menu_shell_append(GTK_MENU_SHELL(gtk_menu), menu_item);
-        gtk_widget_show(menu_item);
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - ignoring menu with " 
+                  << menu.items.size() << " items" << std::endl;
     }
-    
-    app_indicator_set_menu(indicator_, GTK_MENU(gtk_menu));
-    */
+    // No-op in headless mode
 }
 
 void LinuxTray::update_menu() {
-    std::cout << "[Linux Tray] TODO: Update menu" << std::endl;
-    // TODO: Rebuild menu
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - ignoring menu update" << std::endl;
+    }
+    // No-op in headless mode
 }
 
 void LinuxTray::show_notification(
@@ -93,38 +73,33 @@ void LinuxTray::show_notification(
     const std::string& message,
     NotificationType type)
 {
-    std::cout << "[Linux Tray] TODO: Show notification: " << title << " - " << message << std::endl;
-    
-    // TODO: Use libnotify
-    /*
-    notify_init("Lemonade Server");
-    NotifyNotification *n = notify_notification_new(
-        title.c_str(),
-        message.c_str(),
-        nullptr  // icon
-    );
-    notify_notification_show(n, nullptr);
-    g_object_unref(G_OBJECT(n));
-    notify_uninit();
-    */
+    // Print to console instead of showing a GUI notification
+    std::cout << "[Notification] " << title << ": " << message << std::endl;
 }
 
 void LinuxTray::set_icon(const std::string& icon_path) {
     icon_path_ = icon_path;
-    std::cout << "[Linux Tray] TODO: Set icon: " << icon_path << std::endl;
-    // TODO: app_indicator_set_icon_full(indicator_, icon_path.c_str(), "Lemonade");
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - ignoring icon: " << icon_path << std::endl;
+    }
+    // No-op in headless mode
 }
 
 void LinuxTray::set_tooltip(const std::string& tooltip) {
-    std::cout << "[Linux Tray] TODO: Set tooltip: " << tooltip << std::endl;
-    // TODO: app_indicator_set_title(indicator_, tooltip.c_str());
+    if (log_level_ == "debug") {
+        std::cout << "[Linux Tray] Headless mode - ignoring tooltip: " << tooltip << std::endl;
+    }
+    // No-op in headless mode
 }
 
 void LinuxTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
 }
 
+void LinuxTray::set_log_level(const std::string& log_level) {
+    log_level_ = log_level;
+}
+
 } // namespace lemon_tray
 
 #endif // __linux__ && !__ANDROID__
-

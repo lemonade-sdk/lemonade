@@ -21,7 +21,8 @@ public:
         const std::vector<std::string>& args,
         const std::string& working_dir = "",
         bool inherit_output = false,
-        bool filter_health_logs = false);
+        bool filter_health_logs = false,
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {});
     
     // Stop a process
     static void stop_process(ProcessHandle handle);

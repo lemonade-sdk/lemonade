@@ -50,14 +50,12 @@ SERVER_BINARY = "lemonade-server-dev"
 
 
 def is_cpp_server():
-    """Check if we're testing the C++ server instead of Python."""
-    return (
-        "lemonade-router.exe" in SERVER_BINARY
-        or "lemonade-server-beta.exe" in SERVER_BINARY
-        or (
-            SERVER_BINARY != "lemonade-server-dev" and not SERVER_BINARY.endswith(".py")
-        )
-    )
+    """Check if we're testing the C++ server instead of Python.
+
+    Returns True if --server-binary argument was provided (i.e., not using the default Python server).
+    """
+    # If --server-binary was provided, we're testing a custom binary (C++ server)
+    return SERVER_BINARY != "lemonade-server-dev"
 
 
 def stop_lemonade():

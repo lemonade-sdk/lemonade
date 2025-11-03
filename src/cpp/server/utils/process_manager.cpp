@@ -69,7 +69,8 @@ ProcessHandle ProcessManager::start_process(
     const std::vector<std::string>& args,
     const std::string& working_dir,
     bool inherit_output,
-    bool filter_health_logs) {
+    bool filter_health_logs,
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
     
     ProcessHandle handle;
     handle.handle = nullptr;
@@ -196,6 +197,11 @@ ProcessHandle ProcessManager::start_process(
         // Child process
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
+        }
+        
+        // Set environment variables
+        for (const auto& env_pair : env_vars) {
+            setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
         }
         
         // Prepare argv

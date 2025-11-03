@@ -85,6 +85,12 @@ private:
     bool terminate_process();
     bool is_process_alive() const;
     
+#ifndef _WIN32
+    // Linux-specific PID file management
+    void write_pid_file();
+    void remove_pid_file();
+#endif
+    
     // Member variables
     pid_t server_pid_;
     std::string server_binary_path_;

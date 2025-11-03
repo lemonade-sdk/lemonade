@@ -66,21 +66,29 @@ FetchContent_Declare(CLI11
     GIT_TAG v2.4.2
 )
 
+# zstd (BSD License) - required by httplib for compression
+FetchContent_Declare(zstd
+    GIT_REPOSITORY https://github.com/facebook/zstd.git
+    GIT_TAG v1.5.5
+    SOURCE_SUBDIR build/cmake
+)
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
 # libcurl (curl license - MIT/X derivate)
 set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
 set(CURL_STATICLIB ON CACHE INTERNAL "")
-set(CURL_STATIC_CRT ON CACHE INTERNAL "")  # Use static runtime on Windows
 set(HTTP_ONLY ON CACHE INTERNAL "")
 set(BUILD_TESTING OFF CACHE INTERNAL "")
 set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
-# Completely disable zstd support in curl to avoid runtime dependency
-set(CURL_ZSTD OFF CACHE INTERNAL "")
-set(USE_ZSTD OFF CACHE INTERNAL "")
-set(HAVE_ZSTD OFF CACHE INTERNAL "")
-set(CURL_DISABLE_ZSTD ON CACHE INTERNAL "")
+set(SKIP_INSTALL_ALL ON CACHE INTERNAL "")  # Don't install curl files
+
 # Enable native SSL backends per platform
 if(WIN32)
+    set(CURL_STATIC_CRT ON CACHE INTERNAL "")  # Use static runtime on Windows
     set(CURL_USE_SCHANNEL ON CACHE INTERNAL "")
     set(CMAKE_USE_SCHANNEL ON CACHE INTERNAL "")
 elseif(APPLE)
@@ -94,7 +102,35 @@ FetchContent_Declare(curl
 )
 
 # Make dependencies available
-FetchContent_MakeAvailable(httplib json CLI11 curl)
+FetchContent_MakeAvailable(json CLI11 zstd)
+
+# Create alias for httplib compatibility
+# httplib expects zstd::libzstd but FetchContent builds libzstd_static
+if(TARGET libzstd_static AND NOT TARGET zstd::libzstd)
+    add_library(zstd::libzstd ALIAS libzstd_static)
+endif()
+
+# Prevent httplib from searching for system zstd (we're providing it via FetchContent)
+set(ZSTD_FOUND TRUE CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+
+# Fetch curl but prevent it from installing
+FetchContent_GetProperties(curl)
+if(NOT curl_POPULATED)
+    FetchContent_Populate(curl)
+    # Prevent curl from installing any files
+    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+    add_subdirectory(${curl_SOURCE_DIR} ${curl_BINARY_DIR} EXCLUDE_FROM_ALL)
+    set(SKIP_INSTALL_ALL OFF CACHE BOOL "" FORCE)
+endif()
+
+# Fetch httplib but prevent it from installing
+FetchContent_GetProperties(httplib)
+if(NOT httplib_POPULATED)
+    FetchContent_Populate(httplib)
+    set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${httplib_SOURCE_DIR} ${httplib_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
 # Include directories
 include_directories(
@@ -164,20 +200,47 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMENT "Copying resources to output directory"
 )
 
-# Copy zstd.dll from system PATH at build time (Windows only)
-if(WIN32)
-    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-        COMMAND where.exe zstd.dll > "${CMAKE_BINARY_DIR}/zstd_path.txt" 2>NUL || echo "zstd.dll not found" > "${CMAKE_BINARY_DIR}/zstd_path.txt"
-        COMMAND powershell -NoProfile -Command "if (Test-Path '${CMAKE_BINARY_DIR}/zstd_path.txt') { $zstdPath = Get-Content '${CMAKE_BINARY_DIR}/zstd_path.txt' -First 1 -ErrorAction SilentlyContinue; if ($zstdPath -and (Test-Path $zstdPath)) { Copy-Item $zstdPath '$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/zstd.dll' -Force; Write-Host 'Copied zstd.dll from' $zstdPath } }"
-        COMMENT "Copying zstd.dll from system PATH"
-        VERBATIM
-    )
-endif()
-
-# Installation
-install(TARGETS ${EXECUTABLE_NAME}
-    RUNTIME DESTINATION bin
-)
-
 # Add tray application subdirectory
 add_subdirectory(tray)
+
+# ============================================================
+# CPack Configuration for .deb Package (Linux only)
+# ============================================================
+if(UNIX AND NOT APPLE)
+    set(CPACK_GENERATOR "DEB")
+    set(CPACK_PACKAGE_NAME "lemonade-server")
+    set(CPACK_PACKAGE_VERSION "1.0.0")
+    set(CPACK_PACKAGE_VENDOR "Lemonade")
+    set(CPACK_PACKAGE_CONTACT "support@lemonade-server.ai")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
+    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
+    
+    # Debian-specific settings
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <support@lemonade-server.ai>")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    
+    # Installation paths - use ~/.local for user install (no sudo needed)
+    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
+    if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
+        set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+    endif()
+    
+    # Only install our executables (not curl/development files)
+    # Note: lemonade-server-beta installation is handled in tray/CMakeLists.txt
+    install(TARGETS ${EXECUTABLE_NAME}
+        RUNTIME DESTINATION bin
+    )
+    
+    # Install resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
+        DESTINATION share/lemonade-server/resources
+    )
+    
+    # Post-install script to make directories writable
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+    
+    include(CPack)
+endif()

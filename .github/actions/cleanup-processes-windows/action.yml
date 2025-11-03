@@ -1,0 +1,99 @@
+name: 'Cleanup Processes (Windows)'
+description: 'Kill all lemonade, Python, llama-server, FLM, and conda processes on Windows'
+runs:
+  using: "composite"
+  steps:
+    - name: Kill zombie processes
+      shell: PowerShell
+      run: |
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "Cleaning up processes on Windows..." -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+        
+        # Function to safely kill processes by name pattern
+        function Stop-ProcessByPattern {
+            param(
+                [string]$Pattern,
+                [string]$Description
+            )
+            
+            Write-Host "`nSearching for $Description processes..." -ForegroundColor Yellow
+            $processes = Get-Process | Where-Object { $_.ProcessName -like "*$Pattern*" }
+            
+            if ($processes) {
+                Write-Host "Found $($processes.Count) $Description process(es):" -ForegroundColor Yellow
+                $processes | ForEach-Object {
+                    Write-Host "  - $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Gray
+                }
+                
+                $processes | ForEach-Object {
+                    try {
+                        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+                        Write-Host "  Killed: $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Green
+                    } catch {
+                        Write-Host "  Failed to kill: $($_.ProcessName) (PID: $($_.Id)) - $_" -ForegroundColor Red
+                    }
+                }
+            } else {
+                Write-Host "No $Description processes found." -ForegroundColor Gray
+            }
+        }
+        
+        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-dev, etc.)
+        Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
+        
+        # Kill Python processes
+        Stop-ProcessByPattern -Pattern "python" -Description "Python"
+        
+        # Kill llama-server processes
+        Stop-ProcessByPattern -Pattern "llama-server" -Description "llama-server"
+        Stop-ProcessByPattern -Pattern "llama" -Description "llama"
+        
+        # Kill FLM processes (Windows only)
+        Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
+        
+        # Kill conda processes
+        Stop-ProcessByPattern -Pattern "conda" -Description "conda"
+        
+        # Kill wscript processes (VBScript launcher used by lemonade)
+        Stop-ProcessByPattern -Pattern "wscript" -Description "wscript"
+        
+        # Wait a moment for processes to fully terminate
+        Start-Sleep -Seconds 2
+        
+        # Clean up Python user directory that can cause issues
+        Write-Host "`nCleaning up system Python directory..." -ForegroundColor Yellow
+        $systemPythonPath = "C:\windows\system32\config\systemprofile\AppData\Roaming\Python"
+        if (Test-Path $systemPythonPath) {
+            try {
+                Remove-Item -Path $systemPythonPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "  Cleaned: $systemPythonPath" -ForegroundColor Green
+            } catch {
+                Write-Host "  Failed to clean: $systemPythonPath - $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "  System Python directory not found (already clean)" -ForegroundColor Gray
+        }
+        
+        # Clean up log files to avoid confusion between test runs
+        Write-Host "`nCleaning up log files..." -ForegroundColor Yellow
+        $logPatterns = @("lemonade*.log", "lemonade-router*.log", "lemonade-server*.log")
+        foreach ($pattern in $logPatterns) {
+            $logFiles = Get-ChildItem "$env:TEMP\$pattern" -ErrorAction SilentlyContinue
+            if ($logFiles) {
+                Write-Host "  Found $($logFiles.Count) log file(s) matching '$pattern'" -ForegroundColor Gray
+                $logFiles | ForEach-Object {
+                    try {
+                        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                        Write-Host "    Removed: $($_.Name)" -ForegroundColor Green
+                    } catch {
+                        Write-Host "    Failed to remove: $($_.Name)" -ForegroundColor Red
+                    }
+                }
+            }
+        }
+        
+        Write-Host "`n========================================" -ForegroundColor Cyan
+        Write-Host "Process cleanup complete!" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+

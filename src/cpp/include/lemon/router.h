@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <nlohmann/json.hpp>
+#include <httplib.h>
 #include "wrapped_server.h"
 
 namespace lemon {
@@ -40,12 +41,17 @@ public:
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
     
-    // Forward requests to the appropriate wrapped server
+    // Forward requests to the appropriate wrapped server (non-streaming)
     json chat_completion(const json& request);
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
     json responses(const json& request);
+    
+    // Forward streaming requests to the appropriate wrapped server
+    void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
+    void completion_stream(const std::string& request_body, httplib::DataSink& sink);
+    void responses_stream(const std::string& request_body, httplib::DataSink& sink);
     
     // Get telemetry data
     json get_stats() const;
