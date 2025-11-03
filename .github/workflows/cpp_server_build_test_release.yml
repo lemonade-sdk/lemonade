@@ -269,7 +269,7 @@ jobs:
 
   build-lemonade-server-deb:
     name: Build Lemonade Server .deb Package
-    runs-on: [cmake, Linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -278,8 +278,27 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt update
-          sudo apt install -y build-essential cmake libcurl4-openssl-dev pkg-config
+          set -e
+          
+          echo "Updating package lists..."
+          sudo apt-get update
+          
+          echo "Installing build dependencies..."
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            git
+          
+          echo "Verifying installations..."
+          cmake --version
+          gcc --version
+          pkg-config --version
+          
+          echo "Build dependencies installed successfully!"
 
       - name: Build C++ Server with CMake
         run: |
@@ -290,26 +309,41 @@ jobs:
           cd src/cpp
           
           # Create build directory
-          rm -rf build
+          if [ -d "build" ]; then
+              echo "Removing existing build directory..."
+              rm -rf build
+          fi
           mkdir build
           cd build
           
-          # Configure
-          cmake ..
+          # Configure with explicit Release build type
+          echo "Configuring CMake..."
+          cmake .. -DCMAKE_BUILD_TYPE=Release
           
-          # Build
-          cmake --build . --config Release -j$(nproc)
+          # Build using all available cores
+          echo "Building binaries..."
+          cmake --build . -j$(nproc)
+          
+          # List build output for debugging
+          echo "Build output contents:"
+          ls -lh
           
           # Verify binaries exist
           if [ ! -f "lemonade-router" ]; then
               echo "ERROR: lemonade-router not found!"
+              ls -lR .
               exit 1
           fi
           
           if [ ! -f "lemonade-server-beta" ]; then
               echo "ERROR: lemonade-server-beta not found!"
+              ls -lR .
               exit 1
           fi
+          
+          echo "Verifying binary executability..."
+          ./lemonade-router --version
+          ./lemonade-server-beta --version
           
           echo "C++ build successful!"
 
@@ -319,17 +353,30 @@ jobs:
           
           cd src/cpp/build
           
-          # Create .deb package
-          cpack
+          echo "Creating .deb package with CPack..."
+          cpack -G DEB -V
+          
+          # List generated files
+          echo "Files in build directory:"
+          ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
           
           # Verify package was created
           if [ ! -f "lemonade-server-1.0.0-Linux.deb" ]; then
               echo "ERROR: .deb package not created!"
+              echo "Contents of build directory:"
+              ls -lR .
               exit 1
           fi
           
           echo ".deb package created successfully!"
           ls -lh lemonade-server-1.0.0-Linux.deb
+          
+          # Show package info
+          echo "Package information:"
+          dpkg-deb --info lemonade-server-1.0.0-Linux.deb
+          
+          echo "Package contents:"
+          dpkg-deb --contents lemonade-server-1.0.0-Linux.deb
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
