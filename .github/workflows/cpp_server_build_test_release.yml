@@ -393,7 +393,7 @@ jobs:
   # ========================================================================
 
   test-exe-rai-hybrid-basics:
-    name: Test .exe Installer - Basic RAI Hybird Functionality
+    name: Test .exe - Basic RAI Hybird Functionality
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -718,7 +718,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-exe-flm:
-    name: Test C++ Server with FLM
+    name: Test .exe - FLM
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -797,7 +797,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-exe-llamacpp-vulkan:
-    name: Test C++ Server with Llamacpp (Vulkan)
+    name: Test .exe - Llamacpp (Vulkan)
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -875,7 +875,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-exe-llamacpp-rocm:
-    name: Test C++ Server with Llamacpp (ROCm)
+    name: Test .exe - Llamacpp (ROCm)
     runs-on: [stx-halo, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -953,7 +953,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-exe-rai-cpu:
-    name: Test C++ Server - Endpoints and ryzenai-serve CPU
+    name: Test .exe - ryzenai-serve CPU
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -1056,7 +1056,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-deb-llamacpp-vulkan:
-    name: Test .deb Package with Llamacpp (Vulkan)
+    name: Test .deb - Llamacpp (Vulkan)
     runs-on: ubuntu-latest
     needs: build-lemonade-server-deb
     env:
@@ -1159,7 +1159,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-deb-llamacpp-rocm:
-    name: Test .deb Package with Llamacpp (ROCm)
+    name: Test .deb - Llamacpp (ROCm)
     runs-on: [stx-halo, Linux]
     needs: build-lemonade-server-deb
     if: false
