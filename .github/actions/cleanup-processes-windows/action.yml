@@ -28,8 +28,15 @@ runs:
                 
                 $processes | ForEach-Object {
                     try {
-                        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-                        Write-Host "  Killed: $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Green
+                        # Use taskkill for more forceful termination with child process tree
+                        $result = taskkill /F /T /PID $_.Id 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "  Killed: $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Green
+                        } else {
+                            # Fallback to Stop-Process if taskkill fails
+                            Stop-Process -Id $_.Id -Force -ErrorAction Stop
+                            Write-Host "  Killed (fallback): $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Green
+                        }
                     } catch {
                         Write-Host "  Failed to kill: $($_.ProcessName) (PID: $($_.Id)) - $_" -ForegroundColor Red
                     }
@@ -96,4 +103,28 @@ runs:
         Write-Host "`n========================================" -ForegroundColor Cyan
         Write-Host "Process cleanup complete!" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
+        
+        # Verification: Check if any processes are still running
+        Write-Host "`nVerifying cleanup..." -ForegroundColor Yellow
+        $patterns = @("lemonade", "python", "llama-server", "llama", "flm", "conda", "wscript")
+        $stillRunning = @()
+        
+        foreach ($pattern in $patterns) {
+            $remainingProcesses = Get-Process | Where-Object { $_.ProcessName -like "*$pattern*" }
+            if ($remainingProcesses) {
+                $stillRunning += $remainingProcesses
+                Write-Host "  WARNING: Found $($remainingProcesses.Count) $pattern process(es) still running:" -ForegroundColor Red
+                $remainingProcesses | ForEach-Object {
+                    Write-Host "    - $($_.ProcessName) (PID: $($_.Id))" -ForegroundColor Red
+                }
+            }
+        }
+        
+        if ($stillRunning.Count -eq 0) {
+            Write-Host "  ✓ All target processes successfully terminated" -ForegroundColor Green
+        } else {
+            Write-Host "`n  ✗ ERROR: $($stillRunning.Count) process(es) still running after cleanup!" -ForegroundColor Red
+            Write-Host "  This may cause test failures or conflicts." -ForegroundColor Red
+            exit 1
+        }
 

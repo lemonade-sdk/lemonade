@@ -107,10 +107,14 @@ runs:
                         echo "AMD GPU driver detected, attempting restart..."
                         
                         # Try to unload and reload amdgpu module
-                        if sudo -n modprobe -r amdgpu 2>/dev/null; then
+                        # Capture stderr to show actual error message
+                        UNLOAD_ERROR=$(sudo -n modprobe -r amdgpu 2>&1)
+                        if [ $? -eq 0 ]; then
                             echo "  Unloaded amdgpu module"
                             sleep 2
-                            if sudo -n modprobe amdgpu 2>/dev/null; then
+                            
+                            RELOAD_ERROR=$(sudo -n modprobe amdgpu 2>&1)
+                            if [ $? -eq 0 ]; then
                                 echo "  Reloaded amdgpu module"
                                 sleep 2
                                 
@@ -122,9 +126,11 @@ runs:
                                 fi
                             else
                                 echo "  ERROR: Failed to reload amdgpu module"
+                                echo "  Reason: $RELOAD_ERROR"
                             fi
                         else
-                            echo "  WARNING: Unable to restart GPU driver (requires sudo privileges)"
+                            echo "  WARNING: Unable to restart GPU driver"
+                            echo "  Reason: $UNLOAD_ERROR"
                             echo "  This may require a system reboot to clear D-state processes"
                         fi
                     else
@@ -171,3 +177,27 @@ runs:
         echo "========================================"
         echo "Process cleanup complete!"
         echo "========================================"
+        
+        # Verification: Check if any processes are still running
+        echo ""
+        echo "Verifying cleanup..."
+        PATTERNS=("lemonade" "python" "llama-server" "flm" "conda" "ryzenai-serve")
+        STILL_RUNNING=0
+        
+        for pattern in "${PATTERNS[@]}"; do
+            remaining=$(ps aux | grep -i "$pattern" | grep -v grep | grep -v "cleanup-processes" || true)
+            if [ -n "$remaining" ]; then
+                echo "  WARNING: Found $pattern process(es) still running:" >&2
+                echo "$remaining" | awk '{print "    - PID " $2 ": " $11}' >&2
+                STILL_RUNNING=$((STILL_RUNNING + 1))
+            fi
+        done
+        
+        if [ $STILL_RUNNING -eq 0 ]; then
+            echo "  ✓ All target processes successfully terminated"
+        else
+            echo ""
+            echo "  ✗ ERROR: Some processes still running after cleanup!" >&2
+            echo "  This may cause test failures or conflicts." >&2
+            exit 1
+        fi
