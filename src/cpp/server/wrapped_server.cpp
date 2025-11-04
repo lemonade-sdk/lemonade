@@ -19,9 +19,8 @@ int WrappedServer::choose_port() {
 }
 
 bool WrappedServer::wait_for_ready() {
-    // Try both /health and /v1/health (FLM uses /v1/health, llama-server uses /health)
+    // Check /health endpoint (llama-server uses /health)
     std::string health_url = get_base_url() + "/health";
-    std::string health_url_v1 = get_base_url() + "/v1/health";
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
@@ -51,14 +50,14 @@ bool WrappedServer::wait_for_ready() {
             return false;
         }
         
-        // Try both health endpoints
-        if (utils::HttpClient::is_reachable(health_url, 1) || 
-            utils::HttpClient::is_reachable(health_url_v1, 1)) {
+        // Check health endpoint
+        if (utils::HttpClient::is_reachable(health_url, 1)) {
             std::cout << server_name_ + " is ready!" << std::endl;
             return true;
         }
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Sleep 1 second between checks (matches Python implementation)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         
         // Print progress every 10 seconds
         auto time_since_progress = std::chrono::steady_clock::now() - last_progress_time;

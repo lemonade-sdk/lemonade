@@ -306,6 +306,7 @@ bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
     
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, timeout_seconds);  // Prevent indefinite blocking on connection
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
