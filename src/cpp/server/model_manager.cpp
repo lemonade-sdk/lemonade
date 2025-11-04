@@ -211,14 +211,31 @@ std::string ModelManager::get_cache_dir() {
         return std::string(cache_env);
     }
     
-    // Use HuggingFace cache directory (standard HF behavior)
-    // Check HF_HOME first
-    const char* hf_home = std::getenv("HF_HOME");
-    if (hf_home) {
-        return std::string(hf_home);
+    // Default to ~/.cache/lemonade (matching Python implementation)
+#ifdef _WIN32
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile) {
+        return std::string(userprofile) + "\\.cache\\lemonade";
     }
-    
-    // Default to ~/.cache/huggingface/hub
+    return "C:\\.cache\\lemonade";
+#else
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/lemonade";
+    }
+    return "/tmp/.cache/lemonade";
+#endif
+}
+
+std::string ModelManager::get_user_models_file() {
+    return get_cache_dir() + "/user_models.json";
+}
+
+std::string ModelManager::get_hf_cache_dir() const {
+    const char* hf_home_env = std::getenv("HF_HOME");
+    if (hf_home_env) {
+        return std::string(hf_home_env) + "/hub";
+    }
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
@@ -234,8 +251,141 @@ std::string ModelManager::get_cache_dir() {
 #endif
 }
 
-std::string ModelManager::get_user_models_file() {
-    return get_cache_dir() + "/user_models.json";
+std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
+    // FLM models use checkpoint as-is (e.g., "gemma3:4b")
+    if (info.recipe == "flm") {
+        return info.checkpoint;
+    }
+    
+    std::string hf_cache = get_hf_cache_dir();
+    
+    // Local uploads: checkpoint is relative path from HF cache
+    if (info.source == "local_upload") {
+        std::string normalized = info.checkpoint;
+        std::replace(normalized.begin(), normalized.end(), '\\', '/');
+        return hf_cache + "/" + normalized;
+    }
+    
+    // HuggingFace models: need to find the GGUF file in cache
+    // Parse checkpoint to get repo_id and variant
+    std::string repo_id = info.checkpoint;
+    std::string variant;
+    
+    size_t colon_pos = info.checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        repo_id = info.checkpoint.substr(0, colon_pos);
+        variant = info.checkpoint.substr(colon_pos + 1);
+    }
+    
+    // Convert org/model to models--org--model
+    std::string cache_dir_name = "models--";
+    for (char c : repo_id) {
+        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+    }
+    
+    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+    
+    // For OGA models, look for genai_config.json directory
+    if (info.recipe.find("oga-") == 0 || info.recipe == "ryzenai") {
+        if (fs::exists(model_cache_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
+                    return entry.path().parent_path().string();
+                }
+            }
+        }
+        return model_cache_path;  // Return directory even if genai_config not found
+    }
+    
+    // For llamacpp, find the GGUF file with advanced sharded model support
+    if (info.recipe == "llamacpp") {
+        if (!fs::exists(model_cache_path)) {
+            return model_cache_path;  // Return directory path even if not found
+        }
+        
+        // Collect all GGUF files (exclude mmproj files)
+        std::vector<std::string> all_gguf_files;
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                std::string filename_lower = filename;
+                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+                
+                if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
+                    all_gguf_files.push_back(entry.path().string());
+                }
+            }
+        }
+        
+        if (all_gguf_files.empty()) {
+            return model_cache_path;  // Return directory if no GGUF found
+        }
+        
+        // Sort files for consistent ordering (important for sharded models)
+        std::sort(all_gguf_files.begin(), all_gguf_files.end());
+        
+        // Case 0: Wildcard (*) - return first file (llama-server will auto-load shards)
+        if (variant == "*") {
+            return all_gguf_files[0];
+        }
+        
+        // Case 1: Empty variant - return first file
+        if (variant.empty()) {
+            return all_gguf_files[0];
+        }
+        
+        // Case 2: Exact filename match (variant ends with .gguf)
+        if (variant.find(".gguf") != std::string::npos) {
+            for (const auto& filepath : all_gguf_files) {
+                std::string filename = fs::path(filepath).filename().string();
+                if (filename == variant) {
+                    return filepath;
+                }
+            }
+            return model_cache_path;  // Not found
+        }
+        
+        // Case 3: Files ending with {variant}.gguf (case insensitive)
+        std::string variant_lower = variant;
+        std::transform(variant_lower.begin(), variant_lower.end(), variant_lower.begin(), ::tolower);
+        std::string suffix = variant_lower + ".gguf";
+        
+        std::vector<std::string> matching_files;
+        for (const auto& filepath : all_gguf_files) {
+            std::string filename = fs::path(filepath).filename().string();
+            std::string filename_lower = filename;
+            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+            
+            if (filename_lower.size() >= suffix.size() &&
+                filename_lower.substr(filename_lower.size() - suffix.size()) == suffix) {
+                matching_files.push_back(filepath);
+            }
+        }
+        
+        if (!matching_files.empty()) {
+            return matching_files[0];
+        }
+        
+        // Case 4: Folder-based sharding (files in variant/ folder)
+        std::string folder_prefix_lower = variant_lower + "/";
+        
+        for (const auto& filepath : all_gguf_files) {
+            // Get relative path from model cache path
+            std::string relative_path = filepath.substr(model_cache_path.length());
+            std::string relative_lower = relative_path;
+            std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
+            
+            if (relative_lower.find(folder_prefix_lower) != std::string::npos) {
+                return filepath;
+            }
+        }
+        
+        // No match found - return first file as fallback
+        return all_gguf_files[0];
+    }
+    
+    // Fallback: return directory path
+    return model_cache_path;
 }
 
 json ModelManager::load_server_models() {
@@ -294,6 +444,9 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
             }
         }
         
+        // Resolve model path
+        info.resolved_path = resolve_model_path(info);
+        
         models[key] = info;
     }
     
@@ -303,14 +456,18 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
         info.model_name = "user." + key;
         info.checkpoint = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
-        info.suggested = false;
+        info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
                 info.labels.push_back(label.get<std::string>());
             }
         }
+        
+        // Resolve model path
+        info.resolved_path = resolve_model_path(info);
         
         models[info.model_name] = info;
     }
@@ -323,73 +480,20 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     auto all_models = get_supported_models(); // Already filtered by backend
     std::map<std::string, ModelInfo> downloaded;
     
-    // OPTIMIZATION: List HF cache directory once instead of checking each model
-    std::string hf_cache;
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        hf_cache = std::string(hf_home_env) + "/hub";
-    } else {
-#ifdef _WIN32
-        const char* userprofile = std::getenv("USERPROFILE");
-        if (userprofile) {
-            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-        }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            hf_cache = std::string(home) + "/.cache/huggingface/hub";
-        }
-#endif
-    }
-    
-    // Build a set of available model directories by listing the HF cache once
-    std::unordered_set<std::string> available_hf_models;
-    if (!hf_cache.empty() && fs::exists(hf_cache)) {
-        try {
-            for (const auto& entry : fs::directory_iterator(hf_cache)) {
-                if (entry.is_directory()) {
-                    std::string dir_name = entry.path().filename().string();
-                    // Only consider directories that start with "models--"
-                    if (dir_name.find("models--") == 0) {
-                        available_hf_models.insert(dir_name);
-                    }
-                }
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "[ModelManager] Warning: Could not list HF cache: " << e.what() << std::endl;
-        }
-    }
-    
-    // Get FLM models once
+    // OPTIMIZATION: For FLM, get the list once
     auto flm_models = get_flm_installed_models();
     std::unordered_set<std::string> available_flm_models(flm_models.begin(), flm_models.end());
     
-    // Now filter models using in-memory lookups (no filesystem calls per model!)
+    // Filter models - just check resolved_path exists
     for (const auto& [name, info] : all_models) {
         bool is_available = false;
         
         if (info.recipe == "flm") {
-            // Check FLM set
+            // FLM models use their own registry
             is_available = available_flm_models.count(info.checkpoint) > 0;
         } else {
-            // Convert checkpoint to cache directory name
-            std::string checkpoint = info.checkpoint;
-            size_t colon_pos = checkpoint.find(':');
-            if (colon_pos != std::string::npos) {
-                checkpoint = checkpoint.substr(0, colon_pos);
-            }
-            
-            std::string cache_dir_name = "models--";
-            for (char c : checkpoint) {
-                if (c == '/') {
-                    cache_dir_name += "--";
-                } else {
-                    cache_dir_name += c;
-                }
-            }
-            
-            // Check HF set
-            is_available = available_hf_models.count(cache_dir_name) > 0;
+            // All other models: check if resolved_path exists
+            is_available = !info.resolved_path.empty() && fs::exists(info.resolved_path);
         }
         
         if (is_available) {
@@ -500,33 +604,47 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     if (!debug_printed) {
         std::cout << "[ModelManager] Backend availability:" << std::endl;
         std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - OGA available: " << (oga_available ? "Yes" : "No") << std::endl;
         debug_printed = true;
     }
     
+    int filtered_count = 0;
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
+        bool filter_out = false;
+        std::string filter_reason;
         
         // Filter FLM models based on NPU availability
         if (recipe == "flm") {
             if (!flm_available) {
-                continue;
+                filter_out = true;
+                filter_reason = "FLM not available";
             }
         }
         
         // Filter OGA models based on NPU availability
         if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
             if (!oga_available) {
-                continue;
+                filter_out = true;
+                filter_reason = "OGA not available";
             }
         }
         
         // Filter out other OGA models (not yet implemented)
         if (recipe == "oga-igpu") {
-            continue;
+            filter_out = true;
+            filter_reason = "oga-igpu not implemented";
         }
         
         // On macOS, only show llamacpp models
         if (is_macos && recipe != "llamacpp") {
+            filter_out = true;
+            filter_reason = "macOS only supports llamacpp";
+        }
+        
+        if (filter_out) {
+            filtered_count++;
             continue;
         }
         
@@ -542,7 +660,8 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       const std::string& recipe,
                                       bool reasoning,
                                       bool vision,
-                                      const std::string& mmproj) {
+                                      const std::string& mmproj,
+                                      const std::string& source) {
     
     // Remove "user." prefix if present
     std::string clean_name = model_name;
@@ -567,6 +686,10 @@ void ModelManager::register_user_model(const std::string& model_name,
     
     if (!mmproj.empty()) {
         model_entry["mmproj"] = mmproj;
+    }
+    
+    if (!source.empty()) {
+        model_entry["source"] = source;
     }
     
     json updated_user_models = user_models_;
@@ -656,7 +779,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name,
                                        const std::vector<std::string>* flm_cache) {
     auto info = get_model_info(model_name);
     
-    // Check FLM models separately
+    // Check FLM models separately (they use FLM's own registry)
     if (info.recipe == "flm") {
         // Use cached FLM list if provided, otherwise fetch it
         std::vector<std::string> flm_models;
@@ -674,52 +797,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name,
         return false;
     }
     
-    // Get Hugging Face cache directory (not Lemonade cache!)
-    std::string hf_cache;
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        hf_cache = std::string(hf_home_env) + "/hub";
-    } else {
-#ifdef _WIN32
-        const char* userprofile = std::getenv("USERPROFILE");
-        if (userprofile) {
-            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-        } else {
-            return false;
-        }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            hf_cache = std::string(home) + "/.cache/huggingface/hub";
-        } else {
-            return false;
-        }
-#endif
-    }
-    
-    // Parse checkpoint to get repo ID
-    std::string checkpoint = info.checkpoint;
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        checkpoint = checkpoint.substr(0, colon_pos);
-    }
-    
-    // Convert checkpoint to cache directory name
-    // Format: models--<org>--<model>
-    std::string cache_dir_name = "models--";
-    for (char c : checkpoint) {
-        if (c == '/') {
-            cache_dir_name += "--";
-        } else {
-            cache_dir_name += c;
-        }
-    }
-    
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
-    
-    // OPTIMIZATION: Just check if directory exists instead of recursive scan
-    // This is much faster and sufficient to determine if a model is downloaded
-    return fs::exists(model_cache_path) && fs::is_directory(model_cache_path);
+    // For all other models, just check if resolved_path exists
+    return !info.resolved_path.empty() && fs::exists(info.resolved_path);
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -1150,52 +1229,29 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
     
-    // Validate checkpoint is not empty
-    if (info.checkpoint.empty()) {
-        throw std::runtime_error("Model has empty checkpoint field, cannot determine files to delete");
+    // Use resolved_path to find the model directory to delete
+    if (info.resolved_path.empty()) {
+        throw std::runtime_error("Model has no resolved_path, cannot determine files to delete");
     }
     
-    // Get Hugging Face cache directory
-    std::string hf_cache;
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        hf_cache = std::string(hf_home_env) + "/hub";
-    } else {
-#ifdef _WIN32
-        const char* userprofile = std::getenv("USERPROFILE");
-        if (userprofile) {
-            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-        } else {
-            throw std::runtime_error("Cannot determine HF cache directory");
+    // Find the models--* directory from resolved_path
+    // resolved_path could be a file or directory, we need to find the models-- ancestor
+    fs::path path_obj(info.resolved_path);
+    std::string model_cache_path;
+    
+    // Walk up the directory tree to find models--* directory
+    while (!path_obj.empty() && path_obj.has_filename()) {
+        std::string dirname = path_obj.filename().string();
+        if (dirname.find("models--") == 0) {
+            model_cache_path = path_obj.string();
+            break;
         }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            hf_cache = std::string(home) + "/.cache/huggingface/hub";
-        } else {
-            throw std::runtime_error("Cannot determine HF cache directory");
-        }
-#endif
+        path_obj = path_obj.parent_path();
     }
     
-    // Parse checkpoint to get repo ID (remove variant after colon)
-    std::string checkpoint = info.checkpoint;
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        checkpoint = checkpoint.substr(0, colon_pos);
+    if (model_cache_path.empty()) {
+        throw std::runtime_error("Could not find models-- directory in path: " + info.resolved_path);
     }
-    
-    // Convert checkpoint to cache directory name
-    std::string cache_dir_name = "models--";
-    for (char c : checkpoint) {
-        if (c == '/') {
-            cache_dir_name += "--";
-        } else {
-            cache_dir_name += c;
-        }
-    }
-    
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     
     std::cout << "[ModelManager] Cache path: " << model_cache_path << std::endl;
     

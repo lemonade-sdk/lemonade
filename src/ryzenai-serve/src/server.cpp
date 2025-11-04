@@ -1,5 +1,6 @@
 #include "ryzenai/server.h"
 #include "ryzenai/tool_calls.h"
+#include "ryzenai/reasoning.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -219,52 +220,172 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                     if (offset > 0) return false; // Only run once
                     
                     try {
+                        // Create reasoning parser for streaming
+                        ReasoningStreamParser reasoning_parser;
+                        
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count](const std::string& token, bool is_final) {
-                                // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
-                                // causes a crash. This appears to be a memory allocation issue between
-                                // the JSON library and the callback context (not related to OGA itself).
-                                // Solution: Manually build JSON strings instead of using nlohmann::json objects.
-                                std::string escaped_token = token;
-                                // Escape special characters for JSON
-                                size_t pos = 0;
-                                while ((pos = escaped_token.find('\\', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\\\");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('"', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\\"");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('\n', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\n");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('\r', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\r");
-                                    pos += 2;
+                            [&sink, model_id, &token_count, &reasoning_parser](const std::string& token, bool is_final) -> bool {
+                                // Process token through reasoning parser
+                                auto [reasoning_part, content_part] = reasoning_parser.processToken(token);
+                                
+                                // Helper function to escape JSON strings
+                                auto escapeJson = [](const std::string& str) -> std::string {
+                                    std::string escaped = str;
+                                    size_t pos = 0;
+                                    while ((pos = escaped.find('\\', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\\\");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('"', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\\"");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('\n', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\n");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('\r', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\r");
+                                        pos += 2;
+                                    }
+                                    return escaped;
+                                };
+                                
+                                // Send reasoning content chunk if present
+                                if (!reasoning_part.empty()) {
+                                    std::string escaped_reasoning = escapeJson(reasoning_part);
+                                    std::string reasoning_chunk_json = 
+                                        "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                        "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                        ",\"model\":\"" + model_id + 
+                                        "\",\"choices\":[{\"index\":0,\"reasoning_content\":\"" + escaped_reasoning + 
+                                        "\",\"finish_reason\":null}]}";
+                                    
+                                    std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                                    if (!sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size())) {
+                                        return false; // Client disconnected, stop generation
+                                    }
                                 }
                                 
-                                std::string finish_reason = is_final ? "\"stop\"" : "null";
-                                std::string chunk_json = 
-                                    "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
-                                    "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
-                                    ",\"model\":\"" + model_id + 
-                                    "\",\"choices\":[{\"index\":0,\"text\":\"" + escaped_token + 
-                                    "\",\"finish_reason\":" + finish_reason + "}]}";
-                                
-                                std::string chunk_str = "data: " + chunk_json + "\n\n";
-                                
-                                if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
-                                    return; // Client disconnected
+                                // Send regular content chunk if present
+                                if (!content_part.empty()) {
+                                    std::string escaped_content = escapeJson(content_part);
+                                    std::string finish_reason = is_final ? "\"stop\"" : "null";
+                                    std::string chunk_json = 
+                                        "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                        "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                        ",\"model\":\"" + model_id + 
+                                        "\",\"choices\":[{\"index\":0,\"text\":\"" + escaped_content + 
+                                        "\",\"finish_reason\":" + finish_reason + "}]}";
+                                    
+                                    std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                    if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                        return false; // Client disconnected, stop generation
+                                    }
                                 }
+                                
+                                // If this is the final token, flush any remaining buffered content
+                                if (is_final) {
+                                    auto [final_reasoning, final_content] = reasoning_parser.flush();
+                                    
+                                    // Send any remaining reasoning content
+                                    if (!final_reasoning.empty()) {
+                                        std::string escaped_reasoning = escapeJson(final_reasoning);
+                                        std::string reasoning_chunk_json = 
+                                            "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                            "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                            ",\"model\":\"" + model_id + 
+                                            "\",\"choices\":[{\"index\":0,\"reasoning_content\":\"" + escaped_reasoning + 
+                                            "\",\"finish_reason\":null}]}";
+                                        
+                                        std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                                        if (!sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size())) {
+                                            return false;
+                                        }
+                                    }
+                                    
+                                    // Send any remaining regular content
+                                    if (!final_content.empty()) {
+                                        std::string escaped_content = escapeJson(final_content);
+                                        std::string chunk_json = 
+                                            "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                            "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                            ",\"model\":\"" + model_id + 
+                                            "\",\"choices\":[{\"index\":0,\"text\":\"" + escaped_content + 
+                                            "\",\"finish_reason\":\"stop\"}]}";
+                                        
+                                        std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                        if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                            return false;
+                                        }
+                                    }
+                                }
+                                
                                 token_count++;
+                                return true; // Continue generation
                             }
                         );
+                        
+                        // After generation completes, do a final flush to catch any remaining buffered content
+                        auto [final_reasoning, final_content] = reasoning_parser.flush();
+                        
+                        // Helper function to escape JSON strings
+                        auto escapeJson = [](const std::string& str) -> std::string {
+                            std::string escaped = str;
+                            size_t pos = 0;
+                            while ((pos = escaped.find('\\', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\\\");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('"', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\\"");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('\n', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\n");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('\r', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\r");
+                                pos += 2;
+                            }
+                            return escaped;
+                        };
+                        
+                        // Send any remaining reasoning content
+                        if (!final_reasoning.empty()) {
+                            std::string escaped_reasoning = escapeJson(final_reasoning);
+                            std::string reasoning_chunk_json = 
+                                "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                ",\"model\":\"" + model_id + 
+                                "\",\"choices\":[{\"index\":0,\"reasoning_content\":\"" + escaped_reasoning + 
+                                "\",\"finish_reason\":null}]}";
+                            
+                            std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                            sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size());
+                        }
+                        
+                        // Send any remaining regular content
+                        if (!final_content.empty()) {
+                            std::string escaped_content = escapeJson(final_content);
+                            std::string chunk_json = 
+                                "{\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                                "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                ",\"model\":\"" + model_id + 
+                                "\",\"choices\":[{\"index\":0,\"text\":\"" + escaped_content + 
+                                "\",\"finish_reason\":\"stop\"}]}";
+                            
+                            std::string chunk_str = "data: " + chunk_json + "\n\n";
+                            sink.write(chunk_str.c_str(), chunk_str.size());
+                        }
                         
                         // Send [DONE] marker
                         const char* done_msg = "data: [DONE]\n\n";
@@ -298,24 +419,41 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
+            // Parse reasoning content from output
+            auto reasoning_result = parseReasoningContent(output);
+            std::string content = reasoning_result.regular_content;
+            std::string reasoning_content = reasoning_result.reasoning_content;
+            
+            if (reasoning_result.has_reasoning) {
+                std::cout << "[Server] Extracted reasoning content (" << reasoning_content.length() << " chars)" << std::endl;
+            }
+            
             // If echo=True, prepend the prompt to the output (matching Python reference)
-            std::string final_text = comp_req.echo ? (comp_req.prompt + output) : output;
+            std::string final_text = comp_req.echo ? (comp_req.prompt + content) : content;
             
             // Count tokens
             int prompt_tokens = inference_engine_->countTokens(comp_req.prompt);
             int completion_tokens = inference_engine_->countTokens(output);
             int total_tokens = prompt_tokens + completion_tokens;
             
+            // Build choice object
+            json choice = {
+                {"index", 0},
+                {"text", final_text},
+                {"finish_reason", "stop"}
+            };
+            
+            // Add reasoning_content if present
+            if (reasoning_result.has_reasoning && !reasoning_content.empty()) {
+                choice["reasoning_content"] = reasoning_content;
+            }
+            
             json response = {
                 {"id", "cmpl-" + std::to_string(std::time(nullptr))},
                 {"object", "text_completion"},
                 {"created", std::time(nullptr)},
                 {"model", model_id_},
-                {"choices", {{
-                    {"index", 0},
-                    {"text", final_text},
-                    {"finish_reason", "stop"}
-                }}},
+                {"choices", {choice}},
                 {"usage", {
                     {"prompt_tokens", prompt_tokens},
                     {"completion_tokens", completion_tokens},
@@ -403,55 +541,176 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                         // Accumulate full response for tool call extraction
                         std::string full_response;
                         
+                        // Create reasoning parser for streaming
+                        ReasoningStreamParser reasoning_parser;
+                        
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count, &full_response](const std::string& token, bool is_final) {
+                            [&sink, model_id, &token_count, &full_response, &reasoning_parser](const std::string& token, bool is_final) -> bool {
                                 // Accumulate for tool call extraction
                                 full_response += token;
                                 
-                                // WORKAROUND: Creating nlohmann::json objects inside streaming callbacks
-                                // causes a crash. This appears to be a memory allocation issue between
-                                // the JSON library and the callback context (not related to OGA itself).
-                                // Solution: Manually build JSON strings instead of using nlohmann::json objects.
-                                std::string escaped_token = token;
-                                // Escape special characters for JSON
-                                size_t pos = 0;
-                                while ((pos = escaped_token.find('\\', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\\\");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('"', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\\"");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('\n', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\n");
-                                    pos += 2;
-                                }
-                                pos = 0;
-                                while ((pos = escaped_token.find('\r', pos)) != std::string::npos) {
-                                    escaped_token.replace(pos, 1, "\\r");
-                                    pos += 2;
+                                // Process token through reasoning parser
+                                auto [reasoning_part, content_part] = reasoning_parser.processToken(token);
+                                
+                                // Helper function to escape JSON strings
+                                auto escapeJson = [](const std::string& str) -> std::string {
+                                    std::string escaped = str;
+                                    size_t pos = 0;
+                                    while ((pos = escaped.find('\\', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\\\");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('"', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\\"");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('\n', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\n");
+                                        pos += 2;
+                                    }
+                                    pos = 0;
+                                    while ((pos = escaped.find('\r', pos)) != std::string::npos) {
+                                        escaped.replace(pos, 1, "\\r");
+                                        pos += 2;
+                                    }
+                                    return escaped;
+                                };
+                                
+                                // Send reasoning content chunk if present
+                                if (!reasoning_part.empty()) {
+                                    std::string escaped_reasoning = escapeJson(reasoning_part);
+                                    std::string reasoning_chunk_json = 
+                                        "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                        "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                        ",\"model\":\"" + model_id + 
+                                        "\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"" + escaped_reasoning + 
+                                        "\"},\"finish_reason\":null}]}";
+                                    
+                                    std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                                    if (!sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size())) {
+                                        return false; // Client disconnected, stop generation
+                                    }
                                 }
                                 
-                                std::string finish_reason = is_final ? "\"stop\"" : "null";
-                                std::string chunk_json = 
-                                    "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
-                                    "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
-                                    ",\"model\":\"" + model_id + 
-                                    "\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + escaped_token + 
-                                    "\"},\"finish_reason\":" + finish_reason + "}]}";
-                                
-                                std::string chunk_str = "data: " + chunk_json + "\n\n";
-                                
-                                if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
-                                    return; // Client disconnected
+                                // Send regular content chunk if present
+                                if (!content_part.empty()) {
+                                    std::string escaped_content = escapeJson(content_part);
+                                    std::string finish_reason = is_final ? "\"stop\"" : "null";
+                                    std::string chunk_json = 
+                                        "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                        "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                        ",\"model\":\"" + model_id + 
+                                        "\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + escaped_content + 
+                                        "\"},\"finish_reason\":" + finish_reason + "}]}";
+                                    
+                                    std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                    if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                        return false; // Client disconnected, stop generation
+                                    }
                                 }
+                                
+                                // If this is the final token, flush any remaining buffered content
+                                if (is_final) {
+                                    auto [final_reasoning, final_content] = reasoning_parser.flush();
+                                    
+                                    // Send any remaining reasoning content
+                                    if (!final_reasoning.empty()) {
+                                        std::string escaped_reasoning = escapeJson(final_reasoning);
+                                        std::string reasoning_chunk_json = 
+                                            "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                            "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                            ",\"model\":\"" + model_id + 
+                                            "\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"" + escaped_reasoning + 
+                                            "\"},\"finish_reason\":null}]}";
+                                        
+                                        std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                                        if (!sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size())) {
+                                            return false;
+                                        }
+                                    }
+                                    
+                                    // Send any remaining regular content
+                                    if (!final_content.empty()) {
+                                        std::string escaped_content = escapeJson(final_content);
+                                        std::string chunk_json = 
+                                            "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                            "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                            ",\"model\":\"" + model_id + 
+                                            "\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + escaped_content + 
+                                            "\"},\"finish_reason\":\"stop\"}]}";
+                                        
+                                        std::string chunk_str = "data: " + chunk_json + "\n\n";
+                                        if (!sink.write(chunk_str.c_str(), chunk_str.size())) {
+                                            return false;
+                                        }
+                                    }
+                                }
+                                
                                 token_count++;
+                                return true; // Continue generation
                             }
                         );
+                        
+                        // After generation completes, do a final flush to catch any remaining buffered content
+                        // This handles the case where the last few tokens didn't trigger processing due to buffer size
+                        auto [final_reasoning, final_content] = reasoning_parser.flush();
+                        
+                        // Helper function to escape JSON strings (reused from above)
+                        auto escapeJson = [](const std::string& str) -> std::string {
+                            std::string escaped = str;
+                            size_t pos = 0;
+                            while ((pos = escaped.find('\\', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\\\");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('"', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\\"");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('\n', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\n");
+                                pos += 2;
+                            }
+                            pos = 0;
+                            while ((pos = escaped.find('\r', pos)) != std::string::npos) {
+                                escaped.replace(pos, 1, "\\r");
+                                pos += 2;
+                            }
+                            return escaped;
+                        };
+                        
+                        // Send any remaining reasoning content
+                        if (!final_reasoning.empty()) {
+                            std::string escaped_reasoning = escapeJson(final_reasoning);
+                            std::string reasoning_chunk_json = 
+                                "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                ",\"model\":\"" + model_id + 
+                                "\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"" + escaped_reasoning + 
+                                "\"},\"finish_reason\":null}]}";
+                            
+                            std::string reasoning_chunk_str = "data: " + reasoning_chunk_json + "\n\n";
+                            sink.write(reasoning_chunk_str.c_str(), reasoning_chunk_str.size());
+                        }
+                        
+                        // Send any remaining regular content
+                        if (!final_content.empty()) {
+                            std::string escaped_content = escapeJson(final_content);
+                            std::string chunk_json = 
+                                "{\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                                "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                                ",\"model\":\"" + model_id + 
+                                "\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + escaped_content + 
+                                "\"},\"finish_reason\":\"stop\"}]}";
+                            
+                            std::string chunk_str = "data: " + chunk_json + "\n\n";
+                            sink.write(chunk_str.c_str(), chunk_str.size());
+                        }
                         
                         // Extract and send tool calls if tools were provided
                         if (has_tools) {
@@ -519,16 +778,24 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
             
-            // Extract tool calls if tools were provided
-            std::string content = output;
+            // Parse reasoning content from output
+            auto reasoning_result = parseReasoningContent(output);
+            std::string content = reasoning_result.regular_content;
+            std::string reasoning_content = reasoning_result.reasoning_content;
+            
+            if (reasoning_result.has_reasoning) {
+                std::cout << "[Server] Extracted reasoning content (" << reasoning_content.length() << " chars)" << std::endl;
+            }
+            
+            // Extract tool calls if tools were provided (from the cleaned content)
             json tool_calls_json = nullptr;
             
             if (!chat_req.tools.empty()) {
                 std::cout << "[Server DEBUG] Tools provided, extracting tool calls from output..." << std::endl;
-                std::cout << "[Server DEBUG] Output length: " << output.length() << " chars" << std::endl;
-                std::cout << "[Server DEBUG] First 200 chars: " << output.substr(0, std::min(size_t(200), output.length())) << std::endl;
+                std::cout << "[Server DEBUG] Content length: " << content.length() << " chars" << std::endl;
+                std::cout << "[Server DEBUG] First 200 chars: " << content.substr(0, std::min(size_t(200), content.length())) << std::endl;
                 
-                auto [extracted_tool_calls, cleaned_text] = extractToolCalls(output);
+                auto [extracted_tool_calls, cleaned_text] = extractToolCalls(content);
                 std::cout << "[Server DEBUG] Extracted " << extracted_tool_calls.size() << " tool call(s)" << std::endl;
                 
                 if (!extracted_tool_calls.empty()) {
@@ -552,6 +819,12 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                 {"role", "assistant"},
                 {"content", content}
             };
+            
+            // Add reasoning_content if present
+            if (reasoning_result.has_reasoning && !reasoning_content.empty()) {
+                message["reasoning_content"] = reasoning_content;
+            }
+            
             if (!tool_calls_json.is_null()) {
                 message["tool_calls"] = tool_calls_json;
             }
@@ -683,7 +956,7 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
                         
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, &full_response](const std::string& token, bool is_final) {
+                            [&sink, &full_response](const std::string& token, bool is_final) -> bool {
                                 // Escape special characters for JSON
                                 std::string escaped_token = token;
                                 size_t pos = 0;
@@ -718,8 +991,9 @@ void RyzenAIServer::handleResponses(const httplib::Request& req, httplib::Respon
                                 
                                 if (!sink.write(delta_event.c_str(), delta_event.size())) {
                                     std::cout << "[Server] Client disconnected during streaming" << std::endl;
-                                    return; // Client disconnected
+                                    return false; // Client disconnected, stop generation
                                 }
+                                return true; // Continue generation
                             }
                         );
                         

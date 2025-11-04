@@ -368,21 +368,19 @@ std::string LlamaCppServer::download_model(const std::string& checkpoint,
 }
 
 void LlamaCppServer::load(const std::string& model_name,
-                         const std::string& checkpoint,
-                         const std::string& mmproj,
+                         const ModelInfo& model_info,
                          int ctx_size,
-                         bool do_not_upgrade,
-                         const std::vector<std::string>& labels) {
+                         bool do_not_upgrade) {
     
     std::cout << "[LlamaCpp] Loading model: " << model_name << std::endl;
     
     // Install llama-server if needed
     install(backend_);
     
-    // Find GGUF file
-    std::string gguf_path = find_gguf_file(checkpoint);
+    // Use pre-resolved GGUF path
+    std::string gguf_path = model_info.resolved_path;
     if (gguf_path.empty()) {
-        throw std::runtime_error("GGUF file not found for checkpoint: " + checkpoint);
+        throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint);
     }
     
     std::cout << "[LlamaCpp] Using GGUF: " << gguf_path << std::endl;
@@ -418,8 +416,8 @@ void LlamaCppServer::load(const std::string& model_name,
     args.push_back("auto");
     
     // Check for embeddings and reranking support based on labels
-    bool supports_embeddings = std::find(labels.begin(), labels.end(), "embeddings") != labels.end();
-    bool supports_reranking = std::find(labels.begin(), labels.end(), "reranking") != labels.end();
+    bool supports_embeddings = std::find(model_info.labels.begin(), model_info.labels.end(), "embeddings") != model_info.labels.end();
+    bool supports_reranking = std::find(model_info.labels.begin(), model_info.labels.end(), "reranking") != model_info.labels.end();
     
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
@@ -579,79 +577,6 @@ std::string LlamaCppServer::get_llama_server_path() {
                            "\n  - " + install_dir + "/llama-server (ROCm/custom builds)" +
                            "\n  - " + install_dir + "/bin/llama-server" +
                            "\nThis may indicate a failed installation or corrupted download.");
-}
-
-std::string LlamaCppServer::find_gguf_file(const std::string& checkpoint) {
-    // Parse checkpoint (format: repo_id:variant or just repo_id)
-    std::string repo_id = checkpoint;
-    std::string variant;
-    
-    size_t colon_pos = checkpoint.find(':');
-    if (colon_pos != std::string::npos) {
-        repo_id = checkpoint.substr(0, colon_pos);
-        variant = checkpoint.substr(colon_pos + 1);
-    }
-    
-    std::cout << "[LlamaCpp] Looking for GGUF file - repo_id: " << repo_id << ", variant: " << variant << std::endl;
-    
-    // Get HF cache directory
-    std::string hf_cache;
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        hf_cache = std::string(hf_home_env) + "/hub";
-    } else {
-#ifdef _WIN32
-        const char* userprofile = std::getenv("USERPROFILE");
-        if (userprofile) {
-            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-        }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            hf_cache = std::string(home) + "/.cache/huggingface/hub";
-        }
-#endif
-    }
-    
-    // Convert repo_id to cache directory name
-    std::string cache_dir_name = "models--";
-    for (char c : repo_id) {
-        if (c == '/') {
-            cache_dir_name += "--";
-        } else {
-            cache_dir_name += c;
-        }
-    }
-    
-    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
-    std::cout << "[LlamaCpp] Searching in: " << model_cache_path << std::endl;
-    
-    // Find GGUF file matching variant
-    if (fs::exists(model_cache_path)) {
-        std::cout << "[LlamaCpp] Cache directory exists, searching for .gguf files..." << std::endl;
-        
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
-            if (entry.is_regular_file()) {
-                std::string filename = entry.path().filename().string();
-                if (filename.find(".gguf") != std::string::npos) {
-                    std::cout << "[LlamaCpp] Found GGUF: " << filename << std::endl;
-                    
-                    if (variant.empty() || filename.find(variant) != std::string::npos) {
-                        std::cout << "[LlamaCpp] Matches variant! Using: " << entry.path().string() << std::endl;
-                        return entry.path().string();
-                    } else {
-                        std::cout << "[LlamaCpp] Doesn't match variant '" << variant << "'" << std::endl;
-                    }
-                }
-            }
-        }
-        
-        std::cout << "[LlamaCpp] No matching GGUF file found" << std::endl;
-    } else {
-        std::cout << "[LlamaCpp] Cache directory does not exist: " << model_cache_path << std::endl;
-    }
-    
-    return "";
 }
 
 } // namespace backends
