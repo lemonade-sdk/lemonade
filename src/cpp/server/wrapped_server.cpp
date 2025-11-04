@@ -25,10 +25,20 @@ bool WrappedServer::wait_for_ready() {
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
-    // Wait up to 5 minutes (large models can take time to load)
-    const int max_attempts = 3000; // 5 minutes at 100ms intervals
+    // Use actual elapsed time for timeout (5 minutes for large models)
+    auto start_time = std::chrono::steady_clock::now();
+    const auto timeout_duration = std::chrono::minutes(5);
+    auto last_progress_time = start_time;
     
-    for (int i = 0; i < max_attempts; i++) {
+    while (true) {
+        auto elapsed = std::chrono::steady_clock::now() - start_time;
+        
+        // Check if we've exceeded timeout
+        if (elapsed >= timeout_duration) {
+            std::cerr << server_name_ + " failed to start within 5 minute timeout" << std::endl;
+            return false;
+        }
+        
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
             int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
@@ -51,13 +61,14 @@ bool WrappedServer::wait_for_ready() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         // Print progress every 10 seconds
-        if (i % 100 == 0 && i > 0) {
-            std::cout << "Still waiting for " + server_name_ + "..." << std::endl;
+        auto time_since_progress = std::chrono::steady_clock::now() - last_progress_time;
+        if (time_since_progress >= std::chrono::seconds(10)) {
+            int seconds_elapsed = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+            std::cout << "Still waiting for " + server_name_ + "... (" 
+                     << seconds_elapsed << "s elapsed)" << std::endl;
+            last_progress_time = std::chrono::steady_clock::now();
         }
     }
-    
-    std::cerr << server_name_ + " failed to start within timeout" << std::endl;
-    return false;
 }
 
 bool WrappedServer::is_process_running() const {
