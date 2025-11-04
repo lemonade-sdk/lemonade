@@ -5,6 +5,7 @@ import urllib3
 from lemonade.state import State
 import lemonade.common.test_helpers as common
 import lemonade.common.filesystem as fs
+import lemonade.common.build as build
 from lemonade.common.build import builds_dir
 from lemonade.cache import Keys
 from lemonade.tools.prompt import LLMPrompt
