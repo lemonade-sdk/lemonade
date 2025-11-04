@@ -57,6 +57,7 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
+    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);

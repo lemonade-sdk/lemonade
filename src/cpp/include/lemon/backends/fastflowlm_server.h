@@ -19,11 +19,9 @@ public:
                               bool do_not_upgrade = false) override;
     
     void load(const std::string& model_name,
-             const std::string& checkpoint,
-             const std::string& mmproj,
+             const ModelInfo& model_info,
              int ctx_size,
-             bool do_not_upgrade = false,
-             const std::vector<std::string>& labels = {}) override;
+             bool do_not_upgrade = false) override;
     
     void unload() override;
     

@@ -288,11 +288,9 @@ std::string RyzenAIServer::determine_execution_mode(const std::string& model_pat
 }
 
 void RyzenAIServer::load(const std::string& model_name,
-                        const std::string& checkpoint,
-                        const std::string& mmproj,
+                        const ModelInfo& model_info,
                         int ctx_size,
-                        bool do_not_upgrade,
-                        const std::vector<std::string>& labels) {
+                        bool do_not_upgrade) {
     std::cout << "[RyzenAI-Serve] Loading model: " << model_name << std::endl;
     
     // Install/check RyzenAI-Serve (will download if not found)

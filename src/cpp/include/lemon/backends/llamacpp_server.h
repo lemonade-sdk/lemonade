@@ -19,11 +19,9 @@ public:
                               bool do_not_upgrade = false) override;
     
     void load(const std::string& model_name,
-             const std::string& checkpoint,
-             const std::string& mmproj,
+             const ModelInfo& model_info,
              int ctx_size,
-             bool do_not_upgrade = false,
-             const std::vector<std::string>& labels = {}) override;
+             bool do_not_upgrade = false) override;
     
     void unload() override;
     
@@ -43,7 +41,6 @@ protected:
     
 private:
     std::string get_llama_server_path();
-    std::string find_gguf_file(const std::string& checkpoint);
     std::string find_executable_in_install_dir(const std::string& install_dir);
     
     std::string backend_;  // vulkan, rocm, metal

@@ -11,11 +11,13 @@ using json = nlohmann::json;
 
 struct ModelInfo {
     std::string model_name;
-    std::string checkpoint;
+    std::string checkpoint;      // Original checkpoint identifier (for downloads/display)
+    std::string resolved_path;   // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
     bool suggested = false;
     std::string mmproj;
+    std::string source;  // "local_upload" for locally uploaded models
 };
 
 class ModelManager {
@@ -38,7 +40,8 @@ public:
                             const std::string& recipe,
                             bool reasoning = false,
                             bool vision = false,
-                            const std::string& mmproj = "");
+                            const std::string& mmproj = "",
+                            const std::string& source = "");
     
     // Download a model
     void download_model(const std::string& model_name,
@@ -75,6 +78,10 @@ private:
     
     std::string get_cache_dir();
     std::string get_user_models_file();
+    
+    // Resolve model checkpoint to absolute path on disk
+    std::string resolve_model_path(const ModelInfo& info) const;
+    std::string get_hf_cache_dir() const;
     
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id, 

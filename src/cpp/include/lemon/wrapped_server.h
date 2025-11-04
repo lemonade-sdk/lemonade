@@ -7,6 +7,7 @@
 #include <httplib.h>
 #include "utils/process_manager.h"
 #include "server_capabilities.h"
+#include "model_manager.h"
 
 namespace lemon {
 
@@ -62,11 +63,9 @@ public:
     
     // Load a model and start the server
     virtual void load(const std::string& model_name,
-                     const std::string& checkpoint,
-                     const std::string& mmproj,
+                     const ModelInfo& model_info,
                      int ctx_size,
-                     bool do_not_upgrade = false,
-                     const std::vector<std::string>& labels = {}) = 0;
+                     bool do_not_upgrade = false) = 0;
     
     // Unload the model and stop the server
     virtual void unload() = 0;
