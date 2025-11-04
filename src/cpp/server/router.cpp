@@ -23,10 +23,8 @@ Router::~Router() {
 }
 
 void Router::load_model(const std::string& model_name,
-                       const std::string& checkpoint,
-                       const std::string& recipe,
-                       bool do_not_upgrade,
-                       const std::vector<std::string>& labels) {
+                       const ModelInfo& model_info,
+                       bool do_not_upgrade) {
     
     // LOAD SERIALIZATION STRATEGY
     // ============================
@@ -60,7 +58,7 @@ void Router::load_model(const std::string& model_name,
     // Mark that we're now loading (prevents concurrent loads)
     is_loading_ = true;
     
-    std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << checkpoint << ", recipe: " << recipe << ")" << std::endl;
+    std::cout << "[Router] Loading model: " << model_name << " (checkpoint: " << model_info.checkpoint << ", recipe: " << model_info.recipe << ")" << std::endl;
     
     try {
         // Unload any existing model (quick operation, keep lock)
@@ -73,75 +71,23 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server;
         
         // Determine which backend to use based on recipe
-        if (recipe == "flm") {
+        if (model_info.recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             new_server = std::make_unique<backends::FastFlowLMServer>(log_level_);
-        } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai") {
-            std::cout << "[Router] Using RyzenAI-Serve backend: " << recipe << std::endl;
+        } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" || model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
+            std::cout << "[Router] Using RyzenAI-Serve backend: " << model_info.recipe << std::endl;
             
-            // RyzenAI-Serve needs the model path to be passed
-            // The checkpoint should be in the format: "microsoft/Phi-3-mini-4k-instruct-onnx"
-            // and the model path should be in the HF cache
-            std::string model_path = "";
-            
-            // Parse checkpoint to get repo_id
-            std::string repo_id = checkpoint;
-            size_t colon_pos = checkpoint.find(':');
-            if (colon_pos != std::string::npos) {
-                repo_id = checkpoint.substr(0, colon_pos);
-            }
-            
-            // Construct HF cache path
-            // Replace "/" with "--" in repo_id for cache directory name (HF format)
-            std::string cache_repo_name = repo_id;
-            size_t slash_pos = cache_repo_name.find('/');
-            if (slash_pos != std::string::npos) {
-                cache_repo_name.replace(slash_pos, 1, "--");
-            }
-            cache_repo_name = "models--" + cache_repo_name;
-            
-            // Get HF cache directory
-            std::string hf_cache;
-            const char* hf_home_env = std::getenv("HF_HOME");
-            if (hf_home_env) {
-                hf_cache = std::string(hf_home_env) + "\\hub";
-            } else {
-#ifdef _WIN32
-                const char* userprofile = std::getenv("USERPROFILE");
-                if (userprofile) {
-                    hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-                }
-#else
-                const char* home = std::getenv("HOME");
-                if (home) {
-                    hf_cache = std::string(home) + "/.cache/huggingface/hub";
-                }
-#endif
-            }
-            
-            if (!hf_cache.empty()) {
-                model_path = hf_cache + "\\" + cache_repo_name;
-                
-                // Find the snapshot directory (usually there's only one)
-                if (std::filesystem::exists(model_path + "\\snapshots")) {
-                    for (const auto& entry : std::filesystem::directory_iterator(model_path + "\\snapshots")) {
-                        if (entry.is_directory()) {
-                            model_path = entry.path().string();
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            std::cout << "[Router] Resolved model path: " << model_path << std::endl;
+            // RyzenAI-Serve needs the model path - use pre-resolved path
+            std::string model_path = model_info.resolved_path;
+            std::cout << "[Router] Using model path: " << model_path << std::endl;
             
             // Determine backend mode based on recipe
-            std::string backend_mode = recipe;
-            if (recipe == "oga-npu") {
+            std::string backend_mode = model_info.recipe;
+            if (model_info.recipe == "oga-npu") {
                 backend_mode = "npu";
-            } else if (recipe == "oga-hybrid") {
+            } else if (model_info.recipe == "oga-hybrid") {
                 backend_mode = "hybrid";
-            } else if (recipe == "oga-cpu") {
+            } else if (model_info.recipe == "oga-cpu") {
                 backend_mode = "cpu";
             } else {
                 backend_mode = "auto";
@@ -177,7 +123,7 @@ void Router::load_model(const std::string& model_name,
         //   1. ProcessManager::start_process() - Launch llama-server/ryzenai-serve/flm
         //   2. wait_for_ready() - Poll health endpoint until backend responds
         std::cout << "[Router] Starting backend (this may take a moment)..." << std::endl;
-        new_server->load(model_name, checkpoint, "", ctx_size_, do_not_upgrade, labels);
+        new_server->load(model_name, model_info, ctx_size_, do_not_upgrade);
         std::cout << "[Router] Backend started successfully" << std::endl;
         
         // Re-acquire the lock for the final state update
@@ -186,8 +132,8 @@ void Router::load_model(const std::string& model_name,
         // Swap in the new server as the active backend
         wrapped_server_ = std::move(new_server);
         loaded_model_ = model_name;
-        loaded_checkpoint_ = checkpoint;
-        loaded_recipe_ = recipe;
+        loaded_checkpoint_ = model_info.checkpoint;
+        loaded_recipe_ = model_info.recipe;
         unload_called_ = false;  // Reset unload flag for newly loaded model
         
         // CRITICAL: Mark loading as complete and notify waiting threads

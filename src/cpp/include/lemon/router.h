@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
+#include "model_manager.h"
 
 namespace lemon {
 
@@ -22,10 +23,8 @@ public:
     
     // Load a model with the appropriate backend
     void load_model(const std::string& model_name,
-                    const std::string& checkpoint,
-                    const std::string& recipe,
-                    bool do_not_upgrade = true,
-                    const std::vector<std::string>& labels = {});
+                    const ModelInfo& model_info,
+                    bool do_not_upgrade = true);
     
     // Unload the currently loaded model
     void unload_model();

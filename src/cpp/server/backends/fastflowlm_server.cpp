@@ -103,21 +103,19 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint,
 }
 
 void FastFlowLMServer::load(const std::string& model_name,
-                           const std::string& checkpoint,
-                           const std::string& mmproj,
+                           const ModelInfo& model_info,
                            int ctx_size,
-                           bool do_not_upgrade,
-                           const std::vector<std::string>& labels) {
+                           bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Loading model: " << model_name << std::endl;
     
     // Store model name for later use
-    model_name_ = checkpoint;
+    model_name_ = model_info.checkpoint;
     
     // Install/check FLM
     install();
     
     // Download model if needed
-    download_model(checkpoint, mmproj, do_not_upgrade);
+    download_model(model_info.checkpoint, model_info.mmproj, do_not_upgrade);
     
     // Choose a port
     port_ = choose_port();
@@ -129,7 +127,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Construct flm serve command
     std::vector<std::string> args = {
         "serve",
-        checkpoint,
+        model_info.checkpoint,
         "--ctx-len", std::to_string(ctx_size),
         "--port", std::to_string(port_)
     };
@@ -173,7 +171,7 @@ bool FastFlowLMServer::wait_for_ready() {
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
-    const int max_attempts = 60;  // 60 seconds timeout
+    const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
