@@ -32,9 +32,10 @@ bool WrappedServer::wait_for_ready() {
     while (true) {
         auto elapsed = std::chrono::steady_clock::now() - start_time;
         
-        // Check if we've exceeded timeout
+        // Check if we've exceeded timeout FIRST before any blocking operations
         if (elapsed >= timeout_duration) {
             std::cerr << server_name_ + " failed to start within 5 minute timeout" << std::endl;
+            std::flush(std::cerr);  // Force flush for CI logging
             return false;
         }
         
@@ -47,13 +48,32 @@ bool WrappedServer::wait_for_ready() {
             std::cerr << "  - Missing required drivers or dependencies" << std::endl;
             std::cerr << "  - Incompatible model file" << std::endl;
             std::cerr << "  - Try running the server manually to see the actual error" << std::endl;
+            std::flush(std::cerr);
             return false;
         }
         
-        // Check health endpoint
+        // Double-check timeout RIGHT BEFORE the potentially blocking curl call
+        // This ensures we don't enter curl if we're already at/past the timeout
+        elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed >= timeout_duration) {
+            std::cerr << server_name_ + " timeout reached before health check attempt" << std::endl;
+            std::flush(std::cerr);
+            return false;
+        }
+        
+        // Check health endpoint (this may block for up to 1 second)
         if (utils::HttpClient::is_reachable(health_url, 1)) {
             std::cout << server_name_ + " is ready!" << std::endl;
+            std::flush(std::cout);
             return true;
+        }
+        
+        // Check timeout immediately after potentially blocking operation
+        elapsed = std::chrono::steady_clock::now() - start_time;
+        if (elapsed >= timeout_duration) {
+            std::cerr << server_name_ + " timeout after health check attempt" << std::endl;
+            std::flush(std::cerr);
+            return false;
         }
         
         // Sleep 1 second between checks (matches Python implementation)
@@ -65,6 +85,7 @@ bool WrappedServer::wait_for_ready() {
             int seconds_elapsed = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
             std::cout << "Still waiting for " + server_name_ + "... (" 
                      << seconds_elapsed << "s elapsed)" << std::endl;
+            std::flush(std::cout);
             last_progress_time = std::chrono::steady_clock::now();
         }
     }
