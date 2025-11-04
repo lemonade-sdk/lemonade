@@ -534,17 +534,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Normalize max_completion_tokens to max_tokens for backend compatibility
-        if (request_json.contains("max_completion_tokens") && request_json.contains("max_tokens")) {
-            // Both provided - return error
-            res.status = 400;
-            res.set_content("{\"error\": \"Both max_tokens and max_completion_tokens were provided. Please use only one of these parameters.\"}", "application/json");
-            return;
-        } else if (request_json.contains("max_completion_tokens")) {
-            // Move max_completion_tokens to max_tokens for backend
-            request_json["max_tokens"] = request_json["max_completion_tokens"];
-            request_json.erase("max_completion_tokens");
-        }
+        // Forward both max_tokens and max_completion_tokens to backends
+        // Backends should handle both parameters according to OpenAI API spec
         
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -693,17 +684,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Normalize max_completion_tokens to max_tokens for backend compatibility
-        if (request_json.contains("max_completion_tokens") && request_json.contains("max_tokens")) {
-            // Both provided - return error
-            res.status = 400;
-            res.set_content("{\"error\": \"Both max_tokens and max_completion_tokens were provided. Please use only one of these parameters.\"}", "application/json");
-            return;
-        } else if (request_json.contains("max_completion_tokens")) {
-            // Move max_completion_tokens to max_tokens for backend
-            request_json["max_tokens"] = request_json["max_completion_tokens"];
-            request_json.erase("max_completion_tokens");
-        }
+        // Forward both max_tokens and max_completion_tokens to backends
+        // Backends should handle both parameters according to OpenAI API spec
         
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
