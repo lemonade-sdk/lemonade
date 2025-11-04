@@ -240,16 +240,29 @@ void ProcessManager::stop_process(ProcessHandle handle) {
         
         // Wait for process to exit
         int status;
+        bool exited_gracefully = false;
         for (int i = 0; i < 50; i++) {  // Try for 5 seconds
             if (waitpid(handle.pid, &status, WNOHANG) > 0) {
-                return;
+                exited_gracefully = true;
+                break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
-        // If still alive, force kill
-        kill(handle.pid, SIGKILL);
-        waitpid(handle.pid, &status, 0);
+        if (!exited_gracefully) {
+            // If still alive, force kill
+            std::cerr << "[ProcessManager WARNING] Process did not respond to SIGTERM, using SIGKILL" << std::endl;
+            kill(handle.pid, SIGKILL);
+            waitpid(handle.pid, &status, 0);
+        }
+        
+        // CRITICAL FIX: GPU drivers need time to release Vulkan/ROCm contexts
+        // The process may exit but GPU resources persist briefly in the kernel driver.
+        // Without this delay, rapid restarts cause the new process to hang waiting
+        // for GPU resources that are still being cleaned up.
+        // This matches the Python test behavior which has a 5s delay after server start.
+        std::cout << "[ProcessManager] Process terminated, waiting for GPU driver cleanup..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 #endif
 }
@@ -388,7 +401,7 @@ int ProcessManager::find_free_port(int start_port) {
         sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
         
         int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
         
