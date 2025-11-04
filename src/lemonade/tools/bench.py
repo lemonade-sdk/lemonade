@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 import argparse
 import os
 import platform
-import psutil
 from lemonade.state import State
 from lemonade.tools import Tool
 from lemonade.cache import Keys
@@ -194,11 +193,6 @@ class Bench(Tool, ABC):
             )
             self.first_run_prompt = False
 
-            if self.save_max_memory_used:
-                self.max_memory_used_gb_list.append(
-                    psutil.Process().memory_info().peak_wset / 1024**3
-                )
-
         self.set_percent_progress(None)
         self.save_stats(state)
 
@@ -215,7 +209,10 @@ class Bench(Tool, ABC):
         output_tokens,
         **kwargs,
     ):
-        pass
+        """
+        The run_prompt method should append the appropriate value to each of the per prompt
+        measurement statistics lists that are members of the Bench class.
+        """
 
     @staticmethod
     def get_item_or_list(lst):

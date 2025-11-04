@@ -211,19 +211,26 @@ std::string ModelManager::get_cache_dir() {
         return std::string(cache_env);
     }
     
-    // Default cache directory
+    // Use HuggingFace cache directory (standard HF behavior)
+    // Check HF_HOME first
+    const char* hf_home = std::getenv("HF_HOME");
+    if (hf_home) {
+        return std::string(hf_home);
+    }
+    
+    // Default to ~/.cache/huggingface/hub
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
+        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\.cache\\lemonade";
+    return "C:\\.cache\\huggingface\\hub";
 #else
     const char* home = std::getenv("HOME");
     if (home) {
-        return std::string(home) + "/.cache/lemonade";
+        return std::string(home) + "/.cache/huggingface/hub";
     }
-    return "/tmp/lemonade";
+    return "/tmp/.cache/huggingface/hub";
 #endif
 }
 
@@ -799,9 +806,13 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
     
-    // If already downloaded and do_not_upgrade, skip
+    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely
+    // This prevents unnecessary HuggingFace API queries when we just want to use cached models
+    // The do_not_upgrade flag means:
+    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
+    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
     if (do_not_upgrade && is_model_downloaded(model_name)) {
-        std::cout << "Model already downloaded, skipping" << std::endl;
+        std::cout << "[ModelManager] Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
         return;
     }
     
@@ -823,6 +834,19 @@ void ModelManager::download_model(const std::string& model_name,
     }
 }
 
+// Download model files from HuggingFace
+// =====================================
+// IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
+// file list, then downloads any missing files. It does NOT check do_not_upgrade.
+//
+// The caller (download_model) is responsible for checking do_not_upgrade and
+// calling is_model_downloaded() before invoking this function.
+//
+// Download capabilities by backend:
+//   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
+//   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
+//   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
+//   - ryzenai-serve backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_huggingface(const std::string& repo_id,
                                             const std::string& variant,
                                             const std::string& mmproj) {
@@ -873,7 +897,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
     
-    // List files in repository
+    // Query HuggingFace API to get list of all files in the repository
+    // NOTE: This API call happens EVERY time this function is called, regardless of
+    // whether files are cached. The do_not_upgrade check should happen in the caller
+    // (download_model) to avoid this API call when using cached models.
     std::string api_url = "https://huggingface.co/api/models/" + repo_id;
     
     try {
@@ -968,7 +995,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             );
             
             if (success) {
-                std::cout << "\n[ModelManager] ✓ Downloaded: " << filename << std::endl;
+                std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
             } else {
                 throw std::runtime_error("Failed to download file: " + filename);
             }
@@ -1061,8 +1088,65 @@ void ModelManager::delete_model(const std::string& model_name) {
     
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        std::cout << "[ModelManager] Deleting FLM model (not yet implemented)" << std::endl;
-        // TODO: Call 'flm remove' command
+        std::cout << "[ModelManager] Deleting FLM model: " << info.checkpoint << std::endl;
+        
+        // Validate checkpoint is not empty
+        if (info.checkpoint.empty()) {
+            throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
+        }
+        
+        // Find flm executable
+        std::string flm_path;
+#ifdef _WIN32
+        flm_path = "flm";
+#else
+        flm_path = "flm";
+#endif
+        
+        // Prepare arguments for 'flm remove' command
+        std::vector<std::string> args = {"remove", info.checkpoint};
+        
+        std::cout << "[ProcessManager] Starting process: \"" << flm_path << "\"";
+        for (const auto& arg : args) {
+            std::cout << " \"" << arg << "\"";
+        }
+        std::cout << std::endl;
+        
+        // Run flm remove command
+        auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
+        
+        // Wait for process to complete
+        int timeout_seconds = 60; // 1 minute timeout for removal
+        for (int i = 0; i < timeout_seconds * 10; ++i) {
+            if (!utils::ProcessManager::is_running(handle)) {
+                int exit_code = utils::ProcessManager::get_exit_code(handle);
+                if (exit_code != 0) {
+                    std::cerr << "[ModelManager ERROR] FLM remove failed with exit code: " << exit_code << std::endl;
+                    throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
+                }
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Check if process is still running (timeout)
+        if (utils::ProcessManager::is_running(handle)) {
+            std::cerr << "[ModelManager ERROR] FLM remove timed out" << std::endl;
+            throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove timed out");
+        }
+        
+        std::cout << "[ModelManager] ✓ Successfully deleted FLM model: " << model_name << std::endl;
+        
+        // Remove from user models if it's a user model
+        if (model_name.substr(0, 5) == "user.") {
+            std::string clean_name = model_name.substr(5);
+            json updated_user_models = user_models_;
+            updated_user_models.erase(clean_name);
+            save_user_models(updated_user_models);
+            user_models_ = updated_user_models;
+            std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
+        }
+        
         return;
     }
     

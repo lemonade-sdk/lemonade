@@ -14,6 +14,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/stat.h>  // For chmod on Linux/macOS
 #endif
 
 namespace fs = std::filesystem;
@@ -341,12 +343,13 @@ void RyzenAIServer::load(const std::string& model_name,
     
     std::cout << "[RyzenAI-Serve] Starting ryzenai-serve..." << std::endl;
     
-    // Start the process
+    // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(
         ryzenai_serve_path,
         args,
         "",
-        is_debug()
+        is_debug(),
+        true
     );
     
     if (!utils::ProcessManager::is_running(process_handle_)) {
@@ -370,7 +373,11 @@ void RyzenAIServer::unload() {
     
     std::cout << "[RyzenAI-Serve] Unloading model..." << std::endl;
     
+#ifdef _WIN32
     if (process_handle_.handle) {
+#else
+    if (process_handle_.pid > 0) {
+#endif
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
     }

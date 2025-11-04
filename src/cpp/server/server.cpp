@@ -21,6 +21,17 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), running_(false) {
     
+    // Detect log file path (same location as tray uses)
+    // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
+    // This server only READS from the file for the SSE streaming endpoint
+#ifdef _WIN32
+    char temp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_path);
+    log_file_path_ = std::string(temp_path) + "lemonade-server.log";
+#else
+    log_file_path_ = "/tmp/lemonade-server.log";
+#endif
+    
     http_server_ = std::make_unique<httplib::Server>();
     
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
@@ -155,6 +166,11 @@ void Server::setup_routes() {
     
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
+    });
+    
+    // Log streaming endpoint (SSE)
+    register_get("logs/stream", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_logs_stream(req, res);
     });
     
     // Halt endpoint (same as shutdown for compatibility)
@@ -354,6 +370,62 @@ bool Server::is_running() const {
     return running_;
 }
 
+// Helper function for auto-loading models on inference and load endpoints
+// ========================================================================
+// This function is called by:
+//   - handle_chat_completions() - /chat/completions endpoint
+//   - handle_completions() - /completions endpoint  
+//   - handle_load() - /load endpoint
+//
+// Behavior:
+//   1. If model is already loaded: Return immediately (no-op)
+//   2. If model is not downloaded: Download it (first-time use)
+//   3. If model is downloaded: Use cached version (don't check HuggingFace for updates)
+//
+// Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
+void Server::auto_load_model_if_needed(const std::string& requested_model) {
+    std::string loaded_model = router_->get_loaded_model();
+    
+    // Early return if already loaded
+    if (loaded_model == requested_model) {
+        std::cout << "[Server] Model already loaded: " << requested_model << std::endl;
+        return;
+    }
+    
+    // Log the auto-loading action
+    if (!loaded_model.empty()) {
+        std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
+    } else {
+        std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
+    }
+    
+    // Get model info
+    if (!model_manager_->model_exists(requested_model)) {
+        throw std::runtime_error("Model not found: " + requested_model);
+    }
+    
+    auto info = model_manager_->get_model_info(requested_model);
+    
+    // Download model if not cached (first-time use)
+    // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
+    // This means:
+    //   - If model is NOT downloaded: Download it from HuggingFace
+    //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
+    // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
+    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+        std::cout << "[Server] Model not cached, downloading from Hugging Face..." << std::endl;
+        std::cout << "[Server] This may take several minutes for large models." << std::endl;
+        model_manager_->download_model(requested_model, "", "", false, false, "", true);
+        std::cout << "[Server] Model download complete: " << requested_model << std::endl;
+    }
+    
+    // Load model with do_not_upgrade=true
+    // For FLM models: FastFlowLMServer will handle download internally if needed
+    // For non-FLM models: Model should already be cached at this point
+    router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
+    std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+}
+
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
     if (req.method == "HEAD") {
@@ -371,8 +443,14 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
-    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : loaded_checkpoint;
-    response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : loaded_model;
+    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
+    response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
+    
+    // Add log streaming support information
+    response["log_streaming"] = {
+        {"sse", true},
+        {"websocket", false}  // WebSocket support not yet implemented
+    };
     
     res.set_content(response.dump(), "application/json");
     std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: " << thread_id << ") =====" << std::endl;
@@ -467,39 +545,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Handle model loading/switching
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached (only for non-FLM models)
-                // FLM models are downloaded by FastFlowLMServer using 'flm pull'
-                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model (will auto-download FLM models if needed)
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                return;
             }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
@@ -511,21 +563,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
+        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        std::string request_body = req.body;
+        if (router_->get_loaded_recipe() == "flm") {
+            auto request_json_copy = request_json;
+            request_json_copy["model"] = router_->get_loaded_checkpoint();
+            request_body = request_json_copy.dump();
+            if (!is_streaming) {
+                request_json = request_json_copy;  // Update for non-streaming path too
+            }
+        }
+        
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/chat/completions";
-                
-                // FLM requires the checkpoint name in the request, not the Lemonade model name
-                std::string request_body = req.body;
-                if (router_->get_loaded_recipe() == "flm") {
-                    auto request_json_copy = request_json;
-                    request_json_copy["model"] = router_->get_loaded_checkpoint();
-                    request_body = request_json_copy.dump();
-                }
-                
                 // Log the HTTP request
-                std::cout << "[Server] POST " << backend_url << " - Streaming" << std::endl;
+                std::cout << "[Server] POST /api/v1/chat/completions - Streaming" << std::endl;
                 
                 // Set up streaming response with SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -536,20 +588,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [backend_url, request_body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         // For chunked responses, offset tracks bytes sent so far
                         // We only want to stream once when offset is 0
                         if (offset > 0) {
                             return false; // We're done after the first call
                         }
                         
-                        // Use our StreamingProxy to handle all the complexity
-                        StreamingProxy::forward_sse_stream(
-                            backend_url,
-                            request_body,
-                            sink,
-                            nullptr // Telemetry is printed automatically
-                        );
+                        // Use unified Router path for streaming
+                        router_->chat_completion_stream(request_body, sink);
                         
                         // Return false to indicate we're done streaming
                         return false;
@@ -561,11 +608,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
             }
         } else {
-            // Forward to router for non-streaming
-            std::string backend_url = router_->get_backend_address() + "/chat/completions";
-            
             // Log the HTTP request
-            std::cout << "[Server] POST " << backend_url << " - ";
+            std::cout << "[Server] POST /api/v1/chat/completions - ";
             
             auto response = router_->chat_completion(request_json);
             
@@ -640,38 +684,13 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached (only for non-FLM models)
-                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info.checkpoint, info.recipe, true, info.labels);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                res.status = 404;
+                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                return;
             }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
@@ -683,18 +702,21 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
+        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        std::string request_body = req.body;
+        if (router_->get_loaded_recipe() == "flm") {
+            auto request_json_copy = request_json;
+            request_json_copy["model"] = router_->get_loaded_checkpoint();
+            request_body = request_json_copy.dump();
+            if (!is_streaming) {
+                request_json = request_json_copy;  // Update for non-streaming path too
+            }
+        }
+        
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/completions";
-                
-                // FLM requires the checkpoint name in the request, not the Lemonade model name
-                std::string request_body = req.body;
-                if (router_->get_loaded_recipe() == "flm") {
-                    auto request_json_copy = request_json;
-                    request_json_copy["model"] = router_->get_loaded_checkpoint();
-                    request_body = request_json_copy.dump();
-                }
+                // Log the HTTP request
+                std::cout << "[Server] POST /api/v1/completions - Streaming" << std::endl;
                 
                 // Set up SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -702,18 +724,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
                 
-                // Use atomic flag to ensure content provider is called only once
-                auto stream_started = std::make_shared<std::atomic<bool>>(false);
-                
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, backend_url, request_body, stream_started](size_t offset, httplib::DataSink& sink) {
-                        if (offset > 0 || stream_started->exchange(true)) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
+                        if (offset > 0) {
                             return false; // Already sent everything
                         }
                         
-                        // Forward the streaming request
-                        StreamingProxy::forward_sse_stream(backend_url, request_body, sink);
+                        // Use unified Router path for streaming
+                        router_->completion_stream(request_body, sink);
                         
                         return false; // Signal completion
                     }
@@ -960,10 +979,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         
         if (is_streaming) {
             try {
-                // For streaming, forward chunks in real-time to the client
-                std::string backend_url = router_->get_backend_address() + "/responses";
-                
-                std::cout << "[Server] POST " << backend_url << " - Streaming (Responses API)" << std::endl;
+                std::cout << "[Server] POST /api/v1/responses - Streaming" << std::endl;
                 
                 // Set up streaming response with SSE headers
                 res.set_header("Content-Type", "text/event-stream");
@@ -974,18 +990,13 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [backend_url, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
                         
-                        // Use StreamingProxy to forward the SSE stream
-                        StreamingProxy::forward_sse_stream(
-                            backend_url,
-                            request_body,
-                            sink,
-                            nullptr
-                        );
+                        // Use unified Router path for streaming
+                        router_->responses_stream(request_body, sink);
                         
                         return false;
                     }
@@ -996,10 +1007,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_content("{\"error\":\"Internal server error during streaming\"}", "application/json");
             }
         } else {
-            // Forward to backend for non-streaming
-            std::string backend_url = router_->get_backend_address() + "/responses";
-            
-            std::cout << "[Server] POST " << backend_url << " - Non-streaming (Responses API)" << std::endl;
+            std::cout << "[Server] POST /api/v1/responses - Non-streaming" << std::endl;
             
             auto response = router_->responses(request_json);
             
@@ -1063,60 +1071,32 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         
         std::cout << "[Server] Loading model: " << model_name << std::endl;
         
-        // Check if a different model is already loaded
+        // Check if model is already loaded (early return optimization)
         std::string loaded_model = router_->get_loaded_model();
-        if (!loaded_model.empty() && loaded_model != model_name) {
-            std::cout << "[Server] Unloading current model: " << loaded_model << std::endl;
-            router_->unload_model();
-        } else if (loaded_model == model_name) {
+        if (loaded_model == model_name) {
             std::cout << "[Server] Model already loaded: " << model_name << std::endl;
+            auto info = model_manager_->get_model_info(model_name);
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
+                {"checkpoint", info.checkpoint},
+                {"recipe", info.recipe},
                 {"message", "Model already loaded"}
             };
             res.set_content(response.dump(), "application/json");
             return;
         }
         
-        // Look up model info from registry if not provided
-        std::string checkpoint = request_json.value("checkpoint", "");
-        std::string recipe = request_json.value("recipe", "");
-        std::vector<std::string> labels;
+        // Use helper function to handle loading (download outside mutex, no race conditions)
+        auto_load_model_if_needed(model_name);
         
-        if (checkpoint.empty()) {
-            // Get model info from model manager
-            if (!model_manager_->model_exists(model_name)) {
-                std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
-                res.status = 404;
-                res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                return;
-            }
-            
-            auto info = model_manager_->get_model_info(model_name);
-            checkpoint = info.checkpoint;
-            recipe = info.recipe;
-            labels = info.labels;
-        }
-        
-        // Auto-download if not cached (only for non-FLM models)
-        // FLM models are downloaded by FastFlowLMServer using 'flm pull'
-        if (recipe != "flm" && !model_manager_->is_model_downloaded(model_name)) {
-            std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-            model_manager_->download_model(model_name);
-        }
-        
-        // Load the model (will auto-download FLM models if needed)
-        // Use do_not_upgrade=true to avoid forcing re-download with --force
-        router_->load_model(model_name, checkpoint, recipe, true, labels);
-        
-        std::cout << "[Server] Model loaded successfully: " << model_name << std::endl;
-        
+        // Get model info for response
+        auto info = model_manager_->get_model_info(model_name);
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
-            {"checkpoint", checkpoint},
-            {"recipe", recipe}
+            {"checkpoint", info.checkpoint},
+            {"recipe", info.recipe}
         };
         res.set_content(response.dump(), "application/json");
         
@@ -1377,6 +1357,101 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         stop();
     }).detach();
+}
+
+void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& res) {
+    // Check if log file exists
+    if (log_file_path_.empty() || !std::filesystem::exists(log_file_path_)) {
+        std::cerr << "[Server] Log file not found: " << log_file_path_ << std::endl;
+        std::cerr << "[Server] Note: Log streaming only works when server is launched via tray/ServerManager" << std::endl;
+        res.status = 404;
+        nlohmann::json error = {
+            {"error", "Log file not found. Log streaming requires server to be launched via tray application."},
+            {"path", log_file_path_},
+            {"note", "When running directly, logs appear in console instead."}
+        };
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    
+    std::cout << "[Server] Starting log stream for: " << log_file_path_ << std::endl;
+    
+    // Set SSE headers
+    res.set_header("Content-Type", "text/event-stream");
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    
+    // Use chunked streaming
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [this](size_t offset, httplib::DataSink& sink) {
+            // Thread-local state for this connection
+            static thread_local std::unique_ptr<std::ifstream> log_stream;
+            static thread_local std::streampos last_pos = 0;
+            
+            if (offset == 0) {
+                // First call: open file and read from beginning
+                log_stream = std::make_unique<std::ifstream>(
+                    log_file_path_, 
+                    std::ios::in
+                );
+                
+                if (!log_stream->is_open()) {
+                    std::cerr << "[Server] Failed to open log file for streaming" << std::endl;
+                    return false;
+                }
+                
+                // Start from beginning
+                log_stream->seekg(0, std::ios::beg);
+                last_pos = 0;
+                
+                std::cout << "[Server] Log stream connection opened" << std::endl;
+            }
+            
+            // Seek to last known position
+            log_stream->seekg(last_pos);
+            
+            std::string line;
+            bool sent_data = false;
+            int lines_sent = 0;
+            
+            // Read and send new lines
+            while (std::getline(*log_stream, line)) {
+                // Format as SSE: "data: <line>\n\n"
+                std::string sse_msg = "data: " + line + "\n\n";
+                
+                if (!sink.write(sse_msg.c_str(), sse_msg.length())) {
+                    std::cout << "[Server] Log stream client disconnected" << std::endl;
+                    return false;  // Client disconnected
+                }
+                
+                sent_data = true;
+                lines_sent++;
+                
+                // CRITICAL: Update position after each successful line read
+                // Must do this BEFORE hitting EOF, because tellg() returns -1 at EOF!
+                last_pos = log_stream->tellg();
+            }
+            
+            // Clear EOF and any other error flags so we can continue reading on next poll
+            log_stream->clear();
+            
+            // Send heartbeat if no data (keeps connection alive)
+            if (!sent_data) {
+                const char* heartbeat = ": heartbeat\n\n";
+                if (!sink.write(heartbeat, strlen(heartbeat))) {
+                    std::cout << "[Server] Log stream client disconnected during heartbeat" << std::endl;
+                    return false;
+                }
+            }
+            
+            // Sleep briefly before next poll
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            
+            return true;  // Keep streaming
+        }
+    );
 }
 
 } // namespace lemon
