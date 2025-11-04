@@ -25,8 +25,10 @@ bool WrappedServer::wait_for_ready() {
     
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
     
-    // Wait up to 60 seconds for server to start
-    for (int i = 0; i < 600; i++) {
+    // Wait up to 5 minutes (large models can take time to load)
+    const int max_attempts = 3000; // 5 minutes at 100ms intervals
+    
+    for (int i = 0; i < max_attempts; i++) {
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
             int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
@@ -48,8 +50,8 @@ bool WrappedServer::wait_for_ready() {
         
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
-        // Print progress every 5 seconds
-        if (i % 50 == 0 && i > 0) {
+        // Print progress every 10 seconds
+        if (i % 100 == 0 && i > 0) {
             std::cout << "Still waiting for " + server_name_ + "..." << std::endl;
         }
     }

@@ -26,11 +26,9 @@ public:
                               bool do_not_upgrade = true) override;
     
     void load(const std::string& model_name,
-             const std::string& checkpoint,
-             const std::string& mmproj,
+             const ModelInfo& model_info,
              int ctx_size,
-             bool do_not_upgrade = false,
-             const std::vector<std::string>& labels = {}) override;
+             bool do_not_upgrade = false) override;
     
     // RyzenAI-specific: set execution mode before loading
     void set_execution_mode(const std::string& mode) { execution_mode_ = mode; }
