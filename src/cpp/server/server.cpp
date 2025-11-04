@@ -456,6 +456,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
     response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
     
+    // Add context size
+    response["context_size"] = router_->get_ctx_size();
+    
     // Add log streaming support information
     response["log_streaming"] = {
         {"sse", true},
