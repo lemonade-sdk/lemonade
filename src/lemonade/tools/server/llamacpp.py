@@ -163,9 +163,6 @@ class LlamaServer(WrappedServer):
         # strings. Embedding requests can include multiple strings in a batch, and each
         # string needs to fit within the context window.
         if supports_embeddings and ctx_size < EMBEDDING_CTX_SIZE:
-            logging.info(
-                f"Increasing context size from {ctx_size} to {EMBEDDING_CTX_SIZE} for embedding model"
-            )
             ctx_size = EMBEDDING_CTX_SIZE
 
         # Build the base command
