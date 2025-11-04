@@ -74,6 +74,7 @@ set(SOURCES
     src/command_line.cpp
     src/types.cpp
     src/tool_calls.cpp
+    src/reasoning.cpp
 )
 
 # Create executable

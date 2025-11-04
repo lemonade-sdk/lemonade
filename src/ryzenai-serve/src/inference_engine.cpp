@@ -445,8 +445,9 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         
         size_t token_count = 0;
         std::string accumulated_output;  // Track full output for stop sequence detection
+        bool client_disconnected = false;  // Track if client disconnected
         
-        while (!generator->IsDone()) {
+        while (!generator->IsDone() && !client_disconnected) {
             generator->GenerateNextToken();
             
             // Get just the new token
@@ -477,10 +478,21 @@ void InferenceEngine::streamComplete(const std::string& prompt,
                 
                 accumulated_output += token_str;
                 bool is_final = generator->IsDone();
-                callback(token_str, is_final);
+                
+                // Call callback and check if client is still connected
+                if (!callback(token_str, is_final)) {
+                    client_disconnected = true;
+                    std::cout << "[InferenceEngine] Client disconnected, stopping generation" << std::endl;
+                    break;
+                }
             }
             
             token_count++;
+        }
+        
+        if (client_disconnected) {
+            std::cout << "[InferenceEngine] Generation stopped early due to client disconnect (generated " 
+                      << token_count << " tokens)" << std::endl;
         }
         
         std::cout << "[InferenceEngine] Generated " << token_count << " tokens (streaming)" << std::endl;
