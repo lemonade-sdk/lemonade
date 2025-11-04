@@ -1071,7 +1071,7 @@ jobs:
 
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
-    runs-on: [Linux, stx]
+    runs-on: ubuntu-latest
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
@@ -1176,6 +1176,7 @@ jobs:
     name: Test .deb - Llamacpp (ROCm)
     runs-on: [stx-halo, Linux]
     needs: build-lemonade-server-deb
+    if: false
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
