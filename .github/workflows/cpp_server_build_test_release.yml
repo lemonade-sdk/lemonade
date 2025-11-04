@@ -1166,7 +1166,7 @@ jobs:
           conda create -p ./test-env python=3.10 -y
           
           # Install test dependencies
-          conda run -p ./test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
 
       - name: Run Llamacpp Vulkan tests
         env:
@@ -1175,7 +1175,7 @@ jobs:
           echo "Running Llamacpp Vulkan tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server-beta
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server-beta
           
           echo "Llamacpp Vulkan tests PASSED!"
 
@@ -1269,7 +1269,7 @@ jobs:
           conda create -p ./test-env python=3.10 -y
           
           # Install test dependencies
-          conda run -p ./test-env pip install -r test/requirements.txt
+          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
 
       - name: Run Llamacpp ROCm tests
         env:
@@ -1278,7 +1278,7 @@ jobs:
           echo "Running Llamacpp ROCm tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
           
           echo "Llamacpp ROCm tests PASSED!"
 

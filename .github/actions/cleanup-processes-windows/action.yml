@@ -39,18 +39,18 @@ runs:
             }
         }
         
-        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-dev, etc.)
-        Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
-        
-        # Kill Python processes
-        Stop-ProcessByPattern -Pattern "python" -Description "Python"
-        
         # Kill llama-server processes
         Stop-ProcessByPattern -Pattern "llama-server" -Description "llama-server"
         Stop-ProcessByPattern -Pattern "llama" -Description "llama"
         
         # Kill FLM processes (Windows only)
         Stop-ProcessByPattern -Pattern "flm" -Description "FLM"
+
+        # Kill lemonade processes (lemonade-server, lemonade-router, lemonade-server-dev, etc.)
+        Stop-ProcessByPattern -Pattern "lemonade" -Description "lemonade"
+        
+        # Kill Python processes
+        Stop-ProcessByPattern -Pattern "python" -Description "Python"
         
         # Kill conda processes
         Stop-ProcessByPattern -Pattern "conda" -Description "conda"
