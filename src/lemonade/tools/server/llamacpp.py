@@ -216,11 +216,15 @@ class LlamaServer(WrappedServer):
             # For embedding models, set batch sizes to handle multiple documents in a single request
             # batch-size: logical batch size (total tokens across all sequences)
             # ubatch-size: physical batch size (tokens processed in a single forward pass)
-            base_command.extend([
-                "--embeddings",
-                "--batch-size", str(EMBEDDING_BATCH_SIZE),
-                "--ubatch-size", str(EMBEDDING_UBATCH_SIZE)
-            ])
+            base_command.extend(
+                [
+                    "--embeddings",
+                    "--batch-size",
+                    str(EMBEDDING_BATCH_SIZE),
+                    "--ubatch-size",
+                    str(EMBEDDING_UBATCH_SIZE),
+                ]
+            )
 
         # Add reranking support if the model supports it
         if supports_reranking:
