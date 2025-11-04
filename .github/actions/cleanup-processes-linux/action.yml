@@ -38,21 +38,21 @@ runs:
                 fi
             fi
         }
-        
+
+        # Kill llama processes
+        kill_by_pattern "llama-server" "llama-server"
+        kill_by_pattern "llama-cli" "llama-cli"
+        kill_by_pattern "llama-bench" "llama-bench"
+
         # Kill everything lemonade-related
         kill_by_pattern "lemonade" "lemonade"
         
         # Kill Python processes (this is aggressive - be careful!)
         kill_by_pattern "python" "Python"
-        
-        # Kill llama processes
-        kill_by_pattern "llama-server" "llama-server"
-        kill_by_pattern "llama-cli" "llama-cli"
-        kill_by_pattern "llama-bench" "llama-bench"
-        
+
         # Kill conda processes
         kill_by_pattern "conda" "conda"
-        
+
         # Additional pass: kill by exact process names
         echo ""
         echo "Second pass: killing by exact name..."
@@ -72,8 +72,8 @@ runs:
             
             # NUCLEAR OPTION: Kill them with extreme prejudice
             echo "Using nuclear option..."
-            pkill -9 -f "lemonade" 2>/dev/null || true
             pkill -9 -f "llama" 2>/dev/null || true
+            pkill -9 -f "lemonade" 2>/dev/null || true
             pkill -9 -f "conda" 2>/dev/null || true
             sleep 1
             
