@@ -1,5 +1,6 @@
 #include "ryzenai/types.h"
 #include <sstream>
+#include <iostream>
 
 namespace ryzenai {
 
@@ -76,8 +77,12 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
     // max_completion_tokens takes precedence if both are provided
     if (j.contains("max_completion_tokens")) {
         req.max_tokens = j["max_completion_tokens"];
+        std::cout << "[ChatCompletionRequest] Parsed max_completion_tokens=" << req.max_tokens << std::endl;
     } else if (j.contains("max_tokens")) {
         req.max_tokens = j["max_tokens"];
+        std::cout << "[ChatCompletionRequest] Parsed max_tokens=" << req.max_tokens << std::endl;
+    } else {
+        std::cout << "[ChatCompletionRequest] No max_tokens specified, using default=" << req.max_tokens << std::endl;
     }
     
     if (j.contains("temperature")) {
