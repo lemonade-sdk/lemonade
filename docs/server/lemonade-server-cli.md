@@ -56,14 +56,6 @@ When using embedding models with the llamacpp backend, you can configure batch p
 | `LEMONADE_EMBEDDING_BATCH_SIZE` | Logical batch size for embedding requests (total tokens across all documents in a batch) | 8192 |
 | `LEMONADE_EMBEDDING_UBATCH_SIZE` | Physical batch size for embedding requests (tokens processed in a single GPU pass) | 8192 |
 
-These settings are useful for optimizing memory usage on systems with limited RAM/VRAM. For example, on a 16GB RAM system, you may want to reduce these values:
-
-```bash
-export LEMONADE_EMBEDDING_CTX_SIZE=4096
-export LEMONADE_EMBEDDING_BATCH_SIZE=4096
-export LEMONADE_EMBEDDING_UBATCH_SIZE=4096
-```
-
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
 
 <!--Copyright (c) 2025 AMD-->
