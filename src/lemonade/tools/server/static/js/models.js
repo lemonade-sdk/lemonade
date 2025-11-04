@@ -635,8 +635,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         unloadBtn.onclick = unloadModel;
     }
     
-    // Note: Model selection change listener is handled in chat.js to avoid duplicate load requests
-    
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
     
