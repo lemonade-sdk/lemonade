@@ -49,6 +49,9 @@ GenerationParams RyzenAIServer::createGenerationParams(int max_tokens, float tem
     // Start with defaults from genai_config.json (or hardcoded defaults if no config)
     GenerationParams params = inference_engine_->getDefaultParams();
     
+    std::cout << "[createGenerationParams] Input max_tokens=" << max_tokens << std::endl;
+    std::cout << "[createGenerationParams] Default params.max_length=" << params.max_length << std::endl;
+    
     // Always apply user-provided values, regardless of whether they match defaults
     // The request parsing already handles providing defaults when values aren't specified
     params.max_length = max_tokens;
@@ -58,7 +61,8 @@ GenerationParams RyzenAIServer::createGenerationParams(int max_tokens, float tem
     params.repetition_penalty = repeat_penalty;
     params.stop_sequences = stop;
     
-    std::cout << "[createGenerationParams] Final params: temperature=" << params.temperature 
+    std::cout << "[createGenerationParams] Final params: max_length=" << params.max_length
+              << ", temperature=" << params.temperature 
               << ", top_p=" << params.top_p 
               << ", top_k=" << params.top_k 
               << ", do_sample=" << params.do_sample

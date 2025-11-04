@@ -54,9 +54,11 @@ InferenceEngine::InferenceEngine(const std::string& model_path, const std::strin
                 has_search_config_ = true;
                 
                 // Load defaults from search config (matching Python implementation)
-                if (search.contains("max_length") && search["max_length"].is_number()) {
-                    default_params_.max_length = search["max_length"];
-                }
+                // NOTE: search.max_length from genai_config.json means TOTAL sequence length,
+                // but default_params_.max_length is used as "max NEW tokens" in our code.
+                // We intentionally DON'T load search.max_length here to avoid semantic confusion.
+                // The user's max_tokens parameter will be used directly as max new tokens.
+                
                 if (search.contains("temperature") && search["temperature"].is_number()) {
                     default_params_.temperature = search["temperature"];
                 }
@@ -423,7 +425,11 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         auto gen_params = OgaGeneratorParams::Create(*model_);
         // max_length should be prompt_length + max_new_tokens
         // params.max_length is max_new_tokens from the caller
-        gen_params->SetSearchOption("max_length", static_cast<int>(input_ids.size()) + params.max_length);
+        int total_max_length = static_cast<int>(input_ids.size()) + params.max_length;
+        std::cout << "[InferenceEngine::streamComplete] prompt_length=" << input_ids.size() 
+                  << ", max_new_tokens=" << params.max_length 
+                  << ", total_max_length=" << total_max_length << std::endl;
+        gen_params->SetSearchOption("max_length", total_max_length);
         gen_params->SetSearchOption("temperature", params.temperature);
         gen_params->SetSearchOption("top_p", params.top_p);
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
