@@ -392,8 +392,8 @@ jobs:
   # TEST JOBS - Run on stx-halo + Windows workers
   # ========================================================================
 
-  test-installer-basic:
-    name: Test Installer - Basic Functionality
+  test-exe-rai-hybrid-basics:
+    name: Test .exe Installer - Basic RAI Hybird Functionality
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -717,7 +717,7 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-flm-integration:
+  test-exe-flm:
     name: Test C++ Server with FLM
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
@@ -796,7 +796,7 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-llamacpp-vulkan:
+  test-exe-llamacpp-vulkan:
     name: Test C++ Server with Llamacpp (Vulkan)
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
@@ -874,7 +874,7 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-llamacpp-rocm:
+  test-exe-llamacpp-rocm:
     name: Test C++ Server with Llamacpp (ROCm)
     runs-on: [stx-halo, Windows]
     needs: build-lemonade-server-installer
@@ -952,8 +952,8 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-general-server:
-    name: Test C++ Server - General Tests
+  test-exe-rai-cpu:
+    name: Test C++ Server - Endpoints and ryzenai-serve CPU
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -1277,11 +1277,11 @@ jobs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
       - build-ryzenai-serve
-      - test-installer-basic
-      - test-flm-integration
-      - test-llamacpp-vulkan
-      - test-llamacpp-rocm
-      - test-general-server
+      - test-exe-rai-hybrid-basics
+      - test-exe-flm
+      - test-exe-llamacpp-vulkan
+      - test-exe-llamacpp-rocm
+      - test-exe-rai-cpu
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
     if: startsWith(github.ref, 'refs/tags/v')
