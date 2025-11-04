@@ -1,28 +1,28 @@
 name: Setup RyzenAI Serve
-description: Download and setup RyzenAI Serve from build artifacts for testing
+description: Setup RyzenAI Serve from already-downloaded artifact files for testing
 
 inputs:
   install-path:
     description: 'The LEMONADE_INSTALL_PATH where RyzenAI Serve should be installed'
     required: true
+  artifact-path:
+    description: 'Path where the ryzenai-serve artifact files have been downloaded'
+    required: false
+    default: 'ryzenai-serve-files'
 
 runs:
   using: composite
   steps:
-    - name: Download RyzenAI Serve artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: ryzenai-serve
-        path: ryzenai-serve-files
-
     - name: Setup RyzenAI Serve for testing
       shell: PowerShell
       run: |
         Write-Host "Setting up ryzenai-serve from artifact..." -ForegroundColor Cyan
         
-        # First, check what we downloaded
-        Write-Host "`nContents of downloaded artifact:" -ForegroundColor Yellow
-        Get-ChildItem "ryzenai-serve-files" -File | ForEach-Object {
+        $artifactPath = "${{ inputs.artifact-path }}"
+        
+        # First, check what we have
+        Write-Host "`nContents of artifact directory:" -ForegroundColor Yellow
+        Get-ChildItem "$artifactPath" -File | ForEach-Object {
             $sizeMB = [math]::Round($_.Length / 1MB, 2)
             Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
         }
@@ -34,7 +34,7 @@ runs:
         
         # Copy all files from artifact to ryzenai-serve directory
         Write-Host "`nCopying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
-        Copy-Item -Path "ryzenai-serve-files\*" -Destination $ryzenaiDir -Recurse -Force
+        Copy-Item -Path "$artifactPath\*" -Destination $ryzenaiDir -Recurse -Force
         
         # Force filesystem sync and wait
         Start-Sleep -Seconds 2
@@ -65,7 +65,7 @@ runs:
             Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
             Get-ChildItem $ryzenaiDir | Format-Table Name, Length
             Write-Host "`nContents of source directory:" -ForegroundColor Yellow
-            Get-ChildItem "ryzenai-serve-files" | Format-Table Name, Length
+            Get-ChildItem "$artifactPath" | Format-Table Name, Length
             exit 1
         }
 

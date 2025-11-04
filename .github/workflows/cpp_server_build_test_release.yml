@@ -435,10 +435,17 @@ jobs:
           
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
+      - name: Download RyzenAI Serve artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-serve
+          path: ryzenai-serve-files
+
       - name: Setup RyzenAI Serve
         uses: ./.github/actions/setup-ryzenai-serve
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-serve-files
 
       - name: Verify Installation
         shell: PowerShell
@@ -992,10 +999,17 @@ jobs:
           Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
+      - name: Download RyzenAI Serve artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-serve
+          path: ryzenai-serve-files
+
       - name: Setup RyzenAI Serve
         uses: ./.github/actions/setup-ryzenai-serve
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-serve-files
 
       - name: Create minimal Python environment
         shell: PowerShell
