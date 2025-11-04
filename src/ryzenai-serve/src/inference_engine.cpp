@@ -54,9 +54,11 @@ InferenceEngine::InferenceEngine(const std::string& model_path, const std::strin
                 has_search_config_ = true;
                 
                 // Load defaults from search config (matching Python implementation)
-                if (search.contains("max_length") && search["max_length"].is_number()) {
-                    default_params_.max_length = search["max_length"];
-                }
+                // NOTE: search.max_length from genai_config.json means TOTAL sequence length,
+                // but default_params_.max_length is used as "max NEW tokens" in our code.
+                // We intentionally DON'T load search.max_length here to avoid semantic confusion.
+                // The user's max_tokens parameter will be used directly as max new tokens.
+                
                 if (search.contains("temperature") && search["temperature"].is_number()) {
                     default_params_.temperature = search["temperature"];
                 }
@@ -423,7 +425,11 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         auto gen_params = OgaGeneratorParams::Create(*model_);
         // max_length should be prompt_length + max_new_tokens
         // params.max_length is max_new_tokens from the caller
-        gen_params->SetSearchOption("max_length", static_cast<int>(input_ids.size()) + params.max_length);
+        int total_max_length = static_cast<int>(input_ids.size()) + params.max_length;
+        std::cout << "[InferenceEngine::streamComplete] prompt_length=" << input_ids.size() 
+                  << ", max_new_tokens=" << params.max_length 
+                  << ", total_max_length=" << total_max_length << std::endl;
+        gen_params->SetSearchOption("max_length", total_max_length);
         gen_params->SetSearchOption("temperature", params.temperature);
         gen_params->SetSearchOption("top_p", params.top_p);
         gen_params->SetSearchOption("top_k", static_cast<double>(params.top_k));
@@ -445,8 +451,9 @@ void InferenceEngine::streamComplete(const std::string& prompt,
         
         size_t token_count = 0;
         std::string accumulated_output;  // Track full output for stop sequence detection
+        bool client_disconnected = false;  // Track if client disconnected
         
-        while (!generator->IsDone()) {
+        while (!generator->IsDone() && !client_disconnected) {
             generator->GenerateNextToken();
             
             // Get just the new token
@@ -477,10 +484,21 @@ void InferenceEngine::streamComplete(const std::string& prompt,
                 
                 accumulated_output += token_str;
                 bool is_final = generator->IsDone();
-                callback(token_str, is_final);
+                
+                // Call callback and check if client is still connected
+                if (!callback(token_str, is_final)) {
+                    client_disconnected = true;
+                    std::cout << "[InferenceEngine] Client disconnected, stopping generation" << std::endl;
+                    break;
+                }
             }
             
             token_count++;
+        }
+        
+        if (client_disconnected) {
+            std::cout << "[InferenceEngine] Generation stopped early due to client disconnect (generated " 
+                      << token_count << " tokens)" << std::endl;
         }
         
         std::cout << "[InferenceEngine] Generated " << token_count << " tokens (streaming)" << std::endl;
