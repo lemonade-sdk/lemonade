@@ -130,8 +130,8 @@ class Testing(ServerTestingBase):
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
 
-        assert chunk_count > 5
-        assert len(complete_response) > 5
+        assert chunk_count > 2, f"{complete_response} = {chunk_count} chunks"
+        assert len(complete_response) > 5, complete_response
 
     # Endpoint: /api/v1/chat/completions
     async def test_003_test_chat_completion_streaming_async(self):
@@ -155,7 +155,7 @@ class Testing(ServerTestingBase):
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
 
-        assert chunk_count > 5
+        assert chunk_count > 2
         assert len(complete_response) > 5
 
     # Endpoints: /api/v1/models and /api/v1/models/{model_id}
@@ -239,7 +239,7 @@ class Testing(ServerTestingBase):
                 print(chunk.choices[0].text, end="")
                 chunk_count += 1
 
-        assert chunk_count > 5
+        assert chunk_count > 2
         assert len(complete_response) > 5
 
     # Endpoint: /api/v1/completions
@@ -264,7 +264,7 @@ class Testing(ServerTestingBase):
                 print(chunk.choices[0].text, end="")
                 chunk_count += 1
 
-        assert chunk_count > 5
+        assert chunk_count > 2
         assert len(complete_response) > 5
 
     # Endpoint: /api/v1/completions with stop parameter

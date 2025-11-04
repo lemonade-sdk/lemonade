@@ -392,8 +392,8 @@ jobs:
   # TEST JOBS - Run on stx-halo + Windows workers
   # ========================================================================
 
-  test-installer-basic:
-    name: Test Installer - Basic Functionality
+  test-exe-rai-hybrid-basics:
+    name: Test .exe - Basic RAI Hybird Functionality
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -441,59 +441,11 @@ jobs:
           name: ryzenai-serve
           path: ryzenai-serve-files
 
-      - name: Setup RyzenAI Serve for testing
-        shell: PowerShell
-        run: |
-          Write-Host "Setting up ryzenai-serve from artifact..." -ForegroundColor Cyan
-          
-          # First, check what we downloaded
-          Write-Host "`nContents of downloaded artifact:" -ForegroundColor Yellow
-          Get-ChildItem "ryzenai-serve-files" -File | ForEach-Object {
-              $sizeMB = [math]::Round($_.Length / 1MB, 2)
-              Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
-          }
-          
-          $ryzenaiDir = Join-Path $env:LEMONADE_INSTALL_PATH "bin\ryzenai-serve"
-          
-          # Create ryzenai-serve directory
-          New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
-          
-          # Copy all files from artifact to ryzenai-serve directory
-          Write-Host "`nCopying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
-          Copy-Item -Path "ryzenai-serve-files\*" -Destination $ryzenaiDir -Recurse -Force
-          
-          # Force filesystem sync and wait
-          Start-Sleep -Seconds 2
-          
-          # Retry logic for verification
-          $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-serve.exe"
-          $maxRetries = 5
-          $retryCount = 0
-          $found = $false
-          
-          while (-not $found -and $retryCount -lt $maxRetries) {
-              if (Test-Path $ryzenaiExe) {
-                  $found = $true
-                  Write-Host "[OK] ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
-                  
-                  # List a few files to confirm
-                  $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
-                  Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
-              } else {
-                  $retryCount++
-                  Write-Host "Attempt ${retryCount}/${maxRetries}: ryzenai-serve.exe not found yet, waiting..." -ForegroundColor Yellow
-                  Start-Sleep -Seconds 1
-              }
-          }
-          
-          if (-not $found) {
-              Write-Host "ERROR: ryzenai-serve.exe not found after ${maxRetries} attempts!" -ForegroundColor Red
-              Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
-              Get-ChildItem $ryzenaiDir | Format-Table Name, Length
-              Write-Host "`nContents of source directory:" -ForegroundColor Yellow
-              Get-ChildItem "ryzenai-serve-files" | Format-Table Name, Length
-              exit 1
-          }
+      - name: Setup RyzenAI Serve
+        uses: ./.github/actions/setup-ryzenai-serve
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-serve-files
 
       - name: Verify Installation
         shell: PowerShell
@@ -772,8 +724,8 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-flm-integration:
-    name: Test C++ Server with FLM
+  test-exe-flm:
+    name: Test .exe - FLM
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -851,8 +803,8 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-llamacpp-vulkan:
-    name: Test C++ Server with Llamacpp (Vulkan)
+  test-exe-llamacpp-vulkan:
+    name: Test .exe - Llamacpp (Vulkan)
     runs-on: [stx, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -929,8 +881,8 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-llamacpp-rocm:
-    name: Test C++ Server with Llamacpp (ROCm)
+  test-exe-llamacpp-rocm:
+    name: Test .exe - Llamacpp (ROCm)
     runs-on: [stx-halo, Windows]
     needs: build-lemonade-server-installer
     env:
@@ -1007,10 +959,12 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
-  test-general-server:
-    name: Test C++ Server - General Tests
+  test-exe-rai-cpu:
+    name: Test .exe - ryzenai-serve CPU
     runs-on: [stx, Windows]
-    needs: build-lemonade-server-installer
+    needs: 
+      - build-lemonade-server-installer
+      - build-ryzenai-serve
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -1044,6 +998,18 @@ jobs:
         run: |
           Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Download RyzenAI Serve artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-serve
+          path: ryzenai-serve-files
+
+      - name: Setup RyzenAI Serve
+        uses: ./.github/actions/setup-ryzenai-serve
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-serve-files
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1104,8 +1070,8 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-deb-llamacpp-vulkan:
-    name: Test .deb Package with Llamacpp (Vulkan)
-    runs-on: [stx, Linux]
+    name: Test .deb - Llamacpp (Vulkan)
+    runs-on: [Linux, stx]
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
@@ -1207,7 +1173,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-deb-llamacpp-rocm:
-    name: Test .deb Package with Llamacpp (ROCm)
+    name: Test .deb - Llamacpp (ROCm)
     runs-on: [stx-halo, Linux]
     needs: build-lemonade-server-deb
     env:
@@ -1324,11 +1290,11 @@ jobs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
       - build-ryzenai-serve
-      - test-installer-basic
-      - test-flm-integration
-      - test-llamacpp-vulkan
-      - test-llamacpp-rocm
-      - test-general-server
+      - test-exe-rai-hybrid-basics
+      - test-exe-flm
+      - test-exe-llamacpp-vulkan
+      - test-exe-llamacpp-rocm
+      - test-exe-rai-cpu
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
     if: startsWith(github.ref, 'refs/tags/v')
