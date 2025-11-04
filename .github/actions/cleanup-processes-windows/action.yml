@@ -121,9 +121,10 @@ runs:
         }
         
         if ($stillRunning.Count -eq 0) {
-            Write-Host "  ✓ All target processes successfully terminated" -ForegroundColor Green
+            Write-Host "  [OK] All target processes successfully terminated" -ForegroundColor Green
         } else {
-            Write-Host "`n  ✗ ERROR: $($stillRunning.Count) process(es) still running after cleanup!" -ForegroundColor Red
+            Write-Host "" 
+            Write-Host "  [ERROR] $($stillRunning.Count) process(es) still running after cleanup!" -ForegroundColor Red
             Write-Host "  This may cause test failures or conflicts." -ForegroundColor Red
             exit 1
         }

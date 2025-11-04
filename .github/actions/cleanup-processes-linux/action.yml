@@ -181,11 +181,27 @@ runs:
         # Verification: Check if any processes are still running
         echo ""
         echo "Verifying cleanup..."
-        PATTERNS=("lemonade" "python" "llama-server" "flm" "conda" "ryzenai-serve")
         STILL_RUNNING=0
         
-        for pattern in "${PATTERNS[@]}"; do
-            remaining=$(ps aux | grep -i "$pattern" | grep -v grep | grep -v "cleanup-processes" || true)
+        # Check for lemonade processes
+        remaining=$(ps aux | grep -E "lemonade" | grep -v grep | grep -v "cleanup-processes" || true)
+        if [ -n "$remaining" ]; then
+            echo "  WARNING: Found lemonade process(es) still running:" >&2
+            echo "$remaining" | awk '{print "    - PID " $2 ": " $11}' >&2
+            STILL_RUNNING=$((STILL_RUNNING + 1))
+        fi
+        
+        # Check for test-related Python processes (exclude system python and runner)
+        remaining=$(ps aux | grep -E "pytest|unittest|test.*\.py|lemonade.*\.py" | grep -v grep | grep -v "cleanup-processes" || true)
+        if [ -n "$remaining" ]; then
+            echo "  WARNING: Found test Python process(es) still running:" >&2
+            echo "$remaining" | awk '{print "    - PID " $2 ": " $11}' >&2
+            STILL_RUNNING=$((STILL_RUNNING + 1))
+        fi
+        
+        # Check for llama-server and ryzenai-serve
+        for pattern in "llama-server" "ryzenai-serve" "flm"; do
+            remaining=$(ps aux | grep -E "$pattern" | grep -v grep | grep -v "cleanup-processes" || true)
             if [ -n "$remaining" ]; then
                 echo "  WARNING: Found $pattern process(es) still running:" >&2
                 echo "$remaining" | awk '{print "    - PID " $2 ": " $11}' >&2
@@ -194,10 +210,10 @@ runs:
         done
         
         if [ $STILL_RUNNING -eq 0 ]; then
-            echo "  ✓ All target processes successfully terminated"
+            echo "  [OK] All target processes successfully terminated"
         else
             echo ""
-            echo "  ✗ ERROR: Some processes still running after cleanup!" >&2
+            echo "  [ERROR] Some processes still running after cleanup!" >&2
             echo "  This may cause test failures or conflicts." >&2
             exit 1
         fi
