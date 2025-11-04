@@ -793,42 +793,10 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Handle model loading/switching (same logic as completions)
+        // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached
-                if (!model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info, true);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
-            }
+            auto_load_model_if_needed(requested_model);
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -852,42 +820,10 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Handle model loading/switching (same logic as completions)
+        // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Auto-download if not cached
-                if (!model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model
-                // Use do_not_upgrade=true for inference requests to avoid re-downloading
-                router_->load_model(requested_model, info, true);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
-            }
+            auto_load_model_if_needed(requested_model);
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -911,56 +847,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
         
-        // Handle model loading/switching (same as chat_completions)
+        // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            std::string loaded_model = router_->get_loaded_model();
-            
-            // Check if we need to switch models
-            if (loaded_model != requested_model) {
-                // Unload current model if one is loaded
-                if (router_->is_model_loaded()) {
-                    std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-                    router_->unload_model();
-                } else {
-                    std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-                }
-                
-                // Get model info
-                if (!model_manager_->model_exists(requested_model)) {
-                    std::cerr << "[Server ERROR] Model not found: " << requested_model << std::endl;
-                    res.status = 404;
-                    res.set_content("{\"error\": \"Model not found\"}", "application/json");
-                    return;
-                }
-                
-                auto info = model_manager_->get_model_info(requested_model);
-                
-                // Check if model supports responses API (only oga-* recipes)
-                if (info.recipe.find("oga-") == std::string::npos && info.recipe != "oga") {
-                    std::cerr << "[Server ERROR] Responses API not supported for recipe: " << info.recipe << std::endl;
-                    res.status = 422;
-                    nlohmann::json error_response = {
-                        {"error", {
-                            {"message", "Responses API not supported for recipe: " + info.recipe},
-                            {"type", "unsupported_recipe"},
-                            {"code", "responses_not_supported"}
-                        }}
-                    };
-                    res.set_content(error_response.dump(), "application/json");
-                    return;
-                }
-                
-                // Auto-download if not cached (only for non-FLM models)
-                if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
-                    std::cout << "[Server] Model not downloaded, pulling from Hugging Face..." << std::endl;
-                    model_manager_->download_model(requested_model);
-                }
-                
-                // Load the requested model
-                router_->load_model(requested_model, info, true);
-                std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
-            }
+            auto_load_model_if_needed(requested_model);
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -968,7 +858,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             return;
         }
         
-        // Check if current model supports responses API
+        // Check if current model supports responses API (only oga-* recipes)
         std::string loaded_recipe = router_->get_loaded_recipe();
         if (loaded_recipe.find("oga-") == std::string::npos && loaded_recipe != "oga") {
             std::cerr << "[Server ERROR] Responses API not supported for recipe: " << loaded_recipe << std::endl;
