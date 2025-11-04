@@ -146,6 +146,13 @@ if(WIN32)
         ${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest
         @ONLY
     )
+    
+    # Generate NSIS installer script with version
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi
+        @ONLY
+    )
 endif()
 
 # Include directories
