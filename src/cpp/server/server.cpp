@@ -423,6 +423,10 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
         std::cout << "[Server] This may take several minutes for large models." << std::endl;
         model_manager_->download_model(requested_model, "", "", false, false, "", true);
         std::cout << "[Server] Model download complete: " << requested_model << std::endl;
+        
+        // CRITICAL: Refresh model info after download to get correct resolved_path
+        // The resolved_path is computed based on filesystem, so we need fresh info now that files exist
+        info = model_manager_->get_model_info(requested_model);
     }
     
     // Load model with do_not_upgrade=true
