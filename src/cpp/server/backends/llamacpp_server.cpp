@@ -31,6 +31,11 @@ static const std::string LLAMA_VERSION_VULKAN = "b6510";
 static const std::string LLAMA_VERSION_ROCM = "b1066";
 static const std::string LLAMA_VERSION_METAL = "b6510";
 
+// Embedding model batch configuration set to 8192 as default
+static const int EMBEDDING_CTX_SIZE = 8192;
+static const int EMBEDDING_BATCH_SIZE = 8192;
+static const int EMBEDDING_UBATCH_SIZE = 8192;
+
 LlamaCppServer::LlamaCppServer(const std::string& backend, const std::string& log_level)
     : WrappedServer("llama-server", log_level), backend_(backend) {
 }
@@ -391,6 +396,17 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get executable path
     std::string executable = get_llama_server_path();
     
+    // Check for embeddings and reranking support based on labels
+    bool supports_embeddings = std::find(model_info.labels.begin(), model_info.labels.end(), "embeddings") != model_info.labels.end();
+    bool supports_reranking = std::find(model_info.labels.begin(), model_info.labels.end(), "reranking") != model_info.labels.end();
+    
+    // For embedding models, use a larger context size to support longer individual
+    // strings. Embedding requests can include multiple strings in a batch, and each
+    // string needs to fit within the context window.
+    if (supports_embeddings && ctx_size < EMBEDDING_CTX_SIZE) {
+        ctx_size = EMBEDDING_CTX_SIZE;
+    }
+    
     // Build command arguments to match Python implementation EXACTLY
     std::vector<std::string> args = {
         "-m", gguf_path,
@@ -414,15 +430,20 @@ void LlamaCppServer::load(const std::string& model_name,
     args.push_back("--reasoning-format");
     args.push_back("auto");
     
-    // Check for embeddings and reranking support based on labels
-    bool supports_embeddings = std::find(model_info.labels.begin(), model_info.labels.end(), "embeddings") != model_info.labels.end();
-    bool supports_reranking = std::find(model_info.labels.begin(), model_info.labels.end(), "reranking") != model_info.labels.end();
-    
+    // Add embeddings support if the model supports it
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
+        // For embedding models, set batch sizes to handle multiple documents in a single request
+        // batch-size: logical batch size (total tokens across all sequences)
+        // ubatch-size: physical batch size (tokens processed in a single forward pass)
         args.push_back("--embeddings");
+        args.push_back("--batch-size");
+        args.push_back(std::to_string(EMBEDDING_BATCH_SIZE));
+        args.push_back("--ubatch-size");
+        args.push_back(std::to_string(EMBEDDING_UBATCH_SIZE));
     }
     
+    // Add reranking support if the model supports it
     if (supports_reranking) {
         std::cout << "[LlamaCpp] Model supports reranking, adding --reranking flag" << std::endl;
         args.push_back("--reranking");
