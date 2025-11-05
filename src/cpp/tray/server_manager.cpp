@@ -131,24 +131,38 @@ bool ServerManager::start_server(
 }
 
 bool ServerManager::stop_server() {
+    DEBUG_LOG(this, "stop_server() called, server_started_=" << server_started_ << ", server_pid_=" << server_pid_);
+    
     if (!is_server_running()) {
+        DEBUG_LOG(this, "Server not running, checking for orphaned children...");
+        
+        // Even if server appears not running, try to kill children if we have a PID
+        // The router might have crashed/exited but children could still be alive
+        if (server_pid_ != 0) {
+            DEBUG_LOG(this, "Attempting to clean up process tree for PID " << server_pid_);
+            terminate_router_tree();
+        }
+        
+        server_started_ = false;
+        server_pid_ = 0;
+        
+#ifdef _WIN32
+        if (process_handle_) {
+            CloseHandle(process_handle_);
+            process_handle_ = nullptr;
+        }
+#else
+        remove_pid_file();
+#endif
+        
         return true;
     }
     
-    DEBUG_LOG(this, "Stopping server...");
+    DEBUG_LOG(this, "Stopping server and children...");
     
-    // Try graceful shutdown first via API
-    try {
-        make_http_request("/api/v1/halt", "POST");
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-    } catch (...) {
-        // API call failed, proceed to force termination
-    }
-    
-    // Force terminate if still running
-    if (is_process_alive()) {
-        terminate_process();
-    }
+    // Kill the entire process tree (router + children)
+    // This does NOT kill the parent tray app (we might be running inside it!)
+    terminate_router_tree();
     
     server_started_ = false;
     server_pid_ = 0;
@@ -163,6 +177,7 @@ bool ServerManager::stop_server() {
     remove_pid_file();
 #endif
     
+    std::cout << "Server stopped successfully" << std::endl;
     DEBUG_LOG(this, "Server stopped");
     return true;
 }
@@ -398,6 +413,55 @@ bool ServerManager::is_process_alive() const {
     return false;
 }
 
+bool ServerManager::terminate_router_tree() {
+    // Windows implementation: Kill router and its children
+    // This does NOT kill the parent tray app!
+    
+    DEBUG_LOG(this, "terminate_router_tree() called for PID " << server_pid_);
+    
+    std::vector<DWORD> child_pids;
+    
+    // 1. Find router's children (before killing router)
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(pe32);
+        if (Process32FirstW(snapshot, &pe32)) {
+            do {
+                if (pe32.th32ParentProcessID == server_pid_) {
+                    child_pids.push_back(pe32.th32ProcessID);
+                    DEBUG_LOG(this, "Found child process: PID " << pe32.th32ProcessID);
+                }
+            } while (Process32NextW(snapshot, &pe32));
+        }
+        CloseHandle(snapshot);
+    }
+    
+    DEBUG_LOG(this, "Found " << child_pids.size() << " child process(es)");
+    
+    // 2. Terminate router
+    if (process_handle_) {
+        DEBUG_LOG(this, "Terminating router (PID: " << server_pid_ << ")");
+        TerminateProcess(process_handle_, 0);
+        WaitForSingleObject(process_handle_, 5000);  // Wait up to 5 seconds
+    }
+    
+    // 3. Terminate children
+    for (DWORD child_pid : child_pids) {
+        DEBUG_LOG(this, "Terminating child process (PID: " << child_pid << ")");
+        HANDLE hChild = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
+        if (hChild) {
+            TerminateProcess(hChild, 0);
+            WaitForSingleObject(hChild, 5000);  // Wait up to 5 seconds
+            CloseHandle(hChild);
+        }
+    }
+    
+    DEBUG_LOG(this, "terminate_router_tree() complete");
+    
+    return true;
+}
+
 #else  // Unix/Linux/macOS
 
 bool ServerManager::spawn_process() {
@@ -510,6 +574,86 @@ bool ServerManager::is_process_alive() const {
     }
     
     // If we can't parse the state, assume alive to be safe
+    return true;
+}
+
+bool ServerManager::terminate_router_tree() {
+    // Linux implementation: Kill router and its children
+    // This does NOT kill the parent tray app!
+    
+    DEBUG_LOG(this, "terminate_router_tree() called for PID " << server_pid_);
+    
+    if (server_pid_ <= 0) {
+        DEBUG_LOG(this, "Invalid server_pid, returning");
+        return false;
+    }
+    
+    std::vector<pid_t> child_pids;
+    
+    // 1. Find router's children BEFORE killing router
+    // (they get reparented to init if router dies first)
+    std::string cmd = "pgrep -P " + std::to_string(server_pid_);
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (pipe) {
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            pid_t child_pid = atoi(buffer);
+            if (child_pid > 0) {
+                child_pids.push_back(child_pid);
+                DEBUG_LOG(this, "Found child process: PID " << child_pid);
+            }
+        }
+        pclose(pipe);
+    }
+    
+    DEBUG_LOG(this, "Found " << child_pids.size() << " child process(es)");
+    
+    // 2. Send SIGTERM to router
+    DEBUG_LOG(this, "Sending SIGTERM to router (PID: " << server_pid_ << ")");
+    kill(server_pid_, SIGTERM);
+    
+    // 3. Send SIGTERM to children
+    for (pid_t child_pid : child_pids) {
+        DEBUG_LOG(this, "Sending SIGTERM to child process (PID: " << child_pid << ")");
+        kill(child_pid, SIGTERM);
+    }
+    
+    // 4. Wait up to 5 seconds for graceful shutdown
+    bool all_dead = false;
+    for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
+        bool router_alive = (kill(server_pid_, 0) == 0);
+        bool any_child_alive = false;
+        
+        for (pid_t child_pid : child_pids) {
+            if (kill(child_pid, 0) == 0) {
+                any_child_alive = true;
+                break;
+            }
+        }
+        
+        if (!router_alive && !any_child_alive) {
+            all_dead = true;
+            DEBUG_LOG(this, "All processes exited gracefully");
+            break;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // 5. Force kill if still alive
+    if (!all_dead) {
+        DEBUG_LOG(this, "Timeout expired, sending SIGKILL");
+        kill(server_pid_, SIGKILL);
+        for (pid_t child_pid : child_pids) {
+            kill(child_pid, SIGKILL);
+        }
+        
+        // Wait for forced kill to complete
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    
+    DEBUG_LOG(this, "terminate_router_tree() complete");
+    
     return true;
 }
 

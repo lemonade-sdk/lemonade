@@ -41,6 +41,11 @@ namespace lemon_tray {
         std::cout << "DEBUG: " << msg << std::endl; \
     }
 
+#ifndef _WIN32
+// Initialize static signal pipe
+int TrayApp::signal_pipe_[2] = {-1, -1};
+#endif
+
 #ifdef _WIN32
 // Helper function to show a simple Windows notification without tray
 static void show_simple_notification(const std::string& title, const std::string& message) {
@@ -104,24 +109,36 @@ static TrayApp* g_tray_app_instance = nullptr;
 BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
     if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
         std::cout << "\nReceived interrupt signal, shutting down gracefully..." << std::endl;
+        std::cout.flush();
         
         if (g_tray_app_instance) {
             g_tray_app_instance->shutdown();
         }
         
-        return TRUE;  // We handled it
+        // Exit the process explicitly to ensure cleanup completes
+        // Windows will wait for this handler to return before terminating
+        std::exit(0);
     }
     return FALSE;
 }
 #else
 // Unix signal handler for SIGINT/SIGTERM
 void signal_handler(int signal) {
-    if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\nReceived interrupt signal, exiting..." << std::endl;
-        std::cout.flush();
+    if (signal == SIGINT) {
+        // SIGINT = User pressed Ctrl+C
+        // We MUST clean up children ourselves
+        // Write to pipe - main thread will handle cleanup
+        // write() is async-signal-safe
+        char sig = (char)signal;
+        ssize_t written = write(TrayApp::signal_pipe_[1], &sig, 1);
+        (void)written;  // Suppress unused variable warning
         
-        // Don't call shutdown() from signal handler - it blocks on thread joins
-        // Just exit immediately and let the OS clean up
+    } else if (signal == SIGTERM) {
+        // SIGTERM = Stop command is killing us
+        // Stop command will handle killing children
+        // Just exit immediately to avoid race condition
+        std::cout << "\nReceived termination signal, exiting..." << std::endl;
+        std::cout.flush();
         _exit(0);
     }
 }
@@ -194,6 +211,18 @@ TrayApp::TrayApp(int argc, char* argv[])
 #ifdef _WIN32
         SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
 #else
+        // Create self-pipe for safe signal handling
+        if (pipe(signal_pipe_) == -1) {
+            std::cerr << "Failed to create signal pipe: " << strerror(errno) << std::endl;
+            exit(1);
+        }
+        
+        // Set write end to non-blocking to prevent signal handler from blocking
+        int flags = fcntl(signal_pipe_[1], F_GETFL);
+        if (flags != -1) {
+            fcntl(signal_pipe_[1], F_SETFL, flags | O_NONBLOCK);
+        }
+        
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
         
@@ -207,10 +236,28 @@ TrayApp::TrayApp(int argc, char* argv[])
 }
 
 TrayApp::~TrayApp() {
+    // Stop signal monitor thread if running
+#ifndef _WIN32
+    if (signal_monitor_thread_.joinable()) {
+        stop_signal_monitor_ = true;
+        signal_monitor_thread_.join();
+    }
+#endif
+    
     // Only shutdown if we actually started something
     if (server_manager_ || !config_.command.empty()) {
         shutdown();
     }
+    
+#ifndef _WIN32
+    // Clean up signal pipe
+    if (signal_pipe_[0] != -1) {
+        close(signal_pipe_[0]);
+        close(signal_pipe_[1]);
+        signal_pipe_[0] = signal_pipe_[1] = -1;
+    }
+#endif
+    
     g_tray_app_instance = nullptr;
 }
 
@@ -297,10 +344,36 @@ int TrayApp::run() {
     if (config_.no_tray) {
         std::cout << "Press Ctrl+C to stop" << std::endl;
         
-        // TODO: Set up signal handlers for Ctrl+C
+#ifdef _WIN32
+        // Windows: simple sleep loop (signal handler handles Ctrl+C via console_ctrl_handler)
         while (server_manager_->is_server_running()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
+#else
+        // Linux: monitor signal pipe using select() for proper signal handling
+        while (server_manager_->is_server_running()) {
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(signal_pipe_[0], &readfds);
+            
+            struct timeval tv = {1, 0};  // 1 second timeout
+            int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
+            
+            if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
+                // Signal received (SIGINT from Ctrl+C)
+                char sig;
+                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
+                (void)bytes_read;  // Suppress unused variable warning
+                
+                std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
+                
+                // Now we're safely in the main thread - call shutdown properly
+                shutdown();
+                break;
+            }
+            // Timeout or error - just continue checking if server is still running
+        }
+#endif
         
         return 0;
     }
@@ -372,6 +445,36 @@ int TrayApp::run() {
     DEBUG_LOG(this, "Building menu...");
     build_menu();
     DEBUG_LOG(this, "Menu built successfully");
+    
+#ifndef _WIN32
+    // On Linux, start a background thread to monitor the signal pipe
+    // This allows us to handle Ctrl+C cleanly even when tray is running
+    DEBUG_LOG(this, "Starting signal monitor thread...");
+    signal_monitor_thread_ = std::thread([this]() {
+        while (!stop_signal_monitor_ && !should_exit_) {
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(signal_pipe_[0], &readfds);
+            
+            struct timeval tv = {0, 100000};  // 100ms timeout
+            int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
+            
+            if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
+                // Signal received (SIGINT from Ctrl+C)
+                char sig;
+                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
+                (void)bytes_read;  // Suppress unused variable warning
+                
+                std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
+                
+                // Call shutdown from this thread (not signal context, so it's safe)
+                shutdown();
+                break;
+            }
+        }
+        DEBUG_LOG(this, "Signal monitor thread exiting");
+    });
+#endif
     
     DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
@@ -1587,7 +1690,9 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    // Only print shutdown message if we actually have something to shutdown
+    std::cout << "Shutting down server..." << std::endl;
+    
+    // Only print debug message if we actually have something to shutdown
     if (server_manager_ || tray_) {
         DEBUG_LOG(this, "Shutting down gracefully...");
     }
@@ -1621,9 +1726,11 @@ void TrayApp::open_url(const std::string& url) {
 #ifdef _WIN32
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
-    system(("open \"" + url + "\"").c_str());
+    int result = system(("open \"" + url + "\"").c_str());
+    (void)result;  // Suppress unused variable warning
 #else
-    system(("xdg-open \"" + url + "\" &").c_str());
+    int result = system(("xdg-open \"" + url + "\" &").c_str());
+    (void)result;  // Suppress unused variable warning
 #endif
 }
 
