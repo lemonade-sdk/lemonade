@@ -46,6 +46,12 @@ public:
     
     int run();
     void shutdown();  // Public method for signal handlers
+
+#ifndef _WIN32
+    // Signal handling infrastructure for Linux (self-pipe pattern)
+    // Public so signal handler can access it
+    static int signal_pipe_[2];
+#endif
     
 private:
     // Initialization
@@ -128,8 +134,7 @@ private:
     void tail_log_to_console();
 
 #ifndef _WIN32
-    // Signal handling infrastructure for Linux (self-pipe pattern)
-    static int signal_pipe_[2];
+    // Signal monitor thread for Linux
     std::thread signal_monitor_thread_;
     std::atomic<bool> stop_signal_monitor_{false};
 #endif

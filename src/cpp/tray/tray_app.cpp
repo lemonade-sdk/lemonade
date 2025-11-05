@@ -362,7 +362,8 @@ int TrayApp::run() {
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
-                read(signal_pipe_[0], &sig, 1);
+                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
+                (void)bytes_read;  // Suppress unused variable warning
                 
                 std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
                 
@@ -461,7 +462,8 @@ int TrayApp::run() {
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
-                read(signal_pipe_[0], &sig, 1);
+                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
+                (void)bytes_read;  // Suppress unused variable warning
                 
                 std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
                 
@@ -1724,9 +1726,11 @@ void TrayApp::open_url(const std::string& url) {
 #ifdef _WIN32
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
-    system(("open \"" + url + "\"").c_str());
+    int result = system(("open \"" + url + "\"").c_str());
+    (void)result;  // Suppress unused variable warning
 #else
-    system(("xdg-open \"" + url + "\" &").c_str());
+    int result = system(("xdg-open \"" + url + "\" &").c_str());
+    (void)result;  // Suppress unused variable warning
 #endif
 }
 
