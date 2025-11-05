@@ -387,7 +387,6 @@ void LlamaCppServer::load(const std::string& model_name,
     
     // Choose port
     port_ = choose_port();
-    std::cout << "llama-server will use port: " << port_ << std::endl;
     
     // Get executable path
     std::string executable = get_llama_server_path();

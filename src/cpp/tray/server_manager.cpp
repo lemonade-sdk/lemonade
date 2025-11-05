@@ -37,6 +37,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <fcntl.h>  // For open() and file flags
+#include <cerrno>   // For errno and ECHILD
 #endif
 
 // Use cpp-httplib for HTTP client (must be after Windows headers on Windows)
@@ -444,10 +445,20 @@ bool ServerManager::terminate_process() {
         // Wait for process to exit gracefully (up to 5 seconds)
         int status;
         for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
-            if (waitpid(server_pid_, &status, WNOHANG) > 0) {
+            pid_t result = waitpid(server_pid_, &status, WNOHANG);
+            if (result > 0) {
                 // Process exited gracefully
                 return true;
+            } else if (result < 0) {
+                // Error - likely ECHILD (child already reaped by SIGCHLD handler)
+                // This means the process is already gone
+                if (errno == ECHILD) {
+                    return true;
+                }
+                // Other error, break out
+                break;
             }
+            // result == 0 means still running, continue waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
@@ -464,8 +475,33 @@ bool ServerManager::terminate_process() {
 bool ServerManager::is_process_alive() const {
     if (server_pid_ <= 0) return false;
     
-    // Send signal 0 to check if process exists
-    return kill(server_pid_, 0) == 0;
+    // First check if process exists at all
+    if (kill(server_pid_, 0) != 0) {
+        return false;  // Process doesn't exist
+    }
+    
+    // Check if it's a zombie by reading /proc/PID/stat
+    // Format: PID (name) STATE ...
+    // State can be: R (running), S (sleeping), D (disk sleep), Z (zombie), T (stopped), etc.
+    std::string stat_path = "/proc/" + std::to_string(server_pid_) + "/stat";
+    std::ifstream stat_file(stat_path);
+    if (!stat_file) {
+        return false;  // Can't read stat, assume dead
+    }
+    
+    std::string line;
+    std::getline(stat_file, line);
+    
+    // Find the state character (after the closing paren of the process name)
+    size_t paren_pos = line.rfind(')');
+    if (paren_pos != std::string::npos && paren_pos + 2 < line.length()) {
+        char state = line[paren_pos + 2];
+        // Return false if zombie - we consider zombies as "not alive" for our purposes
+        return (state != 'Z');
+    }
+    
+    // If we can't parse the state, assume alive to be safe
+    return true;
 }
 
 void ServerManager::write_pid_file() {

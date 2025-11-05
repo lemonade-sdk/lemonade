@@ -41,7 +41,7 @@ public:
 #else
         // Unix/Linux: Use file locking
         std::string lock_file = "/tmp/lemonade_" + app_name + ".lock";
-        int fd = open(lock_file.c_str(), O_CREAT | O_RDWR, 0666);
+        int fd = open(lock_file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
         if (fd == -1) return false;
         
         // Try to acquire exclusive lock (non-blocking)

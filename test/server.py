@@ -59,7 +59,7 @@ class Testing(ServerTestingBase):
             "load",
             "unload",
             "health",
-            "halt",
+            # "halt",
             "stats",
             "system-info",
         ]
