@@ -1,6 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #include <lemon/single_instance.h>
+#include <lemon/version.h>
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
@@ -122,7 +123,7 @@ void signal_handler(int signal) {
 #endif
 
 TrayApp::TrayApp(int argc, char* argv[])
-    : current_version_("1.0.0")  // TODO: Load from version file
+    : current_version_(LEMON_VERSION_STRING)
     , should_exit_(false)
 {
     parse_arguments(argc, argv);
