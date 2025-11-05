@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 1.0.0)
+project(lemon_cpp VERSION 9.0.0)
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
@@ -132,9 +132,33 @@ if(NOT httplib_POPULATED)
     add_subdirectory(${httplib_SOURCE_DIR} ${httplib_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
 
+# Generate version header from template
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/lemon/version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/lemon/version.h
+    @ONLY
+)
+
+# Generate manifest files from templates (Windows only)
+if(WIN32)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest.in
+        ${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest
+        @ONLY
+    )
+    
+    # Generate NSIS installer script with version
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi
+        @ONLY
+    )
+endif()
+
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -181,7 +205,7 @@ if(WIN32)
     # Embed manifest file
     if(MSVC)
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
         )
     endif()
 endif()
@@ -209,7 +233,7 @@ add_subdirectory(tray)
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
     set(CPACK_PACKAGE_NAME "lemonade-server")
-    set(CPACK_PACKAGE_VERSION "1.0.0")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "support@lemonade-server.ai")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")

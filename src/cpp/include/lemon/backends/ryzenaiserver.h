@@ -14,23 +14,21 @@ public:
     
     // Installation and availability
     static bool is_available();
-    static std::string get_ryzenai_serve_path();
+    static std::string get_ryzenai_server_path();
     
     // WrappedServer interface
     void install(const std::string& backend = "") override;
     void parse_telemetry(const std::string& line) override;
     
-    // Model operations - Note: RyzenAI-Serve loads model at startup
+    // Model operations - Note: RyzenAI-Server loads model at startup
     std::string download_model(const std::string& checkpoint,
                               const std::string& mmproj = "",
                               bool do_not_upgrade = true) override;
     
     void load(const std::string& model_name,
-             const std::string& checkpoint,
-             const std::string& mmproj,
+             const ModelInfo& model_info,
              int ctx_size,
-             bool do_not_upgrade = false,
-             const std::vector<std::string>& labels = {}) override;
+             bool do_not_upgrade = false) override;
     
     // RyzenAI-specific: set execution mode before loading
     void set_execution_mode(const std::string& mode) { execution_mode_ = mode; }
@@ -51,7 +49,7 @@ private:
     std::string execution_mode_; // "auto", "npu", or "hybrid"
     bool is_loaded_;
     
-    // Helper to download and install ryzenai-serve
+    // Helper to download and install ryzenai-server
     static void download_and_install();
     
     // Helper to determine best execution mode based on model
