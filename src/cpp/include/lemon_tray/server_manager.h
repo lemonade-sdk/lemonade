@@ -84,6 +84,7 @@ private:
     // Platform-specific process management
     bool spawn_process();
     bool terminate_process();
+    bool terminate_router_tree();  // Kills router and its children (but NOT parent tray app)
     bool is_process_alive() const;
     
 #ifndef _WIN32
