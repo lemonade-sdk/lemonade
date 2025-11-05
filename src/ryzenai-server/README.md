@@ -36,8 +36,8 @@ This server enables running Large Language Models on AMD Ryzen AI 300-series pro
 ### Build Steps
 
 ```cmd
-# Navigate to the ryzenai-serve directory
-cd src\ryzenai-serve
+# Navigate to the ryzenai-server directory
+cd src\ryzenai-server
 
 # Create and enter build directory
 mkdir build
@@ -54,7 +54,7 @@ cmake --build . --config Release
 
 The executable and required DLLs will be created at:
 ```
-build\bin\Release\ryzenai-serve.exe
+build\bin\Release\ryzenai-server.exe
 ```
 
 All necessary Ryzen AI DLLs are automatically copied to the output directory during build.
@@ -70,7 +70,7 @@ cmake .. -G "Visual Studio 17 2022" -A x64 -DOGA_ROOT="C:\custom\path\to\RyzenAI
 ## Code Structure
 
 ```
-src/ryzenai-serve/
+src/ryzenai-server/
 ├── CMakeLists.txt              # Build configuration
 │
 ├── src/                        # Source files
@@ -150,16 +150,16 @@ These dependencies must be manually installed by the developer:
 
 ```cmd
 # Specify NPU mode
-ryzenai-serve.exe -m C:\path\to\onnx\model --mode npu
+ryzenai-server.exe -m C:\path\to\onnx\model --mode npu
 
 # Hybrid mode with custom port
-ryzenai-serve.exe -m C:\path\to\onnx\model --mode hybrid --port 8081
+ryzenai-server.exe -m C:\path\to\onnx\model --mode hybrid --port 8081
 
 # CPU mode
-ryzenai-serve.exe -m C:\path\to\onnx\model --mode cpu
+ryzenai-server.exe -m C:\path\to\onnx\model --mode cpu
 
 # Verbose logging
-ryzenai-serve.exe -m C:\path\to\onnx\model --verbose
+ryzenai-server.exe -m C:\path\to\onnx\model --verbose
 ```
 
 ### Command-Line Arguments
@@ -222,7 +222,7 @@ All endpoints support both streaming and non-streaming modes. The server applies
 ```cmd
 # Start the server
 cd build\bin\Release
-ryzenai-serve.exe -m C:\path\to\model --verbose
+ryzenai-server.exe -m C:\path\to\model --verbose
 
 # Test health endpoint (in another terminal)
 curl http://localhost:8080/health
@@ -276,7 +276,7 @@ All required DLLs should be automatically copied during build. If you get DLL er
 
 If port 8080 is occupied:
 ```cmd
-ryzenai-serve.exe -m C:\path\to\model --port 8081
+ryzenai-server.exe -m C:\path\to\model --port 8081
 ```
 
 ## Development
@@ -299,7 +299,7 @@ cmake --build . --config Debug
 
 Debug executable location:
 ```
-build\bin\Debug\ryzenai-serve.exe
+build\bin\Debug\ryzenai-server.exe
 ```
 
 ### Known Issues

@@ -34,6 +34,9 @@ public:
     std::string get_loaded_checkpoint() const { return loaded_checkpoint_; }
     std::string get_loaded_recipe() const { return loaded_recipe_; }
     
+    // Get the context size
+    int get_ctx_size() const { return ctx_size_; }
+    
     // Check if a model is loaded
     bool is_model_loaded() const { return wrapped_server_ != nullptr; }
     

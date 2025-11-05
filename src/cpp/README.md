@@ -68,22 +68,22 @@ cmake --build . --config Release
   - `build/lemonade-server-beta` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry)
 
-### RyzenAI Serve Dependency
+### RyzenAI Server Dependency
 
-The `lemonade-router` server has a runtime dependency on `ryzenai-serve` for NPU model inference. This dependency can be fulfilled in two ways:
+The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU model inference. This dependency can be fulfilled in two ways:
 
-1. **Development builds:** Build `ryzenai-serve` from source in the same repository:
+1. **Development builds:** Build `ryzenai-server` from source in the same repository:
    ```bash
-   # Build ryzenai-serve
-   cd src/ryzenai-serve
+   # Build ryzenai-server
+   cd src/ryzenai-server
    mkdir build && cd build
    cmake .. -G "Visual Studio 17 2022"
    cmake --build . --config Release
    
-   # The executable will be at: src/ryzenai-serve/build/bin/Release/ryzenai-serve.exe
+   # The executable will be at: src/ryzenai-server/build/bin/Release/ryzenai-server.exe
    ```
 
-2. **Runtime download:** For end users, `lemonade-router` will automatically download the `ryzenai-serve` executable from GitHub releases as needed when attempting to run NPU models.
+2. **Runtime download:** For end users, `lemonade-router` will automatically download the `ryzenai-server` executable from GitHub releases as needed when attempting to run NPU models.
 
 ### Platform-Specific Notes
 
@@ -163,7 +163,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-1.0.0-Linux.deb` which:
+Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linux.deb`) which:
 - Installs to `/usr/local/bin/` (executables)
 - Installs resources to `/usr/local/share/lemonade-server/`
 - Creates desktop entry in `/usr/local/share/applications/`
@@ -174,7 +174,8 @@ Creates `lemonade-server-1.0.0-Linux.deb` which:
 **Installation:**
 
 ```bash
-sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+# Replace <VERSION> with the actual version (e.g., 9.0.0)
+sudo dpkg -i lemonade-server-<VERSION>-Linux.deb
 
 # If dependencies are missing:
 sudo apt-get install -f
