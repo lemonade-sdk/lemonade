@@ -1,8 +1,9 @@
 #include <winver.h>
+#include "lemon/version.h"
 
 1 VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     LEMON_VERSION_RC
+PRODUCTVERSION  LEMON_VERSION_RC
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0x0L
 FILEOS          VOS_NT_WINDOWS32
@@ -15,12 +16,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "AMD"
             VALUE "FileDescription", "lemonade-router.exe"
-            VALUE "FileVersion", "1.0.0.0"
+            VALUE "FileVersion", LEMON_VERSION_RC_STRING
             VALUE "InternalName", "lemonade"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
             VALUE "OriginalFilename", "lemonade-router.exe"
             VALUE "ProductName", "lemonade-router.exe"
-            VALUE "ProductVersion", "1.0.0.0"
+            VALUE "ProductVersion", LEMON_VERSION_RC_STRING
             VALUE "Comments", "Local AI model serving with hardware acceleration"
         END
     END

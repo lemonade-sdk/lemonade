@@ -163,7 +163,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-1.0.0-Linux.deb` which:
+Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linux.deb`) which:
 - Installs to `/usr/local/bin/` (executables)
 - Installs resources to `/usr/local/share/lemonade-server/`
 - Creates desktop entry in `/usr/local/share/applications/`
@@ -174,7 +174,8 @@ Creates `lemonade-server-1.0.0-Linux.deb` which:
 **Installation:**
 
 ```bash
-sudo dpkg -i lemonade-server-1.0.0-Linux.deb
+# Replace <VERSION> with the actual version (e.g., 9.0.0)
+sudo dpkg -i lemonade-server-<VERSION>-Linux.deb
 
 # If dependencies are missing:
 sudo apt-get install -f
