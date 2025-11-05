@@ -23,8 +23,12 @@
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <cstdlib>
+#include <cstring>     // for strerror
 #include <unistd.h>  // for readlink
 #include <sys/wait.h>  // for waitpid
+#include <sys/file.h>  // for flock
+#include <fcntl.h>     // for open
+#include <cerrno>      // for errno
 #endif
 
 namespace fs = std::filesystem;
@@ -113,13 +117,12 @@ BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
 // Unix signal handler for SIGINT/SIGTERM
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\nReceived interrupt signal, shutting down gracefully..." << std::endl;
+        std::cout << "\nReceived interrupt signal, exiting..." << std::endl;
+        std::cout.flush();
         
-        if (g_tray_app_instance) {
-            g_tray_app_instance->shutdown();
-        }
-        
-        exit(0);
+        // Don't call shutdown() from signal handler - it blocks on thread joins
+        // Just exit immediately and let the OS clean up
+        _exit(0);
     }
 }
 
@@ -1125,61 +1128,93 @@ int TrayApp::execute_stop_command() {
         std::cout << "Found " << router_children.size() << " child process(es) of router" << std::endl;
     }
     
-    // If there's a parent tray app, only signal it (it will handle stopping the router gracefully)
-    // If no parent, signal the router directly
+    // Send SIGTERM to router (it will exit via _exit() immediately)
+    std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
+    kill(router_pid, SIGTERM);
+    
+    // Also send SIGTERM to parent tray app if it exists
     if (tray_pid != 0) {
         std::cout << "Sending SIGTERM to tray app (PID: " << tray_pid << ")..." << std::endl;
         kill(tray_pid, SIGTERM);
-        // Parent's signal handler will call shutdown() which stops the router gracefully
-    } else {
-        // No parent found, signal router directly
-        std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
-        kill(router_pid, SIGTERM);
     }
     
-    // Note: We don't send signals to children here - the router/parent should clean them up
-    // We'll only force-kill them if they're still alive after timeout
+    // Send SIGTERM to child processes immediately (matching Python's stop() behavior)
+    // Since router exits via _exit(), it won't clean up children itself
+    if (!router_children.empty()) {
+        std::cout << "Sending SIGTERM to child processes..." << std::endl;
+        for (int child_pid : router_children) {
+            if (kill(child_pid, 0) == 0) {  // Check if still alive
+                kill(child_pid, SIGTERM);
+            }
+        }
+    }
     
-    // Wait up to 5 seconds for processes to exit
+    // Wait up to 5 seconds for processes to exit gracefully
+    // This matches Python's stop() behavior: terminate everything, then wait
     std::cout << "Waiting for processes to exit (up to 5 seconds)..." << std::endl;
     bool exited_gracefully = false;
+    
     for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
-        // Use helper function that checks for zombies
-        bool router_alive = is_process_alive_not_zombie(router_pid);
-        bool tray_alive = (tray_pid != 0 && is_process_alive_not_zombie(tray_pid));
+        // Check if main processes are completely gone from process table
+        bool router_gone = !std::filesystem::exists("/proc/" + std::to_string(router_pid));
+        bool tray_gone = (tray_pid == 0 || !std::filesystem::exists("/proc/" + std::to_string(tray_pid)));
         
-        // Both router and tray (if it existed) must be gone
-        if (!router_alive && !tray_alive) {
-            exited_gracefully = true;
-            break;
+        // Check if all children have exited
+        bool all_children_gone = true;
+        for (int child_pid : router_children) {
+            if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+                all_children_gone = false;
+                break;
+            }
         }
+        
+        // Both main processes and all children must be gone
+        if (router_gone && tray_gone && all_children_gone) {
+            // Additional check: verify the lock file can be acquired
+            // This is a belt-and-suspenders check to ensure the lock is truly released
+            std::string lock_file = "/tmp/lemonade_ServerBeta.lock";
+            int fd = open(lock_file.c_str(), O_RDWR | O_CREAT, 0666);
+            if (fd != -1) {
+                if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
+                    std::cout << "All processes exited, shutdown complete!" << std::endl;
+                    flock(fd, LOCK_UN);
+                    close(fd);
+                    exited_gracefully = true;
+                    break;
+                } else {
+                    // Lock still held somehow - wait a bit more
+                    close(fd);
+                }
+            }
+        }
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
     if (!exited_gracefully) {
-        // Timeout expired, force kill main processes
+        // Timeout expired, force kill everything that's still alive
+        // This matches Python's stop() behavior
         std::cout << "Timeout expired, forcing termination..." << std::endl;
         
-        // Force kill router process
-        std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
-        kill(router_pid, SIGKILL);
+        // Force kill router process (if still alive)
+        if (std::filesystem::exists("/proc/" + std::to_string(router_pid))) {
+            std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
+            kill(router_pid, SIGKILL);
+        }
         
         // Force kill tray app if it exists
-        if (tray_pid != 0) {
+        if (tray_pid != 0 && std::filesystem::exists("/proc/" + std::to_string(tray_pid))) {
             std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
             kill(tray_pid, SIGKILL);
         }
-    }
-    
-    // Kill any child processes we found earlier (they may have been reparented by now)
-    // When router exits via _exit(), it doesn't clean up children, so we must do it
-    if (!router_children.empty()) {
-        std::cout << "Cleaning up child processes..." << std::endl;
-        for (int child_pid : router_children) {
-            // Check if child is still alive (may have been cleaned up already)
-            if (kill(child_pid, 0) == 0) {
-                std::cout << "  Killing child process (PID: " << child_pid << ")" << std::endl;
-                kill(child_pid, SIGKILL);
+        
+        // Force kill any remaining children (matching Python's behavior for stubborn llama-server)
+        if (!router_children.empty()) {
+            for (int child_pid : router_children) {
+                if (std::filesystem::exists("/proc/" + std::to_string(child_pid))) {
+                    std::cout << "Force killing child process (PID: " << child_pid << ")" << std::endl;
+                    kill(child_pid, SIGKILL);
+                }
             }
         }
     }
