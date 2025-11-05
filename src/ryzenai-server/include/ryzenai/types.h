@@ -28,7 +28,7 @@ struct ChatMessage {
 // Completion request (OpenAI format)
 struct CompletionRequest {
     std::string prompt;
-    int max_tokens = 512;
+    int max_tokens = 1500;
     float temperature = 0.7f;
     float top_p = 0.9f;
     int top_k = 40;
@@ -44,7 +44,7 @@ struct CompletionRequest {
 // Chat completion request (OpenAI format)
 struct ChatCompletionRequest {
     std::vector<ChatMessage> messages;
-    int max_tokens = 512;
+    int max_tokens = 1500;
     float temperature = 0.7f;
     float top_p = 0.9f;
     int top_k = 40;
