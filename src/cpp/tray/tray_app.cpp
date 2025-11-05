@@ -891,8 +891,10 @@ int TrayApp::execute_stop_command() {
         CloseHandle(snapshot);
     }
     
-    // Get list of llama-server children (of the router)
-    std::vector<DWORD> llama_server_pids;
+    // Windows limitation: TerminateProcess doesn't trigger signal handlers (it's like SIGKILL)
+    // So we must explicitly kill children since router won't get a chance to clean up
+    // First, collect all children
+    std::vector<DWORD> child_pids;
     snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32W pe32;
@@ -901,27 +903,27 @@ int TrayApp::execute_stop_command() {
         if (Process32FirstW(snapshot, &pe32)) {
             do {
                 if (pe32.th32ParentProcessID == router_pid) {
+                    child_pids.push_back(pe32.th32ProcessID);
                     std::wstring process_name(pe32.szExeFile);
-                    if (process_name == L"llama-server.exe") {
-                        llama_server_pids.push_back(pe32.th32ProcessID);
-                    }
+                    std::wcout << L"  Found child process: " << process_name 
+                               << L" (PID: " << pe32.th32ProcessID << L")" << std::endl;
                 }
             } while (Process32NextW(snapshot, &pe32));
         }
         CloseHandle(snapshot);
     }
     
-    // Terminate router process (graceful)
-    std::cout << "Sending termination signal to router (PID: " << router_pid << ")..." << std::endl;
+    // Terminate router process
+    std::cout << "Terminating router (PID: " << router_pid << ")..." << std::endl;
     HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, router_pid);
     if (hProcess) {
-        TerminateProcess(hProcess, 0);  // Windows doesn't have graceful terminate, so this is it
+        TerminateProcess(hProcess, 0);
         CloseHandle(hProcess);
     }
     
-    // Terminate llama-server children (graceful)
-    for (DWORD child_pid : llama_server_pids) {
-        std::cout << "Sending termination signal to llama-server child (PID: " << child_pid << ")..." << std::endl;
+    // Terminate children (Windows can't do graceful shutdown from outside)
+    for (DWORD child_pid : child_pids) {
+        std::cout << "Terminating child process (PID: " << child_pid << ")..." << std::endl;
         HANDLE hChild = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
         if (hChild) {
             TerminateProcess(hChild, 0);
@@ -931,7 +933,7 @@ int TrayApp::execute_stop_command() {
     
     // Terminate tray app parent if it exists
     if (tray_pid != 0) {
-        std::cout << "Sending termination signal to tray app (PID: " << tray_pid << ")..." << std::endl;
+        std::cout << "Terminating tray app (PID: " << tray_pid << ")..." << std::endl;
         HANDLE hTray = OpenProcess(PROCESS_TERMINATE, FALSE, tray_pid);
         if (hTray) {
             TerminateProcess(hTray, 0);
@@ -997,24 +999,29 @@ int TrayApp::execute_stop_command() {
         }
     }
     
-    // Force kill any still-running llama-server children
-    for (DWORD child_pid : llama_server_pids) {
-        // Check if still running
-        HANDLE hChild = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, child_pid);
-        if (hChild) {
-            DWORD exit_code;
-            if (GetExitCodeProcess(hChild, &exit_code) && exit_code == STILL_ACTIVE) {
-                CloseHandle(hChild);
-                hChild = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
-                if (hChild) {
-                    std::cout << "Force killing llama-server child (PID: " << child_pid << ")" << std::endl;
-                    TerminateProcess(hChild, 0);
-                    CloseHandle(hChild);
+    // Force kill any remaining orphaned processes (shouldn't be any at this point)
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(pe32);
+        
+        if (Process32FirstW(snapshot, &pe32)) {
+            do {
+                if (pe32.th32ProcessID == router_pid || 
+                    (tray_pid != 0 && pe32.th32ProcessID == tray_pid) ||
+                    pe32.th32ParentProcessID == router_pid) {
+                    HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+                    if (hProc) {
+                        std::wstring process_name(pe32.szExeFile);
+                        std::wcout << L"Force killing remaining process: " << process_name 
+                                   << L" (PID: " << pe32.th32ProcessID << L")" << std::endl;
+                        TerminateProcess(hProc, 0);
+                        CloseHandle(hProc);
+                    }
                 }
-            } else {
-                CloseHandle(hChild);
-            }
+            } while (Process32NextW(snapshot, &pe32));
         }
+        CloseHandle(snapshot);
     }
     
     // Note: log-viewer.exe auto-exits when parent process dies, no need to explicitly kill it
@@ -1051,35 +1058,18 @@ int TrayApp::execute_stop_command() {
         pclose(pipe);
     }
     
-    // Get list of llama-server children (of the router)
-    std::vector<int> llama_server_pids;
-    pipe = popen(("pgrep -P " + std::to_string(router_pid) + " llama-server").c_str(), "r");
-    if (pipe) {
-        char buffer[128];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            int child_pid = atoi(buffer);
-            if (child_pid > 0) {
-                llama_server_pids.push_back(child_pid);
-            }
-        }
-        pclose(pipe);
-    }
-    
-    // Send SIGTERM to router process
+    // Send SIGTERM to router process (it should clean up its children via unload_model)
     std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
     kill(router_pid, SIGTERM);
-    
-    // Send SIGTERM to llama-server children
-    for (int child_pid : llama_server_pids) {
-        std::cout << "Sending SIGTERM to llama-server child (PID: " << child_pid << ")..." << std::endl;
-        kill(child_pid, SIGTERM);
-    }
     
     // Send SIGTERM to tray app parent if it exists
     if (tray_pid != 0) {
         std::cout << "Sending SIGTERM to tray app (PID: " << tray_pid << ")..." << std::endl;
         kill(tray_pid, SIGTERM);
     }
+    
+    // Note: We don't send signals to children here - the router should clean them up
+    // We'll only force-kill them if they're still alive after timeout
     
     // Wait up to 5 seconds for processes to exit
     std::cout << "Waiting for processes to exit (up to 5 seconds)..." << std::endl;
@@ -1114,13 +1104,19 @@ int TrayApp::execute_stop_command() {
         kill(tray_pid, SIGKILL);
     }
     
-    // Force kill any still-running llama-server children
-    for (int child_pid : llama_server_pids) {
-        // Check if still running
-        if (kill(child_pid, 0) == 0) {
-            std::cout << "Force killing llama-server child (PID: " << child_pid << ")" << std::endl;
-            kill(child_pid, SIGKILL);
+    // Find and force kill any still-running child processes
+    // (Router should have cleaned these up, but if it didn't we need to)
+    pipe = popen(("pgrep -P " + std::to_string(router_pid)).c_str(), "r");
+    if (pipe) {
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            int child_pid = atoi(buffer);
+            if (child_pid > 0) {
+                std::cout << "Force killing orphaned child (PID: " << child_pid << ")" << std::endl;
+                kill(child_pid, SIGKILL);
+            }
         }
+        pclose(pipe);
     }
 #endif
     
