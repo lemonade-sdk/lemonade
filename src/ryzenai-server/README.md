@@ -59,6 +59,8 @@ build\bin\Release\ryzenai-server.exe
 
 All necessary Ryzen AI DLLs are automatically copied to the output directory during build.
 
+**Note:** The Ryzen AI DLLs included in the release are licensed under the AMD Software End User License Agreement. See `AMD_LICENSE` in the release package for full terms.
+
 ### Custom Ryzen AI Installation Path
 
 If Ryzen AI is installed in a custom location:
@@ -314,4 +316,8 @@ build\bin\Debug\ryzenai-server.exe
 
 ## License
 
-This project is licensed under the Apache 2.0 License. Dependencies use MIT licenses.
+This project's source code is licensed under the Apache 2.0 License.
+
+**Third-Party Dependencies:**
+- **cpp-httplib** and **nlohmann/json** use MIT licenses
+- **Ryzen AI DLLs** (included in binary releases) are licensed under the AMD Software End User License Agreement - see `AMD_LICENSE` file in the release package for full terms
