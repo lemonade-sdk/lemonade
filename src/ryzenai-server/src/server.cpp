@@ -216,20 +216,34 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             
             std::string prompt = comp_req.prompt;
             std::string model_id = model_id_;
-            int token_count = 0;
+            
+            // Count prompt tokens before streaming
+            int prompt_tokens = inference_engine_->countTokens(prompt);
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, prompt, params, model_id, &token_count](size_t offset, httplib::DataSink& sink) {
+                [this, prompt, params, model_id, prompt_tokens](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false; // Only run once
                     
                     try {
+                        // Track timing for telemetry
+                        auto start_time = std::chrono::high_resolution_clock::now();
+                        auto first_token_time = start_time;
+                        bool first_token_received = false;
+                        int token_count = 0;
+                        
                         // Create reasoning parser for streaming
                         ReasoningStreamParser reasoning_parser;
                         
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count, &reasoning_parser](const std::string& token, bool is_final) -> bool {
+                            [&sink, model_id, &token_count, &reasoning_parser, &first_token_received, &first_token_time](const std::string& token, bool is_final) -> bool {
+                                // Track time to first token
+                                if (!first_token_received && !token.empty()) {
+                                    first_token_time = std::chrono::high_resolution_clock::now();
+                                    first_token_received = true;
+                                }
+                                
                                 // Process token through reasoning parser
                                 auto [reasoning_part, content_part] = reasoning_parser.processToken(token);
                                 
@@ -391,6 +405,29 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                             sink.write(chunk_str.c_str(), chunk_str.size());
                         }
                         
+                        // Calculate timing metrics
+                        auto end_time = std::chrono::high_resolution_clock::now();
+                        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                        auto ttft_duration = std::chrono::duration_cast<std::chrono::milliseconds>(first_token_time - start_time);
+                        double ttft_seconds = ttft_duration.count() / 1000.0;
+                        double total_seconds = total_duration.count() / 1000.0;
+                        double tokens_per_second = (token_count > 0 && total_seconds > 0) ? (token_count / total_seconds) : 0.0;
+                        
+                        // Send final chunk with usage data (for telemetry parsing)
+                        std::string usage_chunk = 
+                            "data: {\"id\":\"cmpl-" + std::to_string(std::time(nullptr)) + 
+                            "\",\"object\":\"text_completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                            ",\"model\":\"" + model_id + 
+                            "\",\"choices\":[{\"index\":0,\"text\":\"\",\"finish_reason\":null}]," +
+                            "\"usage\":{" +
+                                "\"prompt_tokens\":" + std::to_string(prompt_tokens) + "," +
+                                "\"completion_tokens\":" + std::to_string(token_count) + "," +
+                                "\"total_tokens\":" + std::to_string(prompt_tokens + token_count) + "," +
+                                "\"prefill_duration_ttft\":" + std::to_string(ttft_seconds) + "," +
+                                "\"decoding_speed_tps\":" + std::to_string(tokens_per_second) +
+                            "}}\n\n";
+                        sink.write(usage_chunk.c_str(), usage_chunk.size());
+                        
                         // Send [DONE] marker
                         const char* done_msg = "data: [DONE]\n\n";
                         sink.write(done_msg, strlen(done_msg));
@@ -533,15 +570,23 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             );
             
             std::string model_id = model_id_;
-            int token_count = 0;
             bool has_tools = !chat_req.tools.empty();
+            
+            // Count prompt tokens before streaming
+            int prompt_tokens = inference_engine_->countTokens(prompt);
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, prompt, params, model_id, has_tools, &token_count](size_t offset, httplib::DataSink& sink) {
+                [this, prompt, params, model_id, has_tools, prompt_tokens](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) return false; // Only run once
                     
                     try {
+                        // Track timing for telemetry
+                        auto start_time = std::chrono::high_resolution_clock::now();
+                        auto first_token_time = start_time;
+                        bool first_token_received = false;
+                        int token_count = 0;
+                        
                         // Accumulate full response for tool call extraction
                         std::string full_response;
                         
@@ -550,7 +595,13 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                         
                         // Generate and send tokens in real-time
                         inference_engine_->streamComplete(prompt, params, 
-                            [&sink, model_id, &token_count, &full_response, &reasoning_parser](const std::string& token, bool is_final) -> bool {
+                            [&sink, model_id, &token_count, &full_response, &reasoning_parser, &first_token_received, &first_token_time](const std::string& token, bool is_final) -> bool {
+                                // Track time to first token
+                                if (!first_token_received && !token.empty()) {
+                                    first_token_time = std::chrono::high_resolution_clock::now();
+                                    first_token_received = true;
+                                }
+                                
                                 // Accumulate for tool call extraction
                                 full_response += token;
                                 
@@ -749,6 +800,29 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                                 }
                             }
                         }
+                        
+                        // Calculate timing metrics
+                        auto end_time = std::chrono::high_resolution_clock::now();
+                        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                        auto ttft_duration = std::chrono::duration_cast<std::chrono::milliseconds>(first_token_time - start_time);
+                        double ttft_seconds = ttft_duration.count() / 1000.0;
+                        double total_seconds = total_duration.count() / 1000.0;
+                        double tokens_per_second = (token_count > 0 && total_seconds > 0) ? (token_count / total_seconds) : 0.0;
+                        
+                        // Send final chunk with usage data (for telemetry parsing)
+                        std::string usage_chunk = 
+                            "data: {\"id\":\"chatcmpl-" + std::to_string(std::time(nullptr)) + 
+                            "\",\"object\":\"chat.completion.chunk\",\"created\":" + std::to_string(std::time(nullptr)) + 
+                            ",\"model\":\"" + model_id + 
+                            "\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":null}]," +
+                            "\"usage\":{" +
+                                "\"prompt_tokens\":" + std::to_string(prompt_tokens) + "," +
+                                "\"completion_tokens\":" + std::to_string(token_count) + "," +
+                                "\"total_tokens\":" + std::to_string(prompt_tokens + token_count) + "," +
+                                "\"prefill_duration_ttft\":" + std::to_string(ttft_seconds) + "," +
+                                "\"decoding_speed_tps\":" + std::to_string(tokens_per_second) +
+                            "}}\n\n";
+                        sink.write(usage_chunk.c_str(), usage_chunk.size());
                         
                         // Send [DONE] marker
                         const char* done_msg = "data: [DONE]\n\n";
