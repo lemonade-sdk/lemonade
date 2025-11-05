@@ -251,7 +251,7 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         #endif
     }
     
-    // OGA (RyzenAI-Serve): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
+    // OGA (RyzenAI-Server): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
     if (device_type == "cpu" || device_type == "amd_igpu" || 
         device_type == "amd_dgpu" || device_type == "npu") {
         bool ryzenai_available = is_ryzenai_serve_available();

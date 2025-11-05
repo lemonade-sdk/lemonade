@@ -447,14 +447,14 @@ jobs:
       - name: Download RyzenAI Serve artifact
         uses: actions/download-artifact@v4
         with:
-          name: ryzenai-serve
-          path: ryzenai-serve-files
+          name: ryzenai-server
+          path: ryzenai-server-files
 
       - name: Setup RyzenAI Serve
-        uses: ./.github/actions/setup-ryzenai-serve
+        uses: ./.github/actions/setup-ryzenai-server
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-          artifact-path: ryzenai-serve-files
+          artifact-path: ryzenai-server-files
 
       - name: Verify Installation
         shell: PowerShell
@@ -1350,25 +1350,15 @@ jobs:
         run: |
           echo "Release artifacts:"
           ls -lh Lemonade_Server_Installer_beta.exe
-<<<<<<< HEAD
-          ls -lh lemonade-server-1.0.0-Linux.deb
-          ls -lh ryzenai-server.zip
-=======
           ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
-          ls -lh ryzenai-serve.zip
->>>>>>> main
+          ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             Lemonade_Server_Installer_beta.exe
-<<<<<<< HEAD
-            lemonade-server-1.0.0-Linux.deb
-            ryzenai-server.zip
-=======
             lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
-            ryzenai-serve.zip
->>>>>>> main
+            ryzenai-server.zip
           fail_on_unmatched_files: true
 
