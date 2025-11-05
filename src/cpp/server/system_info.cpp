@@ -251,7 +251,7 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         #endif
     }
     
-    // OGA (RyzenAI-Serve): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
+    // OGA (RyzenAI-Server): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
     if (device_type == "cpu" || device_type == "amd_igpu" || 
         device_type == "amd_dgpu" || device_type == "npu") {
         bool ryzenai_available = is_ryzenai_serve_available();
@@ -452,12 +452,12 @@ bool SystemInfo::is_ryzenai_serve_available() {
     // Use the same logic as RyzenAIServer::get_ryzenai_serve_path()
     
     #ifdef _WIN32
-    std::string exe_name = "ryzenai-serve.exe";
-    std::string check_cmd = "where ryzenai-serve.exe >nul 2>&1";
-    #else
-    std::string exe_name = "ryzenai-serve";
-    std::string check_cmd = "which ryzenai-serve >/dev/null 2>&1";
-    #endif
+    std::string exe_name = "ryzenai-server.exe";
+    std::string check_cmd = "where ryzenai-server.exe >nul 2>&1";
+#else
+    std::string exe_name = "ryzenai-server";
+    std::string check_cmd = "which ryzenai-server >/dev/null 2>&1";
+#endif
     
     // Check if executable exists in PATH
     if (system(check_cmd.c_str()) == 0) {
@@ -472,26 +472,26 @@ bool SystemInfo::is_ryzenai_serve_available() {
     GetModuleFileNameA(NULL, exe_path, MAX_PATH);
     fs::path exe_dir = fs::path(exe_path).parent_path();
     
-    // Check relative path: from executable to ../../../ryzenai-serve/build/bin/Release (source tree)
-    fs::path relative_path = exe_dir / ".." / ".." / ".." / "ryzenai-serve" / "build" / "bin" / "Release" / exe_name;
+    // Check relative path: from executable to ../../../ryzenai-server/build/bin/Release (source tree)
+    fs::path relative_path = exe_dir / ".." / ".." / ".." / "ryzenai-server" / "build" / "bin" / "Release" / exe_name;
     if (fs::exists(relative_path)) {
         return true;
     }
     
     // Check installed location next to lemonade binary
-    fs::path install_path = exe_dir / "ryzenai-serve" / exe_name;
+    fs::path install_path = exe_dir / "ryzenai-server" / exe_name;
     if (fs::exists(install_path)) {
         return true;
     }
     #else
     // For Linux/macOS
-    fs::path relative_path = fs::path("../../../ryzenai-serve/build/bin/Release") / exe_name;
+    fs::path relative_path = fs::path("../../../ryzenai-server/build/bin/Release") / exe_name;
     if (fs::exists(relative_path)) {
         return true;
     }
     
     // Check installed location
-    fs::path install_path = fs::path("ryzenai-serve") / exe_name;
+    fs::path install_path = fs::path("ryzenai-server") / exe_name;
     if (fs::exists(install_path)) {
         return true;
     }
