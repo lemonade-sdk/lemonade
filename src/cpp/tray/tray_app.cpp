@@ -11,6 +11,7 @@
 #include <thread>
 #include <chrono>
 #include <csignal>
+#include <vector>
 
 #ifdef _WIN32
 #include <winsock2.h>  // Must come before windows.h
@@ -1093,7 +1094,9 @@ int TrayApp::execute_stop_command() {
                     std::string parent_name(name_buf);
                     // Remove newline
                     parent_name.erase(parent_name.find_last_not_of("\n\r") + 1);
-                    if (parent_name.find("lemonade-server-beta") != std::string::npos) {
+                    // Note: ps -o comm= is limited to 15 chars on Linux (/proc/PID/comm truncation)
+                    // "lemonade-server-beta" (21 chars) gets truncated to "lemonade-server" (15 chars)
+                    if (parent_name.find("lemonade-server") != std::string::npos) {
                         tray_pid = parent_pid;
                         std::cout << "Found parent tray app (PID: " << tray_pid << ")" << std::endl;
                     }
@@ -1104,17 +1107,37 @@ int TrayApp::execute_stop_command() {
         pclose(pipe);
     }
     
-    // Send SIGTERM to router process (it should clean up its children via unload_model)
-    std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
-    kill(router_pid, SIGTERM);
+    // Find router's children BEFORE killing anything (they get reparented after router exits)
+    std::vector<int> router_children;
+    pipe = popen(("pgrep -P " + std::to_string(router_pid)).c_str(), "r");
+    if (pipe) {
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            int child_pid = atoi(buffer);
+            if (child_pid > 0) {
+                router_children.push_back(child_pid);
+            }
+        }
+        pclose(pipe);
+    }
     
-    // Send SIGTERM to tray app parent if it exists
+    if (!router_children.empty()) {
+        std::cout << "Found " << router_children.size() << " child process(es) of router" << std::endl;
+    }
+    
+    // If there's a parent tray app, only signal it (it will handle stopping the router gracefully)
+    // If no parent, signal the router directly
     if (tray_pid != 0) {
         std::cout << "Sending SIGTERM to tray app (PID: " << tray_pid << ")..." << std::endl;
         kill(tray_pid, SIGTERM);
+        // Parent's signal handler will call shutdown() which stops the router gracefully
+    } else {
+        // No parent found, signal router directly
+        std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
+        kill(router_pid, SIGTERM);
     }
     
-    // Note: We don't send signals to children here - the router should clean them up
+    // Note: We don't send signals to children here - the router/parent should clean them up
     // We'll only force-kill them if they're still alive after timeout
     
     // Wait up to 5 seconds for processes to exit
@@ -1133,37 +1156,32 @@ int TrayApp::execute_stop_command() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
-    if (exited_gracefully) {
-        std::cout << "Lemonade Server stopped successfully." << std::endl;
-        return 0;
+    if (!exited_gracefully) {
+        // Timeout expired, force kill main processes
+        std::cout << "Timeout expired, forcing termination..." << std::endl;
+        
+        // Force kill router process
+        std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
+        kill(router_pid, SIGKILL);
+        
+        // Force kill tray app if it exists
+        if (tray_pid != 0) {
+            std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
+            kill(tray_pid, SIGKILL);
+        }
     }
     
-    // Timeout expired, send SIGKILL
-    std::cout << "Timeout expired, forcing termination..." << std::endl;
-    
-    // Force kill router process
-    std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
-    kill(router_pid, SIGKILL);
-    
-    // Force kill tray app if it exists
-    if (tray_pid != 0) {
-        std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
-        kill(tray_pid, SIGKILL);
-    }
-    
-    // Find and force kill any still-running child processes
-    // (Router should have cleaned these up, but if it didn't we need to)
-    pipe = popen(("pgrep -P " + std::to_string(router_pid)).c_str(), "r");
-    if (pipe) {
-        char buffer[128];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            int child_pid = atoi(buffer);
-            if (child_pid > 0) {
-                std::cout << "Force killing orphaned child (PID: " << child_pid << ")" << std::endl;
+    // Kill any child processes we found earlier (they may have been reparented by now)
+    // When router exits via _exit(), it doesn't clean up children, so we must do it
+    if (!router_children.empty()) {
+        std::cout << "Cleaning up child processes..." << std::endl;
+        for (int child_pid : router_children) {
+            // Check if child is still alive (may have been cleaned up already)
+            if (kill(child_pid, 0) == 0) {
+                std::cout << "  Killing child process (PID: " << child_pid << ")" << std::endl;
                 kill(child_pid, SIGKILL);
             }
         }
-        pclose(pipe);
     }
 #endif
     

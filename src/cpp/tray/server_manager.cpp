@@ -37,6 +37,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <fcntl.h>  // For open() and file flags
+#include <cerrno>   // For errno and ECHILD
 #endif
 
 // Use cpp-httplib for HTTP client (must be after Windows headers on Windows)
@@ -444,10 +445,20 @@ bool ServerManager::terminate_process() {
         // Wait for process to exit gracefully (up to 5 seconds)
         int status;
         for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
-            if (waitpid(server_pid_, &status, WNOHANG) > 0) {
+            pid_t result = waitpid(server_pid_, &status, WNOHANG);
+            if (result > 0) {
                 // Process exited gracefully
                 return true;
+            } else if (result < 0) {
+                // Error - likely ECHILD (child already reaped by SIGCHLD handler)
+                // This means the process is already gone
+                if (errno == ECHILD) {
+                    return true;
+                }
+                // Other error, break out
+                break;
             }
+            // result == 0 means still running, continue waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
