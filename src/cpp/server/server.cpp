@@ -12,9 +12,14 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #include <queue>
 #include <filesystem>
 #include <algorithm>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace lemon {
 
@@ -179,10 +184,8 @@ void Server::setup_routes() {
         handle_logs_stream(req, res);
     });
     
-    // Halt endpoint (same as shutdown for compatibility)
-    register_post("halt", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_shutdown(req, res);
-    });
+    // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
+    // The stop command now sends termination signal directly to the process
     
     // Internal shutdown endpoint (not part of public API)
     http_server_->Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
@@ -362,13 +365,20 @@ void Server::run() {
 
 void Server::stop() {
     if (running_) {
+        std::cout << "[Server] Stopping HTTP server..." << std::endl;
         http_server_->stop();
         running_ = false;
         
-        // Unload any loaded model and stop backend servers (only on first stop)
+        // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
-            router_->unload_model();
+            std::cout << "[Server] Unloading models and stopping backend servers..." << std::endl;
+            try {
+                router_->unload_model();
+            } catch (const std::exception& e) {
+                std::cerr << "[Server] Error during cleanup: " << e.what() << std::endl;
+            }
         }
+        std::cout << "[Server] Cleanup complete" << std::endl;
     }
 }
 
@@ -1549,7 +1559,30 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
     // Stop the server asynchronously to allow response to be sent
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::cout << "[Server] Stopping server..." << std::endl;
+        std::cout.flush();
         stop();
+        
+        // Graceful shutdown with timeout: explicitly unload models and stop backend servers
+        if (router_) {
+            std::cout << "[Server] Unloading models and stopping backend servers..." << std::endl;
+            std::cout.flush();
+            
+            // Just call unload_model directly - keep it simple
+            try {
+                router_->unload_model();
+                std::cout << "[Server] Cleanup completed successfully" << std::endl;
+                std::cout.flush();
+            } catch (const std::exception& e) {
+                std::cerr << "[Server] Error during unload: " << e.what() << std::endl;
+                std::cerr.flush();
+            }
+        }
+        
+        // Force process exit - just use standard exit()
+        std::cout << "[Server] Calling exit(0)..." << std::endl;
+        std::cout.flush();
+        std::exit(0);
     }).detach();
 }
 
