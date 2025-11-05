@@ -175,7 +175,9 @@ TrayApp::TrayApp(int argc, char* argv[])
     parse_arguments(argc, argv);
     
     if (config_.show_help) {
-        print_usage();
+        // Show serve options only if command is "serve" or "run"
+        bool show_serve_options = (config_.command == "serve" || config_.command == "run");
+        print_usage(show_serve_options);
         exit(0);
     }
     
@@ -380,18 +382,6 @@ int TrayApp::run() {
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {
-    // First check for --help or --version flags
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h") {
-            config_.show_help = true;
-            return;
-        } else if (arg == "--version" || arg == "-v") {
-            config_.show_version = true;
-            return;
-        }
-    }
-    
     // Check if there's a command (non-flag argument)
     if (argc > 1 && argv[1][0] != '-') {
         config_.command = argv[1];
@@ -399,7 +389,13 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
         // Parse remaining arguments (both command args and options)
         for (int i = 2; i < argc; ++i) {
             std::string arg = argv[i];
-            if (arg == "--log-level" && i + 1 < argc) {
+            if (arg == "--help" || arg == "-h") {
+                config_.show_help = true;
+                return;  // Return early, command is already set
+            } else if (arg == "--version" || arg == "-v") {
+                config_.show_version = true;
+                return;
+            } else if (arg == "--log-level" && i + 1 < argc) {
                 config_.log_level = argv[++i];
             } else if (arg == "--port" && i + 1 < argc) {
                 config_.port = std::stoi(argv[++i]);
@@ -417,6 +413,18 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
         return;
     }
     
+    // Check for global --help or --version flags (before command)
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            config_.show_help = true;
+            return;
+        } else if (arg == "--version" || arg == "-v") {
+            config_.show_version = true;
+            return;
+        }
+    }
+    
     // No command provided - this is an error
     if (argc == 1) {
         config_.command = "";  // Empty command signals error
@@ -427,7 +435,7 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
     config_.command = "";
 }
 
-void TrayApp::print_usage() {
+void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "lemonade-server-beta - Lemonade Server Beta\n\n";
     std::cout << "Usage: lemonade-server-beta <command> [options]\n\n";
     std::cout << "Commands:\n";
@@ -438,18 +446,24 @@ void TrayApp::print_usage() {
     std::cout << "  run <model>              Run a model (starts server if needed)\n";
     std::cout << "  status                   Check server status\n";
     std::cout << "  stop                     Stop the server\n\n";
-    std::cout << "Serve Options:\n";
-    std::cout << "  --port PORT              Server port (default: 8000)\n";
-    std::cout << "  --host HOST              Server host (default: localhost)\n";
-    std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
-    std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
-    std::cout << "  --log-file PATH          Log file path\n";
-    std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
+    
+    // Only show serve options if requested (for serve/run --help)
+    if (show_serve_options) {
+        std::cout << "Serve Options:\n";
+        std::cout << "  --port PORT              Server port (default: 8000)\n";
+        std::cout << "  --host HOST              Server host (default: localhost)\n";
+        std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
+        std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
+        std::cout << "  --log-file PATH          Log file path\n";
+        std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
 #if defined(__linux__) && !defined(__ANDROID__)
-    std::cout << "  --no-tray                Start server without tray (default on Linux)\n";
+        std::cout << "  --no-tray                Start server without tray (default on Linux)\n";
 #else
-    std::cout << "  --no-tray                Start server without tray (headless mode)\n";
+        std::cout << "  --no-tray                Start server without tray (headless mode)\n";
 #endif
+        std::cout << "\n";
+    }
+    
     std::cout << "  --help, -h               Show this help message\n";
     std::cout << "  --version, -v            Show version\n";
 }
@@ -609,7 +623,9 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.ctx_size,
         config_.log_file.empty() ? "" : config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
-        config_.llamacpp_backend  // Pass llamacpp backend to ServerManager
+        config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
+        false,  // show_console
+        true    // is_ephemeral (suppress startup message)
     );
     
     if (!success) {
@@ -1252,7 +1268,8 @@ bool TrayApp::start_server() {
         config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
-        true                // Always show console output for serve command
+        true,               // Always show console output for serve command
+        false               // is_ephemeral = false (persistent server, show startup message with URL)
     );
     
     // Start log tail thread to show logs in console

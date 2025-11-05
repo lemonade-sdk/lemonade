@@ -47,7 +47,8 @@ public:
         const std::string& log_file,
         const std::string& log_level = "info",
         const std::string& llamacpp_backend = "vulkan",
-        bool show_console = false
+        bool show_console = false,
+        bool is_ephemeral = false
     );
     
     bool stop_server();

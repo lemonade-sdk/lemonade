@@ -50,7 +50,7 @@ public:
 private:
     // Initialization
     void parse_arguments(int argc, char* argv[]);
-    void print_usage();
+    void print_usage(bool show_serve_options = false);
     void print_version();
     bool find_server_binary();
     bool setup_logging();

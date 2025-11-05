@@ -69,7 +69,8 @@ bool ServerManager::start_server(
     const std::string& log_file,
     const std::string& log_level,
     const std::string& llamacpp_backend,
-    bool show_console)
+    bool show_console,
+    bool is_ephemeral)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -100,7 +101,15 @@ bool ServerManager::start_server(
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
             DEBUG_LOG(this, "Health check succeeded!");
-            std::cout << "Server started on port " << port_ << std::endl;
+            
+            // Print startup message based on server type
+            if (!is_ephemeral) {
+                // Persistent server: print startup message with URL
+                std::cout << "Server started on port " << port_ << std::endl;
+                std::cout << "Chat and manage models: http://localhost:" << port_ << std::endl;
+            }
+            // Ephemeral server: no output
+            
             server_started_ = true;
             
 #ifndef _WIN32
@@ -161,7 +170,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_);
+    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_, show_console_, false);
 }
 
 bool ServerManager::is_server_running() const {
