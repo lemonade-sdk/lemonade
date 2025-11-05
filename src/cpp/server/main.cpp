@@ -12,14 +12,21 @@ using namespace lemon;
 static std::atomic<bool> g_shutdown_requested(false);
 static Server* g_server_instance = nullptr;
 
-// Signal handler for Ctrl+C
+// Signal handler for Ctrl+C and SIGTERM
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         std::cout << "\n[Server] Shutdown signal received, cleaning up..." << std::endl;
         g_shutdown_requested = true;
+        
+        // Perform cleanup
         if (g_server_instance) {
             g_server_instance->stop();
         }
+        
+        // Force exit after cleanup since http_server->listen() won't return
+        // This is similar to Python's process.terminate() behavior
+        std::cout << "[Server] Exiting..." << std::endl;
+        std::exit(0);
     }
 }
 

@@ -847,25 +847,20 @@ int TrayApp::execute_stop_command() {
     
     std::cout << "Stopping server on port " << port << "..." << std::endl;
     
-    // Try graceful shutdown via API
-    try {
-        httplib::Client client("127.0.0.1", port);
-        client.set_connection_timeout(2, 0);
-        client.set_read_timeout(2, 0);
-        
-        auto res = client.Post("/api/v1/halt");
-        
-        if (res && (res->status == 200 || res->status == 204)) {
-            // Wait a moment for server to shut down
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-    } catch (...) {
-        // API call failed, try force kill below
-    }
+    // Match Python's stop() behavior exactly:
+    // 1. Get main process and children
+    // 2. Send terminate (SIGTERM) to main and llama-server children
+    // 3. Wait 5 seconds
+    // 4. If timeout, send kill (SIGKILL) to main and children
     
-    // Kill any remaining lemonade-server-beta.exe and lemonade-router.exe processes
-    // This handles both the router and the tray app
 #ifdef _WIN32
+    // Use the PID we already got from get_server_info() (the process listening on the port)
+    // This is the router process
+    DWORD router_pid = static_cast<DWORD>(pid);
+    std::cout << "Found router process (PID: " << router_pid << ")" << std::endl;
+    
+    // Find the parent tray app (if it exists)
+    DWORD tray_pid = 0;
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32W pe32;
@@ -873,12 +868,42 @@ int TrayApp::execute_stop_command() {
         
         if (Process32FirstW(snapshot, &pe32)) {
             do {
-                std::wstring process_name(pe32.szExeFile);
-                if (process_name == L"lemonade-router.exe" || process_name == L"lemonade-server-beta.exe") {
-                    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
-                    if (hProcess) {
-                        TerminateProcess(hProcess, 0);
-                        CloseHandle(hProcess);
+                if (pe32.th32ProcessID == router_pid) {
+                    // Found router, check its parent
+                    DWORD parent_pid = pe32.th32ParentProcessID;
+                    // Search for parent to see if it's lemonade-server-beta
+                    if (Process32FirstW(snapshot, &pe32)) {
+                        do {
+                            if (pe32.th32ProcessID == parent_pid) {
+                                std::wstring parent_name(pe32.szExeFile);
+                                if (parent_name == L"lemonade-server-beta.exe") {
+                                    tray_pid = parent_pid;
+                                    std::cout << "Found parent tray app (PID: " << tray_pid << ")" << std::endl;
+                                }
+                                break;
+                            }
+                        } while (Process32NextW(snapshot, &pe32));
+                    }
+                    break;
+                }
+            } while (Process32NextW(snapshot, &pe32));
+        }
+        CloseHandle(snapshot);
+    }
+    
+    // Get list of llama-server children (of the router)
+    std::vector<DWORD> llama_server_pids;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(pe32);
+        
+        if (Process32FirstW(snapshot, &pe32)) {
+            do {
+                if (pe32.th32ParentProcessID == router_pid) {
+                    std::wstring process_name(pe32.szExeFile);
+                    if (process_name == L"llama-server.exe") {
+                        llama_server_pids.push_back(pe32.th32ProcessID);
                     }
                 }
             } while (Process32NextW(snapshot, &pe32));
@@ -886,54 +911,221 @@ int TrayApp::execute_stop_command() {
         CloseHandle(snapshot);
     }
     
-    // Note: log-viewer.exe auto-exits when parent process dies, no need to explicitly kill it
-#else
-    // Unix: Kill processes by name
-    system("pkill -f lemonade-router");
-    system("pkill -f 'lemonade-server-beta.*serve'");
-    // Kill llama-server child processes (launched by lemonade-router)
-    system("pkill -f 'llama-server.*--port'");
-    // Kill log viewer processes
-    system("pkill -f 'tail -f.*lemonade-server.log'");
+    // Terminate router process (graceful)
+    std::cout << "Sending termination signal to router (PID: " << router_pid << ")..." << std::endl;
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, router_pid);
+    if (hProcess) {
+        TerminateProcess(hProcess, 0);  // Windows doesn't have graceful terminate, so this is it
+        CloseHandle(hProcess);
+    }
     
-    // Wait for lock and PID files to be released (critical for clean restarts)
-    std::string lock_file = "/tmp/lemonade_ServerBeta.lock";
-    std::string pid_file = "/tmp/lemonade-router.pid";
+    // Terminate llama-server children (graceful)
+    for (DWORD child_pid : llama_server_pids) {
+        std::cout << "Sending termination signal to llama-server child (PID: " << child_pid << ")..." << std::endl;
+        HANDLE hChild = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
+        if (hChild) {
+            TerminateProcess(hChild, 0);
+            CloseHandle(hChild);
+        }
+    }
     
-    // Poll for up to 10 seconds for files to be released
-    bool files_released = false;
-    for (int i = 0; i < 100; i++) {  // 100 * 100ms = 10 seconds
-        bool lock_exists = fs::exists(lock_file);
-        bool pid_exists = fs::exists(pid_file);
-        
-        if (!lock_exists && !pid_exists) {
-            files_released = true;
-            break;
+    // Terminate tray app parent if it exists
+    if (tray_pid != 0) {
+        std::cout << "Sending termination signal to tray app (PID: " << tray_pid << ")..." << std::endl;
+        HANDLE hTray = OpenProcess(PROCESS_TERMINATE, FALSE, tray_pid);
+        if (hTray) {
+            TerminateProcess(hTray, 0);
+            CloseHandle(hTray);
+        }
+    }
+    
+    // Wait up to 5 seconds for processes to exit
+    std::cout << "Waiting for processes to exit (up to 5 seconds)..." << std::endl;
+    bool exited_gracefully = false;
+    for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
+        bool found_router = false;
+        bool found_tray = false;
+        snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32W pe32;
+            pe32.dwSize = sizeof(pe32);
+            
+            if (Process32FirstW(snapshot, &pe32)) {
+                do {
+                    if (pe32.th32ProcessID == router_pid) {
+                        found_router = true;
+                    }
+                    if (tray_pid != 0 && pe32.th32ProcessID == tray_pid) {
+                        found_tray = true;
+                    }
+                } while (Process32NextW(snapshot, &pe32));
+            }
+            CloseHandle(snapshot);
         }
         
+        // Both router and tray (if it existed) must be gone
+        if (!found_router && (tray_pid == 0 || !found_tray)) {
+            exited_gracefully = true;
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
-    if (!files_released) {
-        std::cerr << "Warning: Lock/PID files not released within timeout" << std::endl;
-    }
-#endif
-    
-#ifndef _WIN32
-    // Unix: no additional sleep needed, we already waited for lock files
-#else
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-#endif
-    
-    // Verify it stopped
-    auto [check_pid, check_port] = get_server_info();
-    if (check_port == 0) {
+    if (exited_gracefully) {
         std::cout << "Lemonade Server stopped successfully." << std::endl;
         return 0;
     }
     
-    std::cerr << "Failed to stop server" << std::endl;
-    return 1;
+    // Timeout expired, force kill
+    std::cout << "Timeout expired, forcing termination..." << std::endl;
+    
+    // Force kill router process
+    hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, router_pid);
+    if (hProcess) {
+        std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
+        TerminateProcess(hProcess, 0);
+        CloseHandle(hProcess);
+    }
+    
+    // Force kill tray app if it exists
+    if (tray_pid != 0) {
+        HANDLE hTray = OpenProcess(PROCESS_TERMINATE, FALSE, tray_pid);
+        if (hTray) {
+            std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
+            TerminateProcess(hTray, 0);
+            CloseHandle(hTray);
+        }
+    }
+    
+    // Force kill any still-running llama-server children
+    for (DWORD child_pid : llama_server_pids) {
+        // Check if still running
+        HANDLE hChild = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, child_pid);
+        if (hChild) {
+            DWORD exit_code;
+            if (GetExitCodeProcess(hChild, &exit_code) && exit_code == STILL_ACTIVE) {
+                CloseHandle(hChild);
+                hChild = OpenProcess(PROCESS_TERMINATE, FALSE, child_pid);
+                if (hChild) {
+                    std::cout << "Force killing llama-server child (PID: " << child_pid << ")" << std::endl;
+                    TerminateProcess(hChild, 0);
+                    CloseHandle(hChild);
+                }
+            } else {
+                CloseHandle(hChild);
+            }
+        }
+    }
+    
+    // Note: log-viewer.exe auto-exits when parent process dies, no need to explicitly kill it
+#else
+    // Unix: Use the PID we already got from get_server_info() (this is the router)
+    int router_pid = pid;
+    std::cout << "Found router process (PID: " << router_pid << ")" << std::endl;
+    
+    // Find parent tray app if it exists
+    int tray_pid = 0;
+    std::string ppid_cmd = "ps -o ppid= -p " + std::to_string(router_pid);
+    FILE* pipe = popen(ppid_cmd.c_str(), "r");
+    if (pipe) {
+        char buffer[128];
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            int parent_pid = atoi(buffer);
+            // Check if parent is lemonade-server-beta
+            std::string name_cmd = "ps -o comm= -p " + std::to_string(parent_pid);
+            FILE* name_pipe = popen(name_cmd.c_str(), "r");
+            if (name_pipe) {
+                char name_buf[128];
+                if (fgets(name_buf, sizeof(name_buf), name_pipe) != nullptr) {
+                    std::string parent_name(name_buf);
+                    // Remove newline
+                    parent_name.erase(parent_name.find_last_not_of("\n\r") + 1);
+                    if (parent_name.find("lemonade-server-beta") != std::string::npos) {
+                        tray_pid = parent_pid;
+                        std::cout << "Found parent tray app (PID: " << tray_pid << ")" << std::endl;
+                    }
+                }
+                pclose(name_pipe);
+            }
+        }
+        pclose(pipe);
+    }
+    
+    // Get list of llama-server children (of the router)
+    std::vector<int> llama_server_pids;
+    pipe = popen(("pgrep -P " + std::to_string(router_pid) + " llama-server").c_str(), "r");
+    if (pipe) {
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            int child_pid = atoi(buffer);
+            if (child_pid > 0) {
+                llama_server_pids.push_back(child_pid);
+            }
+        }
+        pclose(pipe);
+    }
+    
+    // Send SIGTERM to router process
+    std::cout << "Sending SIGTERM to router (PID: " << router_pid << ")..." << std::endl;
+    kill(router_pid, SIGTERM);
+    
+    // Send SIGTERM to llama-server children
+    for (int child_pid : llama_server_pids) {
+        std::cout << "Sending SIGTERM to llama-server child (PID: " << child_pid << ")..." << std::endl;
+        kill(child_pid, SIGTERM);
+    }
+    
+    // Send SIGTERM to tray app parent if it exists
+    if (tray_pid != 0) {
+        std::cout << "Sending SIGTERM to tray app (PID: " << tray_pid << ")..." << std::endl;
+        kill(tray_pid, SIGTERM);
+    }
+    
+    // Wait up to 5 seconds for processes to exit
+    std::cout << "Waiting for processes to exit (up to 5 seconds)..." << std::endl;
+    bool exited_gracefully = false;
+    for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
+        bool router_alive = (kill(router_pid, 0) == 0);
+        bool tray_alive = (tray_pid != 0 && kill(tray_pid, 0) == 0);
+        
+        // Both router and tray (if it existed) must be gone
+        if (!router_alive && !tray_alive) {
+            exited_gracefully = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    if (exited_gracefully) {
+        std::cout << "Lemonade Server stopped successfully." << std::endl;
+        return 0;
+    }
+    
+    // Timeout expired, send SIGKILL
+    std::cout << "Timeout expired, forcing termination..." << std::endl;
+    
+    // Force kill router process
+    std::cout << "Force killing router (PID: " << router_pid << ")" << std::endl;
+    kill(router_pid, SIGKILL);
+    
+    // Force kill tray app if it exists
+    if (tray_pid != 0) {
+        std::cout << "Force killing tray app (PID: " << tray_pid << ")" << std::endl;
+        kill(tray_pid, SIGKILL);
+    }
+    
+    // Force kill any still-running llama-server children
+    for (int child_pid : llama_server_pids) {
+        // Check if still running
+        if (kill(child_pid, 0) == 0) {
+            std::cout << "Force killing llama-server child (PID: " << child_pid << ")" << std::endl;
+            kill(child_pid, SIGKILL);
+        }
+    }
+#endif
+    
+    std::cout << "Lemonade Server stopped successfully." << std::endl;
+    return 0;
 }
 
 bool TrayApp::start_server() {
@@ -1470,5 +1662,6 @@ void TrayApp::tail_log_to_console() {
 }
 
 } // namespace lemon_tray
+
 
 
