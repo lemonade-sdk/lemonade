@@ -1,8 +1,9 @@
 #include <winver.h>
+#include "lemon/version.h"
 
 1 VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     LEMON_VERSION_RC
+PRODUCTVERSION  LEMON_VERSION_RC
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0x0L
 FILEOS          VOS_NT_WINDOWS32
@@ -15,12 +16,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "AMD"
             VALUE "FileDescription", "Lemonade Server Beta"
-            VALUE "FileVersion", "1.0.0.0"
+            VALUE "FileVersion", LEMON_VERSION_RC_STRING
             VALUE "InternalName", "lemonade-server-beta"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
             VALUE "OriginalFilename", "lemonade-server-beta.exe"
             VALUE "ProductName", "Lemonade Server Beta"
-            VALUE "ProductVersion", "1.0.0.0"
+            VALUE "ProductVersion", LEMON_VERSION_RC_STRING
             VALUE "Comments", "System tray interface for Lemonade AI Server"
         END
     END

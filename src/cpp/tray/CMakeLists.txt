@@ -2,6 +2,15 @@
 # Note: This is included from parent CMakeLists.txt via add_subdirectory(tray)
 # Parent project already sets C++ standard and fetches dependencies
 
+# Generate manifest files from templates (Windows only)
+if(WIN32)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-beta.manifest.in
+        ${CMAKE_CURRENT_BINARY_DIR}/lemonade-server-beta.manifest
+        @ONLY
+    )
+endif()
+
 # Platform-specific sources
 set(PLATFORM_SOURCES "")
 set(PLATFORM_LIBS "")
@@ -155,7 +164,7 @@ if(WIN32)
     # Embed manifest file
     if(MSVC)
         set_target_properties(lemonade-server-beta PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-beta.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/lemonade-server-beta.manifest"
         )
     endif()
 endif()

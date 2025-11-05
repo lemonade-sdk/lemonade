@@ -4,6 +4,7 @@
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
+#include <lemon/version.h>
 
 using namespace lemon;
 
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
         }
         
         if (parser.should_show_version()) {
-            std::cout << "lemonade-router version 1.0.0" << std::endl;
+            std::cout << "lemonade-router version " << LEMON_VERSION_STRING << std::endl;
             return 0;
         }
         

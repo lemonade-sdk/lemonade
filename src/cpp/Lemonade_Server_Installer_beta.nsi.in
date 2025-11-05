@@ -1,4 +1,6 @@
 ; Lemonade Server Beta Installer Script (C++ Version)
+; NOTE: This file is now a template configured by CMake
+; The version is automatically populated from CMakeLists.txt
 
 ; Request user rights only (no admin)
 RequestExecutionLevel user
@@ -19,7 +21,7 @@ OutFile "Lemonade_Server_Installer_beta.exe"
 
 ; Define constants
 !define PRODUCT_NAME "Lemonade Server Beta"
-!define PRODUCT_VERSION "1.0.0"
+!define PRODUCT_VERSION "@PROJECT_VERSION@"
 !define PRODUCT_PUBLISHER "AMD"
 !define PRODUCT_WEB_SITE "https://lemonade-server.ai"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"

@@ -273,11 +273,17 @@ jobs:
   build-lemonade-server-deb:
     name: Build Lemonade Server .deb Package
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
 
       - name: Install build dependencies
         run: |
@@ -363,8 +369,11 @@ jobs:
           echo "Files in build directory:"
           ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
           
-          # Verify package was created
-          if [ ! -f "lemonade-server-1.0.0-Linux.deb" ]; then
+          # Verify package was created (using dynamic version)
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Looking for: $DEB_FILE"
+          
+          if [ ! -f "$DEB_FILE" ]; then
               echo "ERROR: .deb package not created!"
               echo "Contents of build directory:"
               ls -lR .
@@ -372,20 +381,20 @@ jobs:
           fi
           
           echo ".deb package created successfully!"
-          ls -lh lemonade-server-1.0.0-Linux.deb
+          ls -lh "$DEB_FILE"
           
           # Show package info
           echo "Package information:"
-          dpkg-deb --info lemonade-server-1.0.0-Linux.deb
+          dpkg-deb --info "$DEB_FILE"
           
           echo "Package contents:"
-          dpkg-deb --contents lemonade-server-1.0.0-Linux.deb
+          dpkg-deb --contents "$DEB_FILE"
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-1.0.0-Linux.deb
+          path: src/cpp/build/lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
           retention-days: 7
 
   # ========================================================================
@@ -1077,6 +1086,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -1098,9 +1108,13 @@ jobs:
         run: |
           echo "Extracting .deb package..."
           
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
           # Extract the .deb package
           mkdir -p ./deb-extract
-          dpkg-deb -x lemonade-server-1.0.0-Linux.deb ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
           
           # Copy resources to user's local share (path_utils.cpp checks here!)
           mkdir -p ~/.local/share/lemonade-server
@@ -1181,6 +1195,7 @@ jobs:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -1202,9 +1217,13 @@ jobs:
         run: |
           echo "Extracting .deb package..."
           
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
           # Extract the .deb package
           mkdir -p ./deb-extract
-          dpkg-deb -x lemonade-server-1.0.0-Linux.deb ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
           
           # Copy resources to user's local share (path_utils.cpp checks here!)
           mkdir -p ~/.local/share/lemonade-server
@@ -1299,6 +1318,8 @@ jobs:
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
     if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
@@ -1329,7 +1350,7 @@ jobs:
         run: |
           echo "Release artifacts:"
           ls -lh Lemonade_Server_Installer_beta.exe
-          ls -lh lemonade-server-1.0.0-Linux.deb
+          ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
           ls -lh ryzenai-serve.zip
 
       - name: Create Release
@@ -1337,7 +1358,7 @@ jobs:
         with:
           files: |
             Lemonade_Server_Installer_beta.exe
-            lemonade-server-1.0.0-Linux.deb
+            lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
             ryzenai-serve.zip
           fail_on_unmatched_files: true
 
