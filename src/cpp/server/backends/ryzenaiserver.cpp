@@ -120,29 +120,11 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 void RyzenAIServer::download_and_install() {
     std::cout << "[RyzenAI-Server] Downloading ryzenai-server..." << std::endl;
     
-    // Download from GitHub Actions artifact
-    // This requires GITHUB_TOKEN environment variable for authentication
-    const char* github_token = std::getenv("GITHUB_TOKEN");
-    if (!github_token) {
-        std::cerr << "\n[RyzenAI-Server ERROR] GITHUB_TOKEN environment variable not set!" << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] Downloading artifacts requires GitHub authentication." << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] Please set GITHUB_TOKEN with a personal access token." << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] You can create one at: https://github.com/settings/tokens" << std::endl;
-        throw std::runtime_error("GITHUB_TOKEN not set - required for artifact download");
-    }
-    
-    // GitHub API URL for artifact download
-    // Format: https://api.github.com/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip
-    // 
-    // NOTE: Artifacts expire after 90 days. To update:
-    // 1. Go to https://github.com/lemonade-sdk/lemonade/actions
-    // 2. Find a recent "C++ Server Build, Test, and Release" workflow run
-    // 3. Click on it, find the "ryzenai-server" artifact
-    // 4. The artifact ID is in the URL: .../artifacts/{artifact_id}
-    std::string artifact_id = "4397765008";
+    // Download from latest GitHub release
+    // Format: https://github.com/{owner}/{repo}/releases/latest/download/{asset_name}
     std::string repo = "lemonade-sdk/lemonade";
-    std::string url = "https://api.github.com/repos/" + repo + "/actions/artifacts/" + artifact_id + "/zip";
     std::string filename = "ryzenai-server.zip";
+    std::string url = "https://github.com/" + repo + "/releases/latest/download/" + filename;
     
     // Determine install directory (next to lemonade-router.exe)
 #ifdef _WIN32
@@ -156,16 +138,12 @@ void RyzenAIServer::download_and_install() {
     fs::path install_dir = exe_dir / "ryzenai-server";
     std::string zip_path = (exe_dir / filename).string();
     
-    std::cout << "[RyzenAI-Server] Downloading from GitHub Actions artifact..." << std::endl;
+    std::cout << "[RyzenAI-Server] Downloading from latest GitHub release..." << std::endl;
     std::cout << "[RyzenAI-Server] Installing to: " << install_dir.string() << std::endl;
     
-    // Prepare authentication headers for GitHub API
-    std::map<std::string, std::string> headers;
-    headers["Authorization"] = std::string("Bearer ") + github_token;
-    headers["Accept"] = "application/vnd.github+json";
-    headers["X-GitHub-Api-Version"] = "2022-11-28";
-    
     // Download the ZIP file with throttled progress updates (once per second)
+    // No authentication needed for public releases
+    std::map<std::string, std::string> headers;
     bool download_success = utils::HttpClient::download_file(
         url, 
         zip_path,
@@ -174,13 +152,13 @@ void RyzenAIServer::download_and_install() {
     );
     
     if (!download_success) {
-        std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server artifact" << std::endl;
+        std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server from GitHub release" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Possible causes:" << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR]   - Invalid or expired GITHUB_TOKEN" << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR]   - Artifact ID " << artifact_id << " no longer exists (artifacts expire after 90 days)" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR]   - No internet connection or GitHub is down" << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] Get the latest artifact ID from: https://github.com/lemonade-sdk/lemonade/actions" << std::endl;
-        throw std::runtime_error("Failed to download ryzenai-server artifact");
+        std::cerr << "[RyzenAI-Server ERROR]   - No release has been published yet" << std::endl;
+        std::cerr << "[RyzenAI-Server ERROR]   - The release does not contain " << filename << std::endl;
+        std::cerr << "[RyzenAI-Server ERROR] Check releases at: https://github.com/" << repo << "/releases" << std::endl;
+        throw std::runtime_error("Failed to download ryzenai-server from release");
     }
     
     std::cout << std::endl << "[RyzenAI-Server] Download complete!" << std::endl;

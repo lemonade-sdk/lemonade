@@ -140,6 +140,14 @@ if(WIN32)
             message(WARNING "DLL not found: ${DLL}")
         endif()
     endforeach()
+    
+    # Copy AMD_LICENSE to output directory
+    add_custom_command(TARGET ryzenai-server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/AMD_LICENSE
+        $<TARGET_FILE_DIR:ryzenai-server>/AMD_LICENSE
+        COMMENT "Copying AMD_LICENSE"
+    )
 endif()
 
 # Compiler warnings

@@ -268,6 +268,7 @@ jobs:
             src/ryzenai-server/build/bin/Release/*.exe
             src/ryzenai-server/build/bin/Release/*.dll
             src/ryzenai-server/build/bin/Release/*.pdb
+            src/ryzenai-server/build/bin/Release/AMD_LICENSE
           retention-days: 7
 
   build-lemonade-server-deb:
