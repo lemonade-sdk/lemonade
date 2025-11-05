@@ -23,6 +23,7 @@
 #else
 #include <cstdlib>
 #include <unistd.h>  // for readlink
+#include <sys/wait.h>  // for waitpid
 #endif
 
 namespace fs = std::filesystem;
@@ -108,7 +109,7 @@ BOOL WINAPI console_ctrl_handler(DWORD ctrl_type) {
     return FALSE;
 }
 #else
-// Unix signal handler
+// Unix signal handler for SIGINT/SIGTERM
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         std::cout << "\nReceived interrupt signal, shutting down gracefully..." << std::endl;
@@ -119,6 +120,47 @@ void signal_handler(int signal) {
         
         exit(0);
     }
+}
+
+// SIGCHLD handler to automatically reap zombie children
+void sigchld_handler(int signal) {
+    // Reap all zombie children without blocking
+    // This prevents the router process from becoming a zombie
+    int status;
+    while (waitpid(-1, &status, WNOHANG) > 0) {
+        // Child reaped successfully
+    }
+}
+
+// Helper function to check if a process is alive (and not a zombie)
+static bool is_process_alive_not_zombie(pid_t pid) {
+    if (pid <= 0) return false;
+    
+    // First check if process exists at all
+    if (kill(pid, 0) != 0) {
+        return false;  // Process doesn't exist
+    }
+    
+    // Check if it's a zombie by reading /proc/PID/stat
+    std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
+    std::ifstream stat_file(stat_path);
+    if (!stat_file) {
+        return false;  // Can't read stat, assume dead
+    }
+    
+    std::string line;
+    std::getline(stat_file, line);
+    
+    // Find the state character (after the closing paren of the process name)
+    size_t paren_pos = line.rfind(')');
+    if (paren_pos != std::string::npos && paren_pos + 2 < line.length()) {
+        char state = line[paren_pos + 2];
+        // Return false if zombie
+        return (state != 'Z');
+    }
+    
+    // If we can't parse the state, assume alive to be safe
+    return true;
 }
 #endif
 
@@ -148,6 +190,10 @@ TrayApp::TrayApp(int argc, char* argv[])
 #else
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
+        
+        // Install SIGCHLD handler to automatically reap zombie children
+        // This prevents the router process from becoming a zombie when it exits
+        signal(SIGCHLD, sigchld_handler);
 #endif
         
         DEBUG_LOG(this, "Signal handlers installed");
@@ -1075,8 +1121,9 @@ int TrayApp::execute_stop_command() {
     std::cout << "Waiting for processes to exit (up to 5 seconds)..." << std::endl;
     bool exited_gracefully = false;
     for (int i = 0; i < 50; i++) {  // 50 * 100ms = 5 seconds
-        bool router_alive = (kill(router_pid, 0) == 0);
-        bool tray_alive = (tray_pid != 0 && kill(tray_pid, 0) == 0);
+        // Use helper function that checks for zombies
+        bool router_alive = is_process_alive_not_zombie(router_pid);
+        bool tray_alive = (tray_pid != 0 && is_process_alive_not_zombie(tray_pid));
         
         // Both router and tray (if it existed) must be gone
         if (!router_alive && !tray_alive) {
