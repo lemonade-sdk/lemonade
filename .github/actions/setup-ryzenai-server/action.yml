@@ -1,22 +1,22 @@
-name: Setup RyzenAI Serve
-description: Setup RyzenAI Serve from already-downloaded artifact files for testing
+name: Setup RyzenAI Server
+description: Setup RyzenAI Server from already-downloaded artifact files for testing
 
 inputs:
   install-path:
-    description: 'The LEMONADE_INSTALL_PATH where RyzenAI Serve should be installed'
+    description: 'The LEMONADE_INSTALL_PATH where RyzenAI Server should be installed'
     required: true
   artifact-path:
-    description: 'Path where the ryzenai-serve artifact files have been downloaded'
+    description: 'Path where the ryzenai-server artifact files have been downloaded'
     required: false
-    default: 'ryzenai-serve-files'
+    default: 'ryzenai-server-files'
 
 runs:
   using: composite
   steps:
-    - name: Setup RyzenAI Serve for testing
+    - name: Setup RyzenAI Server for testing
       shell: PowerShell
       run: |
-        Write-Host "Setting up ryzenai-serve from artifact..." -ForegroundColor Cyan
+        Write-Host "Setting up ryzenai-server from artifact..." -ForegroundColor Cyan
         
         $artifactPath = "${{ inputs.artifact-path }}"
         
@@ -27,20 +27,20 @@ runs:
             Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
         }
         
-        $ryzenaiDir = Join-Path "${{ inputs.install-path }}" "bin\ryzenai-serve"
+        $ryzenaiDir = Join-Path "${{ inputs.install-path }}" "bin\ryzenai-server"
         
-        # Create ryzenai-serve directory
+        # Create ryzenai-server directory
         New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
         
-        # Copy all files from artifact to ryzenai-serve directory
-        Write-Host "`nCopying ryzenai-serve files to: $ryzenaiDir" -ForegroundColor Gray
+        # Copy all files from artifact to ryzenai-server directory
+        Write-Host "`nCopying ryzenai-server files to: $ryzenaiDir" -ForegroundColor Gray
         Copy-Item -Path "$artifactPath\*" -Destination $ryzenaiDir -Recurse -Force
         
         # Force filesystem sync and wait
         Start-Sleep -Seconds 2
         
         # Retry logic for verification
-        $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-serve.exe"
+        $ryzenaiExe = Join-Path $ryzenaiDir "ryzenai-server.exe"
         $maxRetries = 5
         $retryCount = 0
         $found = $false
@@ -48,21 +48,21 @@ runs:
         while (-not $found -and $retryCount -lt $maxRetries) {
             if (Test-Path $ryzenaiExe) {
                 $found = $true
-                Write-Host "[OK] ryzenai-serve.exe found at: $ryzenaiExe" -ForegroundColor Green
+                Write-Host "[OK] ryzenai-server.exe found at: $ryzenaiExe" -ForegroundColor Green
                 
                 # List a few files to confirm
                 $fileCount = (Get-ChildItem $ryzenaiDir -File | Measure-Object).Count
-                Write-Host "[OK] Total files in ryzenai-serve directory: $fileCount" -ForegroundColor Green
+                Write-Host "[OK] Total files in ryzenai-server directory: $fileCount" -ForegroundColor Green
             } else {
                 $retryCount++
-                Write-Host "Attempt ${retryCount}/${maxRetries}: ryzenai-serve.exe not found yet, waiting..." -ForegroundColor Yellow
+                Write-Host "Attempt ${retryCount}/${maxRetries}: ryzenai-server.exe not found yet, waiting..." -ForegroundColor Yellow
                 Start-Sleep -Seconds 1
             }
         }
         
         if (-not $found) {
-            Write-Host "ERROR: ryzenai-serve.exe not found after ${maxRetries} attempts!" -ForegroundColor Red
-            Write-Host "Contents of ryzenai-serve directory:" -ForegroundColor Yellow
+            Write-Host "ERROR: ryzenai-server.exe not found after ${maxRetries} attempts!" -ForegroundColor Red
+            Write-Host "Contents of ryzenai-server directory:" -ForegroundColor Yellow
             Get-ChildItem $ryzenaiDir | Format-Table Name, Length
             Write-Host "`nContents of source directory:" -ForegroundColor Yellow
             Get-ChildItem "$artifactPath" | Format-Table Name, Length

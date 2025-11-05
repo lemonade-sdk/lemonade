@@ -75,9 +75,9 @@ void Router::load_model(const std::string& model_name,
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             new_server = std::make_unique<backends::FastFlowLMServer>(log_level_);
         } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" || model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
-            std::cout << "[Router] Using RyzenAI-Serve backend: " << model_info.recipe << std::endl;
+            std::cout << "[Router] Using RyzenAI-Server backend: " << model_info.recipe << std::endl;
             
-            // RyzenAI-Serve needs the model path - use pre-resolved path
+            // RyzenAI-Server needs the model path - use pre-resolved path
             std::string model_path = model_info.resolved_path;
             std::cout << "[Router] Using model path: " << model_path << std::endl;
             
@@ -120,7 +120,7 @@ void Router::load_model(const std::string& model_name,
         
         // Load the backend (start process, wait for ready) WITHOUT holding the mutex
         // This is the time-consuming part that can take 30-60 seconds:
-        //   1. ProcessManager::start_process() - Launch llama-server/ryzenai-serve/flm
+        //   1. ProcessManager::start_process() - Launch llama-server/ryzenai-server/flm
         //   2. wait_for_ready() - Poll health endpoint until backend responds
         std::cout << "[Router] Starting backend (this may take a moment)..." << std::endl;
         new_server->load(model_name, model_info, ctx_size_, do_not_upgrade);

@@ -4,6 +4,7 @@
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
+#include <lemon/version.h>
 
 using namespace lemon;
 
@@ -11,14 +12,19 @@ using namespace lemon;
 static std::atomic<bool> g_shutdown_requested(false);
 static Server* g_server_instance = nullptr;
 
-// Signal handler for Ctrl+C
+// Signal handler for Ctrl+C and SIGTERM
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\n[Server] Shutdown signal received, cleaning up..." << std::endl;
+        std::cout << "\n[Server] Shutdown signal received, exiting..." << std::endl;
+        std::cout.flush();
+        
+        // Don't call server->stop() from signal handler - it can block/deadlock
+        // Just set the flag and exit immediately. The OS will clean up resources.
         g_shutdown_requested = true;
-        if (g_server_instance) {
-            g_server_instance->stop();
-        }
+        
+        // Use _exit() for async-signal-safe immediate termination
+        // The OS will handle cleanup of file descriptors, memory, and child processes
+        _exit(0);
     }
 }
 
@@ -41,7 +47,7 @@ int main(int argc, char** argv) {
         }
         
         if (parser.should_show_version()) {
-            std::cout << "lemonade-router version 1.0.0" << std::endl;
+            std::cout << "lemonade-router version " << LEMON_VERSION_STRING << std::endl;
             return 0;
         }
         

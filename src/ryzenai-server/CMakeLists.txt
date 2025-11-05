@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ryzenai-serve VERSION 1.0.0 LANGUAGES CXX)
+project(ryzenai-server VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,10 +78,10 @@ set(SOURCES
 )
 
 # Create executable
-add_executable(ryzenai-serve ${SOURCES})
+add_executable(ryzenai-server ${SOURCES})
 
 # Include directories
-target_include_directories(ryzenai-serve PRIVATE
+target_include_directories(ryzenai-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OGA_INCLUDE}
     ${HTTPLIB_DIR}
@@ -89,19 +89,19 @@ target_include_directories(ryzenai-serve PRIVATE
 )
 
 # Link libraries
-target_link_libraries(ryzenai-serve PRIVATE
+target_link_libraries(ryzenai-server PRIVATE
     ${OGA_LIB}
     Threads::Threads
 )
 
 # Enable multi-threading for cpp-httplib
-target_compile_definitions(ryzenai-serve PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=8)
+target_compile_definitions(ryzenai-server PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=8)
 
 # Windows-specific settings
 if(WIN32)
     # Target Windows 10 or later (required for cpp-httplib v0.26.0)
-    target_compile_definitions(ryzenai-serve PRIVATE _WIN32_WINNT=0x0A00)
-    target_link_libraries(ryzenai-serve PRIVATE ws2_32)
+    target_compile_definitions(ryzenai-server PRIVATE _WIN32_WINNT=0x0A00)
+    target_link_libraries(ryzenai-server PRIVATE ws2_32)
     
     # Copy required DLLs to output directory (they're in deployment folder)
     set(REQUIRED_DLLS
@@ -124,16 +124,16 @@ if(WIN32)
     )
     
     # Set console subsystem explicitly
-    set_target_properties(ryzenai-serve PROPERTIES
+    set_target_properties(ryzenai-server PROPERTIES
         LINK_FLAGS "/SUBSYSTEM:CONSOLE"
     )
     
     foreach(DLL ${REQUIRED_DLLS})
         if(EXISTS ${DLL})
-            add_custom_command(TARGET ryzenai-serve POST_BUILD
+            add_custom_command(TARGET ryzenai-server POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${DLL}
-                $<TARGET_FILE_DIR:ryzenai-serve>
+                $<TARGET_FILE_DIR:ryzenai-server>
                 COMMENT "Copying ${DLL}"
             )
         else()
@@ -144,13 +144,13 @@ endif()
 
 # Compiler warnings
 if(MSVC)
-    target_compile_options(ryzenai-serve PRIVATE /W4)
+    target_compile_options(ryzenai-server PRIVATE /W4)
 else()
-    target_compile_options(ryzenai-serve PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(ryzenai-server PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 # Installation rules
-install(TARGETS ryzenai-serve
+install(TARGETS ryzenai-server
     RUNTIME DESTINATION bin
 )
 
