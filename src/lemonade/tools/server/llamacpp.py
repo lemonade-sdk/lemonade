@@ -20,10 +20,10 @@ from lemonade.tools.llamacpp.utils import (
 )
 from lemonade.tools.server.wrapped_server import WrappedServerTelemetry, WrappedServer
 
-# Embedding model batch configuration - can be overridden via environment variables
-EMBEDDING_CTX_SIZE = int(os.getenv("LEMONADE_EMBEDDING_CTX_SIZE", "8192"))
-EMBEDDING_BATCH_SIZE = int(os.getenv("LEMONADE_EMBEDDING_BATCH_SIZE", "8192"))
-EMBEDDING_UBATCH_SIZE = int(os.getenv("LEMONADE_EMBEDDING_UBATCH_SIZE", "8192"))
+# Embedding model batch configuration set to 8192 as default
+EMBEDDING_CTX_SIZE = 8192
+EMBEDDING_BATCH_SIZE = 8192
+EMBEDDING_UBATCH_SIZE = 8192
 
 
 class LlamaTelemetry(WrappedServerTelemetry):

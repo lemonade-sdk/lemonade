@@ -46,16 +46,6 @@ lemonade-server run MODEL_NAME [options]
 
 These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, and `LEMONADE_CTX_SIZE`.
 
-## Advanced Configuration for Embedding Models
-
-When using embedding models with the llamacpp backend, you can configure batch processing parameters via environment variables:
-
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `LEMONADE_EMBEDDING_CTX_SIZE` | Context size for embedding models (maximum tokens per individual document) | 8192 |
-| `LEMONADE_EMBEDDING_BATCH_SIZE` | Logical batch size for embedding requests (total tokens across all documents in a batch) | 8192 |
-| `LEMONADE_EMBEDDING_UBATCH_SIZE` | Physical batch size for embedding requests (tokens processed in a single GPU pass) | 8192 |
-
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
 
 <!--Copyright (c) 2025 AMD-->
