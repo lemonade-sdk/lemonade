@@ -609,7 +609,9 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.ctx_size,
         config_.log_file.empty() ? "" : config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
-        config_.llamacpp_backend  // Pass llamacpp backend to ServerManager
+        config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
+        false,  // show_console
+        true    // is_ephemeral (suppress startup message)
     );
     
     if (!success) {
@@ -1252,7 +1254,8 @@ bool TrayApp::start_server() {
         config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
-        true                // Always show console output for serve command
+        true,               // Always show console output for serve command
+        false               // is_ephemeral = false (persistent server, show startup message with URL)
     );
     
     // Start log tail thread to show logs in console
