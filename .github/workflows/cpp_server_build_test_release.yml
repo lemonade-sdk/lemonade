@@ -147,8 +147,8 @@ jobs:
           path: src\cpp\Lemonade_Server_Installer_beta.exe
           retention-days: 7
 
-  build-ryzenai-serve:
-    name: Build RyzenAI Serve
+  build-ryzenai-server:
+    name: Build RyzenAI Server
     runs-on: [rai-160-sdk, Windows]
     steps:
       - uses: actions/checkout@v4
@@ -198,14 +198,14 @@ jobs:
               cmake --version
           }
 
-      - name: Build RyzenAI Serve with CMake
+      - name: Build RyzenAI Server with CMake
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           
-          Write-Host "Building ryzenai-serve..." -ForegroundColor Cyan
+          Write-Host "Building ryzenai-server..." -ForegroundColor Cyan
           
-          cd src\ryzenai-serve
+          cd src\ryzenai-server
           
           # Create build directory
           if (Test-Path "build") {
@@ -229,24 +229,24 @@ jobs:
           }
           
           # Verify binary exists
-          if (-not (Test-Path "bin\Release\ryzenai-serve.exe")) {
-              Write-Host "ERROR: ryzenai-serve.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "bin\Release\ryzenai-server.exe")) {
+              Write-Host "ERROR: ryzenai-server.exe not found!" -ForegroundColor Red
               exit 1
           }
           
-          Write-Host "ryzenai-serve build successful!" -ForegroundColor Green
+          Write-Host "ryzenai-server build successful!" -ForegroundColor Green
 
-      - name: Verify RyzenAI Serve build
+      - name: Verify RyzenAI Server build
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           
-          $releaseDir = "src\ryzenai-serve\build\bin\Release"
+          $releaseDir = "src\ryzenai-server\build\bin\Release"
           
-          Write-Host "Verifying ryzenai-serve build output..." -ForegroundColor Cyan
+          Write-Host "Verifying ryzenai-server build output..." -ForegroundColor Cyan
           
-          if (-not (Test-Path "$releaseDir\ryzenai-serve.exe")) {
-              Write-Host "ERROR: ryzenai-serve.exe not found in $releaseDir" -ForegroundColor Red
+          if (-not (Test-Path "$releaseDir\ryzenai-server.exe")) {
+              Write-Host "ERROR: ryzenai-server.exe not found in $releaseDir" -ForegroundColor Red
               exit 1
           }
           
@@ -260,14 +260,14 @@ jobs:
           Write-Host "`nFound $fileCount files in release directory" -ForegroundColor Green
           Write-Host "Contents will be uploaded as artifact (GitHub will zip automatically)" -ForegroundColor Gray
 
-      - name: Upload RyzenAI Serve Package
+      - name: Upload RyzenAI Server Package
         uses: actions/upload-artifact@v4
         with:
-          name: ryzenai-serve
+          name: ryzenai-server
           path: |
-            src/ryzenai-serve/build/bin/Release/*.exe
-            src/ryzenai-serve/build/bin/Release/*.dll
-            src/ryzenai-serve/build/bin/Release/*.pdb
+            src/ryzenai-server/build/bin/Release/*.exe
+            src/ryzenai-server/build/bin/Release/*.dll
+            src/ryzenai-server/build/bin/Release/*.pdb
           retention-days: 7
 
   build-lemonade-server-deb:
@@ -406,7 +406,7 @@ jobs:
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
-      - build-ryzenai-serve
+      - build-ryzenai-server
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -447,14 +447,14 @@ jobs:
       - name: Download RyzenAI Serve artifact
         uses: actions/download-artifact@v4
         with:
-          name: ryzenai-serve
-          path: ryzenai-serve-files
+          name: ryzenai-server
+          path: ryzenai-server-files
 
       - name: Setup RyzenAI Serve
-        uses: ./.github/actions/setup-ryzenai-serve
+        uses: ./.github/actions/setup-ryzenai-server
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-          artifact-path: ryzenai-serve-files
+          artifact-path: ryzenai-server-files
 
       - name: Verify Installation
         shell: PowerShell
@@ -969,11 +969,11 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   test-exe-rai-cpu:
-    name: Test .exe - ryzenai-serve CPU
+    name: Test .exe - ryzenai-server CPU
     runs-on: [stx, Windows]
     needs: 
       - build-lemonade-server-installer
-      - build-ryzenai-serve
+      - build-ryzenai-server
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -1008,17 +1008,17 @@ jobs:
           Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
-      - name: Download RyzenAI Serve artifact
+      - name: Download RyzenAI Server artifact
         uses: actions/download-artifact@v4
         with:
-          name: ryzenai-serve
-          path: ryzenai-serve-files
+          name: ryzenai-server
+          path: ryzenai-server-files
 
-      - name: Setup RyzenAI Serve
-        uses: ./.github/actions/setup-ryzenai-serve
+      - name: Setup RyzenAI Server
+        uses: ./.github/actions/setup-ryzenai-server
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-          artifact-path: ryzenai-serve-files
+          artifact-path: ryzenai-server-files
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1309,7 +1309,7 @@ jobs:
     needs: 
       - build-lemonade-server-installer
       - build-lemonade-server-deb
-      - build-ryzenai-serve
+      - build-ryzenai-server
       - test-exe-rai-hybrid-basics
       - test-exe-flm
       - test-exe-llamacpp-vulkan
@@ -1333,25 +1333,25 @@ jobs:
           name: lemonade-server-deb
           path: .
 
-      - name: Download RyzenAI Serve Package
+      - name: Download RyzenAI Server Package
         uses: actions/download-artifact@v4
         with:
-          name: ryzenai-serve
-          path: ryzenai-serve-files
+          name: ryzenai-server
+          path: ryzenai-server-files
 
-      - name: Create ryzenai-serve.zip for release
+      - name: Create ryzenai-server.zip for release
         run: |
-          cd ryzenai-serve-files
-          zip -r ../ryzenai-serve.zip *
+          cd ryzenai-server-files
+          zip -r ../ryzenai-server.zip *
           cd ..
-          ls -lh ryzenai-serve.zip
+          ls -lh ryzenai-server.zip
 
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
           ls -lh Lemonade_Server_Installer_beta.exe
           ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
-          ls -lh ryzenai-serve.zip
+          ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -1359,6 +1359,6 @@ jobs:
           files: |
             Lemonade_Server_Installer_beta.exe
             lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
-            ryzenai-serve.zip
+            ryzenai-server.zip
           fail_on_unmatched_files: true
 
