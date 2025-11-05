@@ -578,7 +578,7 @@ static bool is_flm_available() {
 
 static bool is_oga_available() {
     // OGA models are available if NPU hardware is present
-    // The ryzenai-serve executable (OGA backend) will be obtained as needed
+    // The ryzenai-server executable (OGA backend) will be obtained as needed
     return is_npu_available();
 }
 
@@ -925,7 +925,7 @@ void ModelManager::download_model(const std::string& model_name,
 //   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
-//   - ryzenai-serve backend: ❌ Cannot download (expects ONNX files pre-cached)
+//   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
 void ModelManager::download_from_huggingface(const std::string& repo_id,
                                             const std::string& variant,
                                             const std::string& mmproj) {
