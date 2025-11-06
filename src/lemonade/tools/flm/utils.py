@@ -16,6 +16,7 @@ from packaging.version import Version, InvalidVersion
 from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.tools.server.utils.port import find_free_port
 from lemonade.tools.llamacpp.utils import monitor_process_memory
+import lemonade.common.printing as printing
 
 
 def get_flm_latest_version() -> Optional[str]:
@@ -373,6 +374,16 @@ class FLMAdapter(ModelAdapter):
             return_raw=True
         """
 
+        # Check server process is running
+        if self.server_process is None:
+            error_msg = "FLM server must be started before calling the generate method."
+            raise Exception(error_msg)
+        if self.server_process.poll() is not None:
+            error_msg = (
+                f"FLM server has exited with exit code: {self.server_process.poll()}"
+            )
+            raise Exception(error_msg)
+
         # Start memory monitoring in a separate thread
         if save_max_memory_used:
             memory_data = {}
@@ -387,11 +398,22 @@ class FLMAdapter(ModelAdapter):
             max_new_tokens = self.output_tokens
         prompt = input_ids
         response, usage = self.send_request_to_server(prompt, max_new_tokens)
+        printing.log_info(f"FLM response: {response}")
 
+        # Extract info from usage
+        #
+        # Example:
+        #   CompletionUsage(completion_tokens=27, prompt_tokens=39,
+        #       total_tokens=66, completion_tokens_details=None,
+        #       prompt_tokens_details=None, load_duration=1e-06,
+        #       prefill_duration_ttft=1.026799104,
+        #       decoding_duration=2.2763712, prefill_speed_tps=37.98211339304012,
+        #       decoding_speed_tps=11.860982953922454)
+        #
         self.response_tokens = getattr(usage, "completion_tokens", None)
         self.prompt_tokens = getattr(usage, "prompt_tokens", None)
-        self.time_to_first_token = None  # TODO
-        self.tokens_per_second = None  # TODO
+        self.time_to_first_token = getattr(usage, "prefill_duration_ttft", None)
+        self.tokens_per_second = getattr(usage, "decoding_speed_tps", None)
 
         # Wait for monitor thread to finish and write peak_wset
         if save_max_memory_used:

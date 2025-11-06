@@ -1066,6 +1066,8 @@ class LlamaCppAdapter(ModelAdapter):
             1,
             "-ub",
             1,
+            "-ngl",
+            "99" if self.device == "igpu" else "0",
         ]
         cmd = [str(m) for m in cmd]
 
