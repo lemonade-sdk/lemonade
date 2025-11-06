@@ -62,7 +62,7 @@ ServerManager::ServerManager()
 
 ServerManager::~ServerManager() {
     // Only stop server if this instance actually started it
-    // Don't clean up servers we're just querying (e.g., in wait_for_server_ready, status commands)
+    // Don't clean up servers we're just querying (e.g., in status commands)
     if (server_started_ && server_pid_ > 0) {
         stop_server();
     }
