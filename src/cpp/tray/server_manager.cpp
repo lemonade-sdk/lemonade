@@ -61,7 +61,11 @@ ServerManager::ServerManager()
 }
 
 ServerManager::~ServerManager() {
-    stop_server();
+    // Only stop server if this instance actually started it
+    // Don't clean up servers we're just querying (e.g., in wait_for_server_ready, status commands)
+    if (server_started_ && server_pid_ > 0) {
+        stop_server();
+    }
 }
 
 bool ServerManager::start_server(
@@ -117,7 +121,17 @@ bool ServerManager::start_server(
             
 #ifndef _WIN32
             // Write PID file on Linux for efficient server discovery
+            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
             write_pid_file();
+            
+            // Verify PID file was written
+            std::ifstream verify_file("/tmp/lemonade-router.pid");
+            if (verify_file.good()) {
+                DEBUG_LOG(this, "PID file verified");
+            } else {
+                std::cerr << "[ServerManager] ERROR: PID file was not created!" << std::endl;
+            }
+            verify_file.close();
 #endif
             
             return true;
@@ -673,13 +687,17 @@ bool ServerManager::terminate_router_tree() {
 
 void ServerManager::write_pid_file() {
     std::string pid_file_path = "/tmp/lemonade-router.pid";
+    DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
+    
     std::ofstream pid_file(pid_file_path);
     if (pid_file.is_open()) {
         pid_file << server_pid_ << "\n" << port_ << "\n";
         pid_file.close();
         DEBUG_LOG(this, "Wrote PID file: " << pid_file_path << " (PID: " << server_pid_ << ", Port: " << port_ << ")");
+        std::cout << "[ServerManager] PID file created: " << pid_file_path << std::endl;
     } else {
-        std::cerr << "[ServerManager] Warning: Failed to write PID file: " << pid_file_path << std::endl;
+        std::cerr << "[ServerManager] ERROR: Failed to open PID file for writing: " << pid_file_path << std::endl;
+        std::cerr << "[ServerManager] Error: " << strerror(errno) << std::endl;
     }
 }
 
