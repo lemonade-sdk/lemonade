@@ -52,6 +52,7 @@ ServerManager::ServerManager()
     , port_(8000)
     , ctx_size_(4096)
     , show_console_(false)
+    , is_ephemeral_(false)
     , server_started_(false)
 #ifdef _WIN32
     , process_handle_(nullptr)
@@ -85,6 +86,7 @@ bool ServerManager::start_server(
     log_level_ = log_level;
     llamacpp_backend_ = llamacpp_backend;
     show_console_ = show_console;
+    is_ephemeral_ = is_ephemeral;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -178,7 +180,10 @@ bool ServerManager::stop_server() {
     remove_pid_file();
 #endif
     
-    std::cout << "Server stopped successfully" << std::endl;
+    // Only print message for non-ephemeral servers
+    if (!is_ephemeral_) {
+        std::cout << "Server stopped successfully" << std::endl;
+    }
     DEBUG_LOG(this, "Server stopped");
     return true;
 }
@@ -474,7 +479,7 @@ bool ServerManager::spawn_process() {
     }
     
     if (pid == 0) {
-        // Child process - redirect stdout/stderr to log file if specified
+        // Child process - redirect stdout/stderr to log file if specified, or /dev/null if not
         if (!log_file_.empty()) {
             int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (log_fd >= 0) {
@@ -483,6 +488,14 @@ bool ServerManager::spawn_process() {
                 close(log_fd);
             } else {
                 std::cerr << "Failed to open log file: " << log_file_ << std::endl;
+            }
+        } else {
+            // Redirect to /dev/null to suppress output (for ephemeral servers)
+            int null_fd = open("/dev/null", O_WRONLY);
+            if (null_fd >= 0) {
+                dup2(null_fd, STDOUT_FILENO);
+                dup2(null_fd, STDERR_FILENO);
+                close(null_fd);
             }
         }
         

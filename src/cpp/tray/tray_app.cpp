@@ -1690,7 +1690,11 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    std::cout << "Shutting down server..." << std::endl;
+    // Only print shutdown message for persistent server commands (serve/run)
+    // Don't print for ephemeral commands (list/pull/delete/status/stop)
+    if (config_.command == "serve" || config_.command == "run") {
+        std::cout << "Shutting down server..." << std::endl;
+    }
     
     // Only print debug message if we actually have something to shutdown
     if (server_manager_ || tray_) {
