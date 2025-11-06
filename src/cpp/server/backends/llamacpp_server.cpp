@@ -152,27 +152,27 @@ static std::string get_install_directory(const std::string& backend) {
 }
 
 // Helper to get HuggingFace cache directory
-// Policy: Use HF_HOME or default to ~/.cache/huggingface (standard HF behavior)
+// Policy: Use HF_HOME or default to ~/.cache/huggingface/hub (standard HF behavior)
 static std::string get_hf_cache_dir() {
     // Check HF_HOME first
     const char* hf_home = std::getenv("HF_HOME");
     if (hf_home) {
-        return std::string(hf_home);
+        return std::string(hf_home) + "/hub";
     }
     
-    // Default to ~/.cache/huggingface
+    // Default to ~/.cache/huggingface/hub
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\huggingface";
+        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\.cache\\huggingface";
+    return "C:\\.cache\\huggingface\\hub";
 #else
     const char* home = std::getenv("HOME");
     if (home) {
-        return std::string(home) + "/.cache/huggingface";
+        return std::string(home) + "/.cache/huggingface/hub";
     }
-    return "/tmp/.cache/huggingface";
+    return "/tmp/.cache/huggingface/hub";
 #endif
 }
 
@@ -390,6 +390,54 @@ void LlamaCppServer::load(const std::string& model_name,
     
     std::cout << "[LlamaCpp] Using GGUF: " << gguf_path << std::endl;
     
+    // Get mmproj path for vision models
+    std::string mmproj_path;
+    if (!model_info.mmproj.empty()) {
+        // Parse checkpoint to get repo_id (without variant)
+        std::string repo_id = model_info.checkpoint;
+        size_t colon_pos = model_info.checkpoint.find(':');
+        if (colon_pos != std::string::npos) {
+            repo_id = model_info.checkpoint.substr(0, colon_pos);
+        }
+        
+        // Convert org/model to models--org--model
+        std::string cache_dir_name = "models--";
+        for (char c : repo_id) {
+            cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+        }
+        
+        std::string hf_cache = get_hf_cache_dir();
+        fs::path model_cache_path = fs::path(hf_cache) / cache_dir_name;
+        
+        // Search for mmproj file in the model cache
+        std::cout << "[LlamaCpp] Searching for mmproj '" << model_info.mmproj 
+                  << "' in: " << model_cache_path << std::endl;
+        
+        if (fs::exists(model_cache_path)) {
+            try {
+                for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                    if (entry.is_regular_file()) {
+                        std::string filename = entry.path().filename().string();
+                        if (filename == model_info.mmproj) {
+                            mmproj_path = entry.path().string();
+                            std::cout << "[LlamaCpp] Found mmproj file: " << mmproj_path << std::endl;
+                            break;
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[LlamaCpp] Error during mmproj search: " << e.what() << std::endl;
+            }
+        } else {
+            std::cout << "[LlamaCpp] Model cache path does not exist: " << model_cache_path << std::endl;
+        }
+        
+        if (mmproj_path.empty()) {
+            std::cout << "[LlamaCpp] Warning: mmproj file '" << model_info.mmproj 
+                      << "' not found in cache" << std::endl;
+        }
+    }
+    
     // Choose port
     port_ = choose_port();
     
@@ -414,6 +462,14 @@ void LlamaCppServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
         "--jinja"  // Enable tool use
     };
+    
+    // Add mmproj file if present (for vision models)
+    if (!mmproj_path.empty()) {
+        args.push_back("--mmproj");
+        args.push_back(mmproj_path);
+        // Note: Python implementation adds --no-mmproj-offload for CPU mode
+        // C++ currently only supports GPU mode; CPU fallback would need to be implemented
+    }
     
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (backend_ == "vulkan" || backend_ == "rocm") {
