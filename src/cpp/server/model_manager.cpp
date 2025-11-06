@@ -811,6 +811,7 @@ void ModelManager::download_model(const std::string& model_name,
     
     std::string actual_checkpoint = checkpoint;
     std::string actual_recipe = recipe;
+    std::string actual_mmproj = mmproj;
     
     // Check if model exists in registry
     bool model_registered = model_exists(model_name);
@@ -860,6 +861,15 @@ void ModelManager::download_model(const std::string& model_name,
             actual_checkpoint = info.checkpoint;
             actual_recipe = info.recipe;
         }
+        
+        // Also look up mmproj if not provided (for vision models)
+        if (actual_mmproj.empty()) {
+            auto info = get_model_info(model_name);
+            actual_mmproj = info.mmproj;
+            if (!actual_mmproj.empty()) {
+                std::cout << "[ModelManager] Found mmproj for vision model: " << actual_mmproj << std::endl;
+            }
+        }
     }
     
     // Parse checkpoint
@@ -900,7 +910,7 @@ void ModelManager::download_model(const std::string& model_name,
         download_from_flm(actual_checkpoint, do_not_upgrade);
     } else if (actual_recipe == "llamacpp") {
         // For llamacpp (GGUF) models, use variant-aware download
-        download_from_huggingface(repo_id, variant, mmproj);
+        download_from_huggingface(repo_id, variant, actual_mmproj);
     } else {
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
         download_from_huggingface(repo_id, "", "");
@@ -909,7 +919,7 @@ void ModelManager::download_model(const std::string& model_name,
     // Register if needed
     if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
-                          reasoning, vision, mmproj);
+                          reasoning, vision, actual_mmproj);
     }
 }
 
