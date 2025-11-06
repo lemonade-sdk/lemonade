@@ -722,7 +722,22 @@ std::string ServerManager::make_http_request(
     }
     
     if (res->status != 200) {
-        throw std::runtime_error("HTTP request failed with status: " + std::to_string(res->status));
+        // Try to parse error message from response body
+        std::string error_msg = "HTTP request failed with status: " + std::to_string(res->status);
+        try {
+            auto error_json = nlohmann::json::parse(res->body);
+            if (error_json.contains("error")) {
+                error_msg = error_json["error"].get<std::string>();
+            } else if (error_json.contains("detail")) {
+                error_msg = error_json["detail"].get<std::string>();
+            }
+        } catch (...) {
+            // If parsing fails, just use the generic error with the response body
+            if (!res->body.empty() && res->body.length() < 200) {
+                error_msg += ": " + res->body;
+            }
+        }
+        throw std::runtime_error(error_msg);
     }
     
     return res->body;
