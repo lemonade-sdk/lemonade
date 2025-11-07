@@ -165,3 +165,14 @@ cython_debug/
 #.idea/
 
 .aider*
+
+# Claude files
+CLAUDE.*
+.settings.local.json
+
+# Bruno/GitHub files
+.bruno/
+
+# Cursor files (using .cursor/rules/*.mdc format)
+.cursor/
+.cursor**

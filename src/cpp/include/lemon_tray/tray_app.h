@@ -71,7 +71,6 @@ private:
     
     // Helper functions for command execution
     bool is_server_running_on_port(int port);
-    bool wait_for_server_ready(int port, int timeout_seconds = 30);
     std::pair<int, int> get_server_info();  // Returns {pid, port}
     bool start_ephemeral_server(int port);
     

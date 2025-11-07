@@ -102,6 +102,7 @@ private:
     int port_;
     int ctx_size_;
     bool show_console_;
+    bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;
     
 #ifdef _WIN32

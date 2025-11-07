@@ -42,7 +42,7 @@ setup(
         "zstandard",
         "fastapi",
         "uvicorn[standard]",
-        "openai>=1.81.0,<1.97.1",
+        "openai>=2.0.0,<3.0.0",
         "transformers<=4.53.2",
         "jinja2",
         "tabulate",
