@@ -382,19 +382,14 @@ class WrappedServer(ABC):
         else:
             # Non-streaming response
             try:
-                # Bypass OpenAI client to avoid Pydantic serialization bugs
-                # Make raw HTTP request to get JSON response directly
-                response = requests.post(
-                    f"{self.address()}/chat/completions",
-                    json=openai_client_params,
-                    headers={"Authorization": "Bearer lemonade"},
-                )
-                response.raise_for_status()
+                # Disable streaming for non-streaming requests
+                # pylint: disable=missing-kwoa
+                response = client.chat.completions.create(**openai_client_params)
 
                 # Show telemetry after completion
                 self.telemetry.show_telemetry()
 
-                return response.json()
+                return response
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error("Error during chat completion: %s", str(e))
@@ -482,19 +477,14 @@ class WrappedServer(ABC):
         else:
             # Non-streaming response
             try:
-                # Bypass OpenAI client to avoid Pydantic serialization bugs
-                # Make raw HTTP request to get JSON response directly
-                response = requests.post(
-                    f"{self.address()}/completions",
-                    json=openai_client_params,
-                    headers={"Authorization": "Bearer lemonade"},
-                )
-                response.raise_for_status()
+                # Disable streaming for non-streaming requests
+                # pylint: disable=missing-kwoa
+                response = client.completions.create(**openai_client_params)
 
                 # Show telemetry after completion
                 self.telemetry.show_telemetry()
 
-                return response.json()
+                return response
 
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error("Error during completion: %s", str(e))
