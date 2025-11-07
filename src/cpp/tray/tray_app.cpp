@@ -643,20 +643,6 @@ bool TrayApp::is_server_running_on_port(int port) {
     }
 }
 
-// Helper: Wait for server to be ready
-bool TrayApp::wait_for_server_ready(int port, int timeout_seconds) {
-    auto server_mgr = std::make_unique<ServerManager>();
-    for (int i = 0; i < timeout_seconds * 10; ++i) {
-        try {
-            auto health = server_mgr->get_health();
-            return true;
-        } catch (...) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-    return false;
-}
-
 // Helper: Get server info (returns {pid, port} or {0, 0} if not found)
 std::pair<int, int> TrayApp::get_server_info() {
     // Query OS for listening TCP connections and find lemonade-router.exe
@@ -961,18 +947,12 @@ int TrayApp::execute_run_command() {
     std::cout << "Running model: " << model_name << std::endl;
     
     // The run command will:
-    // 1. Start server (handled by main run() after this returns)
-    // 2. Wait for server to be ready
-    // 3. Load the model
-    // 4. Open browser
-    // 5. Show tray (handled by main run() after this returns)
+    // 1. Start server (already done in main run() before this function is called)
+    // 2. Load the model
+    // 3. Open browser
+    // 4. Show tray (handled by main run() after this returns)
     
-    // Wait for server to be ready
-    std::cout << "Waiting for server to be ready..." << std::endl;
-    if (!wait_for_server_ready(config_.port, 30)) {
-        std::cerr << "Server did not become ready in time" << std::endl;
-        return 1;
-    }
+    // Note: Server is already started and ready - start_server() does health checks internally
     
     // Load the model
     std::cout << "Loading model " << model_name << "..." << std::endl;
@@ -1690,7 +1670,11 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    std::cout << "Shutting down server..." << std::endl;
+    // Only print shutdown message for persistent server commands (serve/run)
+    // Don't print for ephemeral commands (list/pull/delete/status/stop)
+    if (config_.command == "serve" || config_.command == "run") {
+        std::cout << "Shutting down server..." << std::endl;
+    }
     
     // Only print debug message if we actually have something to shutdown
     if (server_manager_ || tray_) {

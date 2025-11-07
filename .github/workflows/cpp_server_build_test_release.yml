@@ -539,7 +539,7 @@ jobs:
           
           Write-Host "Model downloaded successfully!" -ForegroundColor Green
 
-      - name: Start C++ Server and Test Endpoints
+      - name: Test C++ Server Endpoints (Serve and Run Commands)
         shell: PowerShell
         env:
           HF_HOME: "${{ env.HF_HOME }}"
@@ -569,46 +569,170 @@ jobs:
               
               # Show process list if requested
               if ($showProcessList) {
-                  Write-Host "Current lemonade/router processes:"
+                  Write-Host "Current lemonade server processes:"
                   Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*router*" } | Format-Table ProcessName, Id, StartTime -AutoSize
               }
               
-              # Show router logs
-              $stdoutLog = "$env:TEMP\lemonade-router-stdout.log"
-              $stderrLog = "$env:TEMP\lemonade-router-stderr.log"
-              
-              if (Test-Path $stdoutLog) {
-                  Write-Host "`nRouter STDOUT (last $tailLines lines):" -ForegroundColor Cyan
-                  Get-Content $stdoutLog -Tail $tailLines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+              # Show server logs
+              $serverLog = "$env:TEMP\lemonade-server.log"
+              if (Test-Path $serverLog) {
+                  Write-Host "`nServer log (last $tailLines lines):" -ForegroundColor Cyan
+                  Get-Content $serverLog -Tail $tailLines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
               } else {
-                  Write-Host "`nRouter STDOUT log not found at: $stdoutLog" -ForegroundColor Yellow
-              }
-              
-              if (Test-Path $stderrLog) {
-                  $stderrContent = Get-Content $stderrLog -Raw -ErrorAction SilentlyContinue
-                  if ($stderrContent -and $stderrContent.Trim()) {
-                      Write-Host "`nRouter STDERR (last $tailLines lines):" -ForegroundColor Red
-                      Get-Content $stderrLog -Tail $tailLines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ -ForegroundColor Red }
-                  }
+                  Write-Host "`nServer log not found at: $serverLog" -ForegroundColor Yellow
               }
               
               Write-Host "=== End Server Diagnostics ===" -ForegroundColor Yellow
           }
           
-          $routerExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-router.exe"
+          # Function to wait for server port to be available
+          function Wait-ForServerPort {
+              param(
+                  [int]$port = 8000,
+                  [int]$maxAttempts = 12,
+                  [int]$sleepSeconds = 10,
+                  [object]$serverProcess = $null
+              )
+              
+              Write-Host "Waiting for server port $port to become available..." -ForegroundColor Cyan
+              $attempt = 0
+              while ($attempt -lt $maxAttempts) {
+                  $portCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -WarningAction SilentlyContinue
+                  if ($portCheck.TcpTestSucceeded) {
+                      Write-Host "Server is ready on port ${port}!" -ForegroundColor Green
+                      return $true
+                  }
+                  
+                  # Check if server process is still alive (if provided)
+                  if ($serverProcess) {
+                      $serverStillRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+                      if (-not $serverStillRunning) {
+                          Write-Host "ERROR: Server process has died!" -ForegroundColor Red
+                          Show-ServerDiagnostics -context "Server Process Died" -showProcessList
+                          return $false
+                      }
+                  }
+                  
+                  $attempt++
+                  Write-Host "Attempt $attempt of ${maxAttempts}: Server not ready yet, waiting..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds $sleepSeconds
+              }
+              
+              Write-Host "ERROR: Server port never became available!" -ForegroundColor Red
+              Show-ServerDiagnostics -context "Port Never Available" -serverProcess $serverProcess -showProcessList
+              return $false
+          }
           
-          Write-Host "Starting C++ server for endpoint testing..." -ForegroundColor Cyan
+          # Function to test server endpoints
+          function Test-ServerEndpoints {
+              param(
+                  [int]$port = 8000,
+                  [string]$model = "Llama-3.2-1B-Instruct-Hybrid",
+                  [object]$serverProcess = $null
+              )
+              
+              # Test /health endpoint
+              Write-Host "Testing /health endpoint on port ${port}..." -ForegroundColor Cyan
+              try {
+                  $response = Invoke-WebRequest -Uri "http://localhost:${port}/api/v1/health" -UseBasicParsing
+                  
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "[OK] /health status code is 200" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /health status code is $($response.StatusCode)" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Health Check Failed" -serverProcess $serverProcess
+                      return $false
+                  }
+                  
+                  $jsonContent = $response.Content | ConvertFrom-Json
+                  if ($jsonContent) {
+                      Write-Host "[OK] /health JSON content: $($jsonContent | ConvertTo-Json -Compress)" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /health JSON content is empty" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Health JSON Empty" -serverProcess $serverProcess
+                      return $false
+                  }
+              } catch {
+                  Write-Host "ERROR: Failed to call /health endpoint: $_" -ForegroundColor Red
+                  Show-ServerDiagnostics -context "Health Endpoint Exception" -serverProcess $serverProcess
+                  return $false
+              }
+              
+              # Test /chat/completions endpoint with real LLM generation
+              Write-Host "Testing /chat/completions endpoint with model ${model}..." -ForegroundColor Cyan
+              try {
+                  $body = @{
+                      model = $model
+                      messages = @(
+                          @{
+                              role = "user"
+                              content = "What is the population of Paris?"
+                          }
+                      )
+                      stream = $false
+                  } | ConvertTo-Json
+                  
+                  $response = Invoke-WebRequest `
+                      -UseBasicParsing `
+                      -Uri "http://localhost:${port}/api/v1/chat/completions" `
+                      -Method POST `
+                      -Headers @{ "Content-Type" = "application/json" } `
+                      -Body $body
+                  
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "[OK] /chat/completions status code is 200" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /chat/completions status code is $($response.StatusCode)" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Completions HTTP Error" -serverProcess $serverProcess
+                      return $false
+                  }
+                  
+                  $jsonContent = $response.Content | ConvertFrom-Json
+                  $llmAnswer = $jsonContent.choices[0].message.content
+                  if ($llmAnswer) {
+                      Write-Host "[OK] /chat/completions response: $llmAnswer" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /chat/completions JSON content is empty" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Completions JSON Empty" -serverProcess $serverProcess
+                      return $false
+                  }
+              } catch {
+                  Write-Host "ERROR: /chat/completions test failed: $_" -ForegroundColor Red
+                  Show-ServerDiagnostics -context "Completions Exception" -serverProcess $serverProcess
+                  return $false
+              }
+              
+              return $true
+          }
           
-          # Create log files for stdout and stderr
-          $stdoutLog = "$env:TEMP\lemonade-router-stdout.log"
-          $stderrLog = "$env:TEMP\lemonade-router-stderr.log"
+          # Function to show process telemetry
+          function Show-ProcessTelemetry {
+              Write-Host "=== Process Telemetry ===" -ForegroundColor Cyan
+              Write-Host "Current lemonade server processes:"
+              Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*router*" } | Format-Table ProcessName, Id, StartTime -AutoSize
+              Write-Host "=== End Process Telemetry ===" -ForegroundColor Cyan
+          }
           
-          # Start the server in the background with output redirection (no 'serve' argument - router just starts directly)
-          $serverProcess = Start-Process -FilePath $routerExe -PassThru -NoNewWindow -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+          # Function to stop server using CLI
+          function Stop-ServerViaCli {
+              param([string]$cliPath)
+              Write-Host "Stopping server using CLI stop command..." -ForegroundColor Cyan
+              & $cliPath stop
+              Start-Sleep -Seconds 3
+          }
           
-          Write-Host "Server output will be logged to:" -ForegroundColor Cyan
-          Write-Host "  STDOUT: $stdoutLog" -ForegroundColor Gray
-          Write-Host "  STDERR: $stderrLog" -ForegroundColor Gray
+          $cliExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $testPort = 8000
+          
+          # === Test 1: CLI Serve Command ===
+          Write-Host "`n========================================" -ForegroundColor Magenta
+          Write-Host "TEST 1: CLI Serve Command (pre-downloaded model)" -ForegroundColor Magenta
+          Write-Host "========================================`n" -ForegroundColor Magenta
+          
+          Write-Host "Starting server with 'serve --no-tray' command..." -ForegroundColor Cyan
+          
+          # Start the server using serve command in background (no-tray mode for CI)
+          $serverProcess = Start-Process -FilePath $cliExe -ArgumentList "serve", "--no-tray" -PassThru -NoNewWindow
           
           Write-Host "Server started with PID: $($serverProcess.Id)" -ForegroundColor Green
           Write-Host "Waiting for server to initialize..." -ForegroundColor Cyan
@@ -616,119 +740,59 @@ jobs:
           # Wait for server to start
           Start-Sleep -Seconds 15
           
-          # Check what processes are running
-          Write-Host "=== Process Telemetry ===" -ForegroundColor Cyan
-          Write-Host "Current lemonade/router processes:"
-          Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*router*" } | Format-Table ProcessName, Id, StartTime -AutoSize
-          
+          Show-ProcessTelemetry
           Show-ServerDiagnostics -context "Initial Startup" -showProcessList
-          Write-Host "=== End Process Telemetry ===" -ForegroundColor Cyan
           
           # Wait for the server port to come up
-          Write-Host "Waiting for server port 8000 to become available..." -ForegroundColor Cyan
-          $maxAttempts = 12
-          $attempt = 0
-          while ($attempt -lt $maxAttempts) {
-              $portCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -WarningAction SilentlyContinue
-              if ($portCheck.TcpTestSucceeded) {
-                  Write-Host "Server is ready on port 8000!" -ForegroundColor Green
-                  break
-              }
-              
-              # Check if server process is still alive
-              $serverStillRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
-              if (-not $serverStillRunning) {
-                  Write-Host "ERROR: Server process has died!" -ForegroundColor Red
-                  Show-ServerDiagnostics -context "Server Process Died" -showProcessList
-                  exit 1
-              }
-              
-              $attempt++
-              Write-Host "Attempt $attempt of ${maxAttempts}: Server not ready yet, waiting..." -ForegroundColor Yellow
-              Start-Sleep -Seconds 10
-          }
-          
-          if ($attempt -eq $maxAttempts) {
-              Write-Host "ERROR: Server port never became available!" -ForegroundColor Red
-              Show-ServerDiagnostics -context "Port Never Available" -serverProcess $serverProcess -showProcessList
+          if (-not (Wait-ForServerPort -port $testPort -serverProcess $serverProcess)) {
               exit 1
           }
           
-          # Test /health endpoint
-          Write-Host "Testing /health endpoint..." -ForegroundColor Cyan
-          try {
-              $response = Invoke-WebRequest -Uri http://localhost:8000/api/v1/health -UseBasicParsing
-              
-              if ($response.StatusCode -eq 200) {
-                  Write-Host "[OK] /health status code is 200" -ForegroundColor Green
-              } else {
-                  Write-Host "ERROR: /health status code is $($response.StatusCode)" -ForegroundColor Red
-                  Show-ServerDiagnostics -context "Health Check Failed" -serverProcess $serverProcess
-                  exit 1
-              }
-              
-              $jsonContent = $response.Content | ConvertFrom-Json
-              if ($jsonContent) {
-                  Write-Host "[OK] /health JSON content: $($jsonContent | ConvertTo-Json -Compress)" -ForegroundColor Green
-              } else {
-                  Write-Host "ERROR: /health JSON content is empty" -ForegroundColor Red
-                  Show-ServerDiagnostics -context "Health JSON Empty" -serverProcess $serverProcess
-                  exit 1
-              }
-          } catch {
-              Write-Host "ERROR: Failed to call /health endpoint: $_" -ForegroundColor Red
-              Show-ServerDiagnostics -context "Health Endpoint Exception" -serverProcess $serverProcess
+          # Test endpoints
+          if (-not (Test-ServerEndpoints -port $testPort -model "Llama-3.2-1B-Instruct-Hybrid" -serverProcess $serverProcess)) {
               exit 1
           }
           
-          # Test /chat/completions endpoint with real LLM generation
-          Write-Host "Testing /chat/completions endpoint..." -ForegroundColor Cyan
-          try {
-              $response = Invoke-WebRequest `
-                  -UseBasicParsing `
-                  -Uri "http://localhost:8000/api/v1/chat/completions" `
-                  -Method POST `
-                  -Headers @{ "Content-Type" = "application/json" } `
-                  -Body '{
-                      "model": "Llama-3.2-1B-Instruct-Hybrid",
-                      "messages": [
-                          {
-                              "role": "user",
-                              "content": "What is the population of Paris?"
-                          }
-                      ],
-                      "stream": false
-                  }'
-              
-              if ($response.StatusCode -eq 200) {
-                  Write-Host "[OK] /chat/completions status code is 200" -ForegroundColor Green
-              } else {
-                  Write-Host "ERROR: /chat/completions status code is $($response.StatusCode)" -ForegroundColor Red
-                  Show-ServerDiagnostics -context "Completions HTTP Error" -serverProcess $serverProcess
-                  exit 1
-              }
-              
-              $jsonContent = $response.Content | ConvertFrom-Json
-              $llmAnswer = $jsonContent.choices[0].message.content
-              if ($llmAnswer) {
-                  Write-Host "[OK] /chat/completions JSON content is not empty: $llmAnswer" -ForegroundColor Green
-              } else {
-                  Write-Host "ERROR: /chat/completions JSON content is empty" -ForegroundColor Red
-                  Show-ServerDiagnostics -context "Completions JSON Empty" -serverProcess $serverProcess
-                  exit 1
-              }
-          } catch {
-              Write-Host "ERROR: /chat/completions test failed: $_" -ForegroundColor Red
-              Show-ServerDiagnostics -context "Completions Exception" -serverProcess $serverProcess
+          Stop-ServerViaCli -cliPath $cliExe
+          
+          Write-Host "Test 1 completed successfully!" -ForegroundColor Green
+          
+          # === Test 2: CLI Run Command ===
+          Write-Host "`n========================================" -ForegroundColor Magenta
+          Write-Host "TEST 2: CLI Run Command (with auto-download)" -ForegroundColor Magenta
+          Write-Host "========================================`n" -ForegroundColor Magenta
+          
+          Write-Host "Starting server with 'run Qwen3-0.6B-GGUF' command..." -ForegroundColor Cyan
+          
+          # Start the server using run command in background (no-tray mode for CI)
+          $serverProcess = Start-Process -FilePath $cliExe -ArgumentList "run", "Qwen3-0.6B-GGUF", "--no-tray" -PassThru -NoNewWindow
+          
+          Write-Host "Server started with PID: $($serverProcess.Id)" -ForegroundColor Green
+          Write-Host "Waiting for model download and server initialization..." -ForegroundColor Cyan
+          
+          # Wait longer for potential model download
+          Start-Sleep -Seconds 30
+          
+          Show-ProcessTelemetry
+          
+          # Wait for the server port to come up
+          if (-not (Wait-ForServerPort -port $testPort -maxAttempts 18 -serverProcess $serverProcess)) {
+              Show-ServerDiagnostics -context "Run Command Startup Failed" -showProcessList
               exit 1
           }
           
-          # Stop the server
-          Write-Host "Stopping server..." -ForegroundColor Cyan
-          Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 2
+          # Test endpoints
+          if (-not (Test-ServerEndpoints -port $testPort -model "Qwen3-0.6B-GGUF" -serverProcess $serverProcess)) {
+              Show-ServerDiagnostics -context "Run Command Test Failed" -showProcessList
+              exit 1
+          }
           
-          Write-Host "Server endpoint tests completed successfully!" -ForegroundColor Green
+          Stop-ServerViaCli -cliPath $cliExe
+          
+          Write-Host "Test 2 completed successfully!" -ForegroundColor Green
+          Write-Host "`n========================================" -ForegroundColor Green
+          Write-Host "ALL TESTS PASSED!" -ForegroundColor Green
+          Write-Host "========================================`n" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -1299,6 +1363,276 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  test-deb-endpoints:
+    name: Test .deb Endpoints (Serve and Run Commands)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Extract .deb package
+        run: |
+          echo "Extracting .deb package..."
+          
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
+          if [ ! -f "$DEB_FILE" ]; then
+              echo "ERROR: .deb file not found!"
+              ls -la
+              exit 1
+          fi
+          
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
+          
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
+
+      - name: Verify binaries work
+        run: |
+          echo "Verifying binaries..."
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Binaries verified!"
+
+      - name: Download test model (Qwen3-0.6B)
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Downloading Qwen3-0.6B-GGUF model for testing..."
+          lemonade-server-beta pull Qwen3-0.6B-GGUF
+          
+          if [ $? -ne 0 ]; then
+              echo "ERROR: Failed to download model"
+              exit 1
+          fi
+          
+          echo "Model downloaded successfully!"
+
+      - name: Test Server Endpoints (Serve and Run Commands)
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          
+          TEST_PORT=8000
+          
+          # Helper function to wait for server port
+          wait_for_server_port() {
+              local port=$1
+              local max_attempts=${2:-12}
+              local sleep_seconds=${3:-10}
+              
+              echo "Waiting for server port $port to become available..."
+              for i in $(seq 1 $max_attempts); do
+                  if nc -z localhost $port 2>/dev/null; then
+                      echo "Server is ready on port $port!"
+                      return 0
+                  fi
+                  echo "Attempt $i of $max_attempts: Server not ready yet, waiting..."
+                  sleep $sleep_seconds
+              done
+              
+              echo "ERROR: Server port never became available!"
+              return 1
+          }
+          
+          # Helper function to test endpoints
+          test_server_endpoints() {
+              local port=$1
+              local model=$2
+              
+              echo "Testing /health endpoint on port $port..."
+              health_response=$(curl -s -w "\n%{http_code}" "http://localhost:${port}/api/v1/health")
+              health_body=$(echo "$health_response" | head -n -1)
+              health_code=$(echo "$health_response" | tail -n 1)
+              
+              if [ "$health_code" != "200" ]; then
+                  echo "ERROR: /health status code is $health_code"
+                  return 1
+              fi
+              echo "[OK] /health status code is 200"
+              echo "[OK] /health JSON content: $health_body"
+              
+              echo "Testing /chat/completions endpoint with model $model..."
+              chat_response=$(curl -s -w "\n%{http_code}" \
+                  -X POST \
+                  "http://localhost:${port}/api/v1/chat/completions" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"model\": \"$model\", \"messages\": [{\"role\": \"user\", \"content\": \"What is the population of Paris?\"}], \"stream\": false}")
+              
+              chat_body=$(echo "$chat_response" | head -n -1)
+              chat_code=$(echo "$chat_response" | tail -n 1)
+              
+              if [ "$chat_code" != "200" ]; then
+                  echo "ERROR: /chat/completions status code is $chat_code"
+                  echo "Response body: $chat_body"
+                  return 1
+              fi
+              echo "[OK] /chat/completions status code is 200"
+              
+              # Extract and display the response
+              llm_answer=$(echo "$chat_body" | jq -r '.choices[0].message.content' 2>/dev/null || echo "")
+              if [ -n "$llm_answer" ] && [ "$llm_answer" != "null" ]; then
+                  echo "[OK] /chat/completions response: $llm_answer"
+              else
+                  echo "ERROR: /chat/completions JSON content is empty"
+                  return 1
+              fi
+              
+              return 0
+          }
+          
+          # Helper function to show process info
+          show_process_telemetry() {
+              echo "=== Process Telemetry ==="
+              echo "Current lemonade server processes:"
+              ps aux | grep -E "lemonade|router" | grep -v grep || echo "No processes found"
+              echo "=== End Process Telemetry ==="
+          }
+          
+          # Helper function to stop server
+          stop_server_via_cli() {
+              echo "Stopping server using CLI stop command..."
+              lemonade-server-beta stop
+              sleep 3
+          }
+          
+          echo ""
+          echo "========================================"
+          echo "TEST 1: CLI Serve Command (pre-downloaded model)"
+          echo "========================================"
+          echo ""
+          
+          echo "Starting server with 'serve' command..."
+          lemonade-server-beta serve &
+          SERVER_PID=$!
+          
+          echo "Server started with PID: $SERVER_PID"
+          echo "Waiting for server to initialize..."
+          sleep 15
+          
+          show_process_telemetry
+          
+          if ! wait_for_server_port $TEST_PORT; then
+              echo "ERROR: Server failed to start"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          if ! test_server_endpoints $TEST_PORT "Qwen3-0.6B-GGUF"; then
+              echo "ERROR: Endpoint tests failed"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          stop_server_via_cli
+          
+          echo "Test 1 completed successfully!"
+          
+          echo ""
+          echo "========================================"
+          echo "TEST 2: CLI Run Command (with auto-download)"
+          echo "========================================"
+          echo ""
+          
+          echo "Starting server with 'run Qwen3-1.7B-GGUF' command..."
+          lemonade-server-beta run Qwen3-1.7B-GGUF &
+          SERVER_PID=$!
+          
+          echo "Server started with PID: $SERVER_PID"
+          echo "Waiting for model download and server initialization..."
+          sleep 30
+          
+          show_process_telemetry
+          
+          if ! wait_for_server_port $TEST_PORT 18; then
+              echo "ERROR: Server failed to start"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          if ! test_server_endpoints $TEST_PORT "Qwen3-1.7B-GGUF"; then
+              echo "ERROR: Endpoint tests failed"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          stop_server_via_cli
+          
+          echo "Test 2 completed successfully!"
+          echo ""
+          echo "========================================"
+          echo "ALL TESTS PASSED!"
+          echo "========================================"
+          echo ""
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+          
+          echo ""
+          echo "=== Check for llama-server processes ==="
+          ps aux | grep -E "llama-server|lemonade" | grep -v grep || echo "No lemonade/llama-server processes found"
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
@@ -1317,6 +1651,7 @@ jobs:
       - test-exe-rai-cpu
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
+      - test-deb-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}

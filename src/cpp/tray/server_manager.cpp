@@ -52,6 +52,7 @@ ServerManager::ServerManager()
     , port_(8000)
     , ctx_size_(4096)
     , show_console_(false)
+    , is_ephemeral_(false)
     , server_started_(false)
 #ifdef _WIN32
     , process_handle_(nullptr)
@@ -60,7 +61,11 @@ ServerManager::ServerManager()
 }
 
 ServerManager::~ServerManager() {
-    stop_server();
+    // Only stop server if this instance actually started it
+    // Don't clean up servers we're just querying (e.g., in status commands)
+    if (server_started_ && server_pid_ > 0) {
+        stop_server();
+    }
 }
 
 bool ServerManager::start_server(
@@ -85,6 +90,7 @@ bool ServerManager::start_server(
     log_level_ = log_level;
     llamacpp_backend_ = llamacpp_backend;
     show_console_ = show_console;
+    is_ephemeral_ = is_ephemeral;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -115,7 +121,17 @@ bool ServerManager::start_server(
             
 #ifndef _WIN32
             // Write PID file on Linux for efficient server discovery
+            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
             write_pid_file();
+            
+            // Verify PID file was written
+            std::ifstream verify_file("/tmp/lemonade-router.pid");
+            if (verify_file.good()) {
+                DEBUG_LOG(this, "PID file verified");
+            } else {
+                std::cerr << "[ServerManager] ERROR: PID file was not created!" << std::endl;
+            }
+            verify_file.close();
 #endif
             
             return true;
@@ -178,7 +194,10 @@ bool ServerManager::stop_server() {
     remove_pid_file();
 #endif
     
-    std::cout << "Server stopped successfully" << std::endl;
+    // Only print message for non-ephemeral servers
+    if (!is_ephemeral_) {
+        std::cout << "Server stopped successfully" << std::endl;
+    }
     DEBUG_LOG(this, "Server stopped");
     return true;
 }
@@ -474,7 +493,7 @@ bool ServerManager::spawn_process() {
     }
     
     if (pid == 0) {
-        // Child process - redirect stdout/stderr to log file if specified
+        // Child process - redirect stdout/stderr to log file if specified, or /dev/null if not
         if (!log_file_.empty()) {
             int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (log_fd >= 0) {
@@ -483,6 +502,14 @@ bool ServerManager::spawn_process() {
                 close(log_fd);
             } else {
                 std::cerr << "Failed to open log file: " << log_file_ << std::endl;
+            }
+        } else {
+            // Redirect to /dev/null to suppress output (for ephemeral servers)
+            int null_fd = open("/dev/null", O_WRONLY);
+            if (null_fd >= 0) {
+                dup2(null_fd, STDOUT_FILENO);
+                dup2(null_fd, STDERR_FILENO);
+                close(null_fd);
             }
         }
         
@@ -660,13 +687,17 @@ bool ServerManager::terminate_router_tree() {
 
 void ServerManager::write_pid_file() {
     std::string pid_file_path = "/tmp/lemonade-router.pid";
+    DEBUG_LOG(this, "write_pid_file() called - PID: " << server_pid_ << ", Port: " << port_);
+    
     std::ofstream pid_file(pid_file_path);
     if (pid_file.is_open()) {
         pid_file << server_pid_ << "\n" << port_ << "\n";
         pid_file.close();
         DEBUG_LOG(this, "Wrote PID file: " << pid_file_path << " (PID: " << server_pid_ << ", Port: " << port_ << ")");
+        std::cout << "[ServerManager] PID file created: " << pid_file_path << std::endl;
     } else {
-        std::cerr << "[ServerManager] Warning: Failed to write PID file: " << pid_file_path << std::endl;
+        std::cerr << "[ServerManager] ERROR: Failed to open PID file for writing: " << pid_file_path << std::endl;
+        std::cerr << "[ServerManager] Error: " << strerror(errno) << std::endl;
     }
 }
 
@@ -709,7 +740,22 @@ std::string ServerManager::make_http_request(
     }
     
     if (res->status != 200) {
-        throw std::runtime_error("HTTP request failed with status: " + std::to_string(res->status));
+        // Try to parse error message from response body
+        std::string error_msg = "HTTP request failed with status: " + std::to_string(res->status);
+        try {
+            auto error_json = nlohmann::json::parse(res->body);
+            if (error_json.contains("error")) {
+                error_msg = error_json["error"].get<std::string>();
+            } else if (error_json.contains("detail")) {
+                error_msg = error_json["detail"].get<std::string>();
+            }
+        } catch (...) {
+            // If parsing fails, just use the generic error with the response body
+            if (!res->body.empty() && res->body.length() < 200) {
+                error_msg += ": " + res->body;
+            }
+        }
+        throw std::runtime_error(error_msg);
     }
     
     return res->body;
