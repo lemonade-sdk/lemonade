@@ -48,6 +48,14 @@ set(JSON_Install OFF CACHE INTERNAL "")
 set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
 set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
 
+# Disable OpenSSL in cpp-httplib (not needed for localhost HTTP server)
+# All HTTPS downloads are handled by libcurl with native SSL backends:
+#   - Windows: Schannel (native)
+#   - macOS: SecureTransport (native)
+#   - Linux: OpenSSL (system library, not bundled)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE BOOL "" FORCE)
+
 # cpp-httplib (MIT License)
 FetchContent_Declare(httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
