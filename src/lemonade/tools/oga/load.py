@@ -4,6 +4,7 @@
 
 import argparse
 import subprocess
+import sys
 import os
 import json
 import webbrowser
@@ -368,6 +369,35 @@ class OgaLoad(FirstTool):
                     "NPU functionality may not work properly."
                 )
                 _open_driver_install_page()
+
+            # Setup DLL paths for NPU/hybrid inference
+            env_path = os.path.dirname(sys.executable)
+            dll_source_path = os.path.join(
+                env_path, "Lib", "site-packages", "onnxruntime_genai"
+            )
+            required_dlls = ["libutf8_validity.dll", "abseil_dll.dll"]
+
+            # Validate that all required DLLs exist in the source directory
+            missing_dlls = []
+
+            for dll_name in required_dlls:
+                dll_source = os.path.join(dll_source_path, dll_name)
+                if not os.path.exists(dll_source):
+                    missing_dlls.append(dll_source)
+
+            if missing_dlls:
+                dll_list = "\n  - ".join(missing_dlls)
+                raise RuntimeError(
+                    f"Required DLLs not found for {device} inference:\n  - {dll_list}\n"
+                    f"Please ensure your RyzenAI installation is complete and supports {device}.\n"
+                    "Please reinstall the RyzenAI Software for your platform. Run:\n"
+                    "    pip install lemonade-sdk[oga-ryzenai]\n"
+                )
+
+            # Add the DLL source directory to PATH
+            current_path = os.environ.get("PATH", "")
+            if dll_source_path not in current_path:
+                os.environ["PATH"] = dll_source_path + os.pathsep + current_path
 
     @staticmethod
     def _is_preoptimized_model(input_model_path):

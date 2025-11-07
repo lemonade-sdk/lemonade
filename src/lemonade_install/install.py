@@ -52,7 +52,7 @@ def _get_ryzenai_version_info(device=None):
 
         if Version(og.__version__) >= Version("0.7.0"):
             oga_path = os.path.dirname(og.__file__)
-            if og.__version__ in ("0.9.2",):
+            if og.__version__ in ("0.9.2", "0.9.2.1"):
                 return "1.6.0", oga_path
             else:
                 raise ValueError(
