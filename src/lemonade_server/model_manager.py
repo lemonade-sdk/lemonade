@@ -8,8 +8,16 @@ from importlib.metadata import distributions
 from lemonade_server.pydantic_models import PullConfig
 from lemonade_server.pydantic_models import PullConfig
 from lemonade.cache import DEFAULT_CACHE_DIR
-from lemonade.tools.llamacpp.utils import parse_checkpoint, download_gguf
+from lemonade.tools.llamacpp.utils import (
+    parse_checkpoint,
+    download_gguf,
+    resolve_local_gguf_model,
+)
 from lemonade.common.network import custom_snapshot_download
+from lemonade.tools.oga.migration import (
+    detect_incompatible_ryzenai_models,
+    delete_incompatible_models,
+)
 
 USER_MODELS_FILE = os.path.join(DEFAULT_CACHE_DIR, "user_models.json")
 
@@ -61,9 +69,16 @@ class ModelManager:
 
         # Add the model name as a key in each entry, to make it easier
         # to access later
-
+        # Also convert labels to boolean fields for LoadConfig compatibility
         for key, value in models.items():
             value["model_name"] = key
+
+            # Convert labels to boolean fields for backwards compatibility with LoadConfig
+            labels = value.get("labels", [])
+            if "reasoning" in labels and "reasoning" not in value:
+                value["reasoning"] = True
+            if "vision" in labels and "vision" not in value:
+                value["vision"] = True
 
         return models
 
@@ -88,6 +103,8 @@ class ModelManager:
         Returns a dictionary of locally available models.
         For GGUF models with variants, checks if the specific variant files exist.
         """
+        from huggingface_hub.constants import HF_HUB_CACHE
+
         downloaded_models = {}
         downloaded_checkpoints = self.downloaded_hf_checkpoints
 
@@ -106,6 +123,19 @@ class ModelManager:
                 checkpoint = model_info["checkpoint"]
                 base_checkpoint, variant = parse_checkpoint(checkpoint)
 
+                # Special handling for locally uploaded user models (not internet-downloaded)
+                if (
+                    model.startswith("user.")
+                    and model_info.get("source") == "local_upload"
+                ):
+                    # Locally uploaded model: checkpoint is in cache directory format (models--xxx)
+                    local_model_path = os.path.join(HF_HUB_CACHE, base_checkpoint)
+                    if os.path.exists(local_model_path):
+                        downloaded_models[model] = model_info
+                    continue
+
+                # For all other models (server models and internet-downloaded user models),
+                # use the standard verification logic with variant checks
                 if base_checkpoint in downloaded_checkpoints:
                     # For GGUF models with variants, verify the specific variant files exist
                     if variant and model_info.get("recipe") == "llamacpp":
@@ -146,6 +176,55 @@ class ModelManager:
                         # For non-GGUF models or GGUF without variants, use the original logic
                         downloaded_models[model] = model_info
         return downloaded_models
+
+    def register_local_model(
+        self,
+        model_name: str,
+        checkpoint: str,
+        recipe: str,
+        reasoning: bool = False,
+        vision: bool = False,
+        mmproj: str = "",
+        snapshot_path: str = "",
+    ):
+
+        model_name_clean = model_name[5:]
+
+        # Prepare model info
+        labels = ["custom"]
+        if reasoning:
+            labels.append("reasoning")
+        if vision:
+            labels.append("vision")
+
+        new_user_model = {
+            "checkpoint": checkpoint,
+            "recipe": recipe,
+            "suggested": True,
+            "labels": labels,
+            "source": "local_upload",
+        }
+        if mmproj:
+            new_user_model["mmproj"] = mmproj
+
+        # Load existing user models
+        user_models = {}
+        if os.path.exists(USER_MODELS_FILE):
+            with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                user_models = json.load(file)
+
+        # Check for conflicts
+        if model_name_clean in user_models:
+            raise ValueError(
+                f"{model_name_clean} is already registered."
+                f"Please use a different model name or delete the existing model."
+            )
+
+        # Save to user_models.json
+        user_models[model_name_clean] = new_user_model
+        os.makedirs(os.path.dirname(USER_MODELS_FILE), exist_ok=True)
+        with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+            json.dump(user_models, file)
 
     @property
     def downloaded_models_enabled(self) -> dict:
@@ -328,11 +407,23 @@ class ModelManager:
                         f"Please manually install FLM using 'lemonade-install --flm'."
                     ) from e
             elif "gguf" in checkpoint_to_download.lower():
-                download_gguf(
-                    gguf_model_config.checkpoint,
-                    gguf_model_config.mmproj,
-                    do_not_upgrade=do_not_upgrade,
+                # Parse checkpoint to check local cache first
+                base_checkpoint, variant = parse_checkpoint(
+                    gguf_model_config.checkpoint
                 )
+                local_result = resolve_local_gguf_model(
+                    base_checkpoint, variant, gguf_model_config.mmproj
+                )
+
+                # Only download if not found locally
+                if not local_result:
+                    download_gguf(
+                        gguf_model_config.checkpoint,
+                        gguf_model_config.mmproj,
+                        do_not_upgrade=do_not_upgrade,
+                    )
+                else:
+                    print(f"Model already exists locally, skipping download")
             else:
                 custom_snapshot_download(
                     checkpoint_to_download, do_not_upgrade=do_not_upgrade
@@ -342,6 +433,11 @@ class ModelManager:
             # We do this registration after the download so that we don't register
             # any incorrectly configured models where the download would fail
             if new_registration_model_config:
+                # For models downloaded from the internet (HuggingFace),
+                # keep the original checkpoint format (e.g., "amd/Llama-3.2-1B-Instruct-...")
+                # Do NOT convert to cache directory format - that's only for locally uploaded models
+                new_user_model["checkpoint"] = checkpoint
+
                 if os.path.exists(USER_MODELS_FILE):
                     with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
                         user_models: dict = json.load(file)
@@ -444,6 +540,8 @@ class ModelManager:
         Deletes the specified model from local storage.
         For GGUF models with variants, only deletes the specific variant files.
         """
+        from huggingface_hub.constants import HF_HUB_CACHE
+
         if model_name not in self.supported_models:
             raise ValueError(
                 f"Model {model_name} is not supported. Please choose from the following: "
@@ -464,6 +562,37 @@ class ModelManager:
             except subprocess.CalledProcessError as e:
                 raise ValueError(f"Failed to delete FLM model {model_name}: {e}") from e
 
+        if checkpoint.startswith("models--"):
+            # This is already in cache directory format (local model)
+            # Extract just the base directory name (models--{name}) from checkpoint
+            # which might contain full file path like models--name\files\model.gguf
+            checkpoint_parts = checkpoint.replace("\\", "/").split("/")
+            base_checkpoint = checkpoint_parts[0]  # Just the models--{name} part
+            model_cache_dir = os.path.join(HF_HUB_CACHE, base_checkpoint)
+
+            if os.path.exists(model_cache_dir):
+                shutil.rmtree(model_cache_dir)
+                print(
+                    f"Successfully deleted local model {model_name} from {model_cache_dir}"
+                )
+            else:
+                print(
+                    f"Model {model_name} directory not found at {model_cache_dir} - may have been manually deleted"
+                )
+
+            # Clean up user models registry
+            if model_name.startswith("user.") and os.path.exists(USER_MODELS_FILE):
+                with open(USER_MODELS_FILE, "r", encoding="utf-8") as file:
+                    user_models = json.load(file)
+
+                base_model_name = model_name[5:]  # Remove "user." prefix
+                if base_model_name in user_models:
+                    del user_models[base_model_name]
+                    with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
+                        json.dump(user_models, file)
+                    print(f"Removed {model_name} from user models registry")
+
+            return
         # Parse checkpoint to get base and variant
         base_checkpoint, variant = parse_checkpoint(checkpoint)
 
@@ -591,6 +720,38 @@ class ModelManager:
                 with open(USER_MODELS_FILE, "w", encoding="utf-8") as file:
                     json.dump(user_models, file)
                 print(f"Removed {model_name} from user models registry")
+
+    def get_incompatible_ryzenai_models(self):
+        """
+        Get information about incompatible RyzenAI models in the cache.
+
+        Returns:
+            dict with 'models' list and 'total_size' info
+        """
+        # Get HF_HOME from environment
+        hf_home = os.environ.get("HF_HOME", None)
+
+        incompatible_models, total_size = detect_incompatible_ryzenai_models(
+            DEFAULT_CACHE_DIR, hf_home
+        )
+
+        return {
+            "models": incompatible_models,
+            "total_size": total_size,
+            "count": len(incompatible_models),
+        }
+
+    def cleanup_incompatible_models(self, model_paths: list):
+        """
+        Delete incompatible RyzenAI models from the cache.
+
+        Args:
+            model_paths: List of model paths to delete
+
+        Returns:
+            dict with deletion results
+        """
+        return delete_incompatible_models(model_paths)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

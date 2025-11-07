@@ -15,8 +15,15 @@ from lemonade.tools.llamacpp.utils import (
     get_llama_server_exe_path,
     install_llamacpp,
     download_gguf,
+    resolve_local_gguf_model,
+    parse_checkpoint,
 )
 from lemonade.tools.server.wrapped_server import WrappedServerTelemetry, WrappedServer
+
+# Embedding model batch configuration set to 8192 as default
+EMBEDDING_CTX_SIZE = 8192
+EMBEDDING_BATCH_SIZE = 8192
+EMBEDDING_UBATCH_SIZE = 8192
 
 
 class LlamaTelemetry(WrappedServerTelemetry):
@@ -101,8 +108,25 @@ class LlamaServer(WrappedServer):
         self, config_checkpoint, config_mmproj=None, do_not_upgrade=False
     ) -> dict:
         """
-        Download a model for the wrapper server
+        Download a model for the wrapper server.
+        First checks local cache, then downloads from internet if needed.
         """
+        # If it's a direct file path, just return it
+
+        if os.path.exists(config_checkpoint):
+            result = {"variant": config_checkpoint}
+            if config_mmproj:
+                result["mmproj"] = config_mmproj
+            return result
+
+        # Try to resolve from local cache first to avoid unnecessary downloads
+        checkpoint, variant = parse_checkpoint(config_checkpoint)
+        local_result = resolve_local_gguf_model(checkpoint, variant, config_mmproj)
+
+        if local_result:
+            return local_result
+
+        # Not found locally - download from internet
         return download_gguf(
             config_checkpoint=config_checkpoint,
             config_mmproj=config_mmproj,
@@ -134,6 +158,12 @@ class LlamaServer(WrappedServer):
 
         # Get the current executable path (handles both Windows and Ubuntu structures)
         exe_path = get_llama_server_exe_path(self.backend)
+
+        # For embedding models, use a larger context size to support longer individual
+        # strings. Embedding requests can include multiple strings in a batch, and each
+        # string needs to fit within the context window.
+        if supports_embeddings and ctx_size < EMBEDDING_CTX_SIZE:
+            ctx_size = EMBEDDING_CTX_SIZE
 
         # Build the base command
         base_command = [
@@ -180,7 +210,18 @@ class LlamaServer(WrappedServer):
 
         # Add embeddings support if the model supports it
         if supports_embeddings:
-            base_command.append("--embeddings")
+            # For embedding models, set batch sizes to handle multiple documents in a single request
+            # batch-size: logical batch size (total tokens across all sequences)
+            # ubatch-size: physical batch size (tokens processed in a single forward pass)
+            base_command.extend(
+                [
+                    "--embeddings",
+                    "--batch-size",
+                    str(EMBEDDING_BATCH_SIZE),
+                    "--ubatch-size",
+                    str(EMBEDDING_UBATCH_SIZE),
+                ]
+            )
 
         # Add reranking support if the model supports it
         if supports_reranking:

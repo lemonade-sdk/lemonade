@@ -25,12 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+      
       - name: Create conda environment
         shell: PowerShell
         run: |
-          # Make sure the system-level python is clean
-          Remove-Item -Path "C:\\windows\\system32\\config\\systemprofile\\AppData\\Roaming\\Python" -Recurse -Force 
-          
           $ErrorActionPreference = "Stop"
 
           # Keep conda up-to-date since they can apparently break things on the server side
@@ -46,16 +46,16 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run -p .\lemon-flm-ci python -m pip install --upgrade pip
+          conda run --no-capture-output -p .\lemon-flm-ci python -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run -p .\lemon-flm-ci conda install -y pylint
+          conda run --no-capture-output -p .\lemon-flm-ci conda install -y pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run -p .\lemon-flm-ci python -m pip check
+          conda run --no-capture-output -p .\lemon-flm-ci python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run -p .\lemon-flm-ci pip install -e .
+          conda run --no-capture-output -p .\lemon-flm-ci pip install -e .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -91,7 +91,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run -p .\lemon-flm-ci python test/server_flm.py
+          conda run --no-capture-output -p .\lemon-flm-ci python test/server_flm.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 

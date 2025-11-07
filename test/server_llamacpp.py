@@ -32,6 +32,7 @@ from utils.server_base import (
     OpenAI,
     AsyncOpenAI,
     httpx,
+    is_cpp_server,
 )
 
 
@@ -65,6 +66,10 @@ class LlamaCppTesting(ServerTestingBase):
             self.skipTest("Skipping in metal smoke test mode")
         if self.llamacpp_backend != "rocm":
             return
+
+        # Skip when testing C++ server (this is Python-specific functionality)
+        if is_cpp_server():
+            self.skipTest("Skipping Python-specific test when using C++ server")
 
         # FIXME: Our HIP ID detection works in most machines, but seems to specifically fail on
         # our CI Linux machines. We should investigate why this is happening.
@@ -101,7 +106,11 @@ class LlamaCppTesting(ServerTestingBase):
         complete_response = ""
         chunk_count = 0
         for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content is not None:
+            if (
+                chunk.choices
+                and chunk.choices[0].delta
+                and chunk.choices[0].delta.content is not None
+            ):
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
@@ -319,10 +328,7 @@ class LlamaCppTesting(ServerTestingBase):
         """Test generation parameters across all endpoints with llamacpp models"""
         if self.llamacpp_backend == "metal":
             self.skipTest("Skipping in metal smoke test mode")
-        if (
-            self.llamacpp_backend == "rocm"
-            or self.llamacpp_backend == "vulkan"
-        ):
+        if self.llamacpp_backend == "rocm" or self.llamacpp_backend == "vulkan":
             self.skipTest(
                 "Skipping test when backend is set to rocm or vulkan because of https://github.com/lemonade-sdk/lemonade/issues/274"
             )

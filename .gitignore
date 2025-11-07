@@ -30,7 +30,9 @@ MANIFEST
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
+# Note: Only ignore manifest files in build/dist directories, not source C++ manifests
+build/*.manifest
+dist/*.manifest
 *.spec
 
 # Installer logs

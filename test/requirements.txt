@@ -1,0 +1,22 @@
+# Test dependencies for Lemonade C++ server
+# Install with: pip install -r test/requirements.txt
+
+# HTTP clients
+requests
+httpx
+
+# OpenAI client library
+openai
+
+# Hugging Face library (used for model downloads and offline mode)
+huggingface_hub
+
+# Process and system utilities
+psutil
+
+# Testing framework
+pytest
+
+# Numerical computing (required for some tests)
+numpy
+

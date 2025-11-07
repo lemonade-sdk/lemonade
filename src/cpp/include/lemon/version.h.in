@@ -1,0 +1,17 @@
+#ifndef LEMON_VERSION_H
+#define LEMON_VERSION_H
+
+// Version information - auto-generated from CMakeLists.txt
+#define LEMON_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define LEMON_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define LEMON_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define LEMON_VERSION_STRING "@PROJECT_VERSION@"
+
+// Version as comma-separated values for RC files
+#define LEMON_VERSION_RC @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+
+// Version as string with .0 suffix for RC files
+#define LEMON_VERSION_RC_STRING "@PROJECT_VERSION@.0"
+
+#endif // LEMON_VERSION_H
+

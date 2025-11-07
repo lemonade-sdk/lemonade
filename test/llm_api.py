@@ -62,7 +62,7 @@ def download_llamacpp_binary(backend: str = "vulkan"):
         binary_dir = get_llama_folder_path(backend)
 
         # Look for libllama.so in the extracted directory
-        for root, dirs, files in os.walk(binary_dir):
+        for root, _, files in os.walk(binary_dir):
             if any(f.startswith("libllama.so") for f in files):
                 lib_dir = root
                 logger.info(f"Found shared libraries in: {lib_dir}")
@@ -257,6 +257,20 @@ class Testing(unittest.TestCase):
         # Check if any lm_eval stats were saved
         lm_eval_stats = [k for k in stats.keys() if k.startswith("lm_eval_")]
         assert len(lm_eval_stats) > 0, "No lm-eval-harness metrics found in stats"
+
+        results_dir = os.path.join(
+            build.output_dir(state.cache_dir, state.build_name), "lm_eval_results"
+        )
+        assert os.path.exists(
+            results_dir
+        ), f"Results directory not found: {results_dir}"
+        json_files = [f for f in os.listdir(results_dir) if f.endswith(".json")]
+        assert len(json_files) > 0, f"No JSON results file found in {results_dir}"
+
+        # Check for specific expected metrics from the task
+        assert (
+            "lm_eval_mmlu_abstract_algebra_acc" in stats
+        ), "Expected accuracy metric not found"
 
         # Check for specific metrics that should exist
         for metric_name in lm_eval_stats:

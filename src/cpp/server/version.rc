@@ -1,0 +1,33 @@
+#include <winver.h>
+#include "lemon/version.h"
+
+1 VERSIONINFO
+FILEVERSION     LEMON_VERSION_RC
+PRODUCTVERSION  LEMON_VERSION_RC
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName", "AMD"
+            VALUE "FileDescription", "lemonade-router.exe"
+            VALUE "FileVersion", LEMON_VERSION_RC_STRING
+            VALUE "InternalName", "lemonade"
+            VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
+            VALUE "OriginalFilename", "lemonade-router.exe"
+            VALUE "ProductName", "lemonade-router.exe"
+            VALUE "ProductVersion", LEMON_VERSION_RC_STRING
+            VALUE "Comments", "Local AI model serving with hardware acceleration"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+

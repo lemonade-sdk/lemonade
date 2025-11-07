@@ -1,0 +1,1699 @@
+name: C++ Server Build, Test, and Release 🚀
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - v*
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ========================================================================
+  # BUILD JOBS - Run on rai-160-sdk workers
+  # ========================================================================
+  
+  build-lemonade-server-installer:
+    name: Build Lemonade Server Installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          # Check if CMake is already installed
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+          
+          if (-not $cmakeInstalled) {
+              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+              
+              # Download CMake installer
+              $cmakeVersion = "3.28.1"
+              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+              $cmakeInstaller = "cmake-installer.msi"
+              
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              
+              # Install CMake silently
+              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+              
+              # Add CMake to PATH for this session AND future steps
+              $cmakePath = "C:\Program Files\CMake\bin"
+              $env:PATH = "$cmakePath;$env:PATH"
+              
+              # Persist to GITHUB_PATH for future steps
+              echo $cmakePath >> $env:GITHUB_PATH
+              
+              # Verify installation
+              cmake --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+              
+              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
+          } else {
+              Write-Host "CMake is already installed:" -ForegroundColor Green
+              cmake --version
+          }
+
+      - name: Install NSIS
+        shell: PowerShell
+        run: |
+          # Download NSIS installer
+          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe" -OutFile "nsis.exe"
+          
+          # Install NSIS
+          Start-Process nsis.exe -ArgumentList '/S' -Wait
+
+      - name: Verify NSIS installation
+        shell: PowerShell
+        run: |
+          # Check if NSIS is installed
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /VERSION
+
+      - name: Build C++ Server with CMake
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Building lemonade-router and lemonade-server-beta..." -ForegroundColor Cyan
+          
+          cd src\cpp
+          
+          # Create build directory
+          if (Test-Path "build") {
+              Remove-Item -Recurse -Force "build"
+          }
+          mkdir build
+          cd build
+          
+          # Configure
+          cmake .. -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Build
+          cmake --build . --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Verify binaries exist
+          if (-not (Test-Path "Release\lemonade-router.exe")) {
+              Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          if (-not (Test-Path "Release\lemonade-server-beta.exe")) {
+              Write-Host "ERROR: lemonade-server-beta.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "C++ build successful!" -ForegroundColor Green
+
+      - name: Build the Lemonade Server Installer
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          cd src\cpp
+          
+          # Run the build installer script
+          .\build_installer.ps1
+          
+          # Verify installer was created
+          if (-not (Test-Path "Lemonade_Server_Installer_beta.exe")) {
+              Write-Host "ERROR: Installer not created!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Installer created successfully!" -ForegroundColor Green
+
+      - name: Upload Lemonade Server Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: src\cpp\Lemonade_Server_Installer_beta.exe
+          retention-days: 7
+
+  build-ryzenai-server:
+    name: Build RyzenAI Server
+    runs-on: [rai-160-sdk, Windows]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          # Check if CMake is already installed
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+          
+          if (-not $cmakeInstalled) {
+              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
+              
+              # Download CMake installer
+              $cmakeVersion = "3.28.1"
+              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+              $cmakeInstaller = "cmake-installer.msi"
+              
+              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
+              
+              # Install CMake silently
+              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
+              
+              # Add CMake to PATH for this session AND future steps
+              $cmakePath = "C:\Program Files\CMake\bin"
+              $env:PATH = "$cmakePath;$env:PATH"
+              
+              # Persist to GITHUB_PATH for future steps
+              echo $cmakePath >> $env:GITHUB_PATH
+              
+              # Verify installation
+              cmake --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+              
+              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
+          } else {
+              Write-Host "CMake is already installed:" -ForegroundColor Green
+              cmake --version
+          }
+
+      - name: Build RyzenAI Server with CMake
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Building ryzenai-server..." -ForegroundColor Cyan
+          
+          cd src\ryzenai-server
+          
+          # Create build directory
+          if (Test-Path "build") {
+              Remove-Item -Recurse -Force "build"
+          }
+          mkdir build
+          cd build
+          
+          # Configure - Ryzen AI should be at C:\Program Files\RyzenAI\1.6.0
+          cmake .. -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: CMake configuration failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Build
+          cmake --build . --config Release
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Verify binary exists
+          if (-not (Test-Path "bin\Release\ryzenai-server.exe")) {
+              Write-Host "ERROR: ryzenai-server.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "ryzenai-server build successful!" -ForegroundColor Green
+
+      - name: Verify RyzenAI Server build
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $releaseDir = "src\ryzenai-server\build\bin\Release"
+          
+          Write-Host "Verifying ryzenai-server build output..." -ForegroundColor Cyan
+          
+          if (-not (Test-Path "$releaseDir\ryzenai-server.exe")) {
+              Write-Host "ERROR: ryzenai-server.exe not found in $releaseDir" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "`nListing all files that will be uploaded:" -ForegroundColor Cyan
+          Get-ChildItem $releaseDir -File | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
+          }
+          
+          $fileCount = (Get-ChildItem $releaseDir -File | Measure-Object).Count
+          Write-Host "`nFound $fileCount files in release directory" -ForegroundColor Green
+          Write-Host "Contents will be uploaded as artifact (GitHub will zip automatically)" -ForegroundColor Gray
+
+      - name: Upload RyzenAI Server Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryzenai-server
+          path: |
+            src/ryzenai-server/build/bin/Release/*.exe
+            src/ryzenai-server/build/bin/Release/*.dll
+            src/ryzenai-server/build/bin/Release/*.pdb
+            src/ryzenai-server/build/bin/Release/AMD_LICENSE
+          retention-days: 7
+
+  build-lemonade-server-deb:
+    name: Build Lemonade Server .deb Package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          
+          echo "Updating package lists..."
+          sudo apt-get update
+          
+          echo "Installing build dependencies..."
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            git
+          
+          echo "Verifying installations..."
+          cmake --version
+          gcc --version
+          pkg-config --version
+          
+          echo "Build dependencies installed successfully!"
+
+      - name: Build C++ Server with CMake
+        run: |
+          set -e
+          
+          echo "Building lemonade-router and lemonade-server-beta for Linux..."
+          
+          cd src/cpp
+          
+          # Create build directory
+          if [ -d "build" ]; then
+              echo "Removing existing build directory..."
+              rm -rf build
+          fi
+          mkdir build
+          cd build
+          
+          # Configure with explicit Release build type
+          echo "Configuring CMake..."
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          
+          # Build using all available cores
+          echo "Building binaries..."
+          cmake --build . -j$(nproc)
+          
+          # Verify binaries exist
+          if [ ! -f "lemonade-router" ]; then
+              echo "ERROR: lemonade-router not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          if [ ! -f "lemonade-server-beta" ]; then
+              echo "ERROR: lemonade-server-beta not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          echo "✓ Binaries found successfully"
+          
+          echo "Verifying binary executability..."
+          ./lemonade-router --version
+          ./lemonade-server-beta --version
+          
+          echo "C++ build successful!"
+
+      - name: Build .deb package
+        run: |
+          set -e
+          
+          cd src/cpp/build
+          
+          echo "Creating .deb package with CPack..."
+          cpack -G DEB -V
+          
+          # List generated files
+          echo "Files in build directory:"
+          ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
+          
+          # Verify package was created (using dynamic version)
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Looking for: $DEB_FILE"
+          
+          if [ ! -f "$DEB_FILE" ]; then
+              echo "ERROR: .deb package not created!"
+              echo "Contents of build directory:"
+              ls -lR .
+              exit 1
+          fi
+          
+          echo ".deb package created successfully!"
+          ls -lh "$DEB_FILE"
+          
+          # Show package info
+          echo "Package information:"
+          dpkg-deb --info "$DEB_FILE"
+          
+          echo "Package contents:"
+          dpkg-deb --contents "$DEB_FILE"
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: src/cpp/build/lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+          retention-days: 7
+
+  # ========================================================================
+  # TEST JOBS - Run on stx-halo + Windows workers
+  # ========================================================================
+
+  test-exe-rai-hybrid-basics:
+    name: Test .exe - Basic RAI Hybird Functionality
+    runs-on: [stx, Windows]
+    needs: 
+      - build-lemonade-server-installer
+      - build-ryzenai-server
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Download Lemonade Server Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Install Lemonade Server
+        shell: PowerShell
+        run: |
+          Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
+          
+          # Run installer silently
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Download RyzenAI Serve artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-server
+          path: ryzenai-server-files
+
+      - name: Setup RyzenAI Serve
+        uses: ./.github/actions/setup-ryzenai-server
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-server-files
+
+      - name: Verify Installation
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Verifying installation at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Cyan
+          
+          # Check if installation directory exists
+          if (-not (Test-Path $env:LEMONADE_INSTALL_PATH)) {
+              Write-Host "ERROR: Installation directory not found at $env:LEMONADE_INSTALL_PATH" -ForegroundColor Red
+              exit 1
+          }
+          
+          # Check for key binaries
+          $expectedBinaries = @(
+              "bin\lemonade-router.exe",
+              "bin\lemonade-server-beta.exe",
+              "bin\lemonade-tray.exe"
+          )
+          
+          $missingItems = @()
+          foreach ($item in $expectedBinaries) {
+              $fullPath = Join-Path $env:LEMONADE_INSTALL_PATH $item
+              if (-not (Test-Path $fullPath)) {
+                  $missingItems += $item
+              } else {
+                  Write-Host "Found: $item" -ForegroundColor Green
+              }
+          }
+          
+          if ($missingItems.Count -gt 0) {
+              Write-Host "ERROR: Missing expected files after installation:" -ForegroundColor Red
+              foreach ($missing in $missingItems) {
+                  Write-Host "  Missing: $missing" -ForegroundColor Red
+              }
+              exit 1
+          }
+          
+          Write-Host "Installation verification successful!" -ForegroundColor Green
+
+      - name: Test lemonade-router CLI
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $routerExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-router.exe"
+          
+          Write-Host "Testing lemonade-router.exe CLI..." -ForegroundColor Cyan
+          
+          # Test --version flag
+          Write-Host "`nTesting --version..." -ForegroundColor Yellow
+          & $routerExe --version
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: lemonade-router --version failed!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "`nlemonade-router CLI tests PASSED!" -ForegroundColor Green
+
+      - name: Download test model
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          
+          Write-Host "Downloading Llama-3.2-1B-Instruct-Hybrid model..." -ForegroundColor Cyan
+          Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Gray
+          
+          # Download a hybrid model for testing (use lemonade-server-beta.exe for commands)
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-Hybrid
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Failed to download model!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Model downloaded successfully!" -ForegroundColor Green
+
+      - name: Test C++ Server Endpoints (Serve and Run Commands)
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          # Combined function to show server diagnostics including process status and logs
+          function Show-ServerDiagnostics {
+              param(
+                  [string]$context = "",
+                  [object]$serverProcess = $null,
+                  [switch]$showProcessList,
+                  [int]$tailLines = 30
+              )
+              
+              if ($context) {
+                  Write-Host "=== Server Diagnostics ($context) ===" -ForegroundColor Yellow
+              } else {
+                  Write-Host "=== Server Diagnostics ===" -ForegroundColor Yellow
+              }
+              
+              # Show server process status if provided
+              if ($serverProcess) {
+                  Write-Host "Server process status:"
+                  Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue | Format-Table ProcessName, Id, CPU, WorkingSet -AutoSize
+              }
+              
+              # Show process list if requested
+              if ($showProcessList) {
+                  Write-Host "Current lemonade server processes:"
+                  Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*router*" } | Format-Table ProcessName, Id, StartTime -AutoSize
+              }
+              
+              # Show server logs
+              $serverLog = "$env:TEMP\lemonade-server.log"
+              if (Test-Path $serverLog) {
+                  Write-Host "`nServer log (last $tailLines lines):" -ForegroundColor Cyan
+                  Get-Content $serverLog -Tail $tailLines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+              } else {
+                  Write-Host "`nServer log not found at: $serverLog" -ForegroundColor Yellow
+              }
+              
+              Write-Host "=== End Server Diagnostics ===" -ForegroundColor Yellow
+          }
+          
+          # Function to wait for server port to be available
+          function Wait-ForServerPort {
+              param(
+                  [int]$port = 8000,
+                  [int]$maxAttempts = 12,
+                  [int]$sleepSeconds = 10,
+                  [object]$serverProcess = $null
+              )
+              
+              Write-Host "Waiting for server port $port to become available..." -ForegroundColor Cyan
+              $attempt = 0
+              while ($attempt -lt $maxAttempts) {
+                  $portCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -WarningAction SilentlyContinue
+                  if ($portCheck.TcpTestSucceeded) {
+                      Write-Host "Server is ready on port ${port}!" -ForegroundColor Green
+                      return $true
+                  }
+                  
+                  # Check if server process is still alive (if provided)
+                  if ($serverProcess) {
+                      $serverStillRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
+                      if (-not $serverStillRunning) {
+                          Write-Host "ERROR: Server process has died!" -ForegroundColor Red
+                          Show-ServerDiagnostics -context "Server Process Died" -showProcessList
+                          return $false
+                      }
+                  }
+                  
+                  $attempt++
+                  Write-Host "Attempt $attempt of ${maxAttempts}: Server not ready yet, waiting..." -ForegroundColor Yellow
+                  Start-Sleep -Seconds $sleepSeconds
+              }
+              
+              Write-Host "ERROR: Server port never became available!" -ForegroundColor Red
+              Show-ServerDiagnostics -context "Port Never Available" -serverProcess $serverProcess -showProcessList
+              return $false
+          }
+          
+          # Function to test server endpoints
+          function Test-ServerEndpoints {
+              param(
+                  [int]$port = 8000,
+                  [string]$model = "Llama-3.2-1B-Instruct-Hybrid",
+                  [object]$serverProcess = $null
+              )
+              
+              # Test /health endpoint
+              Write-Host "Testing /health endpoint on port ${port}..." -ForegroundColor Cyan
+              try {
+                  $response = Invoke-WebRequest -Uri "http://localhost:${port}/api/v1/health" -UseBasicParsing
+                  
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "[OK] /health status code is 200" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /health status code is $($response.StatusCode)" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Health Check Failed" -serverProcess $serverProcess
+                      return $false
+                  }
+                  
+                  $jsonContent = $response.Content | ConvertFrom-Json
+                  if ($jsonContent) {
+                      Write-Host "[OK] /health JSON content: $($jsonContent | ConvertTo-Json -Compress)" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /health JSON content is empty" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Health JSON Empty" -serverProcess $serverProcess
+                      return $false
+                  }
+              } catch {
+                  Write-Host "ERROR: Failed to call /health endpoint: $_" -ForegroundColor Red
+                  Show-ServerDiagnostics -context "Health Endpoint Exception" -serverProcess $serverProcess
+                  return $false
+              }
+              
+              # Test /chat/completions endpoint with real LLM generation
+              Write-Host "Testing /chat/completions endpoint with model ${model}..." -ForegroundColor Cyan
+              try {
+                  $body = @{
+                      model = $model
+                      messages = @(
+                          @{
+                              role = "user"
+                              content = "What is the population of Paris?"
+                          }
+                      )
+                      stream = $false
+                  } | ConvertTo-Json
+                  
+                  $response = Invoke-WebRequest `
+                      -UseBasicParsing `
+                      -Uri "http://localhost:${port}/api/v1/chat/completions" `
+                      -Method POST `
+                      -Headers @{ "Content-Type" = "application/json" } `
+                      -Body $body
+                  
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "[OK] /chat/completions status code is 200" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /chat/completions status code is $($response.StatusCode)" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Completions HTTP Error" -serverProcess $serverProcess
+                      return $false
+                  }
+                  
+                  $jsonContent = $response.Content | ConvertFrom-Json
+                  $llmAnswer = $jsonContent.choices[0].message.content
+                  if ($llmAnswer) {
+                      Write-Host "[OK] /chat/completions response: $llmAnswer" -ForegroundColor Green
+                  } else {
+                      Write-Host "ERROR: /chat/completions JSON content is empty" -ForegroundColor Red
+                      Show-ServerDiagnostics -context "Completions JSON Empty" -serverProcess $serverProcess
+                      return $false
+                  }
+              } catch {
+                  Write-Host "ERROR: /chat/completions test failed: $_" -ForegroundColor Red
+                  Show-ServerDiagnostics -context "Completions Exception" -serverProcess $serverProcess
+                  return $false
+              }
+              
+              return $true
+          }
+          
+          # Function to show process telemetry
+          function Show-ProcessTelemetry {
+              Write-Host "=== Process Telemetry ===" -ForegroundColor Cyan
+              Write-Host "Current lemonade server processes:"
+              Get-Process | Where-Object { $_.ProcessName -like "*lemonade*" -or $_.ProcessName -like "*router*" } | Format-Table ProcessName, Id, StartTime -AutoSize
+              Write-Host "=== End Process Telemetry ===" -ForegroundColor Cyan
+          }
+          
+          # Function to stop server using CLI
+          function Stop-ServerViaCli {
+              param([string]$cliPath)
+              Write-Host "Stopping server using CLI stop command..." -ForegroundColor Cyan
+              & $cliPath stop
+              Start-Sleep -Seconds 3
+          }
+          
+          $cliExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $testPort = 8000
+          
+          # === Test 1: CLI Serve Command ===
+          Write-Host "`n========================================" -ForegroundColor Magenta
+          Write-Host "TEST 1: CLI Serve Command (pre-downloaded model)" -ForegroundColor Magenta
+          Write-Host "========================================`n" -ForegroundColor Magenta
+          
+          Write-Host "Starting server with 'serve --no-tray' command..." -ForegroundColor Cyan
+          
+          # Start the server using serve command in background (no-tray mode for CI)
+          $serverProcess = Start-Process -FilePath $cliExe -ArgumentList "serve", "--no-tray" -PassThru -NoNewWindow
+          
+          Write-Host "Server started with PID: $($serverProcess.Id)" -ForegroundColor Green
+          Write-Host "Waiting for server to initialize..." -ForegroundColor Cyan
+          
+          # Wait for server to start
+          Start-Sleep -Seconds 15
+          
+          Show-ProcessTelemetry
+          Show-ServerDiagnostics -context "Initial Startup" -showProcessList
+          
+          # Wait for the server port to come up
+          if (-not (Wait-ForServerPort -port $testPort -serverProcess $serverProcess)) {
+              exit 1
+          }
+          
+          # Test endpoints
+          if (-not (Test-ServerEndpoints -port $testPort -model "Llama-3.2-1B-Instruct-Hybrid" -serverProcess $serverProcess)) {
+              exit 1
+          }
+          
+          Stop-ServerViaCli -cliPath $cliExe
+          
+          Write-Host "Test 1 completed successfully!" -ForegroundColor Green
+          
+          # === Test 2: CLI Run Command ===
+          Write-Host "`n========================================" -ForegroundColor Magenta
+          Write-Host "TEST 2: CLI Run Command (with auto-download)" -ForegroundColor Magenta
+          Write-Host "========================================`n" -ForegroundColor Magenta
+          
+          Write-Host "Starting server with 'run Qwen3-0.6B-GGUF' command..." -ForegroundColor Cyan
+          
+          # Start the server using run command in background (no-tray mode for CI)
+          $serverProcess = Start-Process -FilePath $cliExe -ArgumentList "run", "Qwen3-0.6B-GGUF", "--no-tray" -PassThru -NoNewWindow
+          
+          Write-Host "Server started with PID: $($serverProcess.Id)" -ForegroundColor Green
+          Write-Host "Waiting for model download and server initialization..." -ForegroundColor Cyan
+          
+          # Wait longer for potential model download
+          Start-Sleep -Seconds 30
+          
+          Show-ProcessTelemetry
+          
+          # Wait for the server port to come up
+          if (-not (Wait-ForServerPort -port $testPort -maxAttempts 18 -serverProcess $serverProcess)) {
+              Show-ServerDiagnostics -context "Run Command Startup Failed" -showProcessList
+              exit 1
+          }
+          
+          # Test endpoints
+          if (-not (Test-ServerEndpoints -port $testPort -model "Qwen3-0.6B-GGUF" -serverProcess $serverProcess)) {
+              Show-ServerDiagnostics -context "Run Command Test Failed" -showProcessList
+              exit 1
+          }
+          
+          Stop-ServerViaCli -cliPath $cliExe
+          
+          Write-Host "Test 2 completed successfully!" -ForegroundColor Green
+          Write-Host "`n========================================" -ForegroundColor Green
+          Write-Host "ALL TESTS PASSED!" -ForegroundColor Green
+          Write-Host "========================================`n" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-exe-flm:
+    name: Test .exe - FLM
+    runs-on: [stx, Windows]
+    needs: build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Download Lemonade Server Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Install Lemonade Server
+        shell: PowerShell
+        run: |
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Create minimal Python environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          # Create conda environment with minimal dependencies
+          conda create -p .\test-env python=3.10 -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Install test dependencies
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run FLM tests with C++ server
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          
+          Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+          
+          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          Write-Host "FLM tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-exe-llamacpp-vulkan:
+    name: Test .exe - Llamacpp (Vulkan)
+    runs-on: [stx, Windows]
+    needs: build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Download Lemonade Server Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Install Lemonade Server
+        shell: PowerShell
+        run: |
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Create minimal Python environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          conda create -p .\test-env python=3.10 -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Install test dependencies
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run Llamacpp Vulkan tests with C++ server
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          
+          Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+          
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-exe-llamacpp-rocm:
+    name: Test .exe - Llamacpp (ROCm)
+    runs-on: [stx-halo, Windows]
+    needs: build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Download Lemonade Server Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Install Lemonade Server
+        shell: PowerShell
+        run: |
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Create minimal Python environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          conda create -p .\test-env python=3.10 -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Install test dependencies
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run Llamacpp ROCm tests with C++ server
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          
+          Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+          
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          Write-Host "Llamacpp ROCm tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-exe-rai-cpu:
+    name: Test .exe - ryzenai-server CPU
+    runs-on: [stx, Windows]
+    needs: 
+      - build-lemonade-server-installer
+      - build-ryzenai-server
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+          
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Download Lemonade Server Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Install Lemonade Server
+        shell: PowerShell
+        run: |
+          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+
+      - name: Download RyzenAI Server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-server
+          path: ryzenai-server-files
+
+      - name: Setup RyzenAI Server
+        uses: ./.github/actions/setup-ryzenai-server
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          artifact-path: ryzenai-server-files
+
+      - name: Create minimal Python environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          conda create -p .\test-env python=3.10 -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Set HF_HOME environment variable in conda environment
+          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Install test dependencies
+          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run general server tests with C++ server
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          
+          Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
+          
+          # Pre-download models used in the simultaneous load test
+          # This ensures models are cached and prevents download timing issues
+          & $serverBetaExe pull Qwen2.5-0.5B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Qwen2.5-0.5B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          & $serverBetaExe pull Llama-3.2-1B-Instruct-CPU
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Failed to download Llama-3.2-1B-Instruct-CPU" -ForegroundColor Red
+              exit 1 
+          }
+          
+          Write-Host "Test models pre-downloaded successfully!" -ForegroundColor Green
+          
+          Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+          
+          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          Write-Host "General server tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-deb-llamacpp-vulkan:
+    name: Test .deb - Llamacpp (Vulkan)
+    runs-on: [stx, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Extract .deb package (no sudo needed)
+        run: |
+          echo "Extracting .deb package..."
+          
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
+          
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable in the extracted location
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
+
+      - name: Verify binaries work
+        run: |
+          echo "Verifying binaries..."
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Binaries verified!"
+
+      - name: Create Python test environment
+        run: |
+          
+          # Create test environment
+          conda create -p ./test-env python=3.10 -y
+          
+          # Install test dependencies
+          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
+
+      - name: Run Llamacpp Vulkan tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Running Llamacpp Vulkan tests with .deb installation..."
+          echo "HF_HOME: $HF_HOME"
+          
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server-beta
+          
+          echo "Llamacpp Vulkan tests PASSED!"
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  test-deb-llamacpp-rocm:
+    name: Test .deb - Llamacpp (ROCm)
+    runs-on: [stx-halo, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Extract .deb package (no sudo needed)
+        run: |
+          echo "Extracting .deb package..."
+          
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
+          
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable in the extracted location
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
+
+      - name: Verify binaries work
+        run: |
+          echo "Verifying binaries..."
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Binaries verified!"
+
+      - name: Create Python test environment
+        run: |
+
+          # Create test environment
+          conda create -p ./test-env python=3.10 -y
+          
+          # Install test dependencies
+          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
+
+      - name: Run Llamacpp ROCm tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Running Llamacpp ROCm tests with .deb installation..."
+          echo "HF_HOME: $HF_HOME"
+          
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
+          
+          echo "Llamacpp ROCm tests PASSED!"
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+          
+          echo ""
+          echo "=== Check for llama-server processes ==="
+          ps aux | grep -E "llama-server|lemonade" | grep -v grep || echo "No lemonade/llama-server processes found"
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  test-deb-endpoints:
+    name: Test .deb Endpoints (Serve and Run Commands)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Extract .deb package
+        run: |
+          echo "Extracting .deb package..."
+          
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          echo "Extracting: $DEB_FILE"
+          
+          if [ ! -f "$DEB_FILE" ]; then
+              echo "ERROR: .deb file not found!"
+              ls -la
+              exit 1
+          fi
+          
+          # Extract the .deb package
+          mkdir -p ./deb-extract
+          dpkg-deb -x "$DEB_FILE" ./deb-extract
+          
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
+          
+          # Make llama directory writable
+          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
+          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
+          
+          # Add binaries to PATH
+          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
+          
+          echo "Package extracted successfully!"
+
+      - name: Verify binaries work
+        run: |
+          echo "Verifying binaries..."
+          
+          # Test version
+          lemonade-router --version
+          lemonade-server-beta --version
+          
+          echo "Binaries verified!"
+
+      - name: Download test model (Qwen3-0.6B)
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          echo "Downloading Qwen3-0.6B-GGUF model for testing..."
+          lemonade-server-beta pull Qwen3-0.6B-GGUF
+          
+          if [ $? -ne 0 ]; then
+              echo "ERROR: Failed to download model"
+              exit 1
+          fi
+          
+          echo "Model downloaded successfully!"
+
+      - name: Test Server Endpoints (Serve and Run Commands)
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          
+          TEST_PORT=8000
+          
+          # Helper function to wait for server port
+          wait_for_server_port() {
+              local port=$1
+              local max_attempts=${2:-12}
+              local sleep_seconds=${3:-10}
+              
+              echo "Waiting for server port $port to become available..."
+              for i in $(seq 1 $max_attempts); do
+                  if nc -z localhost $port 2>/dev/null; then
+                      echo "Server is ready on port $port!"
+                      return 0
+                  fi
+                  echo "Attempt $i of $max_attempts: Server not ready yet, waiting..."
+                  sleep $sleep_seconds
+              done
+              
+              echo "ERROR: Server port never became available!"
+              return 1
+          }
+          
+          # Helper function to test endpoints
+          test_server_endpoints() {
+              local port=$1
+              local model=$2
+              
+              echo "Testing /health endpoint on port $port..."
+              health_response=$(curl -s -w "\n%{http_code}" "http://localhost:${port}/api/v1/health")
+              health_body=$(echo "$health_response" | head -n -1)
+              health_code=$(echo "$health_response" | tail -n 1)
+              
+              if [ "$health_code" != "200" ]; then
+                  echo "ERROR: /health status code is $health_code"
+                  return 1
+              fi
+              echo "[OK] /health status code is 200"
+              echo "[OK] /health JSON content: $health_body"
+              
+              echo "Testing /chat/completions endpoint with model $model..."
+              chat_response=$(curl -s -w "\n%{http_code}" \
+                  -X POST \
+                  "http://localhost:${port}/api/v1/chat/completions" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"model\": \"$model\", \"messages\": [{\"role\": \"user\", \"content\": \"What is the population of Paris?\"}], \"stream\": false}")
+              
+              chat_body=$(echo "$chat_response" | head -n -1)
+              chat_code=$(echo "$chat_response" | tail -n 1)
+              
+              if [ "$chat_code" != "200" ]; then
+                  echo "ERROR: /chat/completions status code is $chat_code"
+                  echo "Response body: $chat_body"
+                  return 1
+              fi
+              echo "[OK] /chat/completions status code is 200"
+              
+              # Extract and display the response
+              llm_answer=$(echo "$chat_body" | jq -r '.choices[0].message.content' 2>/dev/null || echo "")
+              if [ -n "$llm_answer" ] && [ "$llm_answer" != "null" ]; then
+                  echo "[OK] /chat/completions response: $llm_answer"
+              else
+                  echo "ERROR: /chat/completions JSON content is empty"
+                  return 1
+              fi
+              
+              return 0
+          }
+          
+          # Helper function to show process info
+          show_process_telemetry() {
+              echo "=== Process Telemetry ==="
+              echo "Current lemonade server processes:"
+              ps aux | grep -E "lemonade|router" | grep -v grep || echo "No processes found"
+              echo "=== End Process Telemetry ==="
+          }
+          
+          # Helper function to stop server
+          stop_server_via_cli() {
+              echo "Stopping server using CLI stop command..."
+              lemonade-server-beta stop
+              sleep 3
+          }
+          
+          echo ""
+          echo "========================================"
+          echo "TEST 1: CLI Serve Command (pre-downloaded model)"
+          echo "========================================"
+          echo ""
+          
+          echo "Starting server with 'serve' command..."
+          lemonade-server-beta serve &
+          SERVER_PID=$!
+          
+          echo "Server started with PID: $SERVER_PID"
+          echo "Waiting for server to initialize..."
+          sleep 15
+          
+          show_process_telemetry
+          
+          if ! wait_for_server_port $TEST_PORT; then
+              echo "ERROR: Server failed to start"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          if ! test_server_endpoints $TEST_PORT "Qwen3-0.6B-GGUF"; then
+              echo "ERROR: Endpoint tests failed"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          stop_server_via_cli
+          
+          echo "Test 1 completed successfully!"
+          
+          echo ""
+          echo "========================================"
+          echo "TEST 2: CLI Run Command (with auto-download)"
+          echo "========================================"
+          echo ""
+          
+          echo "Starting server with 'run Qwen3-1.7B-GGUF' command..."
+          lemonade-server-beta run Qwen3-1.7B-GGUF &
+          SERVER_PID=$!
+          
+          echo "Server started with PID: $SERVER_PID"
+          echo "Waiting for model download and server initialization..."
+          sleep 30
+          
+          show_process_telemetry
+          
+          if ! wait_for_server_port $TEST_PORT 18; then
+              echo "ERROR: Server failed to start"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          if ! test_server_endpoints $TEST_PORT "Qwen3-1.7B-GGUF"; then
+              echo "ERROR: Endpoint tests failed"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+          fi
+          
+          stop_server_via_cli
+          
+          echo "Test 2 completed successfully!"
+          echo ""
+          echo "========================================"
+          echo "ALL TESTS PASSED!"
+          echo "========================================"
+          echo ""
+
+      - name: Print server logs on failure
+        if: failure()
+        run: |
+          echo "=== Server Log (if exists) ==="
+          if [ -f /tmp/lemonade-server.log ]; then
+            echo "Last 100 lines of /tmp/lemonade-server.log:"
+            tail -100 /tmp/lemonade-server.log
+          else
+            echo "Log file /tmp/lemonade-server.log not found"
+          fi
+          
+          echo ""
+          echo "=== Router PID file (if exists) ==="
+          if [ -f /tmp/lemonade-router.pid ]; then
+            cat /tmp/lemonade-router.pid
+          else
+            echo "PID file not found"
+          fi
+          
+          echo ""
+          echo "=== Lock file status ==="
+          ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
+          
+          echo ""
+          echo "=== Check for llama-server processes ==="
+          ps aux | grep -E "llama-server|lemonade" | grep -v grep || echo "No lemonade/llama-server processes found"
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  # ========================================================================
+  # RELEASE JOB - Add artifacts to GitHub release
+  # ========================================================================
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: 
+      - build-lemonade-server-installer
+      - build-lemonade-server-deb
+      - build-ryzenai-server
+      - test-exe-rai-hybrid-basics
+      - test-exe-flm
+      - test-exe-llamacpp-vulkan
+      - test-exe-llamacpp-rocm
+      - test-exe-rai-cpu
+      - test-deb-llamacpp-vulkan
+      - test-deb-llamacpp-rocm
+      - test-deb-endpoints
+    if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - name: Download Lemonade Server Installer (Windows)
+        uses: actions/download-artifact@v4
+        with:
+          name: Lemonade_Server_Installer_beta
+          path: .
+
+      - name: Download Lemonade Server .deb Package (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Download RyzenAI Server Package
+        uses: actions/download-artifact@v4
+        with:
+          name: ryzenai-server
+          path: ryzenai-server-files
+
+      - name: Create ryzenai-server.zip for release
+        run: |
+          cd ryzenai-server-files
+          zip -r ../ryzenai-server.zip *
+          cd ..
+          ls -lh ryzenai-server.zip
+
+      - name: Verify release artifacts
+        run: |
+          echo "Release artifacts:"
+          ls -lh Lemonade_Server_Installer_beta.exe
+          ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
+          ls -lh ryzenai-server.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Lemonade_Server_Installer_beta.exe
+            lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+            ryzenai-server.zip
+          fail_on_unmatched_files: true
+

@@ -48,6 +48,18 @@ def _merge_join(str1, str2) -> str:
     return str1 + ("\n" if str1 and str2 else "") + str2
 
 
+def _window_sum(data: list, n_windows: int) -> list:
+    """Sums data into n_windows windows"""
+    if n_windows <= 0:
+        return data
+    window_size = max(1, len(data) // n_windows)
+    summed_data = []
+    for i in range(0, len(data), window_size):
+        window_sum = sum(data[i : i + window_size])
+        summed_data.append(window_sum)
+    return summed_data
+
+
 ################################################################################
 # CLASSES THAT DESCRIBE TEXT TABLE COLUMNS
 ################################################################################
@@ -88,10 +100,54 @@ class SimpleStat(TableColumn):
         if lean and self.omit_if_lean:
             return None
         data = build_stats.get(self.stat, None)
-        if data is None:
-            return ""
+        if data is None or (data == []):
+            return "-"
         if self.stat_fn:
             data = self.stat_fn(data)
+        cell_str = "\n".join(
+            [
+                _wrap("-" if x is None else f"{x:{self.format_str}}", self.wrap)
+                for x in _to_list(data)
+            ]
+        )
+        return cell_str
+
+
+class DependentStat(TableColumn):
+    """
+    These are for statistics already declared by the tool or basic build stats that
+    rely on one or more additional stats to compute their value.  The dependency is
+    embodied by the stat_fn function.
+    """
+
+    def __init__(
+        self,
+        column_header,
+        stats,
+        format_str,
+        align="center",
+        omit_if_lean=False,
+        wrap=None,
+        stat_fn=None,
+    ):
+        self.column_header = column_header
+        self.stats = stats
+        self.format_str = format_str
+        self.align = align
+        self.omit_if_lean = omit_if_lean
+        self.wrap = wrap or self.default_wrap
+        self.stat_fn = stat_fn
+
+    def get_str(self, build_stats, lean=False):
+        if lean and self.omit_if_lean:
+            return None
+        stats_data = [build_stats.get(stat, None) for stat in self.stats]
+        if self.stat_fn:
+            data = self.stat_fn(stats_data)
+        else:
+            data = stats_data[0]
+        if data is None or (data == []):
+            return "-"
         cell_str = "\n".join(
             [_wrap(f"{x:{self.format_str}}", self.wrap) for x in _to_list(data)]
         )
@@ -434,10 +490,12 @@ class Table(ABC):
             row = []
 
             # First columns
+            first_columns_count = 0
             for entry in first_columns:
                 entry_str = entry.get_str(build_stats, self.lean)
                 if entry_str is not None:
                     row.append(entry_str)
+                    first_columns_count += 1
 
             # Per tool columns
             for tool in tools:
@@ -460,22 +518,24 @@ class Table(ABC):
                     row.append(entry_str)
 
             # Final columns
+            last_columns_count = 0
             for entry in last_columns:
                 entry_str = entry.get_str(build_stats, self.lean)
                 if entry_str is not None:
                     row.append(entry_str)
+                    last_columns_count += 1
 
             # See if this row should be merged with the last row
             if last_build_stats and self.merge_test_fn(last_build_stats, build_stats):
                 # Merge with last row
-                for col in range(0, len(first_columns)):
+                for col in range(0, first_columns_count):
                     # If identical, don't duplicate
                     if last_row[col] != row[col]:
                         last_row[col] = _merge_join(last_row[col], row[col])
-                for col in range(len(first_columns), len(row) - len(last_columns)):
+                for col in range(first_columns_count, len(row) - last_columns_count):
                     # Allow duplicates
                     last_row[col] = _merge_join(last_row[col], row[col])
-                for col in range(len(row) - len(last_columns), len(row)):
+                for col in range(len(row) - last_columns_count, len(row)):
                     # If identical, don't duplicate
                     if last_row[col] != row[col]:
                         last_row[col] = _merge_join(last_row[col], row[col])
@@ -593,11 +653,13 @@ class LemonadePerfTable(Table):
                     Keys.STD_DEV_TOKENS_PER_SECOND,
                     ".2f",
                 ),
-                SimpleStat(
+                DependentStat(
                     _wrap("Total Generated Tokens", 9),
-                    Keys.RESPONSE_TOKENS,
+                    [Keys.RESPONSE_TOKENS, Keys.PROMPT_TOKENS],
                     "d",
-                    stat_fn=lambda x: sum(_to_list(x)),
+                    stat_fn=lambda x: _window_sum(
+                        _to_list(x[0]), n_windows=len(_to_list(x[1]))
+                    ),
                 ),
                 SimpleStat(
                     _wrap("Memory Used (GB)", 8), Keys.MAX_MEMORY_USED_GBYTE, ".3f"
