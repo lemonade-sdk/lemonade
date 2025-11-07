@@ -389,7 +389,9 @@ class OgaLoad(FirstTool):
                 dll_list = "\n  - ".join(missing_dlls)
                 raise RuntimeError(
                     f"Required DLLs not found for {device} inference:\n  - {dll_list}\n"
-                    f"Please ensure your RyzenAI installation is complete and supports {device}."
+                    f"Please ensure your RyzenAI installation is complete and supports {device}.\n"
+                    "Please reinstall the RyzenAI Software for your platform. Run:\n"
+                    "    pip install lemonade-sdk[oga-ryzenai]\n"
                 )
 
             # Add the DLL source directory to PATH
