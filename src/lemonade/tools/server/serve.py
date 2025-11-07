@@ -1391,9 +1391,10 @@ class Server:
                                 "<think>" + token if reasoning_first_token else token
                             ),
                             item_id="0 ",
+                            logprobs=[],
                             output_index=0,
-                            type="response.output_text.delta",
                             sequence_number=0,
+                            type="response.output_text.delta",
                         )
                         full_response += token
 

@@ -43,6 +43,7 @@ class FlmTesting(ServerTestingBase):
 
         complete_response = ""
         chunk_count = 0
+        finish_reason = None
         for chunk in stream:
             if (
                 chunk.choices
@@ -52,9 +53,13 @@ class FlmTesting(ServerTestingBase):
                 complete_response += chunk.choices[0].delta.content
                 print(chunk.choices[0].delta.content, end="")
                 chunk_count += 1
+            # Track finish_reason from final chunk
+            if chunk.choices and chunk.choices[0].finish_reason:
+                finish_reason = chunk.choices[0].finish_reason
 
-        assert chunk_count > 5
-        assert len(complete_response) > 5
+        assert chunk_count > 5, f"Expected >5 content chunks, got {chunk_count}"
+        assert len(complete_response) > 5, f"Expected >5 chars in response, got {len(complete_response)}"
+        assert finish_reason is not None, "Stream did not complete with finish_reason"
 
 
 if __name__ == "__main__":
