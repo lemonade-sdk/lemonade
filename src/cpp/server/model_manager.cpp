@@ -232,10 +232,19 @@ std::string ModelManager::get_user_models_file() {
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
+    // Check HF_HUB_CACHE first (highest priority)
+    const char* hf_hub_cache_env = std::getenv("HF_HUB_CACHE");
+    if (hf_hub_cache_env) {
+        return std::string(hf_hub_cache_env);
+    }
+    
+    // Check HF_HOME second (append /hub)
     const char* hf_home_env = std::getenv("HF_HOME");
     if (hf_home_env) {
         return std::string(hf_home_env) + "/hub";
     }
+    
+    // Default platform-specific paths
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
@@ -989,27 +998,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                                             const std::string& variant,
                                             const std::string& mmproj) {
     // Get Hugging Face cache directory
-    std::string hf_cache;
-    const char* hf_home_env = std::getenv("HF_HOME");
-    if (hf_home_env) {
-        hf_cache = std::string(hf_home_env) + "/hub";
-    } else {
-#ifdef _WIN32
-        const char* userprofile = std::getenv("USERPROFILE");
-        if (userprofile) {
-            hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-        } else {
-            throw std::runtime_error("Cannot determine HF cache directory");
-        }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            hf_cache = std::string(home) + "/.cache/huggingface/hub";
-        } else {
-            throw std::runtime_error("Cannot determine HF cache directory");
-        }
-#endif
-    }
+    std::string hf_cache = get_hf_cache_dir();
     
     // Create cache directory structure
     fs::create_directories(hf_cache);
