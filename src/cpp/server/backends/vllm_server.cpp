@@ -239,6 +239,9 @@ bool VllmServer::wait_for_ready() {
             std::cout << "[VLLM] Still waiting... (" << attempt << "s elapsed)" << std::endl;
             std::cout << "[VLLM] vllm may be downloading the model on first run" << std::endl;
         }
+        
+        // Wait 1 second before next attempt
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     
     std::cerr << "[ERROR] " << server_name_ << " failed to start within " 
