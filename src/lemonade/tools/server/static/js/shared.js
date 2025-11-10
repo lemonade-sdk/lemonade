@@ -224,7 +224,7 @@ async function loadModelStandardized(modelId, options = {}) {
         
         // Update chat dropdown and send button to show loading state
         const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
+        const sendBtn = document.getElementById('toggle-btn');
         if (modelSelect && sendBtn) {
             // Ensure the model exists in the dropdown options
             let modelOption = modelSelect.querySelector(`option[value="${modelId}"]`);
@@ -338,7 +338,7 @@ async function loadModelStandardized(modelId, options = {}) {
         
         // Reset chat controls on error
         const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
+        const sendBtn = document.getElementById('toggle-btn');
         if (modelSelect && sendBtn) {
             modelSelect.disabled = false;
             sendBtn.disabled = false;
