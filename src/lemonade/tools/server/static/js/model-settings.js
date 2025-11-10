@@ -28,9 +28,11 @@ function loadModelSettings() {
     const topKInput = document.getElementById('setting-top-k');
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
+    const thinkingCheckbox = document.getElementById('enable-thinking');  
+
     
     // Check if DOM elements exist
-    if (!tempInput || !topKInput || !topPInput || !repeatInput) {
+    if (!tempInput || !topKInput || !topPInput || !repeatInput || !thinkingCheckbox) {
         return;
     }
     
@@ -47,11 +49,18 @@ function loadModelSettings() {
     if (modelSettings.repeat_penalty !== undefined) {
         repeatInput.value = modelSettings.repeat_penalty;
     }
+    if (modelSettings.enable_thinking !== undefined) {
+    thinkingCheckbox.checked = modelSettings.enable_thinking;
+    
+    } else {
+    thinkingCheckbox.checked = true; // default to enabled
+    
+    }
 }
 
 // Auto-save model settings whenever inputs change
 function setupAutoSaveSettings() {
-    const inputs = ['setting-temperature', 'setting-top-k', 'setting-top-p', 'setting-repeat-penalty'];
+    const inputs = ['setting-temperature', 'setting-top-k', 'setting-top-p', 'setting-repeat-penalty', 'enable-thinking'];
     
     inputs.forEach(inputId => {
         const input = document.getElementById(inputId);
@@ -60,6 +69,12 @@ function setupAutoSaveSettings() {
                 updateModelSettings();
             });
             input.addEventListener('blur', function() {
+                updateModelSettings();
+            });
+        }
+        const thinkingCheckbox = document.getElementById('enable-thinking');
+        if (thinkingCheckbox) {
+            thinkingCheckbox.addEventListener('change', function() {
                 updateModelSettings();
             });
         }
@@ -72,9 +87,10 @@ function updateModelSettings() {
     const topKInput = document.getElementById('setting-top-k');
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
+    const thinkingCheckbox = document.getElementById('enable-thinking');
     
     // Check if DOM elements exist (might not be available if DOM isn't ready)
-    if (!tempInput || !topKInput || !topPInput || !repeatInput) {
+    if (!tempInput || !topKInput || !topPInput || !repeatInput || !thinkingCheckbox) {
         return;
     }
     
@@ -93,6 +109,7 @@ function updateModelSettings() {
     if (repeatInput.value && repeatInput.value.trim() !== '') {
         modelSettings.repeat_penalty = parseFloat(repeatInput.value);
     }
+    modelSettings.enable_thinking = thinkingCheckbox.checked;
     
     // Save to localStorage
     localStorage.setItem('lemonade_model_settings', JSON.stringify(modelSettings));
@@ -107,6 +124,7 @@ function resetModelSettings() {
     document.getElementById('setting-top-k').value = '';
     document.getElementById('setting-top-p').value = '';
     document.getElementById('setting-repeat-penalty').value = '';
+    document.getElementById('enable-thinking').checked = true;
     
     localStorage.removeItem('lemonade_model_settings');
 }
@@ -134,6 +152,9 @@ function getCurrentModelSettings() {
     }
     if (modelSettings.repeat_penalty !== undefined) {
         currentSettings.repeat_penalty = modelSettings.repeat_penalty;
+    }
+    if (modelSettings.enable_thinking !== undefined) {
+        currentSettings.enable_thinking = modelSettings.enable_thinking;
     }
     
     console.log('getCurrentModelSettings returning:', currentSettings);

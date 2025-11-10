@@ -140,6 +140,12 @@
                             <input type="number" id="setting-repeat-penalty" min="0.5" max="2" step="0.05" placeholder="default" />
                             <span class="setting-description">Penalty for repeating tokens (1 = no penalty, >1 = less repetition)</span>
                         </div>
+                       <div class="setting-field">
+                         <label for="enable-thinking">Enable Thinking:</label> 
+                         <input type="checkbox" id="enable-thinking"> 
+                         <br>
+                            <span class="setting-description">Determines whether hybrid reasoning models, such as Qwen3, will use thinking.</span> 
+                        </div>
                         <div class="setting-actions">
                             <button id="reset-settings-btn" class="reset-btn">Reset to Defaults</button>
                         </div>
