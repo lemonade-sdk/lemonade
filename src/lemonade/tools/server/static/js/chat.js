@@ -162,17 +162,22 @@ async function handleModelSelectChange() {
             	loadingOption.hidden = true;
             	select.appendChild(loadingOption);
             }
+            // Gray out send button during loading
+            updateAttachmentButtonState();
         },
         onLoadingEnd: (modelId, success) => {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) defaultOption.textContent = 'Click to select a model ▼';
+            // Update button state after loading completes
+            updateAttachmentButtonState();
 		},
         onSuccess: () => {
             updateAttachmentButtonState();
         },
         onError: () => {
             updateModelSelectValue();
+            updateAttachmentButtonState();
         }
     });
 }
