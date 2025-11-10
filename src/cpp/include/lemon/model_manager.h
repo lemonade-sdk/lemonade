@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
@@ -79,6 +80,11 @@ private:
     std::string get_cache_dir();
     std::string get_user_models_file();
     
+    // Cache management for downloaded models
+    void initialize_cache();
+    void add_to_cache(const std::string& model_name);
+    void remove_from_cache(const std::string& model_name);
+    
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info) const;
     std::string get_hf_cache_dir() const;
@@ -93,6 +99,11 @@ private:
     
     json server_models_;
     json user_models_;
+    
+    // Cache for downloaded models (avoids disk checks on every request)
+    std::mutex downloaded_cache_mutex_;
+    std::map<std::string, ModelInfo> downloaded_cache_;
+    bool cache_initialized_ = false;
 };
 
 } // namespace lemon
