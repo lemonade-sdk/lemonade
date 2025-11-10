@@ -2907,9 +2907,19 @@ In case of an error, the status will be <code>error</code> and the message will 
 <span class="w">  </span><span class="nt">&quot;tokens_per_second&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">33.33</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;input_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">128</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;output_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;decode_token_times&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.01</span><span class="p">,</span><span class="w"> </span><span class="mf">0.02</span><span class="p">,</span><span class="w"> </span><span class="mf">0.03</span><span class="p">,</span><span class="w"> </span><span class="mf">0.04</span><span class="p">,</span><span class="w"> </span><span class="mf">0.05</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">&quot;decode_token_times&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.01</span><span class="p">,</span><span class="w"> </span><span class="mf">0.02</span><span class="p">,</span><span class="w"> </span><span class="mf">0.03</span><span class="p">,</span><span class="w"> </span><span class="mf">0.04</span><span class="p">,</span><span class="w"> </span><span class="mf">0.05</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;prompt_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">9</span>
 <span class="p">}</span>
 </code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>time_to_first_token</code> - Time in seconds until the first token was generated</li>
+<li><code>tokens_per_second</code> - Generation speed in tokens per second</li>
+<li><code>input_tokens</code> - Number of tokens processed</li>
+<li><code>output_tokens</code> - Number of tokens generated</li>
+<li><code>decode_token_times</code> - Array of time taken for each generated token</li>
+<li><code>prompt_tokens</code> - Total prompt tokens including cached tokens</li>
+</ul>
 <h3 id="get-apiv1system-info"><code>GET /api/v1/system-info</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>System information endpoint that provides complete hardware details and device enumeration.</p>
 <h4 id="parameters_12">Parameters</h4>
