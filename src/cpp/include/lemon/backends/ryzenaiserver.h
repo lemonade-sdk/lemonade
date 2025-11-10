@@ -18,7 +18,6 @@ public:
     
     // WrappedServer interface
     void install(const std::string& backend = "") override;
-    void parse_telemetry(const std::string& line) override;
     
     // Model operations - Note: RyzenAI-Server loads model at startup
     std::string download_model(const std::string& checkpoint,

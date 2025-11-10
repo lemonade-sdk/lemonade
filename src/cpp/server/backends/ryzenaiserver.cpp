@@ -390,11 +390,5 @@ json RyzenAIServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
-void RyzenAIServer::parse_telemetry(const std::string& line) {
-    // RyzenAI-Server outputs telemetry in its responses, not in stdout
-    // So this method is a no-op for this backend
-    // Telemetry will be parsed from the JSON response itself
-}
-
 } // namespace lemon
 

@@ -244,6 +244,20 @@ json Router::get_stats() const {
     return wrapped_server_->get_telemetry().to_json();
 }
 
+void Router::update_telemetry(int input_tokens, int output_tokens, 
+                              double time_to_first_token, double tokens_per_second) {
+    if (wrapped_server_) {
+        wrapped_server_->set_telemetry(input_tokens, output_tokens, 
+                                       time_to_first_token, tokens_per_second);
+    }
+}
+
+void Router::update_prompt_tokens(int prompt_tokens) {
+    if (wrapped_server_) {
+        wrapped_server_->set_prompt_tokens(prompt_tokens);
+    }
+}
+
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
     if (!wrapped_server_) {
         std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";
