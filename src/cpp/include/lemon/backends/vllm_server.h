@@ -33,6 +33,9 @@ public:
 protected:
     void parse_telemetry(const std::string& line) override;
     
+    // Override to check Docker container status instead of process status
+    bool is_process_running() const override;
+    
 private:
     // Docker container management
     bool is_docker_available();

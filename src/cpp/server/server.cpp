@@ -586,9 +586,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
-        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        // FLM and vLLM require the checkpoint name in the request, not the Lemonade model name
         std::string request_body = req.body;
-        if (router_->get_loaded_recipe() == "flm") {
+        std::string loaded_recipe = router_->get_loaded_recipe();
+        if (loaded_recipe == "flm" || loaded_recipe == "vllm") {
             auto request_json_copy = request_json;
             request_json_copy["model"] = router_->get_loaded_checkpoint();
             request_body = request_json_copy.dump();
@@ -725,9 +726,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
-        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        // FLM and vLLM require the checkpoint name in the request, not the Lemonade model name
         std::string request_body = req.body;
-        if (router_->get_loaded_recipe() == "flm") {
+        std::string loaded_recipe = router_->get_loaded_recipe();
+        if (loaded_recipe == "flm" || loaded_recipe == "vllm") {
             auto request_json_copy = request_json;
             request_json_copy["model"] = router_->get_loaded_checkpoint();
             request_body = request_json_copy.dump();

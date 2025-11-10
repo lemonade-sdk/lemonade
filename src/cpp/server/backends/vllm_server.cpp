@@ -277,6 +277,14 @@ void VllmServer::parse_telemetry(const std::string& line) {
     // For now, we'll rely on the response from the server
 }
 
+bool VllmServer::is_process_running() const {
+    // For vllm, check if the Docker container is running instead of checking process status
+    if (container_name_.empty()) {
+        return false;
+    }
+    return const_cast<VllmServer*>(this)->is_container_running(container_name_);
+}
+
 } // namespace backends
 } // namespace lemon
 

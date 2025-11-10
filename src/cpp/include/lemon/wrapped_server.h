@@ -102,7 +102,8 @@ protected:
     json forward_request(const std::string& endpoint, const json& request);
     
     // Validate that the process is running (platform-agnostic check)
-    bool is_process_running() const;
+    // Virtual to allow backends like vllm to override for Docker containers
+    virtual bool is_process_running() const;
     
     // Get the base URL for the wrapped server
     std::string get_base_url() const {

@@ -349,7 +349,7 @@ function displayModelsByRecipe(recipe) {
             <div class="flm-notice-content">
                 <div class="flm-notice-icon">🐳</div>
                 <div class="flm-notice-text">
-                    <strong><a href="https://github.com/vllm-project/vllm">vLLM</a> models run in Docker containers.</strong> Docker must be installed and running to use vLLM models. The vLLM Docker image will be automatically downloaded on first use (~10GB). Models are downloaded inside the container on first load. AMD GPU with ROCm support required.
+                    <strong><a href="https://github.com/vllm-project/vllm">vLLM</a> models run in Docker containers.</strong> Docker must be installed and running to use vLLM models. The vLLM Docker image will be automatically downloaded on first use. Models are downloaded inside the container on first load. AMD GPU with ROCm support required.
                 </div>
             </div>
         `;
