@@ -88,6 +88,15 @@ public:
     // Get telemetry data
     Telemetry get_telemetry() const { return telemetry_; }
     
+    // Set telemetry data (for non-streaming requests)
+    void set_telemetry(int input_tokens, int output_tokens, 
+                      double time_to_first_token, double tokens_per_second) {
+        telemetry_.input_tokens = input_tokens;
+        telemetry_.output_tokens = output_tokens;
+        telemetry_.time_to_first_token = time_to_first_token;
+        telemetry_.tokens_per_second = tokens_per_second;
+    }
+    
 protected:
     // Choose an available port
     int choose_port();

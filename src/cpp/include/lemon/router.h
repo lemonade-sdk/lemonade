@@ -58,6 +58,10 @@ public:
     // Get telemetry data
     json get_stats() const;
     
+    // Update telemetry data (for non-streaming requests)
+    void update_telemetry(int input_tokens, int output_tokens, 
+                         double time_to_first_token, double tokens_per_second);
+    
 private:
     std::unique_ptr<WrappedServer> wrapped_server_;
     std::string loaded_model_;
