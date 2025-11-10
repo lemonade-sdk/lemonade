@@ -476,15 +476,22 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return filter_models_by_backend(models);
 }
 
-std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
+void ModelManager::initialize_cache() {
+    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+    
+    if (cache_initialized_) {
+        return;
+    }
+    
+    std::cout << "[ModelManager] Initializing downloaded models cache..." << std::endl;
+    
     auto all_models = get_supported_models(); // Already filtered by backend
-    std::map<std::string, ModelInfo> downloaded;
     
     // OPTIMIZATION: For FLM, get the list once
     auto flm_models = get_flm_installed_models();
     std::unordered_set<std::string> available_flm_models(flm_models.begin(), flm_models.end());
     
-    // Filter models - just check resolved_path exists
+    // Check disk ONCE on startup
     for (const auto& [name, info] : all_models) {
         bool is_available = false;
         
@@ -497,11 +504,50 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         }
         
         if (is_available) {
-            downloaded[name] = info;
+            downloaded_cache_[name] = info;
         }
     }
     
-    return downloaded;
+    cache_initialized_ = true;
+    std::cout << "[ModelManager] Cache initialized with " << downloaded_cache_.size() << " downloaded models" << std::endl;
+}
+
+void ModelManager::add_to_cache(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+    
+    if (!cache_initialized_) {
+        return; // Cache will be initialized on next get_downloaded_models() call
+    }
+    
+    try {
+        auto info = get_model_info(model_name);
+        downloaded_cache_[model_name] = info;
+        std::cout << "[ModelManager] Added '" << model_name << "' to cache" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[ModelManager] Failed to add model to cache: " << e.what() << std::endl;
+    }
+}
+
+void ModelManager::remove_from_cache(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+    
+    if (!cache_initialized_) {
+        return; // Cache will be initialized on next get_downloaded_models() call
+    }
+    
+    downloaded_cache_.erase(model_name);
+    std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
+}
+
+std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
+    // Initialize cache on first call (thread-safe)
+    if (!cache_initialized_) {
+        initialize_cache();
+    }
+    
+    // Return cached models (fast - no disk I/O)
+    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+    return downloaded_cache_;
 }
 
 // Helper function to check if NPU is available
@@ -921,6 +967,9 @@ void ModelManager::download_model(const std::string& model_name,
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
                           reasoning, vision, actual_mmproj);
     }
+    
+    // Update cache after successful download
+    add_to_cache(model_name);
 }
 
 // Download model files from HuggingFace
@@ -1236,6 +1285,9 @@ void ModelManager::delete_model(const std::string& model_name) {
             std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
         }
         
+        // Remove from cache after successful deletion
+        remove_from_cache(model_name);
+        
         return;
     }
     
@@ -1282,6 +1334,9 @@ void ModelManager::delete_model(const std::string& model_name) {
         user_models_ = updated_user_models;
         std::cout << "[ModelManager] ✓ Removed from user_models.json" << std::endl;
     }
+    
+    // Remove from cache after successful deletion
+    remove_from_cache(model_name);
 }
 
 ModelInfo ModelManager::get_model_info(const std::string& model_name) {
