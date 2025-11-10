@@ -497,6 +497,9 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         if (info.recipe == "flm") {
             // FLM models use their own registry
             is_available = available_flm_models.count(info.checkpoint) > 0;
+        } else if (info.recipe == "vllm") {
+            // vllm models are always available (downloaded by vllm on first load)
+            is_available = true;
         } else {
             // All other models: check if resolved_path exists
             is_available = !info.resolved_path.empty() && fs::exists(info.resolved_path);
@@ -945,7 +948,16 @@ void ModelManager::download_model(const std::string& model_name,
         download_from_flm(actual_checkpoint, do_not_upgrade);
     } else if (actual_recipe == "vllm") {
         // vllm models are downloaded by vllm inside Docker container
-        std::cout << "[ModelManager] vllm will download the model on first run" << std::endl;
+        // No download needed - they're available immediately
+        std::cout << "[ModelManager] vllm model ready - will download on first load" << std::endl;
+        
+        // Don't register vllm models from server_models.json to user_models.json
+        // They should stay in server_models.json only
+        if (model_name.substr(0, 5) == "user.") {
+            register_user_model(model_name, actual_checkpoint, actual_recipe, 
+                              reasoning, vision, actual_mmproj);
+        }
+        return;  // Skip further processing
     } else if (actual_recipe == "llamacpp") {
         // For llamacpp (GGUF) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj);
@@ -954,8 +966,8 @@ void ModelManager::download_model(const std::string& model_name,
         download_from_huggingface(repo_id, "", "");
     }
     
-    // Register if needed
-    if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
+    // Register if needed (only for user models, not server models)
+    if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
                           reasoning, vision, actual_mmproj);
     }
