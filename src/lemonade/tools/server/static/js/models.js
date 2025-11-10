@@ -329,11 +329,11 @@ function displayModelsByRecipe(recipe) {
     // Add FastFlowLM notice if this is the FLM recipe
     if (recipe === 'flm') {
         const notice = document.createElement('div');
-        notice.className = 'model-manager-notice';
+        notice.className = 'flm-notice';
         notice.innerHTML = `
-            <div class="model-manager-notice-content">
-                <div class="model-manager-notice-icon">⚠️</div>
-                <div class="model-manager-notice-text">
+            <div class="flm-notice-content">
+                <div class="flm-notice-icon">⚠️</div>
+                <div class="flm-notice-text">
                     <strong><a href="https://github.com/FastFlowLM/FastFlowLM">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com">lemonade@amd.com</a> for inquiries.
                 </div>
             </div>
@@ -344,11 +344,11 @@ function displayModelsByRecipe(recipe) {
     // Add vLLM notice if this is the vllm recipe
     if (recipe === 'vllm') {
         const notice = document.createElement('div');
-        notice.className = 'model-manager-notice';
+        notice.className = 'flm-notice';
         notice.innerHTML = `
-            <div class="model-manager-notice-content">
-                <div class="model-manager-notice-icon">🐳</div>
-                <div class="model-manager-notice-text">
+            <div class="flm-notice-content">
+                <div class="flm-notice-icon">🐳</div>
+                <div class="flm-notice-text">
                     <strong><a href="https://github.com/vllm-project/vllm">vLLM</a> models run in Docker containers.</strong> Docker must be installed and running to use vLLM models. The vLLM Docker image will be automatically downloaded on first use (~10GB). Models are downloaded inside the container on first load. AMD GPU with ROCm support required.
                 </div>
             </div>
