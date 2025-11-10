@@ -188,6 +188,7 @@ set(SOURCES
     server/backends/llamacpp_server.cpp
     server/backends/fastflowlm_server.cpp
     server/backends/ryzenaiserver.cpp
+    server/backends/vllm_server.cpp
 )
 
 # Add version resource file on Windows

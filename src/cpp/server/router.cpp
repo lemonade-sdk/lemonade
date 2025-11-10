@@ -2,6 +2,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/vllm_server.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <algorithm>
@@ -74,6 +75,9 @@ void Router::load_model(const std::string& model_name,
         if (model_info.recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
             new_server = std::make_unique<backends::FastFlowLMServer>(log_level_);
+        } else if (model_info.recipe == "vllm") {
+            std::cout << "[Router] Using vllm backend" << std::endl;
+            new_server = std::make_unique<backends::VllmServer>(log_level_);
         } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" || model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Server backend: " << model_info.recipe << std::endl;
             

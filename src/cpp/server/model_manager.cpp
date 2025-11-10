@@ -257,6 +257,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return info.checkpoint;
     }
     
+    // vllm models use checkpoint as-is (e.g., "Qwen/Qwen2.5-1.5B-Instruct")
+    // The model will be downloaded by vllm inside the Docker container
+    if (info.recipe == "vllm") {
+        return info.checkpoint;
+    }
+    
     std::string hf_cache = get_hf_cache_dir();
     
     // Local uploads: checkpoint is relative path from HF cache
@@ -797,6 +803,12 @@ bool ModelManager::is_model_downloaded(const std::string& model_name,
         return false;
     }
     
+    // vllm models are downloaded by vllm inside Docker container
+    // We can't check locally, so assume they will be downloaded on first run
+    if (info.recipe == "vllm") {
+        return true;  // vllm downloads models automatically
+    }
+    
     // For all other models, just check if resolved_path exists
     return !info.resolved_path.empty() && fs::exists(info.resolved_path);
 }
@@ -908,6 +920,9 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade);
+    } else if (actual_recipe == "vllm") {
+        // vllm models are downloaded by vllm inside Docker container
+        std::cout << "[ModelManager] vllm will download the model on first run" << std::endl;
     } else if (actual_recipe == "llamacpp") {
         // For llamacpp (GGUF) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj);

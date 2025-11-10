@@ -478,5 +478,11 @@
         "recipe": "flm",
         "suggested": true,
         "size": 2.62
+    },
+    "Qwen2.5-1.5B-Instruct-VLLM": {
+        "checkpoint": "Qwen/Qwen2.5-1.5B-Instruct",
+        "recipe": "vllm",
+        "suggested": true,
+        "size": 1.5
     }
 }
