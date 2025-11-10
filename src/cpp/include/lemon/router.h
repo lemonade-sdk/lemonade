@@ -62,6 +62,9 @@ public:
     void update_telemetry(int input_tokens, int output_tokens, 
                          double time_to_first_token, double tokens_per_second);
     
+    // Update prompt_tokens field from usage
+    void update_prompt_tokens(int prompt_tokens);
+    
 private:
     std::unique_ptr<WrappedServer> wrapped_server_;
     std::string loaded_model_;

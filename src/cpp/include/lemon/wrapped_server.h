@@ -20,6 +20,7 @@ struct Telemetry {
     double time_to_first_token = 0.0;
     double tokens_per_second = 0.0;
     std::vector<double> decode_token_times;
+    int prompt_tokens = 0;  // From usage.prompt_tokens (includes cached tokens)
     
     void reset() {
         input_tokens = 0;
@@ -27,6 +28,7 @@ struct Telemetry {
         time_to_first_token = 0.0;
         tokens_per_second = 0.0;
         decode_token_times.clear();
+        prompt_tokens = 0;
     }
     
     json to_json() const {
@@ -35,7 +37,8 @@ struct Telemetry {
             {"output_tokens", output_tokens},
             {"time_to_first_token", time_to_first_token},
             {"tokens_per_second", tokens_per_second},
-            {"decode_token_times", decode_token_times}
+            {"decode_token_times", decode_token_times},
+            {"prompt_tokens", prompt_tokens}
         };
     }
 };
@@ -95,6 +98,11 @@ public:
         telemetry_.output_tokens = output_tokens;
         telemetry_.time_to_first_token = time_to_first_token;
         telemetry_.tokens_per_second = tokens_per_second;
+    }
+    
+    // Set prompt_tokens field from usage
+    void set_prompt_tokens(int prompt_tokens) {
+        telemetry_.prompt_tokens = prompt_tokens;
     }
     
 protected:

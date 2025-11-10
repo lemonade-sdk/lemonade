@@ -252,6 +252,12 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
     }
 }
 
+void Router::update_prompt_tokens(int prompt_tokens) {
+    if (wrapped_server_) {
+        wrapped_server_->set_prompt_tokens(prompt_tokens);
+    }
+}
+
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
     if (!wrapped_server_) {
         std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";

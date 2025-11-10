@@ -723,6 +723,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
             }
+            
+            // Capture prompt_tokens from usage if available
+            if (response.contains("usage")) {
+                auto usage = response["usage"];
+                if (usage.contains("prompt_tokens")) {
+                    int prompt_tokens = usage["prompt_tokens"].get<int>();
+                    router_->update_prompt_tokens(prompt_tokens);
+                }
+            }
         }
         
     } catch (const std::exception& e) {
@@ -889,6 +898,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 
                 // Save telemetry to router
                 router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+            }
+            
+            // Capture prompt_tokens from usage if available
+            if (response.contains("usage")) {
+                auto usage = response["usage"];
+                if (usage.contains("prompt_tokens")) {
+                    int prompt_tokens = usage["prompt_tokens"].get<int>();
+                    router_->update_prompt_tokens(prompt_tokens);
+                }
             }
         }
         
