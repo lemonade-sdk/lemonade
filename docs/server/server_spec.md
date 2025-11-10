@@ -703,10 +703,10 @@ curl http://localhost:8000/api/v1/stats
 
 - `time_to_first_token` - Time in seconds until the first token was generated
 - `tokens_per_second` - Generation speed in tokens per second
-- `input_tokens` - Number of tokens processed (from timings data)
-- `output_tokens` - Number of tokens generated (from timings data)
+- `input_tokens` - Number of tokens processed
+- `output_tokens` - Number of tokens generated
 - `decode_token_times` - Array of time taken for each generated token
-- `prompt_tokens` - Total prompt tokens including cached tokens (from usage data)
+- `prompt_tokens` - Total prompt tokens including cached tokens
 
 ### `GET /api/v1/system-info` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
