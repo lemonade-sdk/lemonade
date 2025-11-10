@@ -39,9 +39,6 @@ public:
     // FLM uses /api/tags for readiness check instead of /health
     bool wait_for_ready() override;
     
-protected:
-    void parse_telemetry(const std::string& line) override;
-    
 private:
     // Existing methods
     std::string get_flm_path();

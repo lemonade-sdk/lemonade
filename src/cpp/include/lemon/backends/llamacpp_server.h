@@ -36,9 +36,6 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
     
-protected:
-    void parse_telemetry(const std::string& line) override;
-    
 private:
     std::string get_llama_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);

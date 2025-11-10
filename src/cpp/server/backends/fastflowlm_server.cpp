@@ -234,11 +234,6 @@ json FastFlowLMServer::responses(const json& request) {
     );
 }
 
-void FastFlowLMServer::parse_telemetry(const std::string& line) {
-    // FLM telemetry parsing can be added here if needed
-    // For now, we'll rely on the response from the server
-}
-
 std::string FastFlowLMServer::get_flm_path() {
     // Check common locations for flm executable
 #ifdef _WIN32
