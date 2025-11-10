@@ -580,33 +580,6 @@ json LlamaCppServer::responses(const json& request) {
     );
 }
 
-void LlamaCppServer::parse_telemetry(const std::string& line) {
-    // Parse prompt evaluation
-    std::regex prompt_regex(R"(prompt eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?([\d.]+)\s*tokens per second)");
-    std::smatch match;
-    
-    if (std::regex_search(line, match, prompt_regex)) {
-        float prompt_time_ms = std::stof(match[1]);
-        int input_tokens = std::stoi(match[2]);
-        
-        telemetry_.input_tokens = input_tokens;
-        telemetry_.time_to_first_token = prompt_time_ms / 1000.0;
-        return;
-    }
-    
-    // Parse generation evaluation
-    std::regex eval_regex(R"(eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*tokens.*?([\d.]+)\s*tokens per second)");
-    
-    if (std::regex_search(line, match, eval_regex)) {
-        float eval_time_ms = std::stof(match[1]);
-        int output_tokens = std::stoi(match[2]);
-        float tokens_per_second = std::stof(match[3]);
-        
-        telemetry_.output_tokens = output_tokens;
-        telemetry_.tokens_per_second = tokens_per_second;
-    }
-}
-
 std::string LlamaCppServer::find_executable_in_install_dir(const std::string& install_dir) {
     // Try multiple possible locations where llama-server might be extracted
     std::vector<std::string> possible_paths;

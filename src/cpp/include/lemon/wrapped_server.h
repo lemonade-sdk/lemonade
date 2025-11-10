@@ -104,9 +104,6 @@ protected:
     // Wait for server to be ready (can be overridden for custom health checks)
     virtual bool wait_for_ready();
     
-    // Parse telemetry from subprocess output
-    virtual void parse_telemetry(const std::string& line) = 0;
-    
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request);
     
