@@ -588,6 +588,18 @@ static bool is_oga_available() {
     return is_npu_available();
 }
 
+static bool is_docker_available() {
+    // Check if docker command is available
+    int result = system("docker --version >/dev/null 2>&1");
+    return result == 0;
+}
+
+static bool is_vllm_available() {
+    // vllm requires Docker to be installed
+    // The vllm Docker image will be pulled on first use
+    return is_docker_available();
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
@@ -604,6 +616,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool npu_available = is_npu_available();
     bool flm_available = is_flm_available();
     bool oga_available = is_oga_available();
+    bool vllm_available = is_vllm_available();
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
@@ -612,6 +625,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
         std::cout << "  - OGA available: " << (oga_available ? "Yes" : "No") << std::endl;
+        std::cout << "  - vllm available: " << (vllm_available ? "Yes" : "No") << std::endl;
         debug_printed = true;
     }
     
@@ -626,6 +640,14 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             if (!flm_available) {
                 filter_out = true;
                 filter_reason = "FLM not available";
+            }
+        }
+        
+        // Filter vllm models based on Docker availability
+        if (recipe == "vllm") {
+            if (!vllm_available) {
+                filter_out = true;
+                filter_reason = "vllm not available (Docker required)";
             }
         }
         
@@ -644,6 +666,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
         
         // On macOS, only show llamacpp models
+        // vllm requires Docker with GPU access which is not well-supported on macOS
         if (is_macos && recipe != "llamacpp") {
             filter_out = true;
             filter_reason = "macOS only supports llamacpp";
