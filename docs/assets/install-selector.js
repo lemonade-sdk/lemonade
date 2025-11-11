@@ -698,7 +698,7 @@ window.lmnInit = function() {
         <div id="lmn-badges" class="lmn-badges"></div>
         <div id="lmn-install-content">
           <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
-            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade_server_installer.exe">Download Lemonade Server Installer (.exe)</a>
+            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">Download Lemonade Server Installer (.exe)</a>
           </div>
           <div id="lmn-command" class="lmn-command"></div>
         </div>
