@@ -189,6 +189,8 @@ TrayApp::TrayApp(int argc, char* argv[])
     : current_version_(LEMON_VERSION_STRING)
     , should_exit_(false)
 {
+    // Load defaults from environment variables before parsing command-line arguments
+    load_env_defaults();
     parse_arguments(argc, argv);
     
     if (config_.show_help) {
@@ -482,6 +484,35 @@ int TrayApp::run() {
     
     DEBUG_LOG(this, "Event loop exited");
     return 0;
+}
+
+void TrayApp::load_env_defaults() {
+    // Helper to get environment variable with fallback
+    auto getenv_or_default = [](const char* name, const std::string& default_val) -> std::string {
+        const char* val = std::getenv(name);
+        return val ? std::string(val) : default_val;
+    };
+    
+    // Helper to get integer environment variable with fallback
+    auto getenv_int_or_default = [](const char* name, int default_val) -> int {
+        const char* val = std::getenv(name);
+        if (val) {
+            try {
+                return std::stoi(val);
+            } catch (...) {
+                // Invalid integer, use default
+                return default_val;
+            }
+        }
+        return default_val;
+    };
+    
+    // Load environment variables into config (can be overridden by command-line args)
+    config_.port = getenv_int_or_default("LEMONADE_PORT", config_.port);
+    config_.host = getenv_or_default("LEMONADE_HOST", config_.host);
+    config_.log_level = getenv_or_default("LEMONADE_LOG_LEVEL", config_.log_level);
+    config_.llamacpp_backend = getenv_or_default("LEMONADE_LLAMACPP", config_.llamacpp_backend);
+    config_.ctx_size = getenv_int_or_default("LEMONADE_CTX_SIZE", config_.ctx_size);
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {

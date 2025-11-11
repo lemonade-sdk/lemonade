@@ -55,6 +55,7 @@ public:
     
 private:
     // Initialization
+    void load_env_defaults();
     void parse_arguments(int argc, char* argv[]);
     void print_usage(bool show_serve_options = false);
     void print_version();
