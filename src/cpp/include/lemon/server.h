@@ -20,7 +20,8 @@ public:
            const std::string& log_level = "info",
            int ctx_size = 4096,
            bool tray = false,
-           const std::string& llamacpp_backend = "vulkan");
+           const std::string& llamacpp_backend = "vulkan",
+           const std::string& llamacpp_args = "");
     
     ~Server();
     
@@ -68,6 +69,7 @@ private:
     int ctx_size_;
     bool tray_;
     std::string llamacpp_backend_;
+    std::string llamacpp_args_;
     std::string log_file_path_;
     
     std::unique_ptr<httplib::Server> http_server_;

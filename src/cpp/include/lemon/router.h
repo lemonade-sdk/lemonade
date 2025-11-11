@@ -17,7 +17,8 @@ class Router {
 public:
     Router(int ctx_size = 4096, 
            const std::string& llamacpp_backend = "vulkan",
-           const std::string& log_level = "info");
+           const std::string& log_level = "info",
+           const std::string& llamacpp_args = "");
     
     ~Router();
     
@@ -75,6 +76,7 @@ private:
     int ctx_size_;
     std::string llamacpp_backend_;
     std::string log_level_;
+    std::string llamacpp_args_;
     
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and wrapped_server_

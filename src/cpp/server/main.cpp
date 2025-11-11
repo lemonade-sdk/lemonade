@@ -62,7 +62,8 @@ int main(int argc, char** argv) {
         std::cout << "  Context size: " << config.ctx_size << std::endl;
         
         Server server(config.port, config.host, config.log_level,
-                    config.ctx_size, config.tray, config.llamacpp_backend);
+                    config.ctx_size, config.tray, config.llamacpp_backend,
+                    config.llamacpp_args);
         
         // Register signal handler for Ctrl+C
         g_server_instance = &server;

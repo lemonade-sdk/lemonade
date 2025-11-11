@@ -8,7 +8,9 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-    LlamaCppServer(const std::string& backend = "vulkan", const std::string& log_level = "info");
+    LlamaCppServer(const std::string& backend = "vulkan", 
+                   const std::string& log_level = "info",
+                   const std::string& custom_args = "");
     
     ~LlamaCppServer() override;
     
@@ -42,6 +44,7 @@ private:
     
     std::string backend_;  // vulkan, rocm, metal
     std::string model_path_;
+    std::string custom_args_;  // Custom arguments to pass to llama-server
 };
 
 } // namespace backends
