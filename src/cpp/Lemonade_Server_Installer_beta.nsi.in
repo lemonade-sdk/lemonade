@@ -204,7 +204,7 @@ FunctionEnd
 ; Finish Page settings
 !define MUI_TEXT_FINISH_INFO_TITLE "${PRODUCT_NAME} installed successfully!"
 !define MUI_TEXT_FINISH_INFO_TEXT "A shortcut has been added to your Desktop. What would you like to do next?"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "..\..\installer\installer_banner.bmp"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "installer\installer_banner.bmp"
 
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION RunServer
