@@ -16,7 +16,7 @@ namespace lemon {
 class Server {
 public:
     Server(int port = 8000, 
-           const std::string& host = "localhost",
+           const std::string& host = "127.0.0.1",
            const std::string& log_level = "info",
            int ctx_size = 4096,
            bool tray = false,
