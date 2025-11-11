@@ -77,7 +77,8 @@ bool ServerManager::start_server(
     const std::string& llamacpp_backend,
     bool show_console,
     bool is_ephemeral,
-    const std::string& llamacpp_args)
+    const std::string& llamacpp_args,
+    const std::string& host)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -93,6 +94,7 @@ bool ServerManager::start_server(
     show_console_ = show_console;
     is_ephemeral_ = is_ephemeral;
     llamacpp_args_ = llamacpp_args;
+    host_ = host;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -101,7 +103,7 @@ bool ServerManager::start_server(
     
     // Wait for server to be ready (check health endpoint)
     DEBUG_LOG(this, "Waiting for server to start...");
-    DEBUG_LOG(this, "Will check health at: http://localhost:" << port_ << "/api/v1/health");
+    DEBUG_LOG(this, "Will check health at: http://" << host_ << ":" << port_ << "/api/v1/health");
     
     for (int i = 0; i < 5; ++i) {  // Wait up to 5 seconds
         DEBUG_LOG(this, "Health check attempt " << (i+1) << "/5...");
@@ -115,7 +117,9 @@ bool ServerManager::start_server(
             if (!is_ephemeral) {
                 // Persistent server: print startup message with URL
                 std::cout << "Lemonade Server Beta v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-                std::cout << "Chat and manage models: http://localhost:" << port_ << std::endl;
+                // Display "localhost" for user-friendliness when using 127.0.0.1
+                std::string display_url_host = (host_ == "127.0.0.1") ? "localhost" : host_;
+                std::cout << "Chat and manage models: http://" << display_url_host << ":" << port_ << std::endl;
             }
             // Ephemeral server: no output
             
@@ -207,7 +211,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_, show_console_, false);
+    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_, show_console_, false, llamacpp_args_, host_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -327,6 +331,7 @@ bool ServerManager::spawn_process() {
     // Build command line (server doesn't support --log-file, so we'll redirect stdout/stderr)
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
+    cmdline += " --host " + host_;
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
     cmdline += " --llamacpp " + llamacpp_backend_;
     cmdline += " --log-level debug";  // Always use debug logging for router
@@ -523,6 +528,8 @@ bool ServerManager::spawn_process() {
         args.push_back("--port");
         std::string port_str = std::to_string(port_);
         args.push_back(port_str.c_str());
+        args.push_back("--host");
+        args.push_back(host_.c_str());
         args.push_back("--ctx-size");
         std::string ctx_str = std::to_string(ctx_size_);
         args.push_back(ctx_str.c_str());

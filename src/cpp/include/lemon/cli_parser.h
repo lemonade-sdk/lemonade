@@ -7,7 +7,7 @@ namespace lemon {
 
 struct ServerConfig {
     int port = 8000;
-    std::string host = "0.0.0.0";
+    std::string host = "127.0.0.1";
     std::string log_level = "info";
     bool tray = false;  // Tray is handled by lemonade-server-beta, not lemonade-router
     std::string llamacpp_backend = "vulkan";

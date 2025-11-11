@@ -352,7 +352,7 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 
 # Available options:
 #   --port PORT              Port number (default: 8000)
-#   --host HOST              Bind address (default: 0.0.0.0)
+#   --host HOST              Bind address (default: 127.0.0.1)
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
 #   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
@@ -399,7 +399,7 @@ The `lemonade-server-beta` executable is the command-line interface for terminal
 
 **Available Options:**
 - `--port PORT` - Server port (default: 8000)
-- `--host HOST` - Server host (default: localhost)
+- `--host HOST` - Server host (default: 127.0.0.1)
 - `--ctx-size SIZE` - Context size (default: 4096)
 - `--log-level LEVEL` - Logging verbosity: info, debug (default: info)
 - `--log-file PATH` - Custom log file location

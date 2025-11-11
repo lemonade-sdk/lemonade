@@ -352,9 +352,7 @@ void Server::setup_cors() {
 }
 
 void Server::run() {
-    // Display user-friendly address
-    std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-    std::cout << "[Server] Starting on " << display_host << ":" << port_ << std::endl;
+    std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
     
     // Add request logging for ALL requests
     http_server_->set_logger([](const httplib::Request& req, const httplib::Response& res) {

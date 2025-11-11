@@ -26,7 +26,7 @@ struct AppConfig {
 #endif
     bool show_help = false;
     bool show_version = false;
-    std::string host = "localhost";
+    std::string host = "127.0.0.1";
     std::string llamacpp_backend = "vulkan";  // Default to vulkan
     std::string llamacpp_args = "";  // Custom arguments for llama-server
     

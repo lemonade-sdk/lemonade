@@ -944,17 +944,15 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
 void RyzenAIServer::run() {
     running_ = true;
     
-    std::string display_host = (args_.host == "0.0.0.0") ? "localhost" : args_.host;
-    
     std::cout << "\n";
     std::cout << "===============================================================\n";
-    std::cout << "  Server running at: http://" << display_host << ":" << args_.port << "\n";
+    std::cout << "  Server running at: http://" << args_.host << ":" << args_.port << "\n";
     std::cout << "===============================================================\n";
     std::cout << "\n";
     std::cout << "Available endpoints:\n";
-    std::cout << "  GET  http://" << display_host << ":" << args_.port << "/health\n";
-    std::cout << "  POST http://" << display_host << ":" << args_.port << "/v1/completions\n";
-    std::cout << "  POST http://" << display_host << ":" << args_.port << "/v1/chat/completions\n";
+    std::cout << "  GET  http://" << args_.host << ":" << args_.port << "/health\n";
+    std::cout << "  POST http://" << args_.host << ":" << args_.port << "/v1/completions\n";
+    std::cout << "  POST http://" << args_.host << ":" << args_.port << "/v1/chat/completions\n";
     std::cout << "\n";
     std::cout << "Press Ctrl+C to stop the server\n";
     std::cout << "===============================================================\n\n";
