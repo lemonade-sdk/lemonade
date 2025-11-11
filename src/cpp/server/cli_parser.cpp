@@ -26,6 +26,10 @@ CLIParser::CLIParser()
     
     app_.add_option("--ctx-size", config_.ctx_size, "Context size for the model")
         ->default_val(4096);
+    
+    app_.add_option("--llamacpp-args", config_.llamacpp_args, 
+                   "Custom arguments to pass to llama-server (must not conflict with managed args)")
+        ->default_val("");
 }
 
 int CLIParser::parse(int argc, char** argv) {
