@@ -52,16 +52,10 @@ The additional endpoints under development are:
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
 
-### Windows Installer
-
-See the [Lemonade Server getting started instructions](./README.md). 
-
-### Python Environment
-
-If you have Lemonade [installed in a Python environment](https://lemonade-server.ai/install_options.html), simply activate it and run the following command to start the server:
+See the [Lemonade Server getting started instructions](./README.md).
 
 ```bash
-lemonade-server-dev serve
+lemonade-server serve
 ```
 
 ## OpenAI-Compatible Endpoints

@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux and macOS users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe) and Debian Installer (lemonade-server-<VERSION>-Linux.deb).
 
 ### Checking Server Status
 

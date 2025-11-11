@@ -80,8 +80,6 @@ To check all models available, use the `list` command:
 lemonade-server list
 ```
 
-> **Note**:  If you installed from source, use the `lemonade-server-dev` command instead.
-
 > **Tip**: You can use `--llamacpp vulkan/rocm` to select a backend when running GGUF models.
 
 
