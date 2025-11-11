@@ -12,6 +12,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cstdlib>
+#include <set>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -36,8 +37,94 @@ static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
 
-LlamaCppServer::LlamaCppServer(const std::string& backend, const std::string& log_level)
-    : WrappedServer("llama-server", log_level), backend_(backend) {
+// Helper to add a flag-only argument (e.g., --jinja, --embeddings)
+static void push_arg(std::vector<std::string>& args, 
+                    std::set<std::string>& reserved,
+                    const std::string& key) {
+    args.push_back(key);
+    reserved.insert(key);
+}
+
+// Helper to add a flag-value pair (e.g., --port 8000, -m model.gguf)
+static void push_arg(std::vector<std::string>& args,
+                    std::set<std::string>& reserved,
+                    const std::string& key,
+                    const std::string& value) {
+    args.push_back(key);
+    args.push_back(value);
+    reserved.insert(key);
+}
+
+// Helper to tokenize custom args string into vector
+static std::vector<std::string> parse_custom_args(const std::string& custom_args_str) {
+    std::vector<std::string> result;
+    if (custom_args_str.empty()) {
+        return result;
+    }
+    
+    std::string current_arg;
+    bool in_quotes = false;
+    char quote_char = '\0';
+    
+    for (char c : custom_args_str) {
+        if (!in_quotes && (c == '"' || c == '\'')) {
+            in_quotes = true;
+            quote_char = c;
+        } else if (in_quotes && c == quote_char) {
+            in_quotes = false;
+            quote_char = '\0';
+        } else if (!in_quotes && c == ' ') {
+            if (!current_arg.empty()) {
+                result.push_back(current_arg);
+                current_arg.clear();
+            }
+        } else {
+            current_arg += c;
+        }
+    }
+    
+    if (!current_arg.empty()) {
+        result.push_back(current_arg);
+    }
+    
+    return result;
+}
+
+// Helper to validate custom arguments don't conflict with reserved flags
+static std::string validate_custom_args(const std::string& custom_args_str,
+                                       const std::set<std::string>& reserved_flags) {
+    std::vector<std::string> custom_args = parse_custom_args(custom_args_str);
+    
+    for (const auto& arg : custom_args) {
+        // Extract flag name (handle --flag=value format)
+        std::string flag = arg;
+        size_t eq_pos = flag.find('=');
+        if (eq_pos != std::string::npos) {
+            flag = flag.substr(0, eq_pos);
+        }
+        
+        // Check if it's a flag and if it's reserved
+        if (!flag.empty() && flag[0] == '-') {
+            if (reserved_flags.find(flag) != reserved_flags.end()) {
+                // Build error message with all reserved flags
+                std::string reserved_list;
+                for (const auto& rf : reserved_flags) {
+                    if (!reserved_list.empty()) reserved_list += ", ";
+                    reserved_list += rf;
+                }
+                
+                return "Argument '" + flag + "' is managed by Lemonade and cannot be overridden.\n"
+                       "Reserved arguments: " + reserved_list;
+            }
+        }
+    }
+    
+    return "";  // Valid
+}
+
+LlamaCppServer::LlamaCppServer(const std::string& backend, const std::string& log_level,
+                               const std::string& custom_args)
+    : WrappedServer("llama-server", log_level), backend_(backend), custom_args_(custom_args) {
 }
 
 LlamaCppServer::~LlamaCppServer() {
@@ -455,36 +542,33 @@ void LlamaCppServer::load(const std::string& model_name,
         ctx_size = EMBEDDING_CTX_SIZE;
     }
     
-    // Build command arguments to match Python implementation EXACTLY
-    std::vector<std::string> args = {
-        "-m", gguf_path,
-        "--ctx-size", std::to_string(ctx_size),
-        "--port", std::to_string(port_),
-        "--jinja"  // Enable tool use
-    };
+    // Build command arguments while tracking reserved flags
+    std::vector<std::string> args;
+    std::set<std::string> reserved_flags;
+    
+    push_arg(args, reserved_flags, "-m", gguf_path);
+    push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size));
+    push_arg(args, reserved_flags, "--port", std::to_string(port_));
+    push_arg(args, reserved_flags, "--jinja");
     
     // Add mmproj file if present (for vision models)
     if (!mmproj_path.empty()) {
-        args.push_back("--mmproj");
-        args.push_back(mmproj_path);
+        push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         // Note: Python implementation adds --no-mmproj-offload for CPU mode
         // C++ currently only supports GPU mode; CPU fallback would need to be implemented
     }
     
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (backend_ == "vulkan" || backend_ == "rocm") {
-        args.push_back("--context-shift");
-        args.push_back("--keep");
-        args.push_back("16");
+        push_arg(args, reserved_flags, "--context-shift");
+        push_arg(args, reserved_flags, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        args.push_back("--keep");
-        args.push_back("16");
+        push_arg(args, reserved_flags, "--keep", "16");
     }
     
     // Use legacy reasoning formatting
-    args.push_back("--reasoning-format");
-    args.push_back("auto");
+    push_arg(args, reserved_flags, "--reasoning-format", "auto");
     
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
@@ -492,22 +576,33 @@ void LlamaCppServer::load(const std::string& model_name,
         // For embedding models, set batch sizes to handle multiple documents in a single request
         // batch-size: logical batch size (total tokens across all sequences)
         // ubatch-size: physical batch size (tokens processed in a single forward pass)
-        args.push_back("--embeddings");
-        args.push_back("--batch-size");
-        args.push_back(std::to_string(EMBEDDING_BATCH_SIZE));
-        args.push_back("--ubatch-size");
-        args.push_back(std::to_string(EMBEDDING_UBATCH_SIZE));
+        push_arg(args, reserved_flags, "--embeddings");
+        push_arg(args, reserved_flags, "--batch-size", std::to_string(EMBEDDING_BATCH_SIZE));
+        push_arg(args, reserved_flags, "--ubatch-size", std::to_string(EMBEDDING_UBATCH_SIZE));
     }
     
     // Add reranking support if the model supports it
     if (supports_reranking) {
         std::cout << "[LlamaCpp] Model supports reranking, adding --reranking flag" << std::endl;
-        args.push_back("--reranking");
+        push_arg(args, reserved_flags, "--reranking");
     }
     
     // Configure GPU layers
-    args.push_back("-ngl");
-    args.push_back("99");  // 99 for GPU, 0 for CPU-only
+    push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
+    
+    // Validate and append custom arguments
+    if (!custom_args_.empty()) {
+        std::string validation_error = validate_custom_args(custom_args_, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom llama-server arguments:\n" + validation_error
+            );
+        }
+        
+        std::cout << "[LlamaCpp] Adding custom arguments: " << custom_args_ << std::endl;
+        std::vector<std::string> custom_args_vec = parse_custom_args(custom_args_);
+        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+    }
     
     std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
     

@@ -76,7 +76,8 @@ bool ServerManager::start_server(
     const std::string& log_level,
     const std::string& llamacpp_backend,
     bool show_console,
-    bool is_ephemeral)
+    bool is_ephemeral,
+    const std::string& llamacpp_args)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -91,6 +92,7 @@ bool ServerManager::start_server(
     llamacpp_backend_ = llamacpp_backend;
     show_console_ = show_console;
     is_ephemeral_ = is_ephemeral;
+    llamacpp_args_ = llamacpp_args;
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -328,6 +330,9 @@ bool ServerManager::spawn_process() {
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
     cmdline += " --llamacpp " + llamacpp_backend_;
     cmdline += " --log-level debug";  // Always use debug logging for router
+    if (!llamacpp_args_.empty()) {
+        cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
+    }
     
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
@@ -525,6 +530,13 @@ bool ServerManager::spawn_process() {
         args.push_back(llamacpp_backend_.c_str());
         args.push_back("--log-level");
         args.push_back("debug");  // Always use debug logging
+        
+        // Add llamacpp_args if present
+        if (!llamacpp_args_.empty()) {
+            args.push_back("--llamacpp-args");
+            args.push_back(llamacpp_args_.c_str());
+        }
+        
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));

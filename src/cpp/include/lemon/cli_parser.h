@@ -12,6 +12,7 @@ struct ServerConfig {
     bool tray = false;  // Tray is handled by lemonade-server-beta, not lemonade-router
     std::string llamacpp_backend = "vulkan";
     int ctx_size = 4096;
+    std::string llamacpp_args = "";
 };
 
 class CLIParser {
