@@ -223,6 +223,8 @@ file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade/tools/server/static
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/backend_versions.json
+     DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
 # Also copy to Release and Debug directories for Visual Studio multi-config
 add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD

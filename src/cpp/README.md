@@ -66,7 +66,7 @@ cmake --build . --config Release
 - **Linux/macOS:** 
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server-beta` - Console CLI client
-- **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry)
+- **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
 
 ### RyzenAI Server Dependency
 
@@ -208,6 +208,8 @@ src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
 ├── Lemonade_Server_Installer_beta.nsi  # NSIS installer definition
+├── resources/                  # Configuration and data files
+│   └── backend_versions.json   # llama.cpp version configuration (user-editable)
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing
