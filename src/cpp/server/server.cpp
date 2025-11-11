@@ -24,9 +24,11 @@
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               int ctx_size, bool tray, const std::string& llamacpp_backend)
+               int ctx_size, bool tray, const std::string& llamacpp_backend,
+               const std::string& llamacpp_args)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
-      tray_(tray), llamacpp_backend_(llamacpp_backend), running_(false) {
+      tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
+      running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -51,7 +53,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level);
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;

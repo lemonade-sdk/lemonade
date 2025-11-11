@@ -513,6 +513,7 @@ void TrayApp::load_env_defaults() {
     config_.log_level = getenv_or_default("LEMONADE_LOG_LEVEL", config_.log_level);
     config_.llamacpp_backend = getenv_or_default("LEMONADE_LLAMACPP", config_.llamacpp_backend);
     config_.ctx_size = getenv_int_or_default("LEMONADE_CTX_SIZE", config_.ctx_size);
+    config_.llamacpp_args = getenv_or_default("LEMONADE_LLAMACPP_ARGS", config_.llamacpp_args);
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {
@@ -537,6 +538,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.ctx_size = std::stoi(argv[++i]);
             } else if (arg == "--llamacpp" && i + 1 < argc) {
                 config_.llamacpp_backend = argv[++i];
+            } else if (arg == "--llamacpp-args" && i + 1 < argc) {
+                config_.llamacpp_args = argv[++i];
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
             } else {
@@ -588,6 +591,7 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --host HOST              Server host (default: localhost)\n";
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
+        std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
         std::cout << "  --log-file PATH          Log file path\n";
         std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -745,7 +749,8 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.log_level,  // Pass log level to ServerManager
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
         false,  // show_console
-        true    // is_ephemeral (suppress startup message)
+        true,   // is_ephemeral (suppress startup message)
+        config_.llamacpp_args  // Pass custom llamacpp args
     );
     
     if (!success) {
@@ -1383,7 +1388,8 @@ bool TrayApp::start_server() {
         config_.log_level,  // Pass log level to ServerManager
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
         true,               // Always show console output for serve command
-        false               // is_ephemeral = false (persistent server, show startup message with URL)
+        false,              // is_ephemeral = false (persistent server, show startup message with URL)
+        config_.llamacpp_args  // Pass custom llamacpp args
     );
     
     // Start log tail thread to show logs in console

@@ -9,8 +9,10 @@
 
 namespace lemon {
 
-Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level)
-    : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level) {
+Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level,
+               const std::string& llamacpp_args)
+    : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level),
+      llamacpp_args_(llamacpp_args) {
 }
 
 Router::~Router() {
@@ -99,7 +101,7 @@ void Router::load_model(const std::string& model_name,
             new_server.reset(ryzenai_server);
         } else {
             std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
-            new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_);
+            new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_, llamacpp_args_);
         }
         
         // CRITICAL: Release the lock before the time-consuming backend startup
