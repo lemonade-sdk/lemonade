@@ -1,7 +1,7 @@
-# Build Lemonade Server Beta Installer
-# This script assumes CMake has already built lemonade-router.exe and lemonade-server-beta.exe in build\Release
+# Build Lemonade Server Installer
+# This script assumes CMake has already built lemonade-router.exe and lemonade-server.exe in build\Release
 
-Write-Host "Building Lemonade Server Beta Installer..." -ForegroundColor Cyan
+Write-Host "Building Lemonade Server Installer..." -ForegroundColor Cyan
 
 # Check if NSIS is installed
 $nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
@@ -12,7 +12,7 @@ if (-not (Test-Path $nsisPath)) {
 }
 
 # Check if executables exist
-$trayExe = "build\Release\lemonade-server-beta.exe"
+$trayExe = "build\Release\lemonade-server.exe"
 $serverExe = "build\Release\lemonade-router.exe"
 
 if (-not (Test-Path $trayExe)) {
@@ -30,7 +30,7 @@ if (-not (Test-Path $serverExe)) {
     exit 1
 }
 
-Write-Host "Found lemonade-server-beta.exe" -ForegroundColor Green
+Write-Host "Found lemonade-server.exe" -ForegroundColor Green
 Write-Host "Found lemonade-router.exe" -ForegroundColor Green
 
 # Check if resources directory exists
@@ -42,13 +42,13 @@ if (-not (Test-Path $resourcesDir)) {
 
 # Build the installer
 Write-Host "Running NSIS..." -ForegroundColor Cyan
-& $nsisPath "Lemonade_Server_Installer_beta.nsi"
+& $nsisPath "Lemonade_Server_Installer.nsi"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nInstaller built successfully!" -ForegroundColor Green
-    Write-Host "Output: Lemonade_Server_Installer_beta.exe" -ForegroundColor Green
-    Write-Host "`nYou can now run the installer to install Lemonade Server Beta to:" -ForegroundColor Cyan
-    Write-Host "  $env:LOCALAPPDATA\lemonade_server_beta" -ForegroundColor Cyan
+    Write-Host "Output: Lemonade_Server_Installer.exe" -ForegroundColor Green
+    Write-Host "`nYou can now run the installer to install Lemonade Server to:" -ForegroundColor Cyan
+    Write-Host "  $env:LOCALAPPDATA\lemonade_server" -ForegroundColor Cyan
 } else {
     Write-Host "`nInstaller build failed!" -ForegroundColor Red
     exit 1

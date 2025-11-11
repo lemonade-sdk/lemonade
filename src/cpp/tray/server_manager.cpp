@@ -114,7 +114,7 @@ bool ServerManager::start_server(
             // Print startup message based on server type
             if (!is_ephemeral) {
                 // Persistent server: print startup message with URL
-                std::cout << "Lemonade Server Beta v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+                std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
                 std::cout << "Chat and manage models: http://localhost:" << port_ << std::endl;
             }
             // Ephemeral server: no output

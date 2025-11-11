@@ -157,8 +157,8 @@ if(WIN32)
     
     # Generate NSIS installer script with version
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer_beta.nsi
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi
         @ONLY
     )
 endif()
@@ -261,7 +261,7 @@ if(UNIX AND NOT APPLE)
     endif()
     
     # Only install our executables (not curl/development files)
-    # Note: lemonade-server-beta installation is handled in tray/CMakeLists.txt
+    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION bin
     )
