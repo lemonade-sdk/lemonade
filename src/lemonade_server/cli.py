@@ -628,6 +628,21 @@ def _add_server_arguments(parser):
 
 
 def main():
+    # Display deprecation notice
+    print("=" * 80)
+    print("DEPRECATION NOTICE")
+    print("=" * 80)
+    print("The Python-based 'lemonade-server-dev' command is deprecated.")
+    print("Please use the C++ Lemonade Server instead:")
+    print()
+    print("  • Windows and Linux: Download the installer from")
+    print("    https://github.com/lemonade-sdk/lemonade/releases/latest")
+    print()
+    print("The C++ server offers better performance and is the recommended option.")
+    print("This Python server will be removed in a future release.")
+    print("=" * 80)
+    print()
+
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
         usage=argparse.SUPPRESS,
