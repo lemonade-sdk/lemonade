@@ -534,6 +534,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.log_level = argv[++i];
             } else if (arg == "--port" && i + 1 < argc) {
                 config_.port = std::stoi(argv[++i]);
+            } else if (arg == "--host" && i + 1 < argc) {
+                config_.host = argv[++i];
             } else if (arg == "--ctx-size" && i + 1 < argc) {
                 config_.ctx_size = std::stoi(argv[++i]);
             } else if (arg == "--llamacpp" && i + 1 < argc) {
@@ -588,7 +590,7 @@ void TrayApp::print_usage(bool show_serve_options) {
     if (show_serve_options) {
         std::cout << "Serve Options:\n";
         std::cout << "  --port PORT              Server port (default: 8000)\n";
-        std::cout << "  --host HOST              Server host (default: localhost)\n";
+        std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
@@ -750,7 +752,8 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
         false,  // show_console
         true,   // is_ephemeral (suppress startup message)
-        config_.llamacpp_args  // Pass custom llamacpp args
+        config_.llamacpp_args,  // Pass custom llamacpp args
+        config_.host  // Pass host to ServerManager
     );
     
     if (!success) {
@@ -996,7 +999,7 @@ int TrayApp::execute_run_command() {
         std::cout << "Model loaded successfully!" << std::endl;
         
         // Open browser to chat interface
-        std::string url = "http://localhost:" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
+        std::string url = "http://" + config_.host + ":" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
         std::cout << "Opening browser: " << url << std::endl;
         open_url(url);
     } else {
@@ -1389,7 +1392,8 @@ bool TrayApp::start_server() {
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
         true,               // Always show console output for serve command
         false,              // is_ephemeral = false (persistent server, show startup message with URL)
-        config_.llamacpp_args  // Pass custom llamacpp args
+        config_.llamacpp_args,  // Pass custom llamacpp args
+        config_.host        // Pass host to ServerManager
     );
     
     // Start log tail thread to show logs in console
@@ -1683,11 +1687,11 @@ void TrayApp::on_open_documentation() {
 }
 
 void TrayApp::on_open_llm_chat() {
-    open_url("http://localhost:" + std::to_string(config_.port) + "/#llm-chat");
+    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#llm-chat");
 }
 
 void TrayApp::on_open_model_manager() {
-    open_url("http://localhost:" + std::to_string(config_.port) + "/#model-management");
+    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#model-management");
 }
 
 void TrayApp::on_upgrade() {

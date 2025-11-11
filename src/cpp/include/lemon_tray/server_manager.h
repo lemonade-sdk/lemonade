@@ -49,7 +49,8 @@ public:
         const std::string& llamacpp_backend = "vulkan",
         bool show_console = false,
         bool is_ephemeral = false,
-        const std::string& llamacpp_args = ""
+        const std::string& llamacpp_args = "",
+        const std::string& host = "127.0.0.1"
     );
     
     bool stop_server();
@@ -101,6 +102,7 @@ private:
     std::string log_level_;
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
+    std::string host_;
     int port_;
     int ctx_size_;
     bool show_console_;
