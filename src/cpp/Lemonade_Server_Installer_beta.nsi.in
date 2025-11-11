@@ -98,7 +98,6 @@ SectionIn RO ; Read only, always installed
     ; Create fresh directory structure
     CreateDirectory "$INSTDIR"
     CreateDirectory "$INSTDIR\bin"
-    CreateDirectory "$INSTDIR\resources"
     
     DetailPrint "*** INSTALLATION STARTED ***"
     DetailPrint 'Configuration:'
