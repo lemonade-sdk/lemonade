@@ -272,7 +272,7 @@ bool ServerManager::load_model(const std::string& model_name) {
         DEBUG_LOG(this, "Loading model with extended timeout...");
         DEBUG_LOG(this, "Request body: " << body);
         
-        httplib::Client cli("127.0.0.1", port_);
+        httplib::Client cli(host_, port_);
         cli.set_connection_timeout(10, 0);   // 10 second connection timeout
         cli.set_read_timeout(240, 0);        // 240 second (4 minute) read timeout for large models
         
@@ -301,7 +301,7 @@ bool ServerManager::load_model(const std::string& model_name) {
 bool ServerManager::unload_model() {
     try {
         // Unload can also take time
-        httplib::Client cli("127.0.0.1", port_);
+        httplib::Client cli(host_, port_);
         cli.set_connection_timeout(10, 0);
         cli.set_read_timeout(30, 0);  // 30 second timeout for unload
         
@@ -738,8 +738,8 @@ std::string ServerManager::make_http_request(
 {
     // Debug logging removed - too verbose for normal operations
     
-    // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
-    httplib::Client cli("127.0.0.1", port_);
+    // Use the configured host to connect to the server
+    httplib::Client cli(host_, port_);
     cli.set_connection_timeout(10, 0);  // 10 second connection timeout
     cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
     
