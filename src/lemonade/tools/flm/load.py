@@ -14,9 +14,9 @@ class FLMLoad(FirstTool):
     def __init__(self):
         super().__init__(monitor_message="Starting FLM server and loading FLM model")
 
-        # self.status_stats = [
-        #     Keys.DEVICE,
-        # ]
+        self.status_stats = [
+            Keys.DEVICE,
+        ]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -87,6 +87,7 @@ class FLMLoad(FirstTool):
         time.sleep(1)
 
         # Save initial stats
+        state.save_stat(Keys.DEVICE, "npu")
         installed_flm_version, _ = check_flm_version()
         state.save_stat(Keys.FLM_VERSION_INFO, installed_flm_version)
 
