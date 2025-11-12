@@ -2,6 +2,7 @@
 FLM (FastFlowLM) utilities for installation, version checking, and model management.
 """
 
+import collections
 import os
 import logging
 import subprocess
@@ -422,7 +423,7 @@ class FLMAdapter(ModelAdapter):
 
         return response
 
-    def start_server(self, ctx_len=None, timeout=30):
+    def start_server(self, ctx_len=None, timeout=300):
         """
         Start the FLM server and save the process and port.
         """
@@ -431,7 +432,13 @@ class FLMAdapter(ModelAdapter):
         if ctx_len:
             cmd.extend(["--ctx-len", str(ctx_len)])
         self.server_process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            encoding="utf-8",
+            errors="replace",
         )
 
         # Wait for server to start
@@ -458,6 +465,14 @@ class FLMAdapter(ModelAdapter):
             self.stop_server()
             raise Exception(f"Server failed to start within {timeout} seconds")
 
+        # Start a thread to continuously read and discard server output
+        threading.Thread(
+            target=lambda s=self.server_process.stdout: collections.deque(
+                iter(s.readline, ""), maxlen=0
+            ),
+            daemon=True,
+        ).start()
+
     def stop_server(self):
         if self.server_process:
             self.server_process.terminate()
@@ -483,7 +498,7 @@ class FLMAdapter(ModelAdapter):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.9,
                 top_p=0.95,
-                # presence_penalty=0.5,
+                presence_penalty=0.5,
                 max_tokens=max_new_tokens,
             )
             result = response.choices[0].message.content
