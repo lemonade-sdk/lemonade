@@ -343,35 +343,39 @@ window.lmnRender = function() {
       }
     }
   } else if (lmnState.method === 'pypi' || lmnState.method === 'src') {
+    // Use quotes for package specs with brackets on macOS/Linux
+    const needsQuotes = (lmnState.os === 'macos' || lmnState.os === 'linux');
+    const q = needsQuotes ? '"' : '';
+    
     if (lmnState.fw === 'oga') {
       if (lmnState.dev === 'cpu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-cpu]' : 'pip install lemonade-sdk[dev,oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'pip install ' + q + 'lemonade-sdk[oga-cpu]' + q : 'pip install ' + q + 'lemonade-sdk[dev,oga-cpu]' + q;
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-cpu]' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-cpu]';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[oga-cpu]' + q : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev,oga-cpu]' + q;
         }
       } else if (lmnState.dev === 'npu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple' : 'pip install lemonade-sdk[dev,oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple';
+          cmd = lmnState.type === 'server' ? 'pip install ' + q + 'lemonade-sdk[oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple' : 'pip install ' + q + 'lemonade-sdk[dev,oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple';
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev,oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev,oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple';
         }
       }
     } else if (lmnState.fw === 'torch') {
       // PyTorch not available for server-only
       if (lmnState.type === 'full' && (lmnState.dev === 'cpu' || lmnState.dev === 'gpu')) {
         if (lmnState.method === 'pypi') {
-          cmd = 'pip install lemonade-sdk[dev]';
+          cmd = 'pip install ' + q + 'lemonade-sdk[dev]' + q;
         } else {
-          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
+          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
         }
       }
     } else if (lmnState.fw === 'llama') {
       if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install lemonade-sdk[dev]';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install ' + q + 'lemonade-sdk[dev]' + q;
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
         }
         // Add ROCm requirement for llama.cpp GPU Linux installations (GUI)
         if (lmnState.os === 'linux' && lmnState.dev === 'gpu') {
@@ -382,9 +386,9 @@ window.lmnRender = function() {
       // FastFlowLM: same install commands as llama.cpp CPU
       if (lmnState.dev === 'npu') {
         if (lmnState.method === 'pypi') {
-          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install lemonade-sdk[dev]';
+          cmd = lmnState.type === 'server' ? 'pip install lemonade-sdk' : 'pip install ' + q + 'lemonade-sdk[dev]' + q;
         } else {
-          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .[dev]';
+          cmd = lmnState.type === 'server' ? 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e .' : 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
         }
       }
     }

@@ -4,9 +4,6 @@ let attachedFiles = [];
 let systemMessageElement = null;
 let abortController = null;
 
-// Default model configuration
-const DEFAULT_MODEL = 'Qwen2.5-0.5B-Instruct-CPU';
-
 const THINKING_ANIM_INTERVAL_MS = 550;
 // Toggle this to false if you prefer plain dots only.
 const THINKING_USE_LEMON = true;
@@ -165,17 +162,22 @@ async function handleModelSelectChange() {
             	loadingOption.hidden = true;
             	select.appendChild(loadingOption);
             }
+            // Gray out send button during loading
+            updateAttachmentButtonState();
         },
         onLoadingEnd: (modelId, success) => {
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) defaultOption.textContent = 'Click to select a model ▼';
+            // Update button state after loading completes
+            updateAttachmentButtonState();
 		},
         onSuccess: () => {
             updateAttachmentButtonState();
         },
         onError: () => {
             updateModelSelectValue();
+            updateAttachmentButtonState();
         }
     });
 }
@@ -192,7 +194,8 @@ function updateAttachmentButtonState() {
             toggleBtn.disabled = false;
             toggleBtn.textContent = 'Stop';
         } else {
-            toggleBtn.disabled = loading;
+            // Gray out send button if no model is loaded or if loading
+            toggleBtn.disabled = loading || !currentLoadedModel;
             toggleBtn.textContent = 'Send';
         }
     }
@@ -224,43 +227,6 @@ window.updateAttachmentButtonState = updateAttachmentButtonState;
 
 // Make displaySystemMessage accessible globally
 window.displaySystemMessage = displaySystemMessage;
-
-// Auto-load default model and send message
-async function autoLoadDefaultModelAndSend() {
-    // Check if default model is available and installed
-    if (!window.SERVER_MODELS || !window.SERVER_MODELS[DEFAULT_MODEL]) {
-        showErrorBanner('No models available. Please install a model first.');
-        return;
-    }
-
-    if (!window.installedModels || !window.installedModels.has(DEFAULT_MODEL)) {
-        showErrorBanner('Default model is not installed. Please install it from the Model Management tab.');
-        return;
-    }
-
-    // Store the message to send after loading
-    const messageToSend = chatInput.value.trim();
-    if (!messageToSend && attachedFiles.length === 0) return;
-
-    // Use the standardized load function
-    const success = await loadModelStandardized(DEFAULT_MODEL, {
-        // Custom UI updates for auto-loading
-        onLoadingStart: () => {
-            if (toggleBtn) {
-                toggleBtn.disabled = true;
-                toggleBtn.textContent = 'Send';
-            }
-        },
-        // Reset send button state
-        onLoadingEnd: () => { updateAttachmentButtonState(); },
-        // Send the message after successful load
-        onSuccess: () => { sendMessage(messageToSend); },
-        onError: (error) => {
-            console.error('Error auto-loading default model:', error);
-            showErrorBanner('Failed to load model: ' + error.message);
-        }
-    });
-}
 
 // Check if model supports vision and update attachment button
 function checkCurrentModel() {
@@ -320,13 +286,11 @@ function handleChatInputKeydown(e) {
         clearAttachments();
     } else if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        // Check if we have a loaded model
+        // Only send if we have a loaded model
         if (currentLoadedModel && modelSelect.value !== '' && !modelSelect.disabled) {
             sendMessage();
-        } else if (!currentLoadedModel) {
-            // Auto-load default model and send
-            autoLoadDefaultModelAndSend();
         }
+        // Otherwise do nothing - button is grayed out
     }
 }
 
@@ -860,39 +824,13 @@ async function sendMessage(existingTextIfAny) {
         systemMessageElement = null;
     }
 
-    // Check if a model is loaded, if not, automatically load the default model
+    // Check if a model is loaded
     if (!currentLoadedModel) {
-        const allModels = window.SERVER_MODELS || {};
-
-        if (allModels[DEFAULT_MODEL]) {
-            try {
-                // Show loading message
-                const loadingBubble = appendMessage('system', 'Loading default model, please wait...');
-
-                // Load the default model
-                await httpRequest(getServerBaseUrl() + '/api/v1/load', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model_name: DEFAULT_MODEL })
-                });
-
-                // Update model status
-                await updateModelStatusIndicator();
-
-                // Remove loading message
-                loadingBubble.parentElement.remove();
-
-                // Show success message briefly
-                const successBubble = appendMessage('system', `Loaded ${DEFAULT_MODEL} successfully!`);
-                setTimeout(() => { successBubble.parentElement.remove(); }, 2000);
-            } catch (error) {
-                alert('Please load a model first before sending messages.');
-                return;
-            }
-        } else {
-            alert('Please load a model first before sending messages.');
-            return;
-        }
+        alert('Please load a model first before sending messages.');
+        abortController = null;
+        isStreaming = false;
+        updateAttachmentButtonState();
+        return;
     }
 
     // Check if trying to send images to non-vision model

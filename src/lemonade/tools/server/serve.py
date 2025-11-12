@@ -948,6 +948,23 @@ class Server:
         await self.load_llm(lc)
 
         if self.llm_loaded.recipe == "llamacpp" or self.llm_loaded.recipe == "flm":
+            if (
+                hasattr(chat_completion_request, "enable_thinking")
+                and chat_completion_request.enable_thinking is False
+                and "qwen3" in self.llm_loaded.model_name.lower()
+            ):
+
+                # Modify the last user message to include /no_think
+                if chat_completion_request.messages:
+                    for i in range(len(chat_completion_request.messages) - 1, -1, -1):
+                        if chat_completion_request.messages[i].get("role") == "user":
+                            original_content = chat_completion_request.messages[i][
+                                "content"
+                            ]
+                            chat_completion_request.messages[i][
+                                "content"
+                            ] = f"/no_think\n{original_content}"
+                            break
             return self.wrapped_server.chat_completion(chat_completion_request)
 
         # Convert chat messages to text using the model's chat template
@@ -1374,9 +1391,10 @@ class Server:
                                 "<think>" + token if reasoning_first_token else token
                             ),
                             item_id="0 ",
+                            logprobs=[],
                             output_index=0,
-                            type="response.output_text.delta",
                             sequence_number=0,
+                            type="response.output_text.delta",
                         )
                         full_response += token
 

@@ -207,6 +207,11 @@ async function loadModelStandardized(modelId, options = {}) {
     // Store original states for restoration on error
     const originalStatusText = document.getElementById('model-status-text')?.textContent || '';
     
+    // Track this load operation as active to prevent polling interference
+    if (window.activeOperations) {
+        window.activeOperations.add(modelId);
+    }
+    
     try {
         // Update load button if provided
         if (loadButton) {
@@ -219,7 +224,7 @@ async function loadModelStandardized(modelId, options = {}) {
         
         // Update chat dropdown and send button to show loading state
         const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
+        const sendBtn = document.getElementById('toggle-btn');
         if (modelSelect && sendBtn) {
             // Ensure the model exists in the dropdown options
             let modelOption = modelSelect.querySelector(`option[value="${modelId}"]`);
@@ -311,6 +316,11 @@ async function loadModelStandardized(modelId, options = {}) {
             onSuccess(modelId);
         }
         
+        // Remove from active operations on success
+        if (window.activeOperations) {
+            window.activeOperations.delete(modelId);
+        }
+        
         return true;
         
     } catch (error) {
@@ -328,7 +338,7 @@ async function loadModelStandardized(modelId, options = {}) {
         
         // Reset chat controls on error
         const modelSelect = document.getElementById('model-select');
-        const sendBtn = document.getElementById('send-btn');
+        const sendBtn = document.getElementById('toggle-btn');
         if (modelSelect && sendBtn) {
             modelSelect.disabled = false;
             sendBtn.disabled = false;
@@ -357,6 +367,11 @@ async function loadModelStandardized(modelId, options = {}) {
         }
         // Always show error banner to ensure user sees the error
         showErrorBanner('Failed to load model: ' + error.message);
+        
+        // Remove from active operations on error too
+        if (window.activeOperations) {
+            window.activeOperations.delete(modelId);
+        }
         
         return false;
     }

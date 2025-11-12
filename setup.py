@@ -42,7 +42,7 @@ setup(
         "zstandard",
         "fastapi",
         "uvicorn[standard]",
-        "openai>=1.81.0,<1.97.1",
+        "openai>=2.0.0,<3.0.0",
         "transformers<=4.53.2",
         "jinja2",
         "tabulate",
@@ -58,7 +58,7 @@ setup(
         # applications, without including developer-focused tools
         # Primary NPU extra using unified PyPI package
         "oga-ryzenai": [
-            "onnxruntime-genai-directml-ryzenai==0.9.2",
+            "onnxruntime-genai-directml-ryzenai==0.9.2.1",
             "protobuf>=6.30.1",
         ],
         "oga-cpu": [
