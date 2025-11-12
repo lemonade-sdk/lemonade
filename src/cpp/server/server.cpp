@@ -597,6 +597,35 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             }
         }
         
+        // Handle enable_thinking=false by prepending /no_think to last user message
+        if (request_json.contains("enable_thinking") && 
+            request_json["enable_thinking"].is_boolean() && 
+            request_json["enable_thinking"].get<bool>() == false) {
+            
+            if (request_json.contains("messages") && request_json["messages"].is_array()) {
+                auto& messages = request_json["messages"];
+                
+                // Find the last user message (iterate backwards)
+                for (int i = messages.size() - 1; i >= 0; i--) {
+                    if (messages[i].is_object() && 
+                        messages[i].contains("role") && 
+                        messages[i]["role"].is_string() && 
+                        messages[i]["role"].get<std::string>() == "user") {
+                        
+                        // Prepend /no_think to the content
+                        if (messages[i].contains("content") && messages[i]["content"].is_string()) {
+                            std::string original_content = messages[i]["content"].get<std::string>();
+                            messages[i]["content"] = "/no_think\n" + original_content;
+                            
+                            // Update request_body with modified JSON
+                            request_body = request_json.dump();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
         if (is_streaming) {
             try {
                 // Log the HTTP request
