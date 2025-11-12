@@ -6,6 +6,7 @@
 #include <lemon/system_info.h>
 #include <filesystem>
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <cstdlib>
 #include <sstream>
@@ -1014,8 +1015,6 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     
     std::string model_cache_path = hf_cache + "/" + cache_dir_name;
     fs::create_directories(model_cache_path);
-    std::string snapshot_path = model_cache_path + "/snapshots/main";
-    fs::create_directories(snapshot_path);
     
     // Get HF token if available
     std::map<std::string, std::string> headers;
@@ -1045,6 +1044,31 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         
         if (!model_info.contains("siblings") || !model_info["siblings"].is_array()) {
             throw std::runtime_error("Invalid model info response from Hugging Face API");
+        }
+        
+        // Extract commit hash (sha) from the API response
+        std::string commit_hash;
+        if (model_info.contains("sha") && model_info["sha"].is_string()) {
+            commit_hash = model_info["sha"].get<std::string>();
+            std::cout << "[ModelManager] Using commit hash: " << commit_hash << std::endl;
+        } else {
+            // Fallback to "main" if sha is not available
+            commit_hash = "main";
+            std::cout << "[ModelManager] Warning: No commit hash found in API response, using 'main'" << std::endl;
+        }
+        
+        // Create snapshot directory using commit hash
+        std::string snapshot_path = model_cache_path + "/snapshots/" + commit_hash;
+        fs::create_directories(snapshot_path);
+        
+        // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
+        std::string refs_dir = model_cache_path + "/refs";
+        fs::create_directories(refs_dir);
+        std::string refs_main_path = refs_dir + "/main";
+        std::ofstream refs_file(refs_main_path);
+        if (refs_file.is_open()) {
+            refs_file << commit_hash;
+            refs_file.close();
         }
         
         // Extract list of all files in the repository
