@@ -685,6 +685,26 @@ std::pair<int, int> TrayApp::get_server_info() {
     // Query OS for listening TCP connections and find lemonade-router.exe
 #ifdef _WIN32
     // Windows: Use GetExtendedTcpTable to find listening connections
+    // Check both IPv4 and IPv6 since server may bind to either
+    
+    // Helper lambda to check if a PID is lemonade-router.exe
+    auto is_lemonade_router = [](DWORD pid) -> bool {
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProcess) {
+            WCHAR processName[MAX_PATH];
+            DWORD size = MAX_PATH;
+            if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
+                std::wstring fullPath(processName);
+                std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
+                CloseHandle(hProcess);
+                return (exeName == L"lemonade-router.exe");
+            }
+            CloseHandle(hProcess);
+        }
+        return false;
+    };
+    
+    // Try IPv4 first
     DWORD size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
     
@@ -696,21 +716,26 @@ std::pair<int, int> TrayApp::get_server_info() {
             DWORD pid = pTcpTable->table[i].dwOwningPid;
             int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
             
-            // Check if this PID is lemonade-router.exe
-            HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if (hProcess) {
-                WCHAR processName[MAX_PATH];
-                DWORD size = MAX_PATH;
-                if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
-                    std::wstring fullPath(processName);
-                    std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
-                    
-                    if (exeName == L"lemonade-router.exe") {
-                        CloseHandle(hProcess);
-                        return {static_cast<int>(pid), port};
-                    }
-                }
-                CloseHandle(hProcess);
+            if (is_lemonade_router(pid)) {
+                return {static_cast<int>(pid), port};
+            }
+        }
+    }
+    
+    // Try IPv6 if not found in IPv4
+    size = 0;
+    GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
+    
+    buffer.resize(size);
+    PMIB_TCP6TABLE_OWNER_PID pTcp6Table = reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buffer.data());
+    
+    if (GetExtendedTcpTable(pTcp6Table, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR) {
+        for (DWORD i = 0; i < pTcp6Table->dwNumEntries; i++) {
+            DWORD pid = pTcp6Table->table[i].dwOwningPid;
+            int port = ntohs((u_short)pTcp6Table->table[i].dwLocalPort);
+            
+            if (is_lemonade_router(pid)) {
+                return {static_cast<int>(pid), port};
             }
         }
     }
