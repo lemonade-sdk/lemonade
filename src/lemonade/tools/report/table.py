@@ -12,6 +12,8 @@ from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.oga.bench import OgaBench
+from lemonade.tools.flm.bench import FLMBench
+
 
 # List of python packages for which to log the version
 PYTHON_PACKAGES = ["onnxruntime", "transformers", "lemonade-sdk", "voe"]
@@ -667,6 +669,7 @@ class LemonadePerfTable(Table):
             ],
             HuggingfaceBench: OgaBench,
             LlamaCppBench: OgaBench,
+            FLMBench: OgaBench,
             AccuracyMMLU: [
                 AdditionalStat(
                     "MMLU",
