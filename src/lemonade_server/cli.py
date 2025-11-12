@@ -627,8 +627,11 @@ def _add_server_arguments(parser):
         )
 
 
-def main():
-    # Display deprecation notice
+def _show_deprecation_notice():
+    """Display deprecation notice for Python server, unless in CI mode."""
+    if os.environ.get("LEMONADE_CI_MODE"):
+        return
+
     print("=" * 80)
     print("DEPRECATION NOTICE")
     print("=" * 80)
@@ -642,6 +645,12 @@ def main():
     print("This Python server will be removed in a future release.")
     print("=" * 80)
     print()
+
+
+def main():
+    # Show deprecation notice for --help/-h before argparse handles it
+    if "--help" in sys.argv or "-h" in sys.argv or len(sys.argv) == 1:
+        _show_deprecation_notice()
 
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
@@ -740,6 +749,7 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
+        _show_deprecation_notice()
         _, running_port = get_server_info()
         if running_port is not None:
             print(
@@ -774,6 +784,7 @@ def main():
     elif args.command == "stop":
         stop()
     elif args.command == "run":
+        _show_deprecation_notice()
         run(
             args.model,
             port=args.port,
