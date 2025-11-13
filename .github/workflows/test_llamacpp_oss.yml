@@ -4,7 +4,7 @@ name: Test Lemonade with Llamacpp 🌩️
 # add the required runners
 
 on:
-    push:
+  push:
     branches: ["main"]
     paths:
       - '**.py'
