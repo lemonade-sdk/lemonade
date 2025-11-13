@@ -50,8 +50,8 @@ public:
     virtual std::vector<GPUInfo> get_nvidia_dgpu_devices() = 0;
     virtual NPUInfo get_npu_device() = 0;
     
-    // Common methods
-    static std::string get_os_version();
+    // Common methods (can be overridden for detailed platform info)
+    virtual std::string get_os_version();
     static std::vector<std::string> get_python_packages();
     
     // Helper to detect inference engines for a device (public so it can be called after loading from cache)
@@ -81,15 +81,22 @@ public:
     
     // Override to add Windows-specific fields
     json get_system_info_dict() override;
+    std::string get_os_version() override;
     
     // Windows-specific methods
     std::string get_processor_name();
     std::string get_physical_memory();
+    std::string get_system_model();
+    std::string get_bios_version();
+    std::string get_max_clock_speed();
+    std::string get_windows_power_setting();
     
 private:
     std::vector<GPUInfo> detect_amd_gpus(const std::string& gpu_type);
     std::string get_driver_version(const std::string& device_name);
     std::string get_npu_power_mode();
+    double get_gpu_vram_dxdiag(const std::string& gpu_name);
+    double get_gpu_vram_wmi(uint64_t adapter_ram);
 };
 
 // Linux implementation
@@ -103,6 +110,7 @@ public:
     
     // Override to add Linux-specific fields
     json get_system_info_dict() override;
+    std::string get_os_version() override;
     
     // Linux-specific methods
     std::string get_processor_name();
@@ -149,11 +157,17 @@ public:
     // Get cache file path
     std::string get_cache_file_path() const { return cache_file_path_; }
     
+    // High-level function: Get complete system info (with cache handling and friendly messages)
+    static json get_system_info_with_cache(bool verbose = false);
+    
 private:
     std::string cache_file_path_;
     std::string get_cache_dir() const;
     std::string get_lemonade_version() const;
     bool is_ci_mode() const;
+    
+    // Helper to compare semantic versions (returns true if v1 < v2)
+    static bool is_version_less_than(const std::string& v1, const std::string& v2);
 };
 
 } // namespace lemon

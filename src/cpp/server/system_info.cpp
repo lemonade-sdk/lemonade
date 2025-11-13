@@ -1,4 +1,5 @@
 #include "lemon/system_info.h"
+#include "lemon/version.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -703,9 +704,17 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 
                 // Get VRAM for discrete GPUs
                 if (is_discrete) {
-                    uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
-                    if (adapter_ram > 0) {
-                        gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
+                    // Try dxdiag first (most reliable for dedicated memory)
+                    double vram_gb = get_gpu_vram_dxdiag(name);
+                    
+                    // Fallback to WMI if dxdiag fails
+                    if (vram_gb == 0.0) {
+                        uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
+                        vram_gb = get_gpu_vram_wmi(adapter_ram);
+                    }
+                    
+                    if (vram_gb > 0.0) {
+                        gpu.vram_gb = vram_gb;
                     }
                 }
                 
@@ -788,10 +797,44 @@ std::string WindowsSystemInfo::get_npu_power_mode() {
 }
 
 json WindowsSystemInfo::get_system_info_dict() {
-    json info = SystemInfo::get_system_info_dict();  // Get base fields
+    json info = SystemInfo::get_system_info_dict();  // Get base fields (includes OS Version)
     info["Processor"] = get_processor_name();
+    info["OEM System"] = get_system_model();
     info["Physical Memory"] = get_physical_memory();
+    info["BIOS Version"] = get_bios_version();
+    info["CPU Max Clock"] = get_max_clock_speed();
+    info["Windows Power Setting"] = get_windows_power_setting();
     return info;
+}
+
+std::string WindowsSystemInfo::get_os_version() {
+    // Get detailed Windows version using WMI (similar to Python's platform.platform())
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "Windows";  // Fallback to basic name
+    }
+    
+    std::string os_name, version, build_number;
+    wmi.query(L"SELECT * FROM Win32_OperatingSystem", [&](IWbemClassObject* pObj) {
+        if (os_name.empty()) {  // Only get first result
+            os_name = wmi::get_property_string(pObj, L"Caption");
+            version = wmi::get_property_string(pObj, L"Version");
+            build_number = wmi::get_property_string(pObj, L"BuildNumber");
+        }
+    });
+    
+    if (!os_name.empty()) {
+        std::string result = os_name;
+        if (!version.empty()) {
+            result += " " + version;
+        }
+        if (!build_number.empty()) {
+            result += " (Build " + build_number + ")";
+        }
+        return result;
+    }
+    
+    return "Windows";  // Fallback
 }
 
 std::string WindowsSystemInfo::get_processor_name() {
@@ -848,6 +891,172 @@ std::string WindowsSystemInfo::get_physical_memory() {
     }
     
     return "Physical memory information not found.";
+}
+
+std::string WindowsSystemInfo::get_system_model() {
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "System model information not found.";
+    }
+    
+    std::string model;
+    wmi.query(L"SELECT * FROM Win32_ComputerSystem", [&](IWbemClassObject* pObj) {
+        if (model.empty()) {  // Only get first result
+            model = wmi::get_property_string(pObj, L"Model");
+        }
+    });
+    
+    return model.empty() ? "System model information not found." : model;
+}
+
+std::string WindowsSystemInfo::get_bios_version() {
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "BIOS Version not found.";
+    }
+    
+    std::string bios_version;
+    wmi.query(L"SELECT * FROM Win32_BIOS", [&](IWbemClassObject* pObj) {
+        if (bios_version.empty()) {  // Only get first result
+            bios_version = wmi::get_property_string(pObj, L"Name");
+        }
+    });
+    
+    return bios_version.empty() ? "BIOS Version not found." : bios_version;
+}
+
+std::string WindowsSystemInfo::get_max_clock_speed() {
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        return "Max CPU clock speed not found.";
+    }
+    
+    int max_clock = 0;
+    wmi.query(L"SELECT * FROM Win32_Processor", [&](IWbemClassObject* pObj) {
+        if (max_clock == 0) {  // Only get first processor
+            max_clock = wmi::get_property_int(pObj, L"MaxClockSpeed");
+        }
+    });
+    
+    if (max_clock > 0) {
+        return std::to_string(max_clock) + " MHz";
+    }
+    
+    return "Max CPU clock speed not found.";
+}
+
+std::string WindowsSystemInfo::get_windows_power_setting() {
+    // Execute powercfg /getactivescheme
+    FILE* pipe = _popen("powercfg /getactivescheme 2>NUL", "r");
+    if (!pipe) {
+        return "Windows power setting not found (command failed)";
+    }
+    
+    char buffer[256];
+    std::string result;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result += buffer;
+    }
+    _pclose(pipe);
+    
+    // Extract power scheme name from parentheses
+    // Output format: "Power Scheme GUID: ... (Power Scheme Name)"
+    size_t start = result.find('(');
+    size_t end = result.find(')');
+    if (start != std::string::npos && end != std::string::npos && end > start) {
+        return result.substr(start + 1, end - start - 1);
+    }
+    
+    return "Power scheme name not found in output";
+}
+
+double WindowsSystemInfo::get_gpu_vram_wmi(uint64_t adapter_ram) {
+    if (adapter_ram > 0) {
+        return adapter_ram / (1024.0 * 1024.0 * 1024.0);
+    }
+    return 0.0;
+}
+
+double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
+    // Get GPU VRAM using dxdiag (most reliable for dedicated memory)
+    // Similar to Python's _get_gpu_vram_dxdiag_simple method
+    
+    try {
+        // Create temp file path
+        char temp_path[MAX_PATH];
+        char temp_dir[MAX_PATH];
+        GetTempPathA(MAX_PATH, temp_dir);
+        GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
+        
+        // Run dxdiag /t temp_path
+        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\" 2>NUL";
+        int result = system(command.c_str());
+        
+        if (result != 0) {
+            DeleteFileA(temp_path);
+            return 0.0;
+        }
+        
+        // Wait a bit for dxdiag to finish writing (it can take a few seconds)
+        Sleep(3000);
+        
+        // Read the file
+        std::ifstream file(temp_path);
+        if (!file.is_open()) {
+            DeleteFileA(temp_path);
+            return 0.0;
+        }
+        
+        std::string line;
+        bool found_gpu = false;
+        double vram_gb = 0.0;
+        
+        // Convert gpu_name to lowercase for case-insensitive comparison
+        std::string gpu_name_lower = gpu_name;
+        std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
+        
+        while (std::getline(file, line)) {
+            // Convert line to lowercase for case-insensitive search
+            std::string line_lower = line;
+            std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+            
+            // Check if this is our GPU
+            if (line_lower.find("card name:") != std::string::npos && 
+                line_lower.find(gpu_name_lower) != std::string::npos) {
+                found_gpu = true;
+                continue;
+            }
+            
+            // Look for dedicated memory line
+            if (found_gpu && line_lower.find("dedicated memory:") != std::string::npos) {
+                // Extract memory value (format: "Dedicated Memory: 12345 MB")
+                std::regex memory_regex(R"((\d+(?:\.\d+)?)\s*MB)", std::regex::icase);
+                std::smatch match;
+                if (std::regex_search(line, match, memory_regex)) {
+                    try {
+                        double vram_mb = std::stod(match[1].str());
+                        vram_gb = std::round(vram_mb / 1024.0 * 10.0) / 10.0;  // Convert to GB, round to 1 decimal
+                        break;
+                    } catch (...) {
+                        // Continue searching
+                    }
+                }
+            }
+            
+            // Reset if we hit another display device
+            if (line_lower.find("card name:") != std::string::npos && 
+                line_lower.find(gpu_name_lower) == std::string::npos) {
+                found_gpu = false;
+            }
+        }
+        
+        file.close();
+        DeleteFileA(temp_path);
+        
+        return vram_gb;
+    } catch (...) {
+        return 0.0;
+    }
 }
 
 #endif // _WIN32
@@ -1276,6 +1485,54 @@ json LinuxSystemInfo::get_system_info_dict() {
     return info;
 }
 
+std::string LinuxSystemInfo::get_os_version() {
+    // Get detailed Linux version (similar to Python's platform.platform())
+    std::string result = "Linux";
+    
+    // Get kernel version using uname
+    FILE* pipe = popen("uname -r 2>/dev/null", "r");
+    if (pipe) {
+        char buffer[128];
+        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            std::string kernel = buffer;
+            // Remove newline
+            if (!kernel.empty() && kernel.back() == '\n') {
+                kernel.pop_back();
+            }
+            result += "-" + kernel;
+        }
+        pclose(pipe);
+    }
+    
+    // Try to get distribution info from /etc/os-release
+    std::ifstream os_release("/etc/os-release");
+    if (os_release.is_open()) {
+        std::string line;
+        std::string distro_name, distro_version;
+        while (std::getline(os_release, line)) {
+            if (line.find("NAME=") == 0) {
+                distro_name = line.substr(5);
+                // Remove quotes
+                distro_name.erase(std::remove(distro_name.begin(), distro_name.end(), '"'), distro_name.end());
+            } else if (line.find("VERSION_ID=") == 0) {
+                distro_version = line.substr(11);
+                // Remove quotes
+                distro_version.erase(std::remove(distro_version.begin(), distro_version.end(), '"'), distro_version.end());
+            }
+        }
+        
+        if (!distro_name.empty()) {
+            result += " (" + distro_name;
+            if (!distro_version.empty()) {
+                result += " " + distro_version;
+            }
+            result += ")";
+        }
+    }
+    
+    return result;
+}
+
 std::string LinuxSystemInfo::get_processor_name() {
     FILE* pipe = popen("lscpu 2>/dev/null", "r");
     if (!pipe) {
@@ -1421,13 +1678,48 @@ std::string SystemInfoCache::get_cache_dir() const {
 }
 
 std::string SystemInfoCache::get_lemonade_version() const {
-    // TODO: Get actual version from version.h or similar
-    return "0.1.0";
+    return LEMON_VERSION_STRING;
 }
 
 bool SystemInfoCache::is_ci_mode() const {
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
     return ci_mode != nullptr;
+}
+
+bool SystemInfoCache::is_version_less_than(const std::string& v1, const std::string& v2) {
+    // Parse semantic versions (e.g., "9.0.0" vs "8.5.3")
+    // Returns true if v1 < v2
+    
+    auto parse_version = [](const std::string& v) -> std::vector<int> {
+        std::vector<int> parts;
+        std::stringstream ss(v);
+        std::string part;
+        while (std::getline(ss, part, '.')) {
+            try {
+                parts.push_back(std::stoi(part));
+            } catch (...) {
+                parts.push_back(0);
+            }
+        }
+        // Ensure at least 3 parts (major.minor.patch)
+        while (parts.size() < 3) {
+            parts.push_back(0);
+        }
+        return parts;
+    };
+    
+    std::vector<int> parts1 = parse_version(v1);
+    std::vector<int> parts2 = parse_version(v2);
+    
+    // Compare major, minor, patch (use min with parentheses to avoid Windows macro conflict)
+    size_t min_size = (parts1.size() < parts2.size()) ? parts1.size() : parts2.size();
+    for (size_t i = 0; i < min_size; ++i) {
+        if (parts1[i] < parts2[i]) return true;
+        if (parts1[i] > parts2[i]) return false;
+    }
+    
+    // Equal versions
+    return false;
 }
 
 bool SystemInfoCache::is_valid() const {
@@ -1446,13 +1738,22 @@ bool SystemInfoCache::is_valid() const {
         std::ifstream file(cache_file_path_);
         json cache_data = json::parse(file);
         
+        // Check if version field is missing or hardware field is missing
         if (!cache_data.contains("version") || !cache_data.contains("hardware")) {
             return false;
         }
         
-        // Check if version matches
+        // Get cached version and current version
         std::string cached_version = cache_data["version"];
-        return cached_version == get_lemonade_version();
+        std::string current_version = get_lemonade_version();
+        
+        // Invalidate if cache version is less than current version
+        if (is_version_less_than(cached_version, current_version)) {
+            return false;
+        }
+        
+        // Cache is valid
+        return true;
         
     } catch (...) {
         return false;
@@ -1489,6 +1790,131 @@ void SystemInfoCache::clear() {
     if (fs::exists(cache_file_path_)) {
         fs::remove(cache_file_path_);
     }
+}
+
+json SystemInfoCache::get_system_info_with_cache(bool verbose) {
+    // Create cache instance
+    SystemInfoCache cache;
+    bool cache_exists = fs::exists(cache.get_cache_file_path());
+    json cached_data = cache.load_hardware_info();
+    json system_info;
+    
+    // Create platform-specific system info instance
+    auto sys_info = create_system_info();
+    
+    if (!cached_data.empty()) {
+        std::cout << "[Server] Using cached hardware info" << std::endl;
+        std::cout.flush();  // Ensure message appears immediately
+        system_info = cached_data;
+    } else {
+        // Provide friendly message about why we're detecting hardware
+        if (cache_exists) {
+            std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+        } else {
+            std::cout << "[Server] Collecting system info" << std::endl;
+        }
+        std::cout.flush();  // Ensure message appears immediately
+        
+        // Get full system information (OS Version, Processor, Physical Memory, etc.)
+        system_info = sys_info->get_system_info_dict();
+        
+        // Get device information
+        json devices = sys_info->get_device_dict();
+        system_info["devices"] = devices;
+        
+        // Strip inference_engines before caching (hardware and system info only)
+        json cache_data = system_info;
+        if (cache_data.contains("devices")) {
+            auto& devices_cache = cache_data["devices"];
+            
+            if (devices_cache.contains("cpu") && devices_cache["cpu"].contains("inference_engines")) {
+                devices_cache["cpu"].erase("inference_engines");
+            }
+            if (devices_cache.contains("amd_igpu") && devices_cache["amd_igpu"].contains("inference_engines")) {
+                devices_cache["amd_igpu"].erase("inference_engines");
+            }
+            if (devices_cache.contains("amd_dgpu") && devices_cache["amd_dgpu"].is_array()) {
+                for (auto& gpu : devices_cache["amd_dgpu"]) {
+                    if (gpu.contains("inference_engines")) {
+                        gpu.erase("inference_engines");
+                    }
+                }
+            }
+            if (devices_cache.contains("nvidia_dgpu") && devices_cache["nvidia_dgpu"].is_array()) {
+                for (auto& gpu : devices_cache["nvidia_dgpu"]) {
+                    if (gpu.contains("inference_engines")) {
+                        gpu.erase("inference_engines");
+                    }
+                }
+            }
+            if (devices_cache.contains("npu") && devices_cache["npu"].contains("inference_engines")) {
+                devices_cache["npu"].erase("inference_engines");
+            }
+        }
+        
+        // Save system info and hardware (without inference engines) to cache
+        cache.save_hardware_info(cache_data);
+    }
+    
+    // Detect inference engines (always fresh, never cached)
+    if (system_info.contains("devices")) {
+        auto& devices = system_info["devices"];
+        
+        // CPU
+        if (devices.contains("cpu") && devices["cpu"].contains("name")) {
+            std::string cpu_name = devices["cpu"]["name"];
+            devices["cpu"]["inference_engines"] = sys_info->detect_inference_engines("cpu", cpu_name);
+        }
+        
+        // AMD iGPU
+        if (devices.contains("amd_igpu") && devices["amd_igpu"].contains("name")) {
+            std::string gpu_name = devices["amd_igpu"]["name"];
+            devices["amd_igpu"]["inference_engines"] = sys_info->detect_inference_engines("amd_igpu", gpu_name);
+        }
+        
+        // AMD dGPUs
+        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
+            for (auto& gpu : devices["amd_dgpu"]) {
+                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                    std::string gpu_name = gpu["name"];
+                    gpu["inference_engines"] = sys_info->detect_inference_engines("amd_dgpu", gpu_name);
+                }
+            }
+        }
+        
+        // NVIDIA dGPUs
+        if (devices.contains("nvidia_dgpu") && devices["nvidia_dgpu"].is_array()) {
+            for (auto& gpu : devices["nvidia_dgpu"]) {
+                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                    std::string gpu_name = gpu["name"];
+                    gpu["inference_engines"] = sys_info->detect_inference_engines("nvidia_dgpu", gpu_name);
+                }
+            }
+        }
+        
+        // NPU
+        if (devices.contains("npu") && devices["npu"].contains("name")) {
+            std::string npu_name = devices["npu"]["name"];
+            devices["npu"]["inference_engines"] = sys_info->detect_inference_engines("npu", npu_name);
+        }
+    }
+    
+    // Filter for non-verbose mode (only essential keys)
+    if (!verbose) {
+        std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
+        json filtered_info;
+        for (const auto& key : essential_keys) {
+            if (system_info.contains(key)) {
+                filtered_info[key] = system_info[key];
+            }
+        }
+        system_info = filtered_info;
+    } else {
+        // In verbose mode, add Python packages (empty for C++ implementation)
+        system_info["Python Packages"] = SystemInfo::get_python_packages();
+    }
+    
+    return system_info;
 }
 
 } // namespace lemon
