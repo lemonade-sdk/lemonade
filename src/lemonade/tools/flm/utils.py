@@ -398,8 +398,13 @@ class FLMAdapter(ModelAdapter):
         if max_new_tokens is None:
             max_new_tokens = self.output_tokens
         prompt = input_ids
-        response, usage = self.send_request_to_server(prompt, max_new_tokens)
-        printing.log_info(f"FLM response: {response}")
+        response = self.send_request_to_server(prompt, max_new_tokens)
+        response_content = response.choices[0].message.content
+        finish_reason = response.choices[0].finish_reason
+        usage = response.usage
+
+        printing.log_info(f"FLM response: {response_content}")
+        printing.log_info(f"FLM finish reason: {finish_reason}")
 
         # Extract info from usage
         #
@@ -421,7 +426,7 @@ class FLMAdapter(ModelAdapter):
             monitor_thread.join(timeout=2)
             self.peak_wset = memory_data.get("peak_wset", None)
 
-        return response
+        return response_content
 
     def start_server(self, ctx_len=None, timeout=300):
         """
@@ -463,7 +468,7 @@ class FLMAdapter(ModelAdapter):
 
         if not server_ready or self.server_port is None:
             self.stop_server()
-            raise Exception(f"Server failed to start within {timeout} seconds")
+            raise Exception(f"Server failed to start within {timeout} seconds.  Command was '{' '.join(cmd)}'.")
 
         # Start a thread to continuously read and discard server output
         threading.Thread(
@@ -501,8 +506,7 @@ class FLMAdapter(ModelAdapter):
                 presence_penalty=0.5,
                 max_tokens=max_new_tokens,
             )
-            result = response.choices[0].message.content
-            usage = response.usage
-            return result, usage
+            return response
+
         except Exception as e:
             raise Exception(f"Error during processing prompt with FLM server: {e}")
