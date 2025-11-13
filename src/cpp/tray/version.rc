@@ -15,12 +15,12 @@ BEGIN
         BLOCK "040904E4"
         BEGIN
             VALUE "CompanyName", "AMD"
-            VALUE "FileDescription", "Lemonade Server Beta"
+            VALUE "FileDescription", "Lemonade Server"
             VALUE "FileVersion", LEMON_VERSION_RC_STRING
-            VALUE "InternalName", "lemonade-server-beta"
+            VALUE "InternalName", "lemonade-server"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
-            VALUE "OriginalFilename", "lemonade-server-beta.exe"
-            VALUE "ProductName", "Lemonade Server Beta"
+            VALUE "OriginalFilename", "lemonade-server.exe"
+            VALUE "ProductName", "Lemonade Server"
             VALUE "ProductVersion", LEMON_VERSION_RC_STRING
             VALUE "Comments", "System tray interface for Lemonade AI Server"
         END

@@ -85,7 +85,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          Write-Host "Building lemonade-router and lemonade-server-beta..." -ForegroundColor Cyan
+          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
           
           cd src\cpp
           
@@ -110,8 +110,8 @@ jobs:
               exit 1
           }
           
-          if (-not (Test-Path "Release\lemonade-server-beta.exe")) {
-              Write-Host "ERROR: lemonade-server-beta.exe not found!" -ForegroundColor Red
+          if (-not (Test-Path "Release\lemonade-server.exe")) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
           
@@ -133,7 +133,7 @@ jobs:
           .\build_installer.ps1
           
           # Verify installer was created
-          if (-not (Test-Path "Lemonade_Server_Installer_beta.exe")) {
+          if (-not (Test-Path "Lemonade_Server_Installer.exe")) {
               Write-Host "ERROR: Installer not created!" -ForegroundColor Red
               exit 1
           }
@@ -143,8 +143,8 @@ jobs:
       - name: Upload Lemonade Server Installer
         uses: actions/upload-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
-          path: src\cpp\Lemonade_Server_Installer_beta.exe
+          name: Lemonade_Server_Installer
+          path: src\cpp\Lemonade_Server_Installer.exe
           retention-days: 7
 
   build-ryzenai-server:
@@ -314,7 +314,7 @@ jobs:
         run: |
           set -e
           
-          echo "Building lemonade-router and lemonade-server-beta for Linux..."
+          echo "Building lemonade-router and lemonade-server for Linux..."
           
           cd src/cpp
           
@@ -342,8 +342,8 @@ jobs:
               exit 1
           fi
           
-          if [ ! -f "lemonade-server-beta" ]; then
-              echo "ERROR: lemonade-server-beta not found!"
+          if [ ! -f "lemonade-server" ]; then
+              echo "ERROR: lemonade-server not found!"
               echo "Build directory contents:"
               ls -lh
               exit 1
@@ -353,7 +353,7 @@ jobs:
           
           echo "Verifying binary executability..."
           ./lemonade-router --version
-          ./lemonade-server-beta --version
+          ./lemonade-server --version
           
           echo "C++ build successful!"
 
@@ -432,7 +432,7 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Install Lemonade Server
@@ -441,7 +441,7 @@ jobs:
           Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
           
           # Run installer silently
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
@@ -473,7 +473,7 @@ jobs:
           # Check for key binaries
           $expectedBinaries = @(
               "bin\lemonade-router.exe",
-              "bin\lemonade-server-beta.exe",
+              "bin\lemonade-server.exe",
               "bin\lemonade-tray.exe"
           )
           
@@ -525,13 +525,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           
           Write-Host "Downloading Llama-3.2-1B-Instruct-Hybrid model..." -ForegroundColor Cyan
           Write-Host "HF_HOME: $env:HF_HOME" -ForegroundColor Gray
           
-          # Download a hybrid model for testing (use lemonade-server-beta.exe for commands)
-          & $serverBetaExe pull Llama-3.2-1B-Instruct-Hybrid
+          # Download a hybrid model for testing (use lemonade-server.exe for commands)
+          & $serverExe pull Llama-3.2-1B-Instruct-Hybrid
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Failed to download model!" -ForegroundColor Red
               exit 1
@@ -721,7 +721,7 @@ jobs:
               Start-Sleep -Seconds 3
           }
           
-          $cliExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $cliExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           $testPort = 8000
           
           # === Test 1: CLI Serve Command ===
@@ -827,13 +827,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -860,12 +860,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           
-          Write-Host "Running FLM tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "Running FLM tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -906,13 +906,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -938,12 +938,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           
-          Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -984,13 +984,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -1016,12 +1016,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           
-          Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -1064,13 +1064,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer_beta.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Download RyzenAI Server artifact
@@ -1108,19 +1108,19 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          $serverBetaExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server-beta.exe"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
           
           Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
           
           # Pre-download models used in the simultaneous load test
           # This ensures models are cached and prevents download timing issues
-          & $serverBetaExe pull Qwen2.5-0.5B-Instruct-CPU
+          & $serverExe pull Qwen2.5-0.5B-Instruct-CPU
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Failed to download Qwen2.5-0.5B-Instruct-CPU" -ForegroundColor Red
               exit 1 
           }
           
-          & $serverBetaExe pull Llama-3.2-1B-Instruct-CPU
+          & $serverExe pull Llama-3.2-1B-Instruct-CPU
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Failed to download Llama-3.2-1B-Instruct-CPU" -ForegroundColor Red
               exit 1 
@@ -1128,10 +1128,10 @@ jobs:
           
           Write-Host "Test models pre-downloaded successfully!" -ForegroundColor Green
           
-          Write-Host "Running general server tests with C++ server CLI: $serverBetaExe" -ForegroundColor Cyan
+          Write-Host "Running general server tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverBetaExe
+          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -1200,7 +1200,7 @@ jobs:
           
           # Test version
           lemonade-router --version
-          lemonade-server-beta --version
+          lemonade-server --version
           
           echo "Binaries verified!"
 
@@ -1220,7 +1220,7 @@ jobs:
           echo "Running Llamacpp Vulkan tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server-beta
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server
           
           echo "Llamacpp Vulkan tests PASSED!"
 
@@ -1308,7 +1308,7 @@ jobs:
           
           # Test version
           lemonade-router --version
-          lemonade-server-beta --version
+          lemonade-server --version
           
           echo "Binaries verified!"
 
@@ -1328,7 +1328,7 @@ jobs:
           echo "Running Llamacpp ROCm tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server-beta
+          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server
           
           echo "Llamacpp ROCm tests PASSED!"
 
@@ -1426,7 +1426,7 @@ jobs:
           
           # Test version
           lemonade-router --version
-          lemonade-server-beta --version
+          lemonade-server --version
           
           echo "Binaries verified!"
 
@@ -1435,7 +1435,7 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           echo "Downloading Qwen3-0.6B-GGUF model for testing..."
-          lemonade-server-beta pull Qwen3-0.6B-GGUF
+          lemonade-server pull Qwen3-0.6B-GGUF
           
           if [ $? -ne 0 ]; then
               echo "ERROR: Failed to download model"
@@ -1529,7 +1529,7 @@ jobs:
           # Helper function to stop server
           stop_server_via_cli() {
               echo "Stopping server using CLI stop command..."
-              lemonade-server-beta stop
+              lemonade-server stop
               sleep 3
           }
           
@@ -1540,7 +1540,7 @@ jobs:
           echo ""
           
           echo "Starting server with 'serve' command..."
-          lemonade-server-beta serve &
+          lemonade-server serve &
           SERVER_PID=$!
           
           echo "Server started with PID: $SERVER_PID"
@@ -1572,7 +1572,7 @@ jobs:
           echo ""
           
           echo "Starting server with 'run Qwen3-1.7B-GGUF' command..."
-          lemonade-server-beta run Qwen3-1.7B-GGUF &
+          lemonade-server run Qwen3-1.7B-GGUF &
           SERVER_PID=$!
           
           echo "Server started with PID: $SERVER_PID"
@@ -1659,7 +1659,7 @@ jobs:
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer_beta
+          name: Lemonade_Server_Installer
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux)
@@ -1684,7 +1684,7 @@ jobs:
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
-          ls -lh Lemonade_Server_Installer_beta.exe
+          ls -lh Lemonade_Server_Installer.exe
           ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
           ls -lh ryzenai-server.zip
 
@@ -1692,7 +1692,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Lemonade_Server_Installer_beta.exe
+            Lemonade_Server_Installer.exe
             lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true

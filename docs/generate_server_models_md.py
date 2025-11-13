@@ -58,8 +58,7 @@ Example:
 lemonade-server pull Qwen2.5-0.5B-Instruct-CPU
 ```
 
-> Note: `lemonade-server` is a utility that is added to your PATH when you install Lemonade Server with the GUI installer.
-> If you are using Lemonade Server from a Python environment, use the `lemonade-server-dev pull` command instead.
+> Note: `lemonade-server` is a utility that is added to your PATH when you install Lemonade Server.
 """
 
 # Separate models into Hot, Hybrid, CPU, and GGUF

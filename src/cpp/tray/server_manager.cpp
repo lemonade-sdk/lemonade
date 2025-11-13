@@ -116,10 +116,10 @@ bool ServerManager::start_server(
             // Print startup message based on server type
             if (!is_ephemeral) {
                 // Persistent server: print startup message with URL
-                std::cout << "Lemonade Server Beta v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-                // Display "localhost" for user-friendliness when using 127.0.0.1
-                std::string display_url_host = (host_ == "127.0.0.1") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_url_host << ":" << port_ << std::endl;
+                std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+                // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
+                std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
+                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
             }
             // Ephemeral server: no output
             
@@ -268,30 +268,13 @@ bool ServerManager::load_model(const std::string& model_name) {
     try {
         std::string body = "{\"model_name\": \"" + model_name + "\"}";
         
-        // Model loading can take a long time, so use extended timeout
+        // Model loading can take a long time, so use extended timeout (240 seconds = 4 minutes)
         DEBUG_LOG(this, "Loading model with extended timeout...");
         DEBUG_LOG(this, "Request body: " << body);
         
-        httplib::Client cli("127.0.0.1", port_);
-        cli.set_connection_timeout(10, 0);   // 10 second connection timeout
-        cli.set_read_timeout(240, 0);        // 240 second (4 minute) read timeout for large models
-        
-        auto res = cli.Post("/api/v1/load", body, "application/json");
-        
-        if (!res) {
-            DEBUG_LOG(this, "Load request connection error: " << static_cast<int>(res.error()));
-            return false;
-        }
-        
-        DEBUG_LOG(this, "Load request status: " << res->status);
-        DEBUG_LOG(this, "Response body: " << res->body);
-        
-        if (res->status >= 200 && res->status < 300) {
-            return true;
-        }
-        
-        std::cerr << "Load model failed with status " << res->status << ": " << res->body << std::endl;
-        return false;
+        std::string response = make_http_request("/api/v1/load", "POST", body, 240);
+        DEBUG_LOG(this, "Load request succeeded");
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception loading model: " << e.what() << std::endl;
         return false;
@@ -300,19 +283,9 @@ bool ServerManager::load_model(const std::string& model_name) {
 
 bool ServerManager::unload_model() {
     try {
-        // Unload can also take time
-        httplib::Client cli("127.0.0.1", port_);
-        cli.set_connection_timeout(10, 0);
-        cli.set_read_timeout(30, 0);  // 30 second timeout for unload
-        
-        auto res = cli.Post("/api/v1/unload", "", "application/json");
-        
-        if (!res) {
-            DEBUG_LOG(this, "Unload request connection error: " << static_cast<int>(res.error()));
-            return false;
-        }
-        
-        return (res->status >= 200 && res->status < 300);
+        // Unload can take time, so use 30 second timeout
+        make_http_request("/api/v1/unload", "POST", "", 30);
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception unloading model: " << e.what() << std::endl;
         return false;
@@ -736,10 +709,11 @@ std::string ServerManager::make_http_request(
     const std::string& body,
     int timeout_seconds)
 {
-    // Debug logging removed - too verbose for normal operations
-    
-    // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
-    httplib::Client cli("127.0.0.1", port_);
+
+    // Use the configured host to connect to the server
+    // Special case: 0.0.0.0 is a bind address, not a connect address - use 127.0.0.1 instead
+    std::string connect_host = (host_ == "0.0.0.0") ? "127.0.0.1" : host_;
+    httplib::Client cli(connect_host, port_);
     cli.set_connection_timeout(10, 0);  // 10 second connection timeout
     cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
     

@@ -3,10 +3,10 @@
   <assemblyIdentity
     version="@PROJECT_VERSION@.0"
     processorArchitecture="*"
-    name="AMD.LemonadeServerBeta"
+    name="AMD.LemonadeServer"
     type="win32"
   />
-  <description>Lemonade Server Beta</description>
+  <description>Lemonade Server</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges>

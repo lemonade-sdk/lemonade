@@ -1,4 +1,4 @@
-; Lemonade Server Beta Installer Script (C++ Version)
+; Lemonade Server Installer Script (C++ Version)
 ; NOTE: This file is now a template configured by CMake
 ; The version is automatically populated from CMakeLists.txt
 
@@ -11,8 +11,8 @@ SetCompressorDictSize 32
 SetDatablockOptimize on
 
 ; Define main variables
-Name "Lemonade Server Beta"
-OutFile "Lemonade_Server_Installer_beta.exe"
+Name "Lemonade Server"
+OutFile "Lemonade_Server_Installer.exe"
 
 ; Include modern UI elements
 !include "MUI2.nsh"
@@ -20,7 +20,7 @@ OutFile "Lemonade_Server_Installer_beta.exe"
 !include LogicLib.nsh
 
 ; Define constants
-!define PRODUCT_NAME "Lemonade Server Beta"
+!define PRODUCT_NAME "Lemonade Server"
 !define PRODUCT_VERSION "@PROJECT_VERSION@"
 !define PRODUCT_PUBLISHER "AMD"
 !define PRODUCT_WEB_SITE "https://lemonade-server.ai"
@@ -30,17 +30,17 @@ Var NO_DESKTOP_SHORTCUT
 Var ADD_TO_STARTUP
 
 ; Define a section for the installation
-Section "Install Lemonade Server Beta" SEC01
+Section "Install Lemonade Server" SEC01
 SectionIn RO ; Read only, always installed
-  DetailPrint "Installing Lemonade Server Beta..."
+  DetailPrint "Installing Lemonade Server..."
 
   ; Stop any running instances gracefully using the stop command
   DetailPrint "Checking for running Lemonade Server instances..."
   
   ; First try to use existing installation's stop command if it exists
-  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server-beta.exe"
-    DetailPrint "Stopping server using lemonade-server-beta.exe stop..."
-    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server-beta.exe" stop'
+  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server.exe"
+    DetailPrint "Stopping server using lemonade-server.exe stop..."
+    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server.exe" stop'
     Pop $0 ; Get return value
     DetailPrint "Stop command returned: $0"
     Sleep 2000  ; Give it time to fully shut down
@@ -49,7 +49,7 @@ SectionIn RO ; Read only, always installed
   ${EndIf}
   
   ; Fallback: Also try to close the tray window directly if it's still open
-  FindWindow $0 "" "Lemonade Server Beta"
+  FindWindow $0 "" "Lemonade Server"
   ${If} $0 != 0
     DetailPrint "Tray window still open, sending close message..."
     SendMessage $0 ${WM_CLOSE} 0 0
@@ -68,7 +68,7 @@ SectionIn RO ; Read only, always installed
     
     ; Now ask user if they want to remove it
     ${IfNot} ${Silent}
-      MessageBox MB_YESNO "An existing Lemonade Server Beta installation was found at $INSTDIR.$\n$\nWould you like to remove it and continue with the installation?" IDYES remove_dir
+      MessageBox MB_YESNO "An existing Lemonade Server installation was found at $INSTDIR.$\n$\nWould you like to remove it and continue with the installation?" IDYES remove_dir
       ; If user selects No, show exit message and quit the installer
       MessageBox MB_OK "Installation cancelled. Exiting installer..."
       Quit
@@ -79,7 +79,7 @@ SectionIn RO ; Read only, always installed
   folder_in_use:
     ; Rename failed, folder is in use
     ${IfNot} ${Silent}
-      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, right-click the tray icon and click 'Quit'$\n3. End lemonade-server-beta.exe and lemonade-router.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
+      MessageBox MB_OK "The installation folder is currently being used. To proceed, please follow these steps:$\n$\n1. Close any open files or folders from the installation directory$\n2. If Lemonade Server is running, right-click the tray icon and click 'Quit'$\n3. End lemonade-server.exe and lemonade-router.exe in Task Manager$\n$\nIf the issue persists, try restarting your computer and run the installer again."
     ${EndIf}
     Quit
 
@@ -90,7 +90,7 @@ SectionIn RO ; Read only, always installed
     ; Verify deletion was successful
     IfFileExists "$INSTDIR\*.*" 0 continue_install
       ${IfNot} ${Silent}
-        MessageBox MB_OK "Unable to remove existing installation. Please close any applications using Lemonade Server Beta and try again."
+        MessageBox MB_OK "Unable to remove existing installation. Please close any applications using Lemonade Server and try again."
       ${EndIf}
       Quit
 
@@ -114,7 +114,7 @@ SectionIn RO ; Read only, always installed
     File "build\Release\lemonade-log-viewer.exe"
     DetailPrint "- Installed log viewer"
     
-    File "build\Release\lemonade-server-beta.exe"
+    File "build\Release\lemonade-server.exe"
     DetailPrint "- Installed Lemonade Server CLI client"
     
     File "build\Release\lemonade-router.exe"
@@ -158,9 +158,9 @@ SectionIn RO ; Read only, always installed
 
     ; Create Start Menu shortcuts
     DetailPrint "Creating shortcuts..."
-    CreateDirectory "$SMPROGRAMS\Lemonade Server Beta"
-    CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
-    CreateShortcut "$SMPROGRAMS\Lemonade Server Beta\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+    CreateDirectory "$SMPROGRAMS\Lemonade Server"
+    CreateShortcut "$SMPROGRAMS\Lemonade Server\Lemonade Server.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+    CreateShortcut "$SMPROGRAMS\Lemonade Server\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
     DetailPrint "- Created Start Menu shortcuts"
 
     ; Write uninstaller
@@ -185,7 +185,7 @@ SectionEnd
 
 Section "-Add Desktop Shortcut" ShortcutSec  
   ${If} $NO_DESKTOP_SHORTCUT != "true"
-    CreateShortcut "$DESKTOP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+    CreateShortcut "$DESKTOP\Lemonade Server.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
   ${EndIf}
 SectionEnd
 
@@ -195,15 +195,15 @@ FunctionEnd
 
 Function AddToStartup
   ; Delete existing shortcut if it exists
-  Delete "$SMSTARTUP\Lemonade Server Beta.lnk"
+  Delete "$SMSTARTUP\Lemonade Server.lnk"
   ; Create shortcut in the startup folder
-  CreateShortcut "$SMSTARTUP\Lemonade Server Beta.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
+  CreateShortcut "$SMSTARTUP\Lemonade Server.lnk" "$INSTDIR\bin\lemonade-tray.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
 FunctionEnd
 
 ; Finish Page settings
 !define MUI_TEXT_FINISH_INFO_TITLE "${PRODUCT_NAME} installed successfully!"
 !define MUI_TEXT_FINISH_INFO_TEXT "A shortcut has been added to your Desktop. What would you like to do next?"
-!define MUI_WELCOMEFINISHPAGE_BITMAP "..\..\installer\installer_banner.bmp"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "installer\installer_banner.bmp"
 
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION RunServer
@@ -231,7 +231,7 @@ UninstallIcon ${ICON_FILE}
 LangString MUI_TEXT_WELCOME_INFO_TITLE "${LANG_ENGLISH}" "Welcome to the ${PRODUCT_NAME} Installer"
 LangString MUI_TEXT_WELCOME_INFO_TEXT "${LANG_ENGLISH}" "This wizard will install ${PRODUCT_NAME} on your computer."
 LangString MUI_TEXT_DIRECTORY_TITLE "${LANG_ENGLISH}" "Select Installation Directory"
-LangString MUI_TEXT_INSTALLING_TITLE "${LANG_ENGLISH}" "Installing Lemonade Server Beta"
+LangString MUI_TEXT_INSTALLING_TITLE "${LANG_ENGLISH}" "Installing Lemonade Server"
 LangString MUI_TEXT_FINISH_TITLE "${LANG_ENGLISH}" "Installation Complete"
 LangString MUI_BUTTONTEXT_FINISH "${LANG_ENGLISH}" "Finish"
 
@@ -270,7 +270,7 @@ Function .onInit
     ; /D was used
   ${Else}
     ; Use the default
-    StrCpy $InstDir "$LOCALAPPDATA\lemonade_server_beta"
+    StrCpy $InstDir "$LOCALAPPDATA\lemonade_server"
   ${EndIf}
 
   ; Check if NoDesktopShortcut parameter was used
@@ -337,16 +337,16 @@ FunctionEnd
 ; Uninstaller Section
 Section "Uninstall"
   ; Stop any running instances gracefully using the stop command
-  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server-beta.exe"
-    DetailPrint "Stopping server using lemonade-server-beta.exe stop..."
-    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server-beta.exe" stop'
+  ${If} ${FileExists} "$INSTDIR\bin\lemonade-server.exe"
+    DetailPrint "Stopping server using lemonade-server.exe stop..."
+    nsExec::ExecToLog '"$INSTDIR\bin\lemonade-server.exe" stop'
     Pop $0 ; Get return value
     DetailPrint "Stop command returned: $0"
     Sleep 2000  ; Give it time to fully shut down
   ${EndIf}
   
   ; Fallback: Also try to close the tray window directly if it's still open
-  FindWindow $0 "" "Lemonade Server Beta"
+  FindWindow $0 "" "Lemonade Server"
   ${If} $0 != 0
     DetailPrint "Tray window still open, sending close message..."
     SendMessage $0 ${WM_CLOSE} 0 0
@@ -355,7 +355,7 @@ Section "Uninstall"
 
     ; Remove files
     Delete "$INSTDIR\bin\lemonade-tray.exe"
-    Delete "$INSTDIR\bin\lemonade-server-beta.exe"
+    Delete "$INSTDIR\bin\lemonade-server.exe"
     Delete "$INSTDIR\bin\lemonade-router.exe"
     Delete "$INSTDIR\bin\lemonade-log-viewer.exe"
     Delete "$INSTDIR\Uninstall.exe"
@@ -366,9 +366,9 @@ Section "Uninstall"
   RMDir "$INSTDIR"
 
   ; Remove shortcuts
-  Delete "$DESKTOP\Lemonade Server Beta.lnk"
-  Delete "$SMSTARTUP\Lemonade Server Beta.lnk"
-  RMDir /r "$SMPROGRAMS\Lemonade Server Beta"
+  Delete "$DESKTOP\Lemonade Server.lnk"
+  Delete "$SMSTARTUP\Lemonade Server.lnk"
+  RMDir /r "$SMPROGRAMS\Lemonade Server"
 
   ; Remove from PATH using registry
   ReadRegStr $0 HKCU "Environment" "Path"

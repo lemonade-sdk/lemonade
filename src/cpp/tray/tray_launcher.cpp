@@ -1,5 +1,5 @@
 // Simple GUI launcher for Lemonade Server tray application
-// This is a minimal WIN32 GUI app that just launches lemonade-server-beta.exe serve
+// This is a minimal WIN32 GUI app that just launches lemonade-server.exe serve
 
 #include <windows.h>
 #include <string>
@@ -8,37 +8,37 @@
 
 namespace fs = std::filesystem;
 
-// Find lemonade-server-beta.exe (should be in same directory)
-std::wstring find_server_beta_exe() {
+// Find lemonade-server.exe (should be in same directory)
+std::wstring find_server_exe() {
     // Get directory of this executable
     wchar_t exe_path[MAX_PATH];
     GetModuleFileNameW(NULL, exe_path, MAX_PATH);
     
     fs::path exe_dir = fs::path(exe_path).parent_path();
-    fs::path server_beta_path = exe_dir / L"lemonade-server-beta.exe";
+    fs::path server_path = exe_dir / L"lemonade-server.exe";
     
-    if (fs::exists(server_beta_path)) {
-        return server_beta_path.wstring();
+    if (fs::exists(server_path)) {
+        return server_path.wstring();
     }
     
     return L"";
 }
 
-// Launch lemonade-server-beta.exe serve
-bool launch_server_beta() {
-    std::wstring server_beta = find_server_beta_exe();
+// Launch lemonade-server.exe serve
+bool launch_server() {
+    std::wstring server_exe = find_server_exe();
     
-    if (server_beta.empty()) {
+    if (server_exe.empty()) {
         MessageBoxW(NULL, 
-            L"Could not find lemonade-server-beta.exe\n\n"
-            L"Please ensure lemonade-server-beta.exe is in the same directory as this application.",
+            L"Could not find lemonade-server.exe\n\n"
+            L"Please ensure lemonade-server.exe is in the same directory as this application.",
             L"Lemonade Server - Error",
             MB_OK | MB_ICONERROR);
         return false;
     }
     
-    // Build command line: lemonade-server-beta.exe serve
-    std::wstring cmdline = L"\"" + server_beta + L"\" serve";
+    // Build command line: lemonade-server.exe serve
+    std::wstring cmdline = L"\"" + server_exe + L"\" serve";
     
     // Launch as a new process
     STARTUPINFOW si = {};
@@ -76,19 +76,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     // Check for single instance
     if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
         // Try to activate the existing tray instance
-        // Note: The actual tray window is created by lemonade-server-beta.exe, not this launcher
-        lemon::SingleInstance::ActivateExistingInstance("Lemonade Server Beta");
+        // Note: The actual tray window is created by lemonade-server.exe, not this launcher
+        lemon::SingleInstance::ActivateExistingInstance("Lemonade Server");
         
         MessageBoxW(NULL, 
-            L"Lemonade Server Beta is already running.\n\n"
+            L"Lemonade Server is already running.\n\n"
             L"Check your system tray for the lemon icon.",
-            L"Lemonade Server Beta",
+            L"Lemonade Server",
             MB_OK | MB_ICONINFORMATION);
         return 0;
     }
     
-    // Simply launch lemonade-server-beta.exe serve and exit
-    if (launch_server_beta()) {
+    // Simply launch lemonade-server.exe serve and exit
+    if (launch_server()) {
         return 0;  // Success
     } else {
         return 1;  // Error (already showed message box)
