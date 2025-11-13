@@ -1165,7 +1165,7 @@
 <div class="highlight"><pre><span></span><code>lemonade-server --version
 </code></pre></div>
 <blockquote>
-<p>Note: The <code>lemonade-server</code> CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux and macOS users or Python development environments, the command <code>lemonade-server-dev</code> is available when installing via pip.</p>
+<p>Note: The <code>lemonade-server</code> CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe) and Debian Installer (lemonade-server-<VERSION>-Linux.deb).</p>
 </blockquote>
 <h3 id="checking-server-status">Checking Server Status</h3>
 <p>To identify whether or not the server is running anywhere on the system you may use the <code>status</code> command of <code>lemonade-server</code>.</p>
@@ -1194,7 +1194,7 @@
 <p>Specific version:</p>
 <div class="highlight"><pre><span></span><code>https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 </code></pre></div>
-<p>Please note that the Server Installer is only available on Windows. Apps that integrate with our server on Linux or macOS must install Lemonade from source as described <a href="https://lemonade-server.ai/install_options.html">here</a>.</p>
+<p>Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described <a href="https://lemonade-server.ai/install_options.html">here</a>.</p>
 <p><strong>macOS Requirements:</strong> macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.</p>
 <h3 id="installing-additional-models">Installing Additional Models</h3>
 <p>Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:</p>
@@ -1228,18 +1228,11 @@
 <h3 id="silent-installation">Silent Installation</h3>
 <p>Silent installation runs <code>Lemonade_Server_Installer.exe</code> without a GUI and automatically accepts all prompts.</p>
 <p>In a <code>cmd.exe</code> terminal:</p>
-<p>Install <em>with</em> Ryzen AI hybrid support: </p>
-<div class="highlight"><pre><span></span><code>Lemonade_Server_Installer.exe<span class="w"> </span>/S<span class="w"> </span>/Extras<span class="o">=</span>hybrid
-</code></pre></div>
-<p>Install <em>without</em> Ryzen AI hybrid support:</p>
 <div class="highlight"><pre><span></span><code>Lemonade_Server_Installer.exe<span class="w"> </span>/S
 </code></pre></div>
 <p>The install directory can also be changed from the default by using <code>/D</code> as the last argument. </p>
 <p>For example: </p>
-<div class="highlight"><pre><span></span><code>Lemonade_Server_Installer.exe<span class="w"> </span>/S<span class="w"> </span>/Extras<span class="o">=</span>hybrid<span class="w"> </span>/D<span class="o">=</span>C:<span class="se">\a\n</span>ew<span class="se">\p</span>ath
-</code></pre></div>
-<p>Only <code>Qwen2.5-0.5B-Instruct-CPU</code> is installed by default in silent mode. If you wish to select additional models to download in silent mode, you may use the <code>/Models</code> argument.</p>
-<div class="highlight"><pre><span></span><code>Lemonade_Server_Installer.exe<span class="w"> </span>/S<span class="w"> </span>/Extras<span class="o">=</span>hybrid<span class="w"> </span>/Models<span class="o">=</span><span class="s2">&quot;Qwen2.5-0.5B-Instruct-CPU Llama-3.2-1B-Instruct-Hybrid&quot;</span>
+<div class="highlight"><pre><span></span><code>Lemonade_Server_Installer.exe<span class="w"> </span>/S<span class="w"> </span>/D<span class="o">=</span>C:<span class="se">\a\n</span>ew<span class="se">\p</span>ath
 </code></pre></div>
 <p>The available modes are documented <a href="../server_models/">here</a>.</p>
 <p>Finally, if you don't want to create a desktop shortcut during installation, use the <code>/NoDesktopShortcut</code> parameter:</p>
