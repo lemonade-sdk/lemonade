@@ -40,23 +40,12 @@
 
 ### 4. **How do I uninstall Lemonade Server? (Windows)**
 
-   To completely uninstall Lemonade Server from your system, follow these steps:
+   To uninstall Lemonade Server, use the Windows Add/Remove Programs menu. 
 
-   **Step 1: Remove cached files**
+   **Optional: Remove cached files**
    - Open File Explorer and navigate to `%USERPROFILE%\.cache`
    - Delete the `lemonade` folder if it exists
-   - [Optional] To remove downloaded models, delete the `huggingface` folder
-
-   **Step 2: Remove from PATH environment variable**
-   - Press `Win + I` to open Windows Settings
-   - Search for "environment variables" and select "Edit environment variables for your account"
-   - Find "Path" in the list and click "Edit"
-   - Look for the entry containing `lemonade_server\bin` and select it
-   - Click "Delete" then "OK"
-
-   **Step 3: Delete installation folder**
-   - Navigate to `%LOCALAPPDATA%\lemonade_server`
-   - Delete the entire `lemonade_server` folder
+   - To remove downloaded models, delete the `huggingface` folder
 
 ## Models & Performance
 

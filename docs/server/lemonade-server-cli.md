@@ -2,8 +2,6 @@
 
 The `lemonade-server` command-line interface (CLI) provides a set of utility commands for managing the server. When you install Lemonade Server using the GUI installer, `lemonade-server` is added to your PATH so that it can be invoked from any terminal.
 
-> Note: if you installed from source or PyPI, you should call `lemonade-server-dev` in your activated Python environment, instead of using `lemonade-server`.
-
 `lemonade-server` provides these utilities:
 
 | Option/Command      | Description                         |

@@ -80,8 +80,6 @@ To check all models available, use the `list` command:
 lemonade-server list
 ```
 
-> **Note**:  If you installed from source, use the `lemonade-server-dev` command instead.
-
 > **Tip**: You can use `--llamacpp vulkan/rocm` to select a backend when running GGUF models.
 
 
@@ -201,7 +199,7 @@ This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowe
 ## License and Attribution
 
 This project is:
-- [Built with Python](https://www.amd.com/en/developer/resources/technical-articles/2025/rethinking-local-ai-lemonade-servers-python-advantage.html) with ❤️ for the open source community,
+- Built with C++ (server) and Python (SDK) with ❤️ for the open source community,
 - Standing on the shoulders of great tools from:
   - [ggml/llama.cpp](https://github.com/ggml-org/llama.cpp)
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)

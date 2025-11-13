@@ -5,8 +5,8 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 ## Components
 
 - **lemonade-router.exe** - Core HTTP server executable that handles requests and LLM backend orchestration
-- **lemonade-server-beta.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
-- **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server-beta.exe serve`
+- **lemonade-server.exe** - Console CLI client for terminal users that manages server lifecycle, executes commands via HTTP API
+- **lemonade-tray.exe** (Windows only) - GUI tray launcher for desktop users, automatically starts `lemonade-server.exe serve`
 - **lemonade-log-viewer.exe** (Windows only) - Log file viewer with live tail support and installer-friendly file sharing
 
 ## Building from Source
@@ -60,12 +60,12 @@ cmake --build . --config Release
 
 - **Windows:** 
   - `build/Release/lemonade-router.exe` - HTTP server
-  - `build/Release/lemonade-server-beta.exe` - Console CLI client
+  - `build/Release/lemonade-server.exe` - Console CLI client
   - `build/Release/lemonade-tray.exe` - GUI tray launcher
   - `build/Release/lemonade-log-viewer.exe` - Log file viewer
 - **Linux/macOS:** 
   - `build/lemonade-router` - HTTP server
-  - `build/lemonade-server-beta` - Console CLI client
+  - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
 
 ### RyzenAI Server Dependency
@@ -95,7 +95,7 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 **Linux:**
 - Linux builds are headless-only (no tray application) by default
 - This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
-- Run server using: `lemonade-server-beta serve` (headless mode is automatic)
+- Run server using: `lemonade-server serve` (headless mode is automatic)
 - Fully functional for server operations and model management
 - Uses permissively licensed dependencies only (MIT, Apache 2.0, BSD, curl license)
 - Clean .deb package with only runtime files (no development headers)
@@ -130,22 +130,22 @@ cd src\cpp
 Manual build:
 ```powershell
 cd src\cpp
-"C:\Program Files (x86)\NSIS\makensis.exe" Lemonade_Server_Installer_beta.nsi
+"C:\Program Files (x86)\NSIS\makensis.exe" Lemonade_Server_Installer.nsi
 ```
 
 **Installer Output:**
 
-Creates `Lemonade_Server_Installer_beta.exe` which:
-- Installs to `%LOCALAPPDATA%\lemonade_server_beta\`
+Creates `Lemonade_Server_Installer.exe` which:
+- Installs to `%LOCALAPPDATA%\lemonade_server\`
 - Adds `bin\` folder to user PATH
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Gracefully stops running server before install/uninstall
-- Includes all executables (router, server-beta, tray, log-viewer)
+- Includes all executables (router, server, tray, log-viewer)
 - Includes uninstaller
 
 **Installation Process:**
-- Automatically detects and stops running Lemonade instances using `lemonade-server-beta.exe stop`
+- Automatically detects and stops running Lemonade instances using `lemonade-server.exe stop`
 - Prevents "files in use" errors during installation
 - Works gracefully on fresh installs (no existing installation)
 
@@ -191,14 +191,14 @@ sudo dpkg -r lemonade-server
 
 The executables will be available in PATH:
 ```bash
-lemonade-server-beta --help
+lemonade-server --help
 lemonade-router --help
 
 # Start server in headless mode:
-lemonade-server-beta serve --no-tray
+lemonade-server serve --no-tray
 
 # Or just:
-lemonade-server-beta serve
+lemonade-server serve
 ```
 
 ## Code Structure
@@ -207,7 +207,7 @@ lemonade-server-beta serve
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── Lemonade_Server_Installer_beta.nsi  # NSIS installer definition
+├── Lemonade_Server_Installer.nsi.in  # NSIS installer definition template
 ├── resources/                  # Configuration and data files
 │   └── backend_versions.json   # llama.cpp version configuration (user-editable)
 │
@@ -246,7 +246,7 @@ src/cpp/
 │
 └── tray/                       # System tray application
     ├── CMakeLists.txt          # Tray-specific build config
-    ├── main.cpp                # Tray entry point (lemonade-server-beta)
+    ├── main.cpp                # Tray entry point (lemonade-server)
     ├── tray_launcher.cpp       # GUI launcher (lemonade-tray)
     ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
     ├── server_manager.cpp      # Manages lemonade-router process
@@ -279,7 +279,7 @@ A pure HTTP server that:
 - **Model Manager:** Handles model discovery, downloads, and registry management
 - **Backend Wrappers:** Manages llama.cpp, FastFlowLM, and RyzenAI backends
 
-#### lemonade-server-beta (CLI Client Component)
+#### lemonade-server (CLI Client Component)
 
 A console application for terminal users:
 - Provides command-based user interface (`list`, `pull`, `delete`, `run`, `status`, `stop`, `serve`)
@@ -296,14 +296,14 @@ A console application for terminal users:
 #### lemonade-tray (GUI Launcher - Windows Only)
 
 A minimal WIN32 GUI application for desktop users:
-- Simple launcher that starts `lemonade-server-beta.exe serve`
+- Simple launcher that starts `lemonade-server.exe serve`
 - Zero console output or CLI interface
 - Used by Start Menu, Desktop shortcuts, and autostart
 - Provides seamless GUI experience for non-technical users
 
 ### Client-Server Communication
 
-The `lemonade-server-beta` client communicates with `lemonade-router` server via HTTP:
+The `lemonade-server` client communicates with `lemonade-router` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
 - **Server management:** `/api/v1/health`, `/internal/shutdown`
@@ -316,7 +316,7 @@ The client automatically:
 - Manages persistent servers with proper lifecycle handling
 
 **Single-Instance Protection:**
-- Each component (`lemonade-router`, `lemonade-server-beta serve`, `lemonade-tray`) enforces single-instance using system-wide mutexes
+- Each component (`lemonade-router`, `lemonade-server serve`, `lemonade-tray`) enforces single-instance using system-wide mutexes
 - Only the `serve` command is blocked when a server is running
 - Commands like `status`, `list`, `pull`, `delete`, `stop` can run alongside an active server
 - Provides clear error messages with suggestions when blocked
@@ -360,9 +360,9 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --help, -h               Show help
 ```
 
-### lemonade-server-beta.exe (Console CLI Client)
+### lemonade-server.exe (Console CLI Client)
 
-The `lemonade-server-beta` executable is the command-line interface for terminal users:
+The `lemonade-server` executable is the command-line interface for terminal users:
 - Command-line interface for all model and server management
 - Starts persistent servers (with optional tray interface)
 - Manages ephemeral servers for one-off commands
@@ -370,31 +370,31 @@ The `lemonade-server-beta` executable is the command-line interface for terminal
 
 ```bash
 # List available models
-./lemonade-server-beta list
+./lemonade-server list
 
 # Pull a model
-./lemonade-server-beta pull Llama-3.2-1B-Instruct-CPU
+./lemonade-server pull Llama-3.2-1B-Instruct-CPU
 
 # Delete a model
-./lemonade-server-beta delete Llama-3.2-1B-Instruct-CPU
+./lemonade-server delete Llama-3.2-1B-Instruct-CPU
 
 # Check server status
-./lemonade-server-beta status
+./lemonade-server status
 
 # Stop the server
-./lemonade-server-beta stop
+./lemonade-server stop
 
 # Run a model (starts persistent server with tray and opens browser)
-./lemonade-server-beta run Llama-3.2-1B-Instruct-CPU
+./lemonade-server run Llama-3.2-1B-Instruct-CPU
 
 # Start persistent server (with tray on Windows/macOS, headless on Linux)
-./lemonade-server-beta serve
+./lemonade-server serve
 
 # Start persistent server without tray (headless mode, explicit on all platforms)
-./lemonade-server-beta serve --no-tray
+./lemonade-server serve --no-tray
 
 # Start server with custom options
-./lemonade-server-beta serve --port 8080 --ctx-size 8192
+./lemonade-server serve --port 8080 --ctx-size 8192
 ```
 
 **Available Options:**
@@ -406,19 +406,19 @@ The `lemonade-server-beta` executable is the command-line interface for terminal
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
 
-**Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server-beta` commands to see client-side debug output.
+**Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 
 ### lemonade-tray.exe (GUI Tray Launcher - Windows Only)
 
 The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 - Double-click from Start Menu or Desktop to start server
-- Automatically runs `lemonade-server-beta.exe serve` in tray mode
+- Automatically runs `lemonade-server.exe serve` in tray mode
 - Zero console windows or CLI interface
 - Perfect for non-technical users
 - Single-instance protection: shows friendly message if already running
 
 **What it does:**
-1. Finds `lemonade-server-beta.exe` in the same directory
+1. Finds `lemonade-server.exe` in the same directory
 2. Launches it with the `serve` command
 3. Exits immediately (server continues running with tray icon)
 
@@ -445,7 +445,7 @@ The `lemonade-tray` executable is a simple GUI launcher for desktop users:
 
 ### Logging and Console Output
 
-When running `lemonade-server-beta.exe serve`:
+When running `lemonade-server.exe serve`:
 - **Console Output:** Router logs are streamed to the terminal in real-time via a background tail thread
 - **Log File:** All logs are written to a persistent log file (default: `%TEMP%\lemonade-server.log`)
 - **Log Viewer:** Click "Show Logs" in the tray to open `lemonade-log-viewer.exe`
@@ -479,18 +479,18 @@ The C++ implementation is tested using the existing Python test suite.
 # Test lemonade-router (server) directly
 ./src/cpp/build/Release/lemonade-router.exe --port 8000 --log-level debug
 
-# Test lemonade-server-beta (client) commands
-./src/cpp/build/Release/lemonade-server-beta.exe list
-./src/cpp/build/Release/lemonade-server-beta.exe status
+# Test lemonade-server (client) commands
+./src/cpp/build/Release/lemonade-server.exe list
+./src/cpp/build/Release/lemonade-server.exe status
 
 # Run Python integration tests
-python test/server_llamacpp.py vulkan --server-binary ./src/cpp/build/Release/lemonade-server-beta.exe
-python test/server_flm.py --server-binary ./src/cpp/build/Release/lemonade-server-beta.exe
+python test/server_llamacpp.py vulkan --server-binary ./src/cpp/build/Release/lemonade-server.exe
+python test/server_flm.py --server-binary ./src/cpp/build/Release/lemonade-server.exe
 ```
 
 See the `.github/workflows/` directory for CI/CD test configurations.
 
-**Note:** The Python tests should now use `lemonade-server-beta.exe` as the entry point since it provides the CLI interface.
+**Note:** The Python tests should now use `lemonade-server.exe` as the entry point since it provides the CLI interface.
 
 ## Development
 

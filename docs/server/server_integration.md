@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux and macOS users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe) and Debian Installer (lemonade-server-<VERSION>-Linux.deb).
 
 ### Checking Server Status
 
@@ -73,7 +73,7 @@ Specific version:
 https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on Linux or macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
 
 **macOS Requirements:** macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.
 
@@ -127,14 +127,6 @@ Silent installation runs `Lemonade_Server_Installer.exe` without a GUI and autom
 
 In a `cmd.exe` terminal:
 
-Install *with* Ryzen AI hybrid support: 
-
-```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid
-```
-
-Install *without* Ryzen AI hybrid support:
-
 ```bash
 Lemonade_Server_Installer.exe /S
 ```
@@ -144,13 +136,7 @@ The install directory can also be changed from the default by using `/D` as the 
 For example: 
 
 ```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid /D=C:\a\new\path
-```
-
-Only `Qwen2.5-0.5B-Instruct-CPU` is installed by default in silent mode. If you wish to select additional models to download in silent mode, you may use the `/Models` argument.
-
-```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid /Models="Qwen2.5-0.5B-Instruct-CPU Llama-3.2-1B-Instruct-Hybrid"
+Lemonade_Server_Installer.exe /S /D=C:\a\new\path
 ```
 
 The available modes are documented [here](./server_models.md).

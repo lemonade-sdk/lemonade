@@ -56,7 +56,7 @@ runs:
         # Additional pass: kill by exact process names
         echo ""
         echo "Second pass: killing by exact name..."
-        for proc_name in lemonade-server lemonade-router lemonade-server-beta lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
+        for proc_name in lemonade-server lemonade-router lemonade-server-dev lemonade-tray llama-server llama-cli llama-bench; do
             kill_by_exact_name "$proc_name"
         done
         

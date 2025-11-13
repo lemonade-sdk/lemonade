@@ -627,7 +627,31 @@ def _add_server_arguments(parser):
         )
 
 
+def _show_deprecation_notice():
+    """Display deprecation notice for Python server, unless in CI mode."""
+    if os.environ.get("LEMONADE_CI_MODE"):
+        return
+
+    print("=" * 80)
+    print("DEPRECATION NOTICE")
+    print("=" * 80)
+    print("The Python-based 'lemonade-server-dev' command is deprecated.")
+    print("Please use the C++ Lemonade Server instead:")
+    print()
+    print("  • Windows and Linux: Download the installer from")
+    print("    https://github.com/lemonade-sdk/lemonade/releases/latest")
+    print()
+    print("The C++ server offers better performance and is the recommended option.")
+    print("This Python server will be removed in a future release.")
+    print("=" * 80)
+    print()
+
+
 def main():
+    # Show deprecation notice for --help/-h before argparse handles it
+    if "--help" in sys.argv or "-h" in sys.argv or len(sys.argv) == 1:
+        _show_deprecation_notice()
+
     parser = argparse.ArgumentParser(
         description="Serve LLMs on CPU, GPU, and NPU.",
         usage=argparse.SUPPRESS,
@@ -725,6 +749,7 @@ def main():
     if args.version:
         version()
     elif args.command == "serve":
+        _show_deprecation_notice()
         _, running_port = get_server_info()
         if running_port is not None:
             print(
@@ -759,6 +784,7 @@ def main():
     elif args.command == "stop":
         stop()
     elif args.command == "run":
+        _show_deprecation_notice()
         run(
             args.model,
             port=args.port,

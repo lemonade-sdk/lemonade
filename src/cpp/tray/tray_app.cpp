@@ -304,14 +304,14 @@ int TrayApp::run() {
     } else if (config_.command == "serve" || config_.command == "run") {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
-        if (lemon::SingleInstance::IsAnotherInstanceRunning("ServerBeta")) {
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
 #ifdef _WIN32
             show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
-            std::cerr << "Error: Another instance of lemonade-server-beta serve/run is already running.\n"
+            std::cerr << "Error: Another instance of lemonade-server serve/run is already running.\n"
                       << "Only one persistent server can run at a time.\n\n"
-                      << "To check server status: lemonade-server-beta status\n"
-                      << "To stop the server: lemonade-server-beta stop\n" << std::endl;
+                      << "To check server status: lemonade-server status\n"
+                      << "To stop the server: lemonade-server stop\n" << std::endl;
             return 1;
         }
         // Continue to server initialization below
@@ -575,8 +575,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
 }
 
 void TrayApp::print_usage(bool show_serve_options) {
-    std::cout << "lemonade-server-beta - Lemonade Server Beta\n\n";
-    std::cout << "Usage: lemonade-server-beta <command> [options]\n\n";
+    std::cout << "lemonade-server - Lemonade Server\n\n";
+    std::cout << "Usage: lemonade-server <command> [options]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  serve                    Start the server (default if no command specified)\n";
     std::cout << "  list                     List available models\n";
@@ -609,7 +609,7 @@ void TrayApp::print_usage(bool show_serve_options) {
 }
 
 void TrayApp::print_version() {
-    std::cout << "lemonade-server-beta version " << current_version_ << std::endl;
+    std::cout << "lemonade-server version " << current_version_ << std::endl;
 }
 
 bool TrayApp::find_server_binary() {
@@ -685,6 +685,26 @@ std::pair<int, int> TrayApp::get_server_info() {
     // Query OS for listening TCP connections and find lemonade-router.exe
 #ifdef _WIN32
     // Windows: Use GetExtendedTcpTable to find listening connections
+    // Check both IPv4 and IPv6 since server may bind to either
+    
+    // Helper lambda to check if a PID is lemonade-router.exe
+    auto is_lemonade_router = [](DWORD pid) -> bool {
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProcess) {
+            WCHAR processName[MAX_PATH];
+            DWORD size = MAX_PATH;
+            if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
+                std::wstring fullPath(processName);
+                std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
+                CloseHandle(hProcess);
+                return (exeName == L"lemonade-router.exe");
+            }
+            CloseHandle(hProcess);
+        }
+        return false;
+    };
+    
+    // Try IPv4 first
     DWORD size = 0;
     GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
     
@@ -696,21 +716,26 @@ std::pair<int, int> TrayApp::get_server_info() {
             DWORD pid = pTcpTable->table[i].dwOwningPid;
             int port = ntohs((u_short)pTcpTable->table[i].dwLocalPort);
             
-            // Check if this PID is lemonade-router.exe
-            HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-            if (hProcess) {
-                WCHAR processName[MAX_PATH];
-                DWORD size = MAX_PATH;
-                if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
-                    std::wstring fullPath(processName);
-                    std::wstring exeName = fullPath.substr(fullPath.find_last_of(L"\\/") + 1);
-                    
-                    if (exeName == L"lemonade-router.exe") {
-                        CloseHandle(hProcess);
-                        return {static_cast<int>(pid), port};
-                    }
-                }
-                CloseHandle(hProcess);
+            if (is_lemonade_router(pid)) {
+                return {static_cast<int>(pid), port};
+            }
+        }
+    }
+    
+    // Try IPv6 if not found in IPv4
+    size = 0;
+    GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0);
+    
+    buffer.resize(size);
+    PMIB_TCP6TABLE_OWNER_PID pTcp6Table = reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buffer.data());
+    
+    if (GetExtendedTcpTable(pTcp6Table, &size, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0) == NO_ERROR) {
+        for (DWORD i = 0; i < pTcp6Table->dwNumEntries; i++) {
+            DWORD pid = pTcp6Table->table[i].dwOwningPid;
+            int port = ntohs((u_short)pTcp6Table->table[i].dwLocalPort);
+            
+            if (is_lemonade_router(pid)) {
+                return {static_cast<int>(pid), port};
             }
         }
     }
@@ -835,7 +860,7 @@ int TrayApp::execute_list_command() {
 int TrayApp::execute_pull_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server-beta pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--mmproj MMPROJ]" << std::endl;
+        std::cerr << "Usage: lemonade-server pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--mmproj MMPROJ]" << std::endl;
         return 1;
     }
     
@@ -917,7 +942,7 @@ int TrayApp::execute_pull_command() {
 int TrayApp::execute_delete_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server-beta delete <model_name>" << std::endl;
+        std::cerr << "Usage: lemonade-server delete <model_name>" << std::endl;
         return 1;
     }
     
@@ -978,7 +1003,7 @@ int TrayApp::execute_delete_command() {
 int TrayApp::execute_run_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server-beta run <model_name>" << std::endl;
+        std::cerr << "Usage: lemonade-server run <model_name>" << std::endl;
         return 1;
     }
     
@@ -1059,12 +1084,12 @@ int TrayApp::execute_stop_command() {
                 if (pe32.th32ProcessID == router_pid) {
                     // Found router, check its parent
                     DWORD parent_pid = pe32.th32ParentProcessID;
-                    // Search for parent to see if it's lemonade-server-beta
+                    // Search for parent to see if it's lemonade-server
                     if (Process32FirstW(snapshot, &pe32)) {
                         do {
                             if (pe32.th32ProcessID == parent_pid) {
                                 std::wstring parent_name(pe32.szExeFile);
-                                if (parent_name == L"lemonade-server-beta.exe") {
+                                if (parent_name == L"lemonade-server.exe") {
                                     tray_pid = parent_pid;
                                     std::cout << "Found parent tray app (PID: " << tray_pid << ")" << std::endl;
                                 }
@@ -1226,7 +1251,7 @@ int TrayApp::execute_stop_command() {
         char buffer[128];
         if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
             int parent_pid = atoi(buffer);
-            // Check if parent is lemonade-server-beta
+            // Check if parent is lemonade-server
             std::string name_cmd = "ps -o comm= -p " + std::to_string(parent_pid);
             FILE* name_pipe = popen(name_cmd.c_str(), "r");
             if (name_pipe) {
@@ -1236,7 +1261,7 @@ int TrayApp::execute_stop_command() {
                     // Remove newline
                     parent_name.erase(parent_name.find_last_not_of("\n\r") + 1);
                     // Note: ps -o comm= is limited to 15 chars on Linux (/proc/PID/comm truncation)
-                    // "lemonade-server-beta" (21 chars) gets truncated to "lemonade-server" (15 chars)
+                    // "lemonade-server" is exactly 15 chars, so no truncation occurs
                     if (parent_name.find("lemonade-server") != std::string::npos) {
                         tray_pid = parent_pid;
                         std::cout << "Found parent tray app (PID: " << tray_pid << ")" << std::endl;
@@ -1310,7 +1335,7 @@ int TrayApp::execute_stop_command() {
         if (router_gone && tray_gone && all_children_gone) {
             // Additional check: verify the lock file can be acquired
             // This is a belt-and-suspenders check to ensure the lock is truly released
-            std::string lock_file = "/tmp/lemonade_ServerBeta.lock";
+            std::string lock_file = "/tmp/lemonade_Server.lock";
             int fd = open(lock_file.c_str(), O_RDWR | O_CREAT, 0666);
             if (fd != -1) {
                 if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
