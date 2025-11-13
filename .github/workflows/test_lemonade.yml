@@ -6,8 +6,17 @@ name: Lint and Test Lemonade
 on:
   push:
     branches: ["main"]
+    paths:
+      - '**.py'
+      - '**.yml'
   pull_request:
+    paths:
+      - '**.py'
+      - '**.yml'
   merge_group:
+    paths:
+      - '**.py'
+      - '**.yml'
 
 permissions:
   contents: read
