@@ -17,7 +17,6 @@ on:
     paths:
       - '**.py'
       - '**.yml'
-  merge_group:
   workflow_dispatch:
 
 permissions:
