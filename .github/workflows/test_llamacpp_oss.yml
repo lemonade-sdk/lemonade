@@ -6,9 +6,18 @@ name: Test Lemonade with Llamacpp 🌩️
 on:
   push:
     branches: ["main"]
+    paths:
+      - '**.py'
+      - '**.yml'
   pull_request:
-  workflow_dispatch:
+    paths:
+      - '**.py'
+      - '**.yml'
   merge_group:
+    paths:
+      - '**.py'
+      - '**.yml'
+  workflow_dispatch:
 
 
 permissions:

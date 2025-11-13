@@ -6,8 +6,17 @@ name: Test Lemonade on NPU and Hybrid with OGA environment 🌩️
 on:
   push:
     branches: ["main"]
+    paths:
+      - '**.py'
+      - '**.yml'
   pull_request:
+    paths:
+      - '**.py'
+      - '**.yml'
   merge_group:
+    paths:
+      - '**.py'
+      - '**.yml'
   workflow_dispatch:
     inputs:
       runson:
