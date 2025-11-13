@@ -661,8 +661,10 @@ The `recipe` field defines which software framework and device will be used to l
 | `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
-| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
-| `vision` | No | Whether the model has vision capabilities for processing images (default: false). |
+| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
+| `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
+| `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
+| `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:

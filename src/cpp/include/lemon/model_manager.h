@@ -41,6 +41,8 @@ public:
                             const std::string& recipe,
                             bool reasoning = false,
                             bool vision = false,
+                            bool embedding = false,
+                            bool reranking = false,
                             const std::string& mmproj = "",
                             const std::string& source = "");
     
@@ -50,6 +52,8 @@ public:
                        const std::string& recipe = "",
                        bool reasoning = false,
                        bool vision = false,
+                       bool embedding = false,
+                       bool reranking = false,
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false);
     
