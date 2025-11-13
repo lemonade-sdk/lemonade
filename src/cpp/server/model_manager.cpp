@@ -563,52 +563,7 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
 // Helper function to check if NPU is available
 // Matches Python behavior: on Windows, assume available (FLM will fail at runtime if not compatible)
 // This allows showing FLM models on Windows systems - the actual compatibility check happens when loading
-// Helper function to get backend availability from SystemInfo
-static json get_backend_availability() {
-    // Try to load from cache first
-    SystemInfoCache cache;
-    json cached_hardware = cache.load_hardware_info();
-    
-    if (!cached_hardware.empty()) {
-        return cached_hardware;
-    }
-    
-    // If no cache, detect hardware
-    auto sys_info = create_system_info();
-    json hardware = sys_info->get_device_dict();
-    
-    // Strip inference_engines before caching (hardware only)
-    json hardware_only = hardware;
-    if (hardware_only.contains("cpu") && hardware_only["cpu"].contains("inference_engines")) {
-        hardware_only["cpu"].erase("inference_engines");
-    }
-    if (hardware_only.contains("amd_igpu") && hardware_only["amd_igpu"].contains("inference_engines")) {
-        hardware_only["amd_igpu"].erase("inference_engines");
-    }
-    if (hardware_only.contains("amd_dgpu") && hardware_only["amd_dgpu"].is_array()) {
-        for (auto& gpu : hardware_only["amd_dgpu"]) {
-            if (gpu.contains("inference_engines")) {
-                gpu.erase("inference_engines");
-            }
-        }
-    }
-    if (hardware_only.contains("nvidia_dgpu") && hardware_only["nvidia_dgpu"].is_array()) {
-        for (auto& gpu : hardware_only["nvidia_dgpu"]) {
-            if (gpu.contains("inference_engines")) {
-                gpu.erase("inference_engines");
-            }
-        }
-    }
-    if (hardware_only.contains("npu") && hardware_only["npu"].contains("inference_engines")) {
-        hardware_only["npu"].erase("inference_engines");
-    }
-    
-    cache.save_hardware_info(hardware_only);
-    
-    return hardware_only;
-}
-
-static bool is_npu_available() {
+static bool is_npu_available(const json& hardware) {
     // Check if user explicitly disabled NPU check
     const char* skip_check = std::getenv("RYZENAI_SKIP_PROCESSOR_CHECK");
     if (skip_check && (std::string(skip_check) == "1" || 
@@ -617,8 +572,7 @@ static bool is_npu_available() {
         return true;
     }
     
-    // Use SystemInfo to detect NPU
-    json hardware = get_backend_availability();
+    // Use provided hardware info
     if (hardware.contains("npu") && hardware["npu"].is_object()) {
         return hardware["npu"].value("available", false);
     }
@@ -626,16 +580,16 @@ static bool is_npu_available() {
     return false;
 }
 
-static bool is_flm_available() {
+static bool is_flm_available(const json& hardware) {
     // FLM models are available if NPU hardware is present
     // The FLM executable will be obtained as needed
-    return is_npu_available();
+    return is_npu_available(hardware);
 }
 
-static bool is_oga_available() {
+static bool is_oga_available(const json& hardware) {
     // OGA models are available if NPU hardware is present
     // The ryzenai-server executable (OGA backend) will be obtained as needed
-    return is_npu_available();
+    return is_npu_available(hardware);
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
@@ -650,10 +604,14 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool is_macos = false;
 #endif
     
-    // Check backend availability
-    bool npu_available = is_npu_available();
-    bool flm_available = is_flm_available();
-    bool oga_available = is_oga_available();
+    // Get hardware info once (this will print the message)
+    json system_info = SystemInfoCache::get_system_info_with_cache(false);
+    json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
+    
+    // Check backend availability (passing hardware info)
+    bool npu_available = is_npu_available(hardware);
+    bool flm_available = is_flm_available(hardware);
+    bool oga_available = is_oga_available(hardware);
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
