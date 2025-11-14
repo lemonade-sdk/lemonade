@@ -155,8 +155,8 @@ static std::string validate_custom_args(const std::string& custom_args_str,
 }
 
 LlamaCppServer::LlamaCppServer(const std::string& backend, const std::string& log_level,
-                               const std::string& custom_args)
-    : WrappedServer("llama-server", log_level), backend_(backend), custom_args_(custom_args) {
+                               const std::string& custom_args, ModelManager* model_manager)
+    : WrappedServer("llama-server", log_level, model_manager), backend_(backend), custom_args_(custom_args) {
 }
 
 LlamaCppServer::~LlamaCppServer() {
@@ -270,30 +270,6 @@ static std::string get_install_directory(const std::string& backend) {
     return (fs::path(get_llama_base_dir()) / "llama" / backend).string();
 }
 
-// Helper to get HuggingFace cache directory
-// Policy: Use HF_HOME or default to ~/.cache/huggingface/hub (standard HF behavior)
-static std::string get_hf_cache_dir() {
-    // Check HF_HOME first
-    const char* hf_home = std::getenv("HF_HOME");
-    if (hf_home) {
-        return std::string(hf_home) + "/hub";
-    }
-    
-    // Default to ~/.cache/huggingface/hub
-#ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\huggingface\\hub";
-    }
-    return "C:\\.cache\\huggingface\\hub";
-#else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/huggingface/hub";
-    }
-    return "/tmp/.cache/huggingface/hub";
-#endif
-}
 
 // Helper to extract ZIP files (Windows/Linux built-in tools)
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
@@ -400,7 +376,10 @@ void LlamaCppServer::install(const std::string& backend) {
                          expected_version + "/" + filename;
         
         // Download ZIP to HuggingFace cache directory (follows HF conventions)
-        fs::path cache_dir = get_hf_cache_dir();
+        fs::path cache_dir = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
+        if (cache_dir.empty()) {
+            throw std::runtime_error("ModelManager not available for cache directory lookup");
+        }
         fs::create_directories(cache_dir);
         std::string zip_path = (cache_dir / filename).string();
         
@@ -522,7 +501,10 @@ void LlamaCppServer::load(const std::string& model_name,
             cache_dir_name += (c == '/') ? "--" : std::string(1, c);
         }
         
-        std::string hf_cache = get_hf_cache_dir();
+        std::string hf_cache = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
+        if (hf_cache.empty()) {
+            throw std::runtime_error("ModelManager not available for cache directory lookup");
+        }
         fs::path model_cache_path = fs::path(hf_cache) / cache_dir_name;
         
         // Search for mmproj file in the model cache
