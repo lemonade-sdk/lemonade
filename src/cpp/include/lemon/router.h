@@ -18,7 +18,8 @@ public:
     Router(int ctx_size = 4096, 
            const std::string& llamacpp_backend = "vulkan",
            const std::string& log_level = "info",
-           const std::string& llamacpp_args = "");
+           const std::string& llamacpp_args = "",
+           ModelManager* model_manager = nullptr);
     
     ~Router();
     
@@ -77,6 +78,7 @@ private:
     std::string llamacpp_backend_;
     std::string log_level_;
     std::string llamacpp_args_;
+    ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and wrapped_server_

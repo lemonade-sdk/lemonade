@@ -53,7 +53,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args);
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args, model_manager_.get());
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -1345,27 +1345,7 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         }
         
         // Get HF cache directory
-        std::string hf_cache;
-        const char* hf_home_env = std::getenv("HF_HOME");
-        if (hf_home_env) {
-            hf_cache = std::string(hf_home_env) + "/hub";
-        } else {
-#ifdef _WIN32
-            const char* userprofile = std::getenv("USERPROFILE");
-            if (userprofile) {
-                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-            } else {
-                throw std::runtime_error("Cannot determine HF cache directory");
-            }
-#else
-            const char* home = std::getenv("HOME");
-            if (home) {
-                hf_cache = std::string(home) + "/.cache/huggingface/hub";
-            } else {
-                throw std::runtime_error("Cannot determine HF cache directory");
-            }
-#endif
-        }
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
         
         // Create model directory in HF cache
         std::string model_name_clean = model_name.substr(5); // Remove "user." prefix

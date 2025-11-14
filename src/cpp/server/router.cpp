@@ -10,9 +10,9 @@
 namespace lemon {
 
 Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level,
-               const std::string& llamacpp_args)
+               const std::string& llamacpp_args, ModelManager* model_manager)
     : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level),
-      llamacpp_args_(llamacpp_args) {
+      llamacpp_args_(llamacpp_args), model_manager_(model_manager) {
 }
 
 Router::~Router() {
@@ -75,7 +75,7 @@ void Router::load_model(const std::string& model_name,
         // Determine which backend to use based on recipe
         if (model_info.recipe == "flm") {
             std::cout << "[Router] Using FastFlowLM backend" << std::endl;
-            new_server = std::make_unique<backends::FastFlowLMServer>(log_level_);
+            new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
         } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" || model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
             std::cout << "[Router] Using RyzenAI-Server backend: " << model_info.recipe << std::endl;
             
@@ -95,13 +95,13 @@ void Router::load_model(const std::string& model_name,
                 backend_mode = "auto";
             }
             
-            auto* ryzenai_server = new RyzenAIServer(model_name, 8080, log_level_ == "debug");
+            auto* ryzenai_server = new RyzenAIServer(model_name, 8080, log_level_ == "debug", model_manager_);
             ryzenai_server->set_model_path(model_path);
             ryzenai_server->set_execution_mode(backend_mode);
             new_server.reset(ryzenai_server);
         } else {
             std::cout << "[Router] Using LlamaCpp backend: " << llamacpp_backend_ << std::endl;
-            new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_, llamacpp_args_);
+            new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_, llamacpp_args_, model_manager_);
         }
         
         // CRITICAL: Release the lock before the time-consuming backend startup

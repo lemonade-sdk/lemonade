@@ -18,8 +18,8 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace backends {
 
-FastFlowLMServer::FastFlowLMServer(const std::string& log_level)
-    : WrappedServer("FastFlowLM", log_level) {
+FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* model_manager)
+    : WrappedServer("FastFlowLM", log_level, model_manager) {
 }
 
 FastFlowLMServer::~FastFlowLMServer() {

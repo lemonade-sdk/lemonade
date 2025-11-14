@@ -45,8 +45,8 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
-    WrappedServer(const std::string& server_name, const std::string& log_level = "info")
-        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level) {}
+    WrappedServer(const std::string& server_name, const std::string& log_level = "info", ModelManager* model_manager = nullptr)
+        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level), model_manager_(model_manager) {}
     
     virtual ~WrappedServer() = default;
     
@@ -128,6 +128,7 @@ protected:
     ProcessHandle process_handle_;
     Telemetry telemetry_;
     std::string log_level_;
+    ModelManager* model_manager_;  // Non-owning pointer to ModelManager
 };
 
 } // namespace lemon
