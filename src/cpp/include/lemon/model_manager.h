@@ -72,6 +72,9 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
     
+    // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
+    std::string get_hf_cache_dir() const;
+    
 private:
     json load_server_models();
     json load_user_models();
@@ -87,7 +90,6 @@ private:
     
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info) const;
-    std::string get_hf_cache_dir() const;
     
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id, 
