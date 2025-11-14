@@ -578,17 +578,17 @@ void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "lemonade-server - Lemonade Server\n\n";
     std::cout << "Usage: lemonade-server <command> [options]\n\n";
     std::cout << "Commands:\n";
-    std::cout << "  serve                    Start the server (default if no command specified)\n";
+    std::cout << "  serve                    Start the server\n";
+    std::cout << "  run <model>              Run a model\n";
     std::cout << "  list                     List available models\n";
     std::cout << "  pull <model>             Download a model\n";
     std::cout << "  delete <model>           Delete a model\n";
-    std::cout << "  run <model>              Run a model (starts server if needed)\n";
     std::cout << "  status                   Check server status\n";
     std::cout << "  stop                     Stop the server\n\n";
     
     // Only show serve options if requested (for serve/run --help)
     if (show_serve_options) {
-        std::cout << "Serve Options:\n";
+        std::cout << "Serve/Run Options:\n";
         std::cout << "  --port PORT              Server port (default: 8000)\n";
         std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
