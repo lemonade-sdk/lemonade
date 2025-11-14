@@ -250,12 +250,15 @@ def get_flm_installed_models() -> List[str]:
     """
     Parse FLM model list and return installed model checkpoints.
 
+    Uses the improved FLM CLI methodology with --filter and --quiet flags
+    for cleaner, more reliable output parsing.
+
     Returns:
         List of installed FLM model checkpoints (e.g., ["llama3.2:1b", "gemma3:4b"])
     """
     try:
         result = subprocess.run(
-            ["flm", "list"],
+            ["flm", "list", "--filter", "installed", "--quiet"],
             capture_output=True,
             text=True,
             check=True,
@@ -272,14 +275,13 @@ def get_flm_installed_models() -> List[str]:
         lines = result.stdout.strip().split("\n")
         for line in lines:
             line = line.strip()
+            # Skip the "Models:" header line
+            if line == "Models:" or not line:
+                continue
+            # Parse model checkpoint (format: "  - modelname:tag")
             if line.startswith("- "):
-                # Remove the leading "- " and parse the model info
-                model_info = line[2:].strip()
-
-                # Check if model is installed (✅)
-                if model_info.endswith(" ✅"):
-                    checkpoint = model_info[:-2].strip()
-                    installed_checkpoints.append(checkpoint)
+                checkpoint = line[2:].strip()
+                installed_checkpoints.append(checkpoint)
 
         return installed_checkpoints
 
