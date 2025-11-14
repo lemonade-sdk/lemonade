@@ -713,73 +713,75 @@ void ModelManager::register_user_model(const std::string& model_name,
     user_models_ = updated_user_models;
 }
 
-// Helper function to get FLM installed models by calling 'flm list'
+// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
+// Uses the improved FLM CLI methodology with --filter and --quiet flags
 std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
-    
+
 #ifdef _WIN32
     std::string command = "where flm > nul 2>&1";
 #else
     std::string command = "which flm > /dev/null 2>&1";
 #endif
-    
+
     // Check if flm is available
     if (system(command.c_str()) != 0) {
         return installed_models; // FLM not installed
     }
-    
-    // Run 'flm list' to get installed models
+
+    // Run 'flm list --filter installed --quiet' to get only installed models
+    // This uses FLM's native filtering instead of emoji parsing
 #ifdef _WIN32
-    FILE* pipe = _popen("flm list", "r");
+    FILE* pipe = _popen("flm list --filter installed --quiet", "r");
 #else
-    FILE* pipe = popen("flm list", "r");
+    FILE* pipe = popen("flm list --filter installed --quiet", "r");
 #endif
-    
+
     if (!pipe) {
         return installed_models;
     }
-    
+
     char buffer[256];
     std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
-    
+
 #ifdef _WIN32
     _pclose(pipe);
 #else
     pclose(pipe);
 #endif
-    
-    // Parse output - look for lines starting with "- " and ending with " ✅"
+
+    // Parse output - cleaner format without emojis
+    // Expected format:
+    //   Models:
+    //     - modelname:tag
+    //     - another:model
     std::istringstream stream(output);
     std::string line;
     while (std::getline(stream, line)) {
         // Trim whitespace
         line.erase(0, line.find_first_not_of(" \t\r\n"));
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
-        
+
+        // Skip the "Models:" header line or empty lines
+        if (line == "Models:" || line.empty()) {
+            continue;
+        }
+
+        // Parse model checkpoint (format: "  - modelname:tag")
         if (line.find("- ") == 0) {
-            // Remove "- " prefix
-            std::string model_info = line.substr(2);
-            
-            // Check if model is installed (ends with ✅)
-            // Note: ✅ is UTF-8, so we need to check for the byte sequence
-            if (model_info.size() >= 4 && 
-                (model_info.substr(model_info.size() - 4) == " \xE2\x9C\x85" || 
-                 model_info.find(" \xE2\x9C\x85") != std::string::npos)) {
-                // Remove the checkmark and trim
-                size_t checkmark_pos = model_info.find(" \xE2\x9C\x85");
-                if (checkmark_pos != std::string::npos) {
-                    std::string checkpoint = model_info.substr(0, checkmark_pos);
-                    checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
-                    checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
-                    installed_models.push_back(checkpoint);
-                }
+            std::string checkpoint = line.substr(2);
+            // Trim any remaining whitespace
+            checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
+            checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
+            if (!checkpoint.empty()) {
+                installed_models.push_back(checkpoint);
             }
         }
     }
-    
+
     return installed_models;
 }
 
