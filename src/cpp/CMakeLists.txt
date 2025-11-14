@@ -245,15 +245,15 @@ if(UNIX AND NOT APPLE)
     set(CPACK_PACKAGE_NAME "lemonade-server")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
-    set(CPACK_PACKAGE_CONTACT "support@lemonade-server.ai")
+    set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
     
     # Debian-specific settings
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <support@lemonade-server.ai>")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
     
     # Installation paths - use ~/.local for user install (no sudo needed)
