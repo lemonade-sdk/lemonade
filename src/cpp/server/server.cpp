@@ -245,6 +245,11 @@ void Server::setup_static_files() {
                 {"suggested", info.suggested},
                 {"mmproj", info.mmproj}
             };
+            
+            // Add size if available
+            if (info.size > 0.0) {
+                filtered_models[model_name]["size"] = info.size;
+            }
         }
         
         // Create JavaScript snippets
@@ -517,6 +522,11 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
             {"recipe", model_info.recipe}
         };
         
+        // Add size if available
+        if (model_info.size > 0.0) {
+            model_json["size"] = model_info.size;
+        }
+        
         // Add extra fields when showing all models (for CLI list command)
         if (show_all) {
             // Need to check download status for each model when showing all
@@ -546,6 +556,12 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
             {"checkpoint", info.checkpoint},
             {"recipe", info.recipe}
         };
+        
+        // Add size if available
+        if (info.size > 0.0) {
+            response["size"] = info.size;
+        }
+        
         res.set_content(response.dump(), "application/json");
     } else {
         res.status = 404;

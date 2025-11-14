@@ -447,6 +447,7 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -469,6 +470,7 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
+        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {

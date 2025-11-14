@@ -19,6 +19,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string mmproj;
     std::string source;  // "local_upload" for locally uploaded models
+    double size = 0.0;   // Model size in GB
 };
 
 class ModelManager {
