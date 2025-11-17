@@ -1014,6 +1014,8 @@ function setupRegisterModelForm() {
             const recipe = document.getElementById('register-recipe').value;
             const reasoning = document.getElementById('register-reasoning').checked;
             const vision = document.getElementById('register-vision').checked;
+            const embedding = document.getElementById('register-embedding').checked;
+            const reranking = document.getElementById('register-reranking').checked;
             const mmproj = document.getElementById('register-mmproj').value.trim();
             
             if (!name || !recipe) { 
@@ -1036,6 +1038,8 @@ function setupRegisterModelForm() {
                     formData.append('recipe', recipe);
                     formData.append('reasoning', reasoning);
                     formData.append('vision', vision);
+                    formData.append('embedding', embedding);
+                    formData.append('reranking', reranking);
                     if (mmproj) formData.append('mmproj', mmproj);
                     Array.from(selectedModelFiles).forEach(file => {
                         formData.append('model_files', file, file.webkitRelativePath);
@@ -1050,7 +1054,7 @@ function setupRegisterModelForm() {
                     if (!checkpoint) {
                         throw new Error('Checkpoint is required for remote models');
                     }
-                    const payload = { model_name: name, recipe, reasoning, vision };
+                    const payload = { model_name: name, recipe, reasoning, vision, embedding, reranking };
                     if (checkpoint) payload.checkpoint = checkpoint;
                     if (mmproj) payload.mmproj = mmproj;
                     
@@ -1070,6 +1074,8 @@ function setupRegisterModelForm() {
                     const labels = ['custom'];
                     if (vision) labels.push('vision');
                     if (reasoning) labels.push('reasoning');
+                    if (embedding) labels.push('embeddings');
+                    if (reranking) labels.push('reranking');
 
                     window.SERVER_MODELS[name] = {
                         recipe: recipe,

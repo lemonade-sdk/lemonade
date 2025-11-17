@@ -466,6 +466,7 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
+        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -486,6 +487,7 @@ void ModelManager::build_cache() {
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.mmproj = JsonUtils::get_or_default<std::string>(value, "mmproj", "");
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
+        info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -756,6 +758,8 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       const std::string& recipe,
                                       bool reasoning,
                                       bool vision,
+                                      bool embedding,
+                                      bool reranking,
                                       const std::string& mmproj,
                                       const std::string& source) {
     
@@ -777,6 +781,12 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     if (vision) {
         labels.push_back("vision");
+    }
+    if (embedding) {
+        labels.push_back("embeddings");
+    }
+    if (reranking) {
+        labels.push_back("reranking");
     }
     model_entry["labels"] = labels;
     
@@ -895,6 +905,8 @@ void ModelManager::download_model(const std::string& model_name,
                                  const std::string& recipe,
                                  bool reasoning,
                                  bool vision,
+                                 bool embedding,
+                                 bool reranking,
                                  const std::string& mmproj,
                                  bool do_not_upgrade) {
     
@@ -1008,7 +1020,7 @@ void ModelManager::download_model(const std::string& model_name,
     // Register if needed
     if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
-                          reasoning, vision, actual_mmproj);
+                          reasoning, vision, embedding, reranking, actual_mmproj);
     }
     
     // Update cache after successful download
