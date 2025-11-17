@@ -627,11 +627,7 @@ void TrayApp::print_pull_help() {
     std::cout << "  For custom models, use the registration options below.\n\n";
     std::cout << "Registration Options (for custom models):\n";
     std::cout << "  --checkpoint CHECKPOINT  Hugging Face checkpoint (format: org/model:variant)\n";
-    std::cout << "                           Required for registering new models.\n";
-    std::cout << "                           Examples:\n";
-    std::cout << "                             - unsloth/Qwen3-8B-GGUF:Q4_0\n";
-    std::cout << "                             - microsoft/Phi-3-mini-4k-instruct-onnx\n\n";
-    std::cout << "  --recipe RECIPE          Inference recipe to use. Required for new models.\n";
+    std::cout << "  --recipe RECIPE          Inference recipe to use\n";
     std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n\n";
     std::cout << "  --reasoning              Mark model as a reasoning model (e.g., DeepSeek-R1)\n";
     std::cout << "                           Adds 'reasoning' label to model metadata.\n\n";
@@ -646,28 +642,6 @@ void TrayApp::print_pull_help() {
     std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
     std::cout << "                           Required for GGUF vision models.\n";
     std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
-    std::cout << "Examples:\n";
-    std::cout << "  # Install a registered model\n";
-    std::cout << "  lemonade-server pull Qwen3-0.6B-GGUF\n\n";
-    std::cout << "  # Register and install a custom GGUF model\n";
-    std::cout << "  lemonade-server pull user.Phi-4-Mini-GGUF \\\n";
-    std::cout << "    --checkpoint unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M \\\n";
-    std::cout << "    --recipe llamacpp\n\n";
-    std::cout << "  # Register and install a vision model with mmproj\n";
-    std::cout << "  lemonade-server pull user.Gemma-3-4b \\\n";
-    std::cout << "    --checkpoint ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \\\n";
-    std::cout << "    --recipe llamacpp \\\n";
-    std::cout << "    --vision \\\n";
-    std::cout << "    --mmproj mmproj-model-f16.gguf\n\n";
-    std::cout << "  # Register and install an embedding model\n";
-    std::cout << "  lemonade-server pull user.nomic-embed \\\n";
-    std::cout << "    --checkpoint nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S \\\n";
-    std::cout << "    --recipe llamacpp \\\n";
-    std::cout << "    --embedding\n\n";
-    std::cout << "Notes:\n";
-    std::cout << "  - Custom model names must use the 'user.' namespace (e.g., user.MyModel)\n";
-    std::cout << "  - GGUF models require a variant in the checkpoint (after the colon)\n";
-    std::cout << "  - See available models: lemonade-server list\n";
 }
 
 bool TrayApp::find_server_binary() {
