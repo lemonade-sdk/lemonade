@@ -22,8 +22,8 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
-RyzenAIServer::RyzenAIServer(const std::string& model_name, int port, bool debug)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info"), 
+RyzenAIServer::RyzenAIServer(const std::string& model_name, int port, bool debug, ModelManager* model_manager)
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager), 
       model_name_(model_name),
       execution_mode_("auto"),
       is_loaded_(false) {
