@@ -194,9 +194,14 @@ TrayApp::TrayApp(int argc, char* argv[])
     parse_arguments(argc, argv);
     
     if (config_.show_help) {
-        // Show serve options only if command is "serve" or "run"
-        bool show_serve_options = (config_.command == "serve" || config_.command == "run");
-        print_usage(show_serve_options);
+        // Show command-specific help
+        if (config_.command == "pull") {
+            print_pull_help();
+        } else {
+            // Show serve options only if command is "serve" or "run"
+            bool show_serve_options = (config_.command == "serve" || config_.command == "run");
+            print_usage(show_serve_options);
+        }
         exit(0);
     }
     
@@ -612,6 +617,33 @@ void TrayApp::print_version() {
     std::cout << "lemonade-server version " << current_version_ << std::endl;
 }
 
+void TrayApp::print_pull_help() {
+    std::cout << "lemonade-server pull - Download and install a model\n\n";
+    std::cout << "Usage:\n";
+    std::cout << "  lemonade-server pull <model_name> [options]\n\n";
+    std::cout << "Description:\n";
+    std::cout << "  Downloads a model from the Lemonade Server registry or Hugging Face.\n";
+    std::cout << "  For registered models, only the model name is required.\n";
+    std::cout << "  For custom models, use the registration options below.\n\n";
+    std::cout << "Registration Options (for custom models):\n";
+    std::cout << "  --checkpoint CHECKPOINT  Hugging Face checkpoint (format: org/model:variant)\n";
+    std::cout << "  --recipe RECIPE          Inference recipe to use\n";
+    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n\n";
+    std::cout << "  --reasoning              Mark model as a reasoning model (e.g., DeepSeek-R1)\n";
+    std::cout << "                           Adds 'reasoning' label to model metadata.\n\n";
+    std::cout << "  --vision                 Mark model as a vision model (multimodal)\n";
+    std::cout << "                           Adds 'vision' label to model metadata.\n\n";
+    std::cout << "  --embedding              Mark model as an embedding model\n";
+    std::cout << "                           Adds 'embeddings' label to model metadata.\n";
+    std::cout << "                           For use with /api/v1/embeddings endpoint.\n\n";
+    std::cout << "  --reranking              Mark model as a reranking model\n";
+    std::cout << "                           Adds 'reranking' label to model metadata.\n";
+    std::cout << "                           For use with /api/v1/reranking endpoint.\n\n";
+    std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
+    std::cout << "                           Required for GGUF vision models.\n";
+    std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
+}
+
 bool TrayApp::find_server_binary() {
     // Look for lemonade binary in common locations
     std::vector<std::string> search_paths;
@@ -860,7 +892,7 @@ int TrayApp::execute_list_command() {
 int TrayApp::execute_pull_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--mmproj MMPROJ]" << std::endl;
+        std::cerr << "Usage: lemonade-server pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--embedding] [--reranking] [--mmproj MMPROJ]" << std::endl;
         return 1;
     }
     
@@ -901,6 +933,10 @@ int TrayApp::execute_pull_command() {
                 request_body["reasoning"] = true;
             } else if (arg == "--vision") {
                 request_body["vision"] = true;
+            } else if (arg == "--embedding") {
+                request_body["embedding"] = true;
+            } else if (arg == "--reranking") {
+                request_body["reranking"] = true;
             } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
                 request_body["mmproj"] = config_.command_args[++i];
             }

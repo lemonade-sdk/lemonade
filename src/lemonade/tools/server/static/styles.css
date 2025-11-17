@@ -1178,6 +1178,27 @@ button:disabled {
   accent-color: #e6b800;
 }
 
+/* Checkboxes row styling */
+.register-checkboxes-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1em;
+  padding: 0.5em 0;
+  margin-left: 0;
+}
+
+.register-checkboxes-row .register-label.reasoning-inline {
+  margin-left: 0;
+  padding: 0.4em 0.8em;
+  background: #f8f8f8;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.register-checkboxes-row .register-label.reasoning-inline:hover {
+  background: #f0f0f0;
+}
+
 .register-model-name-group {
   display: flex;
   align-items: stretch;

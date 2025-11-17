@@ -350,6 +350,27 @@
         "labels": ["embeddings"],
         "size": 0.51
     },
+    "Qwen3-Embedding-0.6B-GGUF": {
+        "checkpoint": "Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["embeddings"],
+        "size": 0.64
+    },
+    "Qwen3-Embedding-4B-GGUF": {
+        "checkpoint": "Qwen/Qwen3-Embedding-4B-GGUF:Qwen3-Embedding-4B-Q8_0.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["embeddings"],
+        "size": 4.28
+    },
+    "Qwen3-Embedding-8B-GGUF": {
+        "checkpoint": "Qwen/Qwen3-Embedding-8B-GGUF:Qwen3-Embedding-8B-Q8_0.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["embeddings"],
+        "size": 8.05
+    },
     "bge-reranker-v2-m3-GGUF": {
         "checkpoint": "pqnet/bge-reranker-v2-m3-Q8_0-GGUF",
         "recipe": "llamacpp",

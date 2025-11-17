@@ -60,6 +60,7 @@ private:
     void parse_arguments(int argc, char* argv[]);
     void print_usage(bool show_serve_options = false);
     void print_version();
+    void print_pull_help();
     bool find_server_binary();
     bool setup_logging();
     

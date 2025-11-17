@@ -245,6 +245,11 @@ void Server::setup_static_files() {
                 {"suggested", info.suggested},
                 {"mmproj", info.mmproj}
             };
+            
+            // Add size if available
+            if (info.size > 0.0) {
+                filtered_models[model_name]["size"] = info.size;
+            }
         }
         
         // Create JavaScript snippets
@@ -517,6 +522,11 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
             {"recipe", model_info.recipe}
         };
         
+        // Add size if available
+        if (model_info.size > 0.0) {
+            model_json["size"] = model_info.size;
+        }
+        
         // Add extra fields when showing all models (for CLI list command)
         if (show_all) {
             // Need to check download status for each model when showing all
@@ -546,6 +556,12 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
             {"checkpoint", info.checkpoint},
             {"recipe", info.recipe}
         };
+        
+        // Add size if available
+        if (info.size > 0.0) {
+            response["size"] = info.size;
+        }
+        
         res.set_content(response.dump(), "application/json");
     } else {
         res.status = 404;
@@ -1094,6 +1110,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         std::string recipe = request_json.value("recipe", "");
         bool reasoning = request_json.value("reasoning", false);
         bool vision = request_json.value("vision", false);
+        bool embedding = request_json.value("embedding", false);
+        bool reranking = request_json.value("reranking", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         
@@ -1106,7 +1124,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
         
         model_manager_->download_model(model_name, checkpoint, recipe, 
-                                      reasoning, vision, mmproj, do_not_upgrade);
+                                      reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
         
         nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
@@ -1256,6 +1274,8 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         std::string mmproj;
         bool reasoning = false;
         bool vision = false;
+        bool embedding = false;
+        bool reranking = false;
         
         // Parse form fields
         if (req.form.has_field("model_name")) {
@@ -1277,6 +1297,14 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         if (req.form.has_field("vision")) {
             std::string vision_str = req.form.get_field("vision");
             vision = (vision_str == "true" || vision_str == "True" || vision_str == "1");
+        }
+        if (req.form.has_field("embedding")) {
+            std::string embedding_str = req.form.get_field("embedding");
+            embedding = (embedding_str == "true" || embedding_str == "True" || embedding_str == "1");
+        }
+        if (req.form.has_field("reranking")) {
+            std::string reranking_str = req.form.get_field("reranking");
+            reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
         }
         
         std::cout << "[Server] Model name: " << model_name << std::endl;
@@ -1488,6 +1516,8 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
             recipe,
             reasoning,
             vision,
+            embedding,
+            reranking,
             resolved_mmproj.empty() ? mmproj : resolved_mmproj,
             "local_upload"
         );

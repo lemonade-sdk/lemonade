@@ -20,9 +20,16 @@ We are also actively investigating and developing [additional endpoints](#additi
 ### OpenAI-Compatible Endpoints
 - POST `/api/v1/chat/completions` - Chat Completions (messages -> completion)
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
+- POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
+
+### Extended Endpoints
+
+These endpoints extend the OpenAI-compatible API with additional functionality inspired by other inference server implementations.
+
+- POST `/api/v1/reranking` - Reranking (query + documents -> relevance-scored documents)
 
 ### Additional Endpoints
 
@@ -81,8 +88,6 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `tools`       | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
 
 #### Example request
 
@@ -178,8 +183,6 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion, including input tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
-
 #### Example request
 
 === "PowerShell"
@@ -227,6 +230,181 @@ The following format is used for both streaming and non-streaming responses:
 
 
 
+### `POST /api/v1/embeddings` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Embeddings API. You provide input text and receive vector representations (embeddings) that can be used for semantic search, clustering, and similarity comparisons. This API will also load the model if it is not already loaded.
+
+> **Note:** This endpoint is only available for models using the `llamacpp` or `flm` recipes. ONNX models (OGA recipes) do not support embeddings.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `input` | Yes | The input text or array of texts to embed. Can be a string or an array of strings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for generating embeddings. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `encoding_format` | No | The format to return embeddings in. Supported values: `"float"` (default), `"base64"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/embeddings" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "nomic-embed-text-v1-GGUF",
+        "input": ["Hello, world!", "How are you?"],
+        "encoding_format": "float"
+      }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/embeddings \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "nomic-embed-text-v1-GGUF",
+            "input": ["Hello, world!", "How are you?"],
+            "encoding_format": "float"
+          }'
+    ```
+
+#### Response format
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "embedding": [0.0234, -0.0567, 0.0891, ...]
+    },
+    {
+      "object": "embedding",
+      "index": 1,
+      "embedding": [0.0456, -0.0678, 0.1234, ...]
+    }
+  ],
+  "model": "nomic-embed-text-v1-GGUF",
+  "usage": {
+    "prompt_tokens": 12,
+    "total_tokens": 12
+  }
+}
+```
+
+**Field Descriptions:**
+
+- `object` - Type of response object, always `"list"`
+- `data` - Array of embedding objects
+  - `object` - Type of embedding object, always `"embedding"`
+  - `index` - Index position of the input text in the request
+  - `embedding` - Vector representation as an array of floats
+- `model` - Model identifier used to generate the embeddings
+- `usage` - Token usage statistics
+  - `prompt_tokens` - Number of tokens in the input
+  - `total_tokens` - Total tokens processed
+
+
+
+### `POST /api/v1/reranking` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Reranking API. You provide a query and a list of documents, and receive the documents reordered by their relevance to the query with relevance scores. This is useful for improving search results quality. This API will also load the model if it is not already loaded.
+
+> **Note:** This endpoint follows API conventions similar to OpenAI's format but is not part of the official OpenAI API. It is inspired by llama.cpp and other inference server implementations.
+
+> **Note:** This endpoint is only available for models using the `llamacpp` recipe. It is not available for FLM or ONNX models.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `documents` | Yes | Array of document strings to be reranked. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to use for reranking. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:8000/api/v1/reranking" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+        "model": "bge-reranker-v2-m3-GGUF",
+        "query": "What is the capital of France?",
+        "documents": [
+          "Paris is the capital of France.",
+          "Berlin is the capital of Germany.",
+          "Madrid is the capital of Spain."
+        ]
+      }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/reranking \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "bge-reranker-v2-m3-GGUF",
+            "query": "What is the capital of France?",
+            "documents": [
+              "Paris is the capital of France.",
+              "Berlin is the capital of Germany.",
+              "Madrid is the capital of Spain."
+            ]
+          }'
+    ```
+
+#### Response format
+
+```json
+{
+  "model": "bge-reranker-v2-m3-GGUF",
+  "object": "list",
+  "results": [
+    {
+      "index": 0,
+      "relevance_score": 8.60673713684082
+    },
+    {
+      "index": 1,
+      "relevance_score": -5.3886260986328125
+    },
+    {
+      "index": 2,
+      "relevance_score": -3.555561065673828
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 51,
+    "total_tokens": 51
+  }
+}
+```
+
+**Field Descriptions:**
+
+- `model` - Model identifier used for reranking
+- `object` - Type of response object, always `"list"`
+- `results` - Array of all documents with relevance scores
+  - `index` - Original index of the document in the input array
+  - `relevance_score` - Relevance score assigned by the model (higher = more relevant)
+- `usage` - Token usage statistics
+  - `prompt_tokens` - Number of tokens in the input
+  - `total_tokens` - Total tokens processed
+
+> **Note:** The results are returned in their original input order, not sorted by relevance score. To get documents ranked by relevance, you need to sort the results by `relevance_score` in descending order on the client side.
+
+
+
 ### `POST /api/v1/responses` <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
 
 Responses API. You provide an input and receive a response. This API will also load the model if it is not already loaded.
@@ -244,7 +422,6 @@ Responses API. You provide an input and receive a response. This API will also l
 | `top_p` | No | Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-> Note: The value for `model` is either a [Lemonade Server model name](./server_models.md), or a checkpoint that has been pre-loaded using the [load endpoint](#post-apiv1load).
 
 #### Streaming Events
 
@@ -484,8 +661,10 @@ The `recipe` field defines which software framework and device will be used to l
 | `model_name` | Yes | Namespaced [Lemonade Server model name](./server_models.md) to register and install. |
 | `checkpoint` | Yes | HuggingFace checkpoint to install. |
 | `recipe` | Yes | Lemonade API recipe to load the model with. |
-| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). |
-| `vision` | No | Whether the model has vision capabilities for processing images (default: false). |
+| `reasoning` | No | Whether the model is a reasoning model, like DeepSeek (default: false). Adds 'reasoning' label. |
+| `vision` | No | Whether the model has vision capabilities for processing images (default: false). Adds 'vision' label. |
+| `embedding` | No | Whether the model is an embedding model (default: false). Adds 'embeddings' label. |
+| `reranking` | No | Whether the model is a reranking model (default: false). Adds 'reranking' label. |
 | `mmproj` | No | Multimodal Projector (mmproj) file to use for vision models. |
 
 Example request:
@@ -782,7 +961,9 @@ The OGA models (`*-CPU`, `*-Hybrid`) available in Lemonade Server use Lemonade's
 
 The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
-  - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported. 
+  - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
+  - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
+  - The `reranking` endpoint requires reranker-specific models (e.g., bge-reranker models).
   - `responses` is not supported at this time.
 - A single Lemonade Server process can seamlessly switch between OGA and GGUF models.
   - Lemonade Server will attempt to load models onto GPU with Vulkan first, and if that doesn't work it will fall back to CPU.
@@ -809,7 +990,8 @@ Similar to the [llama-server support](#gguf-support), Lemonade can also route Op
 
 The `flm serve` backend works with Lemonade's suggested `*-FLM` models, as well as any model mentioned in `flm list`. Windows is the only supported operating system. Details:
 - Lemonade Server wraps `flm serve` with support for the `lemonade-server` CLI, client web app, and all Lemonade custom endpoints (e.g., `pull`, `load`, etc.).
-  - The only OpenAI API endpoints supported are `models` and `chat/completions stream=True`. 
+  - OpenAI API endpoints supported: `models`, `chat/completions` (streaming), and `embeddings`.
+  - The `embeddings` endpoint requires embedding-specific models supported by FLM.
 - A single Lemonade Server process can seamlessly switch between FLM, OGA, and GGUF models.
 
 ## Installing FLM Models
