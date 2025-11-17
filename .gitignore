@@ -176,3 +176,7 @@ CLAUDE.*
 # Cursor files (using .cursor/rules/*.mdc format)
 .cursor/
 .cursor**
+
+# WiX Toolset build artifacts
+*.msi
+*.wixpdb

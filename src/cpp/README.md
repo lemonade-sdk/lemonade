@@ -149,6 +149,62 @@ Creates `Lemonade_Server_Installer.exe` which:
 - Prevents "files in use" errors during installation
 - Works gracefully on fresh installs (no existing installation)
 
+### Windows Installer (WiX/MSI)
+
+**Prerequisites:**
+- WiX Toolset 5.0.2 installed from [wix-cli-x64.msi](https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi)
+- Completed C++ build (see above)
+
+**Building:**
+
+Using PowerShell script (recommended):
+```powershell
+cd src\cpp
+.\build_installer_wix.ps1
+```
+
+Manual build using CMake:
+```powershell
+cd src\cpp\build
+cmake --build . --config Release --target wix_installer
+```
+
+**Installer Output:**
+
+Creates `lemonade.msi` which:
+- MSI-based installer (Windows Installer technology)
+- Installs to `%LOCALAPPDATA%\lemonade_server\`
+- Adds `bin\` folder to user PATH using Windows Installer standard methods
+- Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
+- Optionally creates desktop shortcut and startup entry
+- Uses Windows Installer Restart Manager to gracefully close running processes
+- Includes all executables (router, server, tray, log-viewer)
+- Proper upgrade handling between versions
+- Includes uninstaller
+
+**Installation:**
+
+GUI installation:
+```powershell
+# Double-click lemonade.msi or run:
+msiexec /i lemonade.msi
+```
+
+Silent installation:
+```powershell
+# Install silently
+msiexec /i lemonade.msi /qn
+
+# Install to custom directory
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path"
+
+# Install without desktop shortcut
+msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
+
+# Install with startup entry
+msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
+```
+
 ### Linux .deb Package (Debian/Ubuntu)
 
 **Prerequisites:**
