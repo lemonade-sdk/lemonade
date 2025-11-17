@@ -155,13 +155,6 @@ if(WIN32)
         @ONLY
     )
     
-    # Generate NSIS installer script with version
-    configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi
-        @ONLY
-    )
-    
     # ============================================================
     # WiX Toolset Configuration (Windows MSI Installer)
     # ============================================================

@@ -109,8 +109,11 @@ jobs:
             exit 1
           }
 
-          # Make wix available on PATH for later steps in this job
-          $env:PATH = [System.String]::Concat((Split-Path $wixExe -Parent), ";", $env:PATH)
+          $wixDir = Split-Path $wixExe -Parent
+
+          # Persist wix.exe directory to PATH for all subsequent steps
+          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
           Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
           & $wixExe --version
 
