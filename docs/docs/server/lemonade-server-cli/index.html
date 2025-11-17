@@ -720,6 +720,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pull-command-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pull Command Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -927,6 +949,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pull-command-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pull Command Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -976,7 +1020,7 @@
 </tr>
 <tr>
 <td><code>pull MODEL_NAME</code></td>
-<td>Install an LLM named <code>MODEL_NAME</code>. See the <a href="../server_models/">server models guide</a> for more information.</td>
+<td>Install an LLM named <code>MODEL_NAME</code>. See <a href="#pull-command-options">pull command options</a> for registering custom models.</td>
 </tr>
 <tr>
 <td><code>run MODEL_NAME</code></td>
@@ -985,6 +1029,10 @@
 <tr>
 <td><code>list</code></td>
 <td>List all models.</td>
+</tr>
+<tr>
+<td><code>delete MODEL_NAME</code></td>
+<td>Delete a model and its files from local storage.</td>
 </tr>
 </tbody>
 </table>
@@ -1042,6 +1090,84 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 </tbody>
 </table>
 <p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: <code>LEMONADE_HOST</code>, <code>LEMONADE_PORT</code>, <code>LEMONADE_LOG_LEVEL</code>, <code>LEMONADE_LLAMACPP</code>, <code>LEMONADE_CTX_SIZE</code>, and <code>LEMONADE_LLAMACPP_ARGS</code>.</p>
+<h2 id="pull-command-options"><code>pull</code> Command Options</h2>
+<p>The <code>pull</code> command downloads and installs models. For models already in the <a href="../server_models/">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
+<div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--checkpoint CHECKPOINT</code></td>
+<td>Hugging Face checkpoint in the format <code>org/model:variant</code>. For GGUF models, the variant (after the colon) is required. Examples: <code>unsloth/Qwen3-8B-GGUF:Q4_0</code>, <code>amd/Qwen3-4B-awq-quant-onnx-hybrid</code></td>
+<td>For custom models</td>
+</tr>
+<tr>
+<td><code>--recipe RECIPE</code></td>
+<td>Inference recipe to use. Options: <code>llamacpp</code>, <code>flm</code>, <code>oga-cpu</code>, <code>oga-hybrid</code>, <code>oga-npu</code></td>
+<td>For custom models</td>
+</tr>
+<tr>
+<td><code>--reasoning</code></td>
+<td>Mark the model as a reasoning model (e.g., DeepSeek-R1). Adds the 'reasoning' label to model metadata.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--vision</code></td>
+<td>Mark the model as a vision/multimodal model. Adds the 'vision' label to model metadata.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--embedding</code></td>
+<td>Mark the model as an embedding model. Adds the 'embeddings' label to model metadata. For use with the <code>/api/v1/embeddings</code> endpoint.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--reranking</code></td>
+<td>Mark the model as a reranking model. Adds the 'reranking' label to model metadata. For use with the <code>/api/v1/reranking</code> endpoint.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>--mmproj FILENAME</code></td>
+<td>Multimodal projector file for GGUF vision models. Example: <code>mmproj-model-f16.gguf</code></td>
+<td>For vision models</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- Custom model names must use the <code>user.</code> namespace prefix (e.g., <code>user.MyModel</code>)
+- GGUF models require a variant specified in the checkpoint after the colon
+- Use <code>lemonade-server pull --help</code> to see examples and detailed information</p>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Install a registered model from the Lemonade Server registry</span>
+lemonade-server<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Register and install a custom GGUF model</span>
+lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.Phi-4-Mini-GGUF<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Register and install a vision model with multimodal projector</span>
+lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.Gemma-3-4b<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--vision<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--mmproj<span class="w"> </span>mmproj-model-f16.gguf
+
+<span class="c1"># Register and install an embedding model</span>
+lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-embed<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--checkpoint<span class="w"> </span>nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--embedding
+</code></pre></div>
+<p>For more information about model formats and recipes, see the <a href="../../lemonade_api/">API documentation</a> and the <a href="../server_models/">server models guide</a>.</p>
+<h2 id="next-steps">Next Steps</h2>
 <p>The <a href="../server_integration/">Lemonade Server integration guide</a> provides more information about how these commands can be used to integrate Lemonade Server into an application.</p>
 <!--Copyright (c) 2025 AMD-->
 
