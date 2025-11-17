@@ -4,6 +4,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
+#include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -1134,6 +1135,16 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
 
 void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_upgrade) {
     std::cout << "[ModelManager] Pulling FLM model: " << checkpoint << std::endl;
+    
+    // Ensure FLM is installed
+    std::cout << "[ModelManager] Checking FLM installation..." << std::endl;
+    backends::FastFlowLMServer flm_installer("info", this);
+    try {
+        flm_installer.install();
+    } catch (const std::exception& e) {
+        std::cerr << "[ModelManager ERROR] FLM installation failed: " << e.what() << std::endl;
+        throw;
+    }
     
     // Find flm executable
     std::string flm_path;
