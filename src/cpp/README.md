@@ -124,7 +124,7 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 Using PowerShell script (recommended):
 ```powershell
 cd src\cpp
-.\build_installer_wix.ps1
+.\build_installer.ps1
 ```
 
 Manual build using CMake:

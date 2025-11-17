@@ -65,20 +65,25 @@ jobs:
               cmake --version
           }
 
-      - name: Install NSIS
+      - name: Install WiX Toolset 5.0.2 (CLI)
         shell: PowerShell
         run: |
-          # Download NSIS installer
-          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe" -OutFile "nsis.exe"
-          
-          # Install NSIS
-          Start-Process nsis.exe -ArgumentList '/S' -Wait
+          $ErrorActionPreference = "Stop"
 
-      - name: Verify NSIS installation
+          Write-Host "Downloading WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
+          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
+          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
+
+          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
+
+          Write-Host "Installing WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
+          Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -Wait
+
+      - name: Verify WiX installation
         shell: PowerShell
         run: |
-          # Check if NSIS is installed
-          & 'C:\Program Files (x86)\NSIS\makensis.exe' /VERSION
+          $ErrorActionPreference = "Stop"
+          wix --version
 
       - name: Build C++ Server with CMake
         shell: PowerShell
