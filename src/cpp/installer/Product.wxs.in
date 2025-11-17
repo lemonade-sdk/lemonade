@@ -45,7 +45,12 @@
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
     <Property Id="ADDTOSTARTUP" Value="0" Secure="yes" />
     <Property Id="LAUNCHAPP" Value="1" />
+
+    <!-- Enable optional 'Run now' checkbox on ExitDialog -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
+    <!-- 1 = checked by default -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
     <Property Id="EXISTINGINSTALLDIR">
       <RegistrySearch Id="FindInstallDir"
                       Root="HKCU"
@@ -216,6 +221,13 @@
       
       <!-- Override default: InstallDir Back goes to Welcome (skip license) -->
       <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+
+      <!-- On ExitDialog, run Lemonade when user clicks Finish with checkbox checked -->
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
     </UI>
     
     <!-- Custom branding images -->
@@ -224,9 +236,6 @@
     
     <!-- WixUIBannerBmp = 493×58 top banner with lemon icon (replaces red CD) -->
     <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\installer\top_banner.bmp" />
-    
-    <!-- Use built-in optional checkbox on exit dialog for "Run now" -->
-    <WixVariable Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
     
     <!-- ============================================ -->
     <!-- Custom Actions -->
@@ -241,24 +250,18 @@
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Launch lemonade-tray.exe -->
+    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) -->
     <CustomAction Id="LaunchApplication"
                   Directory="BinDir"
                   ExeCommand='&quot;[BinDir]lemonade-tray.exe&quot;'
                   Impersonate="yes"
                   Return="asyncNoWait" />
     
-    
     <InstallExecuteSequence>
       <!-- Stop server before InstallValidate so files aren't reported in use -->
       <Custom Action="StopServerCmd"
               Before="InstallValidate"
               Condition="EXISTINGINSTALLDIR AND (EXISTINGINSTALLDIR &lt;&gt; &quot;&quot;)" />
-      
-      <!-- Launch app after installation completes (fresh installs only / silent) -->
-      <Custom Action="LaunchApplication" 
-              After="InstallFinalize"
-              Condition="(NOT Installed) AND (NOT REMOVE) AND (WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1)" />
     </InstallExecuteSequence>
     
   </Package>
