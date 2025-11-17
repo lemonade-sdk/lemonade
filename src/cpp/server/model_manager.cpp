@@ -601,8 +601,18 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
     auto it = models_cache_.find(model_name);
     if (it != models_cache_.end()) {
         it->second.downloaded = downloaded;
-        std::cout << "[ModelManager] Updated '" << model_name 
-                  << "' downloaded=" << downloaded << std::endl;
+        
+        // Recompute resolved_path after download
+        // The path changes now that files exist on disk
+        if (downloaded) {
+            it->second.resolved_path = resolve_model_path(it->second);
+            std::cout << "[ModelManager] Updated '" << model_name 
+                      << "' downloaded=" << downloaded 
+                      << ", resolved_path=" << it->second.resolved_path << std::endl;
+        } else {
+            std::cout << "[ModelManager] Updated '" << model_name 
+                      << "' downloaded=" << downloaded << std::endl;
+        }
     } else {
         std::cerr << "[ModelManager] Warning: '" << model_name << "' not found in cache" << std::endl;
     }
@@ -1210,6 +1220,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         }
         
         std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
+        std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
         
     } catch (const std::exception& e) {
         // Don't log here - let the caller (Server) handle error logging
