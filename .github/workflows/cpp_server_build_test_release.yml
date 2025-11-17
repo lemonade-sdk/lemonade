@@ -77,13 +77,42 @@ jobs:
           Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
 
           Write-Host "Installing WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
-          Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -Wait
+          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            Write-Host "WiX installer exited with code $($p.ExitCode)" -ForegroundColor Red
+            exit $p.ExitCode
+          }
 
       - name: Verify WiX installation
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          wix --version
+          
+          # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
+          # so we locate it explicitly and then update PATH for subsequent steps.
+          $wixDirs = @(
+            "C:\Program Files\WiX Toolset v5.0\bin",
+            "C:\Program Files (x86)\WiX Toolset v5.0\bin"
+          )
+
+          $wixExe = $null
+          foreach ($dir in $wixDirs) {
+            if (Test-Path (Join-Path $dir "wix.exe")) {
+              $wixExe = Join-Path $dir "wix.exe"
+              break
+            }
+          }
+
+          if (-not $wixExe) {
+            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
+            Get-ChildItem -Recurse "C:\Program Files" -Filter wix.exe -ErrorAction SilentlyContinue | Select-Object -First 20 | Format-List FullName
+            exit 1
+          }
+
+          # Make wix available on PATH for later steps in this job
+          $env:PATH = [System.String]::Concat((Split-Path $wixExe -Parent), ";", $env:PATH)
+          Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
+          & $wixExe --version
 
       - name: Build C++ Server with CMake
         shell: PowerShell
