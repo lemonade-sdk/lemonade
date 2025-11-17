@@ -113,42 +113,6 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 
 ## Building Installers
 
-### Windows Installer (NSIS)
-
-**Prerequisites:**
-- NSIS 3.x installed at `C:\Program Files (x86)\NSIS\`
-- Completed C++ build (see above)
-
-**Building:**
-
-Using PowerShell script (recommended):
-```powershell
-cd src\cpp
-.\build_installer.ps1
-```
-
-Manual build:
-```powershell
-cd src\cpp
-"C:\Program Files (x86)\NSIS\makensis.exe" Lemonade_Server_Installer.nsi
-```
-
-**Installer Output:**
-
-Creates `Lemonade_Server_Installer.exe` which:
-- Installs to `%LOCALAPPDATA%\lemonade_server\`
-- Adds `bin\` folder to user PATH
-- Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
-- Optionally creates desktop shortcut and startup entry
-- Gracefully stops running server before install/uninstall
-- Includes all executables (router, server, tray, log-viewer)
-- Includes uninstaller
-
-**Installation Process:**
-- Automatically detects and stops running Lemonade instances using `lemonade-server.exe stop`
-- Prevents "files in use" errors during installation
-- Works gracefully on fresh installs (no existing installation)
-
 ### Windows Installer (WiX/MSI)
 
 **Prerequisites:**

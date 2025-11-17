@@ -133,7 +133,7 @@ jobs:
           .\build_installer.ps1
           
           # Verify installer was created
-          if (-not (Test-Path "Lemonade_Server_Installer.exe")) {
+          if (-not (Test-Path "lemonade.msi")) {
               Write-Host "ERROR: Installer not created!" -ForegroundColor Red
               exit 1
           }
@@ -143,8 +143,8 @@ jobs:
       - name: Upload Lemonade Server Installer
         uses: actions/upload-artifact@v4
         with:
-          name: Lemonade_Server_Installer
-          path: src\cpp\Lemonade_Server_Installer.exe
+          name: Lemonade_Installer_MSI
+          path: src\cpp\lemonade.msi
           retention-days: 7
 
   build-ryzenai-server:
@@ -432,7 +432,7 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Install Lemonade Server
@@ -441,7 +441,7 @@ jobs:
           Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
           
           # Run installer silently
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
@@ -827,13 +827,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -906,13 +906,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -984,13 +984,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -1064,13 +1064,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Download RyzenAI Server artifact
@@ -1659,7 +1659,7 @@ jobs:
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Installer_MSI
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux)
@@ -1684,7 +1684,7 @@ jobs:
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
-          ls -lh Lemonade_Server_Installer.exe
+          ls -lh lemonade.msi
           ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
           ls -lh ryzenai-server.zip
 
@@ -1692,7 +1692,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Lemonade_Server_Installer.exe
+            lemonade.msi
             lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
