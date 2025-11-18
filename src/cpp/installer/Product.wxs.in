@@ -35,7 +35,8 @@
     <Property Id="ARPURLINFOABOUT" Value="https://lemonade-server.ai" />
     
     <!-- Launch conditions -->
-    <Launch Condition="VersionNT &gt;= 603" Message="This application requires Windows 10 or later." />
+    <Launch Condition="VersionNT &gt;= 603 AND NOT NSISINSTALLED"
+            Message="This application requires that any previous Lemonade Server installed with the legacy Lemonade_Server_Installer.exe installer be removed first. Please open the Windows Settings app, go to 'Apps' &amp; 'Installed apps', uninstall 'Lemonade Server', then run this installer again." />
     
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Lemonade Server is already installed."
@@ -51,6 +52,7 @@
     <!-- 1 = checked by default -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
 
+    <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
     <Property Id="EXISTINGINSTALLDIR">
       <RegistrySearch Id="FindInstallDir"
                       Root="HKCU"
@@ -59,6 +61,14 @@
                       Type="raw" />
     </Property>
     
+    <!-- Detect legacy C++ NSIS-based installer to block MSI and instruct manual uninstall -->
+    <Property Id="NSISINSTALLED">
+      <RegistrySearch Id="FindNsisInstall"
+                      Root="HKCU"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
     
     <!-- Media -->
     <Media Id="1" Cabinet="lemonade.cab" EmbedCab="yes" />
@@ -241,11 +251,27 @@
     <!-- Custom Actions -->
     <!-- ============================================ -->
     
-    <!-- Stop server before upgrade using lemonade-server stop from PATH -->
+    <!-- Stop server before upgrade using lemonade-server stop from existing MSI install -->
     <!-- This properly stops all child processes (router, llama-server, etc.) -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
                   ExeCommand='[SystemFolder]cmd.exe /c "[EXISTINGINSTALLDIR]bin\lemonade-server.exe" stop'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Stop legacy Python-based server from the previous Python NSIS install in INSTALLDIR -->
+    <CustomAction Id="StopLegacyPythonServer"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[INSTALLDIR]bin\lemonade-server.bat" "[INSTALLDIR]bin\lemonade-server.bat" stop'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Clean legacy Python-based install directory in INSTALLDIR before MSI takes over -->
+    <CustomAction Id="CleanLegacyInstall"
+                  Directory="INSTALLDIR"
+                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[INSTALLDIR]"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -258,7 +284,17 @@
                   Return="asyncNoWait" />
     
     <InstallExecuteSequence>
-      <!-- Stop server before InstallValidate so files aren't reported in use -->
+      <!-- Stop legacy Python-based server from the previous Python NSIS install before cleaning its files -->
+      <Custom Action="StopLegacyPythonServer"
+              Before="CleanLegacyInstall"
+              Condition="NOT Installed" />
+      
+      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout) -->
+      <Custom Action="CleanLegacyInstall"
+              Before="InstallValidate"
+              Condition="NOT Installed" />
+      
+      <!-- Stop server from an existing MSI-based C++ install before validation -->
       <Custom Action="StopServerCmd"
               Before="InstallValidate"
               Condition="EXISTINGINSTALLDIR AND (EXISTINGINSTALLDIR &lt;&gt; &quot;&quot;)" />
