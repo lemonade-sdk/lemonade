@@ -388,9 +388,11 @@ class FLMAdapter(ModelAdapter):
         # Start memory monitoring in a separate thread
         if save_max_memory_used:
             memory_data = {}
+            stop_event = threading.Event()
             monitor_thread = threading.Thread(
                 target=monitor_process_memory,
                 args=(self.server_process.pid, memory_data),
+                kwargs={"stop_event": stop_event},
                 daemon=True,
             )
             monitor_thread.start()
@@ -421,9 +423,10 @@ class FLMAdapter(ModelAdapter):
         self.time_to_first_token = getattr(usage, "prefill_duration_ttft", None)
         self.tokens_per_second = getattr(usage, "decoding_speed_tps", None)
 
-        # Wait for monitor thread to finish and write peak_wset
+        # Signal monitor thread to stop and wait for it to finish
         if save_max_memory_used:
-            monitor_thread.join(timeout=2)
+            stop_event.set()  # Signal the monitor to stop
+            monitor_thread.join(timeout=0.5)  # Should finish almost immediately now
             self.peak_wset = memory_data.get("peak_wset", None)
 
         return response_content

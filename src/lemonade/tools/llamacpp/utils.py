@@ -780,8 +780,15 @@ def stream_reader(stream, output_list):
     stream.close()
 
 
-def monitor_process_memory(pid, memory_data, interval=0.5):
-    """Monitor memory usage of a process in a separate thread."""
+def monitor_process_memory(pid, memory_data, interval=0.5, stop_event=None):
+    """Monitor memory usage of a process in a separate thread.
+
+    Args:
+        pid: Process ID to monitor
+        memory_data: Shared dict to store peak_wset
+        interval: How often to check memory (seconds)
+        stop_event: Optional threading.Event to signal when to stop monitoring
+    """
 
     try:
         is_windows = platform.system() == "Windows"
@@ -789,6 +796,10 @@ def monitor_process_memory(pid, memory_data, interval=0.5):
             # We can only collect peak_wset in Windows
             process = psutil.Process(pid)
             while process.is_running():
+                # Check if we should stop monitoring
+                if stop_event and stop_event.is_set():
+                    break
+
                 try:
                     mem_info = process.memory_info()
                     peak_wset = mem_info.peak_wset
