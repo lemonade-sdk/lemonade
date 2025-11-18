@@ -43,21 +43,26 @@ To launch OpenHands, open a browser and navigate to http://localhost:3000. When 
 ## Using OpenHands
 
 1. To launch a new conversation, click `New Conversation`. If you do not see this screen, click the `+` on the top left.
+   
 <img width="635" height="672" alt="open-hands-main-page" src="https://github.com/user-attachments/assets/bea7438a-a799-46f4-aea1-362d30030a18" />
 
 2. Wait for the status on the bottom right to say `Awaiting user input.` and enter your prompt into the text box. For example: "Create a website that showcases Ryzen AI and the ability to run the OpenHands coding agents locally through the Lemonade software stack. Make the website fun with a theme of lemonade and laptops." as shown below:
+
 <img width="632" height="653" alt="prompt" src="https://github.com/user-attachments/assets/246f85cd-4fbe-45cc-b255-b71f495ebe8a" />
 
-3. Hit `Enter` to start the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
+4. Hit `Enter` to start the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
+
 <img width="633" height="671" alt="mid-coding" src="https://github.com/user-attachments/assets/c27fa439-d30a-4042-8809-e4ffd8ef77c5" />
 
-4. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. On the left, we can see that the coding agent has launched the web server hosting the newly developed website at port number `55519`.
+5. When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. On the left, we can see that the coding agent has launched the web server hosting the newly developed website at port number `55519`.
+
 <img width="632" height="652" alt="finished-code" src="https://github.com/user-attachments/assets/37f8d31e-b610-429b-b757-e7e951bef22a" />
 
-5. Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:
+6. Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:
+
 <img width="629" height="653" alt="website" src="https://github.com/user-attachments/assets/f9faaaae-142a-485c-b72a-8f30ff6aee1b" />
 
-6. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
+7. That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.
 
 **Suggestions on what to try next:** Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game. Make the game lemon and laptop themed." OpenHands with Lemonade Server was able to generate the following pong game, which included user-controls, a computer-controlled opponent, and scorekeeping:
 
@@ -73,6 +78,7 @@ To launch OpenHands, open a browser and navigate to http://localhost:3000. When 
 * [OpenHands GitHub](https://github.com/All-Hands-AI/OpenHands/)
 * [OpenHands Documentation](https://docs.all-hands.dev/)
 * [OpenHands Documentation on integrating with local models](https://docs.all-hands.dev/usage/llms/local-llms/)
+
 
 
 
