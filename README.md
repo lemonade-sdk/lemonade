@@ -177,6 +177,7 @@ The [Lemonade SDK](./docs/README.md) also include the following components:
 
 - 🐍 **[Lemonade API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
 - 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
+- 💻 **[Lemonade Desktop App](./src/app/README.md)**: Cross-platform desktop app.
 
 ## FAQ
 
