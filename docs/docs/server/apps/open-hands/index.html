@@ -1133,73 +1133,44 @@
 </ul>
 <h2 id="installation">Installation</h2>
 <h3 id="launch-lemonade-server-with-the-correct-settings">Launch Lemonade Server with the correct settings</h3>
-<p>Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by running the Lemonade Server on IP address <code>0.0.0.0</code>, which is accessible from within Docker. Additionally, OpenHands <a href="https://docs.all-hands.dev/usage/llms/local-llms">recommends</a> using a context length of at least 32,768 tokens. To configure Lemonade with a non-default context size, include the <code>--ctx-size</code> parameter set to <code>32768</code>. <strong>Note:</strong> This large context size is currently supported only by the llamacpp backend.</p>
+<p>Since OpenHands runs inside Docker containers, the containers must be able to access the Lemonade Server. The simplest way to enable this is by running the Lemonade Server on IP address <code>0.0.0.0</code>, which is accessible from within Docker. Additionally, OpenHands <a href="https://docs.all-hands.dev/usage/llms/local-llms">recommends</a> using a context length of at least 32,768 tokens. To configure Lemonade with a non-default context size, include the <code>--ctx-size</code> parameter set to <code>32768</code>.</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">32768</span>
 </code></pre></div>
 <h3 id="installing-openhands">Installing OpenHands</h3>
-<p>Follow the <a href="https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama">OpenHands documentation</a> on how to install OpenHands locally. This can be done via the <code>uvx</code> tool or through <code>docker</code>. No special installation instructions are necessary to integrate with Lemonade. The only thing that we suggest is that when using models that are able to use tools, such as <code>Qwen3-Coder-30B-A3B-Instruct-GGUF</code>, that native tool use is enabled. This can be done by launching OpenHands via docker and adding  <code>-e LLM_NATIVE_TOOL_CALLING=true</code> to the <code>docker run...</code> command in the OpenHands documentation. </p>
+<p>Follow the <a href="https://docs.all-hands.dev/usage/local-setup#local-llm-e-g-lm-studio-llama-cpp-ollama">OpenHands documentation</a> on how to install OpenHands locally. This can be done via the <code>uvx</code> tool or through <code>docker</code>. No special installation instructions are necessary to integrate with Lemonade.</p>
 <p>In the next section, we will show how to configure OpenHands to talk to a local model running via Lemonade Server. </p>
 <h2 id="launching-openhands">Launching OpenHands</h2>
-<p>To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Click on <code>see advanced settings</code> as shown in the image below:
-<img width="567" height="342" alt="configuration" src="https://github.com/user-attachments/assets/6e8d5028-580d-484b-85e0-214f821dd911" /></p>
-<ol>
-<li>
-<p>Once in the Settings menu, toggle the <code>Advanced</code> switch to see all configuration options.</p>
-</li>
-<li>
-<p>Set the following values in the configuration:</p>
-<ul>
-<li><strong>Custom Model</strong>: <code>openai/Qwen3-Coder-30B-A3B-Instruct-GGUF</code></li>
-<li><strong>Base URL</strong>: <code>http://host.docker.internal:8000/api/v1/</code></li>
-<li><strong>API Key</strong>: Use a dash or any character.</li>
-</ul>
-<p>The setup should look as follows:</p>
-<p><img width="953" height="502" alt="advanced-configuration" src="https://github.com/user-attachments/assets/4c710fdd-489f-4b55-8efc-faf6096a068a" /></p>
-</li>
-<li>
-<p>Click <code>Save Settings</code>. </p>
-</li>
-</ol>
+<p>To launch OpenHands, open a browser and navigate to http://localhost:3000. When first launching the application, the "AI Provider Configuration" window will appear. Select "Lemonade" as the LLM Provider and your favorite coding model from the drop-down. For a nice balance of quality and speed, we recommend <code>Qwen3-Coder-30B-A3B-Instruct-GGUF</code>. When complete, hit <code>Save Changes</code>.</p>
+<p><img width="1276" height="677" alt="openhands-llm-settings-wide" src="https://github.com/user-attachments/assets/b39bb75b-1593-48db-a17d-697c872cb7e4" /></p>
 <h2 id="using-openhands">Using OpenHands</h2>
 <ol>
-<li>
-<p>To launch a new project, click <code>Launch from Scratch</code>. If you do not see this screen, click the <code>+</code> on the top left.
-<img width="955" height="507" alt="intro-screen" src="https://github.com/user-attachments/assets/707652ed-a51a-4f01-a615-87e6fdef1767" /></p>
-</li>
-<li>
-<p>Wait for the status on the bottom right to say <code>Awaiting user input.</code> and enter your prompt into the text box. For example: "Write me a flask website that prints "Welcome to OpenHands + Lemonade!" make the website fun with a theme of lemons and laptops." as shown below:
-<img width="952" height="502" alt="initial-prompt-lemonade-website" src="https://github.com/user-attachments/assets/6908631f-d9f3-4c4f-95b2-51e052859b39" /></p>
-</li>
-<li>
-<p>Hit <code>Enter</code> to start the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:
-<img width="950" height="502" alt="lemonade-website-in-progress" src="https://github.com/user-attachments/assets/2eb4b0fd-b24d-447f-888b-5e739d559716" /></p>
-</li>
-<li>
-<p>When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. In the <code>Terminal</code> at the bottom, we can see that the software agent has launched the web server hosting the newly developed website at port number <code>52877</code>.
-<img width="956" height="509" alt="finished-prompt-lemonade-website" src="https://github.com/user-attachments/assets/554b06cf-4593-4a1f-af67-f9b61dca6adb" /></p>
-</li>
-<li>
-<p>Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:
-<img width="941" height="500" alt="lemonade-website" src="https://github.com/user-attachments/assets/485b33ad-773a-49d3-8740-255a3bb42bd6" /></p>
-</li>
-<li>
-<p>That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.</p>
-</li>
+<li>To launch a new conversation, click <code>New Conversation</code>. If you do not see this screen, click the <code>+</code> on the top left.</li>
+</ol>
+<p><img width="635" height="672" alt="open-hands-main-page" src="https://github.com/user-attachments/assets/bea7438a-a799-46f4-aea1-362d30030a18" /></p>
+<ol>
+<li>Wait for the status on the bottom right to say <code>Awaiting user input.</code> and enter your prompt into the text box. For example: "Create a website that showcases Ryzen AI and the ability to run the OpenHands coding agents locally through the Lemonade software stack. Make the website fun with a theme of lemonade and laptops." as shown below:</li>
+</ol>
+<p><img width="632" height="653" alt="prompt" src="https://github.com/user-attachments/assets/246f85cd-4fbe-45cc-b255-b71f495ebe8a" /></p>
+<ol>
+<li>Hit <code>Enter</code> to start the process. This will bring you to a new screen that allows you to monitor the agent operating in its environment to develop the requested application. An example of the agent working on the requested application can be seen below:</li>
+</ol>
+<p><img width="633" height="671" alt="mid-coding" src="https://github.com/user-attachments/assets/c27fa439-d30a-4042-8809-e4ffd8ef77c5" /></p>
+<ol>
+<li>When complete, the user can interact with the environment and artifacts created by the software agent. An image of the workspace at the end of developing the application can be seen below. On the left, we can see that the coding agent has launched the web server hosting the newly developed website at port number <code>55519</code>.</li>
+</ol>
+<p><img width="632" height="652" alt="finished-code" src="https://github.com/user-attachments/assets/37f8d31e-b610-429b-b757-e7e951bef22a" /></p>
+<ol>
+<li>Use your browser to go to the web application developed by the software agent. Below is an image showing what was created:</li>
+</ol>
+<p><img width="629" height="653" alt="website" src="https://github.com/user-attachments/assets/f9faaaae-142a-485c-b72a-8f30ff6aee1b" /></p>
+<ol>
+<li>That's it! You just created a website from scratch using OpenHands integrated with a local LLM powered by Lemonade Server.</li>
 </ol>
 <p><strong>Suggestions on what to try next:</strong> Prompt OpenHands with Lemonade Server to develop some simple games that you can play via a web browser. For example, with the prompt "Write me a simple pong game that I can play on my browser. Make it so I can use the up and down arrows to control my side of the game. Make the game lemon and laptop themed." OpenHands with Lemonade Server was able to generate the following pong game, which included user-controls, a computer-controlled opponent, and scorekeeping:</p>
 <p><img width="668" height="499" alt="pong-game-new" src="https://github.com/user-attachments/assets/5c7568b9-2697-4c3f-9e66-f5a4bdc8b394" /></p>
 <h2 id="common-issues">Common Issues</h2>
 <ul>
-<li>
-<p>Certain small models can struggle with tool calling. This can be seen by the agent continuously running the same command that is resulting in an error. For example, we have found that it is common for certain models to initially struggle with the tool required to create files. In our experience after multiple attempts, the model is able to figure out that it is not using the tool correctly and tries another method to use the tool. An example of this can be seen below. If this issue persists we recommend enabling native tool calling in OpenHands. This can be done by launching OpenHands via docker and adding <code>-e LLM_NATIVE_TOOL_CALLING=true</code> to the <code>docker run...</code> command in the OpenHands documentation. 
-<img width="1528" height="849" alt="tool-calling-struggles" src="https://github.com/user-attachments/assets/2e4cc756-4c0b-42ec-bdf8-dde541f30cf6" /></p>
-</li>
-<li>
-<p>If on OpenHands you get an error with the message: <code>The request failed with an internal server error</code> and in the Lemonade log you see many <code>WARNING: Invalid HTTP request received</code> this is most likely because the base URL set in the settings is using <code>https</code> instead of <code>http</code>. If this occurs, update the base URL in the settings to <code>http://host.docker.internal:8000/api/v1/</code></p>
-</li>
-<li>
-<p>We have run into some issues where despite the source code for a requested website being generated correctly, it cannot be accessed through the browser. When this happens, you can still copy the generated source into your own environment and run the provided commands to serve the generated website. </p>
-</li>
+<li>If on OpenHands you get an error with the message: <code>The request failed with an internal server error</code> and in the Lemonade log you see many <code>WARNING: Invalid HTTP request received</code> this is most likely because the base URL set in the settings is using <code>https</code> instead of <code>http</code>. If this occurs, update the base URL in the settings to <code>http://host.docker.internal:8000/api/v1/</code></li>
 </ul>
 <h2 id="resources">Resources</h2>
 <ul>
