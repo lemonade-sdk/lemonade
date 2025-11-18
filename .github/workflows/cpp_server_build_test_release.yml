@@ -9,73 +9,8 @@ on:
   merge_group:
   workflow_dispatch:
     inputs:
-      build_installer:
-        description: 'Build Windows Installer (.exe)'
-        required: false
-        type: boolean
-        default: true
-      build_ryzenai:
-        description: 'Build RyzenAI Server'
-        required: false
-        type: boolean
-        default: true
-      build_deb:
-        description: 'Build Linux .deb Package'
-        required: false
-        type: boolean
-        default: true
-      include_electron:
-        description: 'Include Electron app in installer'
-        required: false
-        type: boolean
-        default: true
-      run_tests:
-        description: 'Run test suites'
-        required: false
-        type: boolean
-        default: true
-      test_rai_hybrid:
-        description: 'Test RAI Hybrid (requires build_installer + build_ryzenai)'
-        required: false
-        type: boolean
-        default: true
-      test_flm:
-        description: 'Test FLM (requires build_installer)'
-        required: false
-        type: boolean
-        default: true
-      test_llamacpp_vulkan:
-        description: 'Test Llamacpp Vulkan (requires build_installer)'
-        required: false
-        type: boolean
-        default: true
-      test_llamacpp_rocm:
-        description: 'Test Llamacpp ROCm (requires build_installer)'
-        required: false
-        type: boolean
-        default: true
-      test_rai_cpu:
-        description: 'Test RAI CPU (requires build_installer + build_ryzenai)'
-        required: false
-        type: boolean
-        default: true
-      test_deb_vulkan:
-        description: 'Test .deb Vulkan (requires build_deb)'
-        required: false
-        type: boolean
-        default: true
-      test_deb_rocm:
-        description: 'Test .deb ROCm (requires build_deb)'
-        required: false
-        type: boolean
-        default: true
-      test_deb_endpoints:
-        description: 'Test .deb Endpoints (requires build_deb)'
-        required: false
-        type: boolean
-        default: true
-      create_release:
-        description: 'Create GitHub Release (only for tags)'
+      include_electron_app:
+        description: 'Include Electron App in installer'
         required: false
         type: boolean
         default: false
@@ -91,20 +26,11 @@ jobs:
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
     runs-on: windows-latest
-    if: github.event_name != 'workflow_dispatch' || inputs.build_installer
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           fetch-depth: 0
-
-      - name: Setup Node.js for Electron app
-        if: github.event_name != 'workflow_dispatch' || inputs.include_electron
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: src/app/package-lock.json
 
       - name: Install CMake if not available
         shell: PowerShell
@@ -202,6 +128,94 @@ jobs:
           
           Write-Host "C++ build successful!" -ForegroundColor Green
 
+      - name: Setup Node.js
+        if: inputs.include_electron_app == true
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Electron App
+        if: inputs.include_electron_app == true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Building Electron app..." -ForegroundColor Cyan
+          
+          cd src\app
+          
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Build the Electron app for Windows
+          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
+          npm run build:win
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Verify the build output exists
+          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
+              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Electron app build successful!" -ForegroundColor Green
+
+      - name: Copy Electron App to Release Directory
+        if: inputs.include_electron_app == true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Copying Electron app to build directory..." -ForegroundColor Cyan
+          
+          $electronSource = "src\app\dist-app\win-unpacked"
+          $releaseDir = "src\cpp\build\Release"
+          
+          # The CMake CopyElectronApp.cmake script expects the files here
+          # Copy all Electron app files to the Release directory
+          Write-Host "Copying Electron app files..." -ForegroundColor Yellow
+          
+          # Copy main executable
+          Copy-Item "$electronSource\Lemonade.exe" -Destination "$releaseDir\" -Force
+          Write-Host "  ✓ Copied Lemonade.exe" -ForegroundColor Green
+          
+          # Copy DLL files
+          Get-ChildItem "$electronSource\*.dll" | ForEach-Object {
+              Copy-Item $_.FullName -Destination "$releaseDir\" -Force
+          }
+          Write-Host "  ✓ Copied DLL files" -ForegroundColor Green
+          
+          # Copy resource files
+          Get-ChildItem "$electronSource\*.pak", "$electronSource\*.bin", "$electronSource\*.dat", "$electronSource\*.json" | ForEach-Object {
+              Copy-Item $_.FullName -Destination "$releaseDir\" -Force
+          }
+          Write-Host "  ✓ Copied resource files" -ForegroundColor Green
+          
+          # Copy locales directory
+          if (Test-Path "$electronSource\locales") {
+              Copy-Item "$electronSource\locales" -Destination "$releaseDir\" -Recurse -Force
+              Write-Host "  ✓ Copied locales directory" -ForegroundColor Green
+          }
+          
+          # Copy resources directory (rename to electron-resources to avoid conflict)
+          if (Test-Path "$electronSource\resources") {
+              if (Test-Path "$releaseDir\electron-resources") {
+                  Remove-Item "$releaseDir\electron-resources" -Recurse -Force
+              }
+              Copy-Item "$electronSource\resources" -Destination "$releaseDir\electron-resources" -Recurse -Force
+              Write-Host "  ✓ Copied Electron resources directory" -ForegroundColor Green
+          }
+          
+          Write-Host "Electron app copied successfully!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
@@ -230,7 +244,6 @@ jobs:
   build-ryzenai-server:
     name: Build RyzenAI Server
     runs-on: [rai-160-sdk, Windows]
-    if: github.event_name != 'workflow_dispatch' || inputs.build_ryzenai
     steps:
       - uses: actions/checkout@v4
         with:
@@ -355,7 +368,6 @@ jobs:
   build-lemonade-server-deb:
     name: Build Lemonade Server .deb Package
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch' || inputs.build_deb
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -487,12 +499,6 @@ jobs:
   test-exe-rai-hybrid-basics:
     name: Test .exe - Basic RAI Hybird Functionality
     runs-on: [stx, Windows]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_rai_hybrid)) &&
-      (needs.build-lemonade-server-installer.result == 'success') &&
-      (needs.build-ryzenai-server.result == 'success')
     needs: 
       - build-lemonade-server-installer
       - build-ryzenai-server
@@ -889,11 +895,6 @@ jobs:
   test-exe-flm:
     name: Test .exe - FLM
     runs-on: [stx, Windows]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_flm)) &&
-      (needs.build-lemonade-server-installer.result == 'success')
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -973,11 +974,6 @@ jobs:
   test-exe-llamacpp-vulkan:
     name: Test .exe - Llamacpp (Vulkan)
     runs-on: [stx, Windows]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_llamacpp_vulkan)) &&
-      (needs.build-lemonade-server-installer.result == 'success')
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -1056,11 +1052,6 @@ jobs:
   test-exe-llamacpp-rocm:
     name: Test .exe - Llamacpp (ROCm)
     runs-on: [stx-halo, Windows]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_llamacpp_rocm)) &&
-      (needs.build-lemonade-server-installer.result == 'success')
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -1139,12 +1130,6 @@ jobs:
   test-exe-rai-cpu:
     name: Test .exe - ryzenai-server CPU
     runs-on: [stx, Windows]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_rai_cpu)) &&
-      (needs.build-lemonade-server-installer.result == 'success') &&
-      (needs.build-ryzenai-server.result == 'success')
     needs: 
       - build-lemonade-server-installer
       - build-ryzenai-server
@@ -1255,11 +1240,6 @@ jobs:
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
     runs-on: [stx, Linux]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_deb_vulkan)) &&
-      (needs.build-lemonade-server-deb.result == 'success')
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
@@ -1368,11 +1348,6 @@ jobs:
   test-deb-llamacpp-rocm:
     name: Test .deb - Llamacpp (ROCm)
     runs-on: [stx-halo, Linux]
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_deb_rocm)) &&
-      (needs.build-lemonade-server-deb.result == 'success')
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
@@ -1485,11 +1460,6 @@ jobs:
   test-deb-endpoints:
     name: Test .deb Endpoints (Serve and Run Commands)
     runs-on: ubuntu-latest
-    if: |
-      always() &&
-      !cancelled() &&
-      (github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.test_deb_endpoints)) &&
-      (needs.build-lemonade-server-deb.result == 'success')
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
@@ -1776,36 +1746,29 @@ jobs:
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
       - test-deb-endpoints
-    if: |
-      always() &&
-      !cancelled() &&
-      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release))
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
     steps:
       - name: Download Lemonade Server Installer (Windows)
-        if: needs.build-lemonade-server-installer.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: Lemonade_Server_Installer
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux)
-        if: needs.build-lemonade-server-deb.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: lemonade-server-deb
           path: .
 
       - name: Download RyzenAI Server Package
-        if: needs.build-ryzenai-server.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: ryzenai-server
           path: ryzenai-server-files
 
       - name: Create ryzenai-server.zip for release
-        if: needs.build-ryzenai-server.result == 'success'
         run: |
           cd ryzenai-server-files
           zip -r ../ryzenai-server.zip *
@@ -1815,21 +1778,9 @@ jobs:
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
-          if [ -f "Lemonade_Server_Installer.exe" ]; then
-            ls -lh Lemonade_Server_Installer.exe
-          else
-            echo "Windows installer not built"
-          fi
-          if [ -f "lemonade-server-${LEMONADE_VERSION}-Linux.deb" ]; then
-            ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
-          else
-            echo ".deb package not built"
-          fi
-          if [ -f "ryzenai-server.zip" ]; then
-            ls -lh ryzenai-server.zip
-          else
-            echo "RyzenAI server not built"
-          fi
+          ls -lh Lemonade_Server_Installer.exe
+          ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
+          ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
