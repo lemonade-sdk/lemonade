@@ -234,6 +234,67 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMENT "Copying resources to output directory"
 )
 
+# ============================================================
+# Electron App Integration (Cross-Platform)
+# ============================================================
+
+# Find Node.js and npm for building the Electron app
+find_program(NODE_EXECUTABLE node)
+find_program(NPM_EXECUTABLE npm)
+
+get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../../src/app" ABSOLUTE)
+set(ELECTRON_APP_BUILD_DIR "${ELECTRON_APP_SOURCE_DIR}/dist-app")
+
+if(WIN32)
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
+    set(ELECTRON_EXE_NAME "Lemonade.exe")
+elseif(APPLE)
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac")
+    set(ELECTRON_EXE_NAME "Lemonade.app")
+else()
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
+    set(ELECTRON_EXE_NAME "Lemonade")
+endif()
+
+# Custom target to build the Electron app
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+    if(WIN32)
+        set(ELECTRON_BUILD_TARGET "build:win")
+    elseif(APPLE)
+        set(ELECTRON_BUILD_TARGET "build:mac")
+    else()
+        set(ELECTRON_BUILD_TARGET "build:linux")
+    endif()
+    
+    add_custom_target(electron-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run ${ELECTRON_BUILD_TARGET}
+        COMMENT "Building Electron app with npm"
+        WORKING_DIRECTORY "${ELECTRON_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    
+    message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
+    message(STATUS "npm found: ${NPM_EXECUTABLE}")
+    message(STATUS "Electron app can be built with: cmake --build . --target electron-app")
+else()
+    message(STATUS "Node.js or npm not found - Electron app build target disabled")
+    message(STATUS "Install Node.js to enable: https://nodejs.org/")
+endif()
+
+# Custom command to copy Electron app files after building the C++ server
+add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
+    COMMAND ${CMAKE_COMMAND}
+        -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
+        -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
+        -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/CopyElectronApp.cmake
+    COMMENT "Copying Electron app if available"
+    VERBATIM
+)
+
 # Add tray application subdirectory
 add_subdirectory(tray)
 
