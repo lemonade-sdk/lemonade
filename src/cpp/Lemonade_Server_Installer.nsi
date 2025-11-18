@@ -126,49 +126,44 @@ SectionIn RO ; Read only, always installed
     File /r "build\Release\resources"
     DetailPrint "- Installed web UI and configuration files"
 
-    ; Optionally install Electron app files if they exist
-    DetailPrint "Checking for Electron app..."
-    IfFileExists "build\Release\Lemonade.exe" 0 skip_electron_app
-      DetailPrint "Installing Electron app..."
-      
-      ; Copy main Electron executable
-      File "build\Release\Lemonade.exe"
-      DetailPrint "- Installed Lemonade.exe"
-      
-      ; Copy DLL files
-      File /nonfatal "build\Release\*.dll"
-      DetailPrint "- Installed Electron DLL files"
-      
-      ; Copy resource files (.pak, .bin, .dat, .json)
-      File /nonfatal "build\Release\*.pak"
-      File /nonfatal "build\Release\*.bin"
-      File /nonfatal "build\Release\*.dat"
-      File /nonfatal "build\Release\*.json"
-      DetailPrint "- Installed Electron resource files"
-      
-      ; Copy locales directory
-      IfFileExists "build\Release\locales\*.*" 0 skip_locales
-        File /r "build\Release\locales"
-        DetailPrint "- Installed Electron locales"
-      skip_locales:
-      
-      ; Copy electron-resources directory
-      IfFileExists "build\Release\electron-resources\*.*" 0 skip_electron_resources
-        File /r "build\Release\electron-resources"
-        DetailPrint "- Installed Electron resources"
-      skip_electron_resources:
-      
-      ; Create shortcut for Electron app in Start Menu
-      CreateShortcut "$SMPROGRAMS\Lemonade Server\Lemonade App.lnk" "$INSTDIR\bin\Lemonade.exe" "" "$INSTDIR\bin\resources\static\favicon.ico" 0
-      DetailPrint "- Created Lemonade App shortcut"
-      
-      DetailPrint "Electron app installed successfully!"
-      Goto electron_app_done
-      
-    skip_electron_app:
-      DetailPrint "Electron app not found (optional component skipped)"
-      
-    electron_app_done:
+    ; Copy Electron app files if they exist (optional)
+    DetailPrint "Checking for Electron app files..."
+    IfFileExists "build\Release\Lemonade.exe" 0 skip_electron
+    
+    DetailPrint "Installing Electron app..."
+    File "build\Release\Lemonade.exe"
+    DetailPrint "- Installed Lemonade.exe"
+    
+    ; Copy all DLL files
+    File /nonfatal "build\Release\*.dll"
+    DetailPrint "- Installed DLL files"
+    
+    ; Copy Electron resource files
+    File /nonfatal "build\Release\*.pak"
+    File /nonfatal "build\Release\*.bin"
+    File /nonfatal "build\Release\*.dat"
+    File /nonfatal "build\Release\*.json"
+    DetailPrint "- Installed Electron resource files"
+    
+    ; Copy locales directory
+    IfFileExists "build\Release\locales\*.*" 0 skip_locales
+    File /r "build\Release\locales"
+    DetailPrint "- Installed locales directory"
+    skip_locales:
+    
+    ; Copy electron-resources directory
+    IfFileExists "build\Release\electron-resources\*.*" 0 skip_electron_resources
+    File /r "build\Release\electron-resources"
+    DetailPrint "- Installed electron-resources directory"
+    skip_electron_resources:
+    
+    DetailPrint "Electron app installation complete!"
+    Goto electron_done
+    
+    skip_electron:
+    DetailPrint "No Electron app found (optional component skipped)"
+    
+    electron_done:
 
     ; Add bin folder to user PATH using registry directly
     DetailPrint "Configuring environment..."
@@ -413,15 +408,14 @@ Section "Uninstall"
 
   ; Remove directories
   RMDir /r "$INSTDIR\bin\resources"
-  RMDir /r "$INSTDIR\bin\electron-resources"
   RMDir /r "$INSTDIR\bin\locales"
+  RMDir /r "$INSTDIR\bin\electron-resources"
   RMDir "$INSTDIR\bin"
   RMDir "$INSTDIR"
 
   ; Remove shortcuts
   Delete "$DESKTOP\Lemonade Server.lnk"
   Delete "$SMSTARTUP\Lemonade Server.lnk"
-  Delete "$SMPROGRAMS\Lemonade Server\Lemonade App.lnk"
   RMDir /r "$SMPROGRAMS\Lemonade Server"
 
   ; Remove from PATH using registry
