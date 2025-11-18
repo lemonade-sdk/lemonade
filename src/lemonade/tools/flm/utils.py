@@ -426,7 +426,6 @@ class FLMAdapter(ModelAdapter):
         # Signal monitor thread to stop and wait for it to finish
         if save_max_memory_used:
             stop_event.set()  # Signal the monitor to stop
-            monitor_thread.join(timeout=0.5)  # Should finish almost immediately now
             self.peak_wset = memory_data.get("peak_wset", None)
 
         return response_content
@@ -471,7 +470,9 @@ class FLMAdapter(ModelAdapter):
 
         if not server_ready or self.server_port is None:
             self.stop_server()
-            raise Exception(f"Server failed to start within {timeout} seconds.  Command was '{' '.join(cmd)}'.")
+            raise Exception(
+                f"Server failed to start within {timeout} seconds.  Command was '{' '.join(cmd)}'."
+            )
 
         # Start a thread to continuously read and discard server output
         threading.Thread(
