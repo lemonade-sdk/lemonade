@@ -19,6 +19,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string mmproj;
     std::string source;  // "local_upload" for locally uploaded models
+    bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
 };
 
@@ -88,10 +89,11 @@ private:
     std::string get_cache_dir();
     std::string get_user_models_file();
     
-    // Cache management for downloaded models
-    void initialize_cache();
-    void add_to_cache(const std::string& model_name);
-    void remove_from_cache(const std::string& model_name);
+    // Cache management
+    void build_cache();
+    void add_model_to_cache(const std::string& model_name);
+    void update_model_in_cache(const std::string& model_name, bool downloaded);
+    void remove_model_from_cache(const std::string& model_name);
     
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info) const;
@@ -107,10 +109,10 @@ private:
     json server_models_;
     json user_models_;
     
-    // Cache for downloaded models (avoids disk checks on every request)
-    std::mutex downloaded_cache_mutex_;
-    std::map<std::string, ModelInfo> downloaded_cache_;
-    bool cache_initialized_ = false;
+    // Cache of all models with their download status
+    mutable std::mutex models_cache_mutex_;
+    mutable std::map<std::string, ModelInfo> models_cache_;
+    mutable bool cache_valid_ = false;
 };
 
 } // namespace lemon

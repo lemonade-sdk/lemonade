@@ -21,6 +21,8 @@
 #include <windows.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
@@ -529,11 +531,8 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         
         // Add extra fields when showing all models (for CLI list command)
         if (show_all) {
-            // Need to check download status for each model when showing all
-            bool is_downloaded = model_manager_->is_model_downloaded(model_id);
-            
             model_json["name"] = model_info.model_name;
-            model_json["downloaded"] = is_downloaded;
+            model_json["downloaded"] = model_info.downloaded;
             model_json["labels"] = model_info.labels;
         }
         

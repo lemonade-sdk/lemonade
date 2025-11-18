@@ -4,6 +4,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
+#include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -437,9 +438,27 @@ void ModelManager::save_user_models(const json& user_models) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
-    std::map<std::string, ModelInfo> models;
+    // Build cache if needed (lazy initialization)
+    build_cache();
     
-    // Load server models
+    // Return copy of cache (all models, including their download status)
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return models_cache_;
+}
+
+void ModelManager::build_cache() {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (cache_valid_) {
+        return;
+    }
+    
+    std::cout << "[ModelManager] Building models cache..." << std::endl;
+    
+    models_cache_.clear();
+    std::map<std::string, ModelInfo> all_models;
+    
+    // Step 1: Load ALL models from JSON (server models)
     for (auto& [key, value] : server_models_.items()) {
         ModelInfo info;
         info.model_name = key;
@@ -455,10 +474,8 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
             }
         }
         
-        // Resolve model path
         info.resolved_path = resolve_model_path(info);
-        
-        models[key] = info;
+        all_models[key] = info;
     }
     
     // Load user models with "user." prefix
@@ -478,88 +495,163 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
             }
         }
         
-        // Resolve model path
         info.resolved_path = resolve_model_path(info);
-        
-        models[info.model_name] = info;
+        all_models[info.model_name] = info;
     }
     
-    // Filter by backend availability before returning
-    return filter_models_by_backend(models);
+    // Step 2: Filter by backend availability
+    all_models = filter_models_by_backend(all_models);
+    
+    // Step 3: Check download status ONCE for all models
+    auto flm_models = get_flm_installed_models();
+    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
+    
+    int downloaded_count = 0;
+    for (auto& [name, info] : all_models) {
+        if (info.recipe == "flm") {
+            info.downloaded = flm_set.count(info.checkpoint) > 0;
+        } else {
+            info.downloaded = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+        }
+        
+        if (info.downloaded) {
+            downloaded_count++;
+        }
+        
+        models_cache_[name] = info;
+    }
+    
+    cache_valid_ = true;
+    std::cout << "[ModelManager] Cache built: " << models_cache_.size() 
+              << " total, " << downloaded_count << " downloaded" << std::endl;
 }
 
-void ModelManager::initialize_cache() {
-    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+void ModelManager::add_model_to_cache(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
     
-    if (cache_initialized_) {
+    if (!cache_valid_) {
+        return; // Will initialize on next access
+    }
+    
+    // Parse model name to get JSON key
+    std::string json_key = model_name;
+    bool is_user_model = model_name.substr(0, 5) == "user.";
+    if (is_user_model) {
+        json_key = model_name.substr(5);
+    }
+    
+    // Find in JSON
+    json* model_json = nullptr;
+    if (is_user_model && user_models_.contains(json_key)) {
+        model_json = &user_models_[json_key];
+    } else if (!is_user_model && server_models_.contains(json_key)) {
+        model_json = &server_models_[json_key];
+    }
+    
+    if (!model_json) {
+        std::cerr << "[ModelManager] Warning: '" << model_name << "' not found in JSON" << std::endl;
         return;
     }
     
-    std::cout << "[ModelManager] Initializing downloaded models cache..." << std::endl;
+    // Build ModelInfo
+    ModelInfo info;
+    info.model_name = model_name;
+    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
+    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
     
-    auto all_models = get_supported_models(); // Already filtered by backend
+    if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
+        for (const auto& label : (*model_json)["labels"]) {
+            info.labels.push_back(label.get<std::string>());
+        }
+    }
     
-    // OPTIMIZATION: For FLM, get the list once
-    auto flm_models = get_flm_installed_models();
-    std::unordered_set<std::string> available_flm_models(flm_models.begin(), flm_models.end());
+    info.resolved_path = resolve_model_path(info);
     
-    // Check disk ONCE on startup
-    for (const auto& [name, info] : all_models) {
-        bool is_available = false;
+    // Check if it should be filtered out by backend availability
+    std::map<std::string, ModelInfo> temp_map = {{model_name, info}};
+    auto filtered = filter_models_by_backend(temp_map);
+    
+    if (filtered.empty()) {
+        std::cout << "[ModelManager] Model '" << model_name << "' filtered out by backend availability" << std::endl;
+        return; // Backend not available, don't add to cache
+    }
+    
+    // Check download status
+    if (info.recipe == "flm") {
+        auto flm_models = get_flm_installed_models();
+        info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint) != flm_models.end();
+    } else {
+        info.downloaded = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+    }
+    
+    models_cache_[model_name] = info;
+    std::cout << "[ModelManager] Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
+}
+
+void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return; // Will rebuild on next access
+    }
+    
+    auto it = models_cache_.find(model_name);
+    if (it != models_cache_.end()) {
+        it->second.downloaded = downloaded;
         
-        if (info.recipe == "flm") {
-            // FLM models use their own registry
-            is_available = available_flm_models.count(info.checkpoint) > 0;
+        // Recompute resolved_path after download
+        // The path changes now that files exist on disk
+        if (downloaded) {
+            it->second.resolved_path = resolve_model_path(it->second);
+            std::cout << "[ModelManager] Updated '" << model_name 
+                      << "' downloaded=" << downloaded 
+                      << ", resolved_path=" << it->second.resolved_path << std::endl;
         } else {
-            // All other models: check if resolved_path exists
-            is_available = !info.resolved_path.empty() && fs::exists(info.resolved_path);
+            std::cout << "[ModelManager] Updated '" << model_name 
+                      << "' downloaded=" << downloaded << std::endl;
         }
-        
-        if (is_available) {
-            downloaded_cache_[name] = info;
-        }
-    }
-    
-    cache_initialized_ = true;
-    std::cout << "[ModelManager] Cache initialized with " << downloaded_cache_.size() << " downloaded models" << std::endl;
-}
-
-void ModelManager::add_to_cache(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
-    
-    if (!cache_initialized_) {
-        return; // Cache will be initialized on next get_downloaded_models() call
-    }
-    
-    try {
-        auto info = get_model_info(model_name);
-        downloaded_cache_[model_name] = info;
-        std::cout << "[ModelManager] Added '" << model_name << "' to cache" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "[ModelManager] Failed to add model to cache: " << e.what() << std::endl;
+    } else {
+        std::cerr << "[ModelManager] Warning: '" << model_name << "' not found in cache" << std::endl;
     }
 }
 
-void ModelManager::remove_from_cache(const std::string& model_name) {
-    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
+void ModelManager::remove_model_from_cache(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
     
-    if (!cache_initialized_) {
-        return; // Cache will be initialized on next get_downloaded_models() call
+    if (!cache_valid_) {
+        return;
     }
     
-    downloaded_cache_.erase(model_name);
-    std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
+    auto it = models_cache_.find(model_name);
+    if (it != models_cache_.end()) {
+        if (it->second.source == "local_upload") {
+            // Local upload - remove entirely from cache
+            models_cache_.erase(model_name);
+            std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
+        } else {
+            // Registered model - just mark as not downloaded
+            it->second.downloaded = false;
+            std::cout << "[ModelManager] Marked '" << model_name << "' as not downloaded" << std::endl;
+        }
+    }
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
-    // Initialize cache on first call (thread-safe)
-    if (!cache_initialized_) {
-        initialize_cache();
-    }
+    // Build cache if needed
+    build_cache();
     
-    // Return cached models (fast - no disk I/O)
-    std::lock_guard<std::mutex> lock(downloaded_cache_mutex_);
-    return downloaded_cache_;
+    // Filter and return only downloaded models
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    std::map<std::string, ModelInfo> downloaded;
+    for (const auto& [name, info] : models_cache_) {
+        if (info.downloaded) {
+            downloaded[name] = info;
+        }
+    }
+    return downloaded;
 }
 
 // Helper function to check if NPU is available
@@ -721,6 +813,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     
     save_user_models(updated_user_models);
     user_models_ = updated_user_models;
+    
+    // Add new model to cache incrementally
+    add_model_to_cache("user." + clean_name);
 }
 
 // Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
@@ -796,35 +891,23 @@ std::vector<std::string> ModelManager::get_flm_installed_models() {
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
-    // Call the optimized version with empty FLM cache (will fetch on demand)
-    static std::vector<std::string> empty_cache;
-    return is_model_downloaded(model_name, nullptr);
+    // Build cache if needed
+    build_cache();
+    
+    // O(1) lookup - download status is in cache
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto it = models_cache_.find(model_name);
+    if (it != models_cache_.end()) {
+        return it->second.downloaded;
+    }
+    return false;
 }
 
 bool ModelManager::is_model_downloaded(const std::string& model_name, 
                                        const std::vector<std::string>* flm_cache) {
-    auto info = get_model_info(model_name);
-    
-    // Check FLM models separately (they use FLM's own registry)
-    if (info.recipe == "flm") {
-        // Use cached FLM list if provided, otherwise fetch it
-        std::vector<std::string> flm_models;
-        if (flm_cache) {
-            flm_models = *flm_cache;
-        } else {
-            flm_models = get_flm_installed_models();
-        }
-        
-        for (const auto& installed : flm_models) {
-            if (installed == info.checkpoint) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    // For all other models, just check if resolved_path exists
-    return !info.resolved_path.empty() && fs::exists(info.resolved_path);
+    // This overload is no longer needed with unified cache, but keep for compatibility
+    // Just delegate to the simpler version
+    return is_model_downloaded(model_name);
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -951,7 +1034,7 @@ void ModelManager::download_model(const std::string& model_name,
     }
     
     // Update cache after successful download
-    add_to_cache(model_name);
+    update_model_in_cache(model_name, true);
 }
 
 // Download model files from HuggingFace
@@ -1137,6 +1220,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         }
         
         std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
+        std::cout << "[ModelManager DEBUG] Download location: " << snapshot_path << std::endl;
         
     } catch (const std::exception& e) {
         // Don't log here - let the caller (Server) handle error logging
@@ -1146,6 +1230,16 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
 
 void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_upgrade) {
     std::cout << "[ModelManager] Pulling FLM model: " << checkpoint << std::endl;
+    
+    // Ensure FLM is installed
+    std::cout << "[ModelManager] Checking FLM installation..." << std::endl;
+    backends::FastFlowLMServer flm_installer("info", this);
+    try {
+        flm_installer.install();
+    } catch (const std::exception& e) {
+        std::cerr << "[ModelManager ERROR] FLM installation failed: " << e.what() << std::endl;
+        throw;
+    }
     
     // Find flm executable
     std::string flm_path;
@@ -1271,7 +1365,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
         
         // Remove from cache after successful deletion
-        remove_from_cache(model_name);
+        remove_model_from_cache(model_name);
         
         return;
     }
@@ -1321,22 +1415,30 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
     
     // Remove from cache after successful deletion
-    remove_from_cache(model_name);
+    remove_model_from_cache(model_name);
 }
 
 ModelInfo ModelManager::get_model_info(const std::string& model_name) {
-    auto models = get_supported_models();
+    // Build cache if needed
+    build_cache();
     
-    if (models.find(model_name) != models.end()) {
-        return models[model_name];
+    // O(1) lookup in cache
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto it = models_cache_.find(model_name);
+    if (it != models_cache_.end()) {
+        return it->second;
     }
     
     throw std::runtime_error("Model not found: " + model_name);
 }
 
 bool ModelManager::model_exists(const std::string& model_name) {
-    auto models = get_supported_models();
-    return models.find(model_name) != models.end();
+    // Build cache if needed
+    build_cache();
+    
+    // O(1) lookup in cache
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return models_cache_.find(model_name) != models_cache_.end();
 }
 
 } // namespace lemon
