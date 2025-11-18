@@ -69,26 +69,39 @@ runs:
                 $nsisProps = Get-ItemProperty -Path $nsisKey -ErrorAction Stop
                 $uninstallExe = $nsisProps.UninstallString
                 if ($uninstallExe) {
-                    Write-Host "  Found NSIS uninstaller at: $uninstallExe" -ForegroundColor Gray
+                    Write-Host "  Found NSIS uninstall registry entry. UninstallString: $uninstallExe" -ForegroundColor Gray
                     if (Test-Path $uninstallExe) {
                         Write-Host "  Running NSIS uninstaller silently..." -ForegroundColor Yellow
                         try {
                             & $uninstallExe /S | Out-Null
-                            Write-Host "  NSIS uninstaller completed (or exited) successfully." -ForegroundColor Green
+                            Write-Host "  NSIS uninstaller process invoked." -ForegroundColor Green
                         } catch {
                             Write-Host "  NSIS uninstaller execution failed: $_" -ForegroundColor Red
                         }
                     } else {
-                        Write-Host "  Uninstall executable not found on disk: $uninstallExe" -ForegroundColor Gray
+                        Write-Host "  NSIS uninstall executable path is stale (file not found). Treating as already removed." -ForegroundColor Gray
                     }
                 } else {
-                    Write-Host "  NSIS uninstall string not found in registry." -ForegroundColor Gray
+                    Write-Host "  NSIS uninstall string missing in registry. Treating as stale entry." -ForegroundColor Gray
+                }
+
+                # After running (or skipping) the uninstaller, ensure the ARP key is gone so MSI is not blocked
+                if (Test-Path $nsisKey) {
+                    Write-Host "  Removing stale NSIS ARP registry key to unblock MSI install..." -ForegroundColor Yellow
+                    try {
+                        Remove-Item -Path $nsisKey -Recurse -Force -ErrorAction Stop
+                        Write-Host "  NSIS ARP registry key removed." -ForegroundColor Green
+                    } catch {
+                        Write-Host "  Failed to remove NSIS ARP registry key: $_" -ForegroundColor Red
+                    }
+                } else {
+                    Write-Host "  NSIS ARP registry key already removed by uninstaller." -ForegroundColor Green
                 }
             } catch {
                 Write-Host "  Failed to query NSIS uninstall key: $_" -ForegroundColor Red
             }
         } else {
-            Write-Host "  No legacy C++ NSIS installer detected in HKCU (already clean)" -ForegroundColor Gray
+            Write-Host "  No legacy C++ NSIS installer registry key detected in HKCU (already clean)" -ForegroundColor Gray
         }
         
         # Clean up Python user directory that can cause issues

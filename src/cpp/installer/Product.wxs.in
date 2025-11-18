@@ -45,12 +45,10 @@
     <!-- Custom properties for command-line installation -->
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
     <Property Id="ADDTOSTARTUP" Value="0" Secure="yes" />
-    <Property Id="LAUNCHAPP" Value="1" />
+    <Property Id="LAUNCHAPP" Value="0" />
 
-    <!-- Enable optional 'Run now' checkbox on ExitDialog -->
+    <!-- Enable optional 'Run now' checkbox on ExitDialog (unchecked by default) -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
-    <!-- 1 = checked by default -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
 
     <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
     <Property Id="EXISTINGINSTALLDIR">
@@ -276,10 +274,12 @@
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) -->
+    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) by shell-executing
+         the Start Menu shortcut through explorer.exe. This ensures the process runs in the
+         normal user context with the shortcut-defined working directory. -->
     <CustomAction Id="LaunchApplication"
-                  Directory="BinDir"
-                  ExeCommand='&quot;[BinDir]lemonade-tray.exe&quot;'
+                  Directory="SystemFolder"
+                  ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
                   Impersonate="yes"
                   Return="asyncNoWait" />
     
