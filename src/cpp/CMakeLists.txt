@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.0.2)
+project(lemon_cpp VERSION 9.0.3)
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)

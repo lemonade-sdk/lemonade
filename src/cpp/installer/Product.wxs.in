@@ -35,8 +35,8 @@
     <Property Id="ARPURLINFOABOUT" Value="https://lemonade-server.ai" />
     
     <!-- Launch conditions -->
-    <Launch Condition="VersionNT &gt;= 603 AND NOT NSISINSTALLED"
-            Message="This application requires that any previous Lemonade Server installed with the legacy Lemonade_Server_Installer.exe installer be removed first. Please open the Windows Settings app, go to 'Apps' &amp; 'Installed apps', uninstall 'Lemonade Server', then run this installer again." />
+    <Launch Condition="VersionNT &gt;= 603"
+            Message="This application requires Windows 8.1 or later." />
     
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Lemonade Server is already installed."
@@ -59,12 +59,20 @@
                       Type="raw" />
     </Property>
     
-    <!-- Detect legacy C++ NSIS-based installer to block MSI and instruct manual uninstall -->
+    <!-- Detect legacy C++ NSIS-based installer location and uninstaller command -->
     <Property Id="NSISINSTALLED">
       <RegistrySearch Id="FindNsisInstall"
                       Root="HKCU"
                       Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
                       Name="InstallLocation"
+                      Type="raw" />
+    </Property>
+    
+    <Property Id="NSISUNINSTALLSTRING">
+      <RegistrySearch Id="FindNsisUninstall"
+                      Root="HKCU"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="UninstallString"
                       Type="raw" />
     </Property>
     
@@ -249,6 +257,23 @@
     <!-- Custom Actions -->
     <!-- ============================================ -->
     
+    <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
+    <CustomAction Id="StopNsisServer"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[NSISINSTALLED]\bin\lemonade-server.exe" ("[NSISINSTALLED]\bin\lemonade-server.exe" stop &amp; ping 127.0.0.1 -n 3 &gt;nul)'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="check" />
+    
+    <!-- If a legacy C++ NSIS-based installer exists, run its uninstaller and wait for it to complete.
+         The uninstaller may take time to delete large caches, so we wait 10 seconds using ping. -->
+    <CustomAction Id="RunNsisUninstall"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c ""[NSISUNINSTALLSTRING]" /S &amp; echo Cleaing up legacy Lemonade_Server_Installer.exe installation... &amp; ping 127.0.0.1 -n 11 &gt;nul &amp; if exist "[NSISINSTALLED]" (echo ERROR: Directory still exists after uninstall &amp; dir "[NSISINSTALLED]" &amp; exit /b 1) else (echo Legacy uninstall succeeded &amp; exit /b 0)"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="check" />
+    
     <!-- Stop server before upgrade using lemonade-server stop from existing MSI install -->
     <!-- This properly stops all child processes (router, llama-server, etc.) -->
     <CustomAction Id="StopServerCmd"
@@ -284,15 +309,26 @@
                   Return="asyncNoWait" />
     
     <InstallExecuteSequence>
-      <!-- Stop legacy Python-based server from the previous Python NSIS install before cleaning its files -->
+      <!-- If NSIS-based C++ installer is present, stop the server first, then uninstall -->
+      <Custom Action="StopNsisServer"
+              Before="RunNsisUninstall"
+              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
+      
+      <Custom Action="RunNsisUninstall"
+              Before="StopLegacyPythonServer"
+              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
+      
+      <!-- Stop legacy Python-based server from the previous Python NSIS install before cleaning its files.
+           Only runs if lemonade-server.bat exists (evidence of Python install). -->
       <Custom Action="StopLegacyPythonServer"
               Before="CleanLegacyInstall"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
       
-      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout) -->
+      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout).
+           Only runs if we already stopped the Python server (which only runs if .bat exists). -->
       <Custom Action="CleanLegacyInstall"
               Before="InstallValidate"
-              Condition="NOT Installed" />
+              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
       
       <!-- Stop server from an existing MSI-based C++ install before validation -->
       <Custom Action="StopServerCmd"
