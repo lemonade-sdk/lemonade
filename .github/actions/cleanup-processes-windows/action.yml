@@ -61,6 +61,36 @@ runs:
         # Wait a moment for processes to fully terminate
         Start-Sleep -Seconds 2
         
+        # Attempt to uninstall legacy C++ NSIS-based Lemonade Server, if present
+        Write-Host "`nChecking for legacy Lemonade Server NSIS installer..." -ForegroundColor Yellow
+        $nsisKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server'
+        if (Test-Path $nsisKey) {
+            try {
+                $nsisProps = Get-ItemProperty -Path $nsisKey -ErrorAction Stop
+                $uninstallExe = $nsisProps.UninstallString
+                if ($uninstallExe) {
+                    Write-Host "  Found NSIS uninstaller at: $uninstallExe" -ForegroundColor Gray
+                    if (Test-Path $uninstallExe) {
+                        Write-Host "  Running NSIS uninstaller silently..." -ForegroundColor Yellow
+                        try {
+                            & $uninstallExe /S | Out-Null
+                            Write-Host "  NSIS uninstaller completed (or exited) successfully." -ForegroundColor Green
+                        } catch {
+                            Write-Host "  NSIS uninstaller execution failed: $_" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "  Uninstall executable not found on disk: $uninstallExe" -ForegroundColor Gray
+                    }
+                } else {
+                    Write-Host "  NSIS uninstall string not found in registry." -ForegroundColor Gray
+                }
+            } catch {
+                Write-Host "  Failed to query NSIS uninstall key: $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "  No legacy C++ NSIS installer detected in HKCU (already clean)" -ForegroundColor Gray
+        }
+        
         # Clean up Python user directory that can cause issues
         Write-Host "`nCleaning up system Python directory..." -ForegroundColor Yellow
         $systemPythonPath = "C:\windows\system32\config\systemprofile\AppData\Roaming\Python"
