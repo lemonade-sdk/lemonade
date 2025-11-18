@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe) and Debian Installer (lemonade-server-<VERSION>-Linux.deb).
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi) and Debian Installer (lemonade-server-minimal_<VERSION>_amd64.deb).
 
 ### Checking Server Status
 
@@ -64,13 +64,13 @@ The recommended way of directing users to the server installer is pointing users
 Latest version:
 
 ```bash
-https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi
+https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi
 ```
 
 Specific version:
 
 ```bash
-https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade.msi
+https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade-server-minimal.msi
 ```
 
 Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
@@ -123,36 +123,36 @@ To stop the server, you may use the `lemonade-server stop` command, or simply te
 
 ### Silent Installation
 
-Silent installation runs `lemonade.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
+Silent installation runs `lemonade-server-minimal.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
 
 In a `cmd.exe` or PowerShell terminal:
 
 ```bash
-msiexec /i lemonade.msi /qn
+msiexec /i lemonade-server-minimal.msi /qn
 ```
 
 The install directory can also be changed from the default using the `INSTALLDIR` property:
 
 ```bash
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\a\new\path"
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\a\new\path"
 ```
 
 If you don't want to create a desktop shortcut during installation, use the `ADDDESKTOPSHORTCUT=0` parameter:
 
 ```bash
-msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
+msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
 ```
 
 To add Lemonade Server to Windows startup:
 
 ```bash
-msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
+msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
 ```
 
 You can combine multiple parameters:
 
 ```bash
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
 ```
 
 **MSI Properties:**

@@ -170,7 +170,7 @@ jobs:
           .\build_installer.ps1
           
           # Verify installer was created
-          if (-not (Test-Path "lemonade.msi")) {
+          if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Installer not created!" -ForegroundColor Red
               exit 1
           }
@@ -180,8 +180,8 @@ jobs:
       - name: Upload Lemonade Server Installer
         uses: actions/upload-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
-          path: src\cpp\lemonade.msi
+          name: Lemonade_Server_MSI
+          path: src\cpp\lemonade-server-minimal.msi
           retention-days: 7
 
   build-ryzenai-server:
@@ -408,7 +408,7 @@ jobs:
           ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
           
           # Verify package was created (using dynamic version)
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Looking for: $DEB_FILE"
           
           if [ ! -f "$DEB_FILE" ]; then
@@ -432,7 +432,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================
@@ -469,7 +469,7 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
@@ -478,7 +478,7 @@ jobs:
           Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
           
           # Run installer silently
-          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
@@ -864,13 +864,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -943,13 +943,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -1021,13 +1021,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -1101,13 +1101,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          msiexec /i lemonade.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Download RyzenAI Server artifact
@@ -1211,7 +1211,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           # Extract the .deb package
@@ -1319,7 +1319,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           # Extract the .deb package
@@ -1431,7 +1431,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           if [ ! -f "$DEB_FILE" ]; then
@@ -1696,7 +1696,7 @@ jobs:
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Installer_MSI
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux)
@@ -1721,16 +1721,16 @@ jobs:
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
-          ls -lh lemonade.msi
-          ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
+          ls -lh lemonade-server-minimal.msi
+          ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            lemonade.msi
-            lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+            lemonade-server-minimal.msi
+            lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
 

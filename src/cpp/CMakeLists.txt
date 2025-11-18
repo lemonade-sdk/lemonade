@@ -188,10 +188,10 @@ if(WIN32)
                 -arch x64
                 -ext WixToolset.UI.wixext
                 -d SourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
-                -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi"
+                -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi"
                 "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs"
             
-            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
             
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -286,7 +286,7 @@ add_subdirectory(tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGE_NAME "lemonade-server")
+    set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -299,6 +299,7 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..

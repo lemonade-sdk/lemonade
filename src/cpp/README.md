@@ -135,7 +135,7 @@ cmake --build . --config Release --target wix_installer
 
 **Installer Output:**
 
-Creates `lemonade.msi` which:
+Creates `lemonade-server-minimal.msi` which:
 - MSI-based installer (Windows Installer technology)
 - Installs to `%LOCALAPPDATA%\lemonade_server\`
 - Adds `bin\` folder to user PATH using Windows Installer standard methods
@@ -150,23 +150,23 @@ Creates `lemonade.msi` which:
 
 GUI installation:
 ```powershell
-# Double-click lemonade.msi or run:
-msiexec /i lemonade.msi
+# Double-click lemonade-server-minimal.msi or run:
+msiexec /i lemonade-server-minimal.msi
 ```
 
 Silent installation:
 ```powershell
 # Install silently
-msiexec /i lemonade.msi /qn
+msiexec /i lemonade-server-minimal.msi /qn
 
 # Install to custom directory
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path"
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
 
 # Install without desktop shortcut
-msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
+msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
 
 # Install with startup entry
-msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
+msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
 ```
 
 ### Linux .deb Package (Debian/Ubuntu)
@@ -183,7 +183,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linux.deb`) which:
+Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-minimal_9.0.3_amd64.deb`) which:
 - Installs to `/usr/local/bin/` (executables)
 - Installs resources to `/usr/local/share/lemonade-server/`
 - Creates desktop entry in `/usr/local/share/applications/`
@@ -195,7 +195,7 @@ Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linu
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dpkg -i lemonade-server-<VERSION>-Linux.deb
+sudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb
 
 # If dependencies are missing:
 sudo apt-get install -f
@@ -227,9 +227,13 @@ lemonade-server serve
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── Lemonade_Server_Installer.nsi.in  # NSIS installer definition template
 ├── resources/                  # Configuration and data files
 │   └── backend_versions.json   # llama.cpp version configuration (user-editable)
+│
+├── installer/                  # WiX MSI installer (Windows)
+│   ├── Product.wxs.in          # WiX installer definition template
+│   ├── installer_banner_wix.bmp  # Left-side banner (493×312)
+│   └── top_banner.bmp          # Top banner with lemon icon (493×58)
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing

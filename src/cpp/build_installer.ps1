@@ -97,7 +97,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 
 # Success!
-$MsiPath = Join-Path $ScriptDir "lemonade.msi"
+$MsiPath = Join-Path $ScriptDir "lemonade-server-minimal.msi"
 if (Test-Path $MsiPath) {
     $MsiSize = (Get-Item $MsiPath).Length / 1MB
     Write-Host "================================================" -ForegroundColor Green
@@ -109,10 +109,10 @@ if (Test-Path $MsiPath) {
     Write-Host "  Size: $([math]::Round($MsiSize, 2)) MB" -ForegroundColor White
     Write-Host ""
     Write-Host "To install:" -ForegroundColor Yellow
-    Write-Host "  msiexec /i lemonade.msi" -ForegroundColor White
+    Write-Host "  msiexec /i lemonade-server-minimal.msi" -ForegroundColor White
     Write-Host ""
     Write-Host "To install silently:" -ForegroundColor Yellow
-    Write-Host "  msiexec /i lemonade.msi /qn" -ForegroundColor White
+    Write-Host "  msiexec /i lemonade-server-minimal.msi /qn" -ForegroundColor White
     Write-Host ""
 } else {
     Write-Host "WARNING: MSI file not found at expected location!" -ForegroundColor Yellow
