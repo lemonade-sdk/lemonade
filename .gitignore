@@ -176,3 +176,9 @@ CLAUDE.*
 # Cursor files (using .cursor/rules/*.mdc format)
 .cursor/
 .cursor**
+
+# Electron app
+src/app/node_modules/
+src/app/dist/
+src/app/dist-app/
+src/app/.webpack/
