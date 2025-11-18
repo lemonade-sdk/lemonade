@@ -1059,10 +1059,9 @@ int TrayApp::execute_run_command() {
     if (server_manager_->load_model(model_name)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Open browser to chat interface
-        std::string url = "http://" + config_.host + ":" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
-        std::cout << "Opening browser: " << url << std::endl;
-        open_url(url);
+        // Launch the Electron app
+        std::cout << "Launching Lemonade app..." << std::endl;
+        launch_electron_app();
     } else {
         std::cerr << "Failed to load model" << std::endl;
         return 1;
@@ -1748,11 +1747,11 @@ void TrayApp::on_open_documentation() {
 }
 
 void TrayApp::on_open_llm_chat() {
-    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#llm-chat");
+    launch_electron_app();
 }
 
 void TrayApp::on_open_model_manager() {
-    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#model-management");
+    launch_electron_app();
 }
 
 void TrayApp::on_upgrade() {
@@ -1817,6 +1816,116 @@ void TrayApp::open_url(const std::string& url) {
 #else
     int result = system(("xdg-open \"" + url + "\" &").c_str());
     (void)result;  // Suppress unused variable warning
+#endif
+}
+
+bool TrayApp::find_electron_app() {
+    // Get directory of this executable (lemonade-server.exe)
+    fs::path exe_dir;
+    
+#ifdef _WIN32
+    wchar_t exe_path[MAX_PATH];
+    GetModuleFileNameW(NULL, exe_path, MAX_PATH);
+    exe_dir = fs::path(exe_path).parent_path();
+#else
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        exe_dir = fs::path(exe_path).parent_path();
+    } else {
+        return false;
+    }
+#endif
+    
+    // Try different possible locations for the Electron app
+    std::vector<fs::path> possible_paths;
+    
+#ifdef _WIN32
+    // Windows: Look for Lemonade.exe in common locations
+    possible_paths.push_back(exe_dir / "Lemonade.exe");
+    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade.exe");
+    possible_paths.push_back(exe_dir / ".." / "Lemonade.exe");
+    // Check in Program Files
+    possible_paths.push_back(fs::path("C:\\Program Files\\Lemonade\\Lemonade.exe"));
+#elif defined(__APPLE__)
+    // macOS: Look for Lemonade.app
+    possible_paths.push_back(exe_dir / "Lemonade.app");
+    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade.app");
+    possible_paths.push_back(fs::path("/Applications/Lemonade.app"));
+#else
+    // Linux: Look for lemonade AppImage or binary
+    possible_paths.push_back(exe_dir / "Lemonade");
+    possible_paths.push_back(exe_dir / "lemonade");
+    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade");
+#endif
+    
+    // Check each possible path
+    for (const auto& path : possible_paths) {
+        if (fs::exists(path)) {
+            electron_app_path_ = path.string();
+            std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+            return true;
+        }
+    }
+    
+    std::cerr << "Warning: Could not find Electron app" << std::endl;
+    return false;
+}
+
+void TrayApp::launch_electron_app() {
+    // Try to find the app if we haven't already
+    if (electron_app_path_.empty()) {
+        if (!find_electron_app()) {
+            std::cerr << "Error: Cannot launch Electron app - not found" << std::endl;
+            return;
+        }
+    }
+    
+    // Launch the Electron app
+#ifdef _WIN32
+    // Windows: Launch the .exe
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    
+    // Don't wait for the process
+    if (CreateProcessA(
+        electron_app_path_.c_str(),  // Application name
+        NULL,                         // Command line
+        NULL,                         // Process security attributes
+        NULL,                         // Thread security attributes
+        FALSE,                        // Don't inherit handles
+        0,                            // Creation flags
+        NULL,                         // Environment
+        NULL,                         // Current directory
+        &si,                          // Startup info
+        &pi))                         // Process info
+    {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        std::cout << "Launched Electron app" << std::endl;
+    } else {
+        std::cerr << "Failed to launch Electron app: " << GetLastError() << std::endl;
+    }
+#elif defined(__APPLE__)
+    // macOS: Use 'open' command to launch the .app
+    std::string cmd = "open \"" + electron_app_path_ + "\"";
+    int result = system(cmd.c_str());
+    if (result == 0) {
+        std::cout << "Launched Electron app" << std::endl;
+    } else {
+        std::cerr << "Failed to launch Electron app" << std::endl;
+    }
+#else
+    // Linux: Launch the binary directly
+    std::string cmd = "\"" + electron_app_path_ + "\" &";
+    int result = system(cmd.c_str());
+    if (result == 0) {
+        std::cout << "Launched Electron app" << std::endl;
+    } else {
+        std::cerr << "Failed to launch Electron app" << std::endl;
+    }
 #endif
 }
 

@@ -99,6 +99,8 @@ private:
     
     // Helpers
     void open_url(const std::string& url);
+    void launch_electron_app();
+    bool find_electron_app();
     void show_notification(const std::string& title, const std::string& message);
     std::string get_loaded_model();
     std::vector<ModelInfo> get_downloaded_models();
@@ -107,6 +109,7 @@ private:
     AppConfig config_;
     std::unique_ptr<TrayInterface> tray_;
     std::unique_ptr<ServerManager> server_manager_;
+    std::string electron_app_path_;
     
     // State
     std::string loaded_model_;
