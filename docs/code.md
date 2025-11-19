@@ -4,7 +4,6 @@ The Lemonade SDK source code has a few major top-level directories:
 - `.github`: defines CI workflows for GitHub Actions.
 - `docs`: documentation for the entire project.
 - `examples`: example scripts for use with the Lemonade tools.
-- `installer`: implements the `Lemonade_Server_Installer.exe` GUI installer for Windows.
 - `src`: implements the `lemonade-sdk` wheel.
   - `/cpp`: source code for the lemonade-server C++ implementation.
   - `/ryzenai-server`: source code for the C++ implementation of a RyzenAI SW server.

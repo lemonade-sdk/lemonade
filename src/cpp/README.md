@@ -113,10 +113,10 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 
 ## Building Installers
 
-### Windows Installer (NSIS)
+### Windows Installer (WiX/MSI)
 
 **Prerequisites:**
-- NSIS 3.x installed at `C:\Program Files (x86)\NSIS\`
+- WiX Toolset 5.0.2 installed from [wix-cli-x64.msi](https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi)
 - Completed C++ build (see above)
 
 **Building:**
@@ -127,27 +127,47 @@ cd src\cpp
 .\build_installer.ps1
 ```
 
-Manual build:
+Manual build using CMake:
 ```powershell
-cd src\cpp
-"C:\Program Files (x86)\NSIS\makensis.exe" Lemonade_Server_Installer.nsi
+cd src\cpp\build
+cmake --build . --config Release --target wix_installer
 ```
 
 **Installer Output:**
 
-Creates `Lemonade_Server_Installer.exe` which:
+Creates `lemonade-server-minimal.msi` which:
+- MSI-based installer (Windows Installer technology)
 - Installs to `%LOCALAPPDATA%\lemonade_server\`
-- Adds `bin\` folder to user PATH
+- Adds `bin\` folder to user PATH using Windows Installer standard methods
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
-- Gracefully stops running server before install/uninstall
+- Uses Windows Installer Restart Manager to gracefully close running processes
 - Includes all executables (router, server, tray, log-viewer)
+- Proper upgrade handling between versions
 - Includes uninstaller
 
-**Installation Process:**
-- Automatically detects and stops running Lemonade instances using `lemonade-server.exe stop`
-- Prevents "files in use" errors during installation
-- Works gracefully on fresh installs (no existing installation)
+**Installation:**
+
+GUI installation:
+```powershell
+# Double-click lemonade-server-minimal.msi or run:
+msiexec /i lemonade-server-minimal.msi
+```
+
+Silent installation:
+```powershell
+# Install silently
+msiexec /i lemonade-server-minimal.msi /qn
+
+# Install to custom directory
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
+
+# Install without desktop shortcut
+msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
+
+# Install with startup entry
+msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
+```
 
 ### Linux .deb Package (Debian/Ubuntu)
 
@@ -163,7 +183,7 @@ cpack
 
 **Package Output:**
 
-Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linux.deb`) which:
+Creates `lemonade-server-minimal_<VERSION>_amd64.deb` (e.g., `lemonade-server-minimal_9.0.3_amd64.deb`) which:
 - Installs to `/usr/local/bin/` (executables)
 - Installs resources to `/usr/local/share/lemonade-server/`
 - Creates desktop entry in `/usr/local/share/applications/`
@@ -175,7 +195,7 @@ Creates `lemonade-server-<VERSION>-Linux.deb` (e.g., `lemonade-server-9.0.0-Linu
 
 ```bash
 # Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dpkg -i lemonade-server-<VERSION>-Linux.deb
+sudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb
 
 # If dependencies are missing:
 sudo apt-get install -f
@@ -207,9 +227,13 @@ lemonade-server serve
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── Lemonade_Server_Installer.nsi.in  # NSIS installer definition template
 ├── resources/                  # Configuration and data files
 │   └── backend_versions.json   # llama.cpp version configuration (user-editable)
+│
+├── installer/                  # WiX MSI installer (Windows)
+│   ├── Product.wxs.in          # WiX installer definition template
+│   ├── installer_banner_wix.bmp  # Left-side banner (493×312)
+│   └── top_banner.bmp          # Top banner with lemon icon (493×58)
 │
 ├── server/                     # Server implementation
 │   ├── main.cpp                # Entry point, CLI routing

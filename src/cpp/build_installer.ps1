@@ -1,56 +1,122 @@
-# Build Lemonade Server Installer
-# This script assumes CMake has already built lemonade-router.exe and lemonade-server.exe in build\Release
+# Build WiX MSI Installer for Lemonade Server
+# This script builds the MSI installer using WiX Toolset 5.0.2
 
-Write-Host "Building Lemonade Server Installer..." -ForegroundColor Cyan
+param(
+    [string]$Configuration = "Release",
+    [switch]$Help
+)
 
-# Check if NSIS is installed
-$nsisPath = "C:\Program Files (x86)\NSIS\makensis.exe"
-if (-not (Test-Path $nsisPath)) {
-    Write-Host "ERROR: NSIS not found at $nsisPath" -ForegroundColor Red
-    Write-Host "Please install NSIS from https://nsis.sourceforge.io/Download" -ForegroundColor Yellow
+if ($Help) {
+    Write-Host "Build WiX MSI Installer for Lemonade Server"
+    Write-Host ""
+    Write-Host "Usage: .\build_installer_wix.ps1 [-Configuration <Debug|Release>] [-Help]"
+    Write-Host ""
+    Write-Host "Options:"
+    Write-Host "  -Configuration   Build configuration (Debug or Release). Default: Release"
+    Write-Host "  -Help            Show this help message"
+    Write-Host ""
+    Write-Host "Prerequisites:"
+    Write-Host "  - WiX Toolset 5.0.2 installed"
+    Write-Host "  - Visual Studio 2019 or later"
+    Write-Host "  - CMake 3.20 or higher"
+    exit 0
+}
+
+# Script configuration
+$ErrorActionPreference = "Stop"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BuildDir = Join-Path $ScriptDir "build"
+
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  Lemonade Server - WiX MSI Installer Build" -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check for WiX Toolset (v5.0+)
+Write-Host "Checking for WiX Toolset..." -ForegroundColor Yellow
+$wix = Get-Command wix -ErrorAction SilentlyContinue
+if ($null -eq $wix) {
+    Write-Host "ERROR: WiX Toolset not found!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Please install WiX Toolset 5.0.2 from:" -ForegroundColor Yellow
+    Write-Host "  https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "After installation, restart your terminal and try again." -ForegroundColor Yellow
+    Write-Host ""
     exit 1
 }
 
-# Check if executables exist
-$trayExe = "build\Release\lemonade-server.exe"
-$serverExe = "build\Release\lemonade-router.exe"
+# Get WiX version
+$wixVersion = & wix --version 2>&1 | Select-String -Pattern "version ([\d\.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
+Write-Host "  Found: wix version $wixVersion" -ForegroundColor Green
+Write-Host ""
 
-if (-not (Test-Path $trayExe)) {
-    Write-Host "ERROR: $trayExe not found!" -ForegroundColor Red
-    Write-Host "Please build the project first with CMake:" -ForegroundColor Yellow
-    Write-Host "  cd build" -ForegroundColor Yellow
-    Write-Host "  cmake .. -G `"Visual Studio 17 2022`"" -ForegroundColor Yellow
-    Write-Host "  cmake --build . --config Release" -ForegroundColor Yellow
+# Check for CMake
+Write-Host "Checking for CMake..." -ForegroundColor Yellow
+$cmake = Get-Command cmake -ErrorAction SilentlyContinue
+if ($null -eq $cmake) {
+    Write-Host "ERROR: CMake not found in PATH!" -ForegroundColor Red
+    Write-Host "Please install CMake 3.20 or higher." -ForegroundColor Yellow
     exit 1
 }
+Write-Host "  Found: $($cmake.Source)" -ForegroundColor Green
+Write-Host ""
 
-if (-not (Test-Path $serverExe)) {
-    Write-Host "ERROR: $serverExe not found!" -ForegroundColor Red
-    Write-Host "Please build the server executable first." -ForegroundColor Yellow
-    exit 1
-}
-
-Write-Host "Found lemonade-server.exe" -ForegroundColor Green
-Write-Host "Found lemonade-router.exe" -ForegroundColor Green
-
-# Check if resources directory exists
-$resourcesDir = "build\Release\resources"
-if (-not (Test-Path $resourcesDir)) {
-    Write-Host "WARNING: Resources directory not found at $resourcesDir" -ForegroundColor Yellow
-    Write-Host "The installer may not have icons. This is expected if CMake hasn't copied resources yet." -ForegroundColor Yellow
-}
-
-# Build the installer
-Write-Host "Running NSIS..." -ForegroundColor Cyan
-& $nsisPath "Lemonade_Server_Installer.nsi"
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "`nInstaller built successfully!" -ForegroundColor Green
-    Write-Host "Output: Lemonade_Server_Installer.exe" -ForegroundColor Green
-    Write-Host "`nYou can now run the installer to install Lemonade Server to:" -ForegroundColor Cyan
-    Write-Host "  $env:LOCALAPPDATA\lemonade_server" -ForegroundColor Cyan
+# Step 1: Configure with CMake (if build directory doesn't exist)
+if (-not (Test-Path $BuildDir)) {
+    Write-Host "Configuring project with CMake..." -ForegroundColor Yellow
+    cmake -S $ScriptDir -B $BuildDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: CMake configuration failed!" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    Write-Host "  Configuration complete" -ForegroundColor Green
+    Write-Host ""
 } else {
-    Write-Host "`nInstaller build failed!" -ForegroundColor Red
-    exit 1
+    Write-Host "Build directory exists, skipping configuration" -ForegroundColor Green
+    Write-Host ""
 }
+
+# Step 2: Build the project
+Write-Host "Building Lemonade Server ($Configuration)..." -ForegroundColor Yellow
+cmake --build $BuildDir --config $Configuration
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Build failed!" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+Write-Host "  Build complete" -ForegroundColor Green
+Write-Host ""
+
+# Step 3: Build the MSI installer
+Write-Host "Building WiX MSI installer..." -ForegroundColor Yellow
+cmake --build $BuildDir --config $Configuration --target wix_installer
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: MSI build failed!" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+Write-Host ""
+
+# Success!
+$MsiPath = Join-Path $ScriptDir "lemonade-server-minimal.msi"
+if (Test-Path $MsiPath) {
+    $MsiSize = (Get-Item $MsiPath).Length / 1MB
+    Write-Host "================================================" -ForegroundColor Green
+    Write-Host "  SUCCESS!" -ForegroundColor Green
+    Write-Host "================================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "MSI installer created:" -ForegroundColor Cyan
+    Write-Host "  Path: $MsiPath" -ForegroundColor White
+    Write-Host "  Size: $([math]::Round($MsiSize, 2)) MB" -ForegroundColor White
+    Write-Host ""
+    Write-Host "To install:" -ForegroundColor Yellow
+    Write-Host "  msiexec /i lemonade-server-minimal.msi" -ForegroundColor White
+    Write-Host ""
+    Write-Host "To install silently:" -ForegroundColor Yellow
+    Write-Host "  msiexec /i lemonade-server-minimal.msi /qn" -ForegroundColor White
+    Write-Host ""
+} else {
+    Write-Host "WARNING: MSI file not found at expected location!" -ForegroundColor Yellow
+    Write-Host "  Expected: $MsiPath" -ForegroundColor Yellow
+}
+
 

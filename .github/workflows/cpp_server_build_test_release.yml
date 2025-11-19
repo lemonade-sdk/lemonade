@@ -65,20 +65,57 @@ jobs:
               cmake --version
           }
 
-      - name: Install NSIS
+      - name: Install WiX Toolset 5.0.2 (CLI)
         shell: PowerShell
         run: |
-          # Download NSIS installer
-          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe" -OutFile "nsis.exe"
-          
-          # Install NSIS
-          Start-Process nsis.exe -ArgumentList '/S' -Wait
+          $ErrorActionPreference = "Stop"
 
-      - name: Verify NSIS installation
+          Write-Host "Downloading WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
+          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
+          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
+
+          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
+
+          Write-Host "Installing WiX Toolset 5.0.2 CLI..." -ForegroundColor Cyan
+          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            Write-Host "WiX installer exited with code $($p.ExitCode)" -ForegroundColor Red
+            exit $p.ExitCode
+          }
+
+      - name: Verify WiX installation
         shell: PowerShell
         run: |
-          # Check if NSIS is installed
-          & 'C:\Program Files (x86)\NSIS\makensis.exe' /VERSION
+          $ErrorActionPreference = "Stop"
+          
+          # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
+          # so we locate it explicitly and then update PATH for subsequent steps.
+          $wixDirs = @(
+            "C:\Program Files\WiX Toolset v5.0\bin",
+            "C:\Program Files (x86)\WiX Toolset v5.0\bin"
+          )
+
+          $wixExe = $null
+          foreach ($dir in $wixDirs) {
+            if (Test-Path (Join-Path $dir "wix.exe")) {
+              $wixExe = Join-Path $dir "wix.exe"
+              break
+            }
+          }
+
+          if (-not $wixExe) {
+            Write-Host "ERROR: wix.exe not found after installation." -ForegroundColor Red
+            Get-ChildItem -Recurse "C:\Program Files" -Filter wix.exe -ErrorAction SilentlyContinue | Select-Object -First 20 | Format-List FullName
+            exit 1
+          }
+
+          $wixDir = Split-Path $wixExe -Parent
+
+          # Persist wix.exe directory to PATH for all subsequent steps
+          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
+          & $wixExe --version
 
       - name: Build C++ Server with CMake
         shell: PowerShell
@@ -133,7 +170,7 @@ jobs:
           .\build_installer.ps1
           
           # Verify installer was created
-          if (-not (Test-Path "Lemonade_Server_Installer.exe")) {
+          if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Installer not created!" -ForegroundColor Red
               exit 1
           }
@@ -143,8 +180,8 @@ jobs:
       - name: Upload Lemonade Server Installer
         uses: actions/upload-artifact@v4
         with:
-          name: Lemonade_Server_Installer
-          path: src\cpp\Lemonade_Server_Installer.exe
+          name: Lemonade_Server_MSI
+          path: src\cpp\lemonade-server-minimal.msi
           retention-days: 7
 
   build-ryzenai-server:
@@ -371,7 +408,7 @@ jobs:
           ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
           
           # Verify package was created (using dynamic version)
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Looking for: $DEB_FILE"
           
           if [ ! -f "$DEB_FILE" ]; then
@@ -395,7 +432,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================
@@ -432,7 +469,7 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
@@ -441,7 +478,7 @@ jobs:
           Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
           
           # Run installer silently
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
@@ -827,13 +864,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -906,13 +943,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -984,13 +1021,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Create minimal Python environment
@@ -1064,13 +1101,13 @@ jobs:
       - name: Download Lemonade Server Installer
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Install Lemonade Server
         shell: PowerShell
         run: |
-          Start-Process -FilePath ".\Lemonade_Server_Installer.exe" -ArgumentList "/S /D=$env:LEMONADE_INSTALL_PATH" -Wait
+          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
           Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
 
       - name: Download RyzenAI Server artifact
@@ -1174,7 +1211,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           # Extract the .deb package
@@ -1282,7 +1319,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           # Extract the .deb package
@@ -1394,7 +1431,7 @@ jobs:
           echo "Extracting .deb package..."
           
           # Use dynamic version from build job
-          DEB_FILE="lemonade-server-${LEMONADE_VERSION}-Linux.deb"
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
           
           if [ ! -f "$DEB_FILE" ]; then
@@ -1659,7 +1696,7 @@ jobs:
       - name: Download Lemonade Server Installer (Windows)
         uses: actions/download-artifact@v4
         with:
-          name: Lemonade_Server_Installer
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Download Lemonade Server .deb Package (Linux)
@@ -1684,16 +1721,16 @@ jobs:
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
-          ls -lh Lemonade_Server_Installer.exe
-          ls -lh lemonade-server-${LEMONADE_VERSION}-Linux.deb
+          ls -lh lemonade-server-minimal.msi
+          ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Lemonade_Server_Installer.exe
-            lemonade-server-${{ env.LEMONADE_VERSION }}-Linux.deb
+            lemonade-server-minimal.msi
+            lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
 

@@ -48,7 +48,7 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 | Step 1: Download & Install | Step 2: Launch and Pull Models | Step 3: Start chatting! |
 |:---------------------------:|:-------------------------------:|:------------------------:|
 | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/install.gif?raw=true" alt="Download & Install" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/launch_and_pull.gif?raw=true" alt="Launch and Pull Models" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/chat.gif?raw=true" alt="Start chatting!" width="245" /> |
-|Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
+|Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
 </div>
 
 ### Use it with your favorite OpenAI-compatible app!

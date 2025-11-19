@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.0.2)
+project(lemon_cpp VERSION 9.0.3)
 
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
@@ -155,12 +155,56 @@ if(WIN32)
         @ONLY
     )
     
-    # Generate NSIS installer script with version
+    # ============================================================
+    # WiX Toolset Configuration (Windows MSI Installer)
+    # ============================================================
+    
+    # Configure WiX Product.wxs template with version
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi
+        ${CMAKE_CURRENT_SOURCE_DIR}/installer/Product.wxs.in
+        ${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs
         @ONLY
     )
+    
+    # Find WiX Toolset 5.0+ (unified 'wix' command)
+    find_program(WIX_EXECUTABLE wix)
+    
+    if(WIX_EXECUTABLE)
+        # Get WiX version
+        execute_process(
+            COMMAND ${WIX_EXECUTABLE} --version
+            OUTPUT_VARIABLE WIX_VERSION_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        message(STATUS "WiX Toolset found: ${WIX_EXECUTABLE}")
+        message(STATUS "WiX version: ${WIX_VERSION_OUTPUT}")
+        
+        # Create custom target for building MSI installer using WiX 5.0
+        add_custom_target(wix_installer
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer with WiX 5.0..."
+            
+            # WiX 5.0 uses 'wix build' command - single file, simple approach
+            COMMAND ${WIX_EXECUTABLE} build
+                -arch x64
+                -ext WixToolset.UI.wixext
+                -d SourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
+                -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi"
+                "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs"
+            
+            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+            
+            DEPENDS ${EXECUTABLE_NAME}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Building WiX MSI installer"
+        )
+        
+        message(STATUS "WiX installer target 'wix_installer' configured. Run 'cmake --build . --target wix_installer' to build MSI.")
+    else()
+        message(STATUS "WiX Toolset not found. MSI installer will not be available.")
+        message(STATUS "  Install WiX Toolset 5.0.2 from: https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi")
+        message(STATUS "  Or visit: https://wixtoolset.org/")
+    endif()
+    
 endif()
 
 # Include directories
@@ -242,7 +286,7 @@ add_subdirectory(tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGE_NAME "lemonade-server")
+    set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -255,6 +299,7 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..

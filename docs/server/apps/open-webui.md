@@ -45,7 +45,7 @@ The team maintains a fork of Open WebUI called GAIA that provides automatic Lemo
 
 ## Configuring Open WebUI
 
-1. Install and run Lemonade Server. Download [here](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe).
+1. Install and run Lemonade Server. Download [here](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi).
 
 2. Add Lemonade Server as a "connection" in Open WebUI using the following steps:
     1. Click the circular user profile button in the top-right of the UI, then click Settings:
