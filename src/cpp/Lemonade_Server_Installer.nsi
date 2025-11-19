@@ -120,50 +120,35 @@ SectionIn RO ; Read only, always installed
     File "build\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
 
+    ; Copy Electron app files if they exist
+    ${If} ${FileExists} "build\Release\Lemonade.exe"
+        File "build\Release\Lemonade.exe"
+        DetailPrint "- Installed Lemonade Electron app"
+        
+        ; Copy Electron DLL dependencies
+        File /nonfatal "build\Release\*.dll"
+        DetailPrint "- Installed Electron runtime libraries"
+        
+        ; Copy Electron resource files (.pak, .bin, .dat)
+        File /nonfatal "build\Release\*.pak"
+        File /nonfatal "build\Release\*.bin"
+        File /nonfatal "build\Release\*.dat"
+        File /nonfatal "build\Release\*.json"
+        DetailPrint "- Installed Electron resource files"
+        
+        ; Copy locales directory
+        ${If} ${FileExists} "build\Release\locales\*.*"
+            File /r "build\Release\locales"
+            DetailPrint "- Installed Electron locales"
+        ${EndIf}
+    ${EndIf}
+
     ; Copy resources (icon, etc.) to bin directory so lemonade-router.exe can find them
     ; The server looks for resources relative to the executable directory
+    ; This now includes merged Electron resources (app.asar, dist, etc.)
     DetailPrint "Installing application resources..."
     File /r "build\Release\resources"
-    DetailPrint "- Installed web UI and configuration files"
-
-    ; Copy Electron app files if they exist (optional)
-    DetailPrint "Checking for Electron app files..."
-    IfFileExists "build\Release\Lemonade.exe" 0 skip_electron
-    
-    DetailPrint "Installing Electron app..."
-    File "build\Release\Lemonade.exe"
-    DetailPrint "- Installed Lemonade.exe"
-    
-    ; Copy all DLL files
-    File /nonfatal "build\Release\*.dll"
-    DetailPrint "- Installed DLL files"
-    
-    ; Copy Electron resource files
-    File /nonfatal "build\Release\*.pak"
-    File /nonfatal "build\Release\*.bin"
-    File /nonfatal "build\Release\*.dat"
-    File /nonfatal "build\Release\*.json"
-    DetailPrint "- Installed Electron resource files"
-    
-    ; Copy locales directory
-    IfFileExists "build\Release\locales\*.*" 0 skip_locales
-    File /r "build\Release\locales"
-    DetailPrint "- Installed locales directory"
-    skip_locales:
-    
-    ; Copy electron-resources directory
-    IfFileExists "build\Release\electron-resources\*.*" 0 skip_electron_resources
-    File /r "build\Release\electron-resources"
-    DetailPrint "- Installed electron-resources directory"
-    skip_electron_resources:
-    
-    DetailPrint "Electron app installation complete!"
-    Goto electron_done
-    
-    skip_electron:
-    DetailPrint "No Electron app found (optional component skipped)"
-    
-    electron_done:
+    DetailPrint "- Installed web UI, configuration files, and Electron resources"
 
     ; Add bin folder to user PATH using registry directly
     DetailPrint "Configuring environment..."
@@ -397,10 +382,10 @@ Section "Uninstall"
     Delete "$INSTDIR\bin\lemonade-server.exe"
     Delete "$INSTDIR\bin\lemonade-router.exe"
     Delete "$INSTDIR\bin\lemonade-log-viewer.exe"
+    Delete "$INSTDIR\bin\Lemonade.exe"
     Delete "$INSTDIR\Uninstall.exe"
     
-    ; Remove Electron app files if they exist
-    Delete "$INSTDIR\bin\Lemonade.exe"
+    ; Remove Electron runtime files
     Delete "$INSTDIR\bin\*.dll"
     Delete "$INSTDIR\bin\*.pak"
     Delete "$INSTDIR\bin\*.bin"
@@ -409,7 +394,6 @@ Section "Uninstall"
   ; Remove directories
   RMDir /r "$INSTDIR\bin\resources"
   RMDir /r "$INSTDIR\bin\locales"
-  RMDir /r "$INSTDIR\bin\electron-resources"
   RMDir "$INSTDIR\bin"
   RMDir "$INSTDIR"
 

@@ -52,16 +52,30 @@ if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}")
         message(STATUS "  ✓ Copied locales directory")
     endif()
     
-    # Copy resources directory (rename to electron-resources to avoid conflict)
+    # Copy Electron resources directory and merge with existing resources
     if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}/resources")
-        # Remove existing electron-resources if it exists
-        if(EXISTS "${TARGET_DIR}/electron-resources")
-            file(REMOVE_RECURSE "${TARGET_DIR}/electron-resources")
+        # Copy app.asar to resources directory (required by Electron)
+        if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}/resources/app.asar")
+            file(COPY "${ELECTRON_APP_UNPACKED_DIR}/resources/app.asar"
+                 DESTINATION "${TARGET_DIR}/resources")
+            message(STATUS "  ✓ Copied app.asar to resources")
         endif()
-        # Copy to electron-resources directly
-        file(COPY "${ELECTRON_APP_UNPACKED_DIR}/resources/" 
-             DESTINATION "${TARGET_DIR}/electron-resources")
-        message(STATUS "  ✓ Copied Electron resources directory")
+        
+        # Copy dist directory (backend server and renderer)
+        if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}/resources/dist")
+            file(COPY "${ELECTRON_APP_UNPACKED_DIR}/resources/dist"
+                 DESTINATION "${TARGET_DIR}/resources")
+            message(STATUS "  ✓ Copied dist directory to resources")
+        endif()
+        
+        # Copy elevate.exe if it exists (Windows privilege elevation utility)
+        if(EXISTS "${ELECTRON_APP_UNPACKED_DIR}/resources/elevate.exe")
+            file(COPY "${ELECTRON_APP_UNPACKED_DIR}/resources/elevate.exe"
+                 DESTINATION "${TARGET_DIR}/resources")
+            message(STATUS "  ✓ Copied elevate.exe to resources")
+        endif()
+        
+        message(STATUS "  ✓ Merged Electron resources with server resources")
     endif()
     
     # Copy frameworks directory (macOS)
