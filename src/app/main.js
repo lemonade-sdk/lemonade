@@ -26,6 +26,13 @@ function updateWindowMinWidth(requestedWidth) {
 }
 
 function createWindow() {
+  // Get the correct preload path based on whether app is packaged
+  const preloadPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar', 'preload.js')
+    : path.join(__dirname, 'preload.js');
+  
+  console.log('Preload path:', preloadPath);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -36,21 +43,45 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: preloadPath
     }
   });
 
-  // In development, load from dist/renderer; in production from root
-  const htmlPath = app.isPackaged 
-    ? path.join(__dirname, 'dist', 'renderer', 'index.html')
-    : path.join(__dirname, 'dist', 'renderer', 'index.html');
-  
-  mainWindow.loadFile(htmlPath);
-
-  // Open DevTools in development mode
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools();
+  // In development, load from dist/renderer; in production from resources
+  let htmlPath;
+  if (app.isPackaged) {
+    htmlPath = path.join(process.resourcesPath, 'dist', 'renderer', 'index.html');
+    console.log('Loading HTML from:', htmlPath);
+  } else {
+    htmlPath = path.join(__dirname, 'dist', 'renderer', 'index.html');
+    console.log('Loading HTML from:', htmlPath);
   }
+  
+  mainWindow.loadFile(htmlPath).catch((err) => {
+    console.error('Failed to load HTML file:', err);
+    console.error('Attempted path:', htmlPath);
+  });
+
+  // Open DevTools to debug issues
+  // TODO: Remove this after debugging
+  mainWindow.webContents.openDevTools();
+
+  // Log any console messages from the renderer
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`Renderer [${level}]:`, message);
+  });
+
+  // Log page load events
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Page failed to load!');
+    console.error('Error code:', errorCode);
+    console.error('Error description:', errorDescription);
+    console.error('URL:', validatedURL);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Page loaded successfully!');
+  });
 
   // Listen for maximize/unmaximize events
   mainWindow.on('maximize', () => {

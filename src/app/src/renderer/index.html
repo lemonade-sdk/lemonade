@@ -5,6 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:5000 http://localhost:8000 ws://localhost:* wss://localhost:*;">
     <title>Lemonade App</title>
+    <script>
+        // Debug logging - runs before bundle loads
+        console.log('HTML loaded! Location:', window.location.href);
+        console.log('Root element:', document.getElementById('root'));
+        
+        // Track script loading
+        let bundleLoaded = false;
+        let bundleError = null;
+        
+        // Catch all errors INCLUDING script load errors
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e.message, 'at', e.filename, 'line', e.lineno);
+            if (e.target && e.target.tagName === 'SCRIPT') {
+                console.error('SCRIPT LOAD FAILED:', e.target.src);
+                bundleError = e.target.src;
+            }
+        }, true); // Use capture to catch script errors
+        
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('Unhandled promise rejection:', e.reason);
+        });
+        
+        // Check when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM Content Loaded!');
+            console.log('Root element after DOMContentLoaded:', document.getElementById('root'));
+            
+            // Check if script tag exists
+            const scripts = document.querySelectorAll('script[src]');
+            console.log('Found', scripts.length, 'script tags with src:');
+            scripts.forEach(s => {
+                console.log('  -', s.src);
+            });
+        });
+        
+        // Check when everything is loaded
+        window.addEventListener('load', () => {
+            console.log('Window loaded!');
+            console.log('Bundle loaded:', bundleLoaded);
+            console.log('Bundle error:', bundleError);
+            
+            // Check immediately
+            const root = document.getElementById('root');
+            console.log('Root innerHTML immediately:', root.innerHTML || '(empty)');
+            
+            // Check again after delay
+            setTimeout(() => {
+                console.log('Root innerHTML after 1s:', root.innerHTML || '(empty)');
+                if (!root.innerHTML) {
+                    console.error('❌ React app did NOT mount! Root is still empty.');
+                    console.error('This means renderer.bundle.js either did not load or React failed to mount.');
+                } else {
+                    console.log('✅ React app mounted successfully!');
+                }
+            }, 1000);
+            
+            // Another check after longer delay
+            setTimeout(() => {
+                console.log('Root innerHTML after 3s:', root.innerHTML || '(empty)');
+            }, 3000);
+        });
+        
+        // Mark when our bundle script loads (we'll add this to the bundle entry point)
+        window.__LEMONADE_BUNDLE_LOADED__ = () => {
+            bundleLoaded = true;
+            console.log('✅ renderer.bundle.js LOADED');
+        };
+    </script>
 </head>
 <body>
     <div id="root"></div>
