@@ -25,7 +25,7 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 
 **Linux (Ubuntu/Debian):**
 ```bash
-sudo apt install build-essential cmake libcurl4-openssl-dev pkg-config
+sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
 # Note: Tray application is disabled on Linux (headless mode only)
 # This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
@@ -49,8 +49,8 @@ cd build
 # Configure with CMake
 cmake ..
 
-# Build
-cmake --build . --config Release
+# Build with all cores
+cmake --build . --config Release -j
 
 # On Windows, executables will be in: build/Release/
 # On Linux/macOS, executables will be in: build/

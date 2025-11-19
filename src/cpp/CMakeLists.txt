@@ -1,66 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-
-# Use static runtime library on Windows to avoid DLL dependencies
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 project(lemon_cpp VERSION 9.0.3)
-
-# C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Platform-specific configurations
-if(WIN32)
-    set(EXECUTABLE_NAME "lemonade-router")
-    # Set Windows target version to Windows 10 for cpp-httplib v0.26.0
-    add_compile_definitions(_WIN32_WINNT=0x0A00)
-    
-    # Add security-hardening compiler flags for MSVC
-    if(MSVC)
-        # Control Flow Guard - prevents control flow hijacking
-        add_compile_options(/guard:cf)
-        # Buffer Security Check - stack buffer overflow detection
-        add_compile_options(/GS)
-        
-        # Linker security flags
-        add_link_options(
-            /DYNAMICBASE      # Address Space Layout Randomization (ASLR)
-            /NXCOMPAT         # Data Execution Prevention (DEP)
-            /GUARD:CF         # Control Flow Guard
-        )
-    endif()
-else()
-    set(EXECUTABLE_NAME "lemonade-router")
-endif()
-
-# Enable cpp-httplib thread pool with 8 threads
-# This MUST be defined before including httplib.h
-add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
-
-# Dependencies
 include(FetchContent)
 
-# Disable building tests and examples for dependencies
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-set(JSON_Install OFF CACHE INTERNAL "")
-set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
-set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
-
-# Disable OpenSSL in cpp-httplib (not needed for localhost HTTP server)
-# All HTTPS downloads are handled by libcurl with native SSL backends:
-#   - Windows: Schannel (native)
-#   - macOS: SecureTransport (native)
-#   - Linux: OpenSSL (system library, not bundled)
-set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
-set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE BOOL "" FORCE)
-
-# cpp-httplib (MIT License)
-FetchContent_Declare(httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG v0.26.0
-)
+# ============================================================
+# Common dependency declarations
+# ============================================================
 
 # nlohmann/json (MIT License)
 FetchContent_Declare(json
@@ -74,27 +21,52 @@ FetchContent_Declare(CLI11
     GIT_TAG v2.4.2
 )
 
+# libcurl (curl license - MIT/X derivate)
+FetchContent_Declare(curl
+    GIT_REPOSITORY https://github.com/curl/curl.git
+    GIT_TAG curl-8_5_0
+)
+
 # zstd (BSD License) - required by httplib for compression
 FetchContent_Declare(zstd
     GIT_REPOSITORY https://github.com/facebook/zstd.git
     GIT_TAG v1.5.5
     SOURCE_SUBDIR build/cmake
 )
-set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
-set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
-set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-# libcurl (curl license - MIT/X derivate)
+# cpp-httplib (MIT License)
+FetchContent_Declare(httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.26.0
+)
+
+
+# ============================================================
+# Common dependency configurations
+# ============================================================
+
+# Common configurations for all dependencies
+set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
+# Link to MSVC library statically
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+# === nlohmann/json ===
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(json)
+
+# === CLI11 ===
+set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
+set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(CLI11)
+
+# === curl ===
+set(BUILD_STATIC_LIBS ON CACHE INTERNAL "")
 set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
-set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")
-set(CURL_STATICLIB ON CACHE INTERNAL "")
-set(HTTP_ONLY ON CACHE INTERNAL "")
-set(BUILD_TESTING OFF CACHE INTERNAL "")
 set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
-set(SKIP_INSTALL_ALL ON CACHE INTERNAL "")  # Don't install curl files
-
-# Enable native SSL backends per platform
+set(CURL_DISABLE_INSTALL ON CACHE INTERNAL "")
+set(HTTP_ONLY ON CACHE INTERNAL "")  # Disable protocols other than HTTP/S
+# Configure platform-specific SSL backends
 if(WIN32)
     set(CURL_STATIC_CRT ON CACHE INTERNAL "")  # Use static runtime on Windows
     set(CURL_USE_SCHANNEL ON CACHE INTERNAL "")
@@ -104,41 +76,80 @@ elseif(APPLE)
 else()
     set(CURL_USE_OPENSSL ON CACHE INTERNAL "")
 endif()
-FetchContent_Declare(curl
-    GIT_REPOSITORY https://github.com/curl/curl.git
-    GIT_TAG curl-8_5_0
-)
-
-# Make dependencies available
-FetchContent_MakeAvailable(json CLI11 zstd)
-
-# Create alias for httplib compatibility
-# httplib expects zstd::libzstd but FetchContent builds libzstd_static
-if(TARGET libzstd_static AND NOT TARGET zstd::libzstd)
-    add_library(zstd::libzstd ALIAS libzstd_static)
-endif()
-
-# Prevent httplib from searching for system zstd (we're providing it via FetchContent)
-set(ZSTD_FOUND TRUE CACHE BOOL "" FORCE)
-set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
-
-# Fetch curl but prevent it from installing
+# Fetch curl and prevent it from installing
 FetchContent_GetProperties(curl)
 if(NOT curl_POPULATED)
     FetchContent_Populate(curl)
-    # Prevent curl from installing any files
-    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
     add_subdirectory(${curl_SOURCE_DIR} ${curl_BINARY_DIR} EXCLUDE_FROM_ALL)
-    set(SKIP_INSTALL_ALL OFF CACHE BOOL "" FORCE)
 endif()
 
-# Fetch httplib but prevent it from installing
-FetchContent_GetProperties(httplib)
-if(NOT httplib_POPULATED)
-    FetchContent_Populate(httplib)
-    set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
-    add_subdirectory(${httplib_SOURCE_DIR} ${httplib_BINARY_DIR} EXCLUDE_FROM_ALL)
+# === zstd ===
+set(ZSTD_BUILD_STATIC ON CACHE INTERNAL "")
+set(ZSTD_BUILD_PROGRAMS OFF CACHE INTERNAL "")
+set(ZSTD_BUILD_SHARED OFF CACHE INTERNAL "")
+set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
+# Fetch zstd and prevent it from installing
+# FetchContent_MakeAvailable(zstd) forces zstd installation, therefore not used
+FetchContent_GetProperties(zstd)
+if(NOT zstd_POPULATED)
+    FetchContent_Populate(zstd)
+    add_subdirectory(${zstd_SOURCE_DIR}/build/cmake ${zstd_BINARY_DIR} EXCLUDE_FROM_ALL)
+    add_library(zstd::libzstd ALIAS libzstd_static)  # Alias for httplib
 endif()
+
+# === httplib ===
+# Disable OpenSSL in httplib (not needed for localhost HTTP server)
+# All HTTPS downloads are handled by libcurl with native SSL backends:
+#   - Windows: Schannel (native)
+#   - macOS: SecureTransport (native)
+#   - Linux: OpenSSL (system library, not bundled)
+set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
+# Use zstd for compression
+set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")           # Skip zstd checks
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip zstd checks
+set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")           # zstd is provided
+set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")                # Prevent installing
+FetchContent_MakeAvailable(httplib)
+# Patch httplib includes due to manual zstd fetching
+target_include_directories(httplib INTERFACE
+    ${zstd_SOURCE_DIR}/lib
+    ${zstd_SOURCE_DIR}/lib/common
+)
+
+
+# ============================================================
+# Application: lemonade-router
+# ============================================================
+
+set(EXECUTABLE_NAME "lemonade-router")
+
+
+# ============================================================
+# Compilation configurations
+# ============================================================
+
+# Common compiler definitions
+# Enable httplib thread pool with 8 threads
+add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
+
+# Platform-specific compiler definitions
+if(WIN32)
+    # Set Windows target version to Windows 10 for httplib v0.26.0
+    add_compile_definitions(_WIN32_WINNT=0x0A00)
+    if(MSVC)
+        # Add security-hardening compiler flags for MSVC
+        # Control Flow Guard - prevents control flow hijacking
+        add_compile_options(/guard:cf)
+        # Buffer Security Check - stack buffer overflow detection
+        add_compile_options(/GS)
+    endif()
+endif()
+
+
+# ============================================================
+# Compilation
+# ============================================================
 
 # Generate version header from template
 configure_file(
@@ -242,7 +253,33 @@ endif()
 # Create executable
 add_executable(${EXECUTABLE_NAME} ${SOURCES})
 
-# Link libraries
+
+# ============================================================
+# Linking configurations
+# ============================================================
+
+# Platform-specific linking options
+if(WIN32)
+    if(MSVC)
+        # Linker security flags
+        add_link_options(
+            /DYNAMICBASE      # Address Space Layout Randomization (ASLR)
+            /NXCOMPAT         # Data Execution Prevention (DEP)
+            /GUARD:CF         # Control Flow Guard
+        )
+        # Embed manifest file
+        set_target_properties(${EXECUTABLE_NAME} PROPERTIES
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
+        )
+    endif()
+endif()
+
+
+# ============================================================
+# Linking
+# ============================================================
+
+# Common linking
 target_link_libraries(${EXECUTABLE_NAME} PRIVATE
     httplib::httplib
     nlohmann_json::nlohmann_json
@@ -252,17 +289,21 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE
 
 # Platform-specific linking
 if(WIN32)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ws2_32 wsock32 wbemuuid ole32 oleaut32)
-    
-    # Embed manifest file
-    if(MSVC)
-        set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
-        )
-    endif()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+        ws2_32
+        wsock32
+        wbemuuid
+        ole32
+        oleaut32
+    )
 endif()
 
-# Copy resources at build time to both the build directory and the Release directory
+
+# ============================================================
+# Resources
+# ============================================================
+
+# Copy resources to the build directory during configuration
 file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade/tools/server/static
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
@@ -270,7 +311,7 @@ file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/backend_versions.json
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
-# Also copy to Release and Debug directories for Visual Studio multi-config
+# Copy resources to the runtime directoriy after build
 add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_BINARY_DIR}/resources
@@ -278,8 +319,16 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMENT "Copying resources to output directory"
 )
 
-# Add tray application subdirectory
+
+# ============================================================
+# Applications:
+#   - lemonade-server
+#   - lemonade-tray (Windows only)
+#   - lemonade-log-viewer (Windows only)
+# ============================================================
+
 add_subdirectory(tray)
+
 
 # ============================================================
 # CPack Configuration for .deb Package (Linux only)
