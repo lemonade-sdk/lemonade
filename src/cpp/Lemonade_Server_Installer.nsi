@@ -120,28 +120,26 @@ SectionIn RO ; Read only, always installed
     File "build-msvc\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
 
-    ; Copy Electron app files if they exist
-    ${If} ${FileExists} "build-msvc\Release\Lemonade.exe"
-        File "build-msvc\Release\Lemonade.exe"
-        DetailPrint "- Installed Lemonade Electron app"
-        
-        ; Copy Electron DLL dependencies
-        File /nonfatal "build-msvc\Release\*.dll"
-        DetailPrint "- Installed Electron runtime libraries"
-        
-        ; Copy Electron resource files (.pak, .bin, .dat)
-        File /nonfatal "build-msvc\Release\*.pak"
-        File /nonfatal "build-msvc\Release\*.bin"
-        File /nonfatal "build-msvc\Release\*.dat"
-        File /nonfatal "build-msvc\Release\*.json"
-        DetailPrint "- Installed Electron resource files"
-        
-        ; Copy locales directory
-        ${If} ${FileExists} "build-msvc\Release\locales\*.*"
-            File /r "build-msvc\Release\locales"
-            DetailPrint "- Installed Electron locales"
-        ${EndIf}
-    ${EndIf}
+    ; Copy Electron app files
+    File /nonfatal "build-msvc\Release\Lemonade.exe"
+    DetailPrint "- Installed Lemonade Electron app"
+    
+    ; Copy Electron DLL dependencies
+    File /nonfatal "build-msvc\Release\*.dll"
+    DetailPrint "- Installed Electron runtime libraries"
+    
+    ; Copy Electron resource files (.pak, .bin, .dat)
+    File /nonfatal "build-msvc\Release\*.pak"
+    File /nonfatal "build-msvc\Release\*.bin"
+    File /nonfatal "build-msvc\Release\*.dat"
+    File /nonfatal "build-msvc\Release\*.json"
+    DetailPrint "- Installed Electron resource files"
+    
+    ; Copy locales directory  
+    ; Check if locales directory exists before copying
+    IfFileExists "build-msvc\Release\locales" 0 +3
+        File /r "build-msvc\Release\locales"
+        DetailPrint "- Installed Electron locales"
 
     ; Copy resources (icon, etc.) to bin directory so lemonade-router.exe can find them
     ; The server looks for resources relative to the executable directory
