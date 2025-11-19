@@ -36,14 +36,21 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: app.isPackaged 
+        ? path.join(process.resourcesPath, 'app.asar', 'preload.js')
+        : path.join(__dirname, 'preload.js')
     }
   });
 
-  // In development, load from dist/renderer; in production from root
+  // In development, load from dist/renderer; in production use resources path
   const htmlPath = app.isPackaged 
-    ? path.join(__dirname, 'dist', 'renderer', 'index.html')
+    ? path.join(process.resourcesPath, 'dist', 'renderer', 'index.html')
     : path.join(__dirname, 'dist', 'renderer', 'index.html');
+  
+  console.log('Loading HTML from:', htmlPath);
+  console.log('app.isPackaged:', app.isPackaged);
+  console.log('__dirname:', __dirname);
+  console.log('process.resourcesPath:', process.resourcesPath);
   
   mainWindow.loadFile(htmlPath);
 
