@@ -68,3 +68,4 @@ $xml | Out-File -FilePath $OutputFile -Encoding UTF8
 Write-Host "Generated WiX components: $OutputFile" -ForegroundColor Green
 Write-Host "  Total components: $counter" -ForegroundColor Green
 
+

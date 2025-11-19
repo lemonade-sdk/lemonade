@@ -213,6 +213,7 @@ if(WIN32)
                 -arch x64
                 -ext WixToolset.UI.wixext
                 -d SourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
+                -d BuildDir="${CMAKE_BINARY_DIR}"
                 -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi"
                 "${CMAKE_CURRENT_BINARY_DIR}/installer/Product-Full.wxs"
             

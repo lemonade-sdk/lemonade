@@ -23,7 +23,7 @@
                         Keywords="LLM, AI, Server, Local, Electron" />
     
     <!-- Icon for installer window and Add/Remove Programs -->
-    <Icon Id="LemonadeIcon" SourceFile="$(var.SourceDir)\build\Release\resources\static\favicon.ico" />
+    <Icon Id="LemonadeIcon" SourceFile="$(var.BuildDir)\Release\resources\static\favicon.ico" />
     
     <!-- Set installer window icon -->
     <Property Id="ARPPRODUCTICON" Value="LemonadeIcon" />
@@ -115,161 +115,157 @@
     <!-- Server Executable files -->
     <ComponentGroup Id="ExecutableComponents" Directory="BinDir">
       <Component Id="LemonadeTray" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
-        <File Id="lemonade_tray.exe" Source="$(var.SourceDir)\build\Release\lemonade-tray.exe" KeyPath="yes" />
+        <File Id="lemonade_tray.exe" Source="$(var.BuildDir)\Release\lemonade-tray.exe" KeyPath="yes" />
       </Component>
       
       <Component Id="LemonadeServer" Guid="d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a">
-        <File Id="lemonade_server.exe" Source="$(var.SourceDir)\build\Release\lemonade-server.exe" KeyPath="yes" />
+        <File Id="lemonade_server.exe" Source="$(var.BuildDir)\Release\lemonade-server.exe" KeyPath="yes" />
       </Component>
       
       <Component Id="LemonadeRouter" Guid="e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b">
-        <File Id="lemonade_router.exe" Source="$(var.SourceDir)\build\Release\lemonade-router.exe" KeyPath="yes" />
+        <File Id="lemonade_router.exe" Source="$(var.BuildDir)\Release\lemonade-router.exe" KeyPath="yes" />
       </Component>
       
       <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
-        <File Id="lemonade_log_viewer.exe" Source="$(var.SourceDir)\build\Release\lemonade-log-viewer.exe" KeyPath="yes" />
+        <File Id="lemonade_log_viewer.exe" Source="$(var.BuildDir)\Release\lemonade-log-viewer.exe" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
     <!-- Electron App Executable -->
     <ComponentGroup Id="ElectronAppComponents" Directory="BinDir">
       <Component Id="LemonadeElectronExe" Guid="1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d">
-        <File Id="Lemonade.exe" Source="$(var.SourceDir)\build\Release\Lemonade.exe" KeyPath="yes" />
+        <File Id="Lemonade.exe" Source="$(var.BuildDir)\Release\Lemonade.exe" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
     <!-- Electron DLL files -->
     <ComponentGroup Id="ElectronDllComponents" Directory="BinDir">
       <Component Id="D3DCompilerDll" Guid="2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e">
-        <File Id="d3dcompiler_47.dll" Source="$(var.SourceDir)\build\Release\d3dcompiler_47.dll" KeyPath="yes" />
+        <File Id="d3dcompiler_47.dll" Source="$(var.BuildDir)\Release\d3dcompiler_47.dll" KeyPath="yes" />
       </Component>
       
       <Component Id="FfmpegDll" Guid="3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f">
-        <File Id="ffmpeg.dll" Source="$(var.SourceDir)\build\Release\ffmpeg.dll" KeyPath="yes" />
+        <File Id="ffmpeg.dll" Source="$(var.BuildDir)\Release\ffmpeg.dll" KeyPath="yes" />
       </Component>
       
       <Component Id="LibEGLDll" Guid="4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a">
-        <File Id="libEGL.dll" Source="$(var.SourceDir)\build\Release\libEGL.dll" KeyPath="yes" />
+        <File Id="libEGL.dll" Source="$(var.BuildDir)\Release\libEGL.dll" KeyPath="yes" />
       </Component>
       
       <Component Id="LibGLESv2Dll" Guid="5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b">
-        <File Id="libGLESv2.dll" Source="$(var.SourceDir)\build\Release\libGLESv2.dll" KeyPath="yes" />
+        <File Id="libGLESv2.dll" Source="$(var.BuildDir)\Release\libGLESv2.dll" KeyPath="yes" />
       </Component>
       
       <Component Id="VkSwiftshaderDll" Guid="6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c">
-        <File Id="vk_swiftshader.dll" Source="$(var.SourceDir)\build\Release\vk_swiftshader.dll" KeyPath="yes" />
+        <File Id="vk_swiftshader.dll" Source="$(var.BuildDir)\Release\vk_swiftshader.dll" KeyPath="yes" />
       </Component>
       
       <Component Id="Vulkan1Dll" Guid="7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d">
-        <File Id="vulkan_1.dll" Source="$(var.SourceDir)\build\Release\vulkan-1.dll" KeyPath="yes" />
+        <File Id="vulkan_1.dll" Source="$(var.BuildDir)\Release\vulkan-1.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
     <!-- Electron Resource files (in BinDir) -->
     <ComponentGroup Id="ElectronResourceComponents" Directory="BinDir">
       <Component Id="Chrome100Pak" Guid="8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e">
-        <File Id="chrome_100_percent.pak" Source="$(var.SourceDir)\build\Release\chrome_100_percent.pak" KeyPath="yes" />
+        <File Id="chrome_100_percent.pak" Source="$(var.BuildDir)\Release\chrome_100_percent.pak" KeyPath="yes" />
       </Component>
       
       <Component Id="Chrome200Pak" Guid="9c0d1e2f-3a4b-5c6d-7e8f-9a0b1c2d3e4f">
-        <File Id="chrome_200_percent.pak" Source="$(var.SourceDir)\build\Release\chrome_200_percent.pak" KeyPath="yes" />
+        <File Id="chrome_200_percent.pak" Source="$(var.BuildDir)\Release\chrome_200_percent.pak" KeyPath="yes" />
       </Component>
       
       <Component Id="IcudtlDat" Guid="0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a">
-        <File Id="icudtl.dat" Source="$(var.SourceDir)\build\Release\icudtl.dat" KeyPath="yes" />
+        <File Id="icudtl.dat" Source="$(var.BuildDir)\Release\icudtl.dat" KeyPath="yes" />
       </Component>
       
       <Component Id="ResourcesPak" Guid="1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b">
-        <File Id="resources.pak" Source="$(var.SourceDir)\build\Release\resources.pak" KeyPath="yes" />
+        <File Id="resources.pak" Source="$(var.BuildDir)\Release\resources.pak" KeyPath="yes" />
       </Component>
       
       <Component Id="SnapshotBlobBin" Guid="2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c">
-        <File Id="snapshot_blob.bin" Source="$(var.SourceDir)\build\Release\snapshot_blob.bin" KeyPath="yes" />
+        <File Id="snapshot_blob.bin" Source="$(var.BuildDir)\Release\snapshot_blob.bin" KeyPath="yes" />
       </Component>
       
       <Component Id="V8ContextSnapshotBin" Guid="3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d">
-        <File Id="v8_context_snapshot.bin" Source="$(var.SourceDir)\build\Release\v8_context_snapshot.bin" KeyPath="yes" />
+        <File Id="v8_context_snapshot.bin" Source="$(var.BuildDir)\Release\v8_context_snapshot.bin" KeyPath="yes" />
       </Component>
       
       <Component Id="VkSwiftshaderJson" Guid="4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e">
-        <File Id="vk_swiftshader_icd.json" Source="$(var.SourceDir)\build\Release\vk_swiftshader_icd.json" KeyPath="yes" />
+        <File Id="vk_swiftshader_icd.json" Source="$(var.BuildDir)\Release\vk_swiftshader_icd.json" KeyPath="yes" />
       </Component>
       
       <Component Id="ElectronLicense" Guid="5c6d7e8f-9a0b-1c2d-3e4f-5a6b7c8d9e0f">
-        <File Id="LICENSE.electron.txt" Source="$(var.SourceDir)\build\Release\LICENSE.electron.txt" KeyPath="yes" />
+        <File Id="LICENSE.electron.txt" Source="$(var.SourceDir)\..\app\dist-app\win-unpacked\LICENSE.electron.txt" KeyPath="yes" />
       </Component>
       
       <Component Id="ChromiumLicenses" Guid="6d7e8f9a-0b1c-2d3e-4f5a-6b7c8d9e0f1a">
-        <File Id="LICENSES.chromium.html" Source="$(var.SourceDir)\build\Release\LICENSES.chromium.html" KeyPath="yes" />
+        <File Id="LICENSES.chromium.html" Source="$(var.SourceDir)\..\app\dist-app\win-unpacked\LICENSES.chromium.html" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
     <!-- Server Resource files -->
     <ComponentGroup Id="ResourceComponents">
       <Component Id="ServerModelsJson" Directory="ResourcesDir" Guid="a8b9c0d1-e2f3-4a4b-5c6d-7e8f9a0b1c2d">
-        <File Id="server_models.json" Source="$(var.SourceDir)\build\Release\resources\server_models.json" KeyPath="yes" />
+        <File Id="server_models.json" Source="$(var.BuildDir)\Release\resources\server_models.json" KeyPath="yes" />
       </Component>
       
       <Component Id="BackendVersionsJson" Directory="ResourcesDir" Guid="b9c0d1e2-f3a4-4b5c-6d7e-8f9a0b1c2d3e">
-        <File Id="backend_versions.json" Source="$(var.SourceDir)\build\Release\resources\backend_versions.json" KeyPath="yes" />
+        <File Id="backend_versions.json" Source="$(var.BuildDir)\Release\resources\backend_versions.json" KeyPath="yes" />
       </Component>
       
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
-        <File Id="favicon.ico" Source="$(var.SourceDir)\build\Release\resources\static\favicon.ico" KeyPath="yes" />
+        <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
       
       <Component Id="LogsHtml" Directory="StaticDir" Guid="d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a">
-        <File Id="logs.html" Source="$(var.SourceDir)\build\Release\resources\static\logs.html" KeyPath="yes" />
+        <File Id="logs.html" Source="$(var.BuildDir)\Release\resources\static\logs.html" KeyPath="yes" />
       </Component>
       
       <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
-        <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="WebappHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
-        <File Id="webapp.html" Source="$(var.SourceDir)\build\Release\resources\static\webapp.html" KeyPath="yes" />
+        <File Id="styles.css" Source="$(var.BuildDir)\Release\resources\static\styles.css" KeyPath="yes" />
       </Component>
       
       <Component Id="ChatJs" Directory="JsDir" Guid="a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d">
-        <File Id="chat.js" Source="$(var.SourceDir)\build\Release\resources\static\js\chat.js" KeyPath="yes" />
+        <File Id="chat.js" Source="$(var.BuildDir)\Release\resources\static\js\chat.js" KeyPath="yes" />
       </Component>
       
       <Component Id="ModelSettingsJs" Directory="JsDir" Guid="b5c6d7e8-f9a0-4b1c-2d3e-4f5a6b7c8d9e">
-        <File Id="model_settings.js" Source="$(var.SourceDir)\build\Release\resources\static\js\model-settings.js" KeyPath="yes" />
+        <File Id="model_settings.js" Source="$(var.BuildDir)\Release\resources\static\js\model-settings.js" KeyPath="yes" />
       </Component>
       
       <Component Id="ModelsJs" Directory="JsDir" Guid="c6d7e8f9-a0b1-4c2d-3e4f-5a6b7c8d9e0f">
-        <File Id="models.js" Source="$(var.SourceDir)\build\Release\resources\static\js\models.js" KeyPath="yes" />
+        <File Id="models.js" Source="$(var.BuildDir)\Release\resources\static\js\models.js" KeyPath="yes" />
       </Component>
       
       <Component Id="SharedJs" Directory="JsDir" Guid="d7e8f9a0-b1c2-4d3e-4f5a-6b7c8d9e0f1a">
-        <File Id="shared.js" Source="$(var.SourceDir)\build\Release\resources\static\js\shared.js" KeyPath="yes" />
+        <File Id="shared.js" Source="$(var.BuildDir)\Release\resources\static\js\shared.js" KeyPath="yes" />
       </Component>
       
       <!-- Electron App Resources -->
       <Component Id="AppAsar" Directory="ResourcesDir" Guid="7e8f9a0b-1c2d-3e4f-5a6b-7c8d9e0f1a2b">
-        <File Id="app.asar" Source="$(var.SourceDir)\build\Release\resources\app.asar" KeyPath="yes" />
+        <File Id="app.asar" Source="$(var.BuildDir)\Release\resources\app.asar" KeyPath="yes" />
       </Component>
       
       <Component Id="ElevateExe" Directory="ResourcesDir" Guid="8f9a0b1c-2d3e-4f5a-6b7c-8d9e0f1a2b3c">
-        <File Id="elevate.exe" Source="$(var.SourceDir)\build\Release\resources\elevate.exe" KeyPath="yes" />
+        <File Id="elevate.exe" Source="$(var.BuildDir)\Release\resources\elevate.exe" KeyPath="yes" />
       </Component>
       
       <!-- Backend Server Files -->
       <Component Id="BackendServerJs" Directory="BackendDir" Guid="9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d">
-        <File Id="server.js" Source="$(var.SourceDir)\build\Release\resources\dist\backend\server.js" KeyPath="yes" />
+        <File Id="server.js" Source="$(var.BuildDir)\Release\resources\dist\backend\server.js" KeyPath="yes" />
       </Component>
       
       <Component Id="BackendServerJsMap" Directory="BackendDir" Guid="0b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e">
-        <File Id="server.js.map" Source="$(var.SourceDir)\build\Release\resources\dist\backend\server.js.map" KeyPath="yes" />
+        <File Id="server.js.map" Source="$(var.BuildDir)\Release\resources\dist\backend\server.js.map" KeyPath="yes" />
       </Component>
       
       <Component Id="BackendServerDTs" Directory="BackendDir" Guid="1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f">
-        <File Id="server.d.ts" Source="$(var.SourceDir)\build\Release\resources\dist\backend\server.d.ts" KeyPath="yes" />
+        <File Id="server.d.ts" Source="$(var.BuildDir)\Release\resources\dist\backend\server.d.ts" KeyPath="yes" />
       </Component>
       
       <Component Id="BackendServerDTsMap" Directory="BackendDir" Guid="2d3e4f5a-6b7c-8d9e-0f1a-2b3c4d5e6f7a">
-        <File Id="server.d.ts.map" Source="$(var.SourceDir)\build\Release\resources\dist\backend\server.d.ts.map" KeyPath="yes" />
+        <File Id="server.d.ts.map" Source="$(var.BuildDir)\Release\resources\dist\backend\server.d.ts.map" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
@@ -305,223 +301,223 @@
     <!-- Locales files (all language packs) -->
     <ComponentGroup Id="LocalesComponents" Directory="LocalesDir">
       <Component Id="LocaleAf" Guid="00000000-0000-0000-e8f9-a0b1c2d35247">
-        <File Id="af_pak" Source="$(var.SourceDir)\build\Release\locales\af.pak" KeyPath="yes" />
+        <File Id="af_pak" Source="$(var.BuildDir)\Release\locales\af.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleAm" Guid="00000000-0000-0000-e8f9-a0b1c2d35248">
-        <File Id="am_pak" Source="$(var.SourceDir)\build\Release\locales\am.pak" KeyPath="yes" />
+        <File Id="am_pak" Source="$(var.BuildDir)\Release\locales\am.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleAr" Guid="00000000-0000-0000-e8f9-a0b1c2d35249">
-        <File Id="ar_pak" Source="$(var.SourceDir)\build\Release\locales\ar.pak" KeyPath="yes" />
+        <File Id="ar_pak" Source="$(var.BuildDir)\Release\locales\ar.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleBg" Guid="00000000-0000-0000-e8f9-a0b1c2d3524a">
-        <File Id="bg_pak" Source="$(var.SourceDir)\build\Release\locales\bg.pak" KeyPath="yes" />
+        <File Id="bg_pak" Source="$(var.BuildDir)\Release\locales\bg.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleBn" Guid="00000000-0000-0000-e8f9-a0b1c2d3524b">
-        <File Id="bn_pak" Source="$(var.SourceDir)\build\Release\locales\bn.pak" KeyPath="yes" />
+        <File Id="bn_pak" Source="$(var.BuildDir)\Release\locales\bn.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleCa" Guid="00000000-0000-0000-e8f9-a0b1c2d3524c">
-        <File Id="ca_pak" Source="$(var.SourceDir)\build\Release\locales\ca.pak" KeyPath="yes" />
+        <File Id="ca_pak" Source="$(var.BuildDir)\Release\locales\ca.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleCs" Guid="00000000-0000-0000-e8f9-a0b1c2d3524d">
-        <File Id="cs_pak" Source="$(var.SourceDir)\build\Release\locales\cs.pak" KeyPath="yes" />
+        <File Id="cs_pak" Source="$(var.BuildDir)\Release\locales\cs.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleDa" Guid="00000000-0000-0000-e8f9-a0b1c2d3524e">
-        <File Id="da_pak" Source="$(var.SourceDir)\build\Release\locales\da.pak" KeyPath="yes" />
+        <File Id="da_pak" Source="$(var.BuildDir)\Release\locales\da.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleDe" Guid="00000000-0000-0000-e8f9-a0b1c2d3524f">
-        <File Id="de_pak" Source="$(var.SourceDir)\build\Release\locales\de.pak" KeyPath="yes" />
+        <File Id="de_pak" Source="$(var.BuildDir)\Release\locales\de.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEl" Guid="00000000-0000-0000-e8f9-a0b1c2d35250">
-        <File Id="el_pak" Source="$(var.SourceDir)\build\Release\locales\el.pak" KeyPath="yes" />
+        <File Id="el_pak" Source="$(var.BuildDir)\Release\locales\el.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEnGb" Guid="00000000-0000-0000-e8f9-a0b1c2d35251">
-        <File Id="en_GB_pak" Source="$(var.SourceDir)\build\Release\locales\en-GB.pak" KeyPath="yes" />
+        <File Id="en_GB_pak" Source="$(var.BuildDir)\Release\locales\en-GB.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEnUs" Guid="00000000-0000-0000-e8f9-a0b1c2d35252">
-        <File Id="en_US_pak" Source="$(var.SourceDir)\build\Release\locales\en-US.pak" KeyPath="yes" />
+        <File Id="en_US_pak" Source="$(var.BuildDir)\Release\locales\en-US.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEs419" Guid="00000000-0000-0000-e8f9-a0b1c2d35253">
-        <File Id="es_419_pak" Source="$(var.SourceDir)\build\Release\locales\es-419.pak" KeyPath="yes" />
+        <File Id="es_419_pak" Source="$(var.BuildDir)\Release\locales\es-419.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEs" Guid="00000000-0000-0000-e8f9-a0b1c2d35254">
-        <File Id="es_pak" Source="$(var.SourceDir)\build\Release\locales\es.pak" KeyPath="yes" />
+        <File Id="es_pak" Source="$(var.BuildDir)\Release\locales\es.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleEt" Guid="00000000-0000-0000-e8f9-a0b1c2d35255">
-        <File Id="et_pak" Source="$(var.SourceDir)\build\Release\locales\et.pak" KeyPath="yes" />
+        <File Id="et_pak" Source="$(var.BuildDir)\Release\locales\et.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleFa" Guid="00000000-0000-0000-e8f9-a0b1c2d35256">
-        <File Id="fa_pak" Source="$(var.SourceDir)\build\Release\locales\fa.pak" KeyPath="yes" />
+        <File Id="fa_pak" Source="$(var.BuildDir)\Release\locales\fa.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleFi" Guid="00000000-0000-0000-e8f9-a0b1c2d35257">
-        <File Id="fi_pak" Source="$(var.SourceDir)\build\Release\locales\fi.pak" KeyPath="yes" />
+        <File Id="fi_pak" Source="$(var.BuildDir)\Release\locales\fi.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleFil" Guid="00000000-0000-0000-e8f9-a0b1c2d35258">
-        <File Id="fil_pak" Source="$(var.SourceDir)\build\Release\locales\fil.pak" KeyPath="yes" />
+        <File Id="fil_pak" Source="$(var.BuildDir)\Release\locales\fil.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleFr" Guid="00000000-0000-0000-e8f9-a0b1c2d35259">
-        <File Id="fr_pak" Source="$(var.SourceDir)\build\Release\locales\fr.pak" KeyPath="yes" />
+        <File Id="fr_pak" Source="$(var.BuildDir)\Release\locales\fr.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleGu" Guid="00000000-0000-0000-e8f9-a0b1c2d3525a">
-        <File Id="gu_pak" Source="$(var.SourceDir)\build\Release\locales\gu.pak" KeyPath="yes" />
+        <File Id="gu_pak" Source="$(var.BuildDir)\Release\locales\gu.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleHe" Guid="00000000-0000-0000-e8f9-a0b1c2d3525b">
-        <File Id="he_pak" Source="$(var.SourceDir)\build\Release\locales\he.pak" KeyPath="yes" />
+        <File Id="he_pak" Source="$(var.BuildDir)\Release\locales\he.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleHi" Guid="00000000-0000-0000-e8f9-a0b1c2d3525c">
-        <File Id="hi_pak" Source="$(var.SourceDir)\build\Release\locales\hi.pak" KeyPath="yes" />
+        <File Id="hi_pak" Source="$(var.BuildDir)\Release\locales\hi.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleHr" Guid="00000000-0000-0000-e8f9-a0b1c2d3525d">
-        <File Id="hr_pak" Source="$(var.SourceDir)\build\Release\locales\hr.pak" KeyPath="yes" />
+        <File Id="hr_pak" Source="$(var.BuildDir)\Release\locales\hr.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleHu" Guid="00000000-0000-0000-e8f9-a0b1c2d3525e">
-        <File Id="hu_pak" Source="$(var.SourceDir)\build\Release\locales\hu.pak" KeyPath="yes" />
+        <File Id="hu_pak" Source="$(var.BuildDir)\Release\locales\hu.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleId" Guid="00000000-0000-0000-e8f9-a0b1c2d3525f">
-        <File Id="id_pak" Source="$(var.SourceDir)\build\Release\locales\id.pak" KeyPath="yes" />
+        <File Id="id_pak" Source="$(var.BuildDir)\Release\locales\id.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleIt" Guid="00000000-0000-0000-e8f9-a0b1c2d35260">
-        <File Id="it_pak" Source="$(var.SourceDir)\build\Release\locales\it.pak" KeyPath="yes" />
+        <File Id="it_pak" Source="$(var.BuildDir)\Release\locales\it.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleJa" Guid="00000000-0000-0000-e8f9-a0b1c2d35261">
-        <File Id="ja_pak" Source="$(var.SourceDir)\build\Release\locales\ja.pak" KeyPath="yes" />
+        <File Id="ja_pak" Source="$(var.BuildDir)\Release\locales\ja.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleKn" Guid="00000000-0000-0000-e8f9-a0b1c2d35262">
-        <File Id="kn_pak" Source="$(var.SourceDir)\build\Release\locales\kn.pak" KeyPath="yes" />
+        <File Id="kn_pak" Source="$(var.BuildDir)\Release\locales\kn.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleKo" Guid="00000000-0000-0000-e8f9-a0b1c2d35263">
-        <File Id="ko_pak" Source="$(var.SourceDir)\build\Release\locales\ko.pak" KeyPath="yes" />
+        <File Id="ko_pak" Source="$(var.BuildDir)\Release\locales\ko.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleLt" Guid="00000000-0000-0000-e8f9-a0b1c2d35264">
-        <File Id="lt_pak" Source="$(var.SourceDir)\build\Release\locales\lt.pak" KeyPath="yes" />
+        <File Id="lt_pak" Source="$(var.BuildDir)\Release\locales\lt.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleLv" Guid="00000000-0000-0000-e8f9-a0b1c2d35265">
-        <File Id="lv_pak" Source="$(var.SourceDir)\build\Release\locales\lv.pak" KeyPath="yes" />
+        <File Id="lv_pak" Source="$(var.BuildDir)\Release\locales\lv.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleMl" Guid="00000000-0000-0000-e8f9-a0b1c2d35266">
-        <File Id="ml_pak" Source="$(var.SourceDir)\build\Release\locales\ml.pak" KeyPath="yes" />
+        <File Id="ml_pak" Source="$(var.BuildDir)\Release\locales\ml.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleMr" Guid="00000000-0000-0000-e8f9-a0b1c2d35267">
-        <File Id="mr_pak" Source="$(var.SourceDir)\build\Release\locales\mr.pak" KeyPath="yes" />
+        <File Id="mr_pak" Source="$(var.BuildDir)\Release\locales\mr.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleMs" Guid="00000000-0000-0000-e8f9-a0b1c2d35268">
-        <File Id="ms_pak" Source="$(var.SourceDir)\build\Release\locales\ms.pak" KeyPath="yes" />
+        <File Id="ms_pak" Source="$(var.BuildDir)\Release\locales\ms.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleNb" Guid="00000000-0000-0000-e8f9-a0b1c2d35269">
-        <File Id="nb_pak" Source="$(var.SourceDir)\build\Release\locales\nb.pak" KeyPath="yes" />
+        <File Id="nb_pak" Source="$(var.BuildDir)\Release\locales\nb.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleNl" Guid="00000000-0000-0000-e8f9-a0b1c2d3526a">
-        <File Id="nl_pak" Source="$(var.SourceDir)\build\Release\locales\nl.pak" KeyPath="yes" />
+        <File Id="nl_pak" Source="$(var.BuildDir)\Release\locales\nl.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocalePl" Guid="00000000-0000-0000-e8f9-a0b1c2d3526b">
-        <File Id="pl_pak" Source="$(var.SourceDir)\build\Release\locales\pl.pak" KeyPath="yes" />
+        <File Id="pl_pak" Source="$(var.BuildDir)\Release\locales\pl.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocalePtBr" Guid="00000000-0000-0000-e8f9-a0b1c2d3526c">
-        <File Id="pt_BR_pak" Source="$(var.SourceDir)\build\Release\locales\pt-BR.pak" KeyPath="yes" />
+        <File Id="pt_BR_pak" Source="$(var.BuildDir)\Release\locales\pt-BR.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocalePtPt" Guid="00000000-0000-0000-e8f9-a0b1c2d3526d">
-        <File Id="pt_PT_pak" Source="$(var.SourceDir)\build\Release\locales\pt-PT.pak" KeyPath="yes" />
+        <File Id="pt_PT_pak" Source="$(var.BuildDir)\Release\locales\pt-PT.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleRo" Guid="00000000-0000-0000-e8f9-a0b1c2d3526e">
-        <File Id="ro_pak" Source="$(var.SourceDir)\build\Release\locales\ro.pak" KeyPath="yes" />
+        <File Id="ro_pak" Source="$(var.BuildDir)\Release\locales\ro.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleRu" Guid="00000000-0000-0000-e8f9-a0b1c2d3526f">
-        <File Id="ru_pak" Source="$(var.SourceDir)\build\Release\locales\ru.pak" KeyPath="yes" />
+        <File Id="ru_pak" Source="$(var.BuildDir)\Release\locales\ru.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleSk" Guid="00000000-0000-0000-e8f9-a0b1c2d35270">
-        <File Id="sk_pak" Source="$(var.SourceDir)\build\Release\locales\sk.pak" KeyPath="yes" />
+        <File Id="sk_pak" Source="$(var.BuildDir)\Release\locales\sk.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleSl" Guid="00000000-0000-0000-e8f9-a0b1c2d35271">
-        <File Id="sl_pak" Source="$(var.SourceDir)\build\Release\locales\sl.pak" KeyPath="yes" />
+        <File Id="sl_pak" Source="$(var.BuildDir)\Release\locales\sl.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleSr" Guid="00000000-0000-0000-e8f9-a0b1c2d35272">
-        <File Id="sr_pak" Source="$(var.SourceDir)\build\Release\locales\sr.pak" KeyPath="yes" />
+        <File Id="sr_pak" Source="$(var.BuildDir)\Release\locales\sr.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleSv" Guid="00000000-0000-0000-e8f9-a0b1c2d35273">
-        <File Id="sv_pak" Source="$(var.SourceDir)\build\Release\locales\sv.pak" KeyPath="yes" />
+        <File Id="sv_pak" Source="$(var.BuildDir)\Release\locales\sv.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleSw" Guid="00000000-0000-0000-e8f9-a0b1c2d35274">
-        <File Id="sw_pak" Source="$(var.SourceDir)\build\Release\locales\sw.pak" KeyPath="yes" />
+        <File Id="sw_pak" Source="$(var.BuildDir)\Release\locales\sw.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleTa" Guid="00000000-0000-0000-e8f9-a0b1c2d35275">
-        <File Id="ta_pak" Source="$(var.SourceDir)\build\Release\locales\ta.pak" KeyPath="yes" />
+        <File Id="ta_pak" Source="$(var.BuildDir)\Release\locales\ta.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleTe" Guid="00000000-0000-0000-e8f9-a0b1c2d35276">
-        <File Id="te_pak" Source="$(var.SourceDir)\build\Release\locales\te.pak" KeyPath="yes" />
+        <File Id="te_pak" Source="$(var.BuildDir)\Release\locales\te.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleTh" Guid="00000000-0000-0000-e8f9-a0b1c2d35277">
-        <File Id="th_pak" Source="$(var.SourceDir)\build\Release\locales\th.pak" KeyPath="yes" />
+        <File Id="th_pak" Source="$(var.BuildDir)\Release\locales\th.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleTr" Guid="00000000-0000-0000-e8f9-a0b1c2d35278">
-        <File Id="tr_pak" Source="$(var.SourceDir)\build\Release\locales\tr.pak" KeyPath="yes" />
+        <File Id="tr_pak" Source="$(var.BuildDir)\Release\locales\tr.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleUk" Guid="00000000-0000-0000-e8f9-a0b1c2d35279">
-        <File Id="uk_pak" Source="$(var.SourceDir)\build\Release\locales\uk.pak" KeyPath="yes" />
+        <File Id="uk_pak" Source="$(var.BuildDir)\Release\locales\uk.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleUr" Guid="00000000-0000-0000-e8f9-a0b1c2d3527a">
-        <File Id="ur_pak" Source="$(var.SourceDir)\build\Release\locales\ur.pak" KeyPath="yes" />
+        <File Id="ur_pak" Source="$(var.BuildDir)\Release\locales\ur.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleVi" Guid="00000000-0000-0000-e8f9-a0b1c2d3527b">
-        <File Id="vi_pak" Source="$(var.SourceDir)\build\Release\locales\vi.pak" KeyPath="yes" />
+        <File Id="vi_pak" Source="$(var.BuildDir)\Release\locales\vi.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleZhCn" Guid="00000000-0000-0000-e8f9-a0b1c2d3527c">
-        <File Id="zh_CN_pak" Source="$(var.SourceDir)\build\Release\locales\zh-CN.pak" KeyPath="yes" />
+        <File Id="zh_CN_pak" Source="$(var.BuildDir)\Release\locales\zh-CN.pak" KeyPath="yes" />
       </Component>
 
       <Component Id="LocaleZhTw" Guid="00000000-0000-0000-e8f9-a0b1c2d3527d">
-        <File Id="zh_TW_pak" Source="$(var.SourceDir)\build\Release\locales\zh-TW.pak" KeyPath="yes" />
+        <File Id="zh_TW_pak" Source="$(var.BuildDir)\Release\locales\zh-TW.pak" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
@@ -695,7 +691,7 @@
     <!-- Copy Electron renderer files (bulk copy of ~580 files) -->
     <CustomAction Id="CopyRendererFiles"
                   Directory="ResourcesDir"
-                  ExeCommand='cmd.exe /c "robocopy /E /NFL /NDL /NJH /NJS /nc /ns /np "$(var.SourceDir)\build\Release\resources\dist\renderer" "[ResourcesDir]dist\renderer" || exit /b 0"'
+                  ExeCommand='cmd.exe /c "robocopy /E /NFL /NDL /NJH /NJS /nc /ns /np "$(var.BuildDir)\Release\resources\dist\renderer" "[ResourcesDir]dist\renderer" || exit /b 0"'
                   Execute="deferred"
                   Impersonate="no"
                   Return="check" />

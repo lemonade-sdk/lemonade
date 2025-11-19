@@ -47,3 +47,4 @@ file(APPEND "${OUTPUT_FILE}" "</Wix>\n")
 
 message(STATUS "Generated locale components: ${OUTPUT_FILE}")
 
+
