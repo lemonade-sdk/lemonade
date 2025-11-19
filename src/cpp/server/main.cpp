@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
         
         // Start the server
         std::cout << "Starting Lemonade Server..." << std::endl;
+        std::cout << "  Version: " << LEMON_VERSION_STRING << std::endl;
         std::cout << "  Port: " << config.port << std::endl;
         std::cout << "  Host: " << config.host << std::endl;
         std::cout << "  Log level: " << config.log_level << std::endl;
