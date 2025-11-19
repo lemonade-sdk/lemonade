@@ -472,11 +472,11 @@ async function installModel(modelId) {
     activeOperations.add(modelId);
     
     try {
-        const modelData = window.SERVER_MODELS[modelId];
+        // For registered models, only send model_name (per API spec)
         await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model_name: modelId, ...modelData })
+            body: JSON.stringify({ model_name: modelId })
         });
         
         // Download complete - remove from active operations

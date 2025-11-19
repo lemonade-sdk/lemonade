@@ -177,8 +177,14 @@ CLAUDE.*
 .cursor/
 .cursor**
 
+<<<<<<< HEAD
 # Electron app
 src/app/node_modules/
 src/app/dist/
 src/app/dist-app/
 src/app/.webpack/
+=======
+# WiX Toolset build artifacts
+*.msi
+*.wixpdb
+>>>>>>> main
