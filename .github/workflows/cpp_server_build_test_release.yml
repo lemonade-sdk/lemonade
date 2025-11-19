@@ -8,12 +8,6 @@ on:
   pull_request:
   merge_group:
   workflow_dispatch:
-    inputs:
-      include_electron_app:
-        description: 'Include Electron App in installer'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -166,13 +160,11 @@ jobs:
           Write-Host "C++ build successful!" -ForegroundColor Green
 
       - name: Setup Node.js
-        if: inputs.include_electron_app == true
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Build Electron App
-        if: inputs.include_electron_app == true
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -205,54 +197,6 @@ jobs:
           
           Write-Host "Electron app build successful!" -ForegroundColor Green
 
-      - name: Copy Electron App to Release Directory
-        if: inputs.include_electron_app == true
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          Write-Host "Copying Electron app to build directory..." -ForegroundColor Cyan
-          
-          $electronSource = "src\app\dist-app\win-unpacked"
-          $releaseDir = "src\cpp\build\Release"
-          
-          # The CMake CopyElectronApp.cmake script expects the files here
-          # Copy all Electron app files to the Release directory
-          Write-Host "Copying Electron app files..." -ForegroundColor Yellow
-          
-          # Copy main executable
-          Copy-Item "$electronSource\Lemonade.exe" -Destination "$releaseDir\" -Force
-          Write-Host "  [OK] Copied Lemonade.exe" -ForegroundColor Green
-          
-          # Copy DLL files
-          Get-ChildItem "$electronSource\*.dll" | ForEach-Object {
-              Copy-Item $_.FullName -Destination "$releaseDir\" -Force
-          }
-          Write-Host "  [OK] Copied DLL files" -ForegroundColor Green
-          
-          # Copy resource files
-          Get-ChildItem "$electronSource\*.pak", "$electronSource\*.bin", "$electronSource\*.dat", "$electronSource\*.json" | ForEach-Object {
-              Copy-Item $_.FullName -Destination "$releaseDir\" -Force
-          }
-          Write-Host "  [OK] Copied resource files" -ForegroundColor Green
-          
-          # Copy locales directory
-          if (Test-Path "$electronSource\locales") {
-              Copy-Item "$electronSource\locales" -Destination "$releaseDir\" -Recurse -Force
-              Write-Host "  [OK] Copied locales directory" -ForegroundColor Green
-          }
-          
-          # Copy resources directory (rename to electron-resources to avoid conflict)
-          if (Test-Path "$electronSource\resources") {
-              if (Test-Path "$releaseDir\electron-resources") {
-                  Remove-Item "$releaseDir\electron-resources" -Recurse -Force
-              }
-              Copy-Item "$electronSource\resources" -Destination "$releaseDir\electron-resources" -Recurse -Force
-              Write-Host "  [OK] Copied Electron resources directory" -ForegroundColor Green
-          }
-          
-          Write-Host "Electron app copied successfully!" -ForegroundColor Green
-
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
@@ -263,19 +207,26 @@ jobs:
           # Run the build installer script
           .\build_installer.ps1
           
-          # Verify installer was created
+          # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Installer not created!" -ForegroundColor Red
+              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
               exit 1
           }
           
-          Write-Host "Installer created successfully!" -ForegroundColor Green
+          if (-not (Test-Path "lemonade.msi")) {
+              Write-Host "ERROR: Full installer not created!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Installers created successfully!" -ForegroundColor Green
 
-      - name: Upload Lemonade Server Installer
+      - name: Upload Lemonade Server Installers
         uses: actions/upload-artifact@v4
         with:
           name: Lemonade_Server_MSI
-          path: src\cpp\lemonade-server-minimal.msi
+          path: |
+            src\cpp\lemonade-server-minimal.msi
+            src\cpp\lemonade.msi
           retention-days: 7
 
   build-ryzenai-server:
@@ -1816,6 +1767,7 @@ jobs:
         run: |
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
+          ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh ryzenai-server.zip
 
@@ -1824,6 +1776,7 @@ jobs:
         with:
           files: |
             lemonade-server-minimal.msi
+            lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
