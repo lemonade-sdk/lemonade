@@ -109,36 +109,36 @@ SectionIn RO ; Read only, always installed
 
     ; Copy the executables from the build directory
     DetailPrint "Installing application files..."
-    File "build\Release\lemonade-tray.exe"
+    File "build-msvc\Release\lemonade-tray.exe"
     DetailPrint "- Installed Lemonade Server tray application"
-    File "build\Release\lemonade-log-viewer.exe"
+    File "build-msvc\Release\lemonade-log-viewer.exe"
     DetailPrint "- Installed log viewer"
     
-    File "build\Release\lemonade-server.exe"
+    File "build-msvc\Release\lemonade-server.exe"
     DetailPrint "- Installed Lemonade Server CLI client"
     
-    File "build\Release\lemonade-router.exe"
+    File "build-msvc\Release\lemonade-router.exe"
     DetailPrint "- Installed Lemonade AI Server engine"
 
     ; Copy Electron app files if they exist
-    ${If} ${FileExists} "build\Release\Lemonade.exe"
-        File "build\Release\Lemonade.exe"
+    ${If} ${FileExists} "build-msvc\Release\Lemonade.exe"
+        File "build-msvc\Release\Lemonade.exe"
         DetailPrint "- Installed Lemonade Electron app"
         
         ; Copy Electron DLL dependencies
-        File /nonfatal "build\Release\*.dll"
+        File /nonfatal "build-msvc\Release\*.dll"
         DetailPrint "- Installed Electron runtime libraries"
         
         ; Copy Electron resource files (.pak, .bin, .dat)
-        File /nonfatal "build\Release\*.pak"
-        File /nonfatal "build\Release\*.bin"
-        File /nonfatal "build\Release\*.dat"
-        File /nonfatal "build\Release\*.json"
+        File /nonfatal "build-msvc\Release\*.pak"
+        File /nonfatal "build-msvc\Release\*.bin"
+        File /nonfatal "build-msvc\Release\*.dat"
+        File /nonfatal "build-msvc\Release\*.json"
         DetailPrint "- Installed Electron resource files"
         
         ; Copy locales directory
-        ${If} ${FileExists} "build\Release\locales\*.*"
-            File /r "build\Release\locales"
+        ${If} ${FileExists} "build-msvc\Release\locales\*.*"
+            File /r "build-msvc\Release\locales"
             DetailPrint "- Installed Electron locales"
         ${EndIf}
     ${EndIf}
@@ -147,7 +147,7 @@ SectionIn RO ; Read only, always installed
     ; The server looks for resources relative to the executable directory
     ; This now includes merged Electron resources (app.asar, dist, etc.)
     DetailPrint "Installing application resources..."
-    File /r "build\Release\resources"
+    File /r "build-msvc\Release\resources"
     DetailPrint "- Installed web UI, configuration files, and Electron resources"
 
     ; Add bin folder to user PATH using registry directly

@@ -155,7 +155,11 @@ if(WIN32)
         @ONLY
     )
     
-    # Generate NSIS installer script with version
+    # Generate NSIS installer script with version and build directory
+    # Calculate relative path from source dir (where .nsi is) to build dir
+    file(RELATIVE_PATH NSIS_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
+    # Convert to Windows-style backslashes for NSIS
+    string(REPLACE "/" "\\" NSIS_BUILD_DIR "${NSIS_BUILD_DIR}")
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi.in
         ${CMAKE_CURRENT_SOURCE_DIR}/Lemonade_Server_Installer.nsi
