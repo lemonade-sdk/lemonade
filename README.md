@@ -140,9 +140,9 @@ Lemonade supports the following configurations, while also making it easy to swi
 | Under Development                       | Under Consideration                          | Recently Completed        |
 |-----------------------------------------|----------------------------------------------|---------------------------|
 | Electron desktop app (replacing web ui) | General speech-to-text support (whisper.cpp) | Rewrite the server in C++ |
-| Multiple models loaded at the same time | VLLM integration                             | .msi and .deb installers  |
-| FastFlowLM speech-to-text support       | Handheld devices: Ryzen AI Z2 Extreme APUs   | Ryzen AI SW 1.6           |
-|                                         | macOS support in the C++ server              | FastFlowLM integration    |
+| Multiple models loaded at the same time | vLLM integration                             | .msi and .deb installers  |
+| FastFlowLM speech-to-text               | Handheld devices: Ryzen AI Z2 Extreme APUs   | Ryzen AI SW 1.6           |
+|                                         | ROCm support for Ryzen AI 330-375 APUs       | FastFlowLM integration    |
 
 ## Integrate Lemonade Server with Your Application
 
