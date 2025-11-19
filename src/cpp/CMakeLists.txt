@@ -182,12 +182,14 @@ if(WIN32)
         @ONLY
     )
     
+    set(WIX_PRODUCT_WXS "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs")
+    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
+    
     # Find WiX Toolset 5.0+ (unified 'wix' command) and Python for fragment generation
     find_program(WIX_EXECUTABLE wix)
     find_package(Python3 COMPONENTS Interpreter)
     
-    if(WIX_EXECUTABLE AND Python3_FOUND)
-        # Get WiX version
+    if(WIX_EXECUTABLE)
         execute_process(
             COMMAND ${WIX_EXECUTABLE} --version
             OUTPUT_VARIABLE WIX_VERSION_OUTPUT
@@ -195,54 +197,75 @@ if(WIN32)
         )
         message(STATUS "WiX Toolset found: ${WIX_EXECUTABLE}")
         message(STATUS "WiX version: ${WIX_VERSION_OUTPUT}")
-
-        set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
-        set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
-
-        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" WIX_SOURCE_DIR_NATIVE)
-        file(TO_NATIVE_PATH "${ELECTRON_APP_UNPACKED_DIR}" WIX_ELECTRON_SOURCE_NATIVE)
-        file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
-        file(TO_NATIVE_PATH "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs" WIX_PRODUCT_WXS_NATIVE)
-        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi" WIX_OUTPUT_NATIVE)
         
-        # Create custom target for building MSI installer using WiX 5.0
-        add_custom_target(wix_installer
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer with WiX 5.0..."
-            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
-                --source "${ELECTRON_APP_UNPACKED_DIR}"
-                --output "${WIX_ELECTRON_FRAGMENT}"
-                --component-group "ElectronAppComponents"
-                --root-id "ElectronAppDir"
-                --path-variable "ElectronSourceDir"
-            
-            # WiX 5.0 uses 'wix build' command - single file, simple approach
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" WIX_SOURCE_DIR_NATIVE)
+        file(TO_NATIVE_PATH "${WIX_PRODUCT_WXS}" WIX_PRODUCT_WXS_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi" WIX_MINIMAL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi" WIX_FULL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${ELECTRON_APP_UNPACKED_DIR}" WIX_ELECTRON_SOURCE_NATIVE)
+        set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
+        file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
+        
+        # Minimal installer (server only)
+        add_custom_target(wix_installer_minimal
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -ext WixToolset.UI.wixext
                 -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
-                -out "${WIX_OUTPUT_NATIVE}"
+                -d IncludeElectron=0
+                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
-                "${WIX_ELECTRON_FRAGMENT_NATIVE}"
-            
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-            
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer"
+            COMMENT "Building WiX MSI installer (server only)"
         )
-
-        if(TARGET electron-app)
-            add_dependencies(wix_installer electron-app)
+        
+        set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+        
+        if(Python3_FOUND)
+            add_custom_target(wix_installer_full
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${ELECTRON_APP_UNPACKED_DIR}"
+                    --output "${WIX_ELECTRON_FRAGMENT}"
+                    --component-group "ElectronAppComponents"
+                    --root-id "ElectronAppDir"
+                    --path-variable "ElectronSourceDir"
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d IncludeElectron=1
+                    -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                    -out "${WIX_FULL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                    "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (with Electron app)"
+            )
+            
+            if(TARGET electron-app)
+                add_dependencies(wix_installer_full electron-app)
+            endif()
+            
+            list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
+        else()
+            message(STATUS "Python 3 interpreter not found. Skipping the Electron-enabled MSI target 'wix_installer_full'.")
         endif()
         
-        message(STATUS "WiX installer target 'wix_installer' configured. Run 'cmake --build . --target wix_installer' to build MSI.")
-    elseif(NOT WIX_EXECUTABLE)
-        message(STATUS "WiX Toolset not found. MSI installer will not be available.")
+        add_custom_target(wix_installers
+            DEPENDS ${WIX_INSTALLER_TARGETS}
+        )
+        
+        message(STATUS "WiX installer targets configured. Run 'cmake --build . --target wix_installer_minimal' or 'wix_installer_full'.")
+    else()
+        message(STATUS "WiX Toolset not found. MSI installers will not be available.")
         message(STATUS "  Install WiX Toolset 5.0.2 from: https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi")
         message(STATUS "  Or visit: https://wixtoolset.org/")
-    else()
-        message(STATUS "Python 3 interpreter not found. WiX installer target is disabled until Python 3 is installed.")
     endif()
     
 endif()

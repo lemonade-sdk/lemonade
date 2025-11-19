@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?ifndef IncludeElectron?>
+<?define IncludeElectron = 0?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   
@@ -92,7 +95,9 @@
             </Directory>
           </Directory>
         </Directory>
+<?if $(var.IncludeElectron) = 1 ?>
         <Directory Id="ElectronAppDir" Name="app" />
+<?endif?>
       </Directory>
     </StandardDirectory>
     
@@ -212,7 +217,9 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+<?if $(var.IncludeElectron) = 1 ?>
       <ComponentGroupRef Id="ElectronAppComponents" />
+<?endif?>
       <ComponentRef Id="PathEnvironment" />
       <ComponentRef Id="RegistryEntries" />
       <ComponentRef Id="ProgramMenuShortcuts" />
