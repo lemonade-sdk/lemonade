@@ -540,7 +540,7 @@
     <Component Id="ProgramMenuShortcuts" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d">
       <Shortcut Id="ApplicationStartMenuShortcut"
                 Name="Lemonade"
-                Target="[BinDir]Lemonade.exe"
+                Target="[BinDir]lemonade-tray.exe"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
       <Shortcut Id="ServerStartMenuShortcut"
@@ -560,7 +560,7 @@
     <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f" Condition="ADDDESKTOPSHORTCUT = 1">
       <Shortcut Id="DesktopShortcutId"
                 Name="Lemonade"
-                Target="[BinDir]Lemonade.exe"
+                Target="[BinDir]lemonade-tray.exe"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
       <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
@@ -662,7 +662,7 @@
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Launch Lemonade.exe (triggered from ExitDialog Finish button) by shell-executing
+    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) by shell-executing
          the Start Menu shortcut through explorer.exe. This ensures the process runs in the
          normal user context with the shortcut-defined working directory. -->
     <CustomAction Id="LaunchApplication"
