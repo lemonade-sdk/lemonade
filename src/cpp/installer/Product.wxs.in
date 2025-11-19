@@ -308,6 +308,23 @@
                   Impersonate="yes"
                   Return="asyncNoWait" />
     
+    <!-- Stop server during uninstall -->
+    <CustomAction Id="StopServerOnUninstall"
+                  Directory="BinDir"
+                  ExeCommand='cmd.exe /c "lemonade-server.exe stop"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Clean up runtime-created directories during uninstall (ryzenai-server and llama folders).
+         These folders are created at runtime when models are downloaded, so WiX doesn't track them. -->
+    <CustomAction Id="CleanupRuntimeDirs"
+                  Directory="BinDir"
+                  ExeCommand='cmd.exe /c "rmdir /s /q ryzenai-server &amp; rmdir /s /q llama"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
     <InstallExecuteSequence>
       <!-- If NSIS-based C++ installer is present, stop the server first, then uninstall -->
       <Custom Action="StopNsisServer"
@@ -334,6 +351,16 @@
       <Custom Action="StopServerCmd"
               Before="InstallValidate"
               Condition="EXISTINGINSTALLDIR AND (EXISTINGINSTALLDIR &lt;&gt; &quot;&quot;)" />
+      
+      <!-- Stop server during uninstall before cleaning up runtime directories -->
+      <Custom Action="StopServerOnUninstall"
+              Before="CleanupRuntimeDirs"
+              Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+      
+      <!-- Clean up runtime-created directories during uninstall -->
+      <Custom Action="CleanupRuntimeDirs"
+              Before="RemoveFiles"
+              Condition="Installed AND REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
     
   </Package>
