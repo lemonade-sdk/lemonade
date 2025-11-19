@@ -6,10 +6,10 @@
   "scripts": {
     "start": "npm run build:backend && npm run build:renderer && electron .",
     "backend": "npm run build:backend && node dist/backend/server.js",
-    "build:backend": "tsc",
+    "build:backend": "webpack --config webpack.backend.config.js --mode production",
     "build:renderer": "webpack --mode development",
     "build:renderer:prod": "webpack --mode production",
-    "watch:backend": "tsc --watch",
+    "watch:backend": "webpack --config webpack.backend.config.js --watch --mode development",
     "watch:renderer": "webpack --watch --mode development",
     "dev": "npm run build:backend && npm run build:renderer && electron . --remote-debugging-port=9222",
     "build": "npm run build:backend && npm run build:renderer:prod && electron-builder",
