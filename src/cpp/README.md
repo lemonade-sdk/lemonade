@@ -118,8 +118,16 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 **Prerequisites:**
 - WiX Toolset 5.0.2 installed from [wix-cli-x64.msi](https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi)
 - Completed C++ build (see above)
+- For full installer: Node.js 18+ and built Electron app (see below)
 
-**Building:**
+#### Two Installer Versions:
+
+1. **Minimal Installer** (`lemonade-server-minimal.msi`) - Server components only
+2. **Full Installer** (`lemonade.msi`) - Server components + Electron desktop app
+
+---
+
+#### Building Minimal Installer (Server Only)
 
 Using PowerShell script (recommended):
 ```powershell
@@ -133,40 +141,75 @@ cd src\cpp\build
 cmake --build . --config Release --target wix_installer
 ```
 
-**Installer Output:**
+**Output:** Creates `lemonade-server-minimal.msi`
 
-Creates `lemonade-server-minimal.msi` which:
+---
+
+#### Building Full Installer (Server + Electron App)
+
+Using PowerShell script (recommended):
+```powershell
+cd src\cpp
+.\build_full_installer.ps1
+```
+
+Manual build steps:
+```powershell
+# 1. Build Electron app
+cd src\app
+npm install
+npm run build:win
+
+# 2. Build C++ server and full installer
+cd ..\cpp\build
+cmake --build . --config Release
+cmake --build . --config Release --target wix_installer_full
+```
+
+**Output:** Creates `lemonade.msi`
+
+---
+
+#### Installer Features (Both Versions):
+
 - MSI-based installer (Windows Installer technology)
-- Installs to `%LOCALAPPDATA%\lemonade_server\`
+- Installs to `%LOCALAPPDATA%\lemonade\` (full) or `%LOCALAPPDATA%\lemonade_server\` (minimal)
 - Adds `bin\` folder to user PATH using Windows Installer standard methods
-- Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
+- Creates Start Menu shortcuts:
+  - **Full:** Launches `Lemonade.exe` (Electron app) and `lemonade-tray.exe` (server tray)
+  - **Minimal:** Launches `lemonade-tray.exe` only
 - Optionally creates desktop shortcut and startup entry
 - Uses Windows Installer Restart Manager to gracefully close running processes
 - Includes all executables (router, server, tray, log-viewer)
+- **Full version also includes:** Electron app, locales (74 languages), and renderer files (~580 files)
 - Proper upgrade handling between versions
 - Includes uninstaller
 
-**Installation:**
+---
 
-GUI installation:
+#### Installation:
+
+GUI installation (either version):
 ```powershell
-# Double-click lemonade-server-minimal.msi or run:
+# Double-click the MSI file or run:
+msiexec /i lemonade.msi
+# or
 msiexec /i lemonade-server-minimal.msi
 ```
 
 Silent installation:
 ```powershell
 # Install silently
-msiexec /i lemonade-server-minimal.msi /qn
+msiexec /i lemonade.msi /qn
 
 # Install to custom directory
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path"
 
 # Install without desktop shortcut
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
+msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
 
 # Install with startup entry
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
+msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
 ```
 
 ### Linux .deb Package (Debian/Ubuntu)

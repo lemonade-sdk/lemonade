@@ -155,22 +155,20 @@ if(WIN32)
         @ONLY
     )
     
-<<<<<<< HEAD
-    # Generate NSIS installer script with version and build directory
-    # Calculate relative path from source dir (where .nsi is) to build dir
-    file(RELATIVE_PATH NSIS_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
-    # Convert to Windows-style backslashes for NSIS
-    string(REPLACE "/" "\\" NSIS_BUILD_DIR "${NSIS_BUILD_DIR}")
-=======
     # ============================================================
     # WiX Toolset Configuration (Windows MSI Installer)
     # ============================================================
     
-    # Configure WiX Product.wxs template with version
->>>>>>> main
+    # Configure WiX Product.wxs templates with version
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/installer/Product.wxs.in
         ${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs
+        @ONLY
+    )
+    
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/installer/Product-Full.wxs.in
+        ${CMAKE_CURRENT_BINARY_DIR}/installer/Product-Full.wxs
         @ONLY
     )
     
@@ -187,9 +185,9 @@ if(WIN32)
         message(STATUS "WiX Toolset found: ${WIX_EXECUTABLE}")
         message(STATUS "WiX version: ${WIX_VERSION_OUTPUT}")
         
-        # Create custom target for building MSI installer using WiX 5.0
+        # Create custom target for building minimal MSI installer (server only)
         add_custom_target(wix_installer
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer with WiX 5.0..."
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX Minimal MSI installer with WiX 5.0..."
             
             # WiX 5.0 uses 'wix build' command - single file, simple approach
             COMMAND ${WIX_EXECUTABLE} build
@@ -199,14 +197,37 @@ if(WIN32)
                 -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi"
                 "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs"
             
-            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+            COMMAND ${CMAKE_COMMAND} -E echo "Minimal MSI installer created: lemonade-server-minimal.msi"
             
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer"
+            COMMENT "Building WiX Minimal MSI installer (server only)"
         )
         
-        message(STATUS "WiX installer target 'wix_installer' configured. Run 'cmake --build . --target wix_installer' to build MSI.")
+        # Create custom target for building full MSI installer (server + Electron app)
+        add_custom_target(wix_installer_full
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX Full MSI installer with WiX 5.0..."
+            
+            # WiX 5.0 uses 'wix build' command - single file, simple approach
+            COMMAND ${WIX_EXECUTABLE} build
+                -arch x64
+                -ext WixToolset.UI.wixext
+                -d SourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
+                -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi"
+                "${CMAKE_CURRENT_BINARY_DIR}/installer/Product-Full.wxs"
+            
+            COMMAND ${CMAKE_COMMAND} -E echo "Full MSI installer created: lemonade.msi"
+            
+            DEPENDS ${EXECUTABLE_NAME}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Building WiX Full MSI installer (server + Electron app)"
+        )
+        
+        message(STATUS "WiX installer targets configured:")
+        message(STATUS "  - 'wix_installer' for minimal installer (server only)")
+        message(STATUS "  - 'wix_installer_full' for full installer (server + Electron app)")
+        message(STATUS "Run: cmake --build . --target wix_installer")
+        message(STATUS "Run: cmake --build . --target wix_installer_full")
     else()
         message(STATUS "WiX Toolset not found. MSI installer will not be available.")
         message(STATUS "  Install WiX Toolset 5.0.2 from: https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi")
