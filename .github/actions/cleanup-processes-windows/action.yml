@@ -61,6 +61,49 @@ runs:
         # Wait a moment for processes to fully terminate
         Start-Sleep -Seconds 2
         
+        # Attempt to uninstall legacy C++ NSIS-based Lemonade Server, if present
+        Write-Host "`nChecking for legacy Lemonade Server NSIS installer..." -ForegroundColor Yellow
+        $nsisKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server'
+        if (Test-Path $nsisKey) {
+            try {
+                $nsisProps = Get-ItemProperty -Path $nsisKey -ErrorAction Stop
+                $uninstallExe = $nsisProps.UninstallString
+                if ($uninstallExe) {
+                    Write-Host "  Found NSIS uninstall registry entry. UninstallString: $uninstallExe" -ForegroundColor Gray
+                    if (Test-Path $uninstallExe) {
+                        Write-Host "  Running NSIS uninstaller silently..." -ForegroundColor Yellow
+                        try {
+                            & $uninstallExe /S | Out-Null
+                            Write-Host "  NSIS uninstaller process invoked." -ForegroundColor Green
+                        } catch {
+                            Write-Host "  NSIS uninstaller execution failed: $_" -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "  NSIS uninstall executable path is stale (file not found). Treating as already removed." -ForegroundColor Gray
+                    }
+                } else {
+                    Write-Host "  NSIS uninstall string missing in registry. Treating as stale entry." -ForegroundColor Gray
+                }
+
+                # After running (or skipping) the uninstaller, ensure the ARP key is gone so MSI is not blocked
+                if (Test-Path $nsisKey) {
+                    Write-Host "  Removing stale NSIS ARP registry key to unblock MSI install..." -ForegroundColor Yellow
+                    try {
+                        Remove-Item -Path $nsisKey -Recurse -Force -ErrorAction Stop
+                        Write-Host "  NSIS ARP registry key removed." -ForegroundColor Green
+                    } catch {
+                        Write-Host "  Failed to remove NSIS ARP registry key: $_" -ForegroundColor Red
+                    }
+                } else {
+                    Write-Host "  NSIS ARP registry key already removed by uninstaller." -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  Failed to query NSIS uninstall key: $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "  No legacy C++ NSIS installer registry key detected in HKCU (already clean)" -ForegroundColor Gray
+        }
+        
         # Clean up Python user directory that can cause issues
         Write-Host "`nCleaning up system Python directory..." -ForegroundColor Yellow
         $systemPythonPath = "C:\windows\system32\config\systemprofile\AppData\Roaming\Python"

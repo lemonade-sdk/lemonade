@@ -372,28 +372,28 @@ window.lmnRender = function() {
   // Set command and link
   if (lmnState.method === 'gui') {
     if (lmnState.os === 'win') {
-      // Windows .exe installer
+      // Windows .msi installer
       if (lmnState.fw === 'oga') {
         if (lmnState.dev === 'npu' || lmnState.dev === 'cpu') {
-          cmd = 'Download Lemonade Server Installer (.exe)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
+          cmd = 'Download Lemonade Server Installer (.msi)';
+          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
         }
       } else if (lmnState.fw === 'llama') {
         if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          cmd = 'Download Lemonade Server Installer (.exe)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
+          cmd = 'Download Lemonade Server Installer (.msi)';
+          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
         }
       } else if (lmnState.fw === 'flm') {
         if (lmnState.dev === 'npu') {
-          cmd = 'Download Lemonade Server Installer (.exe)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe';
+          cmd = 'Download Lemonade Server Installer (.msi)';
+          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
         }
       }
     } else if (lmnState.os === 'linux') {
       // Linux .deb installer
       if (lmnState.fw === 'llama') {
         if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          cmd = 'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-<VERSION>-Linux.deb\nsudo dpkg -i lemonade-server-<VERSION>-Linux.deb';
+          cmd = 'sudo update-pciids\nwget https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal_<VERSION>_amd64.deb\nsudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb';
           link = '';
         }
       }
@@ -698,7 +698,7 @@ window.lmnInit = function() {
         <div id="lmn-badges" class="lmn-badges"></div>
         <div id="lmn-install-content">
           <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
-            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">Download Lemonade Server Installer (.exe)</a>
+            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi">Download Lemonade Server Installer (.exe)</a>
           </div>
           <div id="lmn-command" class="lmn-command"></div>
         </div>
