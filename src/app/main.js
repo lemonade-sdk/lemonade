@@ -389,6 +389,7 @@ function createWindow() {
     minHeight: DEFAULT_MIN_HEIGHT,
     backgroundColor: '#000000',
     frame: false,
+    icon: path.join(__dirname, '..', '..', 'docs', 'assets', 'favicon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
