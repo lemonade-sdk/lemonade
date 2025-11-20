@@ -30,6 +30,24 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.removeListener(channel, handler);
       ipcRenderer.send('stop-watch-user-models');
     };
+  },
+  getSettings: () => ipcRenderer.invoke('get-app-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
+  onSettingsUpdated: (callback) => {
+    if (typeof callback !== 'function') {
+      return undefined;
+    }
+
+    const channel = 'settings-updated';
+    const handler = (_event, payload) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on(channel, handler);
+
+    return () => {
+      ipcRenderer.removeListener(channel, handler);
+    };
   }
 });
 

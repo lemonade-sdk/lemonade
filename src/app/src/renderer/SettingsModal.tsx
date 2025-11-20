@@ -1,43 +1,162 @@
 import React, { useState, useEffect } from 'react';
+import {
+  AppSettings,
+  BASE_SETTING_VALUES,
+  NumericSettingKey,
+  clampNumericSettingValue,
+  createDefaultSettings,
+  mergeWithDefaultSettings,
+  NUMERIC_SETTING_LIMITS,
+} from './utils/appSettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface Settings {
-  temperature: number;
-  topK: number;
-  topP: number;
-  repeatPenalty: number;
-  enableThinking: boolean;
-}
-
-const DEFAULT_SETTINGS: Settings = {
-  temperature: 0.7,
-  topK: 40,
-  topP: 0.9,
-  repeatPenalty: 1.1,
-  enableThinking: false,
-};
+const numericSettingsConfig: Array<{
+  key: NumericSettingKey;
+  label: string;
+  description: string;
+}> = [
+  {
+    key: 'temperature',
+    label: 'Temperature',
+    description: 'Controls randomness in responses (0 = deterministic, 2 = very random)',
+  },
+  {
+    key: 'topK',
+    label: 'Top K',
+    description: 'Limits token selection to the K most likely tokens',
+  },
+  {
+    key: 'topP',
+    label: 'Top P',
+    description: 'Nucleus sampling - considers tokens within cumulative probability P',
+  },
+  {
+    key: 'repeatPenalty',
+    label: 'Repeat Penalty',
+    description: 'Penalty for repeating tokens (1 = no penalty, >1 = less repetition)',
+  },
+];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleReset = () => {
-    setSettings(DEFAULT_SETTINGS);
-  };
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
 
-  const handleSave = () => {
-    // For now, just close the modal
-    // In the future, this will save settings to backend/storage
-    console.log('Settings saved:', settings);
-    onClose();
-  };
+    let isMounted = true;
+
+    const fetchSettings = async () => {
+      if (isMounted) {
+        setIsLoading(true);
+      }
+
+      try {
+        if (!window.api?.getSettings) {
+          if (isMounted) {
+            setSettings(createDefaultSettings());
+          }
+          return;
+        }
+
+        const stored = await window.api.getSettings();
+        if (isMounted) {
+          setSettings(mergeWithDefaultSettings(stored));
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        if (isMounted) {
+          setSettings(createDefaultSettings());
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
+    }
+  };
+
+  const handleNumericChange = (key: NumericSettingKey, rawValue: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: {
+        value: clampNumericSettingValue(key, rawValue),
+        useDefault: false,
+      },
+    }));
+  };
+
+  const handleBooleanChange = (value: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      enableThinking: {
+        value,
+        useDefault: false,
+      },
+    }));
+  };
+
+  const handleResetField = (key: NumericSettingKey | 'enableThinking') => {
+    setSettings((prev) => {
+      if (key === 'enableThinking') {
+        return {
+          ...prev,
+          enableThinking: {
+            value: BASE_SETTING_VALUES.enableThinking,
+            useDefault: true,
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        [key]: {
+          value: BASE_SETTING_VALUES[key],
+          useDefault: true,
+        },
+      };
+    });
+  };
+
+  const handleReset = () => {
+    setSettings(createDefaultSettings());
+  };
+
+  const handleSave = async () => {
+    if (!window.api?.saveSettings) {
+      onClose();
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const saved = await window.api.saveSettings(settings);
+      setSettings(mergeWithDefaultSettings(saved));
+      onClose();
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      alert('Failed to save settings. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -55,147 +174,110 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        <div className="settings-content">
-          <div className="settings-section">
-            <label className="settings-label">
-              <span className="settings-label-text">Temperature</span>
-              <span className="settings-description">
-                Controls randomness in responses (0 = deterministic, 2 = very random)
-              </span>
-            </label>
-            <div className="settings-input-group">
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={settings.temperature}
-                onChange={(e) => setSettings({ ...settings, temperature: parseFloat(e.target.value) })}
-                className="settings-slider"
-              />
-              <input
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                value={settings.temperature}
-                onChange={(e) => setSettings({ ...settings, temperature: parseFloat(e.target.value) })}
-                className="settings-number-input"
-              />
-            </div>
-          </div>
+        {isLoading ? (
+          <div className="settings-loading">Loading settings…</div>
+        ) : (
+          <div className="settings-content">
+            {numericSettingsConfig.map(({ key, label, description }) => {
+              const limits = NUMERIC_SETTING_LIMITS[key];
+              const isDefault = settings[key].useDefault;
 
-          <div className="settings-section">
-            <label className="settings-label">
-              <span className="settings-label-text">Top K</span>
-              <span className="settings-description">
-                Limits token selection to top K most likely tokens
-              </span>
-            </label>
-            <div className="settings-input-group">
-              <input
-                type="range"
-                min="1"
-                max="100"
-                step="1"
-                value={settings.topK}
-                onChange={(e) => setSettings({ ...settings, topK: parseInt(e.target.value) })}
-                className="settings-slider"
-              />
-              <input
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                value={settings.topK}
-                onChange={(e) => setSettings({ ...settings, topK: parseInt(e.target.value) })}
-                className="settings-number-input"
-              />
-            </div>
-          </div>
+              return (
+                <div
+                  key={key}
+                  className={`settings-section ${isDefault ? 'settings-section-default' : ''}`}
+                >
+                  <div className="settings-label-row">
+                    <label className="settings-label">
+                      <span className="settings-label-text">{label}</span>
+                      <span className="settings-description">{description}</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="settings-field-reset"
+                      onClick={() => handleResetField(key)}
+                      disabled={isDefault}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div className="settings-input-group">
+                    <input
+                      type="range"
+                      min={limits.min}
+                      max={limits.max}
+                      step={limits.step}
+                      value={settings[key].value}
+                      onChange={(e) => handleNumericChange(key, parseFloat(e.target.value))}
+                      className="settings-slider"
+                    />
+                    <input
+                      type="number"
+                      min={limits.min}
+                      max={limits.max}
+                      step={limits.step}
+                      value={settings[key].value}
+                      onChange={(e) => {
+                        const parsed = parseFloat(e.target.value);
+                        if (Number.isNaN(parsed)) {
+                          return;
+                        }
+                        handleNumericChange(key, parsed);
+                      }}
+                      className="settings-number-input"
+                    />
+                  </div>
+                </div>
+              );
+            })}
 
-          <div className="settings-section">
-            <label className="settings-label">
-              <span className="settings-label-text">Top P</span>
-              <span className="settings-description">
-                Nucleus sampling - considers tokens with cumulative probability up to P
-              </span>
-            </label>
-            <div className="settings-input-group">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={settings.topP}
-                onChange={(e) => setSettings({ ...settings, topP: parseFloat(e.target.value) })}
-                className="settings-slider"
-              />
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.01"
-                value={settings.topP}
-                onChange={(e) => setSettings({ ...settings, topP: parseFloat(e.target.value) })}
-                className="settings-number-input"
-              />
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <label className="settings-label">
-              <span className="settings-label-text">Repeat Penalty</span>
-              <span className="settings-description">
-                Penalty for repeating tokens (1 = no penalty, &gt;1 = less repetition)
-              </span>
-            </label>
-            <div className="settings-input-group">
-              <input
-                type="range"
-                min="1"
-                max="2"
-                step="0.1"
-                value={settings.repeatPenalty}
-                onChange={(e) => setSettings({ ...settings, repeatPenalty: parseFloat(e.target.value) })}
-                className="settings-slider"
-              />
-              <input
-                type="number"
-                min="1"
-                max="2"
-                step="0.1"
-                value={settings.repeatPenalty}
-                onChange={(e) => setSettings({ ...settings, repeatPenalty: parseFloat(e.target.value) })}
-                className="settings-number-input"
-              />
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <label className="settings-checkbox-label">
-              <input
-                type="checkbox"
-                checked={settings.enableThinking}
-                onChange={(e) => setSettings({ ...settings, enableThinking: e.target.checked })}
-                className="settings-checkbox"
-              />
-              <div className="settings-checkbox-content">
+            <div
+              className={`settings-section ${
+                settings.enableThinking.useDefault ? 'settings-section-default' : ''
+              }`}
+            >
+              <div className="settings-label-row">
                 <span className="settings-label-text">Enable Thinking</span>
-                <span className="settings-description">
-                  Determines whether hybrid reasoning models, such as Qwen3, will use thinking.
-                </span>
+                <button
+                  type="button"
+                  className="settings-field-reset"
+                  onClick={() => handleResetField('enableThinking')}
+                  disabled={settings.enableThinking.useDefault}
+                >
+                  Reset
+                </button>
               </div>
-            </label>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.enableThinking.value}
+                  onChange={(e) => handleBooleanChange(e.target.checked)}
+                  className="settings-checkbox"
+                />
+                <div className="settings-checkbox-content">
+                  <span className="settings-description">
+                    Determines whether hybrid reasoning models, such as Qwen3, will use thinking.
+                  </span>
+                </div>
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="settings-footer">
-          <button className="settings-reset-button" onClick={handleReset}>
+          <button
+            className="settings-reset-button"
+            onClick={handleReset}
+            disabled={isSaving || isLoading}
+          >
             Reset to Defaults
           </button>
-          <button className="settings-save-button" onClick={handleSave}>
-            Save
+          <button
+            className="settings-save-button"
+            onClick={handleSave}
+            disabled={isSaving || isLoading}
+          >
+            {isSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

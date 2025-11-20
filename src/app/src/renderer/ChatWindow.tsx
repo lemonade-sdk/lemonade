@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
 import { builtInModelsData, fetchSupportedModelsData, ModelsData } from './utils/modelData';
+// @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
+import {
+  AppSettings,
+  buildChatRequestOverrides,
+  mergeWithDefaultSettings,
+} from './utils/appSettings';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';
 
@@ -58,11 +64,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
 useEffect(() => {
   fetchModels();
   fetchLoadedModel();
   fetchSupportedModels();
+  const loadSettings = async () => {
+    if (!window.api?.getSettings) {
+      return;
+    }
+
+    try {
+      const stored = await window.api.getSettings();
+      setAppSettings(mergeWithDefaultSettings(stored));
+    } catch (error) {
+      console.error('Failed to load app settings:', error);
+    }
+  };
+
+  loadSettings();
+
+  const unsubscribeSettings = window.api?.onSettingsUpdated?.((updated) => {
+    setAppSettings(mergeWithDefaultSettings(updated));
+  });
 
   const handleModelLoadEnd = (event: Event) => {
     const customEvent = event as CustomEvent<{ modelId?: string }>;
@@ -82,6 +107,9 @@ useEffect(() => {
 
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+    if (typeof unsubscribeSettings === 'function') {
+      unsubscribeSettings();
+    }
   };
 }, []);
 
@@ -239,7 +267,14 @@ useEffect(() => {
     setUploadedImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const sendMessage = async () => {
+const buildChatRequestBody = (messageHistory: Message[]) => ({
+  model: selectedModel,
+  messages: messageHistory,
+  stream: true,
+  ...buildChatRequestOverrides(appSettings),
+});
+
+const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading) return;
 
     // Cancel any existing request
@@ -299,11 +334,7 @@ useEffect(() => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: messageHistory,
-          stream: true,
-        }),
+        body: JSON.stringify(buildChatRequestBody(messageHistory)),
         signal: abortControllerRef.current.signal,
       });
 
@@ -643,11 +674,7 @@ useEffect(() => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: messageHistory,
-          stream: true,
-        }),
+        body: JSON.stringify(buildChatRequestBody(messageHistory)),
         signal: abortControllerRef.current.signal,
       });
 

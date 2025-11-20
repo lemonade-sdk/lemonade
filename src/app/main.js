@@ -14,6 +14,29 @@ let currentMinWidth = DEFAULT_MIN_WIDTH;
 let userModelsWatcher = null;
 const userModelsSubscribers = new Set();
 const userModelsDestroyedHandlers = new Map();
+const SETTINGS_FILE_NAME = 'app_settings.json';
+const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
+const BASE_APP_SETTING_VALUES = Object.freeze({
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.9,
+  repeatPenalty: 1.1,
+  enableThinking: true,
+});
+const DEFAULT_APP_SETTINGS = Object.freeze({
+  temperature: { value: BASE_APP_SETTING_VALUES.temperature, useDefault: true },
+  topK: { value: BASE_APP_SETTING_VALUES.topK, useDefault: true },
+  topP: { value: BASE_APP_SETTING_VALUES.topP, useDefault: true },
+  repeatPenalty: { value: BASE_APP_SETTING_VALUES.repeatPenalty, useDefault: true },
+  enableThinking: { value: BASE_APP_SETTING_VALUES.enableThinking, useDefault: true },
+});
+const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
+  temperature: { min: 0, max: 2 },
+  topK: { min: 1, max: 100 },
+  topP: { min: 0, max: 1 },
+  repeatPenalty: { min: 1, max: 2 },
+});
+const NUMERIC_APP_SETTING_KEYS = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 const getHomeDirectory = () => {
   if (typeof os.homedir === 'function') {
@@ -36,6 +59,110 @@ const getUserModelsFilePath = () => {
     return '';
   }
   return path.join(cacheDir, 'user_models.json');
+};
+
+const getAppSettingsFilePath = () => {
+  const cacheDir = getCacheDirectory();
+  if (!cacheDir) {
+    return '';
+  }
+  return path.join(cacheDir, SETTINGS_FILE_NAME);
+};
+
+const createDefaultAppSettings = () => ({
+  temperature: { ...DEFAULT_APP_SETTINGS.temperature },
+  topK: { ...DEFAULT_APP_SETTINGS.topK },
+  topP: { ...DEFAULT_APP_SETTINGS.topP },
+  repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
+  enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
+});
+
+const clampValue = (value, min, max) => {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+};
+
+const sanitizeAppSettings = (incoming = {}) => {
+  const sanitized = createDefaultAppSettings();
+
+  NUMERIC_APP_SETTING_KEYS.forEach((key) => {
+    const rawSetting = incoming[key];
+    if (!rawSetting || typeof rawSetting !== 'object') {
+      return;
+    }
+
+    const limits = NUMERIC_APP_SETTING_LIMITS[key];
+    const useDefault =
+      typeof rawSetting.useDefault === 'boolean' ? rawSetting.useDefault : sanitized[key].useDefault;
+    const numericValue = useDefault
+      ? sanitized[key].value
+      : typeof rawSetting.value === 'number'
+        ? clampValue(rawSetting.value, limits.min, limits.max)
+        : sanitized[key].value;
+
+    sanitized[key] = {
+      value: numericValue,
+      useDefault,
+    };
+  });
+
+  const rawEnableThinking = incoming.enableThinking;
+  if (rawEnableThinking && typeof rawEnableThinking === 'object') {
+    const useDefault =
+      typeof rawEnableThinking.useDefault === 'boolean'
+        ? rawEnableThinking.useDefault
+        : sanitized.enableThinking.useDefault;
+    sanitized.enableThinking = {
+      value: useDefault
+        ? sanitized.enableThinking.value
+        : typeof rawEnableThinking.value === 'boolean'
+          ? rawEnableThinking.value
+          : sanitized.enableThinking.value,
+      useDefault,
+    };
+  }
+
+  return sanitized;
+};
+
+const readAppSettingsFile = async () => {
+  const settingsPath = getAppSettingsFilePath();
+  if (!settingsPath) {
+    return createDefaultAppSettings();
+  }
+
+  try {
+    const content = await fs.promises.readFile(settingsPath, 'utf-8');
+    return sanitizeAppSettings(JSON.parse(content));
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return createDefaultAppSettings();
+    }
+    console.error('Failed to read app settings:', error);
+    return createDefaultAppSettings();
+  }
+};
+
+const writeAppSettingsFile = async (settings) => {
+  const settingsPath = getAppSettingsFilePath();
+  if (!settingsPath) {
+    throw new Error('Unable to locate the Lemonade cache-directory');
+  }
+
+  const sanitized = sanitizeAppSettings(settings);
+
+  await fs.promises.mkdir(path.dirname(settingsPath), { recursive: true });
+  await fs.promises.writeFile(settingsPath, JSON.stringify(sanitized, null, 2), 'utf-8');
+
+  return sanitized;
+};
+
+const broadcastSettingsUpdated = (settings) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(SETTINGS_UPDATED_CHANNEL, settings);
+  }
 };
 
 const readUserModelsFile = async () => {
@@ -227,6 +354,16 @@ ipcMain.on('stop-watch-user-models', (event) => {
 
 ipcMain.handle('add-user-model', async (_event, payload) => {
   return addUserModelEntry(payload);
+});
+
+ipcMain.handle('get-app-settings', async () => {
+  return readAppSettingsFile();
+});
+
+ipcMain.handle('save-app-settings', async (_event, payload) => {
+  const sanitized = await writeAppSettingsFile(payload);
+  broadcastSettingsUpdated(sanitized);
+  return sanitized;
 });
 
 function updateWindowMinWidth(requestedWidth) {

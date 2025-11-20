@@ -2530,6 +2530,13 @@ footer {
     gap: 4px;
 }
 
+.settings-label-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+}
+
 .settings-label-text {
     font-size: 0.75rem;
     font-weight: 600;
@@ -2630,6 +2637,17 @@ footer {
     gap: 6px;
 }
 
+.settings-section-default {
+    opacity: 0.65;
+}
+
+.settings-loading {
+    padding: 48px 24px;
+    text-align: center;
+    color: #aaa;
+    font-size: 0.85rem;
+}
+
 .settings-footer {
     padding: 20px 24px;
     border-top: 1px solid #333;
@@ -2676,5 +2694,34 @@ footer {
 
 .settings-save-button:active {
     transform: translateY(0);
+}
+
+.settings-footer button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.settings-field-reset {
+    border: none;
+    background: none;
+    color: #888;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.2s ease, background 0.2s ease;
+}
+
+.settings-field-reset:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-field-reset:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 

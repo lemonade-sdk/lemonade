@@ -16,7 +16,7 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "assets/**/*"],
   "exclude": ["node_modules", "dist"]
 }
 
