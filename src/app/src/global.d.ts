@@ -27,6 +27,14 @@ interface Window {
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
     updateMinWidth: (width: number) => void;
     readUserModels?: () => Promise<Record<string, unknown>>;
+    addUserModel?: (payload: {
+      name: string;
+      checkpoint: string;
+      recipe: string;
+      mmproj?: string;
+      reasoning?: boolean;
+      vision?: boolean;
+    }) => Promise<unknown>;
     watchUserModels?: (callback: () => void) => void | (() => void);
   };
 }

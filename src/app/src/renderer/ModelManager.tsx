@@ -14,6 +14,15 @@ interface ModelManagerProps {
   width?: number;
 }
 
+const createEmptyModelForm = () => ({
+  name: '',
+  checkpoint: '',
+  recipe: '',
+  mmproj: '',
+  reasoning: false,
+  vision: false,
+});
+
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
   const [models, setModels] = useState<Array<{ name: string; info: ModelInfo }>>([]);
   const [downloadedModels, setDownloadedModels] = useState<Set<string>>(new Set());
@@ -25,14 +34,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
-  const [newModel, setNewModel] = useState({
-    name: '',
-    checkpoint: '',
-    recipe: '',
-    mmproj: '',
-    reasoning: false,
-    vision: false
-  });
+  const [newModel, setNewModel] = useState(createEmptyModelForm);
+  const [isAddingModel, setIsAddingModel] = useState(false);
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
 
   const fetchDownloadedModels = useCallback(async () => {
@@ -285,9 +288,65 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
   };
 
-  const handleInstallModel = () => {
-    // Nothing should happen for now
-    console.log('Install clicked with model data:', newModel);
+  const resetNewModelForm = () => {
+    setNewModel(createEmptyModelForm());
+    setShowAddModelForm(false);
+  };
+
+  const handleInstallModel = async () => {
+    if (isAddingModel) {
+      return;
+    }
+
+    if (!window.api?.addUserModel) {
+      alert('Adding custom models is not supported in this build.');
+      return;
+    }
+
+    const trimmedName = newModel.name.trim();
+    const trimmedCheckpoint = newModel.checkpoint.trim();
+    const trimmedRecipe = newModel.recipe.trim();
+    const trimmedMmproj = newModel.mmproj.trim();
+
+    if (!trimmedName) {
+      alert('Model name is required.');
+      return;
+    }
+
+    if (!trimmedCheckpoint) {
+      alert('Checkpoint is required.');
+      return;
+    }
+
+    if (!trimmedRecipe) {
+      alert('Recipe is required.');
+      return;
+    }
+
+    setIsAddingModel(true);
+    try {
+      await window.api.addUserModel({
+        name: trimmedName,
+        checkpoint: trimmedCheckpoint,
+        recipe: trimmedRecipe,
+        mmproj: trimmedMmproj,
+        reasoning: newModel.reasoning,
+        vision: newModel.vision,
+      });
+
+      await loadModels();
+      resetNewModelForm();
+      alert('Model added to your catalog.');
+    } catch (error) {
+      console.error('Failed to add model:', error);
+      alert(
+        `Failed to add model: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    } finally {
+      setIsAddingModel(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -659,7 +718,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         {!showAddModelForm ? (
           <button 
             className="add-model-button"
-            onClick={() => setShowAddModelForm(true)}
+            onClick={() => {
+              setNewModel(createEmptyModelForm());
+              setShowAddModelForm(true);
+            }}
           >
             Add a model
           </button>
@@ -744,7 +806,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               </button>
               <button 
                 className="cancel-button"
-                onClick={() => setShowAddModelForm(false)}
+                onClick={resetNewModelForm}
               >
                 Cancel
               </button>

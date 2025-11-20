@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   updateMinWidth: (width) => ipcRenderer.send('update-min-width', width),
   readUserModels: () => ipcRenderer.invoke('read-user-models'),
+  addUserModel: (payload) => ipcRenderer.invoke('add-user-model', payload),
   watchUserModels: (callback) => {
     if (typeof callback !== 'function') {
       return undefined;

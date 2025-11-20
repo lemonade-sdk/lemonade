@@ -135,6 +135,84 @@ const unsubscribeFromUserModels = (webContentsInstance) => {
   disposeUserModelsWatcher();
 };
 
+const addUserModelEntry = async (payload = {}) => {
+  const { name, checkpoint, recipe, mmproj = '', reasoning = false, vision = false } = payload;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    throw new Error('Model name is required');
+  }
+
+  if (!checkpoint || typeof checkpoint !== 'string' || !checkpoint.trim()) {
+    throw new Error('Checkpoint is required');
+  }
+
+  if (!recipe || typeof recipe !== 'string' || !recipe.trim()) {
+    throw new Error('Recipe is required');
+  }
+
+  const sanitizedName = name.trim();
+  const sanitizedCheckpoint = checkpoint.trim();
+  const sanitizedRecipe = recipe.trim();
+  const sanitizedMmproj = typeof mmproj === 'string' ? mmproj.trim() : '';
+
+  if (sanitizedName.toLowerCase().startsWith('user.')) {
+    throw new Error('Do not include the "user." prefix in the model name field');
+  }
+
+  if (
+    sanitizedCheckpoint.toLowerCase().includes('gguf') &&
+    !sanitizedCheckpoint.includes(':')
+  ) {
+    throw new Error(
+      'GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax'
+    );
+  }
+
+  const userModelsPath = getUserModelsFilePath();
+  if (!userModelsPath) {
+    throw new Error('Unable to locate the Lemonade cache directory');
+  }
+
+  const userModels = await readUserModelsFile();
+  if (Object.prototype.hasOwnProperty.call(userModels, sanitizedName)) {
+    throw new Error(`Model "${sanitizedName}" already exists`);
+  }
+
+  const labels = ['custom'];
+  if (reasoning) {
+    labels.push('reasoning');
+  }
+  if (vision) {
+    labels.push('vision');
+  }
+
+  const entry = {
+    checkpoint: sanitizedCheckpoint,
+    recipe: sanitizedRecipe,
+    suggested: true,
+    labels,
+  };
+
+  if (sanitizedMmproj) {
+    entry.mmproj = sanitizedMmproj;
+  }
+
+  userModels[sanitizedName] = entry;
+  await fs.promises.mkdir(path.dirname(userModelsPath), { recursive: true });
+  await fs.promises.writeFile(
+    userModelsPath,
+    JSON.stringify(userModels, null, 2),
+    'utf-8'
+  );
+
+  notifyUserModelsUpdated();
+
+  return {
+    modelName: sanitizedName,
+    entry,
+  };
+};
+
 ipcMain.handle('read-user-models', async () => {
   return readUserModelsFile();
 });
@@ -145,6 +223,10 @@ ipcMain.on('start-watch-user-models', (event) => {
 
 ipcMain.on('stop-watch-user-models', (event) => {
   unsubscribeFromUserModels(event.sender);
+});
+
+ipcMain.handle('add-user-model', async (_event, payload) => {
+  return addUserModelEntry(payload);
 });
 
 function updateWindowMinWidth(requestedWidth) {
