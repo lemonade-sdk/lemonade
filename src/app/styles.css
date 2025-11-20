@@ -860,6 +860,7 @@ footer {
     cursor: pointer;
     transition: background-color 0.15s ease;
     border-left: 2px solid transparent;
+    min-height: 24px;
 }
 
 .model-item:hover {
@@ -873,6 +874,7 @@ footer {
     justify-content: space-between;
     gap: 8px;
     overflow: hidden;
+    min-height: 18px;
 }
 
 .model-actions {
@@ -880,6 +882,7 @@ footer {
     gap: 2px;
     margin-left: 4px;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .model-action-btn {
