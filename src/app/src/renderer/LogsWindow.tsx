@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -6,136 +6,177 @@ interface LogsWindowProps {
 }
 
 const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
-  const logsContent = `[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 61808) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 61808) =====
-[Server] GET /api/v1/health - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 59528) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 59528) =====
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server] GET /api/v1/health - 200
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health[Server PRE-ROUTE] GET /api/v1/models
+  const [logs, setLogs] = useState<string[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContentRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [serverUrl, setServerUrl] = useState<string>('http://localhost:8000');
 
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 14548) =====
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 14548) =====
-[Server] GET /api/v1/health - 200
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 65964) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 65964) =====
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server] GET /api/v1/health - 200
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 55772) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 55772) =====
-[Server] GET /api/v1/health - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 25632) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 25632) =====
-[Server] GET /api/v1/health - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 30328) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 30328) =====
-[Server] GET /api/v1/health - 200
-[Server PRE-ROUTE] GET /api/v1/models
-[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====
-[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====
-[Server] GET /api/v1/models - 200
-[Server PRE-ROUTE] GET /api/v1/health
-[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: 65964) =====
-[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: 65964) =====
-[Server] GET /api/v1/health - 200`;
+  // Auto-scroll to bottom when new logs arrive (if auto-scroll is enabled)
+  useEffect(() => {
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, autoScroll]);
+
+  // Detect if user scrolls up (disable auto-scroll) or scrolls to bottom (enable auto-scroll)
+  useEffect(() => {
+    const logsContent = logsContentRef.current;
+    if (!logsContent) return;
+
+    const handleScroll = () => {
+      const isAtBottom = 
+        logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 50;
+      setAutoScroll(isAtBottom);
+    };
+
+    logsContent.addEventListener('scroll', handleScroll);
+    return () => logsContent.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Connect to SSE log stream
+  useEffect(() => {
+    if (!isVisible) {
+      // Clean up connection when logs window is hidden
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const connectToLogStream = () => {
+      try {
+        setConnectionStatus('connecting');
+        
+        // Close existing connection if any
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+
+        const eventSource = new EventSource(`${serverUrl}/api/v1/logs/stream`);
+        eventSourceRef.current = eventSource;
+
+        eventSource.onopen = () => {
+          console.log('Log stream connected');
+          setConnectionStatus('connected');
+        };
+
+        eventSource.onmessage = (event) => {
+          // SSE sends data as "data: <log line>"
+          const logLine = event.data;
+          
+          // Skip heartbeat messages
+          if (logLine.trim() === '' || logLine === 'heartbeat') {
+            return;
+          }
+
+          setLogs((prevLogs) => {
+            // Keep last 1000 lines to prevent memory issues
+            const newLogs = [...prevLogs, logLine];
+            return newLogs.length > 1000 ? newLogs.slice(-1000) : newLogs;
+          });
+        };
+
+        eventSource.onerror = (error) => {
+          console.error('Log stream error:', error);
+          setConnectionStatus('error');
+          eventSource.close();
+          
+          // Attempt to reconnect after 5 seconds
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect to log stream...');
+            connectToLogStream();
+          }, 5000);
+        };
+      } catch (error) {
+        console.error('Failed to connect to log stream:', error);
+        setConnectionStatus('error');
+        
+        // Attempt to reconnect after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connectToLogStream();
+        }, 5000);
+      }
+    };
+
+    // Initial connection
+    connectToLogStream();
+
+    // Cleanup on unmount or when visibility changes
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, [isVisible, serverUrl]);
+
+  const handleClearLogs = () => {
+    setLogs([]);
+  };
+
+  const handleScrollToBottom = () => {
+    setAutoScroll(true);
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   if (!isVisible) return null;
 
   return (
     <div className="logs-window" style={height ? { height: `${height}px` } : undefined}>
       <div className="logs-header">
-        <h3>LOGS</h3>
+        <h3>LEMONADE SERVER LOGS</h3>
+        <div className="logs-controls">
+          <span className={`connection-status status-${connectionStatus}`}>
+            {connectionStatus === 'connecting' && '⟳ Connecting...'}
+            {connectionStatus === 'connected' && '● Connected'}
+            {connectionStatus === 'error' && '⚠ Error (Reconnecting...)'}
+            {connectionStatus === 'disconnected' && '○ Disconnected'}
+          </span>
+          {!autoScroll && (
+            <button className="logs-control-btn" onClick={handleScrollToBottom} title="Scroll to bottom">
+              ↓ Jump to Bottom
+            </button>
+          )}
+          <button className="logs-control-btn" onClick={handleClearLogs} title="Clear logs">
+            Clear
+          </button>
+        </div>
       </div>
-      <div className="logs-content">
-        <pre className="logs-text">{logsContent}</pre>
+      <div className="logs-content" ref={logsContentRef}>
+        {logs.length === 0 && connectionStatus === 'connected' && (
+          <div className="logs-placeholder">Waiting for logs...</div>
+        )}
+        {logs.length === 0 && connectionStatus === 'error' && (
+          <div className="logs-error">
+            Failed to connect to lemonade-server logs.
+            <br />
+            Make sure the server is running on {serverUrl}
+          </div>
+        )}
+        <pre className="logs-text">
+          {logs.map((log, index) => (
+            <div key={index} className="log-line">
+              {log}
+            </div>
+          ))}
+          <div ref={logsEndRef} />
+        </pre>
       </div>
     </div>
   );
 };
 
 export default LogsWindow;
-

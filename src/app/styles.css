@@ -2315,6 +2315,9 @@ footer {
     border-bottom: 1px solid #1a1a1a;
     background: #000000;
     flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .logs-header h3 {
@@ -2324,6 +2327,55 @@ footer {
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.logs-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.connection-status {
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.status-connecting {
+    color: #ffa500;
+    background: rgba(255, 165, 0, 0.1);
+}
+
+.status-connected {
+    color: #00ff00;
+    background: rgba(0, 255, 0, 0.1);
+}
+
+.status-error {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+}
+
+.status-disconnected {
+    color: #888;
+    background: rgba(136, 136, 136, 0.1);
+}
+
+.logs-control-btn {
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #333;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logs-control-btn:hover {
+    background: #2a2a2a;
+    border-color: #555;
 }
 
 .logs-content {
@@ -2340,6 +2392,35 @@ footer {
     color: #cccccc;
     white-space: pre-wrap;
     word-wrap: break-word;
+}
+
+.log-line {
+    padding: 2px 0;
+    border-left: 2px solid transparent;
+    padding-left: 8px;
+}
+
+.log-line:hover {
+    background: rgba(255, 255, 255, 0.02);
+    border-left-color: #555;
+}
+
+.logs-placeholder {
+    color: #666;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+.logs-error {
+    color: #ff4444;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 40px 20px;
+    background: rgba(255, 68, 68, 0.1);
+    border-radius: 8px;
+    margin: 20px;
 }
 
 /* Settings Modal Styles */
