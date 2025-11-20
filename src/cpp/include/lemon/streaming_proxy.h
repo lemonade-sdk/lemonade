@@ -37,7 +37,8 @@ public:
         const std::string& backend_url,
         const std::string& request_body,
         httplib::DataSink& sink,
-        std::function<void(const TelemetryData&)> on_complete = nullptr
+        std::function<void(const TelemetryData&)> on_complete = nullptr,
+        long timeout_seconds = 300
     );
     
 private:
