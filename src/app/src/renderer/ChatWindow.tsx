@@ -72,9 +72,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
+useEffect(() => {
+  fetchModels();
+  fetchLoadedModel();
+
+  const handleModelLoadEnd = (event: Event) => {
+    const customEvent = event as CustomEvent<{ modelId?: string }>;
+    const loadedModelId = customEvent.detail?.modelId;
+
+    if (loadedModelId) {
+      setSelectedModel(loadedModelId);
+    } else {
+      fetchLoadedModel();
+    }
+
+    // Refresh the models list so newly loaded models appear in the dropdown
     fetchModels();
-  }, []);
+  };
+
+  window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+
+  return () => {
+    window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+  };
+}, []);
 
   useEffect(() => {
     // Only auto-scroll if user is at the bottom
@@ -122,22 +143,35 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setIsUserAtBottom(true);
   };
 
-  const fetchModels = async () => {
-    try {
-      const response = await fetch(`${CHAT_API_BASE}/models`);
-      const data = await response.json();
-      
-      // Handle both array format and object with data array
-      const modelList = Array.isArray(data) ? data : data.data || [];
-      setModels(modelList);
-      
-      if (modelList.length > 0) {
-        setSelectedModel(modelList[0].id);
-      }
-    } catch (error) {
-      console.error('Failed to fetch models:', error);
+const fetchModels = async () => {
+  try {
+    const response = await fetch(`${CHAT_API_BASE}/models`);
+    const data = await response.json();
+    
+    // Handle both array format and object with data array
+    const modelList = Array.isArray(data) ? data : data.data || [];
+    setModels(modelList);
+    
+    if (modelList.length > 0) {
+      setSelectedModel(prev => prev || modelList[0].id);
     }
-  };
+  } catch (error) {
+    console.error('Failed to fetch models:', error);
+  }
+};
+
+const fetchLoadedModel = async () => {
+  try {
+    const response = await fetch(`${CHAT_API_BASE}/health`);
+    const data = await response.json();
+
+    if (data?.model_loaded) {
+      setSelectedModel(data.model_loaded);
+    }
+  } catch (error) {
+    console.error('Failed to fetch loaded model:', error);
+  }
+};
 
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
