@@ -105,3 +105,12 @@ It will be updated in these ways:
 Simiarly to the health endpoint, the stats endpoint should report stats for the most recent inference request on its existing fields.
 
 > Note: we are not adding any more fields at this time.
+
+### Unload Endpoint
+
+Right now, the unload endpoint unloads the only loaded WrappedServer.
+
+New behavior:
+1. Add an optional argument, `model_name`. When this is provided, unload that specific WrappedServer.
+    - Return a 404 if `model_name` is not loaded.
+2. When no `model_name` is provided, unload all WrappedServers.
