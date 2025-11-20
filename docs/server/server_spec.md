@@ -55,6 +55,56 @@ The additional endpoints under development are:
 
 > 🚧 We are in the process of developing this interface. Let us know what's important to you on Github or by email (lemonade at amd dot com).
 
+## Multi-Model Support
+
+Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.
+
+### Configuration
+
+Use the `--max-loaded-models` option to specify how many models to keep loaded:
+
+```bash
+# Load up to 3 LLMs, 2 embedding models, and 1 reranking model
+lemonade-server serve --max-loaded-models 3 2 1
+
+# Load up to 5 LLMs (embeddings and reranking default to 1 each)
+lemonade-server serve --max-loaded-models 5
+```
+
+**Default:** `1 1 1` (one model of each type)
+
+### Model Types
+
+Models are categorized into three types:
+- **LLM** - Chat and completion models (default type)
+- **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
+- **Reranking** - Models for document reranking (identified by the `reranking` label)
+
+Each type has its own independent limit and LRU cache.
+
+### Device Constraints
+
+- **NPU Exclusivity:** Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.
+- **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
+
+### Eviction Policy
+
+When a model slot is full:
+1. The least recently used model of that type is evicted
+2. The new model is loaded
+3. If loading fails (except file-not-found errors), all models are evicted and the load is retried
+
+Models currently processing inference requests cannot be evicted until they finish.
+
+### Per-Model Settings
+
+Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the `/api/v1/load` endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the [`/api/v1/load` endpoint documentation](#post-apiv1load) for details.
+
+**Setting Priority Order:**
+1. Values passed explicitly in `/api/v1/load` request (highest priority)
+2. Values from `lemonade-server` CLI arguments or environment variables
+3. Hardcoded defaults in `lemonade-router` (lowest priority)
+
 ## Start the REST API Server
 
 > **NOTE:** This server is intended for use on local systems only. Do not expose the server port to the open internet.
@@ -731,8 +781,20 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
+| `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
+| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, or `metal`). Only applies to llamacpp models. Overrides the default value for this model. |
+| `llamacpp_args` | No | Custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Overrides the default value for this model. |
 
-Example request:
+**Setting Priority:**
+
+When loading a model, settings are applied in this priority order:
+1. Values explicitly passed in the `load` request (highest priority)
+2. Values set via `lemonade-server` CLI arguments or environment variables
+3. Default hardcoded values in `lemonade-router` (lowest priority)
+
+#### Example requests
+
+Basic load:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/load \
@@ -742,7 +804,20 @@ curl -X POST http://localhost:8000/api/v1/load \
   }'
 ```
 
-Response format:
+Load with custom settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "llama-3.2-3b-instruct-GGUF",
+    "ctx_size": 8192,
+    "llamacpp_backend": "rocm",
+    "llamacpp_args": "--flash-attn on --no-mmap"
+  }'
+```
+
+#### Response format
 
 ```json
 {
@@ -753,15 +828,27 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
-### `POST /api/v1/unload` <sub>![Status](https://img.shields.io/badge/status-partially_available-red)</sub>
+### `POST /api/v1/unload` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly unload a model from memory. This is useful to free up memory while still leaving the server process running (which takes minimal resources but a few seconds to start).
 
 #### Parameters
 
-This endpoint does not take any parameters.
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | No | Name of the specific model to unload. If not provided, all loaded models will be unloaded. |
 
-#### Example request
+#### Example requests
+
+Unload a specific model:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/unload \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "Llama-3.2-1B-Instruct-Hybrid"}'
+```
+
+Unload all models:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/unload
@@ -769,12 +856,24 @@ curl -X POST http://localhost:8000/api/v1/unload
 
 #### Response format
 
+Success response:
+
 ```json
 {
   "status": "success",
   "message": "Model unloaded successfully"
 }
 ```
+
+Error response (model not found):
+
+```json
+{
+  "status": "error",
+  "message": "Model not found: Llama-3.2-1B-Instruct-Hybrid"
+}
+```
+
 In case of an error, the status will be `error` and the message will contain the error message.
 
 ### `POST /api/v1/params` <sub>![Status](https://img.shields.io/badge/status-in_development-yellow)</sub>
@@ -824,7 +923,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 ### `GET /api/v1/health` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Check the health of the server. This endpoint will also return the currently loaded model.
+Check the health of the server. This endpoint returns information about loaded models.
 
 #### Parameters
 
@@ -843,8 +942,36 @@ curl http://localhost:8000/api/v1/health
   "status": "ok",
   "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
+  "all_models_loaded": [
+    {
+      "model_name": "Llama-3.2-1B-Instruct-Hybrid",
+      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+      "last_use": 1732123456.789,
+      "type": "llm",
+      "device": "gpu npu"
+    },
+    {
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 1732123450.123,
+      "type": "embedding",
+      "device": "gpu"
+    }
+  ]
 }
 ```
+
+**Field Descriptions:**
+
+- `status` - Server health status, always `"ok"`
+- `checkpoint_loaded` - Checkpoint identifier of the most recently loaded model
+- `model_loaded` - Model name of the most recently loaded model
+- `all_models_loaded` - Array of all currently loaded models with details:
+  - `model_name` - Name of the loaded model
+  - `checkpoint` - Full checkpoint identifier
+  - `last_use` - Unix timestamp of last access (load or inference)
+  - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
+  - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Performance statistics from the last request.

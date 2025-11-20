@@ -474,6 +474,10 @@ void ModelManager::build_cache() {
             }
         }
         
+        // Populate type and device fields (multi-model support)
+        info.type = get_model_type_from_labels(info.labels);
+        info.device = get_device_type_from_recipe(info.recipe);
+        
         info.resolved_path = resolve_model_path(info);
         all_models[key] = info;
     }
@@ -494,6 +498,10 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
+        
+        // Populate type and device fields (multi-model support)
+        info.type = get_model_type_from_labels(info.labels);
+        info.device = get_device_type_from_recipe(info.recipe);
         
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
@@ -567,6 +575,10 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
             info.labels.push_back(label.get<std::string>());
         }
     }
+    
+    // Populate type and device fields (multi-model support)
+    info.type = get_model_type_from_labels(info.labels);
+    info.device = get_device_type_from_recipe(info.recipe);
     
     info.resolved_path = resolve_model_path(info);
     

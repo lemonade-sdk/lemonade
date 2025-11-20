@@ -547,6 +547,15 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.llamacpp_backend = argv[++i];
             } else if (arg == "--llamacpp-args" && i + 1 < argc) {
                 config_.llamacpp_args = argv[++i];
+            } else if (arg == "--max-loaded-models" && i + 1 < argc) {
+                // Parse 1-3 values for max loaded models
+                config_.max_llm_models = std::stoi(argv[++i]);
+                if (i + 1 < argc && argv[i + 1][0] != '-') {
+                    config_.max_embedding_models = std::stoi(argv[++i]);
+                    if (i + 1 < argc && argv[i + 1][0] != '-') {
+                        config_.max_reranking_models = std::stoi(argv[++i]);
+                    }
+                }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
             } else {
@@ -599,6 +608,8 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
+        std::cout << "  --max-loaded-models N [E] [R]\n";
+        std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] (default: 1 1 1)\n";
         std::cout << "  --log-file PATH          Log file path\n";
         std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -810,7 +821,10 @@ bool TrayApp::start_ephemeral_server(int port) {
         false,  // show_console
         true,   // is_ephemeral (suppress startup message)
         config_.llamacpp_args,  // Pass custom llamacpp args
-        config_.host  // Pass host to ServerManager
+        config_.host,  // Pass host to ServerManager
+        config_.max_llm_models,
+        config_.max_embedding_models,
+        config_.max_reranking_models
     );
     
     if (!success) {
@@ -1454,7 +1468,10 @@ bool TrayApp::start_server() {
         true,               // Always show console output for serve command
         false,              // is_ephemeral = false (persistent server, show startup message with URL)
         config_.llamacpp_args,  // Pass custom llamacpp args
-        config_.host        // Pass host to ServerManager
+        config_.host,        // Pass host to ServerManager
+        config_.max_llm_models,
+        config_.max_embedding_models,
+        config_.max_reranking_models
     );
     
     // Start log tail thread to show logs in console
