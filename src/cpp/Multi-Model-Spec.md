@@ -77,9 +77,31 @@ ModelInfo and WrappedServer should add an explicit enum field for tracking the t
 
 ## Additional Considerations
 
+### Concurrency
+
 1. If a WrappedServer is busy fulfilling an inference request, we will let it finish before evicting it. Details:
     - The load should queue up indefinitely. We will assume that the inference request will eventually finish.
 2. WrappedServer loads shall be serialized (i.e., never attempt loading two or more WrappedServers at the same time).
     - If there are queued WrappedServer loads, make the eviction policy choices when starting the load for a specific WrappedServer (i.e., make the choices when the WrappedServer is exiting the queue, not when its entering the queue).
     - If a WrappedServer is being auto-loaded for an inference request, make sure that the inference request has a chance to start and finish before this WrappedServer can be evicted (see consideration #1)
         - Auto-load means: if an inference request comes in for a model that is not loaded, Lemonade will load a WrappedServer for that model, then send it the inference request.
+
+
+### Health Endpoint
+
+The current health endpoint reports `checkpoint_loaded` and `model_loaded`.
+
+It will be updated in these ways:
+1. `checkpoint_loaded` and `model_loaded` will refer to the most recently load WrappedServer.
+2. Add a new field, `all_models_loaded`, which has a list of the WrappedServers that are loaded. Include:
+    - `model_name`
+    - `checkpoint`
+    - `last_use` (timestamp)
+    - `type`
+    - `device`
+
+### Stats Endpoint
+
+Simiarly to the health endpoint, the stats endpoint should report stats for the most recent inference request on its existing fields.
+
+> Note: we are not adding any more fields at this time.
