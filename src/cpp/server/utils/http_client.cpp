@@ -87,7 +87,8 @@ HttpResponse HttpClient::get(const std::string& url,
 
 HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
-                              const std::map<std::string, std::string>& headers) {
+                              const std::map<std::string, std::string>& headers,
+                              long timeout_seconds) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -100,7 +101,7 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     
     // Add custom headers
@@ -166,7 +167,8 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
 HttpResponse HttpClient::post_stream(const std::string& url,
                                      const std::string& body,
                                      StreamCallback stream_callback,
-                                     const std::map<std::string, std::string>& headers) {
+                                     const std::map<std::string, std::string>& headers,
+                                     long timeout_seconds) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -183,7 +185,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     
     // Add custom headers
