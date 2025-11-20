@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MarkdownMessage from './MarkdownMessage';
-import serverModelsData from '../../server_models.json';
+import serverModelsData from '../../../lemonade_server/server_models.json';
 import logoSvg from '../../assets/logo.svg';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';

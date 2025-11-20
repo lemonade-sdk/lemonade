@@ -51,7 +51,7 @@ module.exports = {
     }),
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'server_models.json', to: 'server_models.json' },
+        { from: '../lemonade_server/server_models.json', to: 'server_models.json' },
       ],
     }),
   ],

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import serverModelsData from '../../server_models.json';
+import serverModelsData from '../../../lemonade_server/server_models.json';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';
 
