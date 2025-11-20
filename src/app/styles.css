@@ -1027,6 +1027,10 @@ footer {
     background: #38B2AC;
 }
 
+.model-label.label-custom {
+    background: #FAD02C;
+}
+
 .model-manager-footer {
     border-top: 1px solid #1a1a1a;
     background: #000000;

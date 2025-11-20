@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 
 const DEFAULT_MIN_WIDTH = 400;
@@ -9,6 +11,141 @@ const ABSOLUTE_MIN_WIDTH = 400;
 let mainWindow;
 let backendProcess;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
+let userModelsWatcher = null;
+const userModelsSubscribers = new Set();
+const userModelsDestroyedHandlers = new Map();
+
+const getHomeDirectory = () => {
+  if (typeof os.homedir === 'function') {
+    return os.homedir();
+  }
+  return process.env.HOME || process.env.USERPROFILE || '';
+};
+
+const getCacheDirectory = () => {
+  const homeDir = getHomeDirectory();
+  if (!homeDir) {
+    return '';
+  }
+  return path.join(homeDir, '.cache', 'lemonade');
+};
+
+const getUserModelsFilePath = () => {
+  const cacheDir = getCacheDirectory();
+  if (!cacheDir) {
+    return '';
+  }
+  return path.join(cacheDir, 'user_models.json');
+};
+
+const readUserModelsFile = async () => {
+  const userModelsPath = getUserModelsFilePath();
+  if (!userModelsPath) {
+    return {};
+  }
+
+  try {
+    const content = await fs.promises.readFile(userModelsPath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return {};
+    }
+    console.error('Failed to read user_models.json:', error);
+    return {};
+  }
+};
+
+const notifyUserModelsUpdated = () => {
+  for (const webContents of userModelsSubscribers) {
+    if (!webContents.isDestroyed()) {
+      webContents.send('user-models-updated');
+    }
+  }
+};
+
+const disposeUserModelsWatcher = () => {
+  if (userModelsSubscribers.size === 0 && userModelsWatcher) {
+    userModelsWatcher.close();
+    userModelsWatcher = null;
+  }
+};
+
+const ensureUserModelsWatcher = () => {
+  if (userModelsWatcher || userModelsSubscribers.size === 0) {
+    return;
+  }
+
+  const cacheDir = getCacheDirectory();
+  if (!cacheDir) {
+    return;
+  }
+
+  try {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  } catch (error) {
+    console.warn('Unable to ensure Lemonade cache directory exists:', error);
+  }
+
+  try {
+    userModelsWatcher = fs.watch(cacheDir, { persistent: false }, (_eventType, filename) => {
+      if (!filename) {
+        return;
+      }
+
+      if (filename.toLowerCase() === 'user_models.json') {
+        notifyUserModelsUpdated();
+      }
+    });
+  } catch (error) {
+    console.error('Failed to watch user_models.json:', error);
+  }
+};
+
+const subscribeToUserModels = (webContentsInstance) => {
+  if (!webContentsInstance || userModelsSubscribers.has(webContentsInstance)) {
+    return;
+  }
+
+  userModelsSubscribers.add(webContentsInstance);
+
+  const handleDestroyed = () => {
+    userModelsSubscribers.delete(webContentsInstance);
+    userModelsDestroyedHandlers.delete(webContentsInstance.id);
+    disposeUserModelsWatcher();
+    webContentsInstance.removeListener('destroyed', handleDestroyed);
+  };
+
+  userModelsDestroyedHandlers.set(webContentsInstance.id, handleDestroyed);
+  webContentsInstance.on('destroyed', handleDestroyed);
+  ensureUserModelsWatcher();
+};
+
+const unsubscribeFromUserModels = (webContentsInstance) => {
+  if (!webContentsInstance || !userModelsSubscribers.has(webContentsInstance)) {
+    return;
+  }
+
+  userModelsSubscribers.delete(webContentsInstance);
+  const handler = userModelsDestroyedHandlers.get(webContentsInstance.id);
+  if (handler) {
+    webContentsInstance.removeListener('destroyed', handler);
+    userModelsDestroyedHandlers.delete(webContentsInstance.id);
+  }
+  disposeUserModelsWatcher();
+};
+
+ipcMain.handle('read-user-models', async () => {
+  return readUserModelsFile();
+});
+
+ipcMain.on('start-watch-user-models', (event) => {
+  subscribeToUserModels(event.sender);
+});
+
+ipcMain.on('stop-watch-user-models', (event) => {
+  unsubscribeFromUserModels(event.sender);
+});
 
 function updateWindowMinWidth(requestedWidth) {
   if (!mainWindow || typeof requestedWidth !== 'number' || !isFinite(requestedWidth)) {

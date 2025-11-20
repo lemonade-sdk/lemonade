@@ -1,21 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import serverModelsData from '../../../lemonade_server/server_models.json';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  builtInModelsData,
+  fetchSupportedModelsData,
+  ModelInfo,
+  ModelsData,
+  USER_MODEL_PREFIX
+} from './utils/modelData';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';
-
-interface ModelInfo {
-  checkpoint: string;
-  recipe: string;
-  suggested: boolean;
-  size: number;
-  labels?: string[];
-  max_prompt_length?: number;
-  mmproj?: string;
-}
-
-interface ModelsData {
-  [key: string]: ModelInfo;
-}
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -41,6 +33,56 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     reasoning: false,
     vision: false
   });
+  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
+
+  const fetchDownloadedModels = useCallback(async () => {
+    try {
+      const response = await fetch(`${CHAT_API_BASE}/models`);
+      const data = await response.json();
+      
+      // Handle both array format and object with data array
+      const modelList = Array.isArray(data) ? data : data.data || [];
+      const downloadedModelIds = new Set<string>(modelList.map((m: any) => m.id as string));
+      setDownloadedModels(downloadedModelIds);
+    } catch (error) {
+      console.error('Failed to fetch downloaded models:', error);
+    }
+  }, []);
+
+  const fetchCurrentLoadedModel = useCallback(async () => {
+    try {
+      const response = await fetch(`${CHAT_API_BASE}/health`);
+      const data = await response.json();
+      
+      if (data && data.model_loaded) {
+        setCurrentLoadedModel(data.model_loaded);
+        // Remove from loading state if it was loading
+        setLoadingModels(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(data.model_loaded);
+          return newSet;
+        });
+      } else {
+        setCurrentLoadedModel(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch current loaded model:', error);
+    }
+  }, []);
+
+  const loadModels = useCallback(async () => {
+    try {
+      const data = await fetchSupportedModelsData();
+      setSupportedModelsData(data);
+      const suggestedModels = Object.entries(data)
+        .filter(([name, info]) => info.suggested || name.startsWith(USER_MODEL_PREFIX))
+        .map(([name, info]) => ({ name, info }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setModels(suggestedModels);
+    } catch (error) {
+      console.error('Failed to load models:', error);
+    }
+  }, []);
 
   useEffect(() => {
     loadModels();
@@ -89,70 +131,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         });
         // Refresh the loaded model status
         fetchCurrentLoadedModel();
+      } else {
+        loadModels();
       }
     };
     
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+
+    const stopWatchingUserModels = window.api?.watchUserModels?.(() => {
+      loadModels();
+    });
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
       window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
       delete (window as any).setModelLoading;
-    };
-  }, []);
-
-  const fetchDownloadedModels = async () => {
-    try {
-      const response = await fetch(`${CHAT_API_BASE}/models`);
-      const data = await response.json();
-      
-      // Handle both array format and object with data array
-      const modelList = Array.isArray(data) ? data : data.data || [];
-      const downloadedModelIds = new Set<string>(modelList.map((m: any) => m.id as string));
-      setDownloadedModels(downloadedModelIds);
-    } catch (error) {
-      console.error('Failed to fetch downloaded models:', error);
-    }
-  };
-
-  const fetchCurrentLoadedModel = async () => {
-    try {
-      const response = await fetch(`${CHAT_API_BASE}/health`);
-      const data = await response.json();
-      
-      if (data && data.model_loaded) {
-        setCurrentLoadedModel(data.model_loaded);
-        // Remove from loading state if it was loading
-        setLoadingModels(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(data.model_loaded);
-          return newSet;
-        });
-      } else {
-        setCurrentLoadedModel(null);
+      if (typeof stopWatchingUserModels === 'function') {
+        stopWatchingUserModels();
       }
-    } catch (error) {
-      console.error('Failed to fetch current loaded model:', error);
-    }
-  };
-
-  const loadModels = () => {
-    try {
-      const data: ModelsData = serverModelsData as ModelsData;
-      
-      // Filter models that are suggested
-      const suggestedModels = Object.entries(data)
-        .filter(([_, info]) => info.suggested)
-        .map(([name, info]) => ({ name, info }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      
-      setModels(suggestedModels);
-    } catch (error) {
-      console.error('Failed to load models:', error);
-    }
-  };
+    };
+  }, [fetchDownloadedModels, fetchCurrentLoadedModel, loadModels]);
 
   const getFilteredModels = () => {
     let filtered = models;
@@ -224,7 +224,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     });
   };
 
-  const formatSize = (size: number): string => {
+  const formatSize = (size?: number): string => {
+    if (typeof size !== 'number' || Number.isNaN(size)) {
+      return 'Size N/A';
+    }
+
     if (size < 1) {
       return `${(size * 1024).toFixed(0)} MB`;
     }
@@ -252,6 +256,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       'embeddings': 'Embeddings',
       'reranking': 'Reranking',
       'tool-calling': 'Tool Calling',
+      'custom': 'Custom',
       'uncategorized': 'Uncategorized'
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
@@ -294,7 +299,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const handleDownloadModel = async (modelName: string) => {
     try {
-      const modelData = (serverModelsData as ModelsData)[modelName];
+      const modelData = supportedModelsData[modelName];
+      if (!modelData) {
+        alert('Model metadata is unavailable. Please refresh and try again.');
+        return;
+      }
       
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
@@ -327,7 +336,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const handleLoadModel = async (modelName: string) => {
     try {
-      const modelData = (serverModelsData as ModelsData)[modelName];
+      const modelData = supportedModelsData[modelName];
+      if (!modelData) {
+        alert('Model metadata is unavailable. Please refresh and try again.');
+        return;
+      }
       
       // Add to loading state
       setLoadingModels(prev => new Set(prev).add(modelName));
@@ -399,14 +412,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         throw new Error(`Failed to delete model: ${response.statusText}`);
       }
       
-      // Remove custom models from SERVER_MODELS
-      if (modelName.startsWith('user.')) {
-        delete (serverModelsData as any)[modelName];
-      }
-      
       // Refresh downloaded models and current loaded model status
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
+      await loadModels();
     } catch (error) {
       console.error('Error deleting model:', error);
       alert(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);

@@ -42,10 +42,16 @@ const TitleBar: React.FC<TitleBarProps> = ({
   }, []);
 
   useEffect(() => {
-    // Listen for maximize/unmaximize events
-    window.api.onMaximizeChange((maximized: boolean) => {
+    if (!window.api?.onMaximizeChange) {
+      console.warn('window.api.onMaximizeChange is unavailable. Running outside Electron?');
+      return;
+    }
+
+    const handleMaximizeChange = (maximized: boolean) => {
       setIsMaximized(maximized);
-    });
+    };
+
+    window.api.onMaximizeChange(handleMaximizeChange);
   }, []);
 
   useEffect(() => {

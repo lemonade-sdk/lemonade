@@ -26,5 +26,7 @@ interface Window {
     openExternal: (url: string) => void;
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
     updateMinWidth: (width: number) => void;
+    readUserModels?: () => Promise<Record<string, unknown>>;
+    watchUserModels?: (callback: () => void) => void | (() => void);
   };
 }

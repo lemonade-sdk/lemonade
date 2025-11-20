@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
-import serverModelsData from '../../../lemonade_server/server_models.json';
+import { builtInModelsData, fetchSupportedModelsData, ModelsData } from './utils/modelData';
 import logoSvg from '../../assets/logo.svg';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';
@@ -32,20 +32,6 @@ interface Model {
   owned_by?: string;
 }
 
-interface ModelInfo {
-  checkpoint: string;
-  recipe: string;
-  suggested: boolean;
-  size: number;
-  labels?: string[];
-  max_prompt_length?: number;
-  mmproj?: string;
-}
-
-interface ModelsData {
-  [key: string]: ModelInfo;
-}
-
 interface ChatWindowProps {
   isVisible: boolean;
   width?: number;
@@ -55,6 +41,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [models, setModels] = useState<Model[]>([]);
+  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
   const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -75,6 +62,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 useEffect(() => {
   fetchModels();
   fetchLoadedModel();
+  fetchSupportedModels();
 
   const handleModelLoadEnd = (event: Event) => {
     const customEvent = event as CustomEvent<{ modelId?: string }>;
@@ -173,11 +161,35 @@ const fetchLoadedModel = async () => {
   }
 };
 
+const fetchSupportedModels = useCallback(async () => {
+  try {
+    const data = await fetchSupportedModelsData();
+    setSupportedModelsData(data);
+  } catch (error) {
+    console.error('Failed to load supported models:', error);
+  }
+}, []);
+
+useEffect(() => {
+  if (!window.api?.watchUserModels) {
+    return;
+  }
+
+  const stopWatching = window.api.watchUserModels(() => {
+    fetchSupportedModels();
+  });
+
+  return () => {
+    if (typeof stopWatching === 'function') {
+      stopWatching();
+    }
+  };
+}, [fetchSupportedModels]);
+
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelsData: ModelsData = serverModelsData as ModelsData;
-    const modelInfo = modelsData[selectedModel];
+    const modelInfo = supportedModelsData[selectedModel];
     
     return modelInfo?.labels?.includes('vision') || false;
   };
