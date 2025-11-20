@@ -87,7 +87,7 @@ body {
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 4px;
-    min-width: 220px;
+    min-width: 250px;
     padding: 4px 0;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     z-index: 1000;

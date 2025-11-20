@@ -48,6 +48,40 @@ const TitleBar: React.FC<TitleBarProps> = ({
     });
   }, []);
 
+  useEffect(() => {
+    // Handle keyboard shortcuts for View menu items
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl+Shift combinations (or Cmd+Shift on Mac)
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
+        switch (event.key.toLowerCase()) {
+          case 'm':
+            event.preventDefault();
+            onToggleModelManager();
+            setActiveMenu(null);
+            break;
+          case 'p':
+            event.preventDefault();
+            onToggleCenterPanel();
+            setActiveMenu(null);
+            break;
+          case 'h':
+            event.preventDefault();
+            onToggleChat();
+            setActiveMenu(null);
+            break;
+          case 'l':
+            event.preventDefault();
+            onToggleLogs();
+            setActiveMenu(null);
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onToggleModelManager, onToggleCenterPanel, onToggleChat, onToggleLogs]);
+
   const handleMenuClick = (menu: MenuType) => {
     setActiveMenu(activeMenu === menu ? null : menu);
   };
@@ -74,16 +108,20 @@ const TitleBar: React.FC<TitleBarProps> = ({
               {activeMenu === 'view' && (
                 <div className="menu-dropdown">
                   <div className="menu-option" onClick={() => { onToggleModelManager(); setActiveMenu(null); }}>
-                    {isModelManagerVisible ? '✓ ' : ''}Model Manager
+                    <span>{isModelManagerVisible ? '✓ ' : ''}Model Manager</span>
+                    <span className="menu-shortcut">Ctrl+Shift+M</span>
                   </div>
                   <div className="menu-option" onClick={() => { onToggleCenterPanel(); setActiveMenu(null); }}>
-                    {isCenterPanelVisible ? '✓ ' : ''}Center Panel
+                    <span>{isCenterPanelVisible ? '✓ ' : ''}Center Panel</span>
+                    <span className="menu-shortcut">Ctrl+Shift+P</span>
                   </div>
                   <div className="menu-option" onClick={() => { onToggleChat(); setActiveMenu(null); }}>
-                    {isChatVisible ? '✓ ' : ''}Chat Window
+                    <span>{isChatVisible ? '✓ ' : ''}Chat Window</span>
+                    <span className="menu-shortcut">Ctrl+Shift+H</span>
                   </div>
                   <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
-                    {isLogsVisible ? '✓ ' : ''}Logs
+                    <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
+                    <span className="menu-shortcut">Ctrl+Shift+L</span>
                   </div>
                 </div>
               )}
