@@ -29,13 +29,15 @@ public:
     // Simple POST request
     static HttpResponse post(const std::string& url,
                             const std::string& body,
-                            const std::map<std::string, std::string>& headers = {});
+                            const std::map<std::string, std::string>& headers = {},
+                            long timeout_seconds = 300);
     
     // Streaming POST request (calls callback for each chunk as it arrives)
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
-                                   const std::map<std::string, std::string>& headers = {});
+                                   const std::map<std::string, std::string>& headers = {},
+                                   long timeout_seconds = 300);
     
     // Download file to disk
     static bool download_file(const std::string& url,

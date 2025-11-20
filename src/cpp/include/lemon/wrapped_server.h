@@ -49,6 +49,9 @@ public:
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level), model_manager_(model_manager) {}
     
     virtual ~WrappedServer() = default;
+
+    // Timeout for inference requests (0 = infinite)
+    static constexpr long INFERENCE_TIMEOUT_SECONDS = 0;
     
     // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
@@ -113,7 +116,7 @@ protected:
     virtual bool wait_for_ready();
     
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request);
+    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
     
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
