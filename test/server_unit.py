@@ -187,8 +187,8 @@ class SystemTrayTesting(unittest.TestCase):
         # Print installer URL info for debugging
         self.assertIsNotNone(installer_url)
         self.assertTrue(installer_url.startswith("https://"))
-        self.assertTrue(installer_url.endswith(".exe"))
-        self.assertIn("Lemonade_Server_Installer", installer_url)
+        self.assertTrue(installer_url.endswith(".msi"))
+        self.assertIn("lemonade-server-minimal", installer_url)
 
     def tearDown(self):
         # Clean up temporary files
