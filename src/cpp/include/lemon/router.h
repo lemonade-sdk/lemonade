@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <condition_variable>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
@@ -19,28 +20,41 @@ public:
            const std::string& llamacpp_backend = "vulkan",
            const std::string& log_level = "info",
            const std::string& llamacpp_args = "",
-           ModelManager* model_manager = nullptr);
+           ModelManager* model_manager = nullptr,
+           int max_llm_models = 1,
+           int max_embedding_models = 1,
+           int max_reranking_models = 1);
     
     ~Router();
     
     // Load a model with the appropriate backend
+    // Optional per-model settings override the defaults
     void load_model(const std::string& model_name,
                     const ModelInfo& model_info,
-                    bool do_not_upgrade = true);
+                    bool do_not_upgrade = true,
+                    int ctx_size = -1,                           // -1 means use default
+                    const std::string& llamacpp_backend = "",    // empty means use default
+                    const std::string& llamacpp_args = "");
     
-    // Unload the currently loaded model
-    void unload_model();
+    // Unload model(s)
+    void unload_model(const std::string& model_name = "");  // Empty = unload all
     
-    // Get the currently loaded model info
-    std::string get_loaded_model() const { return loaded_model_; }
-    std::string get_loaded_checkpoint() const { return loaded_checkpoint_; }
-    std::string get_loaded_recipe() const { return loaded_recipe_; }
+    // Get the most recently loaded model info (for backward compatibility)
+    std::string get_loaded_model() const;
+    std::string get_loaded_checkpoint() const;
+    std::string get_loaded_recipe() const;
+    
+    // Get all loaded models info
+    json get_all_loaded_models() const;
     
     // Get the context size
     int get_ctx_size() const { return ctx_size_; }
     
-    // Check if a model is loaded
-    bool is_model_loaded() const { return wrapped_server_ != nullptr; }
+    // Check if any model is loaded
+    bool is_model_loaded() const;
+    
+    // Check if a specific model is loaded
+    bool is_model_loaded(const std::string& model_name) const;
     
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
@@ -68,22 +82,44 @@ public:
     void update_prompt_tokens(int prompt_tokens);
     
 private:
-    std::unique_ptr<WrappedServer> wrapped_server_;
-    std::string loaded_model_;
-    std::string loaded_checkpoint_;
-    std::string loaded_recipe_;
-    bool unload_called_ = false;  // Track if unload has been called
+    // Multi-model support: Manage multiple WrappedServers
+    std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
     
+    // Configuration
     int ctx_size_;
     std::string llamacpp_backend_;
     std::string log_level_;
     std::string llamacpp_args_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     
+    // Multi-model limits by type
+    int max_llm_models_;
+    int max_embedding_models_;
+    int max_reranking_models_;
+    
     // Concurrency control for load operations
-    mutable std::mutex load_mutex_;              // Protects loading state and wrapped_server_
+    mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+    
+    // Helper methods for multi-model management
+    WrappedServer* find_server_by_model_name(const std::string& model_name) const;
+    WrappedServer* get_most_recent_server() const;
+    int count_servers_by_type(ModelType type) const;
+    WrappedServer* find_lru_server_by_type(ModelType type) const;
+    bool has_npu_server() const;
+    WrappedServer* find_npu_server() const;
+    void evict_server(WrappedServer* server);
+    void evict_all_servers();
+    std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
+    
+    // Generic inference wrapper that handles locking and busy state
+    template<typename Func>
+    auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
+    
+    // Generic streaming wrapper
+    template<typename Func>
+    void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
 };
 
 } // namespace lemon

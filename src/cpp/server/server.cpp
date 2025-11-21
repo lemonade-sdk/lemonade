@@ -27,7 +27,8 @@ namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
                int ctx_size, bool tray, const std::string& llamacpp_backend,
-               const std::string& llamacpp_args)
+               const std::string& llamacpp_args, int max_llm_models,
+               int max_embedding_models, int max_reranking_models)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
       running_(false) {
@@ -55,7 +56,9 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args, model_manager_.get());
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args, 
+                                       model_manager_.get(), max_llm_models, 
+                                       max_embedding_models, max_reranking_models);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -466,12 +469,15 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     
     nlohmann::json response = {{"status", "ok"}};
     
-    // Add model loaded information like Python implementation
+    // Add model loaded information (most recent for backward compatibility)
     std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
     response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
     response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
+    
+    // Multi-model support: Add all loaded models
+    response["all_models_loaded"] = router_->get_all_loaded_models();
     
     // Add context size
     response["context_size"] = router_->get_ctx_size();
@@ -1144,7 +1150,16 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         std::string model_name = request_json["model_name"];
         
-        std::cout << "[Server] Loading model: " << model_name << std::endl;
+        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        int ctx_size = request_json.value("ctx_size", -1);
+        std::string llamacpp_backend = request_json.value("llamacpp_backend", "");
+        std::string llamacpp_args = request_json.value("llamacpp_args", "");
+        
+        std::cout << "[Server] Loading model: " << model_name;
+        if (ctx_size > 0) std::cout << " (ctx_size=" << ctx_size << ")";
+        if (!llamacpp_backend.empty()) std::cout << " (backend=" << llamacpp_backend << ")";
+        if (!llamacpp_args.empty()) std::cout << " (args=" << llamacpp_args << ")";
+        std::cout << std::endl;
         
         // Check if model is already loaded (early return optimization)
         std::string loaded_model = router_->get_loaded_model();
@@ -1162,11 +1177,24 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             return;
         }
         
-        // Use helper function to handle loading (download outside mutex, no race conditions)
-        auto_load_model_if_needed(model_name);
+        // Get model info
+        if (!model_manager_->model_exists(model_name)) {
+            throw std::runtime_error("Model not found: " + model_name);
+        }
         
-        // Get model info for response
         auto info = model_manager_->get_model_info(model_name);
+        
+        // Download model if needed (first-time use)
+        if (!info.downloaded) {
+            std::cout << "[Server] Model not downloaded, downloading..." << std::endl;
+            model_manager_->download_model(model_name);
+            info = model_manager_->get_model_info(model_name);
+        }
+        
+        // Load model with optional per-model settings
+        router_->load_model(model_name, info, true, ctx_size, llamacpp_backend, llamacpp_args);
+        
+        // Return success response
         nlohmann::json response = {
             {"status", "success"},
             {"model_name", model_name},
@@ -1189,19 +1217,52 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         std::cout << "[Server] Request method: " << req.method << ", body length: " << req.body.length() << std::endl;
         std::cout << "[Server] Content-Type: " << req.get_header_value("Content-Type") << std::endl;
         
-        // Unload doesn't need any request body
-        router_->unload_model();
+        // Multi-model support: Optional model_name parameter
+        std::string model_name;
+        if (!req.body.empty()) {
+            try {
+                auto request_json = nlohmann::json::parse(req.body);
+                if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+                    model_name = request_json["model_name"].get<std::string>();
+                } else if (request_json.contains("model") && request_json["model"].is_string()) {
+                    model_name = request_json["model"].get<std::string>();
+                }
+            } catch (...) {
+                // Ignore parse errors, just unload all
+            }
+        }
         
-        std::cout << "[Server] Model unloaded successfully" << std::endl;
-        nlohmann::json response = {
-            {"status", "success"},
-            {"message", "Model unloaded successfully"}
-        };
-        res.status = 200; // Explicitly set success status first
-        res.set_content(response.dump(), "application/json");
+        router_->unload_model(model_name);  // Empty string = unload all
+        
+        if (model_name.empty()) {
+            std::cout << "[Server] All models unloaded successfully" << std::endl;
+            nlohmann::json response = {
+                {"status", "success"},
+                {"message", "All models unloaded successfully"}
+            };
+            res.status = 200;
+            res.set_content(response.dump(), "application/json");
+        } else {
+            std::cout << "[Server] Model '" << model_name << "' unloaded successfully" << std::endl;
+            nlohmann::json response = {
+                {"status", "success"},
+                {"message", "Model unloaded successfully"},
+                {"model_name", model_name}
+            };
+            res.status = 200;
+            res.set_content(response.dump(), "application/json");
+        }
     } catch (const std::exception& e) {
         std::cerr << "[Server ERROR] Unload failed: " << e.what() << std::endl;
-        res.status = 500;
+        
+        // Check if error is "Model not loaded" for 404
+        std::string error_msg = e.what();
+        if (error_msg.find("not loaded") != std::string::npos) {
+            res.status = 404;
+        } else {
+            res.status = 500;
+        }
+        
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }

@@ -294,14 +294,24 @@ A pure HTTP server that:
 - Serves OpenAI-compatible REST API endpoints (supports both `/api/v0` and `/api/v1`)
 - Routes requests to appropriate LLM backends (llamacpp, fastflowlm, ryzenai)
 - Manages model loading/unloading and backend processes
+- Supports loading multiple models simultaneously with LRU eviction
 - Handles all inference requests
 - No command-based user interface - only accepts startup options
 
 **Key Layers:**
 - **HTTP Layer:** Uses cpp-httplib for HTTP server
-- **Router:** Determines which backend handles each request based on model recipe
+- **Router:** Determines which backend handles each request based on model recipe, manages multiple WrappedServer instances with LRU cache
 - **Model Manager:** Handles model discovery, downloads, and registry management
 - **Backend Wrappers:** Manages llama.cpp, FastFlowLM, and RyzenAI backends
+
+**Multi-Model Support:**
+- Router maintains multiple WrappedServer instances simultaneously
+- Separate LRU caches for LLM, embedding, and reranking model types
+- NPU exclusivity: only one model can use NPU at a time
+- Configurable limits via `--max-loaded-models` (default: 1 1 1)
+- Automatic eviction of least-recently-used models when limits reached
+- Thread-safe model loading with serialization to prevent races
+- Protection against evicting models actively serving inference requests
 
 #### lemonade-server (CLI Client Component)
 
@@ -380,6 +390,8 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
 #   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
+#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS]
+#                            Maximum models to keep loaded (default: 1 1 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
@@ -429,6 +441,7 @@ The `lemonade-server` executable is the command-line interface for terminal user
 - `--log-file PATH` - Custom log file location
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
+- `--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS]` - Maximum number of models to keep loaded simultaneously (default: 1 1 1)
 
 **Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 
