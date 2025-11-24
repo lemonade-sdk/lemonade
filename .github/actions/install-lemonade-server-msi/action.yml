@@ -22,7 +22,9 @@ runs:
       shell: PowerShell
       run: |
         $installPath = "${{ inputs.install-path }}"
+        $logPath = "$((Get-Location).Path)\lemonade-msi-install.log"
         Write-Host "Installing Lemonade Server to: $installPath" -ForegroundColor Cyan
+        Write-Host "Log file will be at: $logPath" -ForegroundColor Gray
         
         if (-not (Test-Path "lemonade-server-minimal.msi")) {
             Write-Host "ERROR: lemonade-server-minimal.msi not found in current directory!" -ForegroundColor Red
@@ -30,12 +32,21 @@ runs:
             exit 1
         }
 
-        # Run installer silently
-        $args = "/i lemonade-server-minimal.msi /qn INSTALLDIR=`"$installPath`""
+        # Run installer silently with verbose logging
+        $args = "/i lemonade-server-minimal.msi /qn INSTALLDIR=`"$installPath`" /L*V `"$logPath`""
         $p = Start-Process -FilePath "msiexec.exe" -ArgumentList $args -Wait -PassThru
         
         if ($p.ExitCode -ne 0) {
              Write-Host "ERROR: Installation failed with exit code $($p.ExitCode)" -ForegroundColor Red
+             
+             if (Test-Path $logPath) {
+                 Write-Host "=== MSI Install Log ($logPath) ===" -ForegroundColor Yellow
+                 Get-Content $logPath
+                 Write-Host "=== End MSI Install Log ===" -ForegroundColor Yellow
+             } else {
+                 Write-Host "ERROR: Log file not found at $logPath" -ForegroundColor Red
+             }
+             
              exit $p.ExitCode
         }
         
@@ -46,12 +57,25 @@ runs:
       run: |
         $ErrorActionPreference = "Stop"
         $installPath = "${{ inputs.install-path }}"
+        $logPath = "$((Get-Location).Path)\lemonade-msi-install.log"
         
         Write-Host "Verifying installation at: $installPath" -ForegroundColor Cyan
+        
+        # Function to print log on failure
+        function Print-InstallLog {
+            if (Test-Path $logPath) {
+                Write-Host "=== MSI Install Log ($logPath) ===" -ForegroundColor Yellow
+                Get-Content $logPath
+                Write-Host "=== End MSI Install Log ===" -ForegroundColor Yellow
+            } else {
+                Write-Host "Log file not found at: $logPath" -ForegroundColor Red
+            }
+        }
         
         # Check if installation directory exists
         if (-not (Test-Path $installPath)) {
             Write-Host "ERROR: Installation directory not found at $installPath" -ForegroundColor Red
+            Print-InstallLog
             exit 1
         }
         
@@ -77,6 +101,7 @@ runs:
             foreach ($missing in $missingItems) {
                 Write-Host "  Missing: $missing" -ForegroundColor Red
             }
+            Print-InstallLog
             exit 1
         }
         
