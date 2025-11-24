@@ -53,7 +53,7 @@
 
    Lemonade adheres to the Hugging Face Hub specification for storing models on your hard drive. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
 
-   For example, `Qwen/Qwen2.5-0.5B` get stored at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B`.
+   For example, `Qwen/Qwen2.5-0.5B` is stored at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B`.
 
    You can change this location by setting the `HF_HOME` env var, which will store your models in `$HF_HOME/hub` (e.g., `$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B`). Alternatively, you can set `HF_HUB_CACHE` and your models will be in `$HF_HUB_CACHE` (e.g., `$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B`).
 
