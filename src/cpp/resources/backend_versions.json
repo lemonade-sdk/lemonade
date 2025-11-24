@@ -1,6 +1,6 @@
 {
   "llamacpp": {
-    "vulkan": "b7142",
+    "vulkan": "b7144",
     "rocm": "b1066",
     "metal": "b6510"
   },
