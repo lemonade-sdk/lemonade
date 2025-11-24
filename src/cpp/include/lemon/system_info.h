@@ -97,6 +97,7 @@ private:
     std::string get_npu_power_mode();
     double get_gpu_vram_dxdiag(const std::string& gpu_name);
     double get_gpu_vram_wmi(uint64_t adapter_ram);
+    bool is_supported_ryzen_ai_processor();
 };
 
 // Linux implementation

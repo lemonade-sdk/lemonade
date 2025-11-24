@@ -1,5 +1,6 @@
 #include "ryzenai/server.h"
 #include "ryzenai/command_line.h"
+#include "ryzenai/driver_check.h"
 #include <iostream>
 #include <csignal>
 #include <memory>
@@ -44,9 +45,15 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
+        // Check NPU driver version (Windows only)
+        // This will print an error and open browser if driver is too old
+        if (!ryzenai::CheckNPUDriverVersion()) {
+            std::cerr << "Aborting startup due to unsupported NPU driver version." << std::endl;
+            return 1;
+        }
+        
         // Create and run the server
-        g_server = std::make_unique<ryzenai::RyzenAIServer>(args);
-        g_server->run();
+        g_server = std::make_unique<ryzenai::RyzenAIServer>(args);        g_server->run();
         
         return 0;
         

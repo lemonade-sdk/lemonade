@@ -336,7 +336,9 @@ void RyzenAIServer::load(const std::string& model_name,
               << process_handle_.pid << std::endl;
     
     // Wait for server to be ready
-    wait_for_ready();
+    if (!wait_for_ready()) {
+        throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
+    }
     
     is_loaded_ = true;
     std::cout << "[RyzenAI-Server] Model loaded on port " << port_ << std::endl;
