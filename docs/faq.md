@@ -49,7 +49,7 @@
 
 ## Models & Performance
 
-### 1. **Where are models storred and how do I change that?**
+### 1. **Where are models stored and how do I change that?**
 
    Lemonade adheres to the Hugging Face Hub specification for storing models on your hard drive. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
 
