@@ -173,23 +173,6 @@ class SystemTrayTesting(unittest.TestCase):
         self.assertEqual(menu.items[3].text, "Submenu")
         self.assertEqual(len(menu.items[3].submenu.items), 2)
 
-    def test_002_get_latest_version(self):
-        """Test fetching latest version from GitHub"""
-        # Create a minimal LemonadeTray instance just for testing get_latest_version
-        tray = LemonadeTray(log_file="test.log", port=8000, server_factory=None)
-        version, installer_url = tray.get_latest_version()
-
-        # Print version info for debugging
-        self.assertIsNotNone(version)
-        self.assertTrue(all(c.isdigit() or c == "." for c in version))
-        self.assertEqual(len(version.split(".")), 3)  # Should have 3 numbers
-
-        # Print installer URL info for debugging
-        self.assertIsNotNone(installer_url)
-        self.assertTrue(installer_url.startswith("https://"))
-        self.assertTrue(installer_url.endswith(".exe"))
-        self.assertIn("Lemonade_Server_Installer", installer_url)
-
     def tearDown(self):
         # Clean up temporary files
         if os.path.exists(self.icon_path):

@@ -140,3 +140,45 @@ runs:
         Write-Host "Process cleanup complete!" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
 
+    - name: Uninstall Lemonade Server (MSI)
+      shell: PowerShell
+      run: |
+        Write-Host "`n========================================" -ForegroundColor Magenta
+        Write-Host "Uninstalling Lemonade Server (MSI)..." -ForegroundColor Magenta
+        Write-Host "========================================" -ForegroundColor Magenta
+        
+        # Uninstall by Product Code - Attempt to find it first
+        $productName = "Lemonade Server"
+        
+        Write-Host "Searching for product: $productName" -ForegroundColor Cyan
+        
+        $product = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq $productName }
+        
+        if ($product) {
+            Write-Host "Found installed product: $($product.Name) (Version: $($product.Version))" -ForegroundColor Green
+            Write-Host "IdentifyingNumber (ProductCode): $($product.IdentifyingNumber)" -ForegroundColor Gray
+            
+            Write-Host "Uninstalling..." -ForegroundColor Yellow
+            $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x $($product.IdentifyingNumber) /qn" -Wait -PassThru
+            
+            if ($proc.ExitCode -eq 0) {
+                Write-Host "Uninstall successful!" -ForegroundColor Green
+            } else {
+                Write-Host "Uninstall failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "Product '$productName' not found installed via MSI." -ForegroundColor Gray
+            
+            # Fallback: Check if we can uninstall via the MSI file if it exists in current directory
+            if (Test-Path "lemonade-server-minimal.msi") {
+                Write-Host "Found lemonade-server-minimal.msi in current directory. Attempting uninstall via file..." -ForegroundColor Yellow
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn" -Wait -PassThru
+                
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host "Uninstall via MSI file successful!" -ForegroundColor Green
+                } else {
+                    Write-Host "Uninstall via MSI file failed with exit code $($proc.ExitCode)" -ForegroundColor Red
+                }
+            }
+        }
+
