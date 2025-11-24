@@ -16,9 +16,9 @@ from lemonade.tools.adapter import PassthroughTokenizer, ModelAdapter
 from lemonade.common.system_info import get_system_info
 from dotenv import set_key, load_dotenv
 
-LLAMA_VERSION_VULKAN = "b6510"
-LLAMA_VERSION_ROCM = "b1066"
-LLAMA_VERSION_METAL = "b6510"
+LLAMA_VERSION_VULKAN = "b7144"
+LLAMA_VERSION_ROCM = "b1118"
+LLAMA_VERSION_METAL = "b7144"
 
 
 def identify_rocm_arch_from_name(device_name: str) -> str | None:
