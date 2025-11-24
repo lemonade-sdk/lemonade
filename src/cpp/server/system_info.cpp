@@ -118,9 +118,6 @@ json SystemInfo::get_device_dict() {
         {"available", npu.available},
         {"inference_engines", npu.inference_engines}
     };
-    if (!npu.driver_version.empty()) {
-        devices["npu"]["driver_version"] = npu.driver_version;
-    }
     if (!npu.power_mode.empty()) {
         devices["npu"]["power_mode"] = npu.power_mode;
     }
@@ -681,7 +678,6 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
     // Check for NPU driver
     std::string driver_version = get_driver_version("NPU Compute Accelerator Device");
     if (!driver_version.empty()) {
-        npu.driver_version = driver_version;
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
         
