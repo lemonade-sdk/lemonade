@@ -646,8 +646,8 @@ void LlamaCppServer::load(const std::string& model_name,
     if (backend_ == "rocm") {
         std::string arch = identify_rocm_arch();
         if (arch == "gfx1151") {
-            env_vars.push_back({"OCL_SET_SVMSIZE", "98304"});
-            std::cout << "[LlamaCpp] Setting OCL_SET_SVMSIZE=98304 for gfx1151 (enables loading larger models)" << std::endl;
+            env_vars.push_back({"OCL_SET_SVM_SIZE", "98304"});
+            std::cout << "[LlamaCpp] Setting OCL_SET_SVM_SIZE=98304 for gfx1151 (enables loading larger models)" << std::endl;
         }
     }
 #endif
