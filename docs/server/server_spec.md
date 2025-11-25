@@ -15,7 +15,7 @@ Lemonade Server currently supports these backends:
 
 The [key endpoints of the OpenAI API](#openai-compatible-endpoints) are available.
 
-We are also actively investigating and developing [additional endpoints](#additional-endpoints) that will improve the experience of local applications.
+We are also actively investigating and developing [additional endpoints](#lemonade-specific-endpoints) that will improve the experience of local applications.
 
 ### OpenAI-Compatible Endpoints
 - POST `/api/v1/chat/completions` - Chat Completions (messages -> completion)
@@ -25,7 +25,7 @@ We are also actively investigating and developing [additional endpoints](#additi
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
-### llamacpp Endpoints
+### llama.cpp Endpoints
 
 These endpoints defined by `llama.cpp` extend the OpenAI-compatible API with additional functionality.
 
