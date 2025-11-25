@@ -2312,7 +2312,8 @@ footer {
     border-top: 1px solid #1a1a1a;
     display: flex;
     flex-direction: column;
-    flex-shrink: 0;
+    flex: 1;
+    min-height: 0;
     /* When logs is the only child, it should take all available space */
     flex-grow: 1;
 }
