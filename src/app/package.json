@@ -77,6 +77,7 @@
       }
     ],
     "win": {
+      "icon": "../../docs/assets/favicon.ico",
       "target": [
         {
           "target": "nsis",
@@ -87,12 +88,14 @@
       ]
     },
     "mac": {
+      "icon": "../../docs/assets/favicon.ico",
       "target": [
         "dmg"
       ],
       "category": "public.app-category.business"
     },
     "linux": {
+      "icon": "../../docs/assets/favicon.ico",
       "target": [
         "AppImage"
       ],
