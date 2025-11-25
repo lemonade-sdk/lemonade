@@ -1272,7 +1272,7 @@ footer {
     flex: 0 1 auto;
     position: relative;
     contain: layout;
-    min-width: 250px;
+    min-width: 290px;
 }
 
 /* When chat has explicit width (center panel visible), keep fixed basis but allow shrink */
@@ -1348,7 +1348,7 @@ footer {
     -webkit-appearance: none;
     -moz-appearance: none;
     line-height: 1;
-    max-width: 120px;
+    max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
