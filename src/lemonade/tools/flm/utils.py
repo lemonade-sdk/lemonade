@@ -358,6 +358,7 @@ class FLMAdapter(ModelAdapter):
         self.state = state
         self.server_process = None
         self.server_port = None
+        self.server_output_process = None
 
     def __del__(self):
         self.stop_server()
@@ -502,17 +503,21 @@ class FLMAdapter(ModelAdapter):
             )
 
         # Start a thread to continuously read and log FLM server output
-        threading.Thread(
+        self.server_output_process = threading.Thread(
             target=log_output,
             args=(self.server_process,),
             daemon=True,
-        ).start()
+        )
+        self.server_output_process.start()
 
     def stop_server(self):
         if self.server_process:
             self.server_process.terminate()
             self.server_process = None
         self.server_port = None
+        if self.server_output_process:
+            self.server_output_process.join()
+            self.server_output_process = None
 
     def send_request_to_server(self, prompt, max_new_tokens):
         """
