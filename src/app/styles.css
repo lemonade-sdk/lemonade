@@ -2393,6 +2393,40 @@ footer {
     font-family: 'Courier New', monospace;
 }
 
+/* Scrollbar for logs-content - hidden by default, visible on hover */
+.logs-content::-webkit-scrollbar {
+    width: 7px;
+    display: block;
+}
+
+.logs-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.logs-content::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.logs-content:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.logs-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Firefox scrollbar support */
+.logs-content {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.logs-content:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
 .logs-text {
     margin: 0;
     font-size: 0.75rem;
