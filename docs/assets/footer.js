@@ -45,7 +45,7 @@ function createFooter(basePath = '') {
         <div class="footer-section">
           <h4>Product</h4>
           <div class="footer-links">
-            <a href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe">Download</a>
+            <a href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi">Download</a>
             <a href="${basePath}docs/">Documentation</a>
             <a href="${basePath}docs/server/server_models/">Model Library</a>
             <a href="${basePath}docs/lemonade_api/">API Reference</a>

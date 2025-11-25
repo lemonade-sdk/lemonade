@@ -22,8 +22,8 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
-RyzenAIServer::RyzenAIServer(const std::string& model_name, int port, bool debug)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info"), 
+RyzenAIServer::RyzenAIServer(const std::string& model_name, int port, bool debug, ModelManager* model_manager)
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager), 
       model_name_(model_name),
       execution_mode_("auto"),
       is_loaded_(false) {
@@ -336,7 +336,9 @@ void RyzenAIServer::load(const std::string& model_name,
               << process_handle_.pid << std::endl;
     
     // Wait for server to be ready
-    wait_for_ready();
+    if (!wait_for_ready()) {
+        throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
+    }
     
     is_loaded_ = true;
     std::cout << "[RyzenAI-Server] Model loaded on port " << port_ << std::endl;

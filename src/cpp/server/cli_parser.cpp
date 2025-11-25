@@ -14,7 +14,7 @@ CLIParser::CLIParser()
         ->default_val(8000);
     
     app_.add_option("--host", config_.host, "Address to bind for connections")
-        ->default_val("127.0.0.1");
+        ->default_val("localhost");
     
     app_.add_option("--log-level", config_.log_level, "Log level for the server")
         ->check(CLI::IsMember({"critical", "error", "warning", "info", "debug", "trace"}))

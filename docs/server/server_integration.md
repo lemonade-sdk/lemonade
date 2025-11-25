@@ -22,7 +22,7 @@ To identify if Lemonade Server is installed on a system, you can use the [`lemon
 lemonade-server --version
 ```
 
->Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (Lemonade_Server_Installer.exe). For Linux and macOS users or Python development environments, the command `lemonade-server-dev` is available when installing via pip.
+>Note: The `lemonade-server` CLI command is added to PATH when using the Windows Installer (lemonade-server-minimal.msi) and Debian Installer (lemonade-server-minimal_<VERSION>_amd64.deb).
 
 ### Checking Server Status
 
@@ -64,16 +64,16 @@ The recommended way of directing users to the server installer is pointing users
 Latest version:
 
 ```bash
-https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe
+https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi
 ```
 
 Specific version:
 
 ```bash
-https://github.com/lemonade-sdk/lemonade/releases/download/v6.0.0/Lemonade_Server_Installer.exe
+https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade-server-minimal.msi
 ```
 
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on Linux or macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
+Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
 
 **macOS Requirements:** macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.
 
@@ -123,43 +123,44 @@ To stop the server, you may use the `lemonade-server stop` command, or simply te
 
 ### Silent Installation
 
-Silent installation runs `Lemonade_Server_Installer.exe` without a GUI and automatically accepts all prompts.
+Silent installation runs `lemonade-server-minimal.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
 
-In a `cmd.exe` terminal:
-
-Install *with* Ryzen AI hybrid support: 
+In a `cmd.exe` or PowerShell terminal:
 
 ```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid
+msiexec /i lemonade-server-minimal.msi /qn
 ```
 
-Install *without* Ryzen AI hybrid support:
+The install directory can also be changed from the default using the `INSTALLDIR` property:
 
 ```bash
-Lemonade_Server_Installer.exe /S
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\a\new\path"
 ```
 
-The install directory can also be changed from the default by using `/D` as the last argument. 
-
-For example: 
+If you don't want to create a desktop shortcut during installation, use the `ADDDESKTOPSHORTCUT=0` parameter:
 
 ```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid /D=C:\a\new\path
+msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
 ```
 
-Only `Qwen2.5-0.5B-Instruct-CPU` is installed by default in silent mode. If you wish to select additional models to download in silent mode, you may use the `/Models` argument.
+To add Lemonade Server to Windows startup:
 
 ```bash
-Lemonade_Server_Installer.exe /S /Extras=hybrid /Models="Qwen2.5-0.5B-Instruct-CPU Llama-3.2-1B-Instruct-Hybrid"
+msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
 ```
 
-The available modes are documented [here](./server_models.md).
-
-Finally, if you don't want to create a desktop shortcut during installation, use the `/NoDesktopShortcut` parameter:
+You can combine multiple parameters:
 
 ```bash
-Lemonade_Server_Installer.exe /S /NoDesktopShortcut
+msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
 ```
+
+**MSI Properties:**
+- `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
+- `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
+- `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
+
+The available models are documented [here](./server_models.md).
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

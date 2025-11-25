@@ -10,7 +10,8 @@ class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IR
 public:
     LlamaCppServer(const std::string& backend = "vulkan", 
                    const std::string& log_level = "info",
-                   const std::string& custom_args = "");
+                   const std::string& custom_args = "",
+                   ModelManager* model_manager = nullptr);
     
     ~LlamaCppServer() override;
     

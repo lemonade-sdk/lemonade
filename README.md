@@ -48,7 +48,7 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 | Step 1: Download & Install | Step 2: Launch and Pull Models | Step 3: Start chatting! |
 |:---------------------------:|:-------------------------------:|:------------------------:|
 | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/install.gif?raw=true" alt="Download & Install" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/launch_and_pull.gif?raw=true" alt="Launch and Pull Models" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/chat.gif?raw=true" alt="Start chatting!" width="245" /> |
-|Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
+|Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
 </div>
 
 ### Use it with your favorite OpenAI-compatible app!
@@ -79,8 +79,6 @@ To check all models available, use the `list` command:
 ```
 lemonade-server list
 ```
-
-> **Note**:  If you installed from source, use the `lemonade-server-dev` command instead.
 
 > **Tip**: You can use `--llamacpp vulkan/rocm` to select a backend when running GGUF models.
 
@@ -136,6 +134,15 @@ Lemonade supports the following configurations, while also making it easy to swi
   </tbody>
 </table>
 </details>
+
+## Project Roadmap
+
+| Under Development                       | Under Consideration                            | Recently Completed        |
+|-----------------------------------------|------------------------------------------------|---------------------------|
+| Electron desktop app (replacing web ui) | General speech-to-text support (whisper.cpp)   | Rewrite the server in C++ |
+| Multiple models loaded at the same time | vLLM integration                               | .msi and .deb installers  |
+| FastFlowLM speech-to-text               | Handheld devices: Ryzen AI Z2 Extreme APUs     | Ryzen AI SW 1.6           |
+|                                         | ROCm support for Ryzen AI 360-375 (Strix) APUs | FastFlowLM integration    |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -201,7 +208,7 @@ This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowe
 ## License and Attribution
 
 This project is:
-- [Built with Python](https://www.amd.com/en/developer/resources/technical-articles/2025/rethinking-local-ai-lemonade-servers-python-advantage.html) with ❤️ for the open source community,
+- Built with C++ (server) and Python (SDK) with ❤️ for the open source community,
 - Standing on the shoulders of great tools from:
   - [ggml/llama.cpp](https://github.com/ggml-org/llama.cpp)
   - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)

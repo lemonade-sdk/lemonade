@@ -51,6 +51,7 @@ ServerManager::ServerManager()
     : server_pid_(0)
     , port_(8000)
     , ctx_size_(4096)
+    , host_("localhost")
     , show_console_(false)
     , is_ephemeral_(false)
     , server_started_(false)
@@ -101,46 +102,20 @@ bool ServerManager::start_server(
         return false;
     }
     
-    // Wait for server to be ready (check health endpoint)
-    DEBUG_LOG(this, "Waiting for server to start...");
+    // Step 1: Wait for server process to start (check health endpoint)
+    DEBUG_LOG(this, "Waiting for server process to start...");
     DEBUG_LOG(this, "Will check health at: http://" << host_ << ":" << port_ << "/api/v1/health");
     
+    bool process_started = false;
     for (int i = 0; i < 5; ++i) {  // Wait up to 5 seconds
         DEBUG_LOG(this, "Health check attempt " << (i+1) << "/5...");
         std::this_thread::sleep_for(std::chrono::seconds(1));
         try {
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
-            DEBUG_LOG(this, "Health check succeeded!");
-            
-            // Print startup message based on server type
-            if (!is_ephemeral) {
-                // Persistent server: print startup message with URL
-                std::cout << "Lemonade Server Beta v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-                // Display "localhost" for user-friendliness when using 127.0.0.1
-                std::string display_url_host = (host_ == "127.0.0.1") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_url_host << ":" << port_ << std::endl;
-            }
-            // Ephemeral server: no output
-            
-            server_started_ = true;
-            
-#ifndef _WIN32
-            // Write PID file on Linux for efficient server discovery
-            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
-            write_pid_file();
-            
-            // Verify PID file was written
-            std::ifstream verify_file("/tmp/lemonade-router.pid");
-            if (verify_file.good()) {
-                DEBUG_LOG(this, "PID file verified");
-            } else {
-                std::cerr << "[ServerManager] ERROR: PID file was not created!" << std::endl;
-            }
-            verify_file.close();
-#endif
-            
-            return true;
+            DEBUG_LOG(this, "Server process is running!");
+            process_started = true;
+            break;  // Process is up, move to next step
         } catch (const std::exception& e) {
             DEBUG_LOG(this, "Health check failed: " << e.what());
         } catch (...) {
@@ -148,7 +123,75 @@ bool ServerManager::start_server(
         }
     }
     
-    std::cerr << "Server failed to start within timeout" << std::endl;
+    if (!process_started) {
+        std::cerr << "Server failed to start within timeout" << std::endl;
+        stop_server();
+        return false;
+    }
+    
+    // Step 2: Quick check if server is ready (try models endpoint with short timeout)
+    DEBUG_LOG(this, "Checking if server is ready...");
+    try {
+        // Use 1 second timeout for quick check
+        make_http_request("/api/v1/models", "GET", "", 1);
+        
+        // Success! Server is ready immediately
+        if (!is_ephemeral) {
+            std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+            // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
+            std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
+            std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+        }
+        
+        server_started_ = true;
+        
+#ifndef _WIN32
+        // Write PID file on Linux for efficient server discovery
+        DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
+        write_pid_file();
+#endif
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        DEBUG_LOG(this, "Quick check failed (expected on first run): " << e.what());
+    }
+    
+    // Step 3: Server is initializing, wait for it
+    std::cout << "Setting things up..." << std::endl;
+    
+    // Step 4: Poll models endpoint with longer timeout
+    for (int i = 0; i < 10; ++i) {
+        DEBUG_LOG(this, "Waiting for initialization... attempt " << (i+1) << "/10");
+        try {
+            // Use 10 second timeout for initialization wait
+            make_http_request("/api/v1/models", "GET", "", 10);
+            
+            // Success! Server is ready
+            if (!is_ephemeral) {
+                std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+                // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
+                std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
+                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+            }
+            
+            server_started_ = true;
+            
+#ifndef _WIN32
+            // Write PID file on Linux for efficient server discovery
+            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
+            write_pid_file();
+#endif
+            
+            return true;
+            
+        } catch (const std::exception& e) {
+            DEBUG_LOG(this, "Still initializing: " << e.what());
+            // Don't sleep here - the 10 second timeout handles the wait
+        }
+    }
+    
+    std::cerr << "Server failed to become ready within timeout" << std::endl;
     stop_server();
     return false;
 }
@@ -268,30 +311,13 @@ bool ServerManager::load_model(const std::string& model_name) {
     try {
         std::string body = "{\"model_name\": \"" + model_name + "\"}";
         
-        // Model loading can take a long time, so use extended timeout
+        // Model loading can take a long time, so use extended timeout (240 seconds = 4 minutes)
         DEBUG_LOG(this, "Loading model with extended timeout...");
         DEBUG_LOG(this, "Request body: " << body);
         
-        httplib::Client cli("127.0.0.1", port_);
-        cli.set_connection_timeout(10, 0);   // 10 second connection timeout
-        cli.set_read_timeout(240, 0);        // 240 second (4 minute) read timeout for large models
-        
-        auto res = cli.Post("/api/v1/load", body, "application/json");
-        
-        if (!res) {
-            DEBUG_LOG(this, "Load request connection error: " << static_cast<int>(res.error()));
-            return false;
-        }
-        
-        DEBUG_LOG(this, "Load request status: " << res->status);
-        DEBUG_LOG(this, "Response body: " << res->body);
-        
-        if (res->status >= 200 && res->status < 300) {
-            return true;
-        }
-        
-        std::cerr << "Load model failed with status " << res->status << ": " << res->body << std::endl;
-        return false;
+        std::string response = make_http_request("/api/v1/load", "POST", body, 240);
+        DEBUG_LOG(this, "Load request succeeded");
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception loading model: " << e.what() << std::endl;
         return false;
@@ -300,19 +326,9 @@ bool ServerManager::load_model(const std::string& model_name) {
 
 bool ServerManager::unload_model() {
     try {
-        // Unload can also take time
-        httplib::Client cli("127.0.0.1", port_);
-        cli.set_connection_timeout(10, 0);
-        cli.set_read_timeout(30, 0);  // 30 second timeout for unload
-        
-        auto res = cli.Post("/api/v1/unload", "", "application/json");
-        
-        if (!res) {
-            DEBUG_LOG(this, "Unload request connection error: " << static_cast<int>(res.error()));
-            return false;
-        }
-        
-        return (res->status >= 200 && res->status < 300);
+        // Unload can take time, so use 30 second timeout
+        make_http_request("/api/v1/unload", "POST", "", 30);
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "Exception unloading model: " << e.what() << std::endl;
         return false;
@@ -736,10 +752,11 @@ std::string ServerManager::make_http_request(
     const std::string& body,
     int timeout_seconds)
 {
-    // Debug logging removed - too verbose for normal operations
-    
-    // Use 127.0.0.1 instead of "localhost" to avoid IPv6/IPv4 resolution issues on Windows
-    httplib::Client cli("127.0.0.1", port_);
+
+    // Use the configured host to connect to the server
+    // Special case: 0.0.0.0 is a bind address, not a connect address - use 127.0.0.1 instead
+    std::string connect_host = (host_ == "0.0.0.0") ? "127.0.0.1" : host_;
+    httplib::Client cli(connect_host, port_);
     cli.set_connection_timeout(10, 0);  // 10 second connection timeout
     cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
     

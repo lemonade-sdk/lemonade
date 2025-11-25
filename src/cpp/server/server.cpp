@@ -21,6 +21,8 @@
 #include <windows.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
@@ -53,7 +55,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args);
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args, model_manager_.get());
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -245,6 +247,11 @@ void Server::setup_static_files() {
                 {"suggested", info.suggested},
                 {"mmproj", info.mmproj}
             };
+            
+            // Add size if available
+            if (info.size > 0.0) {
+                filtered_models[model_name]["size"] = info.size;
+            }
         }
         
         // Create JavaScript snippets
@@ -453,10 +460,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         return;
     }
     
-    auto thread_id = std::this_thread::get_id();
-    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
-    std::cout.flush();
-    
     nlohmann::json response = {{"status", "ok"}};
     
     // Add model loaded information like Python implementation
@@ -476,8 +479,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     };
     
     res.set_content(response.dump(), "application/json");
-    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: " << thread_id << ") =====" << std::endl;
-    std::cout.flush();
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
@@ -486,9 +487,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         res.status = 200;
         return;
     }
-    
-    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====" << std::endl;
-    std::cout.flush();
     
     // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
     bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
@@ -517,13 +515,15 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
             {"recipe", model_info.recipe}
         };
         
+        // Add size if available
+        if (model_info.size > 0.0) {
+            model_json["size"] = model_info.size;
+        }
+        
         // Add extra fields when showing all models (for CLI list command)
         if (show_all) {
-            // Need to check download status for each model when showing all
-            bool is_downloaded = model_manager_->is_model_downloaded(model_id);
-            
             model_json["name"] = model_info.model_name;
-            model_json["downloaded"] = is_downloaded;
+            model_json["downloaded"] = model_info.downloaded;
             model_json["labels"] = model_info.labels;
         }
         
@@ -531,8 +531,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     }
     
     res.set_content(response.dump(), "application/json");
-    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====" << std::endl;
-    std::cout.flush();
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
@@ -546,6 +544,12 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
             {"checkpoint", info.checkpoint},
             {"recipe", info.recipe}
         };
+        
+        // Add size if available
+        if (info.size > 0.0) {
+            response["size"] = info.size;
+        }
+        
         res.set_content(response.dump(), "application/json");
     } else {
         res.status = 404;
@@ -594,6 +598,35 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             request_body = request_json_copy.dump();
             if (!is_streaming) {
                 request_json = request_json_copy;  // Update for non-streaming path too
+            }
+        }
+        
+        // Handle enable_thinking=false by prepending /no_think to last user message
+        if (request_json.contains("enable_thinking") && 
+            request_json["enable_thinking"].is_boolean() && 
+            request_json["enable_thinking"].get<bool>() == false) {
+            
+            if (request_json.contains("messages") && request_json["messages"].is_array()) {
+                auto& messages = request_json["messages"];
+                
+                // Find the last user message (iterate backwards)
+                for (int i = messages.size() - 1; i >= 0; i--) {
+                    if (messages[i].is_object() && 
+                        messages[i].contains("role") && 
+                        messages[i]["role"].is_string() && 
+                        messages[i]["role"].get<std::string>() == "user") {
+                        
+                        // Prepend /no_think to the content
+                        if (messages[i].contains("content") && messages[i]["content"].is_string()) {
+                            std::string original_content = messages[i]["content"].get<std::string>();
+                            messages[i]["content"] = "/no_think\n" + original_content;
+                            
+                            // Update request_body with modified JSON
+                            request_body = request_json.dump();
+                            break;
+                        }
+                    }
+                }
             }
         }
         
@@ -1065,6 +1098,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         std::string recipe = request_json.value("recipe", "");
         bool reasoning = request_json.value("reasoning", false);
         bool vision = request_json.value("vision", false);
+        bool embedding = request_json.value("embedding", false);
+        bool reranking = request_json.value("reranking", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         
@@ -1077,7 +1112,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
         
         model_manager_->download_model(model_name, checkpoint, recipe, 
-                                      reasoning, vision, mmproj, do_not_upgrade);
+                                      reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
         
         nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
         res.set_content(response.dump(), "application/json");
@@ -1227,6 +1262,8 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         std::string mmproj;
         bool reasoning = false;
         bool vision = false;
+        bool embedding = false;
+        bool reranking = false;
         
         // Parse form fields
         if (req.form.has_field("model_name")) {
@@ -1248,6 +1285,14 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         if (req.form.has_field("vision")) {
             std::string vision_str = req.form.get_field("vision");
             vision = (vision_str == "true" || vision_str == "True" || vision_str == "1");
+        }
+        if (req.form.has_field("embedding")) {
+            std::string embedding_str = req.form.get_field("embedding");
+            embedding = (embedding_str == "true" || embedding_str == "True" || embedding_str == "1");
+        }
+        if (req.form.has_field("reranking")) {
+            std::string reranking_str = req.form.get_field("reranking");
+            reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
         }
         
         std::cout << "[Server] Model name: " << model_name << std::endl;
@@ -1316,27 +1361,7 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         }
         
         // Get HF cache directory
-        std::string hf_cache;
-        const char* hf_home_env = std::getenv("HF_HOME");
-        if (hf_home_env) {
-            hf_cache = std::string(hf_home_env) + "/hub";
-        } else {
-#ifdef _WIN32
-            const char* userprofile = std::getenv("USERPROFILE");
-            if (userprofile) {
-                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
-            } else {
-                throw std::runtime_error("Cannot determine HF cache directory");
-            }
-#else
-            const char* home = std::getenv("HOME");
-            if (home) {
-                hf_cache = std::string(home) + "/.cache/huggingface/hub";
-            } else {
-                throw std::runtime_error("Cannot determine HF cache directory");
-            }
-#endif
-        }
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
         
         // Create model directory in HF cache
         std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
@@ -1479,6 +1504,8 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
             recipe,
             reasoning,
             vision,
+            embedding,
+            reranking,
             resolved_mmproj.empty() ? mmproj : resolved_mmproj,
             "local_upload"
         );
@@ -1533,113 +1560,8 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
             verbose = (verbose_param == "true" || verbose_param == "1");
         }
         
-        // Check cache first
-        SystemInfoCache cache;
-        nlohmann::json cached_hardware = cache.load_hardware_info();
-        nlohmann::json devices;
-        
-        // Create platform-specific system info instance
-        auto sys_info = create_system_info();
-        
-        if (!cached_hardware.empty()) {
-            std::cout << "[Server] Using cached hardware info from: " << cache.get_cache_file_path() << std::endl;
-            devices = cached_hardware;
-        } else {
-            std::cout << "[Server] Detecting hardware (will cache to: " << cache.get_cache_file_path() << ")" << std::endl;
-            
-            // Get hardware information
-            devices = sys_info->get_device_dict();
-            
-            // Strip inference_engines before caching (hardware only)
-            nlohmann::json hardware_only = devices;
-            if (hardware_only.contains("cpu") && hardware_only["cpu"].contains("inference_engines")) {
-                hardware_only["cpu"].erase("inference_engines");
-            }
-            if (hardware_only.contains("amd_igpu") && hardware_only["amd_igpu"].contains("inference_engines")) {
-                hardware_only["amd_igpu"].erase("inference_engines");
-            }
-            if (hardware_only.contains("amd_dgpu") && hardware_only["amd_dgpu"].is_array()) {
-                for (auto& gpu : hardware_only["amd_dgpu"]) {
-                    if (gpu.contains("inference_engines")) {
-                        gpu.erase("inference_engines");
-                    }
-                }
-            }
-            if (hardware_only.contains("nvidia_dgpu") && hardware_only["nvidia_dgpu"].is_array()) {
-                for (auto& gpu : hardware_only["nvidia_dgpu"]) {
-                    if (gpu.contains("inference_engines")) {
-                        gpu.erase("inference_engines");
-                    }
-                }
-            }
-            if (hardware_only.contains("npu") && hardware_only["npu"].contains("inference_engines")) {
-                hardware_only["npu"].erase("inference_engines");
-            }
-            
-            // Save hardware-only info to cache
-            cache.save_hardware_info(hardware_only);
-            std::cout << "[Server] Hardware info cached to: " << cache.get_cache_file_path() << std::endl;
-        }
-        
-        // Detect inference engines (always fresh, never cached)
-        // CPU
-        if (devices.contains("cpu") && devices["cpu"].contains("name")) {
-            std::string cpu_name = devices["cpu"]["name"];
-            devices["cpu"]["inference_engines"] = sys_info->detect_inference_engines("cpu", cpu_name);
-        }
-        
-        // AMD iGPU
-        if (devices.contains("amd_igpu") && devices["amd_igpu"].contains("name")) {
-            std::string gpu_name = devices["amd_igpu"]["name"];
-            devices["amd_igpu"]["inference_engines"] = sys_info->detect_inference_engines("amd_igpu", gpu_name);
-        }
-        
-        // AMD dGPUs
-        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
-            for (auto& gpu : devices["amd_dgpu"]) {
-                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                    std::string gpu_name = gpu["name"];
-                    gpu["inference_engines"] = sys_info->detect_inference_engines("amd_dgpu", gpu_name);
-                }
-            }
-        }
-        
-        // NVIDIA dGPUs
-        if (devices.contains("nvidia_dgpu") && devices["nvidia_dgpu"].is_array()) {
-            for (auto& gpu : devices["nvidia_dgpu"]) {
-                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                    std::string gpu_name = gpu["name"];
-                    gpu["inference_engines"] = sys_info->detect_inference_engines("nvidia_dgpu", gpu_name);
-                }
-            }
-        }
-        
-        // NPU
-        if (devices.contains("npu") && devices["npu"].contains("name")) {
-            std::string npu_name = devices["npu"]["name"];
-            devices["npu"]["inference_engines"] = sys_info->detect_inference_engines("npu", npu_name);
-        }
-        
-        // Get system information (OS Version, Processor, Physical Memory, etc.)
-        nlohmann::json system_info = sys_info->get_system_info_dict();
-        
-        // Add devices
-        system_info["devices"] = devices;
-        
-        // Filter for non-verbose mode (only essential keys)
-        if (!verbose) {
-            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
-            nlohmann::json filtered_info;
-            for (const auto& key : essential_keys) {
-                if (system_info.contains(key)) {
-                    filtered_info[key] = system_info[key];
-                }
-            }
-            system_info = filtered_info;
-        } else {
-            // In verbose mode, add Python packages (empty for C++ implementation)
-            system_info["Python Packages"] = SystemInfo::get_python_packages();
-        }
+        // Get system info with cache handling
+        nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
         
         res.set_content(system_info.dump(), "application/json");
         

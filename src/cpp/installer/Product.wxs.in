@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  
+  <!--
+    Lemonade Server MSI Installer - WiX 5.0
+    Version: @PROJECT_VERSION@ (auto-populated by CMake)
+  -->
+  
+  <Package Name="Lemonade Server"
+           Manufacturer="AMD"
+           Version="@PROJECT_VERSION@"
+           UpgradeCode="d4e5f6a7-b8c9-4d5e-a6b7-c8d9e0f1a2b3"
+           Language="1033"
+           Compressed="yes"
+           Scope="perUser"
+           InstallerVersion="500">
+    
+    <!-- Package metadata -->
+    <SummaryInformation Description="Lemonade Local LLM Server"
+                        Manufacturer="AMD"
+                        Keywords="LLM, AI, Server, Local" />
+    
+    <!-- Icon for installer window and Add/Remove Programs -->
+    <Icon Id="LemonadeIcon" SourceFile="$(var.SourceDir)\build\Release\resources\static\favicon.ico" />
+    
+    <!-- Set installer window icon -->
+    <Property Id="ARPPRODUCTICON" Value="LemonadeIcon" />
+    
+    <!-- Also set as the main installer icon (shows in title bar and taskbar) -->
+    <Property Id="SetupIcon" Value="LemonadeIcon" />
+    
+    <!-- Add/Remove Programs properties -->
+    <Property Id="ARPHELPLINK" Value="https://lemonade-server.ai" />
+    <Property Id="ARPURLINFOABOUT" Value="https://lemonade-server.ai" />
+    
+    <!-- Launch conditions -->
+    <Launch Condition="VersionNT &gt;= 603"
+            Message="This application requires Windows 8.1 or later." />
+    
+    <!-- Upgrade logic -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Lemonade Server is already installed."
+                  AllowSameVersionUpgrades="yes" />
+    
+    <!-- Custom properties for command-line installation -->
+    <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
+    <Property Id="ADDTOSTARTUP" Value="0" Secure="yes" />
+    <Property Id="LAUNCHAPP" Value="0" />
+
+    <!-- Enable optional 'Run now' checkbox on ExitDialog (unchecked by default) -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
+
+    <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
+    <Property Id="EXISTINGINSTALLDIR">
+      <RegistrySearch Id="FindInstallDir"
+                      Root="HKCU"
+                      Key="Software\AMD\Lemonade Server"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
+    
+    <!-- Detect legacy C++ NSIS-based installer location and uninstaller command -->
+    <Property Id="NSISINSTALLED">
+      <RegistrySearch Id="FindNsisInstall"
+                      Root="HKCU"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
+    
+    <Property Id="NSISUNINSTALLSTRING">
+      <RegistrySearch Id="FindNsisUninstall"
+                      Root="HKCU"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="UninstallString"
+                      Type="raw" />
+    </Property>
+    
+    <!-- Media -->
+    <Media Id="1" Cabinet="lemonade.cab" EmbedCab="yes" />
+    
+    <!-- ============================================ -->
+    <!-- Directory Structure -->
+    <!-- ============================================ -->
+    
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLDIR" Name="lemonade_server">
+        <Directory Id="BinDir" Name="bin">
+          <Directory Id="ResourcesDir" Name="resources">
+            <Directory Id="StaticDir" Name="static">
+              <Directory Id="JsDir" Name="js" />
+            </Directory>
+          </Directory>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuDir" Name="Lemonade Server" />
+    </StandardDirectory>
+    
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="StartupFolder" />
+    
+    <!-- ============================================ -->
+    <!-- Components -->
+    <!-- ============================================ -->
+    
+    <!-- Executable files -->
+    <ComponentGroup Id="ExecutableComponents" Directory="BinDir">
+      <Component Id="LemonadeTray" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
+        <File Id="lemonade_tray.exe" Source="$(var.SourceDir)\build\Release\lemonade-tray.exe" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="LemonadeServer" Guid="d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a">
+        <File Id="lemonade_server.exe" Source="$(var.SourceDir)\build\Release\lemonade-server.exe" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="LemonadeRouter" Guid="e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b">
+        <File Id="lemonade_router.exe" Source="$(var.SourceDir)\build\Release\lemonade-router.exe" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
+        <File Id="lemonade_log_viewer.exe" Source="$(var.SourceDir)\build\Release\lemonade-log-viewer.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+    
+    <!-- Resource files -->
+    <ComponentGroup Id="ResourceComponents">
+      <Component Id="ServerModelsJson" Directory="ResourcesDir" Guid="a8b9c0d1-e2f3-4a4b-5c6d-7e8f9a0b1c2d">
+        <File Id="server_models.json" Source="$(var.SourceDir)\build\Release\resources\server_models.json" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="BackendVersionsJson" Directory="ResourcesDir" Guid="b9c0d1e2-f3a4-4b5c-6d7e-8f9a0b1c2d3e">
+        <File Id="backend_versions.json" Source="$(var.SourceDir)\build\Release\resources\backend_versions.json" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
+        <File Id="favicon.ico" Source="$(var.SourceDir)\build\Release\resources\static\favicon.ico" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="LogsHtml" Directory="StaticDir" Guid="d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a">
+        <File Id="logs.html" Source="$(var.SourceDir)\build\Release\resources\static\logs.html" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
+        <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="WebappHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
+        <File Id="webapp.html" Source="$(var.SourceDir)\build\Release\resources\static\webapp.html" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="ChatJs" Directory="JsDir" Guid="a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d">
+        <File Id="chat.js" Source="$(var.SourceDir)\build\Release\resources\static\js\chat.js" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="ModelSettingsJs" Directory="JsDir" Guid="b5c6d7e8-f9a0-4b1c-2d3e-4f5a6b7c8d9e">
+        <File Id="model_settings.js" Source="$(var.SourceDir)\build\Release\resources\static\js\model-settings.js" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="ModelsJs" Directory="JsDir" Guid="c6d7e8f9-a0b1-4c2d-3e4f-5a6b7c8d9e0f">
+        <File Id="models.js" Source="$(var.SourceDir)\build\Release\resources\static\js\models.js" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="SharedJs" Directory="JsDir" Guid="d7e8f9a0-b1c2-4d3e-4f5a-6b7c8d9e0f1a">
+        <File Id="shared.js" Source="$(var.SourceDir)\build\Release\resources\static\js\shared.js" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+    
+    <!-- PATH environment variable -->
+    <Component Id="PathEnvironment" Directory="BinDir" Guid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d">
+      <Environment Id="PATH" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="no" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <!-- Registry keys -->
+    <Component Id="RegistryEntries" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e">
+      <RegistryKey Root="HKCU" Key="Software\AMD\Lemonade Server">
+        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
+        <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
+      </RegistryKey>
+    </Component>
+    
+    <!-- Start Menu shortcuts -->
+    <Component Id="ProgramMenuShortcuts" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d">
+      <Shortcut Id="ApplicationStartMenuShortcut"
+                Name="Lemonade Server"
+                Target="[BinDir]lemonade-tray.exe"
+                WorkingDirectory="BinDir"
+                Icon="LemonadeIcon" />
+      <Shortcut Id="UninstallShortcut"
+                Name="Uninstall Lemonade Server"
+                Target="[SystemFolder]msiexec.exe"
+                Arguments="/x [ProductCode]" />
+      <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <!-- Desktop shortcut (conditional) -->
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f" Condition="ADDDESKTOPSHORTCUT = 1">
+      <Shortcut Id="DesktopShortcutId"
+                Name="Lemonade Server"
+                Target="[BinDir]lemonade-tray.exe"
+                WorkingDirectory="BinDir"
+                Icon="LemonadeIcon" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <!-- ============================================ -->
+    <!-- Features -->
+    <!-- ============================================ -->
+    
+    <Feature Id="Complete" Level="1">
+      <ComponentGroupRef Id="ExecutableComponents" />
+      <ComponentGroupRef Id="ResourceComponents" />
+      <ComponentRef Id="PathEnvironment" />
+      <ComponentRef Id="RegistryEntries" />
+      <ComponentRef Id="ProgramMenuShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+    
+    <!-- ============================================ -->
+    <!-- UI -->
+    <!-- ============================================ -->
+    
+    <!-- Custom UI: Skip license and verification screens -->
+    <UI>
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLDIR" />
+      
+      <!-- Override default: Welcome goes directly to InstallDir (skip license) -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="99" />
+      
+      <!-- Override default: InstallDir Next triggers installation (skip VerifyReady) -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="EndDialog" Value="Return" Order="99" />
+      
+      <!-- Override default: InstallDir Back goes to Welcome (skip license) -->
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+
+      <!-- On ExitDialog, run Lemonade when user clicks Finish with checkbox checked -->
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
+    </UI>
+    
+    <!-- Custom branding images -->
+    <!-- WixUIDialogBmp = 493×312 left-side banner for welcome/finish screens -->
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.SourceDir)\installer\installer_banner_wix.bmp" />
+    
+    <!-- WixUIBannerBmp = 493×58 top banner with lemon icon (replaces red CD) -->
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.SourceDir)\installer\top_banner.bmp" />
+    
+    <!-- ============================================ -->
+    <!-- Custom Actions -->
+    <!-- ============================================ -->
+    
+    <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
+    <CustomAction Id="StopNsisServer"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[NSISINSTALLED]\bin\lemonade-server.exe" ("[NSISINSTALLED]\bin\lemonade-server.exe" stop &amp; ping 127.0.0.1 -n 3 &gt;nul)'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="check" />
+    
+    <!-- If a legacy C++ NSIS-based installer exists, run its uninstaller and wait for it to complete.
+         The uninstaller may take time to delete large caches, so we wait 10 seconds using ping. -->
+    <CustomAction Id="RunNsisUninstall"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c ""[NSISUNINSTALLSTRING]" /S &amp; echo Cleaing up legacy Lemonade_Server_Installer.exe installation... &amp; ping 127.0.0.1 -n 11 &gt;nul &amp; if exist "[NSISINSTALLED]" (echo ERROR: Directory still exists after uninstall &amp; dir "[NSISINSTALLED]" &amp; exit /b 1) else (echo Legacy uninstall succeeded &amp; exit /b 0)"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="check" />
+    
+    <!-- Stop server before upgrade using lemonade-server stop from existing MSI install -->
+    <!-- This properly stops all child processes (router, llama-server, etc.) -->
+    <CustomAction Id="StopServerCmd"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c "[EXISTINGINSTALLDIR]bin\lemonade-server.exe" stop'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Stop legacy Python-based server from the previous Python NSIS install in INSTALLDIR -->
+    <CustomAction Id="StopLegacyPythonServer"
+                  Directory="SystemFolder"
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[INSTALLDIR]bin\lemonade-server.bat" "[INSTALLDIR]bin\lemonade-server.bat" stop'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Clean legacy Python-based install directory in INSTALLDIR before MSI takes over -->
+    <CustomAction Id="CleanLegacyInstall"
+                  Directory="INSTALLDIR"
+                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[INSTALLDIR]"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Launch lemonade-tray.exe (triggered from ExitDialog Finish button) by shell-executing
+         the Start Menu shortcut through explorer.exe. This ensures the process runs in the
+         normal user context with the shortcut-defined working directory. -->
+    <CustomAction Id="LaunchApplication"
+                  Directory="SystemFolder"
+                  ExeCommand='"[SystemFolder]explorer.exe" "[ProgramMenuDir]Lemonade Server.lnk"'
+                  Impersonate="yes"
+                  Return="asyncNoWait" />
+    
+    <!-- Stop server during uninstall -->
+    <CustomAction Id="StopServerOnUninstall"
+                  Directory="BinDir"
+                  ExeCommand='cmd.exe /c "lemonade-server.exe stop"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <!-- Clean up runtime-created directories during uninstall (ryzenai-server and llama folders).
+         These folders are created at runtime when models are downloaded, so WiX doesn't track them. -->
+    <CustomAction Id="CleanupRuntimeDirs"
+                  Directory="BinDir"
+                  ExeCommand='cmd.exe /c "rmdir /s /q ryzenai-server &amp; rmdir /s /q llama"'
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <InstallExecuteSequence>
+      <!-- If NSIS-based C++ installer is present, stop the server first, then uninstall -->
+      <Custom Action="StopNsisServer"
+              Before="RunNsisUninstall"
+              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
+      
+      <Custom Action="RunNsisUninstall"
+              Before="StopLegacyPythonServer"
+              Condition="NSISUNINSTALLSTRING AND NOT Installed" />
+      
+      <!-- Stop legacy Python-based server from the previous Python NSIS install before cleaning its files.
+           Only runs if lemonade-server.bat exists (evidence of Python install). -->
+      <Custom Action="StopLegacyPythonServer"
+              Before="CleanLegacyInstall"
+              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
+      
+      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout).
+           Only runs if we already stopped the Python server (which only runs if .bat exists). -->
+      <Custom Action="CleanLegacyInstall"
+              Before="InstallValidate"
+              Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
+      
+      <!-- Stop server from an existing MSI-based C++ install before validation -->
+      <Custom Action="StopServerCmd"
+              Before="InstallValidate"
+              Condition="EXISTINGINSTALLDIR AND (EXISTINGINSTALLDIR &lt;&gt; &quot;&quot;)" />
+      
+      <!-- Stop server during uninstall before cleaning up runtime directories -->
+      <Custom Action="StopServerOnUninstall"
+              Before="CleanupRuntimeDirs"
+              Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+      
+      <!-- Clean up runtime-created directories during uninstall -->
+      <Custom Action="CleanupRuntimeDirs"
+              Before="RemoveFiles"
+              Condition="Installed AND REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+    
+  </Package>
+
+</Wix>
+

@@ -5,8 +5,8 @@
 # Generate manifest files from templates (Windows only)
 if(WIN32)
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-beta.manifest.in
-        ${CMAKE_CURRENT_BINARY_DIR}/lemonade-server-beta.manifest
+        ${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server.manifest.in
+        ${CMAKE_CURRENT_BINARY_DIR}/lemonade-server.manifest
         @ONLY
     )
 endif()
@@ -53,7 +53,7 @@ elseif(UNIX)  # Linux
     # Linux builds are headless-only (no tray support)
     # This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
     message(STATUS "Linux build: Tray application disabled (headless mode only)")
-    message(STATUS "Use 'lemonade-server-beta serve --no-tray' to run server")
+    message(STATUS "Use 'lemonade-server serve --no-tray' to run server")
     
     # Include stub Linux tray implementation (headless mode)
     set(PLATFORM_SOURCES
@@ -76,18 +76,18 @@ if(WIN32)
 endif()
 
 # ============================================================
-# lemonade-server-beta.exe - Console CLI client
+# lemonade-server.exe - Console CLI client
 # ============================================================
-add_executable(lemonade-server-beta
+add_executable(lemonade-server
     ${COMMON_SOURCES}
     ${PLATFORM_SOURCES}
 )
 
-target_include_directories(lemonade-server-beta PRIVATE
+target_include_directories(lemonade-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(lemonade-server-beta PRIVATE
+target_link_libraries(lemonade-server PRIVATE
     nlohmann_json::nlohmann_json
     httplib::httplib
     ${PLATFORM_LIBS}
@@ -96,11 +96,11 @@ target_link_libraries(lemonade-server-beta PRIVATE
 # Set output directory to build root for all platforms
 # Windows uses Debug/Release subdirectories (multi-config generator)
 # Linux/Mac go directly to CMAKE_BINARY_DIR (single-config generator)
-set_target_properties(lemonade-server-beta PROPERTIES
+set_target_properties(lemonade-server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 if(WIN32)
-    set_target_properties(lemonade-server-beta PROPERTIES
+    set_target_properties(lemonade-server PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
     )
@@ -150,21 +150,21 @@ endif()
 # Platform-specific settings
 if(WIN32)
     # On Windows, make sure we have Unicode support
-    target_compile_definitions(lemonade-server-beta PRIVATE
+    target_compile_definitions(lemonade-server PRIVATE
         UNICODE
         _UNICODE
     )
     
     # Link with networking and system libraries
-    target_link_libraries(lemonade-server-beta PRIVATE
+    target_link_libraries(lemonade-server PRIVATE
         ws2_32     # Winsock
         iphlpapi   # IP Helper API for network connection enumeration
     )
     
     # Embed manifest file
     if(MSVC)
-        set_target_properties(lemonade-server-beta PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/lemonade-server-beta.manifest"
+        set_target_properties(lemonade-server PROPERTIES
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/lemonade-server.manifest"
         )
     endif()
 endif()
@@ -172,13 +172,13 @@ endif()
 if(UNIX AND NOT APPLE)
     # On Linux, link with pthread
     find_package(Threads REQUIRED)
-    target_link_libraries(lemonade-server-beta PRIVATE
+    target_link_libraries(lemonade-server PRIVATE
         Threads::Threads
     )
 endif()
 
 # Install target
-install(TARGETS lemonade-server-beta
+install(TARGETS lemonade-server
     RUNTIME DESTINATION bin
 )
 

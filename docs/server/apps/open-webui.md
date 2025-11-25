@@ -15,10 +15,6 @@ This guide walks through how to connect Lemonade Server to Open WebUI and highli
 <iframe width="560" height="315" src="https://www.youtube.com/embed/yZs-Yzl736E?si=BFfxJYSqfu0wBMEP" 
 title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
-## Consider Using GAIA
-
-The team maintains a fork of Open WebUI called GAIA that provides automatic Lemonade integration and a simple Windows installer. You can try it out at <https://github.com/amd/gaia>. If you choose GAIA, you can skip the installation and configuration sections below and go straight to [Using Open WebUI with Lemonade](#using-open-webui-with-lemonade).
-
 ## Installing Open WebUI
 
 1. We recommend installing Open WebUI into a dedicated conda environment using the following commands. To download conda, see [Miniforge](https://conda-forge.org/download/).
@@ -45,7 +41,7 @@ The team maintains a fork of Open WebUI called GAIA that provides automatic Lemo
 
 ## Configuring Open WebUI
 
-1. Install and run Lemonade Server. Download [here](https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade_Server_Installer.exe).
+1. Install and run Lemonade Server. Download [here](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi).
 
 2. Add Lemonade Server as a "connection" in Open WebUI using the following steps:
     1. Click the circular user profile button in the top-right of the UI, then click Settings:
