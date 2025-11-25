@@ -26,7 +26,7 @@ jobs:
   test-flm-npu:
     env:
         LEMONADE_CI_MODE: "True"
-        CONDA_ENV_PATH: .\lemon-flm-ci
+        CONDA_ENV_PATH: ./lemon-ci-env
         PYTHONIOENCODING: utf-8
     runs-on: [stx, Windows]
     concurrency:
@@ -65,7 +65,7 @@ jobs:
           conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip install -e .
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
