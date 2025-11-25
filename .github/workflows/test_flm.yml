@@ -26,6 +26,7 @@ jobs:
   test-flm-npu:
     env:
         LEMONADE_CI_MODE: "True"
+        CONDA_ENV_PATH: .\lemon-flm-ci
         PYTHONIOENCODING: utf-8
     runs-on: [stx, Windows]
     concurrency:
@@ -47,7 +48,7 @@ jobs:
           conda update conda conda-libmamba-solver --solver classic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          conda create -p .\lemon-flm-ci python=3.10 -y
+          conda create -p $env:CONDA_ENV_PATH python=3.10 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
@@ -55,16 +56,16 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p .\lemon-flm-ci python -m pip install --upgrade pip
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci conda install -y pylint
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH conda install -y pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci python -m pip check
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci pip install -e .
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip install -e .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -100,7 +101,16 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p .\lemon-flm-ci python test/server_flm.py
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_flm.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run lemonade FLM CLI tests
+        env:
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i llama3.2:1b flm-load llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i llama3.2:1b flm-load flm-bench -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
 
 
