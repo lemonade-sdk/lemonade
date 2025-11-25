@@ -130,10 +130,12 @@ private:
     pid_t log_viewer_pid_ = 0;
 #endif
 
-    // Electron app process tracking (for child process management)
+    // Electron app process tracking (for child process management and single-instance enforcement)
 #ifdef _WIN32
     HANDLE electron_app_process_ = nullptr;
     HANDLE electron_job_object_ = nullptr;  // Job object to ensure child closes with parent
+#else
+    pid_t electron_app_pid_ = 0;  // Process ID of the Electron app (macOS/Linux)
 #endif
 
     // Log tail thread for console output (when show_console is true)

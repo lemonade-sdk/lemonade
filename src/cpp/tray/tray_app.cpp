@@ -191,6 +191,8 @@ TrayApp::TrayApp(int argc, char* argv[])
 #ifdef _WIN32
     , electron_app_process_(nullptr)
     , electron_job_object_(nullptr)
+#else
+    , electron_app_pid_(0)
 #endif
 {
     // Load defaults from environment variables before parsing command-line arguments
@@ -1798,7 +1800,7 @@ void TrayApp::shutdown() {
     }
 #endif
     
-    // Close Electron app if open (on Windows, the job object will terminate it automatically)
+    // Close Electron app if open
 #ifdef _WIN32
     if (electron_app_process_) {
         // The job object will automatically terminate the process when we close it
@@ -1810,6 +1812,29 @@ void TrayApp::shutdown() {
         // Closing the job object will terminate all processes in it
         CloseHandle(electron_job_object_);
         electron_job_object_ = nullptr;
+    }
+#else
+    // macOS/Linux: Terminate the Electron app if it's running
+    if (electron_app_pid_ > 0) {
+        if (is_process_alive_not_zombie(electron_app_pid_)) {
+            std::cout << "Terminating Electron app (PID: " << electron_app_pid_ << ")..." << std::endl;
+            kill(electron_app_pid_, SIGTERM);
+            
+            // Wait briefly for graceful shutdown
+            for (int i = 0; i < 10; i++) {
+                if (!is_process_alive_not_zombie(electron_app_pid_)) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            
+            // Force kill if still alive
+            if (is_process_alive_not_zombie(electron_app_pid_)) {
+                std::cout << "Force killing Electron app..." << std::endl;
+                kill(electron_app_pid_, SIGKILL);
+            }
+        }
+        electron_app_pid_ = 0;
     }
 #endif
     
@@ -1899,6 +1924,24 @@ void TrayApp::launch_electron_app() {
         }
     }
     
+#ifdef _WIN32
+    // Single-instance enforcement: Only allow one Electron app to be open at a time
+    // Reuse child process tracking to determine if the app is already running
+    if (electron_app_process_ != nullptr) {
+        // Check if the process is still alive
+        DWORD exit_code = 0;
+        if (GetExitCodeProcess(electron_app_process_, &exit_code) && exit_code == STILL_ACTIVE) {
+            std::cout << "Electron app is already running" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, clean up the handle
+            CloseHandle(electron_app_process_);
+            electron_app_process_ = nullptr;
+        }
+    }
+#endif
+    
     // Launch the Electron app
 #ifdef _WIN32
     // Windows: Create a job object to ensure the Electron app closes when tray closes
@@ -1964,22 +2007,70 @@ void TrayApp::launch_electron_app() {
         std::cerr << "Failed to launch Electron app: " << GetLastError() << std::endl;
     }
 #elif defined(__APPLE__)
+    // Single-instance enforcement: Check if the Electron app is already running
+    if (electron_app_pid_ > 0) {
+        // Check if the process is still alive
+        if (kill(electron_app_pid_, 0) == 0) {
+            std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, reset the PID
+            electron_app_pid_ = 0;
+        }
+    }
+    
     // macOS: Use 'open' command to launch the .app
+    // Note: 'open' doesn't give us the PID directly, so we'll need to find it
     std::string cmd = "open \"" + electron_app_path_ + "\"";
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
+        
+        // Try to find the PID of the Electron app we just launched
+        // Look for process named "Lemonade" (the app name, not the .app bundle name)
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Give it time to start
+        FILE* pipe = popen("pgrep -n Lemonade", "r");  // -n = newest matching process
+        if (pipe) {
+            char buffer[128];
+            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                electron_app_pid_ = atoi(buffer);
+                std::cout << "Tracking Electron app (PID: " << electron_app_pid_ << ")" << std::endl;
+            }
+            pclose(pipe);
+        }
     } else {
         std::cerr << "Failed to launch Electron app" << std::endl;
     }
 #else
-    // Linux: Launch the binary directly
-    std::string cmd = "\"" + electron_app_path_ + "\" &";
-    int result = system(cmd.c_str());
-    if (result == 0) {
-        std::cout << "Launched Electron app" << std::endl;
+    // Single-instance enforcement: Check if the Electron app is already running
+    if (electron_app_pid_ > 0) {
+        // Check if the process is still alive (and not a zombie)
+        if (is_process_alive_not_zombie(electron_app_pid_)) {
+            std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, reset the PID
+            electron_app_pid_ = 0;
+        }
+    }
+    
+    // Linux: Launch the binary directly using fork/exec for proper PID tracking
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process: execute the Electron app
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        // If execl returns, it failed
+        std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process: store the PID
+        electron_app_pid_ = pid;
+        std::cout << "Launched Electron app (PID: " << electron_app_pid_ << ")" << std::endl;
     } else {
-        std::cerr << "Failed to launch Electron app" << std::endl;
+        // Fork failed
+        std::cerr << "Failed to launch Electron app: " << strerror(errno) << std::endl;
     }
 #endif
 }
