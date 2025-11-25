@@ -119,7 +119,47 @@ class MultiModelTesting(ServerTestingBase):
         model_names = {m["model_name"] for m in data["all_models_loaded"]}
         self.assertEqual(model_names, {self.model_llm_1, self.model_llm_2})
 
-    def test_004_lru_eviction_when_limit_exceeded(self):
+    def test_004_most_recent_model_updates_on_access(self):
+        """Test that model_loaded/checkpoint_loaded reflect most recently accessed model."""
+        # Load model A
+        response = requests.post(
+            f"{self.base_url}/load", json={"model_name": self.model_llm_1}
+        )
+        self.assertEqual(response.status_code, 200)
+        time.sleep(2)
+
+        # Load model B
+        response = requests.post(
+            f"{self.base_url}/load", json={"model_name": self.model_llm_2}
+        )
+        self.assertEqual(response.status_code, 200)
+        time.sleep(2)
+
+        # Health should show model B as most recent (it was loaded last)
+        response = requests.get(f"{self.base_url}/health")
+        data = response.json()
+        self.assertEqual(data["model_loaded"], self.model_llm_2)
+        self.assertEqual(len(data["all_models_loaded"]), 2)
+
+        # Do a chat/completion on model A
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": self.model_llm_1,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 5,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Health should now show model A as most recent (it was accessed last)
+        response = requests.get(f"{self.base_url}/health")
+        data = response.json()
+        self.assertEqual(data["model_loaded"], self.model_llm_1)
+        # Both models should still be loaded
+        self.assertEqual(len(data["all_models_loaded"]), 2)
+
+    def test_005_lru_eviction_when_limit_exceeded(self):
         """Test LRU eviction when loading a third model with max_llm_models=2."""
         # Load first two models (fills the limit)
         response = requests.post(

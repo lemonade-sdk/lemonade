@@ -913,8 +913,8 @@ curl http://localhost:8000/api/v1/health
 **Field Descriptions:**
 
 - `status` - Server health status, always `"ok"`
-- `checkpoint_loaded` - Checkpoint identifier of the most recently loaded model
-- `model_loaded` - Model name of the most recently loaded model
+- `checkpoint_loaded` - Checkpoint identifier of the most recently accessed model
+- `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
