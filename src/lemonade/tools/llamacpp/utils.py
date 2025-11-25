@@ -1080,8 +1080,6 @@ class LlamaCppAdapter(ModelAdapter):
             "-ngl",
             "99" if self.device == "igpu" else "0",
         ]
-        ngl_value = "99" if self.device == "igpu" else "0"
-        cmd = cmd + ["-ngl", ngl_value]
         cmd = [str(m) for m in cmd]
 
         # save llama-bench command
