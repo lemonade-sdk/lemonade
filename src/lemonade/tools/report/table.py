@@ -438,16 +438,18 @@ class Table(ABC):
         # Per tool headers
         tool_columns = self.table_descriptor.get("tool_columns", {})
         tools = self.tools or []
+        used_tools = set()
         for tool in tools:
 
-            # Don't duplicate columns if tool has an alternate tool listed
+            # Use the column specification of the referenced tool
             if isinstance(tool_columns[tool], type):
-                referenced_tool = tool_columns[tool]
-                if referenced_tool in tools:
-                    continue
-                # Use the column specification of the referenced tool
-                tool = referenced_tool
+                tool = tool_columns[tool]
 
+            # Don't duplicate columns
+            if tool in used_tools:
+                continue
+
+            used_tools.add(tool)
             for column in tool_columns[tool]:
                 if not (self.lean and column.omit_if_lean):
                     headers.append(column.column_header)
@@ -500,14 +502,16 @@ class Table(ABC):
                     first_columns_count += 1
 
             # Per tool columns
+            used_tools = set()
             for tool in tools:
 
-                if not isinstance(tool_columns[tool], list):
-                    referenced_tool = tool_columns[tool]
-                    if referenced_tool in tools:
-                        continue
-                    tool = referenced_tool
+                if isinstance(tool_columns[tool], type):
+                    tool = tool_columns[tool]
 
+                if tool in used_tools:
+                    continue
+
+                used_tools.add(tool)
                 for entry in tool_columns[tool]:
                     entry_str = entry.get_str(build_stats, self.lean)
                     if entry_str is not None:
