@@ -92,8 +92,6 @@ private:
     void on_change_context_size(int new_ctx_size);
     void on_show_logs();
     void on_open_documentation();
-    void on_open_llm_chat();
-    void on_open_model_manager();
     void on_upgrade();
     void on_quit();
     

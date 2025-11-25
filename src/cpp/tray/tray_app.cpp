@@ -1491,6 +1491,16 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
+    // Open app - at the very top (only if Electron app is available on full installer)
+    if (electron_app_path_.empty()) {
+        // Try to find the Electron app if we haven't already
+        const_cast<TrayApp*>(this)->find_electron_app();
+    }
+    if (!electron_app_path_.empty()) {
+        menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
+        menu.add_separator();
+    }
+    
     // Get loaded model once and cache it to avoid redundant health checks
     std::string loaded = is_loading_model_ ? "" : get_loaded_model();
     
@@ -1563,10 +1573,6 @@ Menu TrayApp::create_menu() {
     
     // Main menu items
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
-    menu.add_item(MenuItem::Action("LLM Chat", [this]() { on_open_llm_chat(); }));
-    menu.add_item(MenuItem::Action("Model Manager", [this]() { on_open_model_manager(); }));
-    
-    // Logs menu item (simplified - always debug logs now)
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
     
     menu.add_separator();
@@ -1748,14 +1754,6 @@ void TrayApp::on_show_logs() {
 
 void TrayApp::on_open_documentation() {
     open_url("https://lemonade-server.ai/docs/");
-}
-
-void TrayApp::on_open_llm_chat() {
-    launch_electron_app();
-}
-
-void TrayApp::on_open_model_manager() {
-    launch_electron_app();
 }
 
 void TrayApp::on_upgrade() {
