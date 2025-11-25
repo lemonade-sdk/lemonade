@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('maximize-change', (event, isMaximized) => callback(isMaximized));
   },
   updateMinWidth: (width) => ipcRenderer.send('update-min-width', width),
+  zoomIn: () => ipcRenderer.send('zoom-in'),
+  zoomOut: () => ipcRenderer.send('zoom-out'),
   readUserModels: () => ipcRenderer.invoke('read-user-models'),
   addUserModel: (payload) => ipcRenderer.invoke('add-user-model', payload),
   watchUserModels: (callback) => {

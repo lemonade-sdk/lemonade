@@ -31,6 +31,12 @@ const TitleBar: React.FC<TitleBarProps> = ({
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const platform = window.api?.platform ?? navigator?.platform ?? '';
+  const normalizedPlatform = platform.toLowerCase();
+  const isMacPlatform = normalizedPlatform.includes('darwin') || normalizedPlatform.includes('mac');
+  const isWindowsPlatform = normalizedPlatform.includes('win');
+  const zoomInShortcutLabel = isMacPlatform ? '⌘ +' : isWindowsPlatform ? 'Ctrl Shift +' : 'Ctrl +';
+  const zoomOutShortcutLabel = isMacPlatform ? '⌘ -' : 'Ctrl -';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -100,6 +106,22 @@ const TitleBar: React.FC<TitleBarProps> = ({
     // Add your menu action handlers here
   };
 
+  const handleZoom = (direction: 'in' | 'out') => {
+    if (!window.api?.zoomIn || !window.api?.zoomOut) {
+      console.warn('Zoom controls are unavailable outside Electron.');
+      setActiveMenu(null);
+      return;
+    }
+
+    if (direction === 'in') {
+      window.api.zoomIn();
+    } else {
+      window.api.zoomOut();
+    }
+
+    setActiveMenu(null);
+  };
+
   return (
     <>
       <div className="title-bar">
@@ -130,6 +152,15 @@ const TitleBar: React.FC<TitleBarProps> = ({
                   <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
                     <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
                     <span className="menu-shortcut">Ctrl+Shift+L</span>
+                  </div>
+                  <div className="menu-separator"></div>
+                  <div className="menu-option" onClick={() => handleZoom('in')}>
+                    <span>Zoom In</span>
+                    <span className="menu-shortcut">{zoomInShortcutLabel}</span>
+                  </div>
+                  <div className="menu-option" onClick={() => handleZoom('out')}>
+                    <span>Zoom Out</span>
+                    <span className="menu-shortcut">{zoomOutShortcutLabel}</span>
                   </div>
                 </div>
               )}

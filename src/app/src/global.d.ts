@@ -34,6 +34,8 @@ declare global {
       openExternal: (url: string) => void;
       onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
       updateMinWidth: (width: number) => void;
+      zoomIn: () => void;
+      zoomOut: () => void;
       readUserModels?: () => Promise<Record<string, unknown>>;
       addUserModel?: (payload: {
         name: string;

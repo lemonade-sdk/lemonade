@@ -7,6 +7,9 @@ const { spawn } = require('child_process');
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
+const MIN_ZOOM_LEVEL = -2;
+const MAX_ZOOM_LEVEL = 3;
+const ZOOM_STEP = 0.2;
 
 let mainWindow;
 let backendProcess;
@@ -408,6 +411,23 @@ function updateWindowMinWidth(requestedWidth) {
   mainWindow.setMinimumSize(currentMinWidth, DEFAULT_MIN_HEIGHT);
 }
 
+const clampZoomLevel = (level) => {
+  return Math.min(Math.max(level, MIN_ZOOM_LEVEL), MAX_ZOOM_LEVEL);
+};
+
+const adjustZoomLevel = (delta) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const currentLevel = mainWindow.webContents.getZoomLevel();
+  const nextLevel = clampZoomLevel(currentLevel + delta);
+
+  if (nextLevel !== currentLevel) {
+    mainWindow.webContents.setZoomLevel(nextLevel);
+  }
+};
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -527,6 +547,14 @@ app.on('ready', () => {
 
   ipcMain.on('update-min-width', (_event, width) => {
     updateWindowMinWidth(width);
+  });
+
+  ipcMain.on('zoom-in', () => {
+    adjustZoomLevel(ZOOM_STEP);
+  });
+
+  ipcMain.on('zoom-out', () => {
+    adjustZoomLevel(-ZOOM_STEP);
   });
 });
 
