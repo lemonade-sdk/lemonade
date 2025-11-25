@@ -280,8 +280,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
-      // Show the actual recipe value from the JSON file
-      return key;
+      // Use friendly names for recipes
+      const recipeLabels: { [key: string]: string } = {
+        'flm': 'FastFlowLM NPU',
+        'llamacpp': 'Llama.cpp GPU',
+        'oga-cpu': 'ONNX Runtime CPU',
+        'oga-hybrid': 'ONNX Runtime Hybrid',
+        'oga-npu': 'ONNX Runtime NPU'
+      };
+      return recipeLabels[key] || key;
     } else {
       // Use friendly labels for categories
       return getCategoryLabel(key);
