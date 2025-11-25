@@ -38,8 +38,8 @@ class FLMLoad(FirstTool):
             required=False,
             type=int,
             default=None,
-            help="Context length that will override the models's default context length.  Minimum value "
-            "for FLM is 512 and FLM automatically rounds up to the nearest power of 2.",
+            help="Context length that will override the models's default context length.  Minimum "
+            "value for FLM is 512 and FLM automatically rounds up to the nearest power of 2.",
         )
 
         parser.add_argument(

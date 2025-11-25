@@ -1,5 +1,3 @@
-from typing import List, Tuple
-import time
 import argparse
 import statistics
 from statistics import StatisticsError
@@ -65,7 +63,7 @@ class FLMBench(Bench):
                 # and error handling
                 model.time_to_first_token = None
                 model.tokens_per_second = None
-                response = model.generate(
+                _ = model.generate(
                     prompt,
                     max_new_tokens=output_tokens,
                     save_max_memory_used=self.save_max_memory_used,

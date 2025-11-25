@@ -2,7 +2,6 @@
 FLM (FastFlowLM) utilities for installation, version checking, and model management.
 """
 
-import collections
 import os
 import logging
 import subprocess
@@ -493,7 +492,7 @@ class FLMAdapter(ModelAdapter):
                     self.server_process.terminate()
                     self.server_process = None
                     raise Exception(
-                        f"Failed to parse FLM server port from line: {line}"
+                        f"Error occurred: {e}\nFailed to parse FLM server port from line: {line}"
                     )
 
         if not server_ready or self.server_port is None:
@@ -524,7 +523,7 @@ class FLMAdapter(ModelAdapter):
 
             # Connect to local FastFlowLM server using detected port
             client = OpenAI(
-                base_url=f"http://localhost:{self.server_port}/v1",  # FastFlowLM's local API endpoint
+                base_url=f"http://localhost:{self.server_port}/v1",  # FastFlowLM endpoint
                 api_key="flm",  # Dummy key (FastFlowLM doesn't require authentication)
             )
 
