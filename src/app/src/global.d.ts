@@ -47,6 +47,7 @@ declare global {
       getSettings?: () => Promise<AppSettings>;
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);
+      getVersion?: () => Promise<string>;
     };
   }
 }

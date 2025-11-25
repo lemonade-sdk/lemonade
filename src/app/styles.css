@@ -2728,3 +2728,58 @@ footer {
     cursor: default;
 }
 
+/* About Modal Styles */
+.about-modal {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    animation: slideUp 0.2s ease;
+}
+
+.about-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.about-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.about-content {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.about-item {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+}
+
+.about-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #888;
+    min-width: 70px;
+}
+
+.about-value {
+    font-size: 0.875rem;
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+}
+

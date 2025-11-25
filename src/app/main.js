@@ -366,6 +366,33 @@ ipcMain.handle('save-app-settings', async (_event, payload) => {
   return sanitized;
 });
 
+ipcMain.handle('get-version', async () => {
+  try {
+    const http = require('http');
+    return new Promise((resolve, reject) => {
+      const req = http.get('http://localhost:8000/api/v1/health', (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            resolve(parsed.version || 'Unknown');
+          } catch (e) {
+            resolve('Unknown');
+          }
+        });
+      });
+      req.on('error', () => resolve('Unknown'));
+      req.setTimeout(2000, () => {
+        req.destroy();
+        resolve('Unknown');
+      });
+    });
+  } catch (error) {
+    return 'Unknown';
+  }
+});
+
 function updateWindowMinWidth(requestedWidth) {
   if (!mainWindow || typeof requestedWidth !== 'number' || !isFinite(requestedWidth)) {
     return;

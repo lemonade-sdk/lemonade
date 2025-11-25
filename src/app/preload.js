@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => {
       ipcRenderer.removeListener(channel, handler);
     };
-  }
+  },
+  getVersion: () => ipcRenderer.invoke('get-version')
 });
 

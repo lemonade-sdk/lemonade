@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import logo from '../../assets/logo.svg';
 import SettingsModal from './SettingsModal';
+import AboutModal from './AboutModal';
 
 type MenuType = 'view' | 'help' | null;
 
@@ -27,6 +28,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -149,7 +151,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     Release Notes
                   </div>
                   <div className="menu-separator"></div>
-                  <div className="menu-option" onClick={() => { window.api.openExternal('https://lemonade-server.ai/'); setActiveMenu(null); }}>
+                  <div className="menu-option" onClick={() => { setIsAboutOpen(true); setActiveMenu(null); }}>
                     About
                   </div>
                 </div>
@@ -208,6 +210,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
         </div>
       </div>
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <AboutModal isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
     </>
   );
 };

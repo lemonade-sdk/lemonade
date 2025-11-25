@@ -4,6 +4,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
+#include "lemon/version.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -381,6 +382,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     std::cout.flush();
     
     nlohmann::json response = {{"status", "ok"}};
+    
+    // Add version information
+    response["version"] = LEMON_VERSION_STRING;
     
     // Add model loaded information like Python implementation
     std::string loaded_checkpoint = router_->get_loaded_checkpoint();
