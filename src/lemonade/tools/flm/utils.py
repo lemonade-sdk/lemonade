@@ -312,6 +312,31 @@ def is_flm_available() -> bool:
     )
 
 
+def discard_output(process: subprocess.Popen):
+    """
+    Continuously read and discard output from the given process.
+    """
+    s = process.stdout
+    if s is None:
+        return
+    for _ in iter(s.readline, ""):
+        pass
+
+
+def log_output(process: subprocess.Popen):
+    """
+    Continuously read and log output from the given process.
+    """
+    s = process.stdout
+    if s is None:
+        return
+
+    for line in iter(s.readline, ""):
+        line = line.strip()
+        if line:
+            printing.log_info(f"FLM server: {line}")
+
+
 class FLMTokenizerAdapter(PassthroughTokenizer):
     pass
 
@@ -456,6 +481,7 @@ class FLMAdapter(ModelAdapter):
             if not line:
                 break
             line = line.strip()
+            printing.log_info(f"FLM server: {line}")
             if "WebServer started on port" in line:
                 try:
                     self.server_port = int(line.split("port")[1].split()[0])
@@ -474,11 +500,10 @@ class FLMAdapter(ModelAdapter):
                 f"Server failed to start within {timeout} seconds.  Command was '{' '.join(cmd)}'."
             )
 
-        # Start a thread to continuously read and discard server output
+        # Start a thread to continuously read and log FLM server output
         threading.Thread(
-            target=lambda s=self.server_process.stdout: collections.deque(
-                iter(s.readline, ""), maxlen=0
-            ),
+            target=log_output,
+            args=(self.server_process,),
             daemon=True,
         ).start()
 
