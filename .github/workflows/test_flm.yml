@@ -27,11 +27,17 @@ jobs:
     env:
         LEMONADE_CI_MODE: "True"
         CONDA_ENV_PATH: ./lemon-ci-env
+        LEMONADE_CACHE_DIR: ".\\ci-cache"
         PYTHONIOENCODING: utf-8
+
     runs-on: [stx, Windows]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
+    defaults:
+      run:
+        shell: powershell
+
     steps:
       - uses: actions/checkout@v3
       
@@ -39,7 +45,6 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
       
       - name: Create conda environment
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -52,7 +57,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           
@@ -72,7 +76,6 @@ jobs:
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
 
       - name: Install FLM
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -94,10 +97,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM NPU tests
-        shell: PowerShell
         env:
           HF_HOME: "${{ env.HF_HOME }}"
-          LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
           
@@ -106,7 +107,7 @@ jobs:
 
       - name: Run lemonade FLM CLI tests
         env:
-          LEMONADE_CACHE_DIR: ".\\ci-cache"
+          HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
 
