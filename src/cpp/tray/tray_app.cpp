@@ -188,6 +188,10 @@ static bool is_process_alive_not_zombie(pid_t pid) {
 TrayApp::TrayApp(int argc, char* argv[])
     : current_version_(LEMON_VERSION_STRING)
     , should_exit_(false)
+#ifdef _WIN32
+    , electron_app_process_(nullptr)
+    , electron_job_object_(nullptr)
+#endif
 {
     // Load defaults from environment variables before parsing command-line arguments
     load_env_defaults();
@@ -1796,6 +1800,21 @@ void TrayApp::shutdown() {
     }
 #endif
     
+    // Close Electron app if open (on Windows, the job object will terminate it automatically)
+#ifdef _WIN32
+    if (electron_app_process_) {
+        // The job object will automatically terminate the process when we close it
+        // But we can optionally terminate it gracefully first
+        CloseHandle(electron_app_process_);
+        electron_app_process_ = nullptr;
+    }
+    if (electron_job_object_) {
+        // Closing the job object will terminate all processes in it
+        CloseHandle(electron_job_object_);
+        electron_job_object_ = nullptr;
+    }
+#endif
+    
     // Stop the server
     if (server_manager_) {
         stop_server();
@@ -1884,26 +1903,64 @@ void TrayApp::launch_electron_app() {
     
     // Launch the Electron app
 #ifdef _WIN32
-    // Windows: Launch the .exe
+    // Windows: Create a job object to ensure the Electron app closes when tray closes
+    if (!electron_job_object_) {
+        electron_job_object_ = CreateJobObjectA(NULL, NULL);
+        if (electron_job_object_) {
+            // Configure job to terminate all processes when the last handle is closed
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {};
+            job_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            
+            if (!SetInformationJobObject(
+                electron_job_object_,
+                JobObjectExtendedLimitInformation,
+                &job_info,
+                sizeof(job_info))) {
+                std::cerr << "Warning: Failed to configure job object: " << GetLastError() << std::endl;
+                CloseHandle(electron_job_object_);
+                electron_job_object_ = nullptr;
+            } else {
+                std::cout << "Created job object for Electron app process management" << std::endl;
+            }
+        } else {
+            std::cerr << "Warning: Failed to create job object: " << GetLastError() << std::endl;
+        }
+    }
+    
+    // Launch the .exe
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     
-    // Don't wait for the process
+    // Create the process
     if (CreateProcessA(
         electron_app_path_.c_str(),  // Application name
         NULL,                         // Command line
         NULL,                         // Process security attributes
         NULL,                         // Thread security attributes
         FALSE,                        // Don't inherit handles
-        0,                            // Creation flags
+        CREATE_SUSPENDED,             // Create suspended so we can add to job before it runs
         NULL,                         // Environment
         NULL,                         // Current directory
         &si,                          // Startup info
         &pi))                         // Process info
     {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
+        // Add the process to the job object if we have one
+        if (electron_job_object_) {
+            if (AssignProcessToJobObject(electron_job_object_, pi.hProcess)) {
+                std::cout << "Added Electron app to job object (will close with tray)" << std::endl;
+            } else {
+                std::cerr << "Warning: Failed to add process to job object: " << GetLastError() << std::endl;
+            }
+        }
+        
+        // Resume the process now that it's in the job object
+        ResumeThread(pi.hThread);
+        
+        // Store the process handle (don't close it - we need it for cleanup)
+        electron_app_process_ = pi.hProcess;
+        CloseHandle(pi.hThread);  // We don't need the thread handle
+        
         std::cout << "Launched Electron app" << std::endl;
     } else {
         std::cerr << "Failed to launch Electron app: " << GetLastError() << std::endl;
