@@ -621,13 +621,13 @@ class LemonadePerfTable(Table):
             TimestampStat("Timestamp", fs.Keys.TIMESTAMP, "%Y-%m-%d\n%H:%M:%S"),
             # SimpleStat("Timestamp", fs.Keys.TIMESTAMP, "s"),
             MultiStat(
-                "Model\n\nDevice\nData Type",
+                "Model\nDevice\nBackend\nData Type",
                 [
                     Keys.CHECKPOINT,
                     None,
                     Keys.DEVICE,
+                    Keys.BACKEND,
                     Keys.DTYPE,
-                    None,
                     Keys.LOCAL_MODEL_FOLDER,
                 ],
                 "s",
@@ -882,12 +882,13 @@ class LemonadePerfTable(Table):
         merge_key_list = [
             Keys.CHECKPOINT,
             Keys.DEVICE,
+            Keys.BACKEND,
             Keys.DTYPE,
             fs.Keys.SYSTEM_INFO,
             SW_VERSIONS,
         ]
-        dict_1 = {key: build_stats_1[key] for key in merge_key_list}
-        dict_2 = {key: build_stats_2[key] for key in merge_key_list}
+        dict_1 = {key: build_stats_1.get(key, None) for key in merge_key_list}
+        dict_2 = {key: build_stats_2.get(key, None) for key in merge_key_list}
 
         return dict_1 == dict_2
 

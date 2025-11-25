@@ -16,6 +16,7 @@ class FLMLoad(FirstTool):
 
         self.status_stats = [
             Keys.DEVICE,
+            Keys.BACKEND,
         ]
 
     @staticmethod
@@ -88,6 +89,7 @@ class FLMLoad(FirstTool):
 
         # Save initial stats
         state.save_stat(Keys.DEVICE, "npu")
+        state.save_stat(Keys.BACKEND, "FastFlowLM")
         installed_flm_version, _ = check_flm_version()
         state.save_stat(Keys.FLM_VERSION_INFO, installed_flm_version)
 

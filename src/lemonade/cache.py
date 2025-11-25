@@ -80,6 +80,7 @@ class Keys:
     RESPONSE_LENGTHS_HISTOGRAM = "response_lengths_histogram"
     CACHE_DIR = "cache_dir"
     DEVICE = "device"
+    BACKEND = "backend"
     LOCAL_MODEL_FOLDER = "local_model_folder"
     MEMORY_USAGE_PLOT = "memory_usage_plot"
     MAX_MEMORY_USED_GB = "max_memory_used_GB"
