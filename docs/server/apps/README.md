@@ -8,7 +8,7 @@ This API call triggers the ChatGPT model to generate responses for a chat. With 
 
 `POST http://localhost:8000/api/v1/chat/completions`
 
-This allows the same application to leverage local LLMs instead of relying on OpenAI's cloud-based models. The guides in this folder show how to connect Lemonade Server to popular applications to enable local LLM execution. To run these examples, you'll need a Windows PC.
+This allows the same application to leverage local LLMs instead of relying on OpenAI's cloud-based models. The guides in this folder show how to connect Lemonade Server to popular applications to enable local LLM execution.
 
 ## 🎥 Video Tutorials
 
