@@ -73,9 +73,11 @@ inline ProgressCallback create_throttled_progress_callback() {
                 int percent = is_complete ? 100 : static_cast<int>((current * 100) / total);
                 double mb_current = current / (1024.0 * 1024.0);
                 double mb_total = total / (1024.0 * 1024.0);
-                std::cout << "\r  Progress: " << percent << "% (" 
+                // Use \n instead of \r so log streaming (which reads line-by-line) works properly
+                // Using \r would create a very long line without newlines, freezing the log stream
+                std::cout << "  Progress: " << percent << "% (" 
                          << std::fixed << std::setprecision(1) 
-                         << mb_current << "/" << mb_total << " MB)" << std::flush;
+                         << mb_current << "/" << mb_total << " MB)" << std::endl;
                 *last_print_time = now;
                 
                 if (is_complete) {

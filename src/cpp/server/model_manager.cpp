@@ -1201,7 +1201,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             );
             
             if (success) {
-                std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
+                std::cout << "[ModelManager] Downloaded: " << filename << std::endl;
             } else {
                 throw std::runtime_error("Failed to download file: " + filename);
             }
