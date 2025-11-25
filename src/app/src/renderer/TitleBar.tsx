@@ -151,7 +151,7 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     Release Notes
                   </div>
                   <div className="menu-separator"></div>
-                  <div className="menu-option" onClick={() => { setIsAboutOpen(true); setActiveMenu(null); }}>
+                  <div className="menu-option" onClick={() => { setIsAboutOpen(prev => !prev); setActiveMenu(null); }}>
                     About
                   </div>
                 </div>

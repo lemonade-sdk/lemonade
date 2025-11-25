@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -7,6 +7,7 @@ interface AboutModalProps {
 
 const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   const [version, setVersion] = useState<string>('Loading...');
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen && window.api?.getVersion) {
@@ -31,24 +32,50 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (cardRef.current && !cardRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="about-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="about-header">
-          <h2>About Lemonade</h2>
-          <button className="settings-close-button" onClick={onClose} title="Close">
-            <svg width="14" height="14" viewBox="0 0 14 14">
-              <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
+    <div className="about-popover" ref={cardRef}>
+      <div className="about-popover-header">
+        <div>
+          <p className="about-popover-title">Lemonade</p>
+          <p className="about-popover-subtitle">Local AI control center</p>
         </div>
-        <div className="about-content">
-          <div className="about-item">
-            <span className="about-label">Version:</span>
-            <span className="about-value">{version}</span>
-          </div>
+        <button className="about-popover-close" onClick={onClose} title="Close">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div className="about-popover-body">
+        <div className="about-popover-version">
+          <span>Version</span>
+          <span>{version}</span>
         </div>
       </div>
     </div>

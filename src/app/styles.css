@@ -2728,58 +2728,91 @@ footer {
     cursor: default;
 }
 
-/* About Modal Styles */
-.about-modal {
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 12px;
-    width: 90%;
-    max-width: 400px;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-    animation: slideUp 0.2s ease;
+/* About Popover */
+.about-popover {
+    position: fixed;
+    top: 48px;
+    right: 20px;
+    width: 320px;
+    background: #111111;
+    border: 1px solid #272727;
+    border-radius: 14px;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.8);
+    padding: 18px 20px 20px;
+    z-index: 1200;
+    animation: aboutPopIn 0.18s ease;
+    -webkit-app-region: no-drag;
 }
 
-.about-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid #333;
+@keyframes aboutPopIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.about-popover-header {
     display: flex;
+    align-items: flex-start;
     justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
+    gap: 12px;
 }
 
-.about-header h2 {
+.about-popover-title {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
     color: #ffffff;
 }
 
-.about-content {
-    padding: 24px;
+.about-popover-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: #a0a0a0;
+}
+
+.about-popover-close {
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #888888;
+    padding: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.about-popover-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.about-popover-body {
+    margin-top: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
 }
 
-.about-item {
+.about-popover-version {
     display: flex;
-    gap: 12px;
-    align-items: baseline;
-}
-
-.about-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #888;
-    min-width: 70px;
-}
-
-.about-value {
-    font-size: 0.875rem;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid #2b2b2b;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
     color: #ffffff;
-    font-family: 'Courier New', monospace;
+}
+
+.about-popover-version span:first-child {
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+    color: #9f9f9f;
+    text-transform: uppercase;
 }
 
