@@ -463,10 +463,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         return;
     }
     
-    auto thread_id = std::this_thread::get_id();
-    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
-    std::cout.flush();
-    
     nlohmann::json response = {{"status", "ok"}};
     
     // Add model loaded information (most recent for backward compatibility)
@@ -489,8 +485,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     };
     
     res.set_content(response.dump(), "application/json");
-    std::cout << "[Server DEBUG] ===== HEALTH ENDPOINT RETURNING (Thread: " << thread_id << ") =====" << std::endl;
-    std::cout.flush();
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
@@ -499,9 +493,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         res.status = 200;
         return;
     }
-    
-    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT ENTERED =====" << std::endl;
-    std::cout.flush();
     
     // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
     bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
@@ -546,8 +537,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     }
     
     res.set_content(response.dump(), "application/json");
-    std::cout << "[Server DEBUG] ===== MODELS ENDPOINT RETURNING =====" << std::endl;
-    std::cout.flush();
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {

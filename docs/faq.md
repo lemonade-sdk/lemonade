@@ -49,13 +49,23 @@
 
 ## Models & Performance
 
-### 1. **What models are supported?**
+### 1. **Where are models stored and how do I change that?**
+
+   Lemonade adheres to the Hugging Face Hub specification for storing models on your hard drive. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
+
+   For example, `Qwen/Qwen2.5-0.5B` is stored at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B`.
+
+   You can change this location by setting the `HF_HOME` env var, which will store your models in `$HF_HOME/hub` (e.g., `$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B`). Alternatively, you can set `HF_HUB_CACHE` and your models will be in `$HF_HUB_CACHE` (e.g., `$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B`).
+
+   You can use the official Hugging Face Hub utility (`pip install huggingface-hub`) to manage models outside of Lemonade, e.g., `hf cache ls` will print all models and their sizes.
+
+### 2. **What models are supported?**
 
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
    
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
 
-### 2. **How do I know what size model will work with my setup?**
+### 3. **How do I know what size model will work with my setup?**
 
    Model compatibility depends on your system's RAM, VRAM, and NPU availability. **The actual file size varies significantly between models** due to different quantization techniques and architectures.
 
@@ -65,20 +75,20 @@
    3. Add ~2-4 GB overhead for KV cache, activations, and runtime memory.
    4. Ensure your system has sufficient RAM/VRAM.
 
-### 3. **I'm looking for a model, but it's not listed in the Model Manager.**
+### 4. **I'm looking for a model, but it's not listed in the Model Manager.**
 
    If a model isn't listed, it may not yet be validated or compatible with your selected backend (for example, Hybrid models will not show if Ryzen AI Hybrid software is not installed). You can:
 
    - Add a custom model manually via the Lemonade Server Model Manager's "Add a Model" interface.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
-### 4. **Is there a script or tool to convert models to hybrid format?**
+### 5. **Is there a script or tool to convert models to hybrid format?**
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
    👉 [Model Preparation Guide](https://ryzenai.docs.amd.com/en/latest/oga_model_prepare.html)
 
-### 5. **What's the difference between GGUF and ONNX models?**
+### 6. **What's the difference between GGUF and ONNX models?**
 
    - **GGUF**: Used with llama.cpp backend, supports CPU, and GPU via Vulkan or ROCm.
    - **ONNX**: Used with OnnxRuntime GenAI, supports NPU and NPU+iGPU Hybrid execution.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ryzenai-server VERSION 1.0.0 LANGUAGES CXX)
+project(ryzenai-server VERSION 1.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,6 +75,7 @@ set(SOURCES
     src/types.cpp
     src/tool_calls.cpp
     src/reasoning.cpp
+    src/driver_check.cpp
 )
 
 # Create executable
@@ -101,7 +102,7 @@ target_compile_definitions(ryzenai-server PRIVATE CPPHTTPLIB_THREAD_POOL_COUNT=8
 if(WIN32)
     # Target Windows 10 or later (required for cpp-httplib v0.26.0)
     target_compile_definitions(ryzenai-server PRIVATE _WIN32_WINNT=0x0A00)
-    target_link_libraries(ryzenai-server PRIVATE ws2_32)
+    target_link_libraries(ryzenai-server PRIVATE ws2_32 wbemuuid ole32 oleaut32 shell32)
     
     # Copy required DLLs to output directory (they're in deployment folder)
     set(REQUIRED_DLLS

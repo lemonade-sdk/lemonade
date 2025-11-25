@@ -466,21 +466,10 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
           Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
-      - name: Download Lemonade Server Installer
-        uses: actions/download-artifact@v4
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
         with:
-          name: Lemonade_Server_MSI
-          path: .
-
-      - name: Install Lemonade Server
-        shell: PowerShell
-        run: |
-          Write-Host "Installing Lemonade Server..." -ForegroundColor Cyan
-          
-          # Run installer silently
-          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
-          
-          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Download RyzenAI Serve artifact
         uses: actions/download-artifact@v4
@@ -494,45 +483,6 @@ jobs:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
           artifact-path: ryzenai-server-files
 
-      - name: Verify Installation
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          Write-Host "Verifying installation at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Cyan
-          
-          # Check if installation directory exists
-          if (-not (Test-Path $env:LEMONADE_INSTALL_PATH)) {
-              Write-Host "ERROR: Installation directory not found at $env:LEMONADE_INSTALL_PATH" -ForegroundColor Red
-              exit 1
-          }
-          
-          # Check for key binaries
-          $expectedBinaries = @(
-              "bin\lemonade-router.exe",
-              "bin\lemonade-server.exe",
-              "bin\lemonade-tray.exe"
-          )
-          
-          $missingItems = @()
-          foreach ($item in $expectedBinaries) {
-              $fullPath = Join-Path $env:LEMONADE_INSTALL_PATH $item
-              if (-not (Test-Path $fullPath)) {
-                  $missingItems += $item
-              } else {
-                  Write-Host "Found: $item" -ForegroundColor Green
-              }
-          }
-          
-          if ($missingItems.Count -gt 0) {
-              Write-Host "ERROR: Missing expected files after installation:" -ForegroundColor Red
-              foreach ($missing in $missingItems) {
-                  Write-Host "  Missing: $missing" -ForegroundColor Red
-              }
-              exit 1
-          }
-          
-          Write-Host "Installation verification successful!" -ForegroundColor Green
 
       - name: Test lemonade-router CLI
         shell: PowerShell
@@ -861,17 +811,10 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
           Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
-      - name: Download Lemonade Server Installer
-        uses: actions/download-artifact@v4
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
         with:
-          name: Lemonade_Server_MSI
-          path: .
-
-      - name: Install Lemonade Server
-        shell: PowerShell
-        run: |
-          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
-          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -940,17 +883,10 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
           Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
-      - name: Download Lemonade Server Installer
-        uses: actions/download-artifact@v4
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
         with:
-          name: Lemonade_Server_MSI
-          path: .
-
-      - name: Install Lemonade Server
-        shell: PowerShell
-        run: |
-          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
-          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1018,17 +954,10 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
           Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
-      - name: Download Lemonade Server Installer
-        uses: actions/download-artifact@v4
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
         with:
-          name: Lemonade_Server_MSI
-          path: .
-
-      - name: Install Lemonade Server
-        shell: PowerShell
-        run: |
-          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
-          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Create minimal Python environment
         shell: PowerShell
@@ -1098,17 +1027,10 @@ jobs:
           echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
           Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
 
-      - name: Download Lemonade Server Installer
-        uses: actions/download-artifact@v4
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
         with:
-          name: Lemonade_Server_MSI
-          path: .
-
-      - name: Install Lemonade Server
-        shell: PowerShell
-        run: |
-          msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR=$env:LEMONADE_INSTALL_PATH
-          Write-Host "Installation complete at: $env:LEMONADE_INSTALL_PATH" -ForegroundColor Green
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Download RyzenAI Server artifact
         uses: actions/download-artifact@v4
