@@ -451,6 +451,13 @@ function createWindow() {
   
   mainWindow.loadFile(htmlPath);
 
+  // Open all external links in the default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Open in external browser instead of new Electron window
+    shell.openExternal(url);
+    return { action: 'deny' }; // Prevent Electron from opening a new window
+  });
+
   // Open DevTools in development mode
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
