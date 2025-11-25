@@ -29,7 +29,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
     const handleScroll = () => {
       const isAtBottom = 
-        logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 50;
+        logsContent.scrollHeight - logsContent.scrollTop <= logsContent.clientHeight + 30;
       setAutoScroll(isAtBottom);
     };
 
