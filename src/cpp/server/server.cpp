@@ -410,20 +410,14 @@ bool Server::is_running() const {
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
-    std::string loaded_model = router_->get_loaded_model();
-    
-    // Early return if already loaded
-    if (loaded_model == requested_model) {
+    // Check if this specific model is already loaded (multi-model aware)
+    if (router_->is_model_loaded(requested_model)) {
         std::cout << "[Server] Model already loaded: " << requested_model << std::endl;
         return;
     }
     
     // Log the auto-loading action
-    if (!loaded_model.empty()) {
-        std::cout << "[Server] Switching from '" << loaded_model << "' to '" << requested_model << "'" << std::endl;
-    } else {
-        std::cout << "[Server] No model loaded, auto-loading: " << requested_model << std::endl;
-    }
+    std::cout << "[Server] Auto-loading model: " << requested_model << std::endl;
     
     // Get model info
     if (!model_manager_->model_exists(requested_model)) {
@@ -596,16 +590,9 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
-        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        // Use original request body - each backend (FLM, llamacpp, etc.) handles 
+        // model name transformation internally via their forward methods
         std::string request_body = req.body;
-        if (router_->get_loaded_recipe() == "flm") {
-            auto request_json_copy = request_json;
-            request_json_copy["model"] = router_->get_loaded_checkpoint();
-            request_body = request_json_copy.dump();
-            if (!is_streaming) {
-                request_json = request_json_copy;  // Update for non-streaming path too
-            }
-        }
         
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") && 
@@ -806,16 +793,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
         
-        // FLM requires the checkpoint name in the request, not the Lemonade model name
+        // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
-        if (router_->get_loaded_recipe() == "flm") {
-            auto request_json_copy = request_json;
-            request_json_copy["model"] = router_->get_loaded_checkpoint();
-            request_body = request_json_copy.dump();
-            if (!is_streaming) {
-                request_json = request_json_copy;  // Update for non-streaming path too
-            }
-        }
         
         if (is_streaming) {
             try {

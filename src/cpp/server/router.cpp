@@ -428,6 +428,7 @@ json Router::get_all_loaded_models() const {
         model_info["checkpoint"] = server->get_checkpoint();
         model_info["type"] = model_type_to_string(server->get_model_type());
         model_info["device"] = device_type_to_string(server->get_device_type());
+        model_info["backend_url"] = server->get_address();  // For debugging port issues
         
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();
@@ -465,22 +466,19 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
     {
         std::lock_guard<std::mutex> lock(load_mutex_);
         
-        // Extract model from request if present
+        // Extract model from request - required field, no fallback to avoid silent misrouting
         std::string requested_model;
         if (request.contains("model") && request["model"].is_string()) {
             requested_model = request["model"].get<std::string>();
         }
         
-        // Find requested model or fallback to most recent
-        if (!requested_model.empty()) {
-            server = find_server_by_model_name(requested_model);
-        }
-        if (!server) {
-            server = get_most_recent_server();
+        if (requested_model.empty()) {
+            return ErrorResponse::from_exception(InvalidRequestException("No model specified in request"));
         }
         
+        server = find_server_by_model_name(requested_model);
         if (!server) {
-            return ErrorResponse::from_exception(ModelNotLoadedException());
+            return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
         }
         
         // Mark as busy and update access time
@@ -506,9 +504,30 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     
     {
         std::lock_guard<std::mutex> lock(load_mutex_);
-        server = get_most_recent_server();
+        
+        // Extract model from request body if present (same logic as execute_inference)
+        std::string requested_model;
+        try {
+            json request = json::parse(request_body);
+            if (request.contains("model") && request["model"].is_string()) {
+                requested_model = request["model"].get<std::string>();
+            }
+        } catch (...) {
+            // If JSON parsing fails, fall back to most recent server
+            std::cerr << "[Router DEBUG] Failed to parse request body for model extraction" << std::endl;
+        }
+        
+        // Find requested model - no fallback to avoid silent misrouting
+        if (requested_model.empty()) {
+            std::cerr << "[Router ERROR] No model specified in streaming request" << std::endl;
+            std::string error_msg = "data: {\"error\":{\"message\":\"No model specified in request\",\"type\":\"invalid_request_error\"}}\n\n";
+            sink.write(error_msg.c_str(), error_msg.size());
+            return;
+        }
+        
+        server = find_server_by_model_name(requested_model);
         if (!server) {
-            std::string error_msg = "{\"error\":{\"message\":\"No model loaded\",\"type\":\"model_not_loaded\"}}\n";
+            std::string error_msg = "data: {\"error\":{\"message\":\"Model not loaded: " + requested_model + "\",\"type\":\"model_not_loaded\"}}\n\n";
             sink.write(error_msg.c_str(), error_msg.size());
             return;
         }

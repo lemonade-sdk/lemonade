@@ -897,14 +897,16 @@ curl http://localhost:8000/api/v1/health
       "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
       "last_use": 1732123456.789,
       "type": "llm",
-      "device": "gpu npu"
+      "device": "gpu npu",
+      "backend_url": "http://127.0.0.1:8001/v1"
     },
     {
       "model_name": "nomic-embed-text-v1-GGUF",
       "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
       "last_use": 1732123450.123,
       "type": "embedding",
-      "device": "gpu"
+      "device": "gpu",
+      "backend_url": "http://127.0.0.1:8002/v1"
     }
   ]
 }
@@ -921,6 +923,7 @@ curl http://localhost:8000/api/v1/health
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `backend_url` - URL of the backend server process handling this model (useful for debugging)
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

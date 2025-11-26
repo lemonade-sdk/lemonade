@@ -99,6 +99,7 @@ It will be updated in these ways:
     - `last_use` (timestamp)
     - `type`
     - `device`
+    - `backend_url` (URL of the backend server process, useful for debugging)
 
 ### Stats Endpoint
 

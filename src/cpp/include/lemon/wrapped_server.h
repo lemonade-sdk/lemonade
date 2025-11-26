@@ -132,9 +132,10 @@ public:
     virtual json responses(const json& request) = 0;
     
     // Forward streaming requests to the wrapped server (public for Router access)
-    void forward_streaming_request(const std::string& endpoint, 
-                                   const std::string& request_body,
-                                   httplib::DataSink& sink);
+    // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
+    virtual void forward_streaming_request(const std::string& endpoint, 
+                                           const std::string& request_body,
+                                           httplib::DataSink& sink);
     
     // Get the server address
     std::string get_address() const {
