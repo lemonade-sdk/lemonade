@@ -37,6 +37,7 @@ public:
 private:
     void setup_routes();
     void setup_static_files();
+    void setup_web_ui();
     void setup_cors();
     
     // Endpoint handlers
@@ -71,6 +72,7 @@ private:
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
     std::string log_file_path_;
+    std::string ui_directory_;
     
     std::unique_ptr<httplib::Server> http_server_;
     std::unique_ptr<Router> router_;

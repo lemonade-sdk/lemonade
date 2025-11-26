@@ -13,7 +13,7 @@ from pathlib import Path
 import os
 import shutil
 from fastapi import FastAPI, HTTPException, status, Request, WebSocket, Form, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -291,6 +291,9 @@ class Server:
         self.app.mount(
             "/static", NoCacheStaticFiles(directory=static_dir), name="static_assets"
         )
+
+        # Mount the Electron/React UI if available (for browser access at localhost:8000)
+        self._setup_web_ui()
 
         # Performance stats that are set during /ws and can be
         # fetched in /stats

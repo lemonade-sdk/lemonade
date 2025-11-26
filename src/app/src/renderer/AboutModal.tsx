@@ -10,26 +10,41 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen && window.api?.getVersion) {
-      setVersion('Loading...');
-      
-      // Retry logic to handle backend startup delay
-      const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
-        for (let i = 0; i < retries; i++) {
-          const v = await window.api.getVersion!();
+    if (!isOpen) return;
+    
+    setVersion('Loading...');
+    
+    // Retry logic to handle backend startup delay
+    const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          let v: string;
+          if (window.api?.getVersion) {
+            // Electron mode
+            v = await window.api.getVersion();
+          } else {
+            // Browser mode: fetch from API directly
+            const response = await fetch('http://localhost:8000/api/v1/health');
+            const data = await response.json();
+            v = data.version || 'Unknown';
+          }
+          
           if (v !== 'Unknown') {
             setVersion(v);
             return;
           }
-          if (i < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
+        } catch {
+          // Ignore errors during retry
         }
-        setVersion('Unknown (Backend not running)');
-      };
-      
-      fetchVersionWithRetry();
-    }
+        
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+      setVersion('Unknown (Backend not running)');
+    };
+    
+    fetchVersionWithRetry();
   }, [isOpen]);
 
   useEffect(() => {

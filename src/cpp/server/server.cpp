@@ -229,6 +229,144 @@ void Server::setup_static_files() {
         res.set_header("Pragma", "no-cache");
         res.set_header("Expires", "0");
     });
+    
+    // Setup web UI serving (React/Electron app build)
+    setup_web_ui();
+}
+
+// Helper function for string suffix check (C++17 compatible)
+static bool str_ends_with(const std::string& str, const std::string& suffix) {
+    if (suffix.size() > str.size()) return false;
+    return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+void Server::setup_web_ui() {
+    // Look for the React UI build in several possible locations
+    std::vector<std::string> possible_paths;
+    
+    // Check LEMONADE_UI_PATH environment variable first
+    const char* env_path = std::getenv("LEMONADE_UI_PATH");
+    if (env_path && strlen(env_path) > 0) {
+        possible_paths.push_back(env_path);
+    }
+    
+    // Get executable directory and look relative to it
+    std::string exe_dir = utils::get_executable_dir();
+    fs::path exe_path(exe_dir);
+    
+    // Development paths: navigate up from build directory to find src/app/dist/renderer
+    // Typical dev build locations: src/cpp/build/, build/, etc.
+    possible_paths.push_back((exe_path / ".." / ".." / ".." / "app" / "dist" / "renderer").string());
+    possible_paths.push_back((exe_path / ".." / ".." / "app" / "dist" / "renderer").string());
+    possible_paths.push_back((exe_path / ".." / "app" / "dist" / "renderer").string());
+    possible_paths.push_back((exe_path / ".." / ".." / ".." / ".." / "app" / "dist" / "renderer").string());
+    
+    // Installed: bundled with server
+    possible_paths.push_back(utils::get_resource_path("resources/ui"));
+    possible_paths.push_back(utils::get_resource_path("ui"));
+    
+    std::string ui_dir;
+    for (const auto& path : possible_paths) {
+        try {
+            fs::path index_path = fs::path(path) / "index.html";
+            if (fs::exists(index_path)) {
+                ui_dir = fs::canonical(path).string();
+                std::cout << "[Server] Web UI found at: " << ui_dir << std::endl;
+                break;
+            }
+        } catch (const std::exception& e) {
+            // Path doesn't exist or can't be canonicalized, skip
+            continue;
+        }
+    }
+    
+    if (ui_dir.empty()) {
+        std::cout << "[Server] Web UI not found. Browser access at localhost:" << port_ 
+                  << " will show API info only." << std::endl;
+        std::cout << "[Server] To enable web UI, build the Electron app (npm run build:renderer in src/app)" << std::endl;
+        std::cout << "[Server] Or set LEMONADE_UI_PATH environment variable to the UI directory." << std::endl;
+        
+        // Serve API info at root
+        http_server_->Get("/", [this](const httplib::Request&, httplib::Response& res) {
+            nlohmann::json info = {
+                {"message", "Lemonade Server API"},
+                {"docs", "/api/v1/health"},
+                {"health", "/api/v1/health"},
+                {"logs", "/static/logs.html"},
+                {"ui_hint", "Web UI not available. Build the Electron app or set LEMONADE_UI_PATH."}
+            };
+            res.set_content(info.dump(2), "application/json");
+        });
+        return;
+    }
+    
+    ui_directory_ = ui_dir;
+    
+    // Serve index.html at root
+    http_server_->Get("/", [this](const httplib::Request&, httplib::Response& res) {
+        std::string index_path = ui_directory_ + "/index.html";
+        std::ifstream file(index_path, std::ios::binary);
+        if (file) {
+            std::ostringstream ss;
+            ss << file.rdbuf();
+            res.set_content(ss.str(), "text/html");
+        } else {
+            res.status = 500;
+            res.set_content("{\"error\": \"Failed to load index.html\"}", "application/json");
+        }
+    });
+    
+    // Serve UI assets (JS bundles, fonts, etc.) - catch-all for non-API routes
+    // This regex matches paths that don't start with /api/, /static/, /internal/
+    http_server_->Get(R"(^/(?!api/|static/|internal/)(.+)$)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string path = req.matches[1].str();
+        std::string file_path = ui_directory_ + "/" + path;
+        
+        // Security: prevent directory traversal
+        if (path.find("..") != std::string::npos) {
+            res.status = 403;
+            return;
+        }
+        
+        if (fs::exists(file_path) && fs::is_regular_file(file_path)) {
+            // Determine content type
+            std::string content_type = "application/octet-stream";
+            if (str_ends_with(path, ".js")) content_type = "application/javascript";
+            else if (str_ends_with(path, ".css")) content_type = "text/css";
+            else if (str_ends_with(path, ".html")) content_type = "text/html";
+            else if (str_ends_with(path, ".json")) content_type = "application/json";
+            else if (str_ends_with(path, ".svg")) content_type = "image/svg+xml";
+            else if (str_ends_with(path, ".woff2")) content_type = "font/woff2";
+            else if (str_ends_with(path, ".woff")) content_type = "font/woff";
+            else if (str_ends_with(path, ".ttf")) content_type = "font/ttf";
+            else if (str_ends_with(path, ".png")) content_type = "image/png";
+            else if (str_ends_with(path, ".jpg") || str_ends_with(path, ".jpeg")) content_type = "image/jpeg";
+            else if (str_ends_with(path, ".map")) content_type = "application/json";
+            
+            std::ifstream file(file_path, std::ios::binary);
+            if (file) {
+                std::ostringstream ss;
+                ss << file.rdbuf();
+                res.set_content(ss.str(), content_type);
+                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            } else {
+                res.status = 500;
+            }
+        } else {
+            // SPA fallback: serve index.html for unmatched routes
+            std::string index_path = ui_directory_ + "/index.html";
+            std::ifstream file(index_path, std::ios::binary);
+            if (file) {
+                std::ostringstream ss;
+                ss << file.rdbuf();
+                res.set_content(ss.str(), "text/html");
+            } else {
+                res.status = 404;
+            }
+        }
+    });
+    
+    std::cout << "[Server] Web UI enabled at http://" << host_ << ":" << port_ << "/" << std::endl;
 }
 
 void Server::setup_cors() {

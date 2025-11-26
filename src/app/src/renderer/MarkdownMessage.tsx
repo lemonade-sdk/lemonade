@@ -57,8 +57,14 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content }) => {
       if (target.tagName === 'A') {
         e.preventDefault();
         const href = target.getAttribute('href');
-        if (href && window.api) {
-          window.api.openExternal(href);
+        if (href) {
+          if (window.api?.openExternal) {
+            // Electron mode
+            window.api.openExternal(href);
+          } else {
+            // Browser mode
+            window.open(href, '_blank', 'noopener,noreferrer');
+          }
         }
       }
     };

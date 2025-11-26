@@ -339,16 +339,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
     setIsAddingModel(true);
     try {
-      await window.api.addUserModel({
-        name: trimmedName,
-        checkpoint: trimmedCheckpoint,
-        recipe: trimmedRecipe,
-        mmproj: trimmedMmproj,
-        reasoning: newModel.reasoning,
-        vision: newModel.vision,
-        embedding: newModel.embedding,
-        reranking: newModel.reranking,
-      });
+      // Use Electron API if available, otherwise use REST API
+      if (window.api?.addUserModel) {
+        await window.api.addUserModel({
+          name: trimmedName,
+          checkpoint: trimmedCheckpoint,
+          recipe: trimmedRecipe,
+          mmproj: trimmedMmproj,
+          reasoning: newModel.reasoning,
+          vision: newModel.vision,
+          embedding: newModel.embedding,
+          reranking: newModel.reranking,
+        });
+      } else {
+        // Browser mode: use REST API
+        const formData = new FormData();
+        formData.append('model_name', trimmedName);
+        formData.append('checkpoint', trimmedCheckpoint);
+        formData.append('recipe', trimmedRecipe);
+        if (trimmedMmproj) formData.append('mmproj', trimmedMmproj);
+        formData.append('reasoning', String(newModel.reasoning));
+        formData.append('vision', String(newModel.vision));
+
+        const response = await fetch('http://localhost:8000/api/v1/add-local-model', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'Failed to add model');
+        }
+      }
 
       await loadModels();
       resetNewModelForm();
