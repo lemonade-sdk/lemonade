@@ -16,6 +16,11 @@ const apps = [
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png',
   },
   {
+    name: 'n8n',
+    url: 'https://n8n.io/integrations/lemonade-model/',
+    logo: 'https://avatars.githubusercontent.com/u/45487711?s=48&v=4',
+  },
+  {
     name: 'Gaia',
     url: 'https://github.com/amd/gaia',
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico',
