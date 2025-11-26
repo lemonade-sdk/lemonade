@@ -213,8 +213,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       step={limits.step}
                       value={settings[key].value}
                       onChange={(e) => handleNumericChange(key, parseFloat(e.target.value))}
-                      className="settings-slider"
-                      disabled={isDefault}
+                      className={`settings-slider ${isDefault ? 'slider-auto' : ''}`}
                     />
                     <input
                       type="text"

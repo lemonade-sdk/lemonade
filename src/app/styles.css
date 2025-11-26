@@ -2659,9 +2659,8 @@ footer {
     cursor: pointer;
 }
 
-.settings-slider:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.settings-slider.slider-auto {
+    opacity: 0.65;
 }
 
 .settings-slider::-webkit-slider-thumb {
