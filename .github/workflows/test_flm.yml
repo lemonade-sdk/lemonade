@@ -53,7 +53,7 @@ jobs:
           conda update conda conda-libmamba-solver --solver classic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          conda create -p $env:CONDA_ENV_PATH python=3.10 -y
+          conda create -p $env:CONDA_ENV_PATH python=3.12 -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
       - name: Install dependencies
