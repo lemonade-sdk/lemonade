@@ -32,7 +32,11 @@ class HuggingfaceLoad(FirstTool):
     def __init__(self):
         super().__init__(monitor_message="Loading Huggingface checkpoint")
 
-        self.status_stats = [Keys.DTYPE]
+        self.status_stats = [
+            Keys.DTYPE,
+            Keys.DEVICE,
+            Keys.BACKEND,
+        ]
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -212,12 +216,13 @@ class HuggingfaceLoad(FirstTool):
         state.tokenizer = HuggingfaceTokenizerAdapter(tokenizer, device)
         state.dtype = dtype_to_use
         state.checkpoint = checkpoint
-        state.device = device
+        state.device = device if device else "cpu"
 
         # Save stats about the model
         state.save_stat(Keys.CHECKPOINT, checkpoint)
         state.save_stat(Keys.DTYPE, str(dtype_to_use).split(".")[1])
-        state.save_stat(Keys.DEVICE, device)
+        state.save_stat(Keys.DEVICE, state.device)
+        state.save_stat(Keys.BACKEND, "Hugging Face")
 
         # Get base model information
         base_model = get_base_model(checkpoint)
