@@ -6,6 +6,8 @@ import {
   ModelsData,
   USER_MODEL_PREFIX
 } from './utils/modelData';
+import { ToastContainer, useToast } from './Toast';
+import { useConfirmDialog } from './ConfirmDialog';
 
 const CHAT_API_BASE = 'http://localhost:8000/api/v1';
 
@@ -39,6 +41,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
+  
+  const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const fetchDownloadedModels = useCallback(async () => {
     try {
@@ -308,7 +313,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
 
     if (!window.api?.addUserModel) {
-      alert('Adding custom models is not supported in this build.');
+      showError('Adding custom models is not supported in this build.');
       return;
     }
 
@@ -318,17 +323,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     const trimmedMmproj = newModel.mmproj.trim();
 
     if (!trimmedName) {
-      alert('Model name is required.');
+      showWarning('Model name is required.');
       return;
     }
 
     if (!trimmedCheckpoint) {
-      alert('Checkpoint is required.');
+      showWarning('Checkpoint is required.');
       return;
     }
 
     if (!trimmedRecipe) {
-      alert('Recipe is required.');
+      showWarning('Recipe is required.');
       return;
     }
 
@@ -347,10 +352,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
       await loadModels();
       resetNewModelForm();
-      alert('Model added to your catalog.');
+      showSuccess('Model added to your catalog.');
     } catch (error) {
       console.error('Failed to add model:', error);
-      alert(
+      showError(
         `Failed to add model: ${
           error instanceof Error ? error.message : 'Unknown error'
         }`
@@ -371,7 +376,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     try {
       const modelData = supportedModelsData[modelName];
       if (!modelData) {
-        alert('Model metadata is unavailable. Please refresh and try again.');
+        showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
       
@@ -393,7 +398,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchCurrentLoadedModel();
     } catch (error) {
       console.error('Error downloading model:', error);
-      alert(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       // Remove from loading state
       setLoadingModels(prev => {
@@ -408,7 +413,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     try {
       const modelData = supportedModelsData[modelName];
       if (!modelData) {
-        alert('Model metadata is unavailable. Please refresh and try again.');
+        showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
       
@@ -435,7 +440,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       }, 1000);
     } catch (error) {
       console.error('Error loading model:', error);
-      alert(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Remove from loading state on error
       setLoadingModels(prev => {
@@ -462,12 +467,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchCurrentLoadedModel();
     } catch (error) {
       console.error('Error unloading model:', error);
-      alert(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const handleDeleteModel = async (modelName: string) => {
-    if (!confirm(`Are you sure you want to delete the model "${modelName}"?`)) {
+    const confirmed = await confirm({
+      title: 'Delete Model',
+      message: `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true
+    });
+    
+    if (!confirmed) {
       return;
     }
     
@@ -486,14 +499,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
       await loadModels();
+      showSuccess(`Model "${modelName}" deleted successfully.`);
     } catch (error) {
       console.error('Error deleting model:', error);
-      alert(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ConfirmDialog />
       <div className="model-manager-header">
         <h3>MODEL MANAGER</h3>
         <div className="organization-toggle">

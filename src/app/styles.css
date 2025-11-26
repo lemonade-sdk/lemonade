@@ -2870,3 +2870,214 @@ footer {
     text-transform: uppercase;
 }
 
+/* Toast Notification Styles */
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10001;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 0.85rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+    cursor: pointer;
+    animation: toastSlideIn 0.2s ease;
+    max-width: 360px;
+    min-width: 280px;
+}
+
+.toast-exit {
+    animation: toastSlideOut 0.2s ease forwards;
+}
+
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+.toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.toast-message {
+    flex: 1;
+    line-height: 1.4;
+}
+
+.toast-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Toast Types */
+.toast-error {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: linear-gradient(135deg, #1a1a1a 0%, #1f1517 100%);
+}
+
+.toast-error .toast-icon {
+    color: #ef4444;
+}
+
+.toast-success {
+    border-color: rgba(34, 197, 94, 0.4);
+    background: linear-gradient(135deg, #1a1a1a 0%, #151f17 100%);
+}
+
+.toast-success .toast-icon {
+    color: #22c55e;
+}
+
+.toast-warning {
+    border-color: rgba(234, 179, 8, 0.4);
+    background: linear-gradient(135deg, #1a1a1a 0%, #1f1d15 100%);
+}
+
+.toast-warning .toast-icon {
+    color: #eab308;
+}
+
+.toast-info {
+    border-color: rgba(59, 130, 246, 0.4);
+    background: linear-gradient(135deg, #1a1a1a 0%, #151a1f 100%);
+}
+
+.toast-info .toast-icon {
+    color: #3b82f6;
+}
+
+/* Confirmation Dialog Styles */
+.confirm-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
+    animation: fadeIn 0.15s ease;
+}
+
+.confirm-dialog {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    animation: slideUp 0.15s ease;
+}
+
+.confirm-dialog-title {
+    margin: 0 0 12px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.confirm-dialog-message {
+    margin: 0 0 20px 0;
+    font-size: 0.9rem;
+    color: #aaa;
+    line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.confirm-dialog-btn {
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.confirm-dialog-btn-cancel {
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+}
+
+.confirm-dialog-btn-cancel:hover {
+    background: #252525;
+    border-color: #444;
+    color: #fff;
+}
+
+.confirm-dialog-btn-confirm {
+    background: #ffffff;
+    border: none;
+    color: #000000;
+}
+
+.confirm-dialog-btn-confirm:hover {
+    background: #f0f0f0;
+}
+
+.confirm-dialog-btn-danger {
+    background: #ef4444;
+    border: none;
+    color: #ffffff;
+}
+
+.confirm-dialog-btn-danger:hover {
+    background: #dc2626;
+}
+
