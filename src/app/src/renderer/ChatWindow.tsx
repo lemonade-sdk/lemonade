@@ -451,6 +451,29 @@ const sendMessage = async () => {
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputValue(e.target.value);
+    adjustTextareaHeight(e.target);
+  };
+
+  const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
+    // Reset height to auto to get the correct scrollHeight
+    textarea.style.height = 'auto';
+    const maxHeight = 200;
+    const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = newHeight + 'px';
+    // Show scrollbar only when content exceeds max height
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  };
+
+  // Reset textarea height when input is cleared (after sending)
+  useEffect(() => {
+    if (inputTextareaRef.current && inputValue === '') {
+      inputTextareaRef.current.style.height = 'auto';
+      inputTextareaRef.current.style.overflowY = 'hidden';
+    }
+  }, [inputValue]);
+
   const toggleThinking = (index: number) => {
     setExpandedThinking(prev => {
       const next = new Set(prev);
@@ -984,7 +1007,7 @@ const sendMessage = async () => {
             ref={inputTextareaRef}
             className="chat-input"
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={handleInputChange}
             onKeyPress={handleKeyPress}
             onPaste={handleImagePaste}
             placeholder="Type your message..."

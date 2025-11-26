@@ -1475,7 +1475,7 @@ footer {
 }
 
 .chat-input {
-    flex: 1;
+    width: 100%;
     background: transparent;
     border: none;
     padding: 0;
@@ -1484,8 +1484,10 @@ footer {
     font-family: inherit;
     resize: none;
     min-height: 24px;
-    max-height: 120px;
+    max-height: 200px;
     line-height: 1.4;
+    overflow-y: hidden;
+    box-sizing: border-box;
 }
 
 .chat-input:focus {
