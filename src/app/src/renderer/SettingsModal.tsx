@@ -178,6 +178,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           <div className="settings-loading">Loading settings…</div>
         ) : (
           <div className="settings-content">
+            <div className="settings-category-header">
+              <h3>LLM Chat</h3>
+            </div>
+            
             {numericSettingsConfig.map(({ key, label, description }) => {
               const limits = NUMERIC_SETTING_LIMITS[key];
               const isDefault = settings[key].useDefault;
@@ -210,21 +214,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                       value={settings[key].value}
                       onChange={(e) => handleNumericChange(key, parseFloat(e.target.value))}
                       className="settings-slider"
+                      disabled={isDefault}
                     />
                     <input
-                      type="number"
-                      min={limits.min}
-                      max={limits.max}
-                      step={limits.step}
-                      value={settings[key].value}
+                      type="text"
+                      value={isDefault ? 'auto' : settings[key].value}
                       onChange={(e) => {
+                        if (e.target.value === 'auto' || e.target.value === '') {
+                          return;
+                        }
                         const parsed = parseFloat(e.target.value);
                         if (Number.isNaN(parsed)) {
                           return;
                         }
                         handleNumericChange(key, parsed);
                       }}
+                      onFocus={(e) => {
+                        if (isDefault) {
+                          handleNumericChange(key, settings[key].value);
+                          // Select all text after a brief delay to allow the value to update
+                          setTimeout(() => e.target.select(), 0);
+                        }
+                      }}
                       className="settings-number-input"
+                      placeholder="auto"
                     />
                   </div>
                 </div>

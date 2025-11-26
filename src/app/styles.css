@@ -2577,6 +2577,40 @@ footer {
     gap: 24px;
 }
 
+/* Custom scrollbar for settings content */
+.settings-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.settings-content::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 4px;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.settings-category-header {
+    padding-bottom: 12px;
+    border-bottom: 1px solid #333;
+    margin-bottom: 8px;
+}
+
+.settings-category-header h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .settings-section {
     display: flex;
     flex-direction: column;
@@ -2623,6 +2657,11 @@ footer {
     appearance: none;
     -webkit-appearance: none;
     cursor: pointer;
+}
+
+.settings-slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .settings-slider::-webkit-slider-thumb {
