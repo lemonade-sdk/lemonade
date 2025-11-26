@@ -11,6 +11,11 @@ const apps = [
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg',
   },
   {
+    name: 'Hugging Face',
+    url: 'https://huggingface.co/models?apps=lemonade&sort=trending',
+    logo: 'https://nocodestartup.io/wp-content/uploads/2025/07/O-que-e-o-Hugging-Face-%E2%80%93-e-por-que-todo-projeto-moderno-de-NLP-passa-por-ele-1024x683.png',
+  },
+  {
     name: 'Continue',
     url: 'https://lemonade-server.ai/docs/server/apps/continue/',
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png',
@@ -29,16 +34,6 @@ const apps = [
     name: 'AnythingLLM',
     url: 'https://lemonade-server.ai/docs/server/apps/anythingLLM/',
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png',
-  },
-  {
-    name: 'AI Dev Gallery',
-    url: 'https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp',
-  },
-  {
-    name: 'LM-Eval',
-    url: 'https://lemonade-server.ai/docs/server/apps/lm-eval/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png',
   },
   {
     name: 'Infinity Arcade',
