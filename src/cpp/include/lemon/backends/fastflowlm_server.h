@@ -21,7 +21,9 @@ public:
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              int ctx_size,
-             bool do_not_upgrade = false) override;
+             bool do_not_upgrade = false,
+             const std::string& llamacpp_backend = "vulkan",
+             const std::string& llamacpp_args = "") override;
     
     void unload() override;
     
@@ -38,6 +40,11 @@ public:
     
     // FLM uses /api/tags for readiness check instead of /health
     bool wait_for_ready() override;
+    
+    // Override to transform model name to checkpoint for FLM
+    void forward_streaming_request(const std::string& endpoint, 
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink) override;
     
 private:
     // Existing methods
@@ -58,7 +65,6 @@ private:
     void refresh_environment_path();
     bool verify_flm_installation(const std::string& expected_version, int max_retries = 10);
     
-    std::string model_name_;
     bool is_loaded_ = false;
 };
 

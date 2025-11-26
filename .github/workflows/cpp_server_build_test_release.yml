@@ -924,6 +924,14 @@ jobs:
           
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
 
+          conda run --no-capture-output -p .\test-env python test/server_multimodel.py vulkan --server-binary $serverExe
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Llamacpp multi-model tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          Write-Host "Llamacpp multi-model tests PASSED!" -ForegroundColor Green
+
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
@@ -1182,6 +1190,10 @@ jobs:
           conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server
           
           echo "Llamacpp Vulkan tests PASSED!"
+
+          conda run --no-capture-output -p ./test-env python test/server_multimodel.py vulkan --server-binary lemonade-server
+          
+          echo "Llamacpp multi-model tests PASSED!"
 
       - name: Print server logs on failure
         if: failure()

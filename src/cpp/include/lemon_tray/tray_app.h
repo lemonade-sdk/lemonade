@@ -30,6 +30,11 @@ struct AppConfig {
     std::string llamacpp_backend = "vulkan";  // Default to vulkan
     std::string llamacpp_args = "";  // Custom arguments for llama-server
     
+    // Multi-model support
+    int max_llm_models = 1;
+    int max_embedding_models = 1;
+    int max_reranking_models = 1;
+    
     // For commands that take arguments
     std::vector<std::string> command_args;
 };
