@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager from './ModelManager';
@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [modelManagerWidth, setModelManagerWidth] = useState(280);
   const [chatWidth, setChatWidth] = useState(350);
   const [logsHeight, setLogsHeight] = useState(200);
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -70,6 +71,63 @@ const App: React.FC = () => {
     // Give backend a moment to fully start
     setTimeout(checkBackendStatus, 1500);
   }, []);
+
+  // Load saved layout settings on mount
+  useEffect(() => {
+    const loadLayoutSettings = async () => {
+      try {
+        if (window?.api?.getSettings) {
+          const settings = await window.api.getSettings();
+          if (settings.layout) {
+            setIsChatVisible(settings.layout.isChatVisible);
+            setIsModelManagerVisible(settings.layout.isModelManagerVisible);
+            setIsCenterPanelVisible(settings.layout.isCenterPanelVisible);
+            setIsLogsVisible(settings.layout.isLogsVisible);
+            setModelManagerWidth(settings.layout.modelManagerWidth);
+            setChatWidth(settings.layout.chatWidth);
+            setLogsHeight(settings.layout.logsHeight);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load layout settings:', error);
+      } finally {
+        setLayoutLoaded(true);
+      }
+    };
+    loadLayoutSettings();
+  }, []);
+
+  // Save layout settings when they change (debounced)
+  const saveLayoutSettings = useCallback(async () => {
+    if (!layoutLoaded) return;
+    try {
+      if (window?.api?.getSettings && window?.api?.saveSettings) {
+        // Get current settings and merge layout changes
+        const currentSettings = await window.api.getSettings();
+        await window.api.saveSettings({
+          ...currentSettings,
+          layout: {
+            isChatVisible,
+            isModelManagerVisible,
+            isCenterPanelVisible,
+            isLogsVisible,
+            modelManagerWidth,
+            chatWidth,
+            logsHeight,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Failed to save layout settings:', error);
+    }
+  }, [layoutLoaded, isChatVisible, isModelManagerVisible, isCenterPanelVisible, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
+
+  // Debounced save effect
+  useEffect(() => {
+    if (!layoutLoaded) return;
+    const timeoutId = setTimeout(saveLayoutSettings, 300);
+    return () => clearTimeout(timeoutId);
+  }, [saveLayoutSettings, layoutLoaded]);
 
   useEffect(() => {
     const hasMainColumn = isCenterPanelVisible || isLogsVisible;

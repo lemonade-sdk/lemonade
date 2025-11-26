@@ -12,12 +12,23 @@ export interface BooleanSetting {
   useDefault: boolean;
 }
 
+export interface LayoutSettings {
+  isChatVisible: boolean;
+  isModelManagerVisible: boolean;
+  isCenterPanelVisible: boolean;
+  isLogsVisible: boolean;
+  modelManagerWidth: number;
+  chatWidth: number;
+  logsHeight: number;
+}
+
 export interface AppSettings {
   temperature: NumericSetting;
   topK: NumericSetting;
   topP: NumericSetting;
   repeatPenalty: NumericSetting;
   enableThinking: BooleanSetting;
+  layout: LayoutSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
@@ -41,12 +52,23 @@ export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; ma
 
 const numericSettingKeys: NumericSettingKey[] = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
+export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
+  isChatVisible: true,
+  isModelManagerVisible: true,
+  isCenterPanelVisible: true,
+  isLogsVisible: false,
+  modelManagerWidth: 280,
+  chatWidth: 350,
+  logsHeight: 200,
+};
+
 export const createDefaultSettings = (): AppSettings => ({
   temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
   topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
   topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
 export const cloneSettings = (settings: AppSettings): AppSettings => ({
@@ -55,6 +77,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   topP: { ...settings.topP },
   repeatPenalty: { ...settings.repeatPenalty },
   enableThinking: { ...settings.enableThinking },
+  layout: { ...settings.layout },
 });
 
 export const clampNumericSettingValue = (key: NumericSettingKey, value: number): number => {
@@ -112,6 +135,34 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
       value,
       useDefault,
     };
+  }
+
+  // Merge layout settings
+  const rawLayout = incoming.layout;
+  if (rawLayout && typeof rawLayout === 'object') {
+    // Merge boolean visibility settings
+    if (typeof rawLayout.isChatVisible === 'boolean') {
+      defaults.layout.isChatVisible = rawLayout.isChatVisible;
+    }
+    if (typeof rawLayout.isModelManagerVisible === 'boolean') {
+      defaults.layout.isModelManagerVisible = rawLayout.isModelManagerVisible;
+    }
+    if (typeof rawLayout.isCenterPanelVisible === 'boolean') {
+      defaults.layout.isCenterPanelVisible = rawLayout.isCenterPanelVisible;
+    }
+    if (typeof rawLayout.isLogsVisible === 'boolean') {
+      defaults.layout.isLogsVisible = rawLayout.isLogsVisible;
+    }
+    // Merge numeric size settings
+    if (typeof rawLayout.modelManagerWidth === 'number') {
+      defaults.layout.modelManagerWidth = rawLayout.modelManagerWidth;
+    }
+    if (typeof rawLayout.chatWidth === 'number') {
+      defaults.layout.chatWidth = rawLayout.chatWidth;
+    }
+    if (typeof rawLayout.logsHeight === 'number') {
+      defaults.layout.logsHeight = rawLayout.logsHeight;
+    }
   }
 
   return defaults;

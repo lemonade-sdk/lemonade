@@ -72,12 +72,30 @@ const getAppSettingsFilePath = () => {
   return path.join(cacheDir, SETTINGS_FILE_NAME);
 };
 
+// Default layout settings - which panels are visible and their sizes
+const DEFAULT_LAYOUT_SETTINGS = Object.freeze({
+  isChatVisible: true,
+  isModelManagerVisible: true,
+  isCenterPanelVisible: true,
+  isLogsVisible: false,
+  modelManagerWidth: 280,
+  chatWidth: 350,
+  logsHeight: 200,
+});
+
+const LAYOUT_SIZE_LIMITS = Object.freeze({
+  modelManagerWidth: { min: 200, max: 500 },
+  chatWidth: { min: 250, max: 800 },
+  logsHeight: { min: 100, max: 400 },
+});
+
 const createDefaultAppSettings = () => ({
   temperature: { ...DEFAULT_APP_SETTINGS.temperature },
   topK: { ...DEFAULT_APP_SETTINGS.topK },
   topP: { ...DEFAULT_APP_SETTINGS.topP },
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
+  layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
 const clampValue = (value, min, max) => {
@@ -125,6 +143,25 @@ const sanitizeAppSettings = (incoming = {}) => {
           : sanitized.enableThinking.value,
       useDefault,
     };
+  }
+
+  // Sanitize layout settings
+  const rawLayout = incoming.layout;
+  if (rawLayout && typeof rawLayout === 'object') {
+    // Sanitize boolean visibility settings
+    ['isChatVisible', 'isModelManagerVisible', 'isCenterPanelVisible', 'isLogsVisible'].forEach((key) => {
+      if (typeof rawLayout[key] === 'boolean') {
+        sanitized.layout[key] = rawLayout[key];
+      }
+    });
+
+    // Sanitize numeric size settings with limits
+    Object.entries(LAYOUT_SIZE_LIMITS).forEach(([key, { min, max }]) => {
+      const value = rawLayout[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        sanitized.layout[key] = Math.min(Math.max(Math.round(value), min), max);
+      }
+    });
   }
 
   return sanitized;
