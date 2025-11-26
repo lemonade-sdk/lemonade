@@ -135,7 +135,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   if (!isVisible) return null;
 
   return (
-    <div className="logs-window" style={height ? { height: `${height}px` } : undefined}>
+    <div className="logs-window" style={height ? { height: `${height}px`, flex: 'none' } : undefined}>
       <div className="logs-header">
         <h3>Server Logs</h3>
         <div className="logs-controls">
