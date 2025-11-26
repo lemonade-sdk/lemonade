@@ -734,7 +734,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         ) : (
           <div className="add-model-form">
             <div className="form-section">
-              <label className="form-label">Model Name</label>
+              <label className="form-label" title="A unique name to identify your model in the catalog">Model Name</label>
               <div className="input-with-prefix">
                 <span className="input-prefix">user.</span>
                 <input 
@@ -748,7 +748,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             </div>
 
             <div className="form-section">
-              <label className="form-label">Checkpoint</label>
+              <label className="form-label" title="Hugging Face model path (repo/model:quantization)">Checkpoint</label>
               <input 
                 type="text"
                 className="form-input"
@@ -759,7 +759,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             </div>
 
             <div className="form-section">
-              <label className="form-label">Recipe</label>
+              <label className="form-label" title="Inference backend: llamacpp, flm, oga-cpu, oga-hybrid, or oga-npu">Recipe</label>
               <input 
                 type="text"
                 className="form-input"
@@ -772,7 +772,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             <div className="form-section">
               <label className="form-label">More info</label>
               <div className="form-subsection">
-                <label className="form-label-secondary">mmproj file (Optional)</label>
+                <label className="form-label-secondary" title="Multimodal projection file for vision models">mmproj file (Optional)</label>
                 <input 
                   type="text"
                   className="form-input"
@@ -783,7 +783,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               </div>
               
               <div className="form-checkboxes">
-                <label className="checkbox-label">
+                <label className="checkbox-label" title="Enable if model supports chain-of-thought reasoning">
                   <input 
                     type="checkbox"
                     checked={newModel.reasoning}
@@ -792,7 +792,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                   <span>Reasoning</span>
                 </label>
                 
-                <label className="checkbox-label">
+                <label className="checkbox-label" title="Enable if model can process images">
                   <input 
                     type="checkbox"
                     checked={newModel.vision}
