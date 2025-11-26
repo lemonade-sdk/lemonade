@@ -21,6 +21,8 @@ const createEmptyModelForm = () => ({
   mmproj: '',
   reasoning: false,
   vision: false,
+  embedding: false,
+  reranking: false,
 });
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
@@ -339,6 +341,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         mmproj: trimmedMmproj,
         reasoning: newModel.reasoning,
         vision: newModel.vision,
+        embedding: newModel.embedding,
+        reranking: newModel.reranking,
       });
 
       await loadModels();
@@ -804,6 +808,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                     onChange={(e) => handleInputChange('vision', e.target.checked)}
                   />
                   <span>Vision</span>
+                </label>
+                
+                <label className="checkbox-label" title="Enable if model generates text embeddings">
+                  <input 
+                    type="checkbox"
+                    checked={newModel.embedding}
+                    onChange={(e) => handleInputChange('embedding', e.target.checked)}
+                  />
+                  <span>Embedding</span>
+                </label>
+                
+                <label className="checkbox-label" title="Enable if model performs reranking">
+                  <input 
+                    type="checkbox"
+                    checked={newModel.reranking}
+                    onChange={(e) => handleInputChange('reranking', e.target.checked)}
+                  />
+                  <span>Reranking</span>
                 </label>
               </div>
             </div>

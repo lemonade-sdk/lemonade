@@ -1200,9 +1200,9 @@ footer {
 }
 
 .form-checkboxes {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
     margin-top: 12px;
     padding-left: 8px;
 }

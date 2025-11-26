@@ -44,6 +44,8 @@ declare global {
         mmproj?: string;
         reasoning?: boolean;
         vision?: boolean;
+        embedding?: boolean;
+        reranking?: boolean;
       }) => Promise<unknown>;
       watchUserModels?: (callback: () => void) => void | (() => void);
       getSettings?: () => Promise<AppSettings>;

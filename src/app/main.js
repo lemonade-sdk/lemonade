@@ -266,7 +266,7 @@ const unsubscribeFromUserModels = (webContentsInstance) => {
 };
 
 const addUserModelEntry = async (payload = {}) => {
-  const { name, checkpoint, recipe, mmproj = '', reasoning = false, vision = false } = payload;
+  const { name, checkpoint, recipe, mmproj = '', reasoning = false, vision = false, embedding = false, reranking = false } = payload;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new Error('Model name is required');
@@ -314,6 +314,12 @@ const addUserModelEntry = async (payload = {}) => {
   }
   if (vision) {
     labels.push('vision');
+  }
+  if (embedding) {
+    labels.push('embeddings');
+  }
+  if (reranking) {
+    labels.push('reranking');
   }
 
   const entry = {
