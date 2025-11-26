@@ -759,14 +759,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             </div>
 
             <div className="form-section">
-              <label className="form-label" title="Inference backend: llamacpp, flm, oga-cpu, oga-hybrid, or oga-npu">Recipe</label>
-              <input 
-                type="text"
-                className="form-input"
-                placeholder="llamacpp"
+              <label className="form-label" title="Inference backend to use for this model">Recipe</label>
+              <select 
+                className="form-input form-select"
                 value={newModel.recipe}
                 onChange={(e) => handleInputChange('recipe', e.target.value)}
-              />
+              >
+                <option value="">Select a recipe...</option>
+                <option value="llamacpp">Llama.cpp GPU</option>
+                <option value="flm">FastFlowLM NPU</option>
+                <option value="oga-cpu">ONNX Runtime CPU</option>
+                <option value="oga-hybrid">ONNX Runtime Hybrid</option>
+                <option value="oga-npu">ONNX Runtime NPU</option>
+              </select>
             </div>
 
             <div className="form-section">
