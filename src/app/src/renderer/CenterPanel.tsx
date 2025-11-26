@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 
 interface CenterPanelProps {
   isVisible: boolean;
+  onClose?: () => void;
 }
 
 const apps = [
@@ -57,7 +58,7 @@ const apps = [
   },
 ];
 
-const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible }) => {
+const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   const galleryRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -224,6 +225,15 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible }) => {
 
   return (
     <div className="center-panel">
+      {onClose && (
+        <button 
+          className="center-panel-close-btn" 
+          onClick={onClose}
+          title="Close panel"
+        >
+          ×
+        </button>
+      )}
       <div className="marketplace-section">
         <div className="marketplace-badge">
           <span className="badge-icon">✦</span>

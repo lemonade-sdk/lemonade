@@ -223,7 +223,7 @@ const App: React.FC = () => {
           <div className="main-content-container">
             {isCenterPanelVisible && (
               <div className={`main-content ${isChatVisible ? 'with-chat' : 'full-width'} ${isModelManagerVisible ? 'with-model-manager' : ''}`}>
-                <CenterPanel isVisible={true} />
+                <CenterPanel isVisible={true} onClose={() => setIsCenterPanelVisible(false)} />
               </div>
             )}
             {isCenterPanelVisible && isLogsVisible && (
