@@ -19,7 +19,7 @@ interface ModelManagerProps {
 const createEmptyModelForm = () => ({
   name: '',
   checkpoint: '',
-  recipe: '',
+  recipe: 'llamacpp',
   mmproj: '',
   reasoning: false,
   vision: false,
