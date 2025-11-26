@@ -149,6 +149,10 @@
         <File Id="logs.html" Source="$(var.SourceDir)\build\Release\resources\static\logs.html" KeyPath="yes" />
       </Component>
       
+      <Component Id="IndexHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
+        <File Id="index.html" Source="$(var.SourceDir)\build\Release\resources\static\index.html" KeyPath="yes" />
+      </Component>
+      
       <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
         <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
       </Component>

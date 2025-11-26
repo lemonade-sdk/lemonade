@@ -206,6 +206,42 @@ void Server::setup_routes() {
     // Setup static file serving for web UI
     setup_static_files();
     
+    // Root path - serve a landing page for browser visitors
+    http_server_->Get("/", [this](const httplib::Request& req, httplib::Response& res) {
+        // Load the index.html file from resources/static
+        std::string index_path = utils::get_resource_path("resources/static/index.html");
+        std::ifstream file(index_path);
+        
+        if (!file.is_open()) {
+            // Fallback if file not found
+            res.status = 200;
+            res.set_content(
+                "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0a0a0a;color:#fff;'>"
+                "<h1 style='color:#FFCC00;'>Lemonade Server</h1>"
+                "<p>Server is running. Look for the lemon icon in your system tray to open the app.</p>"
+                "</body></html>",
+                "text/html"
+            );
+            return;
+        }
+        
+        // Read the entire file
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string html = buffer.str();
+        file.close();
+        
+        // Replace {{PORT}} placeholder with actual port
+        std::string port_str = std::to_string(port_);
+        size_t pos = 0;
+        while ((pos = html.find("{{PORT}}", pos)) != std::string::npos) {
+            html.replace(pos, 8, port_str);
+            pos += port_str.length();
+        }
+        
+        res.set_content(html, "text/html");
+    });
+    
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
