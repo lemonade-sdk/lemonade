@@ -2,6 +2,9 @@
 <?ifndef IncludeElectron?>
 <?define IncludeElectron = 0?>
 <?endif?>
+<?ifndef IncludeUi?>
+<?define IncludeUi = 0?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   
@@ -93,6 +96,7 @@
             <Directory Id="StaticDir" Name="static">
               <Directory Id="JsDir" Name="js" />
             </Directory>
+            <Directory Id="UiDir" Name="ui" />
           </Directory>
         </Directory>
 <?if $(var.IncludeElectron) = 1 ?>
@@ -217,6 +221,9 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+<?if $(var.IncludeUi) = 1 ?>
+      <ComponentGroupRef Id="UiComponents" />
+<?endif?>
 <?if $(var.IncludeElectron) = 1 ?>
       <ComponentGroupRef Id="ElectronAppComponents" />
 <?endif?>

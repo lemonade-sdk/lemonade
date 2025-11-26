@@ -183,7 +183,8 @@ if(WIN32)
     )
     
     set(WIX_PRODUCT_WXS "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs")
-    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
+    set(WIX_ELECTRON_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
+    set(WIX_UI_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_ui_fragment.py")
     
     # Find WiX Toolset 5.0+ (unified 'wix' command) and Python for fragment generation
     find_program(WIX_EXECUTABLE wix)
@@ -206,47 +207,117 @@ if(WIN32)
         set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
         file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
         
-        # Minimal installer (server only)
-        add_custom_target(wix_installer_minimal
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
-            COMMAND ${WIX_EXECUTABLE} build
-                -arch x64
-                -ext WixToolset.UI.wixext
-                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                -d IncludeElectron=0
-                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
-                "${WIX_PRODUCT_WXS_NATIVE}"
-            COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-            DEPENDS ${EXECUTABLE_NAME}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer (server only)"
-        )
+        # UI fragment paths
+        set(WIX_UI_SOURCE_DIR "${ELECTRON_APP_SOURCE_DIR}/dist/renderer")
+        set(WIX_UI_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/UiFragment.wxs")
+        file(TO_NATIVE_PATH "${WIX_UI_FRAGMENT}" WIX_UI_FRAGMENT_NATIVE)
         
-        set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+        # Check if React UI is available
+        set(UI_AVAILABLE FALSE)
+        if(EXISTS "${WIX_UI_SOURCE_DIR}/index.html")
+            set(UI_AVAILABLE TRUE)
+            message(STATUS "React UI found at ${WIX_UI_SOURCE_DIR} - will be included in installers")
+        else()
+            message(STATUS "React UI not found - browser UI will not be included in installers")
+            message(STATUS "  To include web UI: cd src/app && npm run build:renderer")
+        endif()
         
-        if(Python3_FOUND)
-            add_custom_target(wix_installer_full
-                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
-                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
-                    --source "${ELECTRON_APP_UNPACKED_DIR}"
-                    --output "${WIX_ELECTRON_FRAGMENT}"
-                    --component-group "ElectronAppComponents"
-                    --root-id "ElectronAppDir"
-                    --path-variable "ElectronSourceDir"
+        # Minimal installer (server only, with web UI if available)
+        if(Python3_FOUND AND UI_AVAILABLE)
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server + web UI)..."
+                COMMAND ${Python3_EXECUTABLE} ${WIX_UI_FRAGMENT_SCRIPT}
+                    --source "${WIX_UI_SOURCE_DIR}"
+                    --output "${WIX_UI_FRAGMENT}"
                 COMMAND ${WIX_EXECUTABLE} build
                     -arch x64
                     -ext WixToolset.UI.wixext
                     -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
-                    -d IncludeElectron=1
-                    -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
-                    -out "${WIX_FULL_OUTPUT_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeUi=1
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                     "${WIX_PRODUCT_WXS_NATIVE}"
-                    "${WIX_ELECTRON_FRAGMENT_NATIVE}"
-                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+                    "${WIX_UI_FRAGMENT_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
                 DEPENDS ${EXECUTABLE_NAME}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                COMMENT "Building WiX MSI installer (with Electron app)"
+                COMMENT "Building WiX MSI installer (server + web UI)"
             )
+        else()
+            add_custom_target(wix_installer_minimal
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only, no web UI)..."
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d IncludeElectron=0
+                    -d IncludeUi=0
+                    -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (server only)"
+            )
+        endif()
+        
+        set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+        
+        if(Python3_FOUND)
+            # Full installer includes Electron app + web UI
+            if(UI_AVAILABLE)
+                add_custom_target(wix_installer_full
+                    COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app + web UI)..."
+                    COMMAND ${Python3_EXECUTABLE} ${WIX_ELECTRON_FRAGMENT_SCRIPT}
+                        --source "${ELECTRON_APP_UNPACKED_DIR}"
+                        --output "${WIX_ELECTRON_FRAGMENT}"
+                        --component-group "ElectronAppComponents"
+                        --root-id "ElectronAppDir"
+                        --path-variable "ElectronSourceDir"
+                    COMMAND ${Python3_EXECUTABLE} ${WIX_UI_FRAGMENT_SCRIPT}
+                        --source "${WIX_UI_SOURCE_DIR}"
+                        --output "${WIX_UI_FRAGMENT}"
+                    COMMAND ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d IncludeElectron=1
+                        -d IncludeUi=1
+                        -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                        -out "${WIX_FULL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                        "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                        "${WIX_UI_FRAGMENT_NATIVE}"
+                    COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+                    DEPENDS ${EXECUTABLE_NAME}
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                    COMMENT "Building WiX MSI installer (with Electron app + web UI)"
+                )
+            else()
+                add_custom_target(wix_installer_full
+                    COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app, no web UI)..."
+                    COMMAND ${Python3_EXECUTABLE} ${WIX_ELECTRON_FRAGMENT_SCRIPT}
+                        --source "${ELECTRON_APP_UNPACKED_DIR}"
+                        --output "${WIX_ELECTRON_FRAGMENT}"
+                        --component-group "ElectronAppComponents"
+                        --root-id "ElectronAppDir"
+                        --path-variable "ElectronSourceDir"
+                    COMMAND ${WIX_EXECUTABLE} build
+                        -arch x64
+                        -ext WixToolset.UI.wixext
+                        -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                        -d IncludeElectron=1
+                        -d IncludeUi=0
+                        -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                        -out "${WIX_FULL_OUTPUT_NATIVE}"
+                        "${WIX_PRODUCT_WXS_NATIVE}"
+                        "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                    COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+                    DEPENDS ${EXECUTABLE_NAME}
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                    COMMENT "Building WiX MSI installer (with Electron app)"
+                )
+            endif()
             
             if(TARGET electron-app)
                 add_dependencies(wix_installer_full electron-app)
@@ -332,6 +403,17 @@ file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/backend_versions.json
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
+
+# Copy React UI if available (for browser access at localhost:8000)
+set(REACT_UI_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../app/dist/renderer")
+if(EXISTS "${REACT_UI_SOURCE_DIR}/index.html")
+    message(STATUS "React UI found at ${REACT_UI_SOURCE_DIR}, copying to resources/ui")
+    file(COPY ${REACT_UI_SOURCE_DIR}/
+         DESTINATION ${CMAKE_BINARY_DIR}/resources/ui)
+else()
+    message(STATUS "React UI not found at ${REACT_UI_SOURCE_DIR}. Browser access will be limited.")
+    message(STATUS "To enable web UI: cd src/app && npm run build:renderer")
+endif()
 
 # Also copy to Release and Debug directories for Visual Studio multi-config
 add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
