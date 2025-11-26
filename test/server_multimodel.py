@@ -35,6 +35,7 @@ class MultiModelTesting(ServerTestingBase):
     # Use small GGUF models for testing
     model_llm_1 = "Qwen3-0.6B-GGUF"
     model_llm_2 = "Qwen3-1.7B-GGUF"
+    model_llm_3 = "granite-4.0-h-tiny-GGUF"
 
     def setUp(self):
         """Setup for multi-model tests."""
@@ -193,7 +194,7 @@ class MultiModelTesting(ServerTestingBase):
 
         # Load third model (should evict model_llm_1 as it's LRU)
         response = requests.post(
-            f"{self.base_url}/load", json={"model_name": "Llama-3.2-1B-Instruct-CPU"}
+            f"{self.base_url}/load", json={"model_name": self.model_llm_3}
         )
         self.assertEqual(response.status_code, 200)
         time.sleep(2)
@@ -205,7 +206,7 @@ class MultiModelTesting(ServerTestingBase):
 
         model_names = {m["model_name"] for m in data["all_models_loaded"]}
         self.assertIn(self.model_llm_2, model_names)
-        self.assertIn("Llama-3.2-1B-Instruct-CPU", model_names)
+        self.assertIn(self.model_llm_3, model_names)
         self.assertNotIn(self.model_llm_1, model_names)
 
     def test_006_unload_specific_model(self):
