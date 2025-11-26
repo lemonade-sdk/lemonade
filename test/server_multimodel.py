@@ -367,7 +367,7 @@ def main():
     # Run the tests
     run_server_tests_with_class(
         MultiModelTesting,
-        offline=True,  # Use offline mode to avoid downloading
+        offline=False,  # Use offline mode to avoid downloading
         additional_args=[
             "--max-loaded-models",
             "2",
