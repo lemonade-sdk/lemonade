@@ -1077,8 +1077,8 @@
         // Render input section based on model type
         function renderInputSection(model, type) {
             const modelName = model.model_name;
-            // Escape model name for use in JS strings (handle quotes)
-            const escapedModelName = modelName.replace(/'/g, "\\'").replace(/"/g, '\\"');
+            // Escape model name for use in JS strings (handle quotes and backslashes)
+            const escapedModelName = modelName.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
             
             if (type === 'embedding') {
                 return `
