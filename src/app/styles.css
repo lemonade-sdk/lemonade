@@ -387,21 +387,18 @@ main {
     display: flex;
     gap: 8px;
     padding: 12px 0;
-    animation: scrollGallery 30s linear infinite;
     width: max-content;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-@keyframes scrollGallery {
-    0% {
-        transform: translateX(0);
-    }
-    100% {
-        transform: translateX(-50%);
-    }
+.apps-gallery.dragging {
+    cursor: grabbing;
 }
 
-.apps-gallery:hover {
-    animation-play-state: paused;
+.apps-gallery.dragging .gallery-app-item {
+    pointer-events: none;
 }
 
 .gallery-app-item {
