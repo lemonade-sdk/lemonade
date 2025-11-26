@@ -295,6 +295,20 @@ void Server::setup_static_files() {
         res.set_content(html_template, "text/html");
     });
     
+    // Serve favicon.ico from root as expected by most browsers
+    http_server_->Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
+        std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
+        if (ifs) {
+            // Read favicon bytes to string to pass to response
+            std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+            res.set_content(content, "image/x-icon");
+            res.status = 200;
+        } else {
+            res.set_content("Favicon not found.", "text/plain");
+            res.status = 404;
+        }
+    });
+
     // Mount static files directory for other files (CSS, JS, images)
     // Use /static prefix to avoid conflicts with webapp.html
     if (!http_server_->set_mount_point("/static", static_dir)) {
