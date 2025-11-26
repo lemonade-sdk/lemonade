@@ -200,8 +200,8 @@ const TitleBar: React.FC<TitleBarProps> = ({
             title="Settings"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 10C9.10457 10 10 9.10457 10 8C10 6.89543 9.10457 6 8 6C6.89543 6 6 6.89543 6 8C6 9.10457 6.89543 10 8 10Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M13 8C13 8.5 12.9 9 12.8 9.4L14 10.3C14.1 10.4 14.1 10.5 14.1 10.6L13 12.4C12.9 12.5 12.8 12.6 12.7 12.5L11.3 12C10.9 12.3 10.5 12.5 10 12.7L9.8 14.2C9.8 14.3 9.7 14.4 9.6 14.4H7.4C7.3 14.4 7.2 14.3 7.2 14.2L7 12.7C6.5 12.5 6.1 12.3 5.7 12L4.3 12.5C4.2 12.6 4.1 12.5 4 12.4L2.9 10.6C2.9 10.5 2.9 10.4 3 10.3L4.2 9.4C4.1 9 4 8.5 4 8C4 7.5 4.1 7 4.2 6.6L3 5.7C2.9 5.6 2.9 5.5 2.9 5.4L4 3.6C4.1 3.5 4.2 3.4 4.3 3.5L5.7 4C6.1 3.7 6.5 3.5 7 3.3L7.2 1.8C7.2 1.7 7.3 1.6 7.4 1.6H9.6C9.7 1.6 9.8 1.7 9.8 1.8L10 3.3C10.5 3.5 10.9 3.7 11.3 4L12.7 3.5C12.8 3.4 12.9 3.5 13 3.6L14.1 5.4C14.1 5.5 14.1 5.6 14 5.7L12.8 6.6C12.9 7 13 7.5 13 8Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.2"/>
             </svg>
           </button>
           <button 
