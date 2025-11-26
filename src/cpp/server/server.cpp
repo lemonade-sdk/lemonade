@@ -320,6 +320,20 @@ void Server::run() {
     });
     
     running_ = true;
+    
+    // Print a clear, visible ready message before starting to listen
+    std::cout << "\n";
+    std::cout << "========================================" << std::endl;
+    std::cout << "  Lemonade Server is Ready! 🍋" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << "\nServer URL: http://" << host_ << ":" << port_ << std::endl;
+    std::cout << "\nHow to use:" << std::endl;
+    std::cout << "  • Open the Lemonade App using the tray icon (If you installed the full version)" << std::endl;
+    std::cout << "  • Use any OpenAI-compatible client" << std::endl;
+    std::cout << "    • API endpoint: http://" << host_ << ":" << port_ << "/api/v1/chat/completions" << std::endl;
+    std::cout << "\nPress Ctrl+C to stop the server" << std::endl;
+    std::cout << "========================================\n" << std::endl;
+    
     http_server_->listen(host_, port_);
 }
 
