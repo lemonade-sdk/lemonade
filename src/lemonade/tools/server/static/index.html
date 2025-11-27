@@ -170,73 +170,6 @@
             color: #FFCC00;
         }
         
-        .apps-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        
-        .app-item {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            padding: 12px 14px;
-            font-size: 0.85rem;
-            color: #b0b0b0;
-            transition: all 0.2s;
-        }
-        
-        .app-item:hover {
-            border-color: rgba(255, 204, 0, 0.3);
-            background: rgba(255, 204, 0, 0.05);
-        }
-        
-        .app-item strong {
-            color: #e0e0e0;
-            display: block;
-            margin-bottom: 2px;
-        }
-        
-        .app-item span {
-            font-size: 0.75rem;
-            color: #707070;
-        }
-        
-        .endpoints-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        
-        .endpoint {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.72rem;
-            color: #909090;
-        }
-        
-        .endpoint .method {
-            color: #FFCC00;
-            margin-right: 4px;
-        }
-        
-        .tip {
-            background: rgba(255, 204, 0, 0.08);
-            border: 1px solid rgba(255, 204, 0, 0.2);
-            border-radius: 8px;
-            padding: 14px 16px;
-            font-size: 0.85rem;
-            color: #c0a030;
-            margin-top: 12px;
-        }
-        
-        .tip strong {
-            color: #FFCC00;
-        }
-        
         .footer {
             margin-top: 24px;
             font-size: 0.8rem;
@@ -258,11 +191,14 @@
             margin-bottom: 14px;
             line-height: 1.5;
         }
-
-        @media (max-width: 500px) {
-            .apps-grid {
-                grid-template-columns: 1fr;
-            }
+        
+        .section-desc code {
+            background: rgba(255, 204, 0, 0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #FFCC00;
         }
     </style>
 </head>
@@ -293,53 +229,16 @@ curl -X POST http://localhost:{{PORT}}/api/v1/chat/completions \
             </div>
         </div>
 
-        <!-- Compatible Apps -->
-        <div class="card">
-            <h2><span class="icon">🔌</span> Compatible Apps</h2>
-            <p class="section-desc">These apps can connect to Lemonade using the OpenAI-compatible API:</p>
-            <div class="apps-grid">
-                <div class="app-item">
-                    <strong>Open WebUI</strong>
-                    <span>Full-featured chat interface</span>
-                </div>
-                <div class="app-item">
-                    <strong>Continue.dev</strong>
-                    <span>VS Code coding assistant</span>
-                </div>
-                <div class="app-item">
-                    <strong>AnythingLLM</strong>
-                    <span>Local RAG & agents</span>
-                </div>
-                <div class="app-item">
-                    <strong>CodeGPT</strong>
-                    <span>IDE coding assistant</span>
-                </div>
-            </div>
-            <div class="tip">
-                <strong>Tip:</strong> Point any OpenAI-compatible app to <code>http://localhost:{{PORT}}/api/v1</code>
-            </div>
-        </div>
-        
-        <!-- API Endpoints -->
-        <div class="card">
-            <h2><span class="icon">📡</span> API Endpoints</h2>
-            <p class="section-desc">OpenAI-compatible REST API:</p>
-            <div class="endpoints-list">
-                <div class="endpoint"><span class="method">POST</span>/chat/completions</div>
-                <div class="endpoint"><span class="method">POST</span>/completions</div>
-                <div class="endpoint"><span class="method">POST</span>/embeddings</div>
-                <div class="endpoint"><span class="method">GET</span>/models</div>
-                <div class="endpoint"><span class="method">POST</span>/pull</div>
-                <div class="endpoint"><span class="method">POST</span>/load</div>
-                <div class="endpoint"><span class="method">GET</span>/health</div>
-            </div>
-        </div>
-
         <!-- Desktop App Hint -->
         <div class="card">
             <h2><span class="icon">💻</span> Want a GUI?</h2>
-            <p class="section-desc">
+            <p class="section-desc" id="gui-hint-windows" style="display: none;">
                 If you installed the <strong>full version</strong> of Lemonade, look for the 🍋 icon in your system tray to open the desktop app.
+                <br><br>
+                Using the minimal install? Get the full version from <strong>github.com/lemonade-sdk/lemonade</strong> for a built-in chat interface and model manager.
+            </p>
+            <p class="section-desc" id="gui-hint-linux" style="display: none;">
+                If you installed the <strong>full version</strong> of Lemonade, launch the UI by running <code>lemonade-app</code> in your terminal, or find <strong>Lemonade</strong> in your applications menu.
                 <br><br>
                 Using the minimal install? Get the full version from <strong>github.com/lemonade-sdk/lemonade</strong> for a built-in chat interface and model manager.
             </p>
@@ -360,6 +259,20 @@ curl -X POST http://localhost:{{PORT}}/api/v1/chat/completions \
                 setTimeout(() => btn.textContent = 'copy', 1500);
             });
         }
+
+        // Detect platform and show appropriate GUI hint
+        (function() {
+            const platform = navigator.platform.toLowerCase();
+            const isWindows = platform.includes('win');
+            const hintWindows = document.getElementById('gui-hint-windows');
+            const hintLinux = document.getElementById('gui-hint-linux');
+            
+            if (isWindows) {
+                hintWindows.style.display = 'block';
+            } else {
+                hintLinux.style.display = 'block';
+            }
+        })();
     </script>
 </body>
 </html>
