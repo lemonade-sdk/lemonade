@@ -540,16 +540,27 @@ jobs:
           echo "Building Electron app for Linux..."
           npm run build:linux
           
-          # Verify the build output exists
-          if [ ! -f "dist-app/linux-unpacked/Lemonade" ]; then
+          # List what was created
+          echo "Contents of dist-app:"
+          ls -la dist-app/ || echo "dist-app directory not found"
+          
+          echo "Contents of linux-unpacked:"
+          ls -la dist-app/linux-unpacked/ || echo "linux-unpacked directory not found"
+          
+          # Verify the build output exists (check both uppercase and lowercase)
+          if [ -f "dist-app/linux-unpacked/lemonade" ]; then
+              echo "Found: dist-app/linux-unpacked/lemonade"
+              ELECTRON_EXE="lemonade"
+          elif [ -f "dist-app/linux-unpacked/Lemonade" ]; then
+              echo "Found: dist-app/linux-unpacked/Lemonade"
+              ELECTRON_EXE="Lemonade"
+          else
               echo "ERROR: Electron app executable not found!"
-              echo "Contents of dist-app:"
-              ls -lR dist-app/ || echo "dist-app directory not found"
+              echo "Looking for 'lemonade' or 'Lemonade' in dist-app/linux-unpacked/"
               exit 1
           fi
           
           echo "Electron app build successful!"
-          ls -lh dist-app/linux-unpacked/
 
       - name: Build C++ Server with CMake
         run: |

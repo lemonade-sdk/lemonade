@@ -11,8 +11,8 @@ mkdir -p "$LLAMA_DIR"
 chmod 777 "$LLAMA_DIR"
 
 # Make the Electron app executable
-if [ -f "$APP_DIR/Lemonade" ]; then
-    chmod +x "$APP_DIR/Lemonade"
+if [ -f "$APP_DIR/lemonade" ]; then
+    chmod +x "$APP_DIR/lemonade"
 fi
 
 # Update desktop database if available

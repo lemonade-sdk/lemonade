@@ -20,7 +20,8 @@ elseif(APPLE)
     set(ELECTRON_EXE_NAME "Lemonade.app")
 else()
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
-    set(ELECTRON_EXE_NAME "Lemonade")
+    # Electron builder uses lowercase product name on Linux
+    set(ELECTRON_EXE_NAME "lemonade")
 endif()
 
 # C++ Standard
@@ -456,7 +457,7 @@ if [ -d \"$HOME/.local/share/lemonade-server/app\" ]; then
     APP_DIR=\"$HOME/.local/share/lemonade-server/app\"
 fi
 
-exec \"$APP_DIR/Lemonade\" \"$@\"
+exec \"$APP_DIR/lemonade\" \"$@\"
 ")
         install(PROGRAMS "${CMAKE_BINARY_DIR}/lemonade-app"
             DESTINATION bin
