@@ -1900,6 +1900,14 @@ bool TrayApp::find_electron_app() {
     possible_paths.push_back(exe_dir / "Lemonade");
     possible_paths.push_back(exe_dir / "lemonade");
     possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade");
+    possible_paths.push_back(exe_dir / ".." / "app" / "lemonade");
+    // Check standard install location for full installer
+    possible_paths.push_back(fs::path("/usr/local/share/lemonade-server/app/lemonade"));
+    // Check user-local install location
+    const char* home = std::getenv("HOME");
+    if (home) {
+        possible_paths.push_back(fs::path(home) / ".local/share/lemonade-server/app/lemonade");
+    }
 #endif
     
     // Check each possible path
