@@ -189,6 +189,22 @@
       </RegistryKey>
     </Component>
     
+<?if $(var.IncludeElectron) = 1 ?>
+    <!-- Protocol handler for lemonade:// URLs (only when Electron app is included) -->
+    <Component Id="ProtocolHandler" Directory="ElectronAppDir" Guid="a1b2c3d4-e5f6-7890-abcd-ef1234567890">
+      <RegistryKey Root="HKCU" Key="Software\Classes\lemonade">
+        <RegistryValue Type="string" Value="URL:Lemonade Protocol" KeyPath="yes" />
+        <RegistryValue Type="string" Name="URL Protocol" Value="" />
+      </RegistryKey>
+      <RegistryKey Root="HKCU" Key="Software\Classes\lemonade\DefaultIcon">
+        <RegistryValue Type="string" Value="[ElectronAppDir]Lemonade.exe,0" />
+      </RegistryKey>
+      <RegistryKey Root="HKCU" Key="Software\Classes\lemonade\shell\open\command">
+        <RegistryValue Type="string" Value="&quot;[ElectronAppDir]Lemonade.exe&quot; &quot;%1&quot;" />
+      </RegistryKey>
+    </Component>
+<?endif?>
+    
     <!-- Start Menu shortcuts -->
     <Component Id="ProgramMenuShortcuts" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d">
       <Shortcut Id="ApplicationStartMenuShortcut"
@@ -223,6 +239,7 @@
       <ComponentGroupRef Id="ResourceComponents" />
 <?if $(var.IncludeElectron) = 1 ?>
       <ComponentGroupRef Id="ElectronAppComponents" />
+      <ComponentRef Id="ProtocolHandler" />
 <?endif?>
       <ComponentRef Id="PathEnvironment" />
       <ComponentRef Id="RegistryEntries" />

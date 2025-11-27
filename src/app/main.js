@@ -4,6 +4,38 @@ const fs = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
 
+// Protocol handler for lemonade:// URLs
+const PROTOCOL_NAME = 'lemonade';
+
+// Register as default protocol handler (for development)
+// In production, this is handled by the installer's registry entries
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL_NAME, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL_NAME);
+}
+
+// Single instance lock - ensure only one instance of the app runs
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  app.quit();
+} else {
+  // Handle second instance launch (e.g., from protocol handler)
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance or opened a lemonade:// URL
+    // Focus the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      mainWindow.show();
+    }
+  });
+}
+
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
 const ABSOLUTE_MIN_WIDTH = 400;
@@ -566,6 +598,17 @@ function stopBackend() {
     backendProcess = null;
   }
 }
+
+// Handle protocol URL on macOS
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  // Focus/show the window when opened via protocol
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    mainWindow.show();
+  }
+});
 
 app.on('ready', () => {
   startTypeScriptBackend();

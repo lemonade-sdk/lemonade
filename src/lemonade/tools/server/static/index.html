@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lemonade Server</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap');
         
@@ -20,6 +21,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             color: #e0e0e0;
             padding: 40px 20px;
             position: relative;
@@ -39,15 +41,15 @@
         }
         
         .container {
-            max-width: 700px;
+            max-width: 500px;
             width: 100%;
             text-align: center;
             z-index: 1;
         }
         
         .logo {
-            font-size: 64px;
-            margin-bottom: 16px;
+            font-size: 72px;
+            margin-bottom: 20px;
             filter: drop-shadow(0 0 30px rgba(255, 220, 0, 0.3));
             animation: float 3s ease-in-out infinite;
         }
@@ -58,9 +60,9 @@
         }
         
         h1 {
-            font-size: 2.2rem;
+            font-size: 2.4rem;
             font-weight: 600;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             background: linear-gradient(135deg, #FFE566 0%, #FFCC00 50%, #FF9500 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -76,7 +78,7 @@
             border: 1px solid rgba(34, 197, 94, 0.3);
             padding: 8px 16px;
             border-radius: 20px;
-            margin-bottom: 32px;
+            margin-bottom: 40px;
             font-size: 0.9rem;
             color: #22c55e;
         }
@@ -94,12 +96,91 @@
             50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
         }
         
+        /* Loading state */
+        .loading-state {
+            margin-bottom: 40px;
+        }
+        
+        .loading-text {
+            color: #888;
+            font-size: 1rem;
+            margin-bottom: 16px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 204, 0, 0.2);
+            border-top-color: #FFCC00;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Fallback content - hidden initially */
+        .fallback-content {
+            display: none;
+        }
+        
+        .fallback-content.visible {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .open-app-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, #FFCC00 0%, #FF9500 100%);
+            color: #000;
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 14px 32px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            margin-bottom: 32px;
+        }
+        
+        .open-app-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 204, 0, 0.3);
+        }
+        
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin: 32px 0;
+            color: #555;
+            font-size: 0.85rem;
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
         .card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 16px;
             padding: 24px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             backdrop-filter: blur(10px);
             text-align: left;
         }
@@ -107,138 +188,39 @@
         .card h2 {
             font-size: 1rem;
             font-weight: 500;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
             color: #ffffff;
             display: flex;
             align-items: center;
             gap: 8px;
         }
         
-        .card h2 .icon {
-            font-size: 1.1rem;
+        .card p {
+            color: #909090;
+            font-size: 0.9rem;
+            line-height: 1.6;
         }
         
-        .code-block {
-            background: #0d0d0d;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 14px 16px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            color: #a0a0a0;
-            overflow-x: auto;
-            margin-bottom: 12px;
-            line-height: 1.5;
-        }
-        
-        .code-block:last-child {
-            margin-bottom: 0;
-        }
-        
-        .code-block .comment {
-            color: #5a5a5a;
-        }
-        
-        .code-block .string {
-            color: #98c379;
-        }
-        
-        .code-block .keyword {
+        .card a {
             color: #FFCC00;
+            text-decoration: none;
         }
         
-        .code-block code {
-            white-space: pre-wrap;
-            word-break: break-all;
+        .card a:hover {
+            text-decoration: underline;
         }
         
-        .copy-btn {
-            float: right;
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: #888;
-            padding: 4px 10px;
+        .code-inline {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 8px;
             border-radius: 4px;
-            font-size: 0.7rem;
-            cursor: pointer;
-            font-family: 'Space Grotesk', sans-serif;
-            transition: all 0.2s;
-        }
-        
-        .copy-btn:hover {
-            background: rgba(255, 204, 0, 0.2);
-            color: #FFCC00;
-        }
-        
-        .apps-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        
-        .app-item {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            padding: 12px 14px;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 0.85rem;
             color: #b0b0b0;
-            transition: all 0.2s;
-        }
-        
-        .app-item:hover {
-            border-color: rgba(255, 204, 0, 0.3);
-            background: rgba(255, 204, 0, 0.05);
-        }
-        
-        .app-item strong {
-            color: #e0e0e0;
-            display: block;
-            margin-bottom: 2px;
-        }
-        
-        .app-item span {
-            font-size: 0.75rem;
-            color: #707070;
-        }
-        
-        .endpoints-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        
-        .endpoint {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.72rem;
-            color: #909090;
-        }
-        
-        .endpoint .method {
-            color: #FFCC00;
-            margin-right: 4px;
-        }
-        
-        .tip {
-            background: rgba(255, 204, 0, 0.08);
-            border: 1px solid rgba(255, 204, 0, 0.2);
-            border-radius: 8px;
-            padding: 14px 16px;
-            font-size: 0.85rem;
-            color: #c0a030;
-            margin-top: 12px;
-        }
-        
-        .tip strong {
-            color: #FFCC00;
         }
         
         .footer {
-            margin-top: 24px;
+            margin-top: 32px;
             font-size: 0.8rem;
             color: #555;
         }
@@ -252,114 +234,142 @@
             color: #FFCC00;
         }
         
-        .section-desc {
-            color: #808080;
-            font-size: 0.85rem;
-            margin-bottom: 14px;
-            line-height: 1.5;
-        }
-
-        @media (max-width: 500px) {
-            .apps-grid {
-                grid-template-columns: 1fr;
-            }
+        /* Hide iframe used for protocol detection */
+        .protocol-frame {
+            display: none;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="logo">🍋</div>
-        <h1>Lemonade Server</h1>
+        <h1>Lemonade</h1>
         <div class="status">
             <span class="status-dot"></span>
-            Running on port {{PORT}}
+            Server running on port {{PORT}}
         </div>
         
-        <!-- Quick Start -->
-        <div class="card">
-            <h2><span class="icon">⚡</span> Quick Test</h2>
-            <p class="section-desc">Send a chat completion request to verify the server is working:</p>
-            <div class="code-block">
-                <button class="copy-btn" onclick="copyCode(this)">copy</button>
-                <code><span class="comment"># List available models</span>
-curl http://localhost:{{PORT}}/api/v1/models</code>
-            </div>
-            <div class="code-block">
-                <button class="copy-btn" onclick="copyCode(this)">copy</button>
-                <code><span class="comment"># Chat with a model (replace MODEL_NAME)</span>
-curl -X POST http://localhost:{{PORT}}/api/v1/chat/completions \
-  -H <span class="string">"Content-Type: application/json"</span> \
-  -d <span class="string">'{"model": "MODEL_NAME", "messages": [{"role": "user", "content": "Hello!"}]}'</span></code>
-            </div>
-        </div>
-
-        <!-- Compatible Apps -->
-        <div class="card">
-            <h2><span class="icon">🔌</span> Compatible Apps</h2>
-            <p class="section-desc">These apps can connect to Lemonade using the OpenAI-compatible API:</p>
-            <div class="apps-grid">
-                <div class="app-item">
-                    <strong>Open WebUI</strong>
-                    <span>Full-featured chat interface</span>
-                </div>
-                <div class="app-item">
-                    <strong>Continue.dev</strong>
-                    <span>VS Code coding assistant</span>
-                </div>
-                <div class="app-item">
-                    <strong>AnythingLLM</strong>
-                    <span>Local RAG & agents</span>
-                </div>
-                <div class="app-item">
-                    <strong>CodeGPT</strong>
-                    <span>IDE coding assistant</span>
-                </div>
-            </div>
-            <div class="tip">
-                <strong>Tip:</strong> Point any OpenAI-compatible app to <code>http://localhost:{{PORT}}/api/v1</code>
-            </div>
+        <!-- Loading state shown while trying to open app -->
+        <div class="loading-state" id="loadingState">
+            <p class="loading-text">Opening Lemonade app...</p>
+            <div class="spinner"></div>
         </div>
         
-        <!-- API Endpoints -->
-        <div class="card">
-            <h2><span class="icon">📡</span> API Endpoints</h2>
-            <p class="section-desc">OpenAI-compatible REST API:</p>
-            <div class="endpoints-list">
-                <div class="endpoint"><span class="method">POST</span>/chat/completions</div>
-                <div class="endpoint"><span class="method">POST</span>/completions</div>
-                <div class="endpoint"><span class="method">POST</span>/embeddings</div>
-                <div class="endpoint"><span class="method">GET</span>/models</div>
-                <div class="endpoint"><span class="method">POST</span>/pull</div>
-                <div class="endpoint"><span class="method">POST</span>/load</div>
-                <div class="endpoint"><span class="method">GET</span>/health</div>
+        <!-- Fallback content shown if app isn't installed -->
+        <div class="fallback-content" id="fallbackContent">
+            <a href="lemonade://open" class="open-app-btn" id="openAppBtn">
+                <span>🚀</span> Open Lemonade App
+            </a>
+            
+            <div class="divider">or</div>
+            
+            <div class="card">
+                <h2>💻 Get the Full App</h2>
+                <p>
+                    Install the <strong>full version</strong> of Lemonade for a built-in chat interface and model manager.
+                    <br><br>
+                    Download from <a href="https://github.com/lemonade-sdk/lemonade/releases" target="_blank">github.com/lemonade-sdk/lemonade</a>
+                </p>
             </div>
-        </div>
-
-        <!-- Desktop App Hint -->
-        <div class="card">
-            <h2><span class="icon">💻</span> Want a GUI?</h2>
-            <p class="section-desc">
-                If you installed the <strong>full version</strong> of Lemonade, look for the 🍋 icon in your system tray to open the desktop app.
-                <br><br>
-                Using the minimal install? Get the full version from <strong>github.com/lemonade-sdk/lemonade</strong> for a built-in chat interface and model manager.
-            </p>
-        </div>
-        
-        <div class="footer">
-            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a> · 
-            <a href="https://lemonade-server.ai/docs/" target="_blank">Documentation</a>
+            
+            <div class="card">
+                <h2>🔌 Use with OpenAI-Compatible Apps</h2>
+                <p>
+                    Connect any OpenAI-compatible app to Lemonade using:<br>
+                    <code class="code-inline">http://localhost:{{PORT}}/api/v1</code>
+                </p>
+            </div>
+            
+            <div class="footer">
+                <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a> · 
+                <a href="https://lemonade-server.ai/" target="_blank">Documentation</a>
+            </div>
         </div>
     </div>
-
+    
+    <iframe class="protocol-frame" id="protocolFrame"></iframe>
+    
     <script>
-        function copyCode(btn) {
-            const codeBlock = btn.parentElement;
-            const code = codeBlock.querySelector('code').textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                btn.textContent = 'copied!';
-                setTimeout(() => btn.textContent = 'copy', 1500);
+        (function() {
+            const loadingState = document.getElementById('loadingState');
+            const fallbackContent = document.getElementById('fallbackContent');
+            const openAppBtn = document.getElementById('openAppBtn');
+            
+            // Try to open the app via protocol handler
+            function tryOpenApp() {
+                const protocolUrl = 'lemonade://open';
+                
+                // Use multiple detection methods
+                let appOpened = false;
+                
+                // Method 1: Try to open via hidden iframe
+                const iframe = document.getElementById('protocolFrame');
+                iframe.src = protocolUrl;
+                
+                // Method 2: Also try window.location as backup (after a small delay)
+                setTimeout(() => {
+                    if (!appOpened) {
+                        // Create a hidden link and click it
+                        const link = document.createElement('a');
+                        link.href = protocolUrl;
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+                }, 100);
+                
+                // Show fallback content after timeout
+                // If the app opens, the browser tab typically becomes inactive/blurred
+                // We use visibility change detection plus a timeout
+                
+                let timeoutId = setTimeout(showFallback, 2500);
+                
+                // If the page loses focus, the app probably opened
+                function handleVisibilityChange() {
+                    if (document.hidden || document.visibilityState === 'hidden') {
+                        appOpened = true;
+                        clearTimeout(timeoutId);
+                        // Show success state briefly then show fallback anyway
+                        // (user might come back to this tab)
+                        setTimeout(showFallback, 500);
+                    }
+                }
+                
+                function handleBlur() {
+                    appOpened = true;
+                    clearTimeout(timeoutId);
+                    setTimeout(showFallback, 500);
+                }
+                
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+                window.addEventListener('blur', handleBlur);
+                
+                // Cleanup listeners after timeout
+                setTimeout(() => {
+                    document.removeEventListener('visibilitychange', handleVisibilityChange);
+                    window.removeEventListener('blur', handleBlur);
+                }, 3000);
+            }
+            
+            function showFallback() {
+                loadingState.style.display = 'none';
+                fallbackContent.classList.add('visible');
+            }
+            
+            // Handle manual "Open App" button click
+            openAppBtn.addEventListener('click', function(e) {
+                // Let the default behavior handle the protocol link
+                // But also add visual feedback
+                this.innerHTML = '<span>⏳</span> Opening...';
+                setTimeout(() => {
+                    this.innerHTML = '<span>🚀</span> Open Lemonade App';
+                }, 2000);
             });
-        }
+            
+            // Start trying to open the app
+            tryOpenApp();
+        })();
     </script>
 </body>
 </html>
