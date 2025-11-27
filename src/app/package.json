@@ -95,11 +95,10 @@
       "category": "public.app-category.business"
     },
     "linux": {
-      "icon": "../../docs/assets/favicon.ico",
       "target": [
-        "AppImage"
+        "dir"
       ],
-      "category": "Office"
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": false,
