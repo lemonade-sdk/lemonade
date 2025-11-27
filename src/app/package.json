@@ -65,7 +65,11 @@
     "files": [
       "main.js",
       "preload.js",
-      "dist/renderer/**/*"
+      {
+        "from": "dist/renderer",
+        "to": "dist/renderer",
+        "filter": ["**/*"]
+      }
     ],
     "extraResources": [
       {

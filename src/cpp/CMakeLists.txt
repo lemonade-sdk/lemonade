@@ -481,7 +481,11 @@ StartupWMClass=Lemonade
         )
         
         # Post-install script for full package
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full")
+        # Note: CPack requires the script to be named 'postinst' exactly
+        # We copy postinst-full to a temporary postinst file for CPack
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
+                       "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
     else()
         # Minimal package (server only)
         set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
