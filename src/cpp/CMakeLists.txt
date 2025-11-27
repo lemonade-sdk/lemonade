@@ -445,41 +445,6 @@ if(UNIX AND NOT APPLE)
             PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
         
-        # Create a launcher script for the Electron app
-        file(WRITE "${CMAKE_BINARY_DIR}/lemonade-app"
-"#!/bin/bash
-# Lemonade App Launcher
-SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"
-APP_DIR=\"/usr/local/share/lemonade-server/app\"
-
-# Check user-local install first
-if [ -d \"$HOME/.local/share/lemonade-server/app\" ]; then
-    APP_DIR=\"$HOME/.local/share/lemonade-server/app\"
-fi
-
-exec \"$APP_DIR/lemonade\" \"$@\"
-")
-        install(PROGRAMS "${CMAKE_BINARY_DIR}/lemonade-app"
-            DESTINATION bin
-        )
-        
-        # Create .desktop file for the Electron app
-        file(WRITE "${CMAKE_BINARY_DIR}/lemonade.desktop"
-"[Desktop Entry]
-Name=Lemonade
-Comment=Lemonade Local LLM Server
-Exec=/usr/local/bin/lemonade-app
-Icon=lemonade
-Terminal=false
-Type=Application
-Categories=Utility;Development;
-StartupNotify=true
-StartupWMClass=Lemonade
-")
-        install(FILES "${CMAKE_BINARY_DIR}/lemonade.desktop"
-            DESTINATION share/applications
-        )
-        
         # Post-install script for full package
         # Note: CPack requires the script to be named 'postinst' exactly
         # We copy postinst-full to a temporary postinst file for CPack

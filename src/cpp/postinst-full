@@ -32,10 +32,5 @@ done
 # Ensure all .so files in the app directory are readable and executable
 find "$APP_DIR" -name "*.so*" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# Update desktop database if available
-if command -v update-desktop-database > /dev/null 2>&1; then
-    update-desktop-database /usr/local/share/applications 2>/dev/null || true
-fi
-
 exit 0
 
