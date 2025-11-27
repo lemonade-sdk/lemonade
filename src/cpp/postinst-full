@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Post-install script for the full Lemonade package (with Electron app)
+
+INSTALL_DIR="/usr/local/share/lemonade-server"
+LLAMA_DIR="${INSTALL_DIR}/llama"
+APP_DIR="${INSTALL_DIR}/app"
+
+# Create llama directory if it doesn't exist and make it writable
+mkdir -p "$LLAMA_DIR"
+chmod 777 "$LLAMA_DIR"
+
+# Make the Electron app executable
+if [ -f "$APP_DIR/Lemonade" ]; then
+    chmod +x "$APP_DIR/Lemonade"
+fi
+
+# Update desktop database if available
+if command -v update-desktop-database > /dev/null 2>&1; then
+    update-desktop-database /usr/local/share/applications 2>/dev/null || true
+fi
+
+exit 0
+

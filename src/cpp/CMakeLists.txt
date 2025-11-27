@@ -396,7 +396,6 @@ add_subdirectory(tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -407,9 +406,7 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-    set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
@@ -428,8 +425,76 @@ if(UNIX AND NOT APPLE)
         DESTINATION share/lemonade-server/resources
     )
     
-    # Post-install script to make directories writable
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+    # Check if Electron app is available for full package
+    option(INCLUDE_ELECTRON_APP "Include Electron app in deb package" OFF)
+    
+    if(INCLUDE_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+        message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
+        message(STATUS "Building full deb package with Electron app")
+        
+        # Full package name
+        set(CPACK_PACKAGE_NAME "lemonade")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0")
+        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+        
+        # Install Electron app
+        install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
+            DESTINATION share/lemonade-server/app
+            USE_SOURCE_PERMISSIONS
+            PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+        
+        # Create a launcher script for the Electron app
+        file(WRITE "${CMAKE_BINARY_DIR}/lemonade-app"
+"#!/bin/bash
+# Lemonade App Launcher
+SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"
+APP_DIR=\"/usr/local/share/lemonade-server/app\"
+
+# Check user-local install first
+if [ -d \"$HOME/.local/share/lemonade-server/app\" ]; then
+    APP_DIR=\"$HOME/.local/share/lemonade-server/app\"
+fi
+
+exec \"$APP_DIR/Lemonade\" \"$@\"
+")
+        install(PROGRAMS "${CMAKE_BINARY_DIR}/lemonade-app"
+            DESTINATION bin
+        )
+        
+        # Create .desktop file for the Electron app
+        file(WRITE "${CMAKE_BINARY_DIR}/lemonade.desktop"
+"[Desktop Entry]
+Name=Lemonade
+Comment=Lemonade Local LLM Server
+Exec=/usr/local/bin/lemonade-app
+Icon=lemonade
+Terminal=false
+Type=Application
+Categories=Utility;Development;
+StartupNotify=true
+StartupWMClass=Lemonade
+")
+        install(FILES "${CMAKE_BINARY_DIR}/lemonade.desktop"
+            DESTINATION share/applications
+        )
+        
+        # Post-install script for full package
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full")
+    else()
+        # Minimal package (server only)
+        set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
+        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+        
+        # Post-install script for minimal package
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+        
+        if(INCLUDE_ELECTRON_APP)
+            message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
+            message(WARNING "Building minimal deb package instead")
+        endif()
+    endif()
     
     include(CPack)
 endif()

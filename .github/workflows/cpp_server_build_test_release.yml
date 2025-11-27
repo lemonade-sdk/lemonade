@@ -480,6 +480,165 @@ jobs:
           path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
+  build-lemonade-deb-full:
+    name: Build Lemonade Full .deb Package (with Electron App)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          
+          echo "Updating package lists..."
+          sudo apt-get update
+          
+          echo "Installing build dependencies..."
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            git
+          
+          echo "Verifying installations..."
+          cmake --version
+          gcc --version
+          pkg-config --version
+          
+          echo "Build dependencies installed successfully!"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Electron App for Linux
+        run: |
+          set -e
+          
+          echo "Building Electron app for Linux..."
+          
+          cd src/app
+          
+          # Install dependencies
+          echo "Installing npm dependencies..."
+          npm install
+          
+          # Build the Electron app for Linux
+          echo "Building Electron app for Linux..."
+          npm run build:linux
+          
+          # Verify the build output exists
+          if [ ! -f "dist-app/linux-unpacked/Lemonade" ]; then
+              echo "ERROR: Electron app executable not found!"
+              echo "Contents of dist-app:"
+              ls -lR dist-app/ || echo "dist-app directory not found"
+              exit 1
+          fi
+          
+          echo "Electron app build successful!"
+          ls -lh dist-app/linux-unpacked/
+
+      - name: Build C++ Server with CMake
+        run: |
+          set -e
+          
+          echo "Building lemonade-router and lemonade-server for Linux..."
+          
+          cd src/cpp
+          
+          # Create build directory
+          if [ -d "build" ]; then
+              echo "Removing existing build directory..."
+              rm -rf build
+          fi
+          mkdir build
+          cd build
+          
+          # Configure with explicit Release build type and Electron app inclusion
+          echo "Configuring CMake with Electron app..."
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DINCLUDE_ELECTRON_APP=ON
+          
+          # Build using all available cores
+          echo "Building binaries..."
+          cmake --build . -j$(nproc)
+          
+          # Verify binaries exist
+          if [ ! -f "lemonade-router" ]; then
+              echo "ERROR: lemonade-router not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          if [ ! -f "lemonade-server" ]; then
+              echo "ERROR: lemonade-server not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          echo "✓ Binaries found successfully"
+          
+          echo "Verifying binary executability..."
+          ./lemonade-router --version
+          ./lemonade-server --version
+          
+          echo "C++ build successful!"
+
+      - name: Build full .deb package
+        run: |
+          set -e
+          
+          cd src/cpp/build
+          
+          echo "Creating full .deb package with CPack..."
+          cpack -G DEB -V
+          
+          # List generated files
+          echo "Files in build directory:"
+          ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
+          
+          # Verify package was created (using dynamic version)
+          DEB_FILE="lemonade_${LEMONADE_VERSION}_amd64.deb"
+          echo "Looking for: $DEB_FILE"
+          
+          if [ ! -f "$DEB_FILE" ]; then
+              echo "ERROR: Full .deb package not created!"
+              echo "Contents of build directory:"
+              ls -lR .
+              exit 1
+          fi
+          
+          echo "Full .deb package created successfully!"
+          ls -lh "$DEB_FILE"
+          
+          # Show package info
+          echo "Package information:"
+          dpkg-deb --info "$DEB_FILE"
+          
+          echo "Package contents (summary):"
+          dpkg-deb --contents "$DEB_FILE" | head -100
+
+      - name: Upload full .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-deb-full
+          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          retention-days: 7
+
   # ========================================================================
   # TEST JOBS - Run on stx-halo + Windows workers
   # ========================================================================
@@ -1725,6 +1884,7 @@ jobs:
     needs: 
       - build-lemonade-server-installer
       - build-lemonade-server-deb
+      - build-lemonade-deb-full
       - build-ryzenai-server
       - test-exe-rai-hybrid-basics
       - test-exe-flm
@@ -1744,10 +1904,16 @@ jobs:
           name: Lemonade_Server_MSI
           path: .
 
-      - name: Download Lemonade Server .deb Package (Linux)
+      - name: Download Lemonade Server .deb Package (Linux - Minimal)
         uses: actions/download-artifact@v4
         with:
           name: lemonade-server-deb
+          path: .
+
+      - name: Download Lemonade Full .deb Package (Linux - with Electron App)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-deb-full
           path: .
 
       - name: Download RyzenAI Server Package
@@ -1769,6 +1935,7 @@ jobs:
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
+          ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
           ls -lh ryzenai-server.zip
 
       - name: Create Release
@@ -1778,6 +1945,7 @@ jobs:
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+            lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
 
