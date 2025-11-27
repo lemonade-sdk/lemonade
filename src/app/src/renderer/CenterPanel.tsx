@@ -78,6 +78,7 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   const velocityHistory = useRef<number[]>([]);
   const animationFrame = useRef<number | null>(null);
   const hasDragged = useRef(false);
+  const clickTarget = useRef<HTMLAnchorElement | null>(null);
 
   // Duplicate apps for seamless infinite scroll
   const scrollApps = [...apps, ...apps, ...apps];
@@ -135,6 +136,11 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
   }, [isDragging, isHovering, wrapPosition]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Store the target to check later if it was a link
+    const target = e.target as HTMLElement;
+    const linkElement = target.tagName === 'A' ? target as HTMLAnchorElement : target.closest('a');
+    clickTarget.current = linkElement;
+    
     if (animationFrame.current) {
       cancelAnimationFrame(animationFrame.current);
     }
@@ -186,6 +192,15 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
     if (!isDragging) return;
     
     setIsDragging(false);
+
+    // If user clicked on a link and didn't drag, navigate to it
+    if (!hasDragged.current && clickTarget.current) {
+      window.open(clickTarget.current.href, '_blank', 'noopener,noreferrer');
+      clickTarget.current = null;
+      return;
+    }
+    
+    clickTarget.current = null;
 
     // Calculate average velocity from history
     if (velocityHistory.current.length > 0) {
