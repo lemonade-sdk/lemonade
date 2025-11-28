@@ -124,9 +124,15 @@ useEffect(() => {
   window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
   window.addEventListener('modelUnload' as any, handleModelUnload);
 
+  // Periodically check health status to detect when another app unloads the model
+  const healthCheckInterval = setInterval(() => {
+    fetchLoadedModel();
+  }, 5000);
+
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
+    clearInterval(healthCheckInterval);
     if (typeof unsubscribeSettings === 'function') {
       unsubscribeSettings();
     }
@@ -203,7 +209,10 @@ const fetchLoadedModel = async () => {
 
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
-      setSelectedModel(data.model_loaded);
+      // Only auto-select if user hasn't manually chosen a model
+      if (!userHasSelectedModelRef.current) {
+        setSelectedModel(data.model_loaded);
+      }
       // If the model we were waiting for is now loaded, clear the loading state
       setIsModelLoading(false);
     } else {
