@@ -2684,30 +2684,40 @@ footer {
 
 .settings-content {
     padding: 24px;
-    overflow-y: auto;
+    padding-right: 16px;
+    overflow-y: scroll;
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 24px;
+    min-height: 0;
+    max-height: calc(80vh - 140px);
+    /* Override global scrollbar hiding */
+    scrollbar-width: thin;
+    scrollbar-color: #555 #252525;
+    -ms-overflow-style: auto;
 }
 
 /* Custom scrollbar for settings content */
 .settings-content::-webkit-scrollbar {
-    width: 8px;
+    width: 10px;
+    display: block !important;
 }
 
 .settings-content::-webkit-scrollbar-track {
-    background: #1a1a1a;
-    border-radius: 4px;
+    background: #252525;
+    border-radius: 5px;
+    margin: 4px 0;
 }
 
 .settings-content::-webkit-scrollbar-thumb {
-    background: #444;
-    border-radius: 4px;
+    background: #555;
+    border-radius: 5px;
+    border: 2px solid #252525;
 }
 
 .settings-content::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: #666;
 }
 
 .settings-category-header {
