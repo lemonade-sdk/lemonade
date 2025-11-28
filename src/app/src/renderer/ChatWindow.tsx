@@ -1024,17 +1024,7 @@ const sendMessage = async () => {
         })}
         {isLoading && isModelLoading && (
           <div className="model-loading-indicator">
-            <div className="model-loading-spinner">
-              <svg viewBox="0 0 24 24" fill="none" className="model-loading-icon">
-                <path 
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10" 
-                  stroke="currentColor" 
-                  strokeWidth="2.5" 
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <span className="model-loading-text">Loading model...</span>
+            <span className="model-loading-text">Loading model</span>
           </div>
         )}
         {isLoading && !isModelLoading && (
