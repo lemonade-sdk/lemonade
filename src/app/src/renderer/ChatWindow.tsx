@@ -50,6 +50,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
   const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // Track if user has manually selected a model (to avoid overriding their choice)
+  const userHasSelectedModelRef = useRef(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
@@ -93,10 +95,13 @@ useEffect(() => {
     const customEvent = event as CustomEvent<{ modelId?: string }>;
     const loadedModelId = customEvent.detail?.modelId;
 
-    if (loadedModelId) {
-      setSelectedModel(loadedModelId);
-    } else {
-      fetchLoadedModel();
+    // Only auto-select the loaded model if user hasn't manually selected a different one
+    if (!userHasSelectedModelRef.current) {
+      if (loadedModelId) {
+        setSelectedModel(loadedModelId);
+      } else {
+        fetchLoadedModel();
+      }
     }
 
     // Refresh the models list so newly loaded models appear in the dropdown
@@ -1043,7 +1048,10 @@ const sendMessage = async () => {
               <select
                 className="model-selector"
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                onChange={(e) => {
+                  userHasSelectedModelRef.current = true;
+                  setSelectedModel(e.target.value);
+                }}
                 disabled={isLoading}
               >
                 {models.map((model) => (
