@@ -50,6 +50,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
   const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
+  const [isModelLoading, setIsModelLoading] = useState(false);
   // Track if user has manually selected a model (to avoid overriding their choice)
   const userHasSelectedModelRef = useRef(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -94,6 +96,12 @@ useEffect(() => {
   const handleModelLoadEnd = (event: Event) => {
     const customEvent = event as CustomEvent<{ modelId?: string }>;
     const loadedModelId = customEvent.detail?.modelId;
+
+    // Update the current loaded model state
+    if (loadedModelId) {
+      setCurrentLoadedModel(loadedModelId);
+      setIsModelLoading(false);
+    }
 
     // Only auto-select the loaded model if user hasn't manually selected a different one
     if (!userHasSelectedModelRef.current) {
@@ -187,7 +195,12 @@ const fetchLoadedModel = async () => {
     const data = await response.json();
 
     if (data?.model_loaded) {
+      setCurrentLoadedModel(data.model_loaded);
       setSelectedModel(data.model_loaded);
+      // If the model we were waiting for is now loaded, clear the loading state
+      setIsModelLoading(false);
+    } else {
+      setCurrentLoadedModel(null);
     }
   } catch (error) {
     console.error('Failed to fetch loaded model:', error);
@@ -293,6 +306,13 @@ const sendMessage = async () => {
     // When sending a new message, ensure we're at the bottom
     setIsUserAtBottom(true);
 
+    // Check if the selected model is different from the currently loaded model
+    // If so, show the model loading indicator
+    const needsModelLoad = currentLoadedModel !== selectedModel;
+    if (needsModelLoad) {
+      setIsModelLoading(true);
+    }
+
     // Build message content with images if present
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
@@ -332,6 +352,7 @@ const sendMessage = async () => {
 
     let accumulatedContent = '';
     let accumulatedThinking = '';
+    let receivedFirstChunk = false;
 
     try {
       const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
@@ -390,6 +411,13 @@ const sendMessage = async () => {
                 }
                 
                 if (content || thinkingContent) {
+                  // First response received - model is loaded, clear loading indicator
+                  if (!receivedFirstChunk) {
+                    receivedFirstChunk = true;
+                    setIsModelLoading(false);
+                    setCurrentLoadedModel(selectedModel);
+                  }
+                  
                   setMessages(prev => {
                     const newMessages = [...prev];
                     const messageIndex = newMessages.length - 1;
@@ -445,6 +473,7 @@ const sendMessage = async () => {
       }
     } finally {
       setIsLoading(false);
+      setIsModelLoading(false); // Clear loading state on error or completion
       abortControllerRef.current = null;
     }
   };
@@ -690,11 +719,18 @@ const sendMessage = async () => {
     setEditingImages([]);
     setIsLoading(true);
 
+    // Check if the selected model is different from the currently loaded model
+    const needsModelLoad = currentLoadedModel !== selectedModel;
+    if (needsModelLoad) {
+      setIsModelLoading(true);
+    }
+
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     let accumulatedContent = '';
     let accumulatedThinking = '';
+    let receivedFirstChunk = false;
 
     try {
       const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
@@ -753,6 +789,13 @@ const sendMessage = async () => {
                 }
                 
                 if (content || thinkingContent) {
+                  // First response received - model is loaded, clear loading indicator
+                  if (!receivedFirstChunk) {
+                    receivedFirstChunk = true;
+                    setIsModelLoading(false);
+                    setCurrentLoadedModel(selectedModel);
+                  }
+                  
                   setMessages(prev => {
                     const newMessages = [...prev];
                     const messageIndex = newMessages.length - 1;
@@ -808,6 +851,7 @@ const sendMessage = async () => {
       }
     } finally {
       setIsLoading(false);
+      setIsModelLoading(false); // Clear loading state on error or completion
       abortControllerRef.current = null;
     }
   };
@@ -978,7 +1022,22 @@ const sendMessage = async () => {
             </div>
           );
         })}
-        {isLoading && (
+        {isLoading && isModelLoading && (
+          <div className="model-loading-indicator">
+            <div className="model-loading-spinner">
+              <svg viewBox="0 0 24 24" fill="none" className="model-loading-icon">
+                <path 
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10" 
+                  stroke="currentColor" 
+                  strokeWidth="2.5" 
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+            <span className="model-loading-text">Loading model...</span>
+          </div>
+        )}
+        {isLoading && !isModelLoading && (
           <div className="chat-message assistant-message">
             <div className="typing-indicator">
               <span></span>
