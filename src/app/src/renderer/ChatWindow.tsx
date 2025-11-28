@@ -116,10 +116,17 @@ useEffect(() => {
     fetchModels();
   };
 
+  const handleModelUnload = () => {
+    // Model was unloaded/ejected - reset the current loaded model state
+    setCurrentLoadedModel(null);
+  };
+
   window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+  window.addEventListener('modelUnload' as any, handleModelUnload);
 
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+    window.removeEventListener('modelUnload' as any, handleModelUnload);
     if (typeof unsubscribeSettings === 'function') {
       unsubscribeSettings();
     }

@@ -465,6 +465,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       
       // Refresh current loaded model status
       await fetchCurrentLoadedModel();
+      
+      // Dispatch event to notify other components (e.g., ChatWindow) that model was unloaded
+      window.dispatchEvent(new CustomEvent('modelUnload'));
     } catch (error) {
       console.error('Error unloading model:', error);
       showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
