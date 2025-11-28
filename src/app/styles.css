@@ -1838,28 +1838,26 @@ footer {
     font-weight: 500;
     background: linear-gradient(
         90deg,
-        #fff 0%,
-        #fff 40%,
-        #555 60%,
+        #555 0%,
+        #555 35%,
+        #fff 50%,
+        #555 65%,
         #555 100%
     );
-    background-size: 250% 100%;
+    background-size: 300% 100%;
     background-position: 100% 0;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: modelLoadingSweep 1.8s ease-in-out infinite;
+    animation: modelLoadingSweep 1.5s ease-in-out infinite;
 }
 
 @keyframes modelLoadingSweep {
     0% {
         background-position: 100% 0;
     }
-    50% {
-        background-position: 0% 0;
-    }
     100% {
-        background-position: 100% 0;
+        background-position: 0% 0;
     }
 }
 
