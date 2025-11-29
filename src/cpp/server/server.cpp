@@ -48,8 +48,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
-    http_server_->new_task_queue = [] { 
-        std::cout << "[Server DEBUG] Creating new thread pool with 8 threads" << std::endl;
+    http_server_->new_task_queue = [this] { 
+        debug_log("Creating new thread pool with 8 threads");
         return new httplib::ThreadPool(8);
     };
     
@@ -60,9 +60,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
                                        model_manager_.get(), max_llm_models, 
                                        max_embedding_models, max_reranking_models);
     
-    if (log_level_ == "debug" || log_level_ == "trace") {
-        std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
-    }
+    debug_log("Debug logging enabled - subprocess output will be visible");
     
     setup_routes();
 }
@@ -71,10 +69,16 @@ Server::~Server() {
     stop();
 }
 
+void Server::debug_log(const std::string& msg) {
+    if (log_level_ == "debug" || log_level_ == "trace") {
+        std::cout << "[Server DEBUG] " << msg << std::endl;
+    }
+}
+
 void Server::setup_routes() {
     // Add pre-routing handler to log ALL incoming requests
     http_server_->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
+        debug_log("PRE-ROUTE: " + req.method + " " + req.path);
         std::cout.flush();
         return httplib::Server::HandlerResponse::Unhandled;
     });
@@ -563,10 +567,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
-            std::cout << "[Server DEBUG] Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
-            std::cout << "[Server DEBUG] Tools JSON: " << request_json["tools"].dump() << std::endl;
+            debug_log("Tools present in request: " + std::to_string(request_json["tools"].size()) + " tool(s)");
+            debug_log("Tools JSON: " + request_json["tools"].dump());
         } else {
-            std::cout << "[Server DEBUG] No tools in request" << std::endl;
+            debug_log("No tools in request");
         }
         
         // Handle model loading/switching
@@ -671,11 +675,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 if (first_choice.contains("message")) {
                     auto& message = first_choice["message"];
                     if (message.contains("tool_calls")) {
-                        std::cout << "[Server DEBUG] Response contains tool_calls: " << message["tool_calls"].dump() << std::endl;
+                        debug_log("Response contains tool_calls: " + message["tool_calls"].dump());
                     } else {
-                        std::cout << "[Server DEBUG] Response message does NOT contain tool_calls" << std::endl;
+                        debug_log("Response message does NOT contain tool_calls");
                         if (message.contains("content")) {
-                            std::cout << "[Server DEBUG] Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
+                            debug_log("Message content: " + message["content"].get<std::string>().substr(0, 200));
                         }
                     }
                 }
@@ -1112,7 +1116,9 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
 void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     auto thread_id = std::this_thread::get_id();
-    std::cout << "[Server DEBUG] ===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
+    std::ostringstream oss;
+    oss << "===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====";
+    debug_log(oss.str());
     std::cout.flush();
     try {
         auto request_json = nlohmann::json::parse(req.body);

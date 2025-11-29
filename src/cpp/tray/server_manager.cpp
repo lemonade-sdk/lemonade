@@ -144,9 +144,7 @@ bool ServerManager::start_server(
         // Success! Server is ready immediately
         if (!is_ephemeral) {
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-            // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-            std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-            std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+            std::cout << "Chat and manage models: http://" << host_ << ":" << port_ << std::endl;
         }
         
         server_started_ = true;
@@ -176,9 +174,7 @@ bool ServerManager::start_server(
             // Success! Server is ready
             if (!is_ephemeral) {
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-                // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-                std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+                std::cout << "Chat and manage models: http://" << host_ << ":" << port_ << std::endl;
             }
             
             server_started_ = true;
@@ -561,7 +557,7 @@ bool ServerManager::spawn_process() {
         args.push_back("--llamacpp");
         args.push_back(llamacpp_backend_.c_str());
         args.push_back("--log-level");
-        args.push_back("debug");  // Always use debug logging
+        args.push_back(log_level_.c_str());
         
         // Add llamacpp_args if present
         if (!llamacpp_args_.empty()) {

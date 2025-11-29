@@ -135,6 +135,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     
     // Choose a port
     port_ = choose_port();
+    std::cout << "[FastFlowLM] Using port: " << port_ << std::endl;
     
     // Get flm executable path
     std::string flm_path = get_flm_path();

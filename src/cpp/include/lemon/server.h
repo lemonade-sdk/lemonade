@@ -38,6 +38,7 @@ public:
     bool is_running() const;
     
 private:
+    void debug_log(const std::string& msg);
     void setup_routes();
     void setup_static_files();
     void setup_cors();
