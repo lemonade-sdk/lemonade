@@ -69,6 +69,34 @@ static std::string get_llamacpp_version(const std::string& backend) {
     }
 }
 
+// Helper to load cpuFallback flag from configuration file
+static bool get_cpu_fallback_enabled() {
+    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+
+    try {
+        json config = utils::JsonUtils::load_from_file(config_path);
+
+        if (!config.contains("cpuFallback") || !config["cpuFallback"].is_boolean()) {
+            throw std::runtime_error("backend_versions.json is missing boolean 'cpuFallback' field");
+        }
+
+        bool enabled = config["cpuFallback"].get<bool>();
+        std::cout << "[Config] cpuFallback = " << std::boolalpha << enabled << std::endl;
+        return enabled;
+
+    } catch (const std::exception& e) {
+        std::cerr << "\n" << std::string(70, '=') << std::endl;
+        std::cerr << "ERROR: Failed to load cpuFallback from configuration" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl;
+        std::cerr << "\nConfig file: " << config_path << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "\nThe backend_versions.json file must contain:" << std::endl;
+        std::cerr << "  \"cpuFallback\": true/false" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl << std::endl;
+        throw;
+    }
+}
+
 // Helper to add a flag-only argument (e.g., --jinja, --embeddings)
 static void push_arg(std::vector<std::string>& args, 
                     std::set<std::string>& reserved,
@@ -303,7 +331,7 @@ void LlamaCppServer::install(const std::string& backend) {
     
     // Get expected version from config file (or fallback to defaults)
     std::string expected_version = get_llamacpp_version(backend_.empty() ? backend : backend_);
-    
+
     // Check if already installed with correct version
     std::string exe_path = find_executable_in_install_dir(install_dir);
     bool needs_install = exe_path.empty();
@@ -561,12 +589,27 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size));
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja");
+
+    // Get cpu fall back value from config file
+    bool use_gpu = true;  // default
+
+    try {
+        use_gpu = !get_cpu_fallback_enabled();
+    } catch (...) {
+        // keep default (GPU enabled)
+        std::cerr << "[Config] cpuFallback not found or invalid, defaulting to use_gpu = true" << std::endl;
+    }
+
+    std::cout << "[LlamaCpp] Using backend: " << backend_ << "\n"
+            << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
     
     // Add mmproj file if present (for vision models)
     if (!mmproj_path.empty()) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
-        // Note: Python implementation adds --no-mmproj-offload for CPU mode
-        // C++ currently only supports GPU mode; CPU fallback would need to be implemented
+        if (!use_gpu) {
+            std::cout << "[LlamaCpp] Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+            push_arg(args, reserved_flags, "--no-mmproj-offload");
+        }
     }
     
     // Enable context shift for vulkan/rocm (not supported on Metal)
@@ -605,7 +648,12 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     
     // Configure GPU layers
-    push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
+    if (use_gpu) {
+        push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
+    } else {
+        std::cout << "[LlamaCpp] ngl set to 0" << std::endl;
+        push_arg(args, reserved_flags, "-ngl", "0");   // 0
+    }
     
     // Validate and append custom arguments
     if (!custom_args_.empty()) {
