@@ -63,7 +63,8 @@ public:
     // Configuration
     void set_port(int port);
     void set_context_size(int ctx_size);
-    bool set_log_level(LogLevel level);
+    void set_log_level(const std::string& log_level);
+    // bool set_log_level(LogLevel level);
     
     int get_port() const { return port_; }
     int get_context_size() const { return ctx_size_; }

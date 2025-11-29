@@ -1573,6 +1573,19 @@ Menu TrayApp::create_menu() {
     }
     menu.add_item(MenuItem::Submenu("Context Size", ctx_submenu));
     
+    // Log level submenu
+    auto log_level_submenu = std::make_shared<Menu>();
+    std::vector<std::string> log_levels = {"info", "debug"};
+    for (auto log_level : log_levels) {
+        bool is_current = (log_level == config_.log_level);
+        port_submenu->add_item(MenuItem::Checkable(
+            "Log level " + log_level,
+            [this, log_level]() { on_change_log_level(log_level); },
+            is_current
+        ));
+    }
+    menu.add_item(MenuItem::Submenu("Log level", port_submenu));
+    
     menu.add_separator();
     
     // Main menu items
@@ -1674,6 +1687,14 @@ void TrayApp::on_change_context_size(int new_ctx_size) {
         ? std::to_string(new_ctx_size / 1024) + "K"
         : std::to_string(new_ctx_size);
     show_notification("Context Size Changed", "Lemonade Server context size is now " + label);
+}
+
+void TrayApp::on_change_log_level(const std::string& log_level) {
+    std::cout << "Changing log level to: " << log_level << std::endl;
+    config_.log_level = log_level;
+    server_manager_->set_log_level(log_level);
+    build_menu();
+    show_notification("Log Level Changed", "Lemonade Server is now running with log level " + log_level);
 }
 
 void TrayApp::on_show_logs() {
