@@ -311,6 +311,7 @@ void RyzenAIServer::load(const std::string& model_name,
     
     // Find available port
     port_ = choose_port();
+    std::cout << "[RyzenAI-Server] Using port: " << port_ << std::endl;
     
     // Build command line arguments
     std::vector<std::string> args = {

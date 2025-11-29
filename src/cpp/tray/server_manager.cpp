@@ -144,9 +144,7 @@ bool ServerManager::start_server(
         // Success! Server is ready immediately
         if (!is_ephemeral) {
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-            // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-            std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-            std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+            std::cout << "Chat and manage models: http://" << host_ << ":" << port_ << std::endl;
         }
         
         server_started_ = true;
@@ -176,9 +174,7 @@ bool ServerManager::start_server(
             // Success! Server is ready
             if (!is_ephemeral) {
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-                // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-                std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+                std::cout << "Chat and manage models: http://" << host_ << ":" << port_ << std::endl;
             }
             
             server_started_ = true;
@@ -285,23 +281,30 @@ void ServerManager::set_context_size(int ctx_size) {
     }
 }
 
-bool ServerManager::set_log_level(LogLevel level) {
-    std::string level_str;
-    switch (level) {
-        case LogLevel::DEBUG: level_str = "debug"; break;
-        case LogLevel::INFO: level_str = "info"; break;
-        case LogLevel::WARNING: level_str = "warning"; break;
-        case LogLevel::ERROR: level_str = "error"; break;
-    }
-    
-    try {
-        std::string body = "{\"level\": \"" + level_str + "\"}";
-        make_http_request("/api/v1/log-level", "POST", body);
-        return true;
-    } catch (...) {
-        return false;
+void ServerManager::set_log_level(const std::string& log_level){
+    log_level_ = log_level;
+    if (is_server_running()) {
+        restart_server();
     }
 }
+
+// bool ServerManager::set_log_level(LogLevel level) {
+//     std::string level_str;
+//     switch (level) {
+//         case LogLevel::DEBUG: level_str = "debug"; break;
+//         case LogLevel::INFO: level_str = "info"; break;
+//         case LogLevel::WARNING: level_str = "warning"; break;
+//         case LogLevel::ERROR: level_str = "error"; break;
+//     }
+    
+//     try {
+//         std::string body = "{\"level\": \"" + level_str + "\"}";
+//         make_http_request("/api/v1/log-level", "POST", body);
+//         return true;
+//     } catch (...) {
+//         return false;
+//     }
+// }
 
 nlohmann::json ServerManager::get_health() {
     std::string response = make_http_request("/api/v1/health");
@@ -561,7 +564,7 @@ bool ServerManager::spawn_process() {
         args.push_back("--llamacpp");
         args.push_back(llamacpp_backend_.c_str());
         args.push_back("--log-level");
-        args.push_back("debug");  // Always use debug logging
+        args.push_back(log_level_.c_str());
         
         // Add llamacpp_args if present
         if (!llamacpp_args_.empty()) {

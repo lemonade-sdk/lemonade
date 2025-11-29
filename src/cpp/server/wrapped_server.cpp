@@ -14,7 +14,6 @@ int WrappedServer::choose_port() {
     if (port_ < 0) {
         throw std::runtime_error("Failed to find free port for " + server_name_);
     }
-    std::cout << server_name_ << " will use port: " << port_ << std::endl;
     return port_;
 }
 

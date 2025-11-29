@@ -547,6 +547,7 @@ void LlamaCppServer::load(const std::string& model_name,
     
     // Choose port
     port_ = choose_port();
+    std::cout << "[LlamaCpp] Using port: " << port_ << std::endl;
     
     // Get executable path
     std::string executable = get_llama_server_path();
@@ -570,6 +571,11 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size));
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja");
+    
+    // Disable llamacpp logging unless in debug mode
+    if (!is_debug()) {
+        push_arg(args, reserved_flags, "--log-disable");
+    }
     
     // Add mmproj file if present (for vision models)
     if (!mmproj_path.empty()) {
