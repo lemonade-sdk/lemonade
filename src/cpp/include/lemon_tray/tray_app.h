@@ -95,7 +95,7 @@ private:
     void on_unload_model();
     void on_change_port(int new_port);
     void on_change_context_size(int new_ctx_size);
-    void on_change_log_level(const std::string& log_level);
+    void on_change_log_level(const std::string log_level);
     void on_show_logs();
     void on_open_documentation();
     void on_open_llm_chat();

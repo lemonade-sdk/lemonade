@@ -359,7 +359,7 @@ bool ServerManager::spawn_process() {
     cmdline += " --host " + host_;
     cmdline += " --ctx-size " + std::to_string(ctx_size_);
     cmdline += " --llamacpp " + llamacpp_backend_;
-    cmdline += " --log-level debug";  // Always use debug logging for router
+    cmdline += " --log-level " + log_level_;
     if (!llamacpp_args_.empty()) {
         cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
     }
