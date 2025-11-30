@@ -1584,7 +1584,7 @@ Menu TrayApp::create_menu() {
             is_current
         ));
     }
-    menu.add_item(MenuItem::Submenu("Log level", log_level_submenu));
+    menu.add_item(MenuItem::Submenu("Log Level", log_level_submenu));
     
     menu.add_separator();
     
