@@ -32,10 +32,10 @@ CLIParser::CLIParser()
         ->default_val("");
     
     // Multi-model support: Max loaded models
-    // Use a member vector to capture 1-3 values
+    // Use a member vector to capture 1-4 values
     app_.add_option("--max-loaded-models", max_models_vec_,
-                   "Maximum number of models to keep loaded (format: LLMS [EMBEDDINGS] [RERANKINGS])")
-        ->expected(1, 3);
+                   "Maximum number of models to keep loaded (format: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO])")
+        ->expected(1, 4);
 }
 
 int CLIParser::parse(int argc, char** argv) {
@@ -50,6 +50,9 @@ int CLIParser::parse(int argc, char** argv) {
             }
             if (max_models_vec_.size() > 2) {
                 config_.max_reranking_models = max_models_vec_[2];
+            }
+            if (max_models_vec_.size() > 3) {
+                config_.max_audio_models = max_models_vec_[3];
             }
         }
         
