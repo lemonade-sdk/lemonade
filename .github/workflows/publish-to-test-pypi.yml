@@ -27,7 +27,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           python -m pip install --upgrade pip
-          python -m pip install build --user
+          python -m pip install build
       - name: Build a binary wheel and a source tarball
         run: |
           source .venv/bin/activate
