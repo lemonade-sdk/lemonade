@@ -4,6 +4,6 @@
     "rocm": "b1122",
     "metal": "b7188"
   },
-  "comment": "This configuration file controls which llama.cpp versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application."
+  "whispercpp": "v1.8.2"
 }
 
