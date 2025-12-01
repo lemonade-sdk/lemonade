@@ -22,6 +22,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
+- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -69,10 +70,11 @@ lemonade-server serve --max-loaded-models 5
 
 ### Model Types
 
-Models are categorized into three types:
+Models are categorized into four types:
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
+- **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
 
 Each type has its own independent limit and LRU cache.
 
@@ -528,6 +530,67 @@ For a full list of event types, see the [API reference for streaming](https://pl
 === "Streaming Responses"
     For streaming responses, the API returns a series of events. Refer to [OpenAI streaming guide](https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses) for details.
 
+
+
+### `POST /api/v1/audio/transcriptions` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.
+
+> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `file` | Yes | The audio file to transcribe. Supported formats: wav, mp3, mp4, mpeg, mpga, m4a, webm, ogg, flac. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The Whisper model to use for transcription (e.g., `whisper-tiny`, `whisper-base`, `whisper-small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    $audioFile = "C:\path\to\audio.wav"
+    $form = @{
+        file = Get-Item $audioFile
+        model = "whisper-tiny"
+    }
+    Invoke-RestMethod -Uri "http://localhost:8000/api/v1/audio/transcriptions" `
+      -Method POST `
+      -Form $form
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
+      -F "file=@/path/to/audio.wav" \
+      -F "model=whisper-tiny"
+    ```
+
+#### Response format
+
+```json
+{
+  "text": "Hello, this is a sample transcription of the audio file."
+}
+```
+
+**Field Descriptions:**
+
+- `text` - The transcribed text from the audio file
+
+#### Available Whisper Models
+
+| Model | Description |
+|-------|-------------|
+| `whisper-tiny` | Fastest, lowest accuracy (~39M parameters) |
+| `whisper-base` | Fast with improved accuracy (~74M parameters) |
+| `whisper-small` | Balanced speed and accuracy (~244M parameters) |
+| `whisper-medium` | Higher accuracy, slower (~769M parameters) |
+| `whisper-large` | Highest accuracy, slowest (~1.5B parameters) |
 
 
 
