@@ -942,12 +942,12 @@ int TrayApp::execute_pull_command() {
             }
         }
         
-        // Use 2 hour timeout for pull - large models can take a very long time
+        // 24 hour timeout - models can be 100GB+ and downloads may need many retries
         std::string response = server_manager_->make_http_request(
             "/api/v1/pull", 
             "POST", 
             request_body.dump(),
-            7200  // 2 hours
+            86400
         );
         
         auto response_json = nlohmann::json::parse(response);

@@ -4,6 +4,11 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <thread>
+#include <chrono>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace lemon {
 namespace utils {
@@ -52,7 +57,7 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);  // 5 minute timeout
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     
     // Add custom headers
@@ -226,29 +231,42 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     return response;
 }
 
-bool HttpClient::download_file(const std::string& url,
-                               const std::string& output_path,
-                               ProgressCallback callback,
-                               const std::map<std::string, std::string>& headers) {
+DownloadResult HttpClient::download_attempt(const std::string& url,
+                                            const std::string& output_path,
+                                            size_t resume_from,
+                                            ProgressCallback callback,
+                                            const std::map<std::string, std::string>& headers,
+                                            const DownloadOptions& options) {
+    DownloadResult result;
+    
     CURL* curl = curl_easy_init();
     if (!curl) {
-        return false;
+        result.error_message = "Failed to initialize CURL";
+        return result;
     }
     
-    FILE* fp = fopen(output_path.c_str(), "wb");
+    const char* mode = (resume_from > 0) ? "ab" : "wb";
+    FILE* fp = fopen(output_path.c_str(), mode);
     if (!fp) {
+        result.error_message = "Failed to open file for writing: " + output_path;
         curl_easy_cleanup(curl);
-        return false;
+        return result;
     }
     
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);  // No timeout for large downloads
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.low_speed_limit));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
     
-    // Progress tracking
+    if (resume_from > 0) {
+        curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
+    }
+    
     ProgressData* prog_data = nullptr;
     if (callback) {
         prog_data = new ProgressData();
@@ -270,12 +288,20 @@ bool HttpClient::download_file(const std::string& url,
     
     CURLcode res = curl_easy_perform(curl);
     
+    curl_off_t downloaded = 0;
+    curl_off_t total = 0;
+    curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &downloaded);
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &total);
+    
+    result.bytes_downloaded = static_cast<size_t>(downloaded);
+    result.total_bytes = (total > 0) ? static_cast<size_t>(total) : 0;
+    
     fclose(fp);
     curl_slist_free_all(header_list);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.http_code);
     
-    // Check HTTP response code
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    result.curl_code = static_cast<int>(res);
+    result.curl_error = curl_easy_strerror(res);
     
     curl_easy_cleanup(curl);
     
@@ -285,17 +311,150 @@ bool HttpClient::download_file(const std::string& url,
     }
     
     if (res != CURLE_OK) {
-        std::cerr << "CURL download error: " << curl_easy_strerror(res) << std::endl;
-        return false;
+        bool retryable = false;
+        switch (res) {
+            case CURLE_COULDNT_CONNECT:
+            case CURLE_COULDNT_RESOLVE_HOST:
+            case CURLE_COULDNT_RESOLVE_PROXY:
+            case CURLE_OPERATION_TIMEDOUT:
+            case CURLE_SEND_ERROR:
+            case CURLE_RECV_ERROR:
+            case CURLE_GOT_NOTHING:
+            case CURLE_PARTIAL_FILE:
+            case CURLE_SSL_CONNECT_ERROR:
+                retryable = true;
+                break;
+            default:
+                retryable = false;
+        }
+        
+        size_t current_file_size = 0;
+        if (fs::exists(output_path)) {
+            current_file_size = fs::file_size(output_path);
+        }
+        result.can_resume = retryable && (current_file_size > 0);
+        
+        std::ostringstream oss;
+        oss << "Download failed: " << result.curl_error << " (CURL code: " << result.curl_code << ")";
+        if (result.bytes_downloaded > 0) {
+            oss << "\n  Downloaded " << (result.bytes_downloaded / (1024.0 * 1024.0)) << " MB before failure";
+        }
+        if (current_file_size > 0) {
+            oss << "\n  Partial file size: " << (current_file_size / (1024.0 * 1024.0)) << " MB";
+            if (result.can_resume) {
+                oss << " (resumable)";
+            }
+        }
+        result.error_message = oss.str();
+        return result;
     }
     
-    // Check for HTTP errors (404, 403, 500, etc.)
-    if (http_code >= 400) {
-        std::cerr << "HTTP error: " << http_code << " for URL: " << url << std::endl;
-        return false;
+    if (result.http_code >= 400) {
+        // HTTP 416 when resuming means the file is already complete
+        if (result.http_code == 416 && resume_from > 0) {
+            std::cout << "\n[Download] File already complete" << std::endl;
+            result.success = true;
+            result.bytes_downloaded = 0;
+            return result;
+        }
+        
+        std::ostringstream oss;
+        oss << "HTTP error " << result.http_code << " for URL: " << url;
+        result.error_message = oss.str();
+        result.can_resume = false;
+        return result;
     }
     
-    return true;
+    result.success = true;
+    return result;
+}
+
+DownloadResult HttpClient::download_file(const std::string& url,
+                                         const std::string& output_path,
+                                         ProgressCallback callback,
+                                         const std::map<std::string, std::string>& headers,
+                                         const DownloadOptions& options) {
+    DownloadResult final_result;
+    int retry_delay_ms = options.initial_retry_delay_ms;
+    
+    size_t resume_offset = 0;
+    if (options.resume_partial && fs::exists(output_path)) {
+        resume_offset = fs::file_size(output_path);
+        if (resume_offset > 0) {
+            std::cout << "\n[Download] Found partial file (" 
+                      << std::fixed << std::setprecision(1) 
+                      << (resume_offset / (1024.0 * 1024.0)) 
+                      << " MB), resuming..." << std::endl;
+        }
+    }
+    
+    for (int attempt = 0; attempt <= options.max_retries; ++attempt) {
+        if (attempt > 0) {
+            std::cout << "\n[Download] Retry " << attempt << "/" << options.max_retries 
+                      << " after " << (retry_delay_ms / 1000.0) << "s..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+            
+            // Exponential backoff (parentheses avoid Windows min/max macro)
+            retry_delay_ms = (std::min)(retry_delay_ms * 2, options.max_retry_delay_ms);
+            
+            if (options.resume_partial && fs::exists(output_path)) {
+                size_t new_offset = fs::file_size(output_path);
+                if (new_offset > resume_offset) {
+                    resume_offset = new_offset;
+                    std::cout << "[Download] Resuming from " 
+                              << std::fixed << std::setprecision(1) 
+                              << (resume_offset / (1024.0 * 1024.0)) << " MB" << std::endl;
+                }
+            }
+        }
+        
+        ProgressCallback adjusted_callback = nullptr;
+        if (callback) {
+            adjusted_callback = [callback, resume_offset](size_t current, size_t total) {
+                callback(current, total);
+            };
+        }
+        
+        final_result = download_attempt(url, output_path, resume_offset, 
+                                        adjusted_callback, headers, options);
+        
+        if (final_result.success) {
+            return final_result;
+        }
+        
+        if (!final_result.can_resume && attempt < options.max_retries) {
+            std::cerr << "\n[Download] Error (attempt " << (attempt + 1) << "): " 
+                      << final_result.error_message << std::endl;
+            
+            if (fs::exists(output_path)) {
+                std::cerr << "[Download] Removing incomplete file for fresh retry..." << std::endl;
+                fs::remove(output_path);
+            }
+            resume_offset = 0;
+        } else if (final_result.can_resume) {
+            std::cerr << "\n[Download] Connection interrupted (attempt " << (attempt + 1) << "): " 
+                      << final_result.curl_error << std::endl;
+        } else {
+            break;
+        }
+    }
+    
+    std::ostringstream oss;
+    oss << "Download failed after " << (options.max_retries + 1) << " attempts.\n";
+    oss << "Last error: " << final_result.error_message;
+    
+    if (fs::exists(output_path)) {
+        size_t partial_size = fs::file_size(output_path);
+        if (partial_size > 0) {
+            oss << "\n\nPartial file preserved: " << output_path;
+            oss << "\nPartial size: " << std::fixed << std::setprecision(1) 
+                << (partial_size / (1024.0 * 1024.0)) << " MB";
+            oss << "\n\nRun the command again to resume from where it left off.";
+        }
+    }
+    
+    final_result.error_message = oss.str();
+    return final_result;
 }
 
 bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
@@ -329,4 +488,3 @@ bool HttpClient::is_reachable(const std::string& url, int timeout_seconds) {
 
 } // namespace utils
 } // namespace lemon
-

@@ -14,6 +14,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_set>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -1175,35 +1176,72 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             std::cout << "  - " << filename << std::endl;
         }
         
-        // Download each file
+        // Download each file with robust retry and resume support
         for (const auto& filename : files_to_download) {
             std::string file_url = "https://huggingface.co/" + repo_id + 
                                  "/resolve/main/" + filename;
             std::string output_path = snapshot_path + "/" + filename;
             
-            // Skip if file already exists
-            if (fs::exists(output_path)) {
-                std::cout << "[ModelManager] Skipping (already exists): " << filename << std::endl;
-                continue;
-            }
-            
             // Create parent directory for file (handles folders in filenames)
             fs::create_directories(fs::path(output_path).parent_path());
             
-            std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
+            // Check if file already exists and get its size for resume detection
+            size_t existing_size = 0;
+            if (fs::exists(output_path)) {
+                existing_size = fs::file_size(output_path);
+            }
             
-            // Download with throttled progress updates (once per second)
-            bool success = HttpClient::download_file(
+            // For files that exist, we'll let the robust downloader handle resume logic
+            // It will compare with Content-Length and skip if already complete
+            if (existing_size > 0) {
+                std::cout << "[ModelManager] Found existing file (" 
+                          << std::fixed << std::setprecision(1) 
+                          << (existing_size / (1024.0 * 1024.0)) 
+                          << " MB): " << filename << std::endl;
+            } else {
+                std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
+            }
+            
+            utils::DownloadOptions download_opts;
+            download_opts.max_retries = 10;
+            download_opts.initial_retry_delay_ms = 2000;
+            download_opts.max_retry_delay_ms = 120000;
+            download_opts.resume_partial = true;
+            download_opts.low_speed_limit = 1000;
+            download_opts.low_speed_time = 60;
+            download_opts.connect_timeout = 60;
+            
+            auto progress_cb = utils::create_throttled_progress_callback(existing_size);
+            
+            auto result = HttpClient::download_file(
                 file_url,
                 output_path,
-                utils::create_throttled_progress_callback(),
-                headers
+                progress_cb,
+                headers,
+                download_opts
             );
             
-            if (success) {
+            if (result.success) {
                 std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
             } else {
-                throw std::runtime_error("Failed to download file: " + filename);
+                // Build a detailed error message
+                std::ostringstream error_msg;
+                error_msg << "Failed to download file: " << filename << "\n";
+                error_msg << "URL: " << file_url << "\n";
+                error_msg << result.error_message;
+                
+                // If there's a partial file, provide helpful information
+                if (fs::exists(output_path)) {
+                    size_t partial_size = fs::file_size(output_path);
+                    if (partial_size > 0) {
+                        error_msg << "\n\n[INFO] Partial download preserved at: " << output_path;
+                        error_msg << "\n[INFO] Partial size: " << std::fixed << std::setprecision(1) 
+                                  << (partial_size / (1024.0 * 1024.0)) << " MB";
+                        error_msg << "\n[INFO] Run the command again to resume from where it left off.";
+                    }
+                }
+                
+                throw std::runtime_error(error_msg.str());
             }
         }
         
