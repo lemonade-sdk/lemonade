@@ -775,11 +775,8 @@ std::string ServerManager::make_http_request(
         std::string error_msg;
         switch (err) {
             case httplib::Error::Read:
-                if (timeout_seconds > 0) {
-                    error_msg = "Request timed out after " + std::to_string(timeout_seconds) + " seconds";
-                } else {
-                    error_msg = "Connection read error";
-                }
+                // Read error usually means server closed connection (shutdown, Ctrl+C, etc.)
+                error_msg = "Server connection closed (server may have shut down)";
                 break;
             case httplib::Error::Write:
                 error_msg = "Connection write error";

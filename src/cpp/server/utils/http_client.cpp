@@ -350,11 +350,61 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     }
     
     if (result.http_code >= 400) {
-        // HTTP 416 when resuming means the file is already complete
+        // HTTP 416 (Range Not Satisfiable) when resuming - verify if file is actually complete
         if (result.http_code == 416 && resume_from > 0) {
-            std::cout << "\n[Download] File already complete" << std::endl;
-            result.success = true;
-            result.bytes_downloaded = 0;
+            // Do a HEAD request to get the actual file size
+            CURL* head_curl = curl_easy_init();
+            if (head_curl) {
+                curl_easy_setopt(head_curl, CURLOPT_URL, url.c_str());
+                curl_easy_setopt(head_curl, CURLOPT_NOBODY, 1L);  // HEAD request
+                curl_easy_setopt(head_curl, CURLOPT_FOLLOWLOCATION, 1L);
+                curl_easy_setopt(head_curl, CURLOPT_TIMEOUT, 30L);
+                
+                // Add headers
+                struct curl_slist* head_headers = nullptr;
+                for (const auto& header : headers) {
+                    std::string header_str = header.first + ": " + header.second;
+                    head_headers = curl_slist_append(head_headers, header_str.c_str());
+                }
+                if (head_headers) {
+                    curl_easy_setopt(head_curl, CURLOPT_HTTPHEADER, head_headers);
+                }
+                
+                CURLcode head_res = curl_easy_perform(head_curl);
+                
+                if (head_res == CURLE_OK) {
+                    curl_off_t remote_size = 0;
+                    curl_easy_getinfo(head_curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &remote_size);
+                    
+                    curl_slist_free_all(head_headers);
+                    curl_easy_cleanup(head_curl);
+                    
+                    if (remote_size > 0 && static_cast<size_t>(remote_size) <= resume_from) {
+                        // Local file is >= remote size, file is complete
+                        std::cout << "\n[Download] File verified complete (local: " 
+                                  << (resume_from / (1024.0 * 1024.0)) << " MB, remote: "
+                                  << (remote_size / (1024.0 * 1024.0)) << " MB)" << std::endl;
+                        result.success = true;
+                        result.bytes_downloaded = 0;
+                        return result;
+                    } else {
+                        // Local file is smaller than remote, or size unknown - corrupted or needs restart
+                        std::ostringstream oss;
+                        oss << "Resume failed - local file (" << (resume_from / (1024.0 * 1024.0)) 
+                            << " MB) doesn't match remote size (" << (remote_size / (1024.0 * 1024.0)) << " MB)";
+                        result.error_message = oss.str();
+                        result.can_resume = false;  // Force fresh download
+                        return result;
+                    }
+                }
+                
+                curl_slist_free_all(head_headers);
+                curl_easy_cleanup(head_curl);
+            }
+            
+            // HEAD request failed, treat 416 as needing restart
+            result.error_message = "Resume failed (HTTP 416) - could not verify file size";
+            result.can_resume = false;
             return result;
         }
         
@@ -377,9 +427,22 @@ DownloadResult HttpClient::download_file(const std::string& url,
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
     
+    // Use .partial extension for in-progress downloads
+    std::string partial_path = output_path + ".partial";
+    
+    // Check if final file already exists and is complete
+    if (fs::exists(output_path) && !fs::exists(partial_path)) {
+        // Final file exists with no partial - consider it complete
+        final_result.success = true;
+        final_result.bytes_downloaded = 0;
+        std::cout << "[Download] File already exists: " << output_path << std::endl;
+        return final_result;
+    }
+    
+    // Check for existing partial file to resume
     size_t resume_offset = 0;
-    if (options.resume_partial && fs::exists(output_path)) {
-        resume_offset = fs::file_size(output_path);
+    if (options.resume_partial && fs::exists(partial_path)) {
+        resume_offset = fs::file_size(partial_path);
         if (resume_offset > 0) {
             std::cout << "\n[Download] Found partial file (" 
                       << std::fixed << std::setprecision(1) 
@@ -397,8 +460,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
             // Exponential backoff (parentheses avoid Windows min/max macro)
             retry_delay_ms = (std::min)(retry_delay_ms * 2, options.max_retry_delay_ms);
             
-            if (options.resume_partial && fs::exists(output_path)) {
-                size_t new_offset = fs::file_size(output_path);
+            if (options.resume_partial && fs::exists(partial_path)) {
+                size_t new_offset = fs::file_size(partial_path);
                 if (new_offset > resume_offset) {
                     resume_offset = new_offset;
                     std::cout << "[Download] Resuming from " 
@@ -410,15 +473,35 @@ DownloadResult HttpClient::download_file(const std::string& url,
         
         ProgressCallback adjusted_callback = nullptr;
         if (callback) {
+            // Adjust progress to account for resume offset
+            // curl reports: current = bytes downloaded this session, total = remaining bytes
+            // We want to show: (resume_offset + current) / (resume_offset + total)
             adjusted_callback = [callback, resume_offset](size_t current, size_t total) {
-                callback(current, total);
+                if (total > 0) {  // Only call when we have valid progress info
+                    callback(resume_offset + current, resume_offset + total);
+                }
             };
         }
         
-        final_result = download_attempt(url, output_path, resume_offset, 
+        // Download to .partial file
+        final_result = download_attempt(url, partial_path, resume_offset, 
                                         adjusted_callback, headers, options);
         
         if (final_result.success) {
+            // Download complete - rename .partial to final path
+            std::error_code ec;
+            fs::rename(partial_path, output_path, ec);
+            if (ec) {
+                // Rename failed - try copy and delete
+                fs::copy_file(partial_path, output_path, fs::copy_options::overwrite_existing, ec);
+                if (!ec) {
+                    fs::remove(partial_path, ec);
+                }
+            }
+            if (ec) {
+                final_result.success = false;
+                final_result.error_message = "Download succeeded but failed to rename file: " + ec.message();
+            }
             return final_result;
         }
         
@@ -426,9 +509,9 @@ DownloadResult HttpClient::download_file(const std::string& url,
             std::cerr << "\n[Download] Error (attempt " << (attempt + 1) << "): " 
                       << final_result.error_message << std::endl;
             
-            if (fs::exists(output_path)) {
+            if (fs::exists(partial_path)) {
                 std::cerr << "[Download] Removing incomplete file for fresh retry..." << std::endl;
-                fs::remove(output_path);
+                fs::remove(partial_path);
             }
             resume_offset = 0;
         } else if (final_result.can_resume) {
@@ -443,10 +526,10 @@ DownloadResult HttpClient::download_file(const std::string& url,
     oss << "Download failed after " << (options.max_retries + 1) << " attempts.\n";
     oss << "Last error: " << final_result.error_message;
     
-    if (fs::exists(output_path)) {
-        size_t partial_size = fs::file_size(output_path);
+    if (fs::exists(partial_path)) {
+        size_t partial_size = fs::file_size(partial_path);
         if (partial_size > 0) {
-            oss << "\n\nPartial file preserved: " << output_path;
+            oss << "\n\nPartial file preserved: " << partial_path;
             oss << "\nPartial size: " << std::fixed << std::setprecision(1) 
                 << (partial_size / (1024.0 * 1024.0)) << " MB";
             oss << "\n\nRun the command again to resume from where it left off.";
