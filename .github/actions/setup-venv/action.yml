@@ -1,0 +1,130 @@
+name: 'Setup Virtual Environment'
+description: 'Create a Python virtual environment in the checkout folder for clean isolation'
+
+inputs:
+  venv-name:
+    description: 'Name for the virtual environment directory (will be created in workspace)'
+    required: false
+    default: '.venv'
+  python-version:
+    description: 'Python version to use (passed to setup-python action on self-hosted)'
+    required: false
+    default: '3.10'
+  requirements-file:
+    description: 'Optional requirements file to install'
+    required: false
+    default: ''
+  install-package:
+    description: 'Optional package specification to install (e.g., ".[dev]" or "package-name")'
+    required: false
+    default: ''
+  extra-index-url:
+    description: 'Optional extra index URL for pip'
+    required: false
+    default: ''
+
+outputs:
+  venv-path:
+    description: 'Full path to the venv directory'
+    value: ${{ steps.create-venv.outputs.venv-path }}
+  python-path:
+    description: 'Path to the Python executable in the venv'
+    value: ${{ steps.create-venv.outputs.python-path }}
+  activate-script:
+    description: 'Path to the activation script'
+    value: ${{ steps.create-venv.outputs.activate-script }}
+
+runs:
+  using: "composite"
+  steps:
+    # For GitHub-hosted runners, use actions/setup-python
+    - name: Setup Python (GitHub-hosted)
+      if: ${{ !contains(runner.name, 'stx') && !contains(runner.name, 'rai') && !contains(runner.name, 'selfhost') }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # For self-hosted runners, use our custom setup
+    - name: Setup Python (self-hosted)
+      if: ${{ contains(runner.name, 'stx') || contains(runner.name, 'rai') || contains(runner.name, 'selfhost') }}
+      uses: ./.github/actions/setup-python
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Create virtual environment
+      id: create-venv
+      shell: bash
+      run: |
+        VENV_NAME="${{ inputs.venv-name }}"
+        VENV_PATH="$GITHUB_WORKSPACE/$VENV_NAME"
+        
+        echo "Creating virtual environment at $VENV_PATH..."
+        
+        # Remove existing venv if present
+        if [ -d "$VENV_PATH" ]; then
+          echo "Removing existing venv..."
+          rm -rf "$VENV_PATH"
+        fi
+        
+        # Create the venv
+        python -m venv "$VENV_PATH"
+        
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          PYTHON_PATH="$VENV_PATH/Scripts/python.exe"
+          ACTIVATE_SCRIPT="$VENV_PATH/Scripts/activate"
+          PIP_PATH="$VENV_PATH/Scripts/pip.exe"
+          
+          # Add Scripts to PATH for Windows
+          echo "$VENV_PATH/Scripts" >> $GITHUB_PATH
+        else
+          PYTHON_PATH="$VENV_PATH/bin/python"
+          ACTIVATE_SCRIPT="$VENV_PATH/bin/activate"
+          PIP_PATH="$VENV_PATH/bin/pip"
+          
+          # Add bin to PATH for Linux/macOS
+          echo "$VENV_PATH/bin" >> $GITHUB_PATH
+        fi
+        
+        # Upgrade pip
+        "$PYTHON_PATH" -m pip install --upgrade pip
+        
+        echo "venv-path=$VENV_PATH" >> $GITHUB_OUTPUT
+        echo "python-path=$PYTHON_PATH" >> $GITHUB_OUTPUT
+        echo "activate-script=$ACTIVATE_SCRIPT" >> $GITHUB_OUTPUT
+        
+        echo "Virtual environment created successfully!"
+        "$PYTHON_PATH" --version
+
+    - name: Install requirements file
+      if: inputs.requirements-file != ''
+      shell: bash
+      run: |
+        VENV_PATH="${{ steps.create-venv.outputs.venv-path }}"
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          PIP="$VENV_PATH/Scripts/pip.exe"
+        else
+          PIP="$VENV_PATH/bin/pip"
+        fi
+        
+        echo "Installing requirements from ${{ inputs.requirements-file }}..."
+        "$PIP" install -r "${{ inputs.requirements-file }}"
+
+    - name: Install package
+      if: inputs.install-package != ''
+      shell: bash
+      run: |
+        VENV_PATH="${{ steps.create-venv.outputs.venv-path }}"
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          PIP="$VENV_PATH/Scripts/pip.exe"
+        else
+          PIP="$VENV_PATH/bin/pip"
+        fi
+        
+        EXTRA_INDEX=""
+        if [ -n "${{ inputs.extra-index-url }}" ]; then
+          EXTRA_INDEX="--extra-index-url ${{ inputs.extra-index-url }}"
+        fi
+        
+        echo "Installing package: ${{ inputs.install-package }}..."
+        "$PIP" install ${{ inputs.install-package }} $EXTRA_INDEX
+

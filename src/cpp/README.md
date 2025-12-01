@@ -495,7 +495,7 @@ Run the commands from the Usage section above to verify basic functionality.
 The C++ implementation is tested using the existing Python test suite.
 
 **Prerequisites:**
-- Python 3.10+ (Miniforge or Miniconda recommended)
+- Python 3.10+
 - Test dependencies: `pip install -r test/requirements.txt`
 
 **Running tests:**

@@ -816,22 +816,12 @@ jobs:
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
-      - name: Create minimal Python environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          # Create conda environment with minimal dependencies
-          conda create -p .\test-env python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Set HF_HOME environment variable in conda environment
-          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Install test dependencies
-          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run FLM tests with C++ server
         shell: PowerShell
@@ -841,11 +831,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running FLM tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_flm.py --server-binary $serverExe
+          & $venvPython test/server_flm.py --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -888,21 +879,12 @@ jobs:
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
-      - name: Create minimal Python environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          conda create -p .\test-env python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Set HF_HOME environment variable in conda environment
-          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Install test dependencies
-          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run Llamacpp Vulkan tests with C++ server
         shell: PowerShell
@@ -912,11 +894,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py vulkan --server-binary $serverExe
+          & $venvPython test/server_llamacpp.py vulkan --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -959,21 +942,12 @@ jobs:
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
-      - name: Create minimal Python environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          conda create -p .\test-env python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Set HF_HOME environment variable in conda environment
-          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Install test dependencies
-          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run Llamacpp ROCm tests with C++ server
         shell: PowerShell
@@ -983,11 +957,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server_llamacpp.py rocm --server-binary $serverExe
+          & $venvPython test/server_llamacpp.py rocm --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -1044,21 +1019,12 @@ jobs:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
           artifact-path: ryzenai-server-files
 
-      - name: Create minimal Python environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          conda create -p .\test-env python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Set HF_HOME environment variable in conda environment
-          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Install test dependencies
-          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run general server tests with C++ server
         shell: PowerShell
@@ -1068,6 +1034,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
           
@@ -1090,7 +1057,7 @@ jobs:
           Write-Host "Running general server tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          conda run --no-capture-output -p .\test-env python test/server.py --server-binary $serverExe
+          & $venvPython test/server.py --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -1163,14 +1130,12 @@ jobs:
           
           echo "Binaries verified!"
 
-      - name: Create Python test environment
-        run: |
-          
-          # Create test environment
-          conda create -p ./test-env python=3.10 -y
-          
-          # Install test dependencies
-          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run Llamacpp Vulkan tests
         env:
@@ -1179,7 +1144,8 @@ jobs:
           echo "Running Llamacpp Vulkan tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py vulkan --server-binary lemonade-server
+          source .venv/bin/activate
+          python test/server_llamacpp.py vulkan --server-binary lemonade-server
           
           echo "Llamacpp Vulkan tests PASSED!"
 
@@ -1271,14 +1237,12 @@ jobs:
           
           echo "Binaries verified!"
 
-      - name: Create Python test environment
-        run: |
-
-          # Create test environment
-          conda create -p ./test-env python=3.10 -y
-          
-          # Install test dependencies
-          conda run --no-capture-output -p ./test-env pip install -r test/requirements.txt
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run Llamacpp ROCm tests
         env:
@@ -1287,7 +1251,8 @@ jobs:
           echo "Running Llamacpp ROCm tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          conda run --no-capture-output -p ./test-env python test/server_llamacpp.py rocm --server-binary lemonade-server
+          source .venv/bin/activate
+          python test/server_llamacpp.py rocm --server-binary lemonade-server
           
           echo "Llamacpp ROCm tests PASSED!"
 
