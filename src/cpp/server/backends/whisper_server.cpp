@@ -380,9 +380,7 @@ void WhisperServer::load(const std::string& model_name,
         "--port", std::to_string(port_)
     };
 
-    if (is_debug()) {
-        args.push_back("--debug");
-    }
+    // Note: whisper-server doesn't support --debug flag
 
     // Launch the subprocess
     process_handle_ = utils::ProcessManager::start_process(
