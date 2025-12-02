@@ -907,7 +907,7 @@ jobs:
           
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
 
-          conda run --no-capture-output -p .\test-env python test/server_multimodel.py vulkan --server-binary $serverExe
+          & $venvPython python test/server_multimodel.py vulkan --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp multi-model tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -1157,7 +1157,7 @@ jobs:
           
           echo "Llamacpp Vulkan tests PASSED!"
 
-          conda run --no-capture-output -p ./test-env python test/server_multimodel.py vulkan --server-binary lemonade-server
+          python test/server_multimodel.py vulkan --server-binary lemonade-server
           
           echo "Llamacpp multi-model tests PASSED!"
 
