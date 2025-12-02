@@ -15,6 +15,7 @@ import socket
 import time
 import json
 import os
+import platform
 from threading import Thread
 import sys
 import io
@@ -22,6 +23,18 @@ import httpx
 from lemonade import __version__ as version_number
 
 from utils.server_base import stop_lemonade, PORT, MODEL_NAME
+
+
+def _get_server_binary():
+    """Get the server binary path based on the current Python interpreter."""
+    python_dir = os.path.dirname(sys.executable)
+    if platform.system() == "Windows":
+        return os.path.join(python_dir, "lemonade-server-dev.exe")
+    else:
+        return os.path.join(python_dir, "lemonade-server-dev")
+
+
+SERVER_BINARY = _get_server_binary()
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -42,7 +55,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
     def test_001_version(self):
         result = subprocess.run(
-            ["lemonade-server-dev", "--version"], capture_output=True, text=True
+            [SERVER_BINARY, "--version"], capture_output=True, text=True
         )
 
         # Check that the stdout ends with the version number (some apps rely on this)
@@ -54,7 +67,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # First, ensure we can correctly detect that the server is not running
         result = subprocess.run(
-            ["lemonade-server-dev", "status"],
+            [SERVER_BINARY, "status"],
             capture_output=True,
             text=True,
         )
@@ -66,7 +79,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         NON_DEFAULT_PORT = PORT + 1
         process = subprocess.Popen(
             [
-                "lemonade-server-dev",
+                SERVER_BINARY,
                 "serve",
                 "--port",
                 str(NON_DEFAULT_PORT),
@@ -83,7 +96,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Now, ensure we can correctly detect that the server is running
         result = subprocess.run(
-            ["lemonade-server-dev", "status"],
+            [SERVER_BINARY, "status"],
             capture_output=True,
             text=True,
         )
@@ -93,7 +106,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Close the server
         result = subprocess.run(
-            ["lemonade-server-dev", "stop"],
+            [SERVER_BINARY, "stop"],
             capture_output=True,
             text=True,
         )
@@ -101,7 +114,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Ensure the server is not running
         result = subprocess.run(
-            ["lemonade-server-dev", "status"],
+            [SERVER_BINARY, "status"],
             capture_output=True,
             text=True,
         )
@@ -114,13 +127,13 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Close the server (if it's still running)
         result = subprocess.run(
-            ["lemonade-server-dev", "stop"],
+            [SERVER_BINARY, "stop"],
             capture_output=True,
             text=True,
         )
 
         # Run the server with the specified model and port
-        cmd = ["lemonade-server-dev", "run", MODEL_NAME, "--port", str(PORT)]
+        cmd = [SERVER_BINARY, "run", MODEL_NAME, "--port", str(PORT)]
         if os.name == "nt":
             cmd.append("--no-tray")
         server_process = subprocess.Popen(
@@ -137,7 +150,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         start_time = time.time()
         while True:
             result = subprocess.run(
-                ["lemonade-server-dev", "status"],
+                [SERVER_BINARY, "status"],
                 capture_output=True,
                 text=True,
             )
