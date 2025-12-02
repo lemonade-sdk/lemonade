@@ -1041,7 +1041,7 @@
 <li>Open a PowerShell script in admin mode, and run <code>Set-ExecutionPolicy -ExecutionPolicy RemoteSigned</code></li>
 <li>Go into Windows settings:</li>
 <li>Go to system, power &amp; battery, screen sleep &amp; hibernate timeouts, and make it so the laptop never sleeps while plugged in. If you don't do this it can fall asleep during jobs.</li>
-<li>Searrch "Change the date and time", and then click "sync" under "additional settings."</li>
+<li>Search "Change the date and time", and then click "sync" under "additional settings."</li>
 </ul>
 <h3 id="runner-configuration">Runner Configuration</h3>
 <p>These steps will place your machine in the <code>stx-test</code> pool, which is where we put machines while we are setting them up. In the next section we will finalize setup and then move the runner into the production pool.</p>
@@ -1071,8 +1071,7 @@
 <p>These steps will use GitHub Actions to run automated setup and validation for your new runner while it is still in the <code>stx-test</code> group.</p>
 <ol>
 <li>Go to the <a href="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_ryzenai.yml">lemonade ryzenai test action</a> and click "run workflow".<ul>
-<li>Select <code>stx-test</code> as the nimbys group</li>
-<li>Check the box for "Install miniforge"</li>
+<li>Select <code>stx-test</code> as the runner group</li>
 <li>Click <code>Run workflow</code></li>
 </ul>
 </li>
@@ -1081,8 +1080,7 @@
 <li>Wait for the workflow to finish successfully.</li>
 </ul>
 </li>
-<li>In a powershell admin terminal, run <code>Stop-Service "actions.runner.*"</code> and then <code>Start-Service "actions.runner.*"</code>. If you don't do this, the runner wont be able to find Conda.</li>
-<li>Repeat step 1, except do <strong>not</strong> check the box for "Install miniforge". Wait for it to finish successfully. Congrats, your new runner is working!</li>
+<li>Repeat step 1. Wait for it to finish successfully. Congrats, your new runner is working!</li>
 <li>Go to the stx Runner Group, click your new runner, and click the gear icon to change labels. Uncheck <code>stx-test</code> and check <code>stx</code>.</li>
 <li>Done!</li>
 </ol>
@@ -1095,10 +1093,10 @@
 <li>Error: Runner connect error: &lt; details about the connection error &gt;</li>
 <li>Information: Runner reconnected</li>
 <li>Information: Running Job: &lt; job name &gt;</li>
-<li>Information: Jos &lt; job name &gt; completed with result: [Succeeded / Canceled / Failed]</li>
+<li>Information: Job &lt; job name &gt; completed with result: [Succeeded / Canceled / Failed]</li>
 </ul>
 <h3 id="actions-are-failing-unexpectedly">Actions are failing unexpectedly</h3>
-<p>Actions fail all the time, often because they are testing buggy code. However, sometimes an Action will fail because something is wrong with the specific NIMBYS runner that ran the Action. </p>
+<p>Actions fail all the time, often because they are testing buggy code. However, sometimes an Action will fail because something is wrong with the specific runner that ran the Action. </p>
 <p>If this happens to you, here are some steps you can take (in order):
 1. Take note of which runner executed your Action. You can check this by going to the <code>Set up job</code> section of the Action's log and checking the <code>Runner name:</code> field. The machine name in that field will correspond to a machine on the <a href="https://github.com/organizations/lemonade-sdk/settings/actions/runners">runners page</a>.
 1. Re-queue your job. It is possible that that the failure is a one-off, and it will work the next time on the same runner. Re-queuing also gives you a chance of getting a runner that is in a healthier state.
@@ -1132,16 +1130,15 @@
 </ul>
 </li>
 <li>Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include <code>on: pull request:</code> in your workflow until after a reviewer has signed off.</li>
-<li>Only map a workflow with <code>runs on: stx</code> if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-NIMBYS runner like <code>runs on: windows-latest</code>.</li>
+<li>Only map a workflow with <code>runs on: stx</code> if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-self-hosted runner like <code>runs on: windows-latest</code>.</li>
 <li>Be very considerate about installing software on to the runners:<ul>
 <li>Installing software into the CWD (e.g., a path of <code>.\</code>) is always ok, because that will end up in <code>C:\actions-runner\_work\REPO</code>, which is always wiped between tests.</li>
 <li>Installing software into <code>AppData</code>, <code>Program Files</code>, etc. is not advisable because that software will persist across tests. See the <a href="#npu-runner-setup">setup</a> section to see which software is already expected on the system.</li>
 </ul>
 </li>
-<li>Always create new conda environments in the CWD, for example <code>conda create -p .\my-env</code>.<ul>
-<li>This way, the conda environment is located in <code>C:\actions-runner\_work\REPO</code>, which is wiped between tests.</li>
-<li>Do NOT create conda environments by name, for example <code>conda create -n dont-you-dare</code> since that will end up in the conda install location and will persist across tests.</li>
-<li>Make sure to activate your conda environment (e.g., <code>conda activate .\lemon-npu-ci</code>) before running any <code>pip install</code> commands. Otherwise your workflow will modify the base environment!</li>
+<li>Always create new virtual environments in the CWD, for example <code>python -m venv .venv</code>.<ul>
+<li>This way, the virtual environment is located in <code>C:\actions-runner\_work\REPO</code>, which is wiped between tests.</li>
+<li>Make sure to activate your virtual environment before running any <code>pip install</code> commands. Otherwise your workflow will modify the system Python installation!</li>
 </ul>
 </li>
 <li>PowerShell scripts do not necessarily raise errors by programs they call.<ul>
