@@ -25,16 +25,17 @@ from lemonade import __version__ as version_number
 from utils.server_base import stop_lemonade, PORT, MODEL_NAME
 
 
-def _get_server_binary():
-    """Get the server binary path based on the current Python interpreter."""
+def _get_venv_executable(name):
+    """Get an executable path from the venv based on the current Python interpreter."""
     python_dir = os.path.dirname(sys.executable)
     if platform.system() == "Windows":
-        return os.path.join(python_dir, "lemonade-server-dev.exe")
+        return os.path.join(python_dir, f"{name}.exe")
     else:
-        return os.path.join(python_dir, "lemonade-server-dev")
+        return os.path.join(python_dir, name)
 
 
-SERVER_BINARY = _get_server_binary()
+SERVER_BINARY = _get_venv_executable("lemonade-server-dev")
+LEMONADE_CLI = _get_venv_executable("lemonade")
 
 try:
     from openai import OpenAI, AsyncOpenAI
@@ -194,7 +195,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         """
         # Test default (non-verbose) table output
         result = subprocess.run(
-            [sys.executable, "-m", "lemonade", "system-info"],
+            [LEMONADE_CLI, "system-info"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -211,7 +212,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test verbose mode
         result = subprocess.run(
-            [sys.executable, "-m", "lemonade", "system-info", "--verbose"],
+            [LEMONADE_CLI, "system-info", "--verbose"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -234,7 +235,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test JSON output
         result = subprocess.run(
-            [sys.executable, "-m", "lemonade", "system-info", "--format", "json"],
+            [LEMONADE_CLI, "system-info", "--format", "json"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -251,15 +252,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test JSON output (verbose mode)
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "lemonade",
-                "system-info",
-                "--verbose",
-                "--format",
-                "json",
-            ],
+            [LEMONADE_CLI, "system-info", "--verbose", "--format", "json"],
             capture_output=True,
             text=True,
             timeout=60,
