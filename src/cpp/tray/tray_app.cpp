@@ -12,7 +12,9 @@
 #include <thread>
 #include <chrono>
 #include <csignal>
+#include <cctype>
 #include <vector>
+#include <set>
 
 #ifdef _WIN32
 #include <winsock2.h>  // Must come before windows.h
@@ -549,13 +551,44 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
             } else if (arg == "--llamacpp-args" && i + 1 < argc) {
                 config_.llamacpp_args = argv[++i];
             } else if (arg == "--max-loaded-models" && i + 1 < argc) {
-                // Parse 1-3 values for max loaded models
-                config_.max_llm_models = std::stoi(argv[++i]);
-                if (i + 1 < argc && argv[i + 1][0] != '-') {
-                    config_.max_embedding_models = std::stoi(argv[++i]);
-                    if (i + 1 < argc && argv[i + 1][0] != '-') {
-                        config_.max_reranking_models = std::stoi(argv[++i]);
+                // Parse 1 or 3 values for max loaded models (2 or 4+ is not allowed)
+                // All values must be positive integers (no floats, no negatives, no zero)
+                std::vector<int> max_models;
+                
+                // Helper lambda to validate a string is a positive integer
+                auto is_positive_integer = [](const std::string& s) -> bool {
+                    if (s.empty()) return false;
+                    for (char c : s) {
+                        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
                     }
+                    return true;
+                };
+                
+                // Parse all consecutive numeric values
+                while (i + 1 < argc && argv[i + 1][0] != '-') {
+                    std::string val_str = argv[++i];
+                    if (!is_positive_integer(val_str)) {
+                        std::cerr << "Error: --max-loaded-models values must be positive integers (got '" << val_str << "')" << std::endl;
+                        exit(1);
+                    }
+                    int val = std::stoi(val_str);
+                    if (val <= 0) {
+                        std::cerr << "Error: --max-loaded-models values must be non-zero (got " << val << ")" << std::endl;
+                        exit(1);
+                    }
+                    max_models.push_back(val);
+                }
+                
+                // Validate: must have exactly 1 or 3 values
+                if (max_models.size() != 1 && max_models.size() != 3) {
+                    std::cerr << "Error: --max-loaded-models requires 1 value (LLMS) or 3 values (LLMS EMBEDDINGS RERANKINGS), got " << max_models.size() << std::endl;
+                    exit(1);
+                }
+                
+                config_.max_llm_models = max_models[0];
+                if (max_models.size() == 3) {
+                    config_.max_embedding_models = max_models[1];
+                    config_.max_reranking_models = max_models[2];
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
@@ -1602,17 +1635,30 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
-    // Get loaded model once and cache it to avoid redundant health checks
-    std::string loaded = is_loading_model_ ? "" : get_loaded_model();
+    // Get all loaded models to display at top and for checkmarks
+    std::vector<LoadedModelInfo> loaded_models = is_loading_model_ ? std::vector<LoadedModelInfo>() : get_all_loaded_models();
     
-    // Status display
+    // Build a set of loaded model names for quick lookup
+    std::set<std::string> loaded_model_names;
+    for (const auto& m : loaded_models) {
+        loaded_model_names.insert(m.model_name);
+    }
+    
+    // Status display - show all loaded models at the top
     if (is_loading_model_) {
         std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(loading_mutex_));
         menu.add_item(MenuItem::Action("Loading: " + loading_model_name_ + "...", nullptr, false));
     } else {
-        if (!loaded.empty()) {
-            menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
-            menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+        if (!loaded_models.empty()) {
+            // Show each loaded model with its type
+            for (const auto& model : loaded_models) {
+                std::string display_text = "Loaded: " + model.model_name;
+                if (!model.type.empty() && model.type != "llm") {
+                    display_text += " (" + model.type + ")";
+                }
+                menu.add_item(MenuItem::Action(display_text, nullptr, false));
+            }
+            menu.add_item(MenuItem::Action("Unload Models", [this]() { on_unload_model(); }));
         } else {
             menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
         }
@@ -1621,8 +1667,6 @@ Menu TrayApp::create_menu() {
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
     auto models = get_downloaded_models();
-    // Reuse cached value instead of calling get_loaded_model() again
-    std::string current_loaded = loaded;
     if (models.empty()) {
         load_submenu->add_item(MenuItem::Action(
             "No models available: Use the Model Manager",
@@ -1631,7 +1675,8 @@ Menu TrayApp::create_menu() {
         ));
     } else {
         for (const auto& model : models) {
-            bool is_loaded = (model.id == current_loaded);
+            // Check if this model is in the loaded models set
+            bool is_loaded = loaded_model_names.count(model.id) > 0;
             load_submenu->add_item(MenuItem::Checkable(
                 model.id,
                 [this, model]() { on_load_model(model.id); },
@@ -1956,6 +2001,35 @@ std::string TrayApp::get_loaded_model() {
     }
     
     return "";  // No model loaded
+}
+
+std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+    std::vector<LoadedModelInfo> loaded_models;
+    
+    try {
+        auto health = server_manager_->get_health();
+        
+        // Check for all_models_loaded array
+        if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
+            for (const auto& model : health["all_models_loaded"]) {
+                LoadedModelInfo info;
+                info.model_name = model.value("model_name", "");
+                info.checkpoint = model.value("checkpoint", "");
+                info.last_use = model.value("last_use", 0.0);
+                info.type = model.value("type", "llm");
+                info.device = model.value("device", "");
+                info.backend_url = model.value("backend_url", "");
+                
+                if (!info.model_name.empty()) {
+                    loaded_models.push_back(info);
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get loaded models: " << e.what() << std::endl;
+    }
+    
+    return loaded_models;
 }
 
 std::vector<ModelInfo> TrayApp::get_downloaded_models() {

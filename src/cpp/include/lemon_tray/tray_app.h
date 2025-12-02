@@ -45,6 +45,16 @@ struct ModelInfo {
     std::string recipe;
 };
 
+// Information about a loaded model from the health endpoint
+struct LoadedModelInfo {
+    std::string model_name;
+    std::string checkpoint;
+    double last_use;
+    std::string type;  // "llm", "embedding", or "reranking"
+    std::string device;  // e.g., "gpu", "npu", "gpu npu"
+    std::string backend_url;
+};
+
 class TrayApp {
 public:
     TrayApp(int argc, char* argv[]);
@@ -106,6 +116,7 @@ private:
     void open_url(const std::string& url);
     void show_notification(const std::string& title, const std::string& message);
     std::string get_loaded_model();
+    std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
     
     // Member variables
