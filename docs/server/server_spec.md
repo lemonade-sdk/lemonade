@@ -567,7 +567,8 @@ Default response (only downloaded models):
       "object": "model",
       "owned_by": "lemonade",
       "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-      "recipe": "oga-cpu"
+      "recipe": "oga-cpu",
+      "size": 0.77
     },
     {
       "id": "Llama-3.2-1B-Instruct-Hybrid",
@@ -575,7 +576,8 @@ Default response (only downloaded models):
       "object": "model",
       "owned_by": "lemonade",
       "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-      "recipe": "oga-hybrid"
+      "recipe": "oga-hybrid",
+      "size": 1.89
     }
   ]
 }
@@ -595,6 +597,7 @@ With `show_all=true` (includes all models with additional fields):
       "name": "Qwen2.5-0.5B-Instruct-CPU",
       "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
       "recipe": "oga-cpu",
+      "size": 0.77,
       "downloaded": true,
       "labels": ["hot", "cpu"]
     },
@@ -606,6 +609,7 @@ With `show_all=true` (includes all models with additional fields):
       "name": "Llama-3.2-1B-Instruct-Hybrid",
       "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
       "recipe": "oga-hybrid",
+      "size": 1.89,
       "downloaded": false,
       "labels": ["hot", "hybrid"]
     }
@@ -638,9 +642,20 @@ curl http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
   "object": "model",
   "owned_by": "lemonade",
   "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-  "recipe": "oga-hybrid"
+  "recipe": "oga-hybrid",
+  "size": 1.89
 }
 ```
+
+**Field Descriptions:**
+
+- `id` - Model identifier
+- `created` - Unix timestamp of when the model entry was created
+- `object` - Type of object, always `"model"`
+- `owned_by` - Owner of the model, always `"lemonade"`
+- `checkpoint` - Full checkpoint identifier on Hugging Face
+- `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+- `size` - Model size in GB (may be `null` for models without size information)
 
 #### Error responses
 
