@@ -1640,7 +1640,6 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
-<<<<<<< HEAD
     // Open app - at the very top (only if Electron app is available on full installer)
     if (electron_app_path_.empty()) {
         // Try to find the Electron app if we haven't already
@@ -1653,10 +1652,8 @@ Menu TrayApp::create_menu() {
     
     // Get loaded model once and cache it to avoid redundant health checks
     std::string loaded = is_loading_model_ ? "" : get_loaded_model();
-=======
     // Get all loaded models to display at top and for checkmarks
     std::vector<LoadedModelInfo> loaded_models = is_loading_model_ ? std::vector<LoadedModelInfo>() : get_all_loaded_models();
->>>>>>> main
     
     // Build a set of loaded model names for quick lookup
     std::set<std::string> loaded_model_names;
