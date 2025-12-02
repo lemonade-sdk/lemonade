@@ -25,8 +25,10 @@ namespace utils {
 // Helper function to check if a line should be filtered
 static bool should_filter_line(const std::string& line) {
     // Filter out health check requests (both /health and /v1/health)
+    // Also filter FLM's interactive prompt spam
     return (line.find("GET /health") != std::string::npos ||
-            line.find("GET /v1/health") != std::string::npos);
+            line.find("GET /v1/health") != std::string::npos ||
+            line.find("Enter 'exit' to stop the server") != std::string::npos);
 }
 
 #ifdef _WIN32
@@ -187,6 +189,16 @@ ProcessHandle ProcessManager::start_process(
     
 #else
     // Unix implementation
+    int stdout_pipe[2] = {-1, -1};
+    int stderr_pipe[2] = {-1, -1};
+    
+    // Create pipes for filtering if requested
+    if (inherit_output && filter_health_logs) {
+        if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {
+            throw std::runtime_error("Failed to create pipes for output filtering");
+        }
+    }
+    
     pid_t pid = fork();
     
     if (pid < 0) {
@@ -202,6 +214,16 @@ ProcessHandle ProcessManager::start_process(
         // Set environment variables
         for (const auto& env_pair : env_vars) {
             setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
+        }
+        
+        // Redirect stdout/stderr to pipes if filtering
+        if (inherit_output && filter_health_logs) {
+            close(stdout_pipe[0]);  // Close read end
+            close(stderr_pipe[0]);
+            dup2(stdout_pipe[1], STDOUT_FILENO);
+            dup2(stderr_pipe[1], STDERR_FILENO);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[1]);
         }
         
         // Prepare argv
@@ -221,6 +243,67 @@ ProcessHandle ProcessManager::start_process(
     
     // Parent process
     handle.pid = pid;
+    
+    // Start filter threads if needed
+    if (inherit_output && filter_health_logs) {
+        close(stdout_pipe[1]);  // Close write ends in parent
+        close(stderr_pipe[1]);
+        
+        // Start threads to read and filter output
+        std::thread([fd = stdout_pipe[0]]() {
+            char buffer[4096];
+            std::string line_buffer;
+            ssize_t bytes_read;
+            
+            while ((bytes_read = read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+                buffer[bytes_read] = '\0';
+                line_buffer += buffer;
+                
+                size_t pos;
+                while ((pos = line_buffer.find('\n')) != std::string::npos) {
+                    std::string line = line_buffer.substr(0, pos);
+                    line_buffer = line_buffer.substr(pos + 1);
+                    
+                    if (!should_filter_line(line)) {
+                        std::cout << line << std::endl;
+                    }
+                }
+            }
+            
+            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
+                std::cout << line_buffer << std::endl;
+            }
+            
+            close(fd);
+        }).detach();
+        
+        std::thread([fd = stderr_pipe[0]]() {
+            char buffer[4096];
+            std::string line_buffer;
+            ssize_t bytes_read;
+            
+            while ((bytes_read = read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+                buffer[bytes_read] = '\0';
+                line_buffer += buffer;
+                
+                size_t pos;
+                while ((pos = line_buffer.find('\n')) != std::string::npos) {
+                    std::string line = line_buffer.substr(0, pos);
+                    line_buffer = line_buffer.substr(pos + 1);
+                    
+                    if (!should_filter_line(line)) {
+                        std::cerr << line << std::endl;
+                    }
+                }
+            }
+            
+            if (!line_buffer.empty() && !should_filter_line(line_buffer)) {
+                std::cerr << line_buffer << std::endl;
+            }
+            
+            close(fd);
+        }).detach();
+    }
     
 #endif
     
@@ -393,25 +476,59 @@ int ProcessManager::find_free_port(int start_port) {
 #endif
     
     for (int port = start_port; port < start_port + 1000; port++) {
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock < 0) {
-            continue;
+        // Test BOTH 127.0.0.1 and 0.0.0.0 - different servers bind to different addresses
+        // llama-server binds to 127.0.0.1, while FLM binds to 0.0.0.0
+        // We need to detect both cases to avoid port conflicts
+        
+        bool port_free = true;
+        
+        // Test 1: Try binding to 127.0.0.1 (catches llama-server and any loopback bind)
+        {
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock < 0) {
+                continue;
+            }
+            
+            sockaddr_in addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(port);
+            addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+            
+            int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+#ifdef _WIN32
+            closesocket(sock);
+#else
+            close(sock);
+#endif
+            if (result != 0) {
+                port_free = false;
+            }
         }
         
-        sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-        
-        int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-        
+        // Test 2: Try binding to 0.0.0.0 (catches FLM and any wildcard bind)
+        if (port_free) {
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock < 0) {
+                continue;
+            }
+            
+            sockaddr_in addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(port);
+            addr.sin_addr.s_addr = INADDR_ANY;
+            
+            int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 #ifdef _WIN32
-        closesocket(sock);
+            closesocket(sock);
 #else
-        close(sock);
+            close(sock);
 #endif
+            if (result != 0) {
+                port_free = false;
+            }
+        }
         
-        if (result == 0) {
+        if (port_free) {
 #ifdef _WIN32
             WSACleanup();
 #endif

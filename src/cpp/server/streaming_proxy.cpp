@@ -9,7 +9,8 @@ void StreamingProxy::forward_sse_stream(
     const std::string& backend_url,
     const std::string& request_body,
     httplib::DataSink& sink,
-    std::function<void(const TelemetryData&)> on_complete) {
+    std::function<void(const TelemetryData&)> on_complete,
+    long timeout_seconds) {
     
     std::string telemetry_buffer;
     bool stream_error = false;
@@ -35,7 +36,9 @@ void StreamingProxy::forward_sse_stream(
             }
             
             return true; // Continue streaming
-        }
+        },
+        {}, // Empty headers map
+        timeout_seconds
     );
     
     if (result.status_code != 200) {

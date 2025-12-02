@@ -320,6 +320,29 @@
         "labels": ["vision"],
         "size": 4.68
     },
+    "Qwen3-VL-4B-Instruct-GGUF": {
+        "checkpoint": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["vision"],
+        "size": 3.33
+    },
+    "Qwen3-VL-8B-Instruct-GGUF": {
+        "checkpoint": "Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["vision"],
+        "size": 6.19
+    },
+    "Qwen3-Next-80B-A3B-Instruct-GGUF": {
+        "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot"],
+        "size": 45.1
+    },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
         "mmproj": "mmproj-F16.gguf",
@@ -441,6 +464,19 @@
         "labels": ["coding"],
         "size": 4.68
     },
+    "granite-4.0-h-tiny-GGUF": {
+        "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["tool-calling"],
+        "size": 4.25
+    },
+    "LFM2-8B-A1B-GGUF": {
+        "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 4.8
+    },
     "gpt-oss-20b-FLM": {
         "checkpoint": "gpt-oss:20b",
         "recipe": "flm",
@@ -461,6 +497,13 @@
         "labels": ["hot","vision"],
         "size": 5.26
     },
+    "Qwen3-4B-VL-FLM": {
+        "checkpoint": "qwen3vl-it:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["hot","vision"],
+        "size": 3.85
+    },
     "Qwen3-0.6b-FLM": {
         "checkpoint": "qwen3:0.6b",
         "recipe": "flm",
@@ -472,7 +515,6 @@
         "checkpoint": "qwen3-it:4b",
         "recipe": "flm",
         "suggested": true,
-        "labels": ["hot"],
         "size": 3.07
     },
     "Qwen3-8b-FLM": {

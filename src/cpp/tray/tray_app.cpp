@@ -5,13 +5,16 @@
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <thread>
 #include <chrono>
 #include <csignal>
+#include <cctype>
 #include <vector>
+#include <set>
 
 #ifdef _WIN32
 #include <winsock2.h>  // Must come before windows.h
@@ -553,6 +556,46 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.llamacpp_backend = argv[++i];
             } else if (arg == "--llamacpp-args" && i + 1 < argc) {
                 config_.llamacpp_args = argv[++i];
+            } else if (arg == "--max-loaded-models" && i + 1 < argc) {
+                // Parse 1 or 3 values for max loaded models (2 or 4+ is not allowed)
+                // All values must be positive integers (no floats, no negatives, no zero)
+                std::vector<int> max_models;
+                
+                // Helper lambda to validate a string is a positive integer
+                auto is_positive_integer = [](const std::string& s) -> bool {
+                    if (s.empty()) return false;
+                    for (char c : s) {
+                        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+                    }
+                    return true;
+                };
+                
+                // Parse all consecutive numeric values
+                while (i + 1 < argc && argv[i + 1][0] != '-') {
+                    std::string val_str = argv[++i];
+                    if (!is_positive_integer(val_str)) {
+                        std::cerr << "Error: --max-loaded-models values must be positive integers (got '" << val_str << "')" << std::endl;
+                        exit(1);
+                    }
+                    int val = std::stoi(val_str);
+                    if (val <= 0) {
+                        std::cerr << "Error: --max-loaded-models values must be non-zero (got " << val << ")" << std::endl;
+                        exit(1);
+                    }
+                    max_models.push_back(val);
+                }
+                
+                // Validate: must have exactly 1 or 3 values
+                if (max_models.size() != 1 && max_models.size() != 3) {
+                    std::cerr << "Error: --max-loaded-models requires 1 value (LLMS) or 3 values (LLMS EMBEDDINGS RERANKINGS), got " << max_models.size() << std::endl;
+                    exit(1);
+                }
+                
+                config_.max_llm_models = max_models[0];
+                if (max_models.size() == 3) {
+                    config_.max_embedding_models = max_models[1];
+                    config_.max_reranking_models = max_models[2];
+                }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
             } else {
@@ -605,6 +648,8 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
+        std::cout << "  --max-loaded-models N [E] [R]\n";
+        std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] (default: 1 1 1)\n";
         std::cout << "  --log-file PATH          Log file path\n";
         std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -813,10 +858,13 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.log_file.empty() ? "" : config_.log_file,
         config_.log_level,  // Pass log level to ServerManager
         config_.llamacpp_backend,  // Pass llamacpp backend to ServerManager
-        false,  // show_console
+        false,  // show_console - SSE streaming provides progress via client
         true,   // is_ephemeral (suppress startup message)
         config_.llamacpp_args,  // Pass custom llamacpp args
-        config_.host  // Pass host to ServerManager
+        config_.host,  // Pass host to ServerManager
+        config_.max_llm_models,
+        config_.max_embedding_models,
+        config_.max_reranking_models
     );
     
     if (!success) {
@@ -917,15 +965,10 @@ int TrayApp::execute_pull_command() {
         }
     }
     
-    // Pull model via API with optional parameters
+    // Pull model via API with SSE streaming for progress
     try {
-        if (!server_manager_) {
-            server_manager_ = std::make_unique<ServerManager>();
-        }
-        server_manager_->set_port(port);  // Use the detected or configured port
-        
         // Build request body with all optional parameters
-        nlohmann::json request_body = {{"model", model_name}};
+        nlohmann::json request_body = {{"model", model_name}, {"stream", true}};
         
         // Parse optional arguments from config_.command_args (starting at index 1)
         for (size_t i = 1; i < config_.command_args.size(); ++i) {
@@ -948,19 +991,120 @@ int TrayApp::execute_pull_command() {
             }
         }
         
-        // Use 2 hour timeout for pull - large models can take a very long time
-        std::string response = server_manager_->make_http_request(
-            "/api/v1/pull", 
-            "POST", 
-            request_body.dump(),
-            7200  // 2 hours
-        );
+        // Use SSE streaming to receive progress events
+        // Use the same host the server is bound to (0.0.0.0 is special - use localhost instead)
+        std::string connect_host = (config_.host == "0.0.0.0") ? "localhost" : config_.host;
         
-        auto response_json = nlohmann::json::parse(response);
-        if (response_json.value("status", "") == "success") {
+        httplib::Client cli(connect_host, port);
+        cli.set_connection_timeout(30, 0);
+        cli.set_read_timeout(86400, 0);  // 24 hour read timeout for large downloads
+        
+        std::string last_file;
+        int last_percent = -1;
+        bool success = false;
+        std::string error_message;
+        std::string buffer;  // Buffer for partial SSE messages
+        
+        httplib::Headers headers;
+        auto res = cli.Post("/api/v1/pull", headers, request_body.dump(), "application/json",
+            [&](const char* data, size_t len) {
+                buffer.append(data, len);
+                
+                // Process complete SSE messages (end with \n\n)
+                size_t pos;
+                while ((pos = buffer.find("\n\n")) != std::string::npos) {
+                    std::string message = buffer.substr(0, pos);
+                    buffer.erase(0, pos + 2);
+                    
+                    // Parse SSE event
+                    std::string event_type;
+                    std::string event_data;
+                    
+                    std::istringstream stream(message);
+                    std::string line;
+                    while (std::getline(stream, line)) {
+                        if (line.substr(0, 6) == "event:") {
+                            event_type = line.substr(7);
+                            // Trim whitespace
+                            while (!event_type.empty() && event_type[0] == ' ') {
+                                event_type.erase(0, 1);
+                            }
+                        } else if (line.substr(0, 5) == "data:") {
+                            event_data = line.substr(6);
+                            // Trim whitespace
+                            while (!event_data.empty() && event_data[0] == ' ') {
+                                event_data.erase(0, 1);
+                            }
+                        }
+                    }
+                    
+                    if (!event_data.empty()) {
+                        try {
+                            auto json_data = nlohmann::json::parse(event_data);
+                            
+                            if (event_type == "progress") {
+                                std::string file = json_data.value("file", "");
+                                int file_index = json_data.value("file_index", 0);
+                                int total_files = json_data.value("total_files", 0);
+                                // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
+                                uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
+                                uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+                                int percent = json_data.value("percent", 0);
+                                
+                                // Only print when file changes or percent changes significantly
+                                if (file != last_file) {
+                                    if (!last_file.empty()) {
+                                        std::cout << std::endl;  // New line after previous file
+                                    }
+                                    std::cout << "[" << file_index << "/" << total_files << "] " << file;
+                                    if (bytes_total > 0) {
+                                        std::cout << " (" << std::fixed << std::setprecision(1) 
+                                                  << (bytes_total / (1024.0 * 1024.0)) << " MB)";
+                                    }
+                                    std::cout << std::endl;
+                                    last_file = file;
+                                    last_percent = -1;
+                                }
+                                
+                                // Update progress bar
+                                if (bytes_total > 0 && percent != last_percent) {
+                                    std::cout << "\r  Progress: " << percent << "% (" 
+                                              << std::fixed << std::setprecision(1)
+                                              << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
+                                              << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                                    last_percent = percent;
+                                }
+                            } else if (event_type == "complete") {
+                                std::cout << std::endl;
+                                success = true;
+                            } else if (event_type == "error") {
+                                error_message = json_data.value("error", "Unknown error");
+                            }
+                        } catch (const std::exception&) {
+                            // Ignore JSON parse errors in SSE events
+                        }
+                    }
+                }
+                
+                return true;  // Continue receiving
+            });
+        
+        // Check for errors - but ignore connection close if we got a success event
+        if (!res && !success) {
+            throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+        }
+        
+        if (!error_message.empty()) {
+            throw std::runtime_error(error_message);
+        }
+        
+        if (success) {
             std::cout << "Model pulled successfully: " << model_name << std::endl;
+        } else if (!res) {
+            // Connection closed without success - this is an error
+            throw std::runtime_error("Connection closed unexpectedly");
         } else {
-            std::cerr << "Failed to pull model" << std::endl;
+            std::cerr << "Pull completed without success confirmation" << std::endl;
             if (!server_was_running) stop_server();
             return 1;
         }
@@ -1459,7 +1603,10 @@ bool TrayApp::start_server() {
         true,               // Always show console output for serve command
         false,              // is_ephemeral = false (persistent server, show startup message with URL)
         config_.llamacpp_args,  // Pass custom llamacpp args
-        config_.host        // Pass host to ServerManager
+        config_.host,        // Pass host to ServerManager
+        config_.max_llm_models,
+        config_.max_embedding_models,
+        config_.max_reranking_models
     );
     
     // Start log tail thread to show logs in console
@@ -1493,6 +1640,7 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
+<<<<<<< HEAD
     // Open app - at the very top (only if Electron app is available on full installer)
     if (electron_app_path_.empty()) {
         // Try to find the Electron app if we haven't already
@@ -1505,15 +1653,32 @@ Menu TrayApp::create_menu() {
     
     // Get loaded model once and cache it to avoid redundant health checks
     std::string loaded = is_loading_model_ ? "" : get_loaded_model();
+=======
+    // Get all loaded models to display at top and for checkmarks
+    std::vector<LoadedModelInfo> loaded_models = is_loading_model_ ? std::vector<LoadedModelInfo>() : get_all_loaded_models();
+>>>>>>> main
     
-    // Status display
+    // Build a set of loaded model names for quick lookup
+    std::set<std::string> loaded_model_names;
+    for (const auto& m : loaded_models) {
+        loaded_model_names.insert(m.model_name);
+    }
+    
+    // Status display - show all loaded models at the top
     if (is_loading_model_) {
         std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(loading_mutex_));
         menu.add_item(MenuItem::Action("Loading: " + loading_model_name_ + "...", nullptr, false));
     } else {
-        if (!loaded.empty()) {
-            menu.add_item(MenuItem::Action("Loaded: " + loaded, nullptr, false));
-            menu.add_item(MenuItem::Action("Unload LLM", [this]() { on_unload_model(); }));
+        if (!loaded_models.empty()) {
+            // Show each loaded model with its type
+            for (const auto& model : loaded_models) {
+                std::string display_text = "Loaded: " + model.model_name;
+                if (!model.type.empty() && model.type != "llm") {
+                    display_text += " (" + model.type + ")";
+                }
+                menu.add_item(MenuItem::Action(display_text, nullptr, false));
+            }
+            menu.add_item(MenuItem::Action("Unload Models", [this]() { on_unload_model(); }));
         } else {
             menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
         }
@@ -1522,8 +1687,6 @@ Menu TrayApp::create_menu() {
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
     auto models = get_downloaded_models();
-    // Reuse cached value instead of calling get_loaded_model() again
-    std::string current_loaded = loaded;
     if (models.empty()) {
         load_submenu->add_item(MenuItem::Action(
             "No models available: Use the Model Manager",
@@ -1532,7 +1695,8 @@ Menu TrayApp::create_menu() {
         ));
     } else {
         for (const auto& model : models) {
-            bool is_loaded = (model.id == current_loaded);
+            // Check if this model is in the loaded models set
+            bool is_loaded = loaded_model_names.count(model.id) > 0;
             load_submenu->add_item(MenuItem::Checkable(
                 model.id,
                 [this, model]() { on_load_model(model.id); },
@@ -2105,6 +2269,35 @@ std::string TrayApp::get_loaded_model() {
     }
     
     return "";  // No model loaded
+}
+
+std::vector<LoadedModelInfo> TrayApp::get_all_loaded_models() {
+    std::vector<LoadedModelInfo> loaded_models;
+    
+    try {
+        auto health = server_manager_->get_health();
+        
+        // Check for all_models_loaded array
+        if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
+            for (const auto& model : health["all_models_loaded"]) {
+                LoadedModelInfo info;
+                info.model_name = model.value("model_name", "");
+                info.checkpoint = model.value("checkpoint", "");
+                info.last_use = model.value("last_use", 0.0);
+                info.type = model.value("type", "llm");
+                info.device = model.value("device", "");
+                info.backend_url = model.value("backend_url", "");
+                
+                if (!info.model_name.empty()) {
+                    loaded_models.push_back(info);
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get loaded models: " << e.what() << std::endl;
+    }
+    
+    return loaded_models;
 }
 
 std::vector<ModelInfo> TrayApp::get_downloaded_models() {

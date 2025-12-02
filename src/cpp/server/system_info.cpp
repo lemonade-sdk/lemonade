@@ -118,9 +118,6 @@ json SystemInfo::get_device_dict() {
         {"available", npu.available},
         {"inference_engines", npu.inference_engines}
     };
-    if (!npu.driver_version.empty()) {
-        devices["npu"]["driver_version"] = npu.driver_version;
-    }
     if (!npu.power_mode.empty()) {
         devices["npu"]["power_mode"] = npu.power_mode;
     }
@@ -252,9 +249,8 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         #endif
     }
     
-    // OGA (RyzenAI-Server): Available for CPU, AMD iGPU, AMD dGPU, NPU (NOT NVIDIA)
-    if (device_type == "cpu" || device_type == "amd_igpu" || 
-        device_type == "amd_dgpu" || device_type == "npu") {
+    // OGA (RyzenAI-Server): Available AMD NPU (NOT NVIDIA)
+    if (device_type == "npu") {
         bool ryzenai_available = is_ryzenai_serve_available();
         engines["oga"] = {
             {"available", ryzenai_available}
@@ -636,15 +632,52 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
     return gpus;
 }
 
+bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
+    // Check if the processor is a supported Ryzen AI processor (300-series)
+    // This matches the logic in Python's check_ryzen_ai_processor() function
+    
+    wmi::WMIConnection wmi;
+    if (!wmi.is_valid()) {
+        // If we can't connect to WMI, we can't verify the processor
+        return false;
+    }
+    
+    std::string processor_name;
+    wmi.query(L"SELECT * FROM Win32_Processor", [&processor_name](IWbemClassObject* pObj) {
+        if (processor_name.empty()) {  // Only get first processor
+            processor_name = wmi::get_property_string(pObj, L"Name");
+        }
+    });
+    
+    if (processor_name.empty()) {
+        return false;
+    }
+    
+    // Convert to lowercase for case-insensitive matching
+    std::string processor_lower = processor_name;
+    std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
+    
+    // Check for Ryzen AI 300-series pattern: "ryzen ai" followed by a 3-digit number starting with 3
+    // Pattern: ryzen ai.*\b3\d{2}\b
+    std::regex pattern(R"(ryzen ai.*\b3\d{2}\b)", std::regex::icase);
+    
+    return std::regex_search(processor_lower, pattern);
+}
+
 NPUInfo WindowsSystemInfo::get_npu_device() {
     NPUInfo npu;
     npu.name = "AMD NPU";
     npu.available = false;
     
+    // First, check if the processor is a supported Ryzen AI processor
+    if (!is_supported_ryzen_ai_processor()) {
+        npu.error = "NPU requires AMD Ryzen AI 300-series processor";
+        return npu;
+    }
+    
     // Check for NPU driver
     std::string driver_version = get_driver_version("NPU Compute Accelerator Device");
     if (!driver_version.empty()) {
-        npu.driver_version = driver_version;
         npu.power_mode = get_npu_power_mode();
         npu.available = true;
         

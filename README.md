@@ -135,6 +135,15 @@ Lemonade supports the following configurations, while also making it easy to swi
 </table>
 </details>
 
+## Project Roadmap
+
+| Under Development                       | Under Consideration                            | Recently Completed        |
+|-----------------------------------------|------------------------------------------------|---------------------------|
+| Electron desktop app (replacing web ui) | General speech-to-text support (whisper.cpp)   | Rewrite the server in C++ |
+| Multiple models loaded at the same time | vLLM integration                               | .msi and .deb installers  |
+| FastFlowLM speech-to-text               | Handheld devices: Ryzen AI Z2 Extreme APUs     | Ryzen AI SW 1.6           |
+|                                         | ROCm support for Ryzen AI 360-375 (Strix) APUs | FastFlowLM integration    |
+
 ## Integrate Lemonade Server with Your Application
 
 You can use any OpenAI-compatible client library by configuring it to use `http://localhost:8000/api/v1` as the base URL. A table containing official and popular OpenAI clients on different languages is shown below.

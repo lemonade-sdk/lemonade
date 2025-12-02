@@ -3,6 +3,8 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <chrono>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -46,15 +48,64 @@ struct Telemetry {
 class WrappedServer : public ICompletionServer {
 public:
     WrappedServer(const std::string& server_name, const std::string& log_level = "info", ModelManager* model_manager = nullptr)
-        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level), model_manager_(model_manager) {}
+        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level), 
+          model_manager_(model_manager), last_access_time_(std::chrono::steady_clock::now()),
+          is_busy_(false) {}
     
     virtual ~WrappedServer() = default;
+
+    // Timeout for inference requests (0 = infinite)
+    static constexpr long INFERENCE_TIMEOUT_SECONDS = 0;
     
     // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
     
     // Check if debug logging is enabled
     bool is_debug() const { return log_level_ == "debug" || log_level_ == "trace"; }
+    
+    // Multi-model support: Track last access time (for LRU eviction)
+    void update_access_time() { 
+        last_access_time_ = std::chrono::steady_clock::now(); 
+    }
+    
+    std::chrono::steady_clock::time_point get_last_access_time() const { 
+        return last_access_time_; 
+    }
+    
+    // Multi-model support: Track if server is currently processing a request
+    void set_busy(bool busy) {
+        std::lock_guard<std::mutex> lock(busy_mutex_);
+        is_busy_ = busy;
+        if (!busy) {
+            busy_cv_.notify_all();
+        }
+    }
+    
+    bool is_busy() const {
+        std::lock_guard<std::mutex> lock(busy_mutex_);
+        return is_busy_;
+    }
+    
+    void wait_until_not_busy() const {
+        std::unique_lock<std::mutex> lock(busy_mutex_);
+        while (is_busy_) {
+            busy_cv_.wait(lock);
+        }
+    }
+    
+    // Multi-model support: Model metadata
+    void set_model_metadata(const std::string& model_name, const std::string& checkpoint, 
+                           ModelType type, DeviceType device) {
+        model_name_ = model_name;
+        checkpoint_ = checkpoint;
+        model_type_ = type;
+        device_type_ = device;
+    }
+    
+    std::string get_model_name() const { return model_name_; }
+    std::string get_checkpoint() const { return checkpoint_; }
+    ModelType get_model_type() const { return model_type_; }
+    DeviceType get_device_type() const { return device_type_; }
     
     // Install the backend server
     virtual void install(const std::string& backend = "") = 0;
@@ -68,7 +119,9 @@ public:
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,
                      int ctx_size,
-                     bool do_not_upgrade = false) = 0;
+                     bool do_not_upgrade = false,
+                     const std::string& llamacpp_backend = "vulkan",
+                     const std::string& llamacpp_args = "") = 0;
     
     // Unload the model and stop the server
     virtual void unload() = 0;
@@ -79,9 +132,10 @@ public:
     virtual json responses(const json& request) = 0;
     
     // Forward streaming requests to the wrapped server (public for Router access)
-    void forward_streaming_request(const std::string& endpoint, 
-                                   const std::string& request_body,
-                                   httplib::DataSink& sink);
+    // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
+    virtual void forward_streaming_request(const std::string& endpoint, 
+                                           const std::string& request_body,
+                                           httplib::DataSink& sink);
     
     // Get the server address
     std::string get_address() const {
@@ -113,7 +167,7 @@ protected:
     virtual bool wait_for_ready();
     
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request);
+    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = INFERENCE_TIMEOUT_SECONDS);
     
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
@@ -129,6 +183,18 @@ protected:
     Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
+    
+    // Multi-model support fields
+    std::string model_name_;
+    std::string checkpoint_;
+    ModelType model_type_ = ModelType::LLM;
+    DeviceType device_type_ = DEVICE_NONE;
+    std::chrono::steady_clock::time_point last_access_time_;
+    
+    // Busy state tracking (for safe eviction)
+    mutable std::mutex busy_mutex_;
+    mutable std::condition_variable busy_cv_;
+    bool is_busy_;
 };
 
 } // namespace lemon

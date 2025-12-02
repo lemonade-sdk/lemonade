@@ -36,38 +36,61 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Miniconda with 64-bit Python
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          miniconda-version: "latest"
-          activate-environment: lemon
           python-version: ${{ matrix.python-version }}
-          run-post: "false"
-      - name: Install dependencies
-        shell: bash -el {0}
+      - name: Create virtual environment and install dependencies
+        shell: bash
         run: |
+          python -m venv .venv
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python -m pip install --upgrade pip
           python -m pip check
           pip install -e .[dev,oga-cpu]
           lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
           lemonade-server-dev pull Llama-3.2-1B-Instruct-CPU
       - name: Run server tests (unit tests)
-        shell: bash -el {0}
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python test/server_unit.py
       - name: Run Model Manager Tests
-        shell: bash -el {0}
+        shell: bash
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python test/model_manager.py
       - name: Run server tests (network online mode)
-        shell: bash -el {0}
+        shell: bash
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python test/server.py
       - name: Run server tests (offline mode)
-        shell: bash -el {0}
+        shell: bash
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python test/server.py --offline
 
 # This file was originally licensed under Apache 2.0. It has been modified.

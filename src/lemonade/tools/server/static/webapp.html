@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lemonade Server</title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script>
+    window.SERVER_PORT = {{SERVER_PORT}};
+    </script>
+    {{SERVER_MODELS_JS}}
+    {{PLATFORM_JS}}
+</head>
+<body>
+    <nav class="navbar" id="navbar">
+        <div class="navbar-brand">
+            <span class="brand-title"><a href="https://lemonade-server.ai"><img src="/favicon.ico" alt="🍋" class="brand-icon"> Lemonade Server</a></span>
+        </div>  
+        <div class="navbar-links">
+            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a>
+            <a href="https://lemonade-server.ai/docs/" target="_blank">Docs</a>
+            <a href="https://lemonade-server.ai/docs/server/server_models/" target="_blank">Models</a>
+            <a href="https://lemonade-server.ai/docs/server/apps/" target="_blank">Featured Apps</a>
+            <a href="https://lemonade-server.ai/news/" target="_blank">News</a>
+        </div>
+    </nav>
+    <div id="error-banner" class="error-banner" style="display:none;">
+        <span id="error-banner-msg"></span>
+        <button class="close-btn" onclick="hideErrorBanner()">&times;</button>
+    </div>
+    <div id="migration-banner" class="migration-banner" style="display:none;">
+        <span id="migration-banner-msg"></span>
+        <button class="migration-action-btn" onclick="showMigrationModal()">Clean Up Now</button>
+        <button class="close-btn" onclick="hideMigrationBanner()">&times;</button>
+    </div>
+    <main class="main">
+        <div class="tab-content-wrapper">
+        <div class="tab-container"> 
+            <div class="tabs"> 
+                <div class="tab-group">
+					<button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button>
+					<button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
+					<button class="tab" id="tab-models" onclick="showTab('models')">Model Management</button>
+				</div>
+
+				<div class="model-status-indicator" id="model-status-indicator">
+					<div class="model-select-wrapper">
+						<div class="status-light" id="status-light"></div>
+						<select id="model-select" class="model-select">
+							<option value="">Pick a model</option>
+						</select>
+					</div>
+					<button class="model-action-btn" id="model-unload-btn" title="Unload model" style="display: flex;">⏏</button>
+                    <!-- Dropdown -->
+                    <div class="dropdown">
+                        <button class="dropbtn" aria-label="Dropdown" style="display: flex;">🛠️</button>
+                        <div class="dropdown-content">
+                            <a href="/static/logs.html" target="_blank">View Logs</a>
+                        </div>
+                    </div>
+				</div>
+			</div>            
+            <div class="tab-content active" id="content-chat">
+                <div class="chat-container">
+                    <div class="chat-history" id="chat-history" style="overflow-y: auto;"></div>
+                    <div class="chat-input-row">
+                        <div class="input-with-indicator">
+                            <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea> 
+                        </div>
+                        <input type="file" id="file-attachment" style="display: none;" multiple accept="image/*">
+                        <button id="attachment-btn" title="Attach files">&#x1F4CE;</button>
+                        <button id="toggle-btn" title="Start">Start</button>
+                    </div>
+                    <div class="attachments-preview-container" id="attachments-preview-container">
+                        <div class="attachments-preview-row" id="attachments-preview-row"></div>
+                    </div> 
+                </div>
+                <!-- App Suggestions Section -->
+                <div class="app-suggestions-section">
+                    <div class="suggestion-text">
+                        Use Lemonade with your favorite app
+                    </div>
+                    <div class="app-logos-grid">
+                        <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" target="_blank" class="app-logo-item" title="Open WebUI">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" class="app-logo-img">
+                            <span class="app-name">Open WebUI</span>
+                        </a>
+                        <a href="https://lemonade-server.ai/docs/server/apps/continue/" target="_blank" class="app-logo-item" title="Continue">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png" alt="Continue" class="app-logo-img">
+                            <span class="app-name">Continue</span>
+                        </a>
+                        <a href="https://github.com/amd/gaia" target="_blank" class="app-logo-item" title="Gaia">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico" alt="Gaia" class="app-logo-img">
+                            <span class="app-name">Gaia</span>
+                        </a>
+                        <a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" target="_blank" class="app-logo-item" title="AnythingLLM">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png" alt="AnythingLLM" class="app-logo-img">
+                            <span class="app-name">AnythingLLM</span>
+                        </a>
+                        <a href="https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/" target="_blank" class="app-logo-item" title="AI Dev Gallery">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp" alt="AI Dev Gallery" class="app-logo-img">
+                            <span class="app-name">AI Dev Gallery</span>
+                        </a>
+                        <a href="https://lemonade-server.ai/docs/server/apps/lm-eval/" target="_blank" class="app-logo-item" title="LM-Eval">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" class="app-logo-img">
+                            <span class="app-name">LM-Eval</span>
+                        </a>
+                        <a href="https://github.com/lemonade-sdk/lemonade-arcade" target="_blank" class="app-logo-item" title="Lemonade Arcade">
+                            <img src="https://raw.githubusercontent.com/lemonade-sdk/lemonade-arcade/refs/heads/main/docs/assets/favicon.ico" alt="Lemonade Arcade" class="app-logo-img">
+                            <span class="app-name">Lemonade Arcade</span>
+                        </a>
+                    <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/apps/ai-toolkit.md" target="_blank" class="app-logo-item" title="AI Toolkit">
+                        <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" class="app-logo-img">
+                        <span class="app-name">AI Toolkit</span>
+                    </a>
+                    </div>
+                </div>
+            </div> 
+            <div class="tab-content" id="content-settings">
+                <div class="model-settings-container">
+                    <div class="settings-form">
+                        <div class="setting-row">
+                            <label for="setting-temperature">Temperature:</label>
+                            <input type="number" id="setting-temperature" min="0" max="2" step="0.1" placeholder="default" />
+                            <span class="setting-description">Controls randomness in responses (0 = deterministic, 2 = very random)</span>
+                        </div>
+                        <div class="setting-row">
+                            <label for="setting-top-k">Top K:</label>
+                            <input type="number" id="setting-top-k" min="1" max="100" step="1" placeholder="default" />
+                            <span class="setting-description">Limits token selection to top K most likely tokens</span>
+                        </div>
+                        <div class="setting-row">
+                            <label for="setting-top-p">Top P:</label>
+                            <input type="number" id="setting-top-p" min="0" max="1" step="0.01" placeholder="default" />
+                            <span class="setting-description">Nucleus sampling - considers tokens with cumulative probability up to P</span>
+                        </div>
+                        <div class="setting-row">
+                            <label for="setting-repeat-penalty">Repeat Penalty:</label>
+                            <input type="number" id="setting-repeat-penalty" min="0.5" max="2" step="0.05" placeholder="default" />
+                            <span class="setting-description">Penalty for repeating tokens (1 = no penalty, >1 = less repetition)</span>
+                        </div>
+                       <div class="setting-field">
+                         <label for="enable-thinking">Enable Thinking:</label> 
+                         <input type="checkbox" id="enable-thinking"> 
+                         <br>
+                            <span class="setting-description">Determines whether hybrid reasoning models, such as Qwen3, will use thinking.</span> 
+                        </div>
+                        <div class="setting-actions">
+                            <button id="reset-settings-btn" class="reset-btn">Reset to Defaults</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content" id="content-models">
+                <div class="model-browser-container">
+                    <div class="model-browser-sidebar">
+                        <div class="model-category" data-category="hot">
+                            <div class="category-header active" onclick="toggleCategory('hot')">
+                                <span class="category-icon">🔥</span>
+                                <span class="category-name">Hot Models</span>
+                            </div>
+                            <div class="category-content expanded" id="category-hot"></div>
+                        </div>
+                        <div class="model-category-section">
+                            <div class="section-header">
+                                <span class="section-icon">🔧</span>
+                                <span class="section-name">By Recipe</span>
+                            </div>
+                            <div class="section-content">
+                                <div class="subcategory" data-recipe="llamacpp" onclick="selectRecipe('llamacpp')">llama.cpp</div>
+                                <div class="subcategory" data-recipe="oga-hybrid" onclick="selectRecipe('oga-hybrid')">OGA Hybrid</div>
+                                <div class="subcategory" data-recipe="oga-npu" onclick="selectRecipe('oga-npu')">OGA NPU</div>
+                                <div class="subcategory" data-recipe="oga-cpu" onclick="selectRecipe('oga-cpu')">OGA CPU</div>
+                                <div class="subcategory" data-recipe="flm" onclick="selectRecipe('flm')">FastFlowLM NPU</div>
+                            </div>
+                        </div>
+                        <div class="model-category-section">
+                            <div class="section-header">
+                                <span class="section-icon">🏷️</span>
+                                <span class="section-name">By Category</span>
+                            </div>
+                            <div class="section-content">
+                                <div class="subcategory" data-label="coding" onclick="selectLabel('coding')">Coding</div>
+                                <div class="subcategory" data-label="vision" onclick="selectLabel('vision')">Vision</div>
+                                <div class="subcategory" data-label="reasoning" onclick="selectLabel('reasoning')">Reasoning</div>
+                                <div class="subcategory" data-label="tool-calling" onclick="selectLabel('tool-calling')">Tool Calling</div>
+                                <div class="subcategory" data-label="reranking" onclick="selectLabel('reranking')">Reranking</div>
+                                <div class="subcategory" data-label="embeddings" onclick="selectLabel('embeddings')">Embeddings</div>
+                                <div class="subcategory" data-label="custom" onclick="selectLabel('custom')">Custom</div>
+                            </div>
+                        </div>
+                        <div class="model-category" data-category="add">
+                            <div class="category-header" onclick="showAddModelForm()">
+                                <span class="category-icon">➕</span>
+                                <span class="category-name">Add a Model</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="model-browser-main">
+                        <div class="model-list" id="model-list"></div>
+                        
+                        <!-- Add Model Form (hidden by default) -->
+                        <div class="add-model-form-main" id="add-model-form-main" style="display: none;">
+                            <form id="register-model-form" autocomplete="off" class="form-content">
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Model Name
+                                        <span class="tooltip-icon" data-tooltip="Enter a unique short name for your model. This is how the model will be referenced by Lemonade Server and connected apps. It will be prefixed with 'user.' to distinguish it from the built-in models.">ⓘ</span>
+                                    </label>
+                                    <div class="register-model-name-group">
+                                        <span class="register-model-prefix styled-prefix">user.</span>
+                                        <input type="text" id="register-model-name" name="model_name" placeholder="Gemma-3-12b-it-GGUF" required autocomplete="off">
+                                    </div>
+                                </div>
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Checkpoint
+                                        <span class="tooltip-icon" data-tooltip="Specify the model checkpoint path from Hugging Face (e.g., org-name/model-name:variant).">ⓘ</span>
+                                    </label>
+                                    <div class="checkpoint-input-group">
+                                    <input type="text" id="register-checkpoint" name="checkpoint" placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0" class="register-textbox" autocomplete="off">
+                                    <button type="button" id="select-folder-btn" class="folder-select-btn" title="Select local folder">📁</button>
+                                    </div>
+                                    <input type="file" id="folder-input" webkitdirectory directory style="display: none;">
+                                </div>
+                                <div class="register-form-row">
+                                    <label class="register-label">
+                                        Recipe
+                                        <span class="tooltip-icon" data-tooltip="Select the Lemonade recipe corresponding to the inference engine and device Lemonade Server should use for the model. Use llamacpp for GGUF models. For OGA/ONNX models, click the More Info button to learn about the oga-* recipes.">ⓘ</span>
+                                    </label>
+                                    <select id="register-recipe" name="recipe" required>
+                                        <option value="llamacpp">llamacpp</option>
+                                        <option value="flm">flm</option>
+                                        <option value="oga-npu">oga-npu</option>
+                                        <option value="oga-hybrid">oga-hybrid</option>
+                                        <option value="oga-cpu">oga-cpu</option>
+                                    </select>
+                                    <a href="https://lemonade-server.ai/docs/lemonade_api/" target="_blank" class="register-doc-link">More info</a>
+                                </div>
+                                <div class="register-form-row register-form-row-tight">
+                                    <label class="register-label">
+                                        mmproj file
+                                        <span class="tooltip-icon" data-tooltip="Specify an mmproj file from the same Hugging Face checkpoint as the model. This is used for multimodal models, such as VLMs. Leave empty if not needed.">ⓘ</span>
+                                    </label>
+                                    <input type="text" id="register-mmproj" name="mmproj" placeholder="(Optional) mmproj-F16.gguf" autocomplete="off">
+                                </div>
+                                <div class="register-form-row register-form-row-tight register-checkboxes-row">
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-reasoning" name="reasoning">
+                                        Reasoning
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has reasoning capabilities that will use thinking tokens.">ⓘ</span>
+                                    </label>
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-vision" name="vision">
+                                        Vision
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model has vision capabilities for processing images.">ⓘ</span>
+                                    </label>
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-embedding" name="embedding">
+                                        Embedding
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model is an embedding model for use with the /api/v1/embeddings endpoint.">ⓘ</span>
+                                    </label>
+                                    <label class="register-label reasoning-inline">
+                                        <input type="checkbox" id="register-reranking" name="reranking">
+                                        Reranking
+                                        <span class="tooltip-icon" data-tooltip="Enable to inform Lemonade Server that the model is a reranking model for use with the /api/v1/reranking endpoint.">ⓘ</span>
+                                    </label>
+                                </div>
+                                <div class="register-form-row register-form-row-tight">
+                                    <button type="submit" id="register-submit">Install</button>
+                                    <span id="register-model-status" class="register-status"></span>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div> 
+            </div>
+        </div> 
+    </main>
+    <footer class="site-footer">
+        <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
+        <div class="copyright">Copyright 2025 AMD</div>
+    </footer>
+    
+    <!-- External libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/openai@6.7.0/dist/openai.min.js"></script> 
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.0/marked.min.js"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <!-- Migration Cleanup Modal -->
+    <div id="migration-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Clean Up Incompatible Models</h2>
+                <button class="modal-close" onclick="hideMigrationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>The following RyzenAI models are incompatible with RyzenAI 1.6 and can be safely deleted:</p>
+                <p class="migration-instructions">
+                    After deleting, you can re-download compatible Ryzen AI 1.6 models from the <em>OGA NPU</em> and <em>OGA Hybrid</em> tabs.</p>
+                <div id="migration-model-list" class="migration-model-list"></div>
+                <div class="migration-summary">
+                    <strong>Total space to free: <span id="migration-total-size"></span></strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" onclick="hideMigrationModal()">Cancel</button>
+                <button class="delete-btn" onclick="deleteIncompatibleModels()">Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application JavaScript -->
+    <script src="/static/js/shared.js"></script>
+    <script src="/static/js/models.js"></script>
+    <script src="/static/js/model-settings.js"></script>
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
