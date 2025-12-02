@@ -110,7 +110,7 @@ Results in:
 
 And then `wut` provides some helpful feedback:
 
-> Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. The output wut is the name of the activated Conda environment. To create a pull request, use git request-pull or git pull with the --pr option. 
+> Key takeaway: The command git pull-request is not a valid Git command. The correct command to create a pull request is git request-pull, but it's not a standard Git command. To create a pull request, use git request-pull or git pull with the --pr option. 
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

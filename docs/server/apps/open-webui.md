@@ -17,11 +17,9 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 ## Installing Open WebUI
 
-1. We recommend installing Open WebUI into a dedicated conda environment using the following commands. To download conda, see [Miniforge](https://conda-forge.org/download/).
+1. We recommend installing Open WebUI into a dedicated Python environment using the following commands:
 
     ```bash
-    conda create -n webui python=3.11
-    conda activate webui
     pip install open-webui
     ```
 

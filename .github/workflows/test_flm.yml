@@ -26,10 +26,7 @@ jobs:
   test-flm-npu:
     env:
         LEMONADE_CI_MODE: "True"
-        CONDA_ENV_PATH: ./lemon-ci-env
-        LEMONADE_CACHE_DIR: ".\\ci-cache"
         PYTHONIOENCODING: utf-8
-
     runs-on: [stx, Windows]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,32 +41,29 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
       
-      - name: Create conda environment
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # Keep conda up-to-date since they can apparently break things on the server side
-          # We can probably remove this in the future
-          conda update conda conda-libmamba-solver --solver classic
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda create -p $env:CONDA_ENV_PATH python=3.12 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
           
       - name: Install dependencies
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip install --upgrade pip
+          $venvPython = ".\.venv\Scripts\python.exe"
+          $venvPip = ".\.venv\Scripts\pip.exe"
+          
+          & $venvPython -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH conda install -y pylint
+          & $venvPip install pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip check
+          & $venvPython -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip install -e .[dev]
+          & $venvPip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -99,19 +93,28 @@ jobs:
       - name: Run FLM NPU tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_flm.py
+          $venvPython = ".\.venv\Scripts\python.exe"
+          
+          & $venvPython test/server_flm.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run lemonade FLM CLI tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
 
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i llama3.2:1b flm-load llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i llama3.2:1b flm-load flm-bench -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
-
+          $venvActivate = ".\.venv\Scripts\Activate.ps1"
+          $venvLemonade = ".\.venv\Scripts\lemonade.exe"
+          
+          & $venvActivate
+          $venvLemonade -i llama3.2:1b -d .\ci-cache flm-load llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $venvLemonade -i llama3.2:1b -d .\ci-cache flm-load flm-bench -w 0 -i 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

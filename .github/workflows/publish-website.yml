@@ -15,36 +15,32 @@ jobs:
         - uses: actions/checkout@main
           with:
             fetch-depth: 0
-        - uses: conda-incubator/setup-miniconda@v3
+        - name: Set up Python
+          uses: actions/setup-python@v5
           with:
-            miniconda-version: "latest"
-            activate-environment: lemon
             python-version: "3.10"
-        - name: Install dependencies
-          shell: bash -el {0}
+        - name: Create virtual environment and install dependencies
           run: |
+            python -m venv .venv
+            source .venv/bin/activate
             python -m pip install --upgrade pip
             pip install -r docs/assets/mkdocs_requirements.txt
         - name: Configure git
-          shell: bash -el {0}
           run: |
             git config --global user.name "Lemonade Bot"
             git config --global user.email "lemonade@amd.com"
         - name: Capture main branch commit hash
-          shell: bash -el {0}
           run: |
             echo "MAIN_COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
         - name: Merge into website branch
-          shell: bash -el {0}
           run: |
             git checkout website
             git merge origin/main -X theirs
         - name: Run mkdocs update script
-          shell: bash -el {0}
           run: |
+            source .venv/bin/activate
             python docs/publish_website_docs.py
         - name: Push updates
-          shell: bash -el {0}
           run: |
             git add .
             if git diff --staged --quiet; then
