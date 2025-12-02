@@ -386,15 +386,14 @@ void LlamaCppServer::install(const std::string& backend) {
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
         std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
         
-        // Download the file with throttled progress updates (once per second)
-        bool download_success = utils::HttpClient::download_file(
+        auto result = utils::HttpClient::download_file(
             url, 
             zip_path, 
             utils::create_throttled_progress_callback()
         );
         
-        if (!download_success) {
-            throw std::runtime_error("Failed to download llama-server from: " + url);
+        if (!result.success) {
+            throw std::runtime_error("Failed to download llama-server: " + result.error_message);
         }
         
         std::cout << std::endl << "[LlamaCpp] Download complete!" << std::endl;

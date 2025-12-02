@@ -4,11 +4,27 @@
 #include <map>
 #include <vector>
 #include <mutex>
+#include <functional>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+// Progress information for download operations
+struct DownloadProgress {
+    std::string file;           // Current file being downloaded
+    int file_index = 0;         // Current file index (1-based)
+    int total_files = 0;        // Total number of files to download
+    size_t bytes_downloaded = 0; // Bytes downloaded for current file
+    size_t bytes_total = 0;     // Total bytes for current file
+    int percent = 0;            // Overall percentage (0-100)
+    bool complete = false;      // True when all downloads finished
+    std::string error;          // Error message if failed
+};
+
+// Callback for download progress updates
+using DownloadProgressCallback = std::function<void(const DownloadProgress&)>;
 
 struct ModelInfo {
     std::string model_name;
@@ -57,7 +73,8 @@ public:
                        bool embedding = false,
                        bool reranking = false,
                        const std::string& mmproj = "",
-                       bool do_not_upgrade = false);
+                       bool do_not_upgrade = false,
+                       DownloadProgressCallback progress_callback = nullptr);
     
     // Delete a model
     void delete_model(const std::string& model_name);
@@ -101,7 +118,8 @@ private:
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id, 
                                    const std::string& variant = "",
-                                   const std::string& mmproj = "");
+                                   const std::string& mmproj = "",
+                                   DownloadProgressCallback progress_callback = nullptr);
     
     // Download from FLM
     void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);

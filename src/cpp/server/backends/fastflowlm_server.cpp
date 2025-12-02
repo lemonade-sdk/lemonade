@@ -502,19 +502,19 @@ bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {
     
     std::cout << "[FastFlowLM] Downloading FLM installer..." << std::endl;
     
-    // Use existing HttpClient::download_file() with progress callback
     auto progress_callback = utils::create_throttled_progress_callback();
     
-    bool success = utils::HttpClient::download_file(url, output_path, progress_callback);
+    auto result = utils::HttpClient::download_file(url, output_path, progress_callback);
     
-    if (success) {
+    if (result.success) {
         std::cout << "\n[FastFlowLM] Downloaded installer to " 
                   << output_path << std::endl;
     } else {
-        std::cerr << "[FastFlowLM ERROR] Failed to download installer" << std::endl;
+        std::cerr << "[FastFlowLM ERROR] Failed to download installer: " 
+                  << result.error_message << std::endl;
     }
     
-    return success;
+    return result.success;
 }
 
 void FastFlowLMServer::run_flm_installer(const std::string& installer_path, bool silent) {

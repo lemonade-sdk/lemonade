@@ -144,15 +144,15 @@ void RyzenAIServer::download_and_install() {
     // Download the ZIP file with throttled progress updates (once per second)
     // No authentication needed for public releases
     std::map<std::string, std::string> headers;
-    bool download_success = utils::HttpClient::download_file(
+    auto download_result = utils::HttpClient::download_file(
         url, 
         zip_path,
         utils::create_throttled_progress_callback(),
         headers
     );
     
-    if (!download_success) {
-        std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server from GitHub release" << std::endl;
+    if (!download_result.success) {
+        std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server: " << download_result.error_message << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Possible causes:" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR]   - No internet connection or GitHub is down" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR]   - No release has been published yet" << std::endl;

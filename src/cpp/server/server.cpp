@@ -1102,6 +1102,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool reranking = request_json.value("reranking", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
+        bool stream = request_json.value("stream", false);
         
         std::cout << "[Server] Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
@@ -1111,11 +1112,63 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             std::cout << "[Server]   recipe: " << recipe << std::endl;
         }
         
-        model_manager_->download_model(model_name, checkpoint, recipe, 
-                                      reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
-        
-        nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
-        res.set_content(response.dump(), "application/json");
+        if (stream) {
+            // SSE streaming mode - send progress events
+            res.set_header("Content-Type", "text/event-stream");
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+            
+            res.set_chunked_content_provider(
+                "text/event-stream",
+                [this, model_name, checkpoint, recipe, reasoning, vision, 
+                 embedding, reranking, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                    if (offset > 0) {
+                        return false; // Already sent everything
+                    }
+                    
+                    try {
+                        // Create progress callback that emits SSE events
+                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) {
+                            nlohmann::json event_data;
+                            event_data["file"] = p.file;
+                            event_data["file_index"] = p.file_index;
+                            event_data["total_files"] = p.total_files;
+                            // Explicitly cast to uint64_t for proper JSON serialization
+                            event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
+                            event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
+                            event_data["percent"] = p.percent;
+                            
+                            if (p.complete) {
+                                std::string event = "event: complete\ndata: " + event_data.dump() + "\n\n";
+                                sink.write(event.c_str(), event.size());
+                            } else {
+                                std::string event = "event: progress\ndata: " + event_data.dump() + "\n\n";
+                                sink.write(event.c_str(), event.size());
+                            }
+                        };
+                        
+                        model_manager_->download_model(model_name, checkpoint, recipe,
+                                                      reasoning, vision, embedding, reranking, 
+                                                      mmproj, do_not_upgrade, progress_cb);
+                        
+                    } catch (const std::exception& e) {
+                        // Send error event
+                        nlohmann::json error_data = {{"error", e.what()}};
+                        std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                        sink.write(event.c_str(), event.size());
+                    }
+                    
+                    return false; // Signal completion
+                });
+        } else {
+            // Legacy synchronous mode - blocks until complete
+            model_manager_->download_model(model_name, checkpoint, recipe, 
+                                          reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
+            
+            nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
+            res.set_content(response.dump(), "application/json");
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_pull: " << e.what() << std::endl;

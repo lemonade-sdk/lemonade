@@ -615,6 +615,12 @@ Register and install models for use with Lemonade Server.
 
 The Lemonade Server built-in model registry has a collection of model names that can be pulled and loaded. The `pull` endpoint can install any registered model, and it can also register-then-install any model available on Hugging Face.
 
+**Common Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `stream` | No | If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to `false`. |
+
 **Install a Model that is Already Registered**
 
 | Parameter | Required | Description |
@@ -683,6 +689,29 @@ Response format:
 ```
 
 In case of an error, the status will be `error` and the message will contain the error message.
+
+#### Streaming Response (stream=true)
+
+When `stream=true`, the endpoint returns Server-Sent Events with real-time download progress:
+
+```
+event: progress
+data: {"file":"model.gguf","file_index":1,"total_files":2,"bytes_downloaded":1073741824,"bytes_total":2684354560,"percent":40}
+
+event: progress
+data: {"file":"config.json","file_index":2,"total_files":2,"bytes_downloaded":1024,"bytes_total":1024,"percent":100}
+
+event: complete
+data: {"file_index":2,"total_files":2,"percent":100}
+```
+
+**Event Types:**
+
+| Event | Description |
+|-------|-------------|
+| `progress` | Sent during download with current file and byte progress |
+| `complete` | Sent when all files are downloaded successfully |
+| `error` | Sent if download fails, with `error` field containing the message |
 
 ### `POST /api/v1/delete` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
