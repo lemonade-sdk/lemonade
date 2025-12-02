@@ -311,11 +311,11 @@ bool ServerManager::load_model(const std::string& model_name) {
     try {
         std::string body = "{\"model_name\": \"" + model_name + "\"}";
         
-        // Model loading can take a long time, so use extended timeout (240 seconds = 4 minutes)
-        DEBUG_LOG(this, "Loading model with extended timeout...");
+        // 24 hour timeout - models can be 100GB+ and downloads may need many retries
+        DEBUG_LOG(this, "Loading model...");
         DEBUG_LOG(this, "Request body: " << body);
         
-        std::string response = make_http_request("/api/v1/load", "POST", body, 240);
+        std::string response = make_http_request("/api/v1/load", "POST", body, 86400);
         DEBUG_LOG(this, "Load request succeeded");
         return true;
     } catch (const std::exception& e) {
@@ -772,7 +772,32 @@ std::string ServerManager::make_http_request(
     
     if (!res) {
         auto err = res.error();
-        throw std::runtime_error("HTTP request failed: connection error");
+        std::string error_msg;
+        switch (err) {
+            case httplib::Error::Read:
+                // Read error usually means server closed connection (shutdown, Ctrl+C, etc.)
+                error_msg = "Server connection closed (server may have shut down)";
+                break;
+            case httplib::Error::Write:
+                error_msg = "Connection write error";
+                break;
+            case httplib::Error::Connection:
+                error_msg = "Failed to connect to server at " + connect_host + ":" + std::to_string(port_);
+                break;
+            case httplib::Error::SSLConnection:
+                error_msg = "SSL connection error";
+                break;
+            case httplib::Error::SSLServerVerification:
+                error_msg = "SSL server verification failed";
+                break;
+            case httplib::Error::Canceled:
+                error_msg = "Request was canceled";
+                break;
+            default:
+                error_msg = "HTTP request failed (error code: " + std::to_string(static_cast<int>(err)) + ")";
+                break;
+        }
+        throw std::runtime_error(error_msg);
     }
     
     if (res->status != 200) {
