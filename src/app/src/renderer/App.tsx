@@ -7,8 +7,6 @@ import CenterPanel from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import '../../styles.css';
 
-const API_URL = 'http://localhost:5000';
-
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
   mainContentMinWidth: 300,
@@ -18,10 +16,6 @@ const LAYOUT_CONSTANTS = {
 };
 
 const App: React.FC = () => {
-  const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'error'>('checking');
-  const [statusText, setStatusText] = useState('Checking connection...');
-  const [responseData, setResponseData] = useState('');
-  const [showResponse, setShowResponse] = useState(false);
   const [isChatVisible, setIsChatVisible] = useState(true);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(true);
   const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(true);
@@ -35,42 +29,6 @@ const App: React.FC = () => {
   const startYRef = useRef(0);
   const startWidthRef = useRef(0);
   const startHeightRef = useRef(0);
-
-  const checkBackendStatus = async () => {
-    try {
-      const response = await fetch(`${API_URL}/health`);
-      const data = await response.json();
-      
-      if (data.status === 'ok') {
-        setBackendStatus('connected');
-        setStatusText('Connected to TypeScript backend');
-      }
-    } catch (error) {
-      setBackendStatus('error');
-      setStatusText('Backend connection failed');
-      console.error('Backend health check failed:', error);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    setShowResponse(true);
-    setResponseData('Connecting to backend...');
-    
-    try {
-      const response = await fetch(`${API_URL}/api/test`);
-      const data = await response.json();
-      
-      setResponseData(JSON.stringify(data, null, 2));
-    } catch (error: any) {
-      setResponseData(`Error: ${error.message}`);
-      console.error('API test failed:', error);
-    }
-  };
-
-  useEffect(() => {
-    // Give backend a moment to fully start
-    setTimeout(checkBackendStatus, 1500);
-  }, []);
 
   // Load saved layout settings on mount
   useEffect(() => {

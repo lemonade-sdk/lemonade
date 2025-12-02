@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn } = require('child_process');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -12,7 +11,6 @@ const MAX_ZOOM_LEVEL = 3;
 const ZOOM_STEP = 0.2;
 
 let mainWindow;
-let backendProcess;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
 let userModelsWatcher = null;
 const userModelsSubscribers = new Set();
@@ -520,57 +518,9 @@ function createWindow() {
   });
 }
 
-function startTypeScriptBackend() {
-  // Determine the server script path and Node executable
-  let serverScriptPath;
-  let nodeExecutable = 'node';
-  
-  if (app.isPackaged) {
-    // In production, compiled backend is in resources
-    serverScriptPath = path.join(process.resourcesPath, 'dist', 'backend', 'server.js');
-    console.log('Starting TypeScript backend from:', serverScriptPath);
-  } else {
-    // In development, use the compiled version in dist
-    serverScriptPath = path.join(__dirname, 'dist', 'backend', 'server.js');
-    console.log('Starting TypeScript backend from:', serverScriptPath);
-  }
-
-  // Start Node process
-  backendProcess = spawn(nodeExecutable, [serverScriptPath], {
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-
-  backendProcess.stdout.on('data', (data) => {
-    console.log(`Backend: ${data.toString()}`);
-  });
-
-  backendProcess.stderr.on('data', (data) => {
-    console.error(`Backend Error: ${data.toString()}`);
-  });
-
-  backendProcess.on('error', (error) => {
-    console.error('Failed to start backend process:', error);
-  });
-
-  backendProcess.on('close', (code) => {
-    console.log(`Backend process exited with code ${code}`);
-    if (code !== 0 && code !== null) {
-      console.error('Backend exited unexpectedly');
-    }
-  });
-}
-
-function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill();
-    backendProcess = null;
-  }
-}
 
 app.on('ready', () => {
-  startTypeScriptBackend();
-  // Give backend a moment to start
-  setTimeout(createWindow, 1000);
+  createWindow();
   
   // Window control handlers
   ipcMain.on('minimize-window', () => {
@@ -610,7 +560,6 @@ app.on('ready', () => {
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') {
-    stopBackend();
     app.quit();
   }
 });
@@ -621,7 +570,4 @@ app.on('activate', function () {
   }
 });
 
-app.on('before-quit', () => {
-  stopBackend();
-});
 
