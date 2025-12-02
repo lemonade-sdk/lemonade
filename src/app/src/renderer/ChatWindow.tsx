@@ -1021,6 +1021,7 @@ const sendMessage = async () => {
                             strokeWidth="2"
                             strokeLinecap="round"
                             strokeLinejoin="round"
+                            transform="translate(-1, 1)"
                           />
                         </svg>
                       </button>
@@ -1157,6 +1158,7 @@ const sendMessage = async () => {
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    transform="translate(-1, 1)"
                   />
                 </svg>
               </button>
