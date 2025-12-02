@@ -55,7 +55,6 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
           $venvPip = ".\.venv\Scripts\pip.exe"
           
@@ -86,13 +85,11 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
-          $venvActivate = ".\.venv\Scripts\Activate.ps1"
+          $venvLemonade = ".\.venv\Scripts\lemonade.exe"
 
           # Test CLI
-          & $venvActivate
-          lemonade -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          & $venvLemonade -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-npu -d .\ci-cache oga-load --device npu --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs
@@ -108,13 +105,11 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
-          $venvActivate = ".\.venv\Scripts\Activate.ps1"
+          $venvLemonade = ".\.venv\Scripts\lemonade.exe"
 
           # Test CLI
-          & $venvActivate
-          lemonade -m -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          & $venvLemonade -m -i amd/Llama-3.2-1B-Instruct-onnx-ryzenai-hybrid oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Test high-level APIs
