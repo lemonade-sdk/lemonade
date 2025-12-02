@@ -74,6 +74,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
 
         # Wait a few seconds after the port is available
@@ -126,6 +128,8 @@ class Testing(unittest.IsolatedAsyncioTestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env={"LEMONADE_DISABLE_BROWSER": "1", **os.environ},
         )
 
