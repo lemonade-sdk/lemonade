@@ -520,21 +520,31 @@ void ModelManager::build_cache() {
                 // 1. Check for .download_manifest.json in snapshot directory
                 // 2. Check for any .partial files
                 fs::path resolved(info.resolved_path);
-                fs::path snapshot_dir = resolved.parent_path();
+                
+                // For directories (OGA models), check within the directory
+                // For files (GGUF models), check in parent directory
+                fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
                 
                 // Check for manifest (indicates incomplete multi-file download)
                 fs::path manifest_path = snapshot_dir / ".download_manifest.json";
                 bool has_manifest = fs::exists(manifest_path);
                 
-                // Check for .partial files (indicates incomplete single file)
-                bool has_partial = fs::exists(info.resolved_path + ".partial");
+                // Check for .partial files
+                bool has_partial = false;
+                if (fs::is_directory(resolved)) {
+                    // For directories, scan for any .partial files inside
+                    for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                        if (entry.path().extension() == ".partial") {
+                            has_partial = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // For files, check if the specific file has a .partial version
+                    has_partial = fs::exists(info.resolved_path + ".partial");
+                }
                 
                 info.downloaded = !has_manifest && !has_partial;
-                
-                if (has_manifest || has_partial) {
-                    // Log only at debug level to avoid spam
-                    // std::cout << "[ModelManager] Incomplete download detected for: " << name << std::endl;
-                }
             } else {
                 info.downloaded = false;
             }
@@ -615,10 +625,22 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         if (file_exists) {
             // Check for incomplete downloads
             fs::path resolved(info.resolved_path);
-            fs::path snapshot_dir = resolved.parent_path();
+            fs::path snapshot_dir = fs::is_directory(resolved) ? resolved : resolved.parent_path();
+            
             fs::path manifest_path = snapshot_dir / ".download_manifest.json";
             bool has_manifest = fs::exists(manifest_path);
-            bool has_partial = fs::exists(info.resolved_path + ".partial");
+            
+            bool has_partial = false;
+            if (fs::is_directory(resolved)) {
+                for (const auto& entry : fs::directory_iterator(snapshot_dir)) {
+                    if (entry.path().extension() == ".partial") {
+                        has_partial = true;
+                        break;
+                    }
+                }
+            } else {
+                has_partial = fs::exists(info.resolved_path + ".partial");
+            }
             
             info.downloaded = !has_manifest && !has_partial;
         } else {
