@@ -11,7 +11,7 @@ The demos available are:
     - `search/`: demonstrates how a user can search an employee handbook in natural language using an LLM.
 
 To run a demo:
-1. Set up a conda environment with the appropriate framework and backend support.
+1. Set up a Python environment with the appropriate framework and backend support.
 1. `cd` into the demo directory (e.g., `cd search/`)
 1. Run the `*_start.py` script to see what the application is like without the LLM (e.g., `python search_start.py`)
 1. Run the `*_hybrid.py` script to see what the application is like with the LLM (e.g., `python search_hybrid.py`)

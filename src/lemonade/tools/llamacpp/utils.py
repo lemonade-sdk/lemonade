@@ -139,9 +139,12 @@ def get_llama_version(backend: str) -> str:
 
 def get_llama_folder_path(backend: str):
     """
-    Get path for llama.cpp platform-specific executables folder
+    Get path for llama.cpp platform-specific executables folder.
+    Uses sys.prefix to get the environment root (works for both venv and conda):
+    - Conda: sys.executable is at env/python.exe, sys.prefix is env/
+    - Venv: sys.executable is at .venv/Scripts/python.exe, sys.prefix is .venv/
     """
-    return os.path.join(os.path.dirname(sys.executable), backend, "llama_server")
+    return os.path.join(sys.prefix, backend, "llama_server")
 
 
 def get_llama_exe_path(exe_name: str, backend: str):
