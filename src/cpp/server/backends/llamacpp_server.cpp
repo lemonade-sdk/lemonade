@@ -592,18 +592,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
-        // For embedding models, set batch sizes to handle multiple documents in a single request
-        // batch-size: logical batch size (total tokens across all sequences)
-        // ubatch-size: physical batch size (tokens processed in a single forward pass)
         push_arg(args, reserved_flags, "--embeddings");
-        push_arg(args, reserved_flags, "--batch-size", std::to_string(EMBEDDING_BATCH_SIZE));
-        
-        // Only set ubatch-size for nomic models (case insensitive check)
-        std::string gguf_path_lower = gguf_path;
-        std::transform(gguf_path_lower.begin(), gguf_path_lower.end(), gguf_path_lower.begin(), ::tolower);
-        if (gguf_path_lower.find("nomic") != std::string::npos) {
-            push_arg(args, reserved_flags, "--ubatch-size", std::to_string(EMBEDDING_UBATCH_SIZE));
-        }
     }
     
     // Add reranking support if the model supports it
