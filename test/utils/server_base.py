@@ -233,6 +233,8 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            encoding='utf-8',
+            errors='replace',  # Replace any non-UTF-8 characters to prevent crashes
             env=os.environ.copy(),
         )
 

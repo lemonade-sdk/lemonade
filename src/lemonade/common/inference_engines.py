@@ -331,9 +331,8 @@ class LlamaCppDetector(BaseEngineDetector):
         """
         try:
             # Use backend-specific path - same logic as get_llama_folder_path in utils.py
-            server_base_dir = os.path.join(
-                os.path.dirname(sys.executable), backend, "llama_server"
-            )
+            # Uses sys.prefix to get the environment root (works for both venv and conda)
+            server_base_dir = os.path.join(sys.prefix, backend, "llama_server")
             version_file = os.path.join(server_base_dir, "version.txt")
 
             if os.path.exists(version_file):

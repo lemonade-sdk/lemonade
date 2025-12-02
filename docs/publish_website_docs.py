@@ -1,4 +1,4 @@
-# In conda environment of choice, run the following from lemonade repo root:
+# From lemonade repo root, run the following:
 # pip install -r docs/assets/mkdocs_requirements.txt
 
 # Then run this script to publish the documentation to docs/docs/
