@@ -1275,6 +1275,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#streaming-response-streamtrue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming Response (stream=true)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2085,6 +2096,17 @@
     <span class="md-ellipsis">
       
         Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-response-streamtrue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming Response (stream=true)
       
     </span>
   </a>
@@ -3133,6 +3155,23 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <p>Register and install models for use with Lemonade Server.</p>
 <h4 id="parameters_7">Parameters</h4>
 <p>The Lemonade Server built-in model registry has a collection of model names that can be pulled and loaded. The <code>pull</code> endpoint can install any registered model, and it can also register-then-install any model available on Hugging Face.</p>
+<p><strong>Common Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream</code></td>
+<td>No</td>
+<td>If <code>true</code>, returns Server-Sent Events (SSE) with download progress. Defaults to <code>false</code>.</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Install a Model that is Already Registered</strong></p>
 <table>
 <thead>
@@ -3237,6 +3276,40 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <span class="p">}</span>
 </code></pre></div>
 <p>In case of an error, the status will be <code>error</code> and the message will contain the error message.</p>
+<h4 id="streaming-response-streamtrue">Streaming Response (stream=true)</h4>
+<p>When <code>stream=true</code>, the endpoint returns Server-Sent Events with real-time download progress:</p>
+<div class="highlight"><pre><span></span><code>event: progress
+data: {&quot;file&quot;:&quot;model.gguf&quot;,&quot;file_index&quot;:1,&quot;total_files&quot;:2,&quot;bytes_downloaded&quot;:1073741824,&quot;bytes_total&quot;:2684354560,&quot;percent&quot;:40}
+
+event: progress
+data: {&quot;file&quot;:&quot;config.json&quot;,&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;bytes_downloaded&quot;:1024,&quot;bytes_total&quot;:1024,&quot;percent&quot;:100}
+
+event: complete
+data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:100}
+</code></pre></div>
+<p><strong>Event Types:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>progress</code></td>
+<td>Sent during download with current file and byte progress</td>
+</tr>
+<tr>
+<td><code>complete</code></td>
+<td>Sent when all files are downloaded successfully</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>Sent if download fails, with <code>error</code> field containing the message</td>
+</tr>
+</tbody>
+</table>
 <h3 id="post-apiv1delete"><code>POST /api/v1/delete</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.</p>
 <h4 id="parameters_8">Parameters</h4>
