@@ -104,13 +104,15 @@ useEffect(() => {
       setIsModelLoading(false);
     }
 
-    // Only auto-select the loaded model if user hasn't manually selected a different one
-    if (!userHasSelectedModelRef.current) {
-      if (loadedModelId) {
-        setSelectedModel(loadedModelId);
-      } else {
-        fetchLoadedModel();
-      }
+    // When a model is explicitly loaded (via Model Manager or other explicit action),
+    // always select it in the chat - this is an intentional user action
+    if (loadedModelId) {
+      setSelectedModel(loadedModelId);
+      // Reset the manual selection flag since the user loaded a new model
+      userHasSelectedModelRef.current = false;
+    } else {
+      // Fallback: fetch the loaded model from the health endpoint
+      fetchLoadedModel();
     }
 
     // Refresh the models list so newly loaded models appear in the dropdown
