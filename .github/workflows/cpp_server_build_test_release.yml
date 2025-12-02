@@ -907,7 +907,7 @@ jobs:
           
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
 
-          & $venvPython python test/server_multimodel.py vulkan --server-binary $serverExe
+          & $venvPython test/server_multimodel.py vulkan --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp multi-model tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
