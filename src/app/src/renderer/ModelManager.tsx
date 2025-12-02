@@ -683,11 +683,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       e.stopPropagation();
                                       handleUnloadModel(model.name);
                                     }}
-                                    title="Unload model"
+                                    title="Eject model"
                                   >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <circle cx="12" cy="12" r="10" />
-                                      <line x1="8" y1="12" x2="16" y2="12" />
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M9 11L12 8L15 11" />
+                                      <path d="M12 8V16" />
+                                      <path d="M5 20H19" />
                                     </svg>
                                   </button>
                                   <button 
