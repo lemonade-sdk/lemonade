@@ -579,6 +579,7 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
             model_json["name"] = model_info.model_name;
             model_json["downloaded"] = model_info.downloaded;
             model_json["labels"] = model_info.labels;
+            model_json["suggested"] = model_info.suggested;
         }
         
         response["data"].push_back(model_json);

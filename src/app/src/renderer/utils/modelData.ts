@@ -1,5 +1,3 @@
-import serverModelsData from '../../../../lemonade_server/server_models.json';
-
 export const USER_MODEL_PREFIX = 'user.';
 
 export interface ModelInfo {
@@ -14,14 +12,13 @@ export interface ModelInfo {
   model_name?: string;
   reasoning?: boolean;
   vision?: boolean;
+  downloaded?: boolean;
   [key: string]: unknown;
 }
 
 export interface ModelsData {
   [key: string]: ModelInfo;
 }
-
-export const builtInModelsData: ModelsData = serverModelsData as ModelsData;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -129,10 +126,80 @@ const loadUserModelsFromCache = async (): Promise<ModelsData> => {
   }
 };
 
+const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
+  const CHAT_API_BASE = 'http://localhost:8000/api/v1';
+  
+  try {
+    const response = await fetch(`${CHAT_API_BASE}/models?show_all=true`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    const modelList = Array.isArray(data) ? data : data.data || [];
+    
+    return modelList.reduce((acc: ModelsData, model: any) => {
+      if (!model.id || !model.checkpoint || !model.recipe) {
+        return acc;
+      }
+      
+      const modelInfo: ModelInfo = {
+        checkpoint: model.checkpoint,
+        recipe: model.recipe,
+        // Use the suggested field from the API response
+        suggested: model.suggested === true,
+        downloaded: model.downloaded || false,
+      };
+      
+      if (Array.isArray(model.labels)) {
+        modelInfo.labels = model.labels;
+      }
+      
+      if (typeof model.size === 'number' && Number.isFinite(model.size)) {
+        modelInfo.size = model.size;
+      }
+      
+      if (typeof model.max_prompt_length === 'number' && Number.isFinite(model.max_prompt_length)) {
+        modelInfo.max_prompt_length = model.max_prompt_length;
+      }
+      
+      if (typeof model.mmproj === 'string' && model.mmproj) {
+        modelInfo.mmproj = model.mmproj;
+      }
+      
+      if (typeof model.source === 'string' && model.source) {
+        modelInfo.source = model.source;
+      }
+      
+      if (typeof model.model_name === 'string' && model.model_name) {
+        modelInfo.model_name = model.model_name;
+      }
+      
+      if (typeof model.reasoning === 'boolean') {
+        modelInfo.reasoning = model.reasoning;
+      }
+      
+      if (typeof model.vision === 'boolean') {
+        modelInfo.vision = model.vision;
+      }
+      
+      acc[model.id] = modelInfo;
+      return acc;
+    }, {} as ModelsData);
+  } catch (error) {
+    console.error('Failed to fetch built-in models from API:', error);
+    return {};
+  }
+};
+
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  const userModels = await loadUserModelsFromCache();
+  const [builtInModels, userModels] = await Promise.all([
+    fetchBuiltInModelsFromAPI(),
+    loadUserModelsFromCache(),
+  ]);
+  
   return {
-    ...builtInModelsData,
+    ...builtInModels,
     ...userModels,
   };
 };

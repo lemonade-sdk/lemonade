@@ -596,7 +596,8 @@ With `show_all=true` (includes all models with additional fields):
       "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
       "recipe": "oga-cpu",
       "downloaded": true,
-      "labels": ["hot", "cpu"]
+      "labels": ["hot", "cpu"],
+      "suggested": true
     },
     {
       "id": "Llama-3.2-1B-Instruct-Hybrid",
@@ -607,7 +608,8 @@ With `show_all=true` (includes all models with additional fields):
       "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
       "recipe": "oga-hybrid",
       "downloaded": false,
-      "labels": ["hot", "hybrid"]
+      "labels": ["hot", "hybrid"],
+      "suggested": true
     }
   ]
 }

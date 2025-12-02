@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MarkdownMessage from './MarkdownMessage';
-import { builtInModelsData, fetchSupportedModelsData, ModelsData } from './utils/modelData';
+import { fetchSupportedModelsData, ModelsData } from './utils/modelData';
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -47,7 +47,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [models, setModels] = useState<Model[]>([]);
-  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
+  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
   const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);

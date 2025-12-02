@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  builtInModelsData,
   fetchSupportedModelsData,
   ModelInfo,
   ModelsData,
@@ -40,7 +39,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [isAddingModel, setIsAddingModel] = useState(false);
-  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>(builtInModelsData);
+  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
   
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();

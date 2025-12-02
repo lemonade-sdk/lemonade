@@ -1,6 +1,5 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   mode: 'development',
@@ -48,11 +47,6 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './src/renderer/index.html',
       filename: 'index.html',
-    }),
-    new CopyWebpackPlugin({
-      patterns: [
-        { from: '../lemonade_server/server_models.json', to: 'server_models.json' },
-      ],
     }),
   ],
 };
