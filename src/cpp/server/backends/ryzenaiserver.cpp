@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 
 namespace lemon {
 
-RyzenAIServer::RyzenAIServer(const std::string& model_name, int port, bool debug, ModelManager* model_manager)
+RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager), 
       model_name_(model_name),
       execution_mode_("auto"),
@@ -268,7 +268,14 @@ std::string RyzenAIServer::determine_execution_mode(const std::string& model_pat
 void RyzenAIServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
                         int ctx_size,
-                        bool do_not_upgrade) {
+                        bool do_not_upgrade,
+                        const std::string& llamacpp_backend,
+                        const std::string& llamacpp_args) {
+    // Note: llamacpp_backend and llamacpp_args parameters are not used by RyzenAI-Server
+    // They are part of the uniform interface for polymorphism
+    (void)llamacpp_backend;  // Suppress unused parameter warning
+    (void)llamacpp_args;     // Suppress unused parameter warning
+    
     std::cout << "[RyzenAI-Server] Loading model: " << model_name << std::endl;
     
     // Install/check RyzenAI-Server (will download if not found)

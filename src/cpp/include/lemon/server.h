@@ -21,7 +21,10 @@ public:
            int ctx_size = 4096,
            bool tray = false,
            const std::string& llamacpp_backend = "vulkan",
-           const std::string& llamacpp_args = "");
+           const std::string& llamacpp_args = "",
+           int max_llm_models = 1,
+           int max_embedding_models = 1,
+           int max_reranking_models = 1);
     
     ~Server();
     

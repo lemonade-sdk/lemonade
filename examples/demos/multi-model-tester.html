@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lemonade Multi-Model Tester</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a26;
+            --bg-card: #16161f;
+            --border-color: #2a2a3a;
+            --border-hover: #3a3a5a;
+            --text-primary: #e8e8ef;
+            --text-secondary: #9090a8;
+            --text-muted: #606078;
+            --accent-cyan: #00d4ff;
+            --accent-pink: #ff0080;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --gradient-1: linear-gradient(135deg, #00d4ff 0%, #8b5cf6 100%);
+            --gradient-2: linear-gradient(135deg, #ff0080 0%, #8b5cf6 100%);
+            --shadow-glow: 0 0 40px rgba(0, 212, 255, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(255, 0, 128, 0.04) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 100%;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .server-config {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .server-config input {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.6rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 300px;
+            transition: all 0.2s ease;
+        }
+
+        .server-config input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-red);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-layout {
+            display: flex;
+            gap: 2rem;
+        }
+
+        /* Available Models Sidebar */
+        .sidebar {
+            width: 300px;
+            flex-shrink: 0;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-title {
+            font-weight: 600;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-title .icon {
+            font-size: 1.2rem;
+        }
+
+        .refresh-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+        }
+
+        .refresh-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .filter-box {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .filter-box input {
+            width: 100%;
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+
+        .filter-box input:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .filter-box input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .model-list {
+            max-height: calc(70vh - 60px);
+            overflow-y: auto;
+        }
+
+        .model-item.hidden {
+            display: none;
+        }
+
+        .model-item {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .model-item:last-child {
+            border-bottom: none;
+        }
+
+        .model-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .model-item.loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .model-name {
+            font-weight: 500;
+            margin-bottom: 0.3rem;
+            font-size: 0.95rem;
+        }
+
+        .model-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .model-labels {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            margin-top: 0.5rem;
+        }
+
+        .label {
+            font-size: 0.65rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .label.llm { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); }
+        .label.embedding { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+        .label.reranking { background: rgba(245, 158, 11, 0.2); color: var(--accent-orange); }
+        .label.loaded { background: rgba(0, 212, 255, 0.2); color: var(--accent-cyan); }
+
+        /* Loaded Models Table */
+        .main-content {
+            flex: 1;
+            overflow-x: auto;
+        }
+
+        .loaded-models-container {
+            display: flex;
+            gap: 1.5rem;
+            padding-bottom: 1rem;
+        }
+
+        .model-column {
+            min-width: 380px;
+            max-width: 450px;
+            flex-shrink: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .model-column:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .column-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-card) 100%);
+        }
+
+        .column-model-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            word-break: break-word;
+        }
+
+        .column-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .meta-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .meta-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .meta-value.type-llm { color: var(--accent-purple); }
+        .meta-value.type-embedding { color: var(--accent-green); }
+        .meta-value.type-reranking { color: var(--accent-orange); }
+
+        .eject-btn {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            margin-top: 0.75rem;
+            width: 100%;
+        }
+
+        .eject-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--accent-red);
+        }
+
+        .column-body {
+            padding: 1.25rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .input-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .input-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .key-hint {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        textarea {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            resize: vertical;
+            min-height: 80px;
+            transition: all 0.2s ease;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* For reranking - documents input */
+        .documents-input {
+            min-height: 100px;
+        }
+
+        .send-btn {
+            background: var(--gradient-1);
+            border: none;
+            color: var(--bg-primary);
+            padding: 0.65rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .response-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            min-height: 200px;
+        }
+
+        .response-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .response-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .response-status {
+            font-size: 0.7rem;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+
+        .response-status.streaming {
+            background: rgba(0, 212, 255, 0.2);
+            color: var(--accent-cyan);
+            animation: pulse 1s infinite;
+        }
+
+        .response-box {
+            flex: 1;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            overflow-y: auto;
+            min-height: 150px;
+            max-height: 400px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .response-box.streaming {
+            border-color: var(--accent-cyan);
+        }
+
+        .response-box .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1.2em;
+            background: var(--accent-cyan);
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        /* Reasoning content block (for reasoning models like DeepSeek) */
+        .reasoning-block {
+            background: rgba(139, 92, 246, 0.1);
+            border-left: 3px solid var(--accent-purple);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+        }
+
+        .reasoning-block::before {
+            content: '💭 Reasoning';
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--accent-purple);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Empty state */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p {
+            font-size: 0.9rem;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-hover);
+        }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.error {
+            border-color: var(--accent-red);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .toast.success {
+            border-color: var(--accent-green);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Loading spinner */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍋 Lemonade Multi-Model Tester</h1>
+            <p class="subtitle">Test multiple models concurrently with streaming responses</p>
+            <div class="server-config">
+                <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="Server URL">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <aside class="sidebar">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">
+                            <span class="icon">📦</span>
+                            Available Models
+                        </span>
+                        <button class="refresh-btn" onclick="fetchModels()">Refresh</button>
+                    </div>
+                    <div class="filter-box">
+                        <input type="text" 
+                               id="modelFilter" 
+                               placeholder="🔍 Filter models..." 
+                               oninput="filterModels()">
+                    </div>
+                    <div class="model-list" id="modelList">
+                        <div class="empty-state">
+                            <div class="spinner"></div>
+                            <p style="margin-top: 1rem;">Loading models...</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <div class="loaded-models-container" id="loadedModels">
+                    <div class="empty-state" style="min-width: 400px;">
+                        <div class="icon">🎯</div>
+                        <h3>No Models Loaded</h3>
+                        <p>Click on a model from the sidebar to load it</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // State
+        let serverUrl = 'http://localhost:8000';
+        let availableModels = [];
+        let loadedModels = [];
+        let healthPollInterval = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlInput = document.getElementById('serverUrl');
+            urlInput.addEventListener('change', (e) => {
+                serverUrl = e.target.value.replace(/\/$/, '');
+                startHealthPolling();
+            });
+            startHealthPolling();
+        });
+
+        // Start polling health endpoint
+        function startHealthPolling() {
+            if (healthPollInterval) clearInterval(healthPollInterval);
+            checkHealth();
+            fetchModels();
+            healthPollInterval = setInterval(checkHealth, 3000);
+        }
+
+        // Check server health
+        async function checkHealth() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            try {
+                const response = await fetch(`${serverUrl}/api/v1/health`);
+                const data = await response.json();
+
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected';
+
+                // Update loaded models from health endpoint
+                if (data.all_models_loaded) {
+                    updateLoadedModels(data.all_models_loaded);
+                } else {
+                    // Fallback for single model
+                    if (data.model_loaded) {
+                        updateLoadedModels([{
+                            model_name: data.model_loaded,
+                            checkpoint: data.checkpoint_loaded,
+                            last_use: Date.now() / 1000,
+                            type: 'llm',
+                            device: 'unknown'
+                        }]);
+                    } else {
+                        updateLoadedModels([]);
+                    }
+                }
+            } catch (error) {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+                updateLoadedModels([]);
+            }
+        }
+
+        // Fetch available models
+        async function fetchModels() {
+            const modelList = document.getElementById('modelList');
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/v1/models`);
+                const data = await response.json();
+                availableModels = data.data || [];
+                renderModelList();
+            } catch (error) {
+                modelList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <p>Failed to fetch models</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Render model list
+        function renderModelList() {
+            const modelList = document.getElementById('modelList');
+            
+            if (availableModels.length === 0) {
+                modelList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <p>No models installed</p>
+                    </div>
+                `;
+                return;
+            }
+
+            modelList.innerHTML = availableModels.map(model => {
+                const isLoaded = loadedModels.some(lm => lm.model_name === model.id);
+                const modelType = getModelType(model);
+                
+                return `
+                    <div class="model-item ${isLoaded ? 'loaded' : ''}" 
+                         onclick="loadModel('${model.id}')"
+                         data-model-id="${model.id}"
+                         data-model-name="${model.id.toLowerCase()}"
+                         data-model-type="${modelType}"
+                         data-model-recipe="${(model.recipe || '').toLowerCase()}">
+                        <div class="model-name">${model.id}</div>
+                        <div class="model-meta">${model.recipe || 'unknown'}</div>
+                        <div class="model-labels">
+                            <span class="label ${modelType}">${modelType}</span>
+                            ${isLoaded ? '<span class="label loaded">loaded</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Re-apply filter if there's text in the filter box
+            filterModels();
+        }
+
+        // Filter models based on search input
+        function filterModels() {
+            const filterInput = document.getElementById('modelFilter');
+            const filterText = (filterInput?.value || '').toLowerCase().trim();
+            const modelItems = document.querySelectorAll('.model-item');
+            
+            modelItems.forEach(item => {
+                if (!filterText) {
+                    item.classList.remove('hidden');
+                    return;
+                }
+                
+                const modelName = item.dataset.modelName || '';
+                const modelType = item.dataset.modelType || '';
+                const modelRecipe = item.dataset.modelRecipe || '';
+                
+                // Search in name, type, and recipe
+                const matches = modelName.includes(filterText) || 
+                               modelType.includes(filterText) || 
+                               modelRecipe.includes(filterText);
+                
+                item.classList.toggle('hidden', !matches);
+            });
+        }
+
+        // Get model type from model info
+        function getModelType(model) {
+            const labels = model.labels || [];
+            if (labels.includes('embedding') || labels.includes('embeddings')) return 'embedding';
+            if (labels.includes('reranking')) return 'reranking';
+            return 'llm';
+        }
+
+        // Load a model
+        async function loadModel(modelName) {
+            const modelItem = document.querySelector(`[data-model-id="${modelName}"]`);
+            if (modelItem) modelItem.classList.add('loading');
+
+            try {
+                showToast(`Loading ${modelName}...`, 'info');
+                
+                const response = await fetch(`${serverUrl}/api/v1/load`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: modelName })
+                });
+
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showToast(`Loaded ${modelName}`, 'success');
+                    await checkHealth();
+                } else {
+                    showToast(`Failed to load: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                showToast(`Error loading model: ${error.message}`, 'error');
+            } finally {
+                if (modelItem) modelItem.classList.remove('loading');
+            }
+        }
+
+        // Unload a model
+        async function unloadModel(modelName) {
+            try {
+                showToast(`Unloading ${modelName}...`, 'info');
+                
+                const response = await fetch(`${serverUrl}/api/v1/unload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: modelName })
+                });
+
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showToast(`Unloaded ${modelName}`, 'success');
+                    await checkHealth();
+                } else {
+                    showToast(`Failed to unload: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                showToast(`Error unloading model: ${error.message}`, 'error');
+            }
+        }
+
+        // Update loaded models UI
+        function updateLoadedModels(models) {
+            // Check if models have actually changed to avoid unnecessary re-renders
+            const modelsChanged = hasModelsChanged(loadedModels, models);
+            
+            loadedModels = models;
+            renderModelList(); // Update sidebar labels (lightweight)
+            
+            // Only re-render if models changed (added/removed)
+            if (modelsChanged) {
+                renderLoadedModels();
+            } else {
+                // Just update the metadata (last_use timestamps) without re-rendering
+                updateModelMetadata(models);
+            }
+        }
+
+        // Check if the loaded models list has changed (added/removed models)
+        function hasModelsChanged(oldModels, newModels) {
+            if (oldModels.length !== newModels.length) return true;
+            
+            const oldNames = new Set(oldModels.map(m => m.model_name));
+            const newNames = new Set(newModels.map(m => m.model_name));
+            
+            for (const name of oldNames) {
+                if (!newNames.has(name)) return true;
+            }
+            for (const name of newNames) {
+                if (!oldNames.has(name)) return true;
+            }
+            
+            return false;
+        }
+
+        // Update just the metadata without re-rendering (preserves focus)
+        function updateModelMetadata(models) {
+            models.forEach(model => {
+                const column = document.querySelector(`[data-model-name="${model.model_name}"]`);
+                if (!column) return;
+                
+                // Update last used timestamp
+                const lastUse = model.last_use ? new Date(model.last_use * 1000).toLocaleTimeString() : 'N/A';
+                const metaItems = column.querySelectorAll('.meta-item');
+                metaItems.forEach(item => {
+                    const label = item.querySelector('.meta-label');
+                    if (label && label.textContent === 'Last Used') {
+                        const value = item.querySelector('.meta-value');
+                        if (value) value.textContent = lastUse;
+                    }
+                });
+            });
+        }
+
+        // Render loaded models columns
+        function renderLoadedModels() {
+            const container = document.getElementById('loadedModels');
+            
+            if (loadedModels.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="min-width: 400px;">
+                        <div class="icon">🎯</div>
+                        <h3>No Models Loaded</h3>
+                        <p>Click on a model from the sidebar to load it</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Preserve existing response content when re-rendering
+            const existingResponses = {};
+            const existingInputs = {};
+            const existingStatuses = {};
+            
+            loadedModels.forEach(model => {
+                const responseBox = document.getElementById(`response-${model.model_name}`);
+                const inputBox = document.getElementById(`input-${model.model_name}`);
+                const docsBox = document.getElementById(`docs-${model.model_name}`);
+                const statusEl = document.getElementById(`status-${model.model_name}`);
+                
+                if (responseBox) existingResponses[model.model_name] = responseBox.innerHTML;
+                if (inputBox) existingInputs[model.model_name] = { type: 'input', value: inputBox.value };
+                if (docsBox) existingInputs[model.model_name + '_docs'] = { type: 'docs', value: docsBox.value };
+                if (statusEl) existingStatuses[model.model_name] = {
+                    class: statusEl.className,
+                    text: statusEl.textContent
+                };
+            });
+
+            container.innerHTML = loadedModels.map(model => {
+                const type = model.type || 'llm';
+                const lastUse = model.last_use ? new Date(model.last_use * 1000).toLocaleTimeString() : 'N/A';
+                
+                return `
+                    <div class="model-column" data-model-name="${model.model_name}">
+                        <div class="column-header">
+                            <div class="column-model-name">${model.model_name}</div>
+                            <div class="column-meta">
+                                <div class="meta-item">
+                                    <span class="meta-label">Type</span>
+                                    <span class="meta-value type-${type}">${type.toUpperCase()}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Device</span>
+                                    <span class="meta-value">${model.device || 'unknown'}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Last Used</span>
+                                    <span class="meta-value">${lastUse}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Checkpoint</span>
+                                    <span class="meta-value" style="font-size: 0.7rem; word-break: break-all;">${model.checkpoint || 'N/A'}</span>
+                                </div>
+                                <div class="meta-item" style="grid-column: span 2;">
+                                    <span class="meta-label">Backend URL</span>
+                                    <span class="meta-value" style="font-size: 0.75rem; color: var(--accent-cyan);">${model.backend_url || 'N/A'}</span>
+                                </div>
+                            </div>
+                            <button class="eject-btn" onclick="unloadModel('${model.model_name}')">
+                                ⏏️ Eject Model
+                            </button>
+                        </div>
+                        <div class="column-body">
+                            ${renderInputSection(model, type)}
+                            <div class="response-section">
+                                <div class="response-header">
+                                    <span class="response-label">Response</span>
+                                    <span class="response-status" id="status-${model.model_name}">Ready</span>
+                                </div>
+                                <div class="response-box" id="response-${model.model_name}"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Restore preserved content
+            loadedModels.forEach(model => {
+                if (existingResponses[model.model_name]) {
+                    const responseBox = document.getElementById(`response-${model.model_name}`);
+                    if (responseBox) responseBox.innerHTML = existingResponses[model.model_name];
+                }
+                if (existingInputs[model.model_name]) {
+                    const inputBox = document.getElementById(`input-${model.model_name}`);
+                    if (inputBox) inputBox.value = existingInputs[model.model_name].value;
+                }
+                if (existingInputs[model.model_name + '_docs']) {
+                    const docsBox = document.getElementById(`docs-${model.model_name}`);
+                    if (docsBox) docsBox.value = existingInputs[model.model_name + '_docs'].value;
+                }
+                if (existingStatuses[model.model_name]) {
+                    const statusEl = document.getElementById(`status-${model.model_name}`);
+                    if (statusEl) {
+                        statusEl.className = existingStatuses[model.model_name].class;
+                        statusEl.textContent = existingStatuses[model.model_name].text;
+                    }
+                }
+            });
+        }
+
+        // Render input section based on model type
+        function renderInputSection(model, type) {
+            const modelName = model.model_name;
+            // Escape model name for use in JS strings (handle quotes and backslashes)
+            const escapedModelName = modelName.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+            
+            if (type === 'embedding') {
+                return `
+                    <div class="input-section">
+                        <span class="input-label">Text to Embed <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
+                        <div class="input-group">
+                            <textarea id="input-${modelName}" 
+                                      placeholder="Enter text to generate embeddings for...&#10;&#10;You can enter multiple texts separated by newlines"
+                                      onkeydown="handleKeyDown(event, 'embedding', '${escapedModelName}')"></textarea>
+                            <button class="send-btn" onclick="sendEmbedding('${escapedModelName}')">
+                                🔢 Generate Embeddings
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'reranking') {
+                return `
+                    <div class="input-section">
+                        <span class="input-label">Query <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
+                        <textarea id="input-${modelName}" 
+                                  placeholder="Enter your search query..."
+                                  style="min-height: 50px;"
+                                  onkeydown="handleKeyDown(event, 'reranking', '${escapedModelName}')"></textarea>
+                        <span class="input-label">Documents (one per line)</span>
+                        <textarea id="docs-${modelName}" 
+                                  class="documents-input"
+                                  placeholder="Document 1&#10;Document 2&#10;Document 3..."
+                                  onkeydown="handleKeyDown(event, 'reranking', '${escapedModelName}')"></textarea>
+                        <button class="send-btn" onclick="sendReranking('${escapedModelName}')">
+                            📊 Rerank Documents
+                        </button>
+                    </div>
+                `;
+            } else {
+                // LLM - chat/completions
+                return `
+                    <div class="input-section">
+                        <span class="input-label">Message <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
+                        <div class="input-group">
+                            <textarea id="input-${modelName}" 
+                                      placeholder="Enter your message..."
+                                      onkeydown="handleKeyDown(event, 'chat', '${escapedModelName}')"></textarea>
+                            <button class="send-btn" onclick="sendChat('${escapedModelName}')">
+                                ✨ Send Message
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Handle Enter key to send (Shift+Enter for newline)
+        function handleKeyDown(event, type, modelName) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (type === 'chat') {
+                    sendChat(modelName);
+                } else if (type === 'embedding') {
+                    sendEmbedding(modelName);
+                } else if (type === 'reranking') {
+                    sendReranking(modelName);
+                }
+            }
+        }
+
+        // Handle keydown for Enter to send, Shift+Enter for newline
+        function handleChatKeydown(event, modelName) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendChat(modelName);
+            }
+        }
+
+        // Send chat completion (streaming)
+        async function sendChat(modelName) {
+            const inputEl = document.getElementById(`input-${modelName}`);
+            const responseBox = document.getElementById(`response-${modelName}`);
+            const statusEl = document.getElementById(`status-${modelName}`);
+            const message = inputEl.value.trim();
+
+            if (!message) {
+                showToast('Please enter a message', 'error');
+                return;
+            }
+
+            responseBox.innerHTML = '';
+            responseBox.classList.add('streaming');
+            statusEl.classList.add('streaming');
+            statusEl.textContent = 'Streaming...';
+
+            try {
+                const response = await fetch(`${serverUrl}/api/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: modelName,
+                        messages: [{ role: 'user', content: message }],
+                        stream: true
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let reasoningContent = '';
+                let mainContent = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+
+                            try {
+                                const json = JSON.parse(data);
+                                const delta = json.choices?.[0]?.delta || {};
+                                
+                                // Handle reasoning_content (for reasoning models like DeepSeek)
+                                if (delta.reasoning_content) {
+                                    reasoningContent += delta.reasoning_content;
+                                }
+                                
+                                // Handle regular content
+                                if (delta.content) {
+                                    mainContent += delta.content;
+                                }
+                                
+                                // Build display with both reasoning and content
+                                let display = '';
+                                if (reasoningContent) {
+                                    display += '<div class="reasoning-block">' + escapeHtml(reasoningContent) + '</div>';
+                                }
+                                if (mainContent || !reasoningContent) {
+                                    display += escapeHtml(mainContent);
+                                }
+                                display += '<span class="cursor"></span>';
+                                
+                                responseBox.innerHTML = display;
+                                responseBox.scrollTop = responseBox.scrollHeight;
+                            } catch (e) {
+                                // Ignore parse errors for incomplete chunks
+                            }
+                        }
+                    }
+                }
+
+                // Final display without cursor
+                let finalDisplay = '';
+                if (reasoningContent) {
+                    finalDisplay += '<div class="reasoning-block">' + escapeHtml(reasoningContent) + '</div>';
+                }
+                finalDisplay += escapeHtml(mainContent);
+                responseBox.innerHTML = finalDisplay;
+                
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Complete';
+
+            } catch (error) {
+                responseBox.innerHTML = `<span style="color: var(--accent-red)">Error: ${escapeHtml(error.message)}</span>`;
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Error';
+            }
+
+            responseBox.classList.remove('streaming');
+        }
+
+        // Send embedding request
+        async function sendEmbedding(modelName) {
+            const inputEl = document.getElementById(`input-${modelName}`);
+            const responseBox = document.getElementById(`response-${modelName}`);
+            const statusEl = document.getElementById(`status-${modelName}`);
+            const text = inputEl.value.trim();
+
+            if (!text) {
+                showToast('Please enter text to embed', 'error');
+                return;
+            }
+
+            responseBox.innerHTML = '<div class="spinner"></div> Generating embeddings...';
+            statusEl.classList.add('streaming');
+            statusEl.textContent = 'Processing...';
+
+            try {
+                // Split by newlines for multiple texts
+                const inputs = text.split('\n').filter(t => t.trim());
+                
+                const response = await fetch(`${serverUrl}/api/v1/embeddings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: modelName,
+                        input: inputs.length === 1 ? inputs[0] : inputs
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // Format the response nicely
+                let output = `📊 Embeddings Generated\n\n`;
+                output += `Model: ${data.model}\n`;
+                output += `Usage: ${data.usage?.total_tokens || 'N/A'} tokens\n\n`;
+                
+                data.data.forEach((item, i) => {
+                    const embedding = item.embedding;
+                    const preview = embedding.slice(0, 5).map(n => n.toFixed(4)).join(', ');
+                    output += `[${item.index}] Dimension: ${embedding.length}\n`;
+                    output += `    First 5: [${preview}, ...]\n`;
+                    output += `    Magnitude: ${Math.sqrt(embedding.reduce((a, b) => a + b * b, 0)).toFixed(4)}\n\n`;
+                });
+
+                responseBox.innerHTML = escapeHtml(output);
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Complete';
+
+            } catch (error) {
+                responseBox.innerHTML = `<span style="color: var(--accent-red)">Error: ${escapeHtml(error.message)}</span>`;
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Error';
+            }
+        }
+
+        // Send reranking request
+        async function sendReranking(modelName) {
+            const queryEl = document.getElementById(`input-${modelName}`);
+            const docsEl = document.getElementById(`docs-${modelName}`);
+            const responseBox = document.getElementById(`response-${modelName}`);
+            const statusEl = document.getElementById(`status-${modelName}`);
+            
+            const query = queryEl.value.trim();
+            const docsText = docsEl.value.trim();
+
+            if (!query) {
+                showToast('Please enter a query', 'error');
+                return;
+            }
+
+            if (!docsText) {
+                showToast('Please enter documents to rerank', 'error');
+                return;
+            }
+
+            const documents = docsText.split('\n').filter(d => d.trim());
+
+            if (documents.length < 2) {
+                showToast('Please enter at least 2 documents', 'error');
+                return;
+            }
+
+            responseBox.innerHTML = '<div class="spinner"></div> Reranking documents...';
+            statusEl.classList.add('streaming');
+            statusEl.textContent = 'Processing...';
+
+            try {
+                const response = await fetch(`${serverUrl}/api/v1/reranking`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: modelName,
+                        query: query,
+                        documents: documents
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // Sort by relevance score
+                const sortedResults = [...data.results].sort((a, b) => b.relevance_score - a.relevance_score);
+                
+                // Format the response nicely
+                let output = `📊 Reranking Results\n\n`;
+                output += `Query: "${query}"\n`;
+                output += `Model: ${data.model}\n`;
+                output += `Usage: ${data.usage?.total_tokens || 'N/A'} tokens\n\n`;
+                output += `Ranked Documents (highest relevance first):\n`;
+                output += `${'─'.repeat(50)}\n\n`;
+                
+                sortedResults.forEach((result, rank) => {
+                    const doc = documents[result.index];
+                    const score = result.relevance_score.toFixed(4);
+                    const bar = '█'.repeat(Math.max(0, Math.min(20, Math.floor((result.relevance_score + 10) * 1))));
+                    
+                    output += `#${rank + 1} [Score: ${score}]\n`;
+                    output += `   ${bar}\n`;
+                    output += `   "${doc.length > 60 ? doc.slice(0, 60) + '...' : doc}"\n\n`;
+                });
+
+                responseBox.innerHTML = escapeHtml(output);
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Complete';
+
+            } catch (error) {
+                responseBox.innerHTML = `<span style="color: var(--accent-red)">Error: ${escapeHtml(error.message)}</span>`;
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Error';
+            }
+        }
+
+        // Utility: Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Show toast notification
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
+

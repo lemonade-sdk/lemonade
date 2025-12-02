@@ -226,6 +226,10 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         if self.llamacpp_backend:
             cmd.extend(["--llamacpp", self.llamacpp_backend])
 
+        # Add any additional server arguments
+        if hasattr(self.__class__, "additional_server_args"):
+            cmd.extend(self.__class__.additional_server_args)
+
         # Start the lemonade server
         lemonade_process = subprocess.Popen(
             cmd,
@@ -283,14 +287,27 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             )
 
 
-def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
-    """Utility function to run server tests with a given test class."""
+def run_server_tests_with_class(
+    test_class, description="SERVER TESTS", offline=None, additional_args=None
+):
+    """Utility function to run server tests with a given test class.
+
+    Args:
+        test_class: The unittest.TestCase class to run
+        description: Description for the test run
+        offline: Whether to run in offline mode (defaults to parsed --offline arg)
+        additional_args: List of additional command-line arguments to pass to the server
+    """
     # Always parse args to set SERVER_BINARY global
     args = parse_args()
 
     # If offline parameter is not provided, use parsed value
     if offline is None:
         offline = args.offline
+
+    # Store additional args in a class variable so setUp can access them
+    if additional_args:
+        test_class.additional_server_args = additional_args
 
     if offline:
         print(f"\n=== STARTING {description} IN OFFLINE MODE ===")
