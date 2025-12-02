@@ -194,7 +194,10 @@ class Testing(unittest.IsolatedAsyncioTestCase):
         """
         # Test default (non-verbose) table output
         result = subprocess.run(
-            ["lemonade", "system-info"], capture_output=True, text=True, timeout=60
+            [sys.executable, "-m", "lemonade", "system-info"],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
 
         assert result.returncode == 0, f"system-info failed: {result.stderr}"
@@ -208,7 +211,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test verbose mode
         result = subprocess.run(
-            ["lemonade", "system-info", "--verbose"],
+            [sys.executable, "-m", "lemonade", "system-info", "--verbose"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -231,7 +234,7 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test JSON output
         result = subprocess.run(
-            ["lemonade", "system-info", "--format", "json"],
+            [sys.executable, "-m", "lemonade", "system-info", "--format", "json"],
             capture_output=True,
             text=True,
             timeout=60,
@@ -248,7 +251,15 @@ class Testing(unittest.IsolatedAsyncioTestCase):
 
         # Test JSON output (verbose mode)
         result = subprocess.run(
-            ["lemonade", "system-info", "--verbose", "--format", "json"],
+            [
+                sys.executable,
+                "-m",
+                "lemonade",
+                "system-info",
+                "--verbose",
+                "--format",
+                "json",
+            ],
             capture_output=True,
             text=True,
             timeout=60,
