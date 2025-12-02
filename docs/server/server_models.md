@@ -75,6 +75,24 @@ lemonade-server pull Gemma-3-4b-it-GGUF
 </details>
 
 <details>
+<summary>Qwen3-Next-80B-A3B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-Next-80B-A3B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF">unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>45.1</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>gpt-oss-120b-mxfp-GGUF</summary>
 
 ```bash
@@ -397,6 +415,24 @@ lemonade-server pull Qwen3-VL-8B-Instruct-GGUF
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>vision</td></tr>
 <tr><td>Size (GB)</td><td>6.19</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-Next-80B-A3B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Qwen3-Next-80B-A3B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF">unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>45.1</td></tr>
 </table>
 
 </details>
