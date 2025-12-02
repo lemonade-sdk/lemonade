@@ -396,6 +396,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Refresh downloaded models and current loaded model status
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
+      
+      // Show success notification
+      showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
       console.error('Error downloading model:', error);
       showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
