@@ -6,6 +6,7 @@
 #include <mutex>
 #include <functional>
 #include <nlohmann/json.hpp>
+#include "model_types.h"
 
 namespace lemon {
 
@@ -37,6 +38,10 @@ struct ModelInfo {
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
+    
+    // Multi-model support fields
+    ModelType type = ModelType::LLM;      // Model type for LRU cache management
+    DeviceType device = DEVICE_NONE;      // Target device(s) for this model
 };
 
 class ModelManager {
