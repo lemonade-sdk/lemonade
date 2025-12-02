@@ -1074,18 +1074,23 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 </tr>
 <tr>
 <td><code>--llamacpp [vulkan\|rocm]</code></td>
-<td>Specify the LlamaCpp backend to use</td>
+<td>Default LlamaCpp backend to use when loading models. Can be overridden per-model via the <code>/api/v1/load</code> endpoint.</td>
 <td>vulkan</td>
 </tr>
 <tr>
 <td><code>--ctx-size [size]</code></td>
-<td>Set the context size for the model. For llamacpp recipes, this sets the <code>--ctx-size</code> parameter for the llama server. For other recipes, prompts exceeding this size will be truncated.</td>
+<td>Default context size for models. For llamacpp recipes, this sets the <code>--ctx-size</code> parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the <code>/api/v1/load</code> endpoint.</td>
 <td>4096</td>
 </tr>
 <tr>
 <td><code>--llamacpp-args [args]</code></td>
-<td>Custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., <code>-m</code>, <code>--port</code>, <code>--ctx-size</code>, <code>-ngl</code>). Example: <code>--llamacpp-args "--flash-attn --no-mmap"</code></td>
+<td>Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., <code>-m</code>, <code>--port</code>, <code>--ctx-size</code>, <code>-ngl</code>). Can be overridden per-model via the <code>/api/v1/load</code> endpoint. Example: <code>--llamacpp-args "--flash-attn on --no-mmap"</code></td>
 <td>""</td>
+</tr>
+<tr>
+<td><code>--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS]</code></td>
+<td>Maximum number of models to keep loaded simultaneously. Accepts 1-3 values for LLM, embedding, and reranking models respectively. Unspecified values default to 1. Example: <code>--max-loaded-models 3 2 1</code> loads up to 3 LLMs, 2 embedding models, and 1 reranking model.</td>
+<td><code>1 1 1</code></td>
 </tr>
 </tbody>
 </table>
