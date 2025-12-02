@@ -27,7 +27,6 @@ jobs:
   test-server-llamacpp-windows:
     env:
       LEMONADE_CI_MODE: "True"
-      CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       PYTHONIOENCODING: utf-8
@@ -54,55 +53,60 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
 
-      - name: Set up Conda environment
-        run: |
-          # Keep conda up-to-date since they can apparently break things on the server side
-          # We can probably remove this in the future
-          conda update conda conda-libmamba-solver --solver classic
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda create -p $env:CONDA_ENV_PATH python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python -m pip install --upgrade pip
+          $ErrorActionPreference = "Stop"
+          
+          $venvPython = ".\.venv\Scripts\python.exe"
+          $venvPip = ".\.venv\Scripts\pip.exe"
+          
+          & $venvPython -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH conda install -y pylint
+          & $venvPip install pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip install -e .[dev]
+          & $venvPip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH pip check
+          & $venvPip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME=$(pwd)/hf-cache" >> $env:GITHUB_ENV
 
       - name: Run lemonade Llamacpp CLI tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
+          $venvActivate = ".\.venv\Scripts\Activate.ps1"
+          & $venvActivate
+          
           if ("${{ matrix.backend }}" -ne "rocm") {
-            conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
           }
 
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Run lemonade Llamacpp API tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
-          conda run --no-capture-output -p $env:CONDA_ENV_PATH python test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
+          $venvPython = ".\.venv\Scripts\python.exe"
+          
+          & $venvPython test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $venvPython test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 
   test-server-llamacpp-ubuntu:
     if: false  # Temporarily disabled due to unkillable D-state processes with GPU drivers
     env:
       LEMONADE_CI_MODE: "True"
-      CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -125,17 +129,17 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-linux
 
-      - name: Set up Conda environment
-        run: |
-          conda create -p $CONDA_ENV_PATH python=3.10 -y
-          conda init
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+          source .venv/bin/activate
           python -m pip install --upgrade pip
-          conda install -y pylint
+          pip install pylint
           pip install -e .[dev]
           pip check
 
@@ -145,8 +149,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+          source .venv/bin/activate
 
           if [ "${{ matrix.backend }}" != "rocm" ]; then
             lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
@@ -159,8 +162,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source ~/miniforge3/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+          source .venv/bin/activate
 
           python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
           python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
@@ -168,7 +170,6 @@ jobs:
   test-server-llamacpp-macos:
     env:
       LEMONADE_CI_MODE: "True"
-      CONDA_ENV_PATH: ./lemon-ci-env
       LEMONADE_CACHE_DIR: ./ci-cache
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -188,21 +189,15 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-linux
 
-      - name: Setup Miniconda
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          miniforge-variant: Miniforge3
-          miniforge-version: latest
+          python-version: ${{ matrix.python-version }}
 
-      - name: Set up Conda environment
+      - name: Create virtual environment and install dependencies
         run: |
-          conda create -p $CONDA_ENV_PATH python=${{ matrix.python-version }} -y
-          conda init
-
-      - name: Install dependencies
-        run: |
-          source $CONDA/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+          python -m venv .venv
+          source .venv/bin/activate
           pip install -e .[dev]
           pip check
 
@@ -212,8 +207,7 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source $CONDA/etc/profile.d/conda.sh
-          conda activate $CONDA_ENV_PATH
+          source .venv/bin/activate
 
           python test/server_llamacpp.py metal || exit 1
           python test/server_llamacpp.py metal --offline || exit 1

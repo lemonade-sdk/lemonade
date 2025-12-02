@@ -364,10 +364,10 @@ window.lmnRender = function() {
   
   var cmd = '';
   var link = '';
-  var condaBlock = '';
-  // Conda is only needed for Python SDK, not for Server (C++)
+  var pythonSetupNote = '';
+  // Python setup note is only needed for Python SDK, not for Server (C++)
   if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.type === 'full') {
-    condaBlock = '<div style="margin-bottom:0.5em"><a href="https://github.com/conda-forge/miniforge?tab=readme-ov-file#install" target="_blank" class="lmn-btn" style="font-size:1.02rem; padding:0.38em 1em;">Download and Install Miniforge</a></div>';
+    pythonSetupNote = '<div style="margin-bottom:0.7em; color:#666; font-size:1.02rem;">Requires Python 3.10-3.13. Create a virtual environment if desired.</div>';
   }
   // Set command and link
   if (lmnState.method === 'gui') {
@@ -504,7 +504,7 @@ window.lmnRender = function() {
     label = 'Install this tool:';
   } else if (cmd) {
     var gitCloneLines = (lmnState.method === 'src') ? 2 : 0; // git clone + cd
-    var cmdLines = (condaBlock ? 2 : 0) + gitCloneLines + (cmd ? cmd.split('\n').length : 0);
+    var cmdLines = gitCloneLines + (cmd ? cmd.split('\n').length : 0);
     label = cmdLines > 1 ? 'Run these Commands to Install:' : 'Run this Command to Install:';
   } else {
     label = '';
@@ -549,7 +549,7 @@ window.lmnRender = function() {
       downloadArea.style.display = 'none';
     }
     if (cmdDiv) {
-      var fullBlock = (condaBlock ? condaBlock : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
+      var fullBlock = (pythonSetupNote ? pythonSetupNote : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
       cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
       
       // Add a note if NPU is selected
@@ -572,10 +572,6 @@ window.lmnRender = function() {
         var pre = document.getElementById('lmn-pre-block');
         if (pre) {
           var lines = [];
-          if (condaBlock) {
-            lines.push('conda create -n lemon python=3.12');
-            lines.push('conda activate lemon');
-          }
           cmd.split('\n').forEach(function(line) { lines.push(line); });
           pre.innerHTML = lines.map(function(line, idx) {
             var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

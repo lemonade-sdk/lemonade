@@ -1,0 +1,152 @@
+name: 'Setup Python'
+description: 'Install Python on self-hosted runners. Uses full Python installer on Windows, checks system Python on Linux.'
+
+inputs:
+  python-version:
+    description: 'Python version to install (e.g., 3.10, 3.12)'
+    required: false
+    default: '3.10'
+
+outputs:
+  python-path:
+    description: 'Path to the Python executable'
+    value: ${{ steps.setup-windows.outputs.python-path || steps.setup-linux.outputs.python-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python (Windows)
+      id: setup-windows
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Stop"
+        $PYTHON_VERSION = "${{ inputs.python-version }}"
+        
+        Write-Host "Setting up Python $PYTHON_VERSION on Windows..."
+        
+        # Map version to download URL for full installer
+        switch ($PYTHON_VERSION) {
+          "3.10" { $PYTHON_FULL = "3.10.11" }
+          "3.11" { $PYTHON_FULL = "3.11.9" }
+          "3.12" { $PYTHON_FULL = "3.12.7" }
+          "3.13" { $PYTHON_FULL = "3.13.0" }
+          default {
+            Write-Host "Unsupported Python version: $PYTHON_VERSION"
+            exit 1
+          }
+        }
+        
+        $PYTHON_DIR = "$env:GITHUB_WORKSPACE\.python-$PYTHON_VERSION"
+        $PYTHON_EXE = "$PYTHON_DIR\python.exe"
+        
+        # Check if already installed
+        if (Test-Path $PYTHON_EXE) {
+          Write-Host "Python $PYTHON_VERSION already available at $PYTHON_DIR"
+        } else {
+          Write-Host "Downloading Python $PYTHON_FULL..."
+          
+          # Use nuget to install Python (more reliable than embeddable)
+          $nugetUrl = "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe"
+          $nugetPath = "$env:GITHUB_WORKSPACE\nuget.exe"
+          
+          Invoke-WebRequest -Uri $nugetUrl -OutFile $nugetPath
+          
+          # Install Python via nuget
+          & $nugetPath install python -Version $PYTHON_FULL -OutputDirectory "$env:GITHUB_WORKSPACE\.nuget-packages"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # Find the installed Python
+          $pythonPackageDir = Get-ChildItem "$env:GITHUB_WORKSPACE\.nuget-packages" -Directory | Where-Object { $_.Name -like "python.$PYTHON_FULL" } | Select-Object -First 1
+          if (-not $pythonPackageDir) {
+            Write-Host "ERROR: Python package not found after nuget install"
+            Get-ChildItem "$env:GITHUB_WORKSPACE\.nuget-packages"
+            exit 1
+          }
+          
+          $pythonToolsDir = Join-Path $pythonPackageDir.FullName "tools"
+          
+          # Move to our expected location
+          if (Test-Path $PYTHON_DIR) { Remove-Item -Recurse -Force $PYTHON_DIR }
+          Move-Item $pythonToolsDir $PYTHON_DIR
+          
+          # Ensure pip is installed
+          Write-Host "Ensuring pip is installed..."
+          & $PYTHON_EXE -m ensurepip --upgrade
+          if ($LASTEXITCODE -ne 0) { 
+            Write-Host "ensurepip failed, trying get-pip.py..."
+            Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$PYTHON_DIR\get-pip.py"
+            & $PYTHON_EXE "$PYTHON_DIR\get-pip.py"
+          }
+          
+          Write-Host "Python $PYTHON_FULL installed at $PYTHON_DIR"
+        }
+        
+        # Add to PATH for subsequent steps
+        "$PYTHON_DIR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "$PYTHON_DIR\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        
+        # Output the path
+        "python-path=$PYTHON_EXE" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        
+        # Verify
+        & $PYTHON_EXE --version
+        & $PYTHON_EXE -m pip --version
+
+    - name: Setup Python (Linux/macOS)
+      id: setup-linux
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        PYTHON_VERSION="${{ inputs.python-version }}"
+        
+        echo "Setting up Python $PYTHON_VERSION..."
+        
+        REQUIRED_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+        REQUIRED_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+        
+        # Try python3.X first, then python3, then python
+        PYTHON_CMD=""
+        for cmd in "python$PYTHON_VERSION" "python3" "python"; do
+          if command -v "$cmd" &> /dev/null; then
+            VERSION=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f2)
+            
+            if [[ "$MAJOR" == "$REQUIRED_MAJOR" && "$MINOR" == "$REQUIRED_MINOR" ]]; then
+              PYTHON_CMD=$(command -v "$cmd")
+              echo "Found matching Python: $PYTHON_CMD (version $VERSION)"
+              break
+            elif [[ "$MAJOR" == "$REQUIRED_MAJOR" && "$MINOR" -ge "$REQUIRED_MINOR" ]]; then
+              PYTHON_CMD=$(command -v "$cmd")
+              echo "Found compatible Python: $PYTHON_CMD (version $VERSION, requested $PYTHON_VERSION)"
+              break
+            fi
+          fi
+        done
+        
+        if [ -z "$PYTHON_CMD" ]; then
+          # Try to install from deadsnakes PPA (Ubuntu)
+          echo "Python $PYTHON_VERSION not found. Attempting to install..."
+          
+          if command -v apt-get &> /dev/null; then
+            sudo add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
+            sudo apt-get update
+            sudo apt-get install -y "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-venv" || {
+              echo "Failed to install Python $PYTHON_VERSION from deadsnakes"
+              echo "Falling back to system python3..."
+              PYTHON_CMD=$(command -v python3)
+            }
+            PYTHON_CMD=$(command -v "python${PYTHON_VERSION}") || PYTHON_CMD=$(command -v python3)
+          else
+            PYTHON_CMD=$(command -v python3)
+          fi
+        fi
+        
+        if [ -z "$PYTHON_CMD" ]; then
+          echo "ERROR: Could not find or install Python $PYTHON_VERSION"
+          exit 1
+        fi
+        
+        echo "python-path=$PYTHON_CMD" >> $GITHUB_OUTPUT
+        "$PYTHON_CMD" --version

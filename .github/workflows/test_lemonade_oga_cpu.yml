@@ -31,18 +31,17 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Miniconda with 64-bit Python
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          miniconda-version: "latest"
-          activate-environment: lemon
           python-version: "3.10"
-          run-post: "false"
-      - name: Install dependencies
-        shell: bash -el {0}
+      - name: Create virtual environment and install dependencies
+        shell: bash
         run: |
+          python -m venv .venv
+          source .venv/Scripts/activate
           python -m pip install --upgrade pip
-          conda install pylint
+          pip install pylint
           python -m pip check
           pip install -e .[dev,oga-cpu]
       - name: Lint with Black
@@ -51,12 +50,14 @@ jobs:
           options: "--check --verbose"
           src: "./src"
       - name: Lint with PyLint
-        shell: bash -el {0}
+        shell: bash
         run: |
+          source .venv/Scripts/activate
           pylint src/lemonade --rcfile .pylintrc --disable E0401
       - name: Run lemonade tests
-        shell: bash -el {0}
+        shell: bash
         run: |
+          source .venv/Scripts/activate
           # Test CLI
           lemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
 

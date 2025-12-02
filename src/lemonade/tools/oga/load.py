@@ -371,7 +371,10 @@ class OgaLoad(FirstTool):
                 _open_driver_install_page()
 
             # Setup DLL paths for NPU/hybrid inference
-            env_path = os.path.dirname(sys.executable)
+            # Use sys.prefix to get the environment root (works for both venv and conda)
+            # - Conda: sys.executable is at env/python.exe, sys.prefix is env/
+            # - Venv: sys.executable is at .venv/Scripts/python.exe, sys.prefix is .venv/
+            env_path = sys.prefix
             dll_source_path = os.path.join(
                 env_path, "Lib", "site-packages", "onnxruntime_genai"
             )

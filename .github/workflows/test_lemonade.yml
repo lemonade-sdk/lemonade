@@ -34,16 +34,19 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Miniconda with 64-bit Python
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          miniconda-version: "latest"
-          activate-environment: lemon
           python-version: "3.10"
-          run-post: "false"
-      - name: Install dependencies
-        shell: bash -el {0}
+      - name: Create virtual environment and install dependencies
+        shell: bash
         run: |
+          python -m venv .venv
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           python -m pip install --upgrade pip
           pip install pylint
           python -m pip check
@@ -55,13 +58,23 @@ jobs:
           options: "--check --verbose"
           src: "./src"
       - name: Lint with PyLint
-        shell: bash -el {0}
+        shell: bash
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           pylint src/lemonade --rcfile .pylintrc --disable E0401
           pylint examples --rcfile .pylintrc --disable E0401,E0611,F0010 --jobs=1 -v
       - name: Run lemonade tests
-        shell: bash -el {0}
+        shell: bash
         run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            source .venv/Scripts/activate
+          else
+            source .venv/bin/activate
+          fi
           # Test CLI
           lemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
           
