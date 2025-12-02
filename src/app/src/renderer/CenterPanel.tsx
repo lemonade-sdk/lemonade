@@ -256,7 +256,7 @@ const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
         </div>
         <h1 className="marketplace-title">App Marketplace</h1>
         <p className="marketplace-subtitle">
-          One-click install for your favorite AI apps
+          Quick start for your favorite AI apps
         </p>
         
         <div 
