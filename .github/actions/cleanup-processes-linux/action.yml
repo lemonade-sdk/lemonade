@@ -1,5 +1,5 @@
 name: 'Cleanup Processes (Linux)'
-description: 'Kill all lemonade, Python, llama-server, and conda processes on Linux'
+description: 'Kill all lemonade, Python, and llama-server processes on Linux'
 runs:
   using: "composite"
   steps:
@@ -50,9 +50,6 @@ runs:
         # Kill Python processes (this is aggressive - be careful!)
         kill_by_pattern "python" "Python"
 
-        # Kill conda processes
-        kill_by_pattern "conda" "conda"
-
         # Additional pass: kill by exact process names
         echo ""
         echo "Second pass: killing by exact name..."
@@ -66,21 +63,20 @@ runs:
         # FINAL VERIFICATION - show what's still alive
         echo ""
         echo "=== Verification: checking for remaining processes ==="
-        if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
+        if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
             echo "WARNING: Some processes still alive:"
-            ps aux | grep -E "lemonade|llama|conda" | grep -v grep | grep -v "cleanup-processes" || true
+            ps aux | grep -E "lemonade|llama" | grep -v grep | grep -v "cleanup-processes" || true
             
             # NUCLEAR OPTION: Kill them with extreme prejudice
             echo "Using nuclear option..."
             pkill -9 -f "llama" 2>/dev/null || true
             pkill -9 -f "lemonade" 2>/dev/null || true
-            pkill -9 -f "conda" 2>/dev/null || true
             sleep 1
             
             # Check again
-            if pgrep -f "lemonade|llama|conda" > /dev/null 2>&1; then
+            if pgrep -f "lemonade|llama" > /dev/null 2>&1; then
                 echo "ERROR: Processes STILL alive after nuclear option!"
-                ps aux | grep -E "lemonade|llama|conda" | grep -v grep || true
+                ps aux | grep -E "lemonade|llama" | grep -v grep || true
             else
                 echo "Nuclear option successful"
             fi

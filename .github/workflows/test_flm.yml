@@ -37,34 +37,30 @@ jobs:
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
       
-      - name: Create conda environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # Keep conda up-to-date since they can apparently break things on the server side
-          # We can probably remove this in the future
-          conda update conda conda-libmamba-solver --solver classic
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          conda create -p .\lemon-flm-ci python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
           
       - name: Install dependencies
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p .\lemon-flm-ci python -m pip install --upgrade pip
+          $venvPython = ".\.venv\Scripts\python.exe"
+          $venvPip = ".\.venv\Scripts\pip.exe"
+          
+          & $venvPython -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci conda install -y pylint
+          & $venvPip install pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci python -m pip check
+          & $venvPython -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          conda run --no-capture-output -p .\lemon-flm-ci pip install -e .
+          & $venvPip install -e .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
@@ -100,7 +96,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           
-          conda run --no-capture-output -p .\lemon-flm-ci python test/server_flm.py
+          $venvPython = ".\.venv\Scripts\python.exe"
+          
+          & $venvPython test/server_flm.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 
