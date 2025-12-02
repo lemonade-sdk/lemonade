@@ -60,6 +60,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
+  const userScrolledAwayRef = useRef(false); // Immediate tracking for scroll during streaming
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -140,15 +141,18 @@ useEffect(() => {
 }, []);
 
   useEffect(() => {
-    // Only auto-scroll if user is at the bottom
-    if (isUserAtBottom) {
+    // Only auto-scroll if user hasn't scrolled away during streaming
+    // Use the ref for immediate check to prevent overriding user scroll
+    if (!userScrolledAwayRef.current && isUserAtBottom) {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
       
       // Use requestAnimationFrame to scroll after render completes
       requestAnimationFrame(() => {
-        scrollToBottom();
+        if (!userScrolledAwayRef.current) {
+          scrollToBottom();
+        }
       });
     }
     
@@ -178,6 +182,14 @@ useEffect(() => {
   const handleScroll = () => {
     const atBottom = checkIfAtBottom();
     setIsUserAtBottom(atBottom);
+    
+    // Track immediately via ref - if user scrolls away during streaming, respect it
+    if (!atBottom && isLoading) {
+      userScrolledAwayRef.current = true;
+    } else if (atBottom) {
+      // User scrolled back to bottom, reset the flag
+      userScrolledAwayRef.current = false;
+    }
   };
 
   const scrollToBottom = () => {
@@ -319,8 +331,9 @@ const sendMessage = async () => {
     // Create new abort controller
     abortControllerRef.current = new AbortController();
     
-    // When sending a new message, ensure we're at the bottom
+    // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
 
     // Check if the selected model is different from the currently loaded model
     // If so, show the model loading indicator
@@ -491,6 +504,8 @@ const sendMessage = async () => {
       setIsLoading(false);
       setIsModelLoading(false); // Clear loading state on error or completion
       abortControllerRef.current = null;
+      // Reset scroll tracking after streaming ends so next message can autoscroll
+      userScrolledAwayRef.current = false;
     }
   };
 
@@ -693,8 +708,9 @@ const sendMessage = async () => {
     // Create new abort controller
     abortControllerRef.current = new AbortController();
     
-    // When submitting an edit, ensure we're at the bottom
+    // When submitting an edit, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
 
     // Truncate messages up to the edited message
     const truncatedMessages = messages.slice(0, editingIndex);
@@ -869,6 +885,8 @@ const sendMessage = async () => {
       setIsLoading(false);
       setIsModelLoading(false); // Clear loading state on error or completion
       abortControllerRef.current = null;
+      // Reset scroll tracking after streaming ends so next message can autoscroll
+      userScrolledAwayRef.current = false;
     }
   };
 
@@ -904,6 +922,7 @@ const sendMessage = async () => {
     setIsLoading(false);
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
+    userScrolledAwayRef.current = false;
   };
 
   if (!isVisible) return null;
