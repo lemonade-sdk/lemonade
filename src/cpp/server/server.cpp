@@ -209,42 +209,6 @@ void Server::setup_routes() {
     // Setup static file serving for web UI
     setup_static_files();
     
-    // Root path - serve a landing page for browser visitors
-    http_server_->Get("/", [this](const httplib::Request& req, httplib::Response& res) {
-        // Load the index.html file from resources/static
-        std::string index_path = utils::get_resource_path("resources/static/index.html");
-        std::ifstream file(index_path);
-        
-        if (!file.is_open()) {
-            // Fallback if file not found
-            res.status = 200;
-            res.set_content(
-                "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#0a0a0a;color:#fff;'>"
-                "<h1 style='color:#FFCC00;'>Lemonade Server</h1>"
-                "<p>Server is running. Look for the lemon icon in your system tray to open the app.</p>"
-                "</body></html>",
-                "text/html"
-            );
-            return;
-        }
-        
-        // Read the entire file
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        std::string html = buffer.str();
-        file.close();
-        
-        // Replace {{PORT}} placeholder with actual port
-        std::string port_str = std::to_string(port_);
-        size_t pos = 0;
-        while ((pos = html.find("{{PORT}}", pos)) != std::string::npos) {
-            html.replace(pos, 8, port_str);
-            pos += port_str.length();
-        }
-        
-        res.set_content(html, "text/html");
-    });
-    
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
@@ -252,20 +216,15 @@ void Server::setup_static_files() {
     // Determine static files directory (relative to executable)
     std::string static_dir = utils::get_resource_path("resources/static");
     
-    // Root path redirects to web UI
-    http_server_->Get("/", [](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/webapp.html");
-    });
-    
-    // Special handler for webapp.html to replace template variables
-    http_server_->Get("/webapp.html", [this, static_dir](const httplib::Request&, httplib::Response& res) {
-        std::string webapp_path = static_dir + "/webapp.html";
-        std::ifstream file(webapp_path);
+    // Root path - serve index.html with template variable replacement
+    http_server_->Get("/", [this, static_dir](const httplib::Request&, httplib::Response& res) {
+        std::string index_path = static_dir + "/index.html";
+        std::ifstream file(index_path);
         
         if (!file.is_open()) {
-            std::cerr << "[Server] Could not open webapp.html at: " << webapp_path << std::endl;
+            std::cerr << "[Server] Could not open index.html at: " << index_path << std::endl;
             res.status = 404;
-            res.set_content("{\"error\": \"webapp.html not found\"}", "application/json");
+            res.set_content("{\"error\": \"index.html not found\"}", "application/json");
             return;
         }
         
@@ -315,7 +274,7 @@ void Server::setup_static_files() {
         
         // Replace {{SERVER_PORT}}
         while ((pos = html_template.find("{{SERVER_PORT}}")) != std::string::npos) {
-            html_template.replace(pos, 17, std::to_string(port_));
+            html_template.replace(pos, 15, std::to_string(port_));
         }
         
         // Replace {{SERVER_MODELS_JS}}
@@ -350,7 +309,6 @@ void Server::setup_static_files() {
     });
 
     // Mount static files directory for other files (CSS, JS, images)
-    // Use /static prefix to avoid conflicts with webapp.html
     if (!http_server_->set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
         std::cerr << "[Server] Web UI assets will not be available" << std::endl;

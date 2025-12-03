@@ -208,7 +208,7 @@
         <h1>Lemonade Server</h1>
         <div class="status">
             <span class="status-dot"></span>
-            Running on port {{PORT}}
+            Running on port {{SERVER_PORT}}
         </div>
         
         <!-- Quick Start -->
@@ -218,12 +218,12 @@
             <div class="code-block">
                 <button class="copy-btn" onclick="copyCode(this)">copy</button>
                 <code><span class="comment"># List available models</span>
-curl http://localhost:{{PORT}}/api/v1/models</code>
+curl http://localhost:{{SERVER_PORT}}/api/v1/models</code>
             </div>
             <div class="code-block">
                 <button class="copy-btn" onclick="copyCode(this)">copy</button>
                 <code><span class="comment"># Chat with a model (replace MODEL_NAME)</span>
-curl -X POST http://localhost:{{PORT}}/api/v1/chat/completions \
+curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
   -H <span class="string">"Content-Type: application/json"</span> \
   -d <span class="string">'{"model": "MODEL_NAME", "messages": [{"role": "user", "content": "Hello!"}]}'</span></code>
             </div>
