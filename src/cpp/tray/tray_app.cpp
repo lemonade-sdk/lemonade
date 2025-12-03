@@ -1683,6 +1683,15 @@ Menu TrayApp::create_menu() {
                 [this, model_name = model.model_name]() { on_unload_specific_model(model_name); }
             ));
         }
+        
+        // Add "Unload all" option if multiple models are loaded
+        if (loaded_models.size() > 1) {
+            unload_submenu->add_separator();
+            unload_submenu->add_item(MenuItem::Action(
+                "Unload all",
+                [this]() { on_unload_model(); }
+            ));
+        }
     }
     menu.add_item(MenuItem::Submenu("Unload Model", unload_submenu));
     
