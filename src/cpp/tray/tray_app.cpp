@@ -1839,16 +1839,10 @@ void TrayApp::on_unload_specific_model(const std::string& model_name) {
         std::cout << "Background thread: Unloading model: '" << model_name_copy << "'" << std::endl;
         std::cout.flush();
         
-        bool success = server_manager_->unload_model(model_name_copy);
+        server_manager_->unload_model(model_name_copy);
         
         // Update menu to show new status
         build_menu();
-        
-        if (success) {
-            show_notification("Model Unloaded", "Successfully unloaded " + model_name_copy);
-        } else {
-            show_notification("Unload Failed", "Failed to unload " + model_name_copy);
-        }
     }).detach();
 }
 
