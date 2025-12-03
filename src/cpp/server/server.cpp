@@ -559,33 +559,31 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     response["object"] = "list";
     
     for (const auto& [model_id, model_info] : models) {
-        
-        nlohmann::json model_json = {
-            {"id", model_id},
-            {"object", "model"},
-            {"created", 1234567890},
-            {"owned_by", "lemonade"},
-            {"checkpoint", model_info.checkpoint},
-            {"recipe", model_info.recipe}
-        };
-        
-        // Add size if available
-        if (model_info.size > 0.0) {
-            model_json["size"] = model_info.size;
-        }
-        
-        // Add extra fields when showing all models (for CLI list command)
-        if (show_all) {
-            model_json["name"] = model_info.model_name;
-            model_json["downloaded"] = model_info.downloaded;
-            model_json["labels"] = model_info.labels;
-            model_json["suggested"] = model_info.suggested;
-        }
-        
-        response["data"].push_back(model_json);
+        response["data"].push_back(model_info_to_json(model_id, model_info));
     }
     
     res.set_content(response.dump(), "application/json");
+}
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+    nlohmann::json model_json = {
+        {"id", model_id},
+        {"object", "model"},
+        {"created", 1234567890},
+        {"owned_by", "lemonade"},
+        {"checkpoint", info.checkpoint},
+        {"recipe", info.recipe},
+        {"downloaded", info.downloaded},
+        {"suggested", info.suggested},
+        {"labels", info.labels}
+    };
+    
+    // Add size if available
+    if (info.size > 0.0) {
+        model_json["size"] = info.size;
+    }
+    
+    return model_json;
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
@@ -593,19 +591,7 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        nlohmann::json response = {
-            {"id", model_id},
-            {"name", info.model_name},
-            {"checkpoint", info.checkpoint},
-            {"recipe", info.recipe}
-        };
-        
-        // Add size if available
-        if (info.size > 0.0) {
-            response["size"] = info.size;
-        }
-        
-        res.set_content(response.dump(), "application/json");
+        res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
     } else {
         res.status = 404;
         res.set_content("{\"error\": \"Model not found\"}", "application/json");
@@ -1699,26 +1685,17 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
     
-    try {
-        // Get verbose parameter from query string (default to false)
-        bool verbose = false;
-        if (req.has_param("verbose")) {
-            std::string verbose_param = req.get_param_value("verbose");
-            std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
-            verbose = (verbose_param == "true" || verbose_param == "1");
-        }
-        
-        // Get system info with cache handling
-        nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
-        
-        res.set_content(system_info.dump(), "application/json");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[Server] ERROR in handle_system_info: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
+    // Get verbose parameter from query string (default to false)
+    bool verbose = false;
+    if (req.has_param("verbose")) {
+        std::string verbose_param = req.get_param_value("verbose");
+        std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
+        verbose = (verbose_param == "true" || verbose_param == "1");
     }
+    
+    // Get system info - this function handles all errors internally and never throws
+    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
+    res.set_content(system_info.dump(), "application/json");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {

@@ -102,7 +102,8 @@ private:
     
     // Menu actions
     void on_load_model(const std::string& model_name);
-    void on_unload_model();
+    void on_unload_model();  // Unload all models (kept for backward compatibility)
+    void on_unload_specific_model(const std::string& model_name);  // Unload specific model
     void on_change_port(int new_port);
     void on_change_context_size(int new_ctx_size);
     void on_show_logs();
