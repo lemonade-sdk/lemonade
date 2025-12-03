@@ -39,11 +39,12 @@ jobs:
         shell: bash
         run: |
           python -m venv .venv
-          source .venv/Scripts/activate
-          python -m pip install --upgrade pip
-          pip install pylint
-          python -m pip check
-          pip install -e .[dev,oga-cpu]
+          venvPython=".venv/Scripts/python"
+          venvPip=".venv/Scripts/pip"
+          $venvPython -m pip install --upgrade pip
+          $venvPip install pylint
+          $venvPython -m pip check
+          $venvPip install -e .[dev,oga-cpu]
       - name: Lint with Black
         uses: psf/black@stable
         with:
@@ -52,21 +53,22 @@ jobs:
       - name: Lint with PyLint
         shell: bash
         run: |
-          source .venv/Scripts/activate
-          pylint src/lemonade --rcfile .pylintrc --disable E0401
+          venvPylint=".venv/Scripts/pylint"
+          $venvPylint src/lemonade --rcfile .pylintrc --disable E0401
       - name: Run lemonade tests
         shell: bash
         run: |
-          source .venv/Scripts/activate
+          venvPython=".venv/Scripts/python"
+          venvLemonade=".venv/Scripts/lemonade"
           # Test CLI
-          lemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
+          $venvLemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
 
           # Test low-level APIs
-          python test/oga_cpu_api.py
+          $venvPython test/oga_cpu_api.py
 
           # Test high-level APIs
-          python examples/api_oga_cpu.py
-          python examples/api_oga_cpu_streaming.py
+          $venvPython examples/api_oga_cpu.py
+          $venvPython examples/api_oga_cpu_streaming.py
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD
