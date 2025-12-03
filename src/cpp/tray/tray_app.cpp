@@ -1830,8 +1830,7 @@ void TrayApp::on_unload_model() {
 }
 
 void TrayApp::on_unload_specific_model(const std::string& model_name) {
-    // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
-    // when build_menu() destroys the old menu (which destroys the lambda that captured the model)
+    // Copy to avoid reference invalidation when menu is rebuilt
     std::string model_name_copy = model_name;
     
     // Don't allow unload while a model is loading
