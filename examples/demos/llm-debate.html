@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🍋 Lemonade LLM Debate Arena</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a0c;
+            --bg-chat: #111115;
+            --bg-input: #18181d;
+            --bg-hover: #222229;
+            --bg-panel: #14141a;
+            --border-color: #2a2a35;
+            --text-primary: #f0f0f5;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-purple: #a855f7;
+            --accent-blue: #38bdf8;
+            --accent-green: #22c55e;
+            --accent-yellow: #facc15;
+            --accent-red: #ef4444;
+            --accent-pink: #ec4899;
+            --accent-orange: #f97316;
+            --vote-yes: #22c55e;
+            --vote-no: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh;
+            max-width: 100%;
+        }
+
+        /* Compact Header - Mobile First */
+        header {
+            background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+            padding: 0.5rem 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 0.5rem;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .logo-icon {
+            font-size: 1.25rem;
+        }
+
+        .logo h1 {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-orange) 50%, var(--accent-pink) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        /* Compact Vote Display in Header */
+        .vote-display {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: var(--bg-input);
+            padding: 0.35rem 0.6rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .vote-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .vote-item.yes { color: var(--vote-yes); }
+        .vote-item.no { color: var(--vote-no); }
+        .vote-item.pending { color: var(--text-muted); }
+
+        .vote-divider {
+            width: 1px;
+            height: 16px;
+            background: var(--border-color);
+        }
+
+        .server-config {
+            display: none;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-red);
+            flex-shrink: 0;
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+            box-shadow: 0 0 6px var(--accent-green);
+        }
+
+        /* Main Content - Chat Focused */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Hide side panels on mobile */
+        .models-panel,
+        .vote-panel {
+            display: none;
+        }
+
+        /* Chat Area - Full Width */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: linear-gradient(180deg, var(--bg-dark) 0%, var(--bg-chat) 50%, var(--bg-dark) 100%);
+        }
+
+        /* Question Bar - Compact */
+        .question-bar {
+            padding: 0.5rem;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .question-input-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .question-input {
+            flex: 1;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.6rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .question-input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        .question-input::placeholder {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .start-btn {
+            background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-pink) 100%);
+            border: none;
+            color: white;
+            padding: 0.6rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .start-btn:hover:not(:disabled) {
+            transform: scale(1.02);
+            box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
+        }
+
+        .start-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .start-btn.stop-btn {
+            background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);
+        }
+
+        .start-btn.stop-btn:hover {
+            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Chat Messages - Clean & Minimal */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem 0.6rem;
+        }
+
+        .chat-message {
+            max-width: 100%;
+            margin-bottom: 0.2rem;
+        }
+
+        .chat-message.system {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.5rem;
+            margin: 0.15rem auto;
+            max-width: 80%;
+        }
+
+        .chat-message.user {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            padding: 0.5rem 0.6rem;
+        }
+
+        .chat-message.user .message-author {
+            color: var(--accent-pink);
+        }
+
+        .chat-message.model {
+            background: transparent;
+            padding: 0.4rem 0.5rem;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-bottom: 0.15rem;
+        }
+
+        .message-author {
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        .message-badge {
+            font-size: 0.55rem;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .message-badge.gguf {
+            background: rgba(56, 189, 248, 0.2);
+            color: var(--accent-blue);
+        }
+
+        .message-content {
+            color: var(--text-secondary);
+            line-height: 1.4;
+            font-size: 0.82rem;
+        }
+
+        .message-content.streaming::after {
+            content: '▋';
+            animation: blink 0.8s step-end infinite;
+            color: var(--accent-purple);
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        .message-content .thinking {
+            color: var(--text-muted);
+            font-style: italic;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .vote-announcement {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            font-weight: 600;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            margin-top: 0.25rem;
+            opacity: 0.9;
+        }
+
+        .vote-announcement.yes {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--vote-yes);
+        }
+
+        .vote-announcement.no {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--vote-no);
+        }
+
+        /* Winner Banner - Mobile Optimized */
+        .winner-banner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-panel);
+            border: 2px solid;
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            z-index: 100;
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            width: 85%;
+            max-width: 320px;
+        }
+
+        .winner-banner.yes {
+            border-color: var(--vote-yes);
+            box-shadow: 0 0 40px rgba(34, 197, 94, 0.3);
+        }
+
+        .winner-banner.no {
+            border-color: var(--vote-no);
+            box-shadow: 0 0 40px rgba(239, 68, 68, 0.3);
+        }
+
+        .winner-banner.tie {
+            border-color: var(--accent-yellow);
+            box-shadow: 0 0 40px rgba(250, 204, 21, 0.3);
+        }
+
+        @keyframes popIn {
+            from { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+            to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+
+        .winner-banner h2 {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.5rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .winner-banner.yes h2 { color: var(--vote-yes); }
+        .winner-banner.no h2 { color: var(--vote-no); }
+        .winner-banner.tie h2 { color: var(--accent-yellow); }
+
+        .winner-banner p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .winner-banner .close-btn {
+            margin-top: 1rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 1.25rem;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .winner-banner .close-btn:hover {
+            background: var(--bg-hover);
+        }
+
+        /* Loading Overlay - Mobile Friendly */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            padding: 1rem;
+        }
+
+        .loading-overlay h2 {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--accent-yellow) 0%, var(--accent-orange) 50%, var(--accent-pink) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+        }
+
+        .loading-models {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+            max-width: 360px;
+        }
+
+        .loading-model-item {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.6rem 0.8rem;
+            background: var(--bg-input);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .loading-model-item .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-purple);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        .loading-model-item .check {
+            color: var(--accent-green);
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .loading-model-item .model-name {
+            flex: 1;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .loading-model-item .model-size {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Scrollbar - Minimal */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 2px;
+        }
+
+        /* Hidden elements for JS compatibility */
+        #yesBar, #noBar, #pendingCount, #pressureLevel, #pressureFill, #messageCount, #roundCount, #modelsList {
+            display: none;
+        }
+
+        /* Model colors for chat messages */
+        .model-color-0 { color: #f87171 !important; }
+        .model-color-1 { color: #38bdf8 !important; }
+        .model-color-2 { color: #facc15 !important; }
+        .model-color-3 { color: #4ade80 !important; }
+        .model-color-4 { color: #c084fc !important; }
+        .model-color-5 { color: #2dd4bf !important; }
+        .model-color-6 { color: #fb923c !important; }
+        .model-color-7 { color: #f472b6 !important; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <span class="logo-icon">🍋</span>
+                <h1>DEBATE ARENA</h1>
+            </div>
+            <div class="vote-display">
+                <div class="status-dot" id="statusDot"></div>
+                <div class="vote-divider"></div>
+                <div class="vote-item yes">✓ <span id="yesCountDisplay">0</span></div>
+                <div class="vote-item no">✗ <span id="noCountDisplay">0</span></div>
+                <div class="vote-divider"></div>
+                <div class="vote-item pending">⏳ <span id="pendingCountDisplay">8</span></div>
+            </div>
+            <input type="hidden" id="serverUrl" value="http://localhost:8000">
+        </header>
+
+        <div class="main-content">
+            <div class="chat-area">
+                <div class="question-bar">
+                    <div class="question-input-group">
+                        <input type="text" 
+                               class="question-input" 
+                               id="questionInput" 
+                               placeholder="Ask a yes/no question..."
+                               value="Is a hotdog a sandwich?"
+                               disabled>
+                        <button class="start-btn" id="startBtn" disabled>GO</button>
+                    </div>
+                </div>
+                <div class="chat-container" id="chatContainer">
+                    <div class="chat-message system">
+                        🍋 8 AI models will debate your question and vote!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden elements for JS compatibility -->
+    <div style="display:none;">
+        <span id="yesCount">0</span>
+        <span id="noCount">0</span>
+        <span id="yesBar"></span>
+        <span id="noBar"></span>
+        <span id="pendingCount">8</span>
+        <span id="pressureLevel"></span>
+        <span id="pressureFill"></span>
+        <span id="messageCount">0</span>
+        <span id="roundCount">0</span>
+        <span id="modelsList"></span>
+        <span id="statusText"></span>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <h2>🍋 PREPARING DEBATE ARENA</h2>
+        <div class="loading-models" id="loadingModels">
+            <div class="chat-message system" style="margin: 0;">
+                Connecting to server...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============== Configuration ==============
+        const CONFIG = {
+            serverUrl: 'http://localhost:8000',
+            numModels: 8,
+            maxHistoryMessages: 8,
+            messagesPerPressureLevel: 8,  // ~4 rounds average before voting starts
+            minRespondsBeforePrompt: 2,
+            responseDelayMs: 500,
+        };
+
+        // ============== State ==============
+        const state = {
+            connected: false,
+            models: [],           // Selected 8 models
+            loadedModels: new Set(),
+            debateActive: false,
+            question: '',
+            chatHistory: [],      // Full chat history
+            votes: {},            // { modelId: 'yes' | 'no' | null }
+            speakingModels: new Set(),
+            messageCount: 0,
+            roundCount: 0,
+            pressureLevel: 1,
+            modelColors: {},
+            abortControllers: {}, // For canceling streaming requests
+        };
+
+        // ============== Model Colors ==============
+        // Softer, distinguishable colors
+        const MODEL_COLORS = [
+            '#f97316', '#06b6d4', '#eab308', '#22c55e',
+            '#a855f7', '#14b8a6', '#f43f5e', '#8b5cf6'
+        ];
+
+        // ============== System Prompts ==============
+        // First round - no one to reference yet
+        const FIRST_ROUND_PROMPT = `Give your thought on this yes/no question with ONE sentence, but do not use the word "yes" or "no".`;
+        
+        // Later rounds - can reference others
+        const DEBATE_PROMPTS = {
+            1: `ONE sentence. You may agree or disagree with someone mentioned above.`,
+            2: `ONE sentence. Respond to a point made above, or add your own.`,
+            3: `ONE sentence. You can now vote by saying: MY VOTE: YES or MY VOTE: NO`,
+            4: `Final round. ONE sentence then vote: MY VOTE: YES or MY VOTE: NO`,
+            5: `ONLY say "MY VOTE: YES" or "MY VOTE: NO". Nothing else. No explanation.`
+        };
+
+        // ============== DOM Elements ==============
+        const elements = {
+            serverUrl: document.getElementById('serverUrl'),
+            statusDot: document.getElementById('statusDot'),
+            statusText: document.getElementById('statusText'),
+            modelsList: document.getElementById('modelsList'),
+            questionInput: document.getElementById('questionInput'),
+            startBtn: document.getElementById('startBtn'),
+            chatContainer: document.getElementById('chatContainer'),
+            yesCount: document.getElementById('yesCount'),
+            noCount: document.getElementById('noCount'),
+            yesBar: document.getElementById('yesBar'),
+            noBar: document.getElementById('noBar'),
+            pendingCount: document.getElementById('pendingCount'),
+            pressureLevel: document.getElementById('pressureLevel'),
+            pressureFill: document.getElementById('pressureFill'),
+            messageCount: document.getElementById('messageCount'),
+            roundCount: document.getElementById('roundCount'),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            loadingModels: document.getElementById('loadingModels'),
+        };
+
+        // ============== Utility Functions ==============
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Scroll management - keep scroll locked to bottom during streaming
+        let isScrollLocked = true;
+        let lastScrollHeight = 0;
+        
+        function smoothScrollToBottom() {
+            const container = elements.chatContainer;
+            container.scrollTop = container.scrollHeight;
+            isScrollLocked = true;
+        }
+        
+        // Use MutationObserver to maintain scroll position from bottom
+        function setupScrollLock() {
+            const container = elements.chatContainer;
+            
+            // Track if user manually scrolled away from bottom
+            container.addEventListener('scroll', () => {
+                const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+                isScrollLocked = distanceFromBottom < 50;
+            });
+            
+            // When content changes, maintain position from bottom
+            const observer = new MutationObserver(() => {
+                if (isScrollLocked) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            });
+            
+            observer.observe(container, { 
+                childList: true, 
+                subtree: true, 
+                characterData: true 
+            });
+        }
+
+        // ============== Server Communication ==============
+        async function checkServerHealth() {
+            try {
+                const response = await fetch(`${CONFIG.serverUrl}/api/v1/health`);
+                if (response.ok) {
+                    state.connected = true;
+                    elements.statusDot.classList.add('connected');
+                    elements.statusText.textContent = 'Connected';
+                    return true;
+                }
+            } catch (e) {
+                // Ignore
+            }
+            state.connected = false;
+            elements.statusDot.classList.remove('connected');
+            elements.statusText.textContent = 'Disconnected';
+            return false;
+        }
+
+        async function fetchModels() {
+            const response = await fetch(`${CONFIG.serverUrl}/api/v1/models`);
+            const data = await response.json();
+            return data.data || [];
+        }
+
+        async function loadModel(modelId) {
+            const response = await fetch(`${CONFIG.serverUrl}/api/v1/load`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_name: modelId })
+            });
+            return response.json();
+        }
+
+        // ============== Model Selection ==============
+        // Hardcoded list of debate models
+        const DEBATE_MODELS = [
+            'Phi-4-mini-instruct-GGUF',
+            'Gemma-3-4b-it-GGUF',
+            'Qwen3-4B-Instruct-2507-GGUF',
+            'granite-4.0-h-tiny-GGUF',
+            'SmolLM3-3B-GGUF',
+            'Ministral-3-3B-Instruct-2512-GGUF',
+            'Llama-3.2-3B-Instruct-GGUF',
+            'LFM2-1.2B-GGUF'
+        ];
+
+        function selectDebateModels(allModels) {
+            // Use the hardcoded list of debate models
+            const selected = [];
+            
+            for (const modelId of DEBATE_MODELS) {
+                // Find this model in the available models list
+                const model = allModels.find(m => m.id === modelId);
+                if (model) {
+                    selected.push(model);
+                    console.log(`Found model: ${modelId}`);
+                } else {
+                    // Model not in server list, create a minimal model object
+                    console.log(`Model ${modelId} not in server list, adding manually`);
+                    selected.push({
+                        id: modelId,
+                        recipe: 'llamacpp',
+                        size: null
+                    });
+                }
+            }
+
+            console.log(`Selected ${selected.length} debate models`);
+
+            // Assign colors
+            selected.forEach((model, i) => {
+                state.modelColors[model.id] = MODEL_COLORS[i % MODEL_COLORS.length];
+            });
+
+            // Update config to match selected count
+            CONFIG.numModels = selected.length;
+
+            return selected;
+        }
+
+        // ============== UI Updates ==============
+        function renderModelsList() {
+            // Simplified for mobile - models list is hidden
+            // Just keeping this function for compatibility
+        }
+
+        function renderLoadingOverlay() {
+            if (state.models.length === 0) return;
+
+            elements.loadingModels.innerHTML = state.models.map((model, i) => {
+                const isLoaded = state.loadedModels.has(model.id);
+                return `
+                    <div class="loading-model-item">
+                        ${isLoaded 
+                            ? '<span class="check">✓</span>' 
+                            : '<div class="spinner"></div>'
+                        }
+                        <span class="model-name">${model.id}</span>
+                        <span class="model-size">${model.size ? model.size.toFixed(1) + 'GB' : ''}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateVoteTally() {
+            const votes = Object.values(state.votes).filter(v => v);
+            const yesVotes = votes.filter(v => v === 'yes').length;
+            const noVotes = votes.filter(v => v === 'no').length;
+            const pending = CONFIG.numModels - votes.length;
+
+            // Update mobile header display
+            const yesDisplay = document.getElementById('yesCountDisplay');
+            const noDisplay = document.getElementById('noCountDisplay');
+            const pendingDisplay = document.getElementById('pendingCountDisplay');
+            
+            if (yesDisplay) yesDisplay.textContent = yesVotes;
+            if (noDisplay) noDisplay.textContent = noVotes;
+            if (pendingDisplay) pendingDisplay.textContent = pending;
+
+            // Keep old elements updated for compatibility
+            elements.yesCount.textContent = yesVotes;
+            elements.noCount.textContent = noVotes;
+            elements.pendingCount.textContent = pending;
+        }
+
+        function updatePressure() {
+            elements.pressureLevel.textContent = `Level ${state.pressureLevel}`;
+            elements.pressureFill.style.width = `${state.pressureLevel * 20}%`;
+        }
+
+        function updateStats() {
+            elements.messageCount.textContent = state.messageCount;
+            elements.roundCount.textContent = state.roundCount;
+        }
+
+        function addChatMessage(type, author, content, modelId = null) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${type}`;
+            
+            if (type === 'system') {
+                messageDiv.textContent = content;
+            } else {
+                const color = modelId ? state.modelColors[modelId] : 'var(--accent-pink)';
+                // Use a unique ID based on model and timestamp
+                const uniqueId = `msg-${modelId || 'user'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-author" style="color: ${color}">${escapeHtml(author)}</span>
+                    </div>
+                    <div class="message-content" id="${uniqueId}">${content ? escapeHtml(content) : '<span class="thinking">thinking...</span>'}</div>
+                `;
+            }
+
+            elements.chatContainer.appendChild(messageDiv);
+            smoothScrollToBottom();
+            return messageDiv;
+        }
+
+        function showWinnerBanner() {
+            const votes = Object.values(state.votes).filter(v => v);
+            const yesVotes = votes.filter(v => v === 'yes').length;
+            const noVotes = votes.filter(v => v === 'no').length;
+
+            let result, resultClass, emoji;
+            if (yesVotes > noVotes) {
+                result = 'YES WINS!';
+                resultClass = 'yes';
+                emoji = '✅';
+            } else if (noVotes > yesVotes) {
+                result = 'NO WINS!';
+                resultClass = 'no';
+                emoji = '❌';
+            } else {
+                result = "IT'S A TIE!";
+                resultClass = 'tie';
+                emoji = '🤝';
+            }
+
+            const banner = document.createElement('div');
+            banner.className = `winner-banner ${resultClass}`;
+            banner.innerHTML = `
+                <h2>${emoji} ${result}</h2>
+                <p>Final Vote: ${yesVotes} YES - ${noVotes} NO</p>
+                <button class="close-btn" onclick="this.parentElement.remove()">Close</button>
+            `;
+            document.body.appendChild(banner);
+        }
+
+        // ============== Vote Detection ==============
+        function detectVote(text) {
+            // Remove markdown formatting
+            const cleanText = text.replace(/\*+/g, '').toUpperCase();
+            
+            // Look for various vote formats
+            const patterns = [
+                /MY\s*VOTE\s*:?\s*(YES|NO)/,
+                /I\s*VOTE\s*:?\s*(YES|NO)/,
+                /VOTE\s*:?\s*(YES|NO)/,
+                /\b(YES|NO)\b.*(?:VOTE|SANDWICH|HOTDOG)/,  // "NO, a hotdog is not..."
+            ];
+            
+            for (const pattern of patterns) {
+                const match = cleanText.match(pattern);
+                if (match) {
+                    return match[1].toLowerCase();
+                }
+            }
+            
+            // Check if response is just YES or NO (or starts with it)
+            const trimmed = cleanText.trim();
+            if (trimmed === 'YES' || trimmed === 'NO') {
+                return trimmed.toLowerCase();
+            }
+            if (trimmed.startsWith('YES') || trimmed.startsWith('NO,') || trimmed.startsWith('NO ') || trimmed.startsWith('NO.')) {
+                return trimmed.startsWith('YES') ? 'yes' : 'no';
+            }
+            
+            return null;
+        }
+
+        // ============== Chat History Management ==============
+        function getShortName(modelId) {
+            // Get a very short name for natural referencing
+            return modelId
+                .replace(/-GGUF$/, '')
+                .replace(/-Instruct.*$/, '')
+                .replace(/-it$/, '')
+                .replace(/-2507$/, '')
+                .replace(/-2512$/, '')
+                .replace(/^Llama-3\.2-3B.*/, 'Llama')
+                .replace(/^Phi-4-mini.*/, 'Phi')
+                .replace(/^Gemma-3-4b.*/, 'Gemma')
+                .replace(/^Qwen3-4B.*/, 'Qwen')
+                .replace(/^granite.*/, 'Granite')
+                .replace(/^SmolLM3.*/, 'SmolLM')
+                .replace(/^Ministral.*/, 'Ministral')
+                .replace(/^LFM2.*/, 'LFM');
+        }
+
+        function buildChatHistoryForModel(modelId) {
+            // Only include model messages (not system or user)
+            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
+            const recentMessages = modelMessages.slice(-CONFIG.maxHistoryMessages);
+            
+            // Start with just the question
+            let prompt = `Question: ${state.question}`;
+            
+            // Only add conversation history if there are actual messages
+            if (recentMessages.length > 0) {
+                prompt += `\n\nOther opinions:\n`;
+                for (const msg of recentMessages) {
+                    const shortName = getShortName(msg.author);
+                    prompt += `- ${shortName}: ${msg.content}\n`;
+                }
+            }
+
+            return prompt;
+        }
+
+        function getSystemPrompt() {
+            // First round (no model messages yet) - don't mention referencing others
+            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
+            if (modelMessages.length === 0) {
+                return FIRST_ROUND_PROMPT;
+            }
+            // Later rounds - can reference others
+            return DEBATE_PROMPTS[state.pressureLevel] || DEBATE_PROMPTS[1];
+        }
+
+        // ============== Debate Logic ==============
+        async function streamModelResponse(modelId) {
+            if (!state.debateActive) return;
+            if (state.votes[modelId]) return; // Already voted
+            if (state.speakingModels.has(modelId)) return; // Already speaking
+
+            state.speakingModels.add(modelId);
+            renderModelsList();
+
+            const model = state.models.find(m => m.id === modelId);
+            const messageDiv = addChatMessage('model', modelId, '', modelId);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            contentDiv.classList.add('streaming');
+
+            // Build the prompt
+            const chatHistory = buildChatHistoryForModel(modelId);
+            const systemPrompt = getSystemPrompt();
+
+            const controller = new AbortController();
+            state.abortControllers[modelId] = controller;
+
+            // Timeout after 30 seconds
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            let fullResponse = '';
+
+            try {
+                // Add /no_think for SmolLM3 model
+                const finalSystemPrompt = modelId === 'SmolLM3-3B-GGUF' 
+                    ? systemPrompt + '\n/no_think' 
+                    : systemPrompt;
+
+                // For level 5, use minimal tokens and simplified prompt
+                const isVotingRound = state.pressureLevel >= 5;
+                const userPrompt = isVotingRound 
+                    ? `Question: ${state.question}\n\nVote YES or NO:`
+                    : chatHistory;
+
+                const response = await fetch(`${CONFIG.serverUrl}/api/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: modelId,
+                        messages: [
+                            { role: 'system', content: finalSystemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        stream: true,
+                        max_tokens: isVotingRound ? 20 : 60,  // Very short for voting round
+                        temperature: isVotingRound ? 0.3 : 0.7,
+                        enable_thinking: false  // Disable reasoning tokens so responses aren't empty
+                    }),
+                    signal: controller.signal
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+
+                            try {
+                                const json = JSON.parse(data);
+                                const delta = json.choices?.[0]?.delta?.content || '';
+                                fullResponse += delta;
+                                contentDiv.textContent = fullResponse;
+                                smoothScrollToBottom();
+                            } catch (e) {
+                                // Ignore parse errors
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    console.error(`Error from ${modelId}:`, e);
+                }
+            } finally {
+                clearTimeout(timeoutId);
+            }
+
+            // Finalize
+            contentDiv.classList.remove('streaming');
+            state.speakingModels.delete(modelId);
+            delete state.abortControllers[modelId];
+
+            // Clean up empty responses - remove the message div entirely
+            const trimmedResponse = fullResponse.trim();
+            if (!trimmedResponse) {
+                console.log(`Empty response from ${modelId}, removing message and will retry`);
+                messageDiv.remove();
+                
+                // Track empty response count for retry limiting
+                state.emptyResponseCount = state.emptyResponseCount || {};
+                state.emptyResponseCount[modelId] = (state.emptyResponseCount[modelId] || 0) + 1;
+                
+                // Retry after a delay if we haven't exceeded retry limit
+                if (state.emptyResponseCount[modelId] < 3 && state.debateActive && !state.votes[modelId]) {
+                    setTimeout(() => {
+                        if (state.debateActive && !state.votes[modelId]) {
+                            streamModelResponse(modelId);
+                        }
+                    }, 2000 + Math.random() * 2000); // 2-4 second delay
+                }
+            } else {
+                // Reset empty response count on success
+                if (state.emptyResponseCount) {
+                    state.emptyResponseCount[modelId] = 0;
+                }
+                
+                // Add to chat history
+                state.chatHistory.push({
+                    type: 'model',
+                    author: modelId,
+                    modelId: modelId,
+                    content: trimmedResponse
+                });
+                state.messageCount++;
+                updateStats();
+
+                // Check for vote
+                const vote = detectVote(trimmedResponse);
+                if (vote) {
+                    state.votes[modelId] = vote;
+                    // Add vote announcement
+                    const voteDiv = document.createElement('div');
+                    voteDiv.className = `vote-announcement ${vote}`;
+                    voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
+                    contentDiv.appendChild(voteDiv);
+                    
+                    updateVoteTally();
+                }
+            }
+
+            renderModelsList();
+            checkDebateEnd();
+
+            // Possibly prompt more models
+            if (state.debateActive) {
+                scheduleNextResponses();
+            }
+        }
+
+        function scheduleNextResponses() {
+            // Get models that haven't voted and aren't currently speaking
+            const availableModels = state.models.filter(m => 
+                !state.votes[m.id] && 
+                !state.speakingModels.has(m.id) &&
+                state.loadedModels.has(m.id)
+            );
+
+            // If no available models and some are still speaking, wait for them
+            if (availableModels.length === 0) {
+                // Check if any models are still speaking
+                if (state.speakingModels.size > 0) {
+                    return; // Wait for speaking models to finish
+                }
+                
+                // Check if there are models that haven't voted (stuck models)
+                const unvotedModels = state.models.filter(m => !state.votes[m.id]);
+                if (unvotedModels.length > 0 && state.debateActive) {
+                    console.log(`${unvotedModels.length} unvoted models detected, forcing retry`);
+                    // Force retry for stuck models
+                    setTimeout(() => {
+                        if (state.debateActive) {
+                            unvotedModels.forEach((m, i) => {
+                                if (!state.votes[m.id] && !state.speakingModels.has(m.id)) {
+                                    setTimeout(() => streamModelResponse(m.id), i * 1000);
+                                }
+                            });
+                        }
+                    }, 3000);
+                }
+                return;
+            }
+            
+            // If there are very few models left, be more aggressive about prompting
+            const votedCount = Object.values(state.votes).filter(v => v).length;
+            const remainingCount = CONFIG.numModels - votedCount;
+            
+            // Increase pressure if needed
+            const newPressure = Math.min(5, Math.ceil(state.messageCount / CONFIG.messagesPerPressureLevel) + 1);
+            if (newPressure > state.pressureLevel) {
+                state.pressureLevel = newPressure;
+                updatePressure();
+                if (state.pressureLevel >= 4) {
+                    addChatMessage('system', '', `⚡ Pressure L${state.pressureLevel}!`);
+                }
+            }
+
+            // If only 1-2 models left, max pressure
+            if (remainingCount <= 2 && state.pressureLevel < 5) {
+                state.pressureLevel = 5;
+                updatePressure();
+                addChatMessage('system', '', '🔥 FINAL ROUND!');
+            }
+
+            // How many to prompt at once (more chaotic with more models remaining)
+            const concurrentPrompts = Math.min(availableModels.length, Math.max(2, Math.floor(remainingCount / 2)));
+
+            // Shuffle and pick models
+            const shuffled = [...availableModels].sort(() => Math.random() - 0.5);
+            const toPrompt = shuffled.slice(0, concurrentPrompts);
+
+            // Start responses with slight stagger
+            toPrompt.forEach((model, i) => {
+                setTimeout(() => {
+                    if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id)) {
+                        streamModelResponse(model.id);
+                    }
+                }, i * CONFIG.responseDelayMs);
+            });
+
+            state.roundCount++;
+            updateStats();
+        }
+
+        function checkDebateEnd() {
+            const votedCount = Object.values(state.votes).filter(v => v).length;
+            
+            if (votedCount >= CONFIG.numModels) {
+                state.debateActive = false;
+                
+                // Cancel any pending responses
+                Object.values(state.abortControllers).forEach(c => c.abort());
+                state.abortControllers = {};
+                state.speakingModels.clear();
+                
+                addChatMessage('system', '', '🎉 All votes in!');
+                showWinnerBanner();
+                
+                // Re-enable input for new debate
+                elements.questionInput.disabled = false;
+                elements.startBtn.textContent = 'GO';
+                elements.startBtn.classList.remove('stop-btn');
+            }
+        }
+
+        function stopDebate() {
+            if (!state.debateActive) return;
+            
+            state.debateActive = false;
+            
+            // Cancel all ongoing requests
+            Object.values(state.abortControllers).forEach(c => c.abort());
+            state.abortControllers = {};
+            state.speakingModels.clear();
+            
+            addChatMessage('system', '', '⏹️ Debate stopped');
+            
+            // Reset button
+            elements.questionInput.disabled = false;
+            elements.startBtn.textContent = 'GO';
+            elements.startBtn.classList.remove('stop-btn');
+        }
+
+        async function startDebate() {
+            const question = elements.questionInput.value.trim();
+            if (!question) return;
+
+            state.debateActive = true;
+            state.question = question;
+            state.chatHistory = [];
+            state.votes = {};
+            state.messageCount = 0;
+            state.roundCount = 0;
+            state.pressureLevel = 1;
+            state.emptyResponseCount = {};
+
+            // Reset UI
+            elements.questionInput.disabled = true;
+            elements.startBtn.textContent = 'STOP';
+            elements.startBtn.classList.add('stop-btn');
+            elements.chatContainer.innerHTML = '';
+            updateVoteTally();
+            updatePressure();
+            updateStats();
+            renderModelsList();
+
+            // Add question to chat
+            addChatMessage('user', 'Human', question);
+            state.chatHistory.push({
+                type: 'user',
+                author: 'Human',
+                content: question
+            });
+
+            addChatMessage('system', '', `🔥 Debate begins!`);
+
+            // Start all models responding in parallel (initial burst)
+            state.models.forEach((model, i) => {
+                setTimeout(() => {
+                    if (state.debateActive) {
+                        streamModelResponse(model.id);
+                    }
+                }, i * 200);  // Stagger starts slightly
+            });
+        }
+
+        function toggleDebate() {
+            if (state.debateActive) {
+                stopDebate();
+            } else {
+                startDebate();
+            }
+        }
+
+        // ============== Initialization ==============
+        async function init() {
+            // Setup scroll lock for smooth scrolling
+            setupScrollLock();
+            
+            // Setup event listeners
+            elements.serverUrl.addEventListener('change', (e) => {
+                CONFIG.serverUrl = e.target.value.replace(/\/$/, '');
+                init();  // Reinitialize
+            });
+
+            elements.startBtn.addEventListener('click', toggleDebate);
+            elements.questionInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !state.debateActive) {
+                    startDebate();
+                }
+            });
+
+            // Check server connection
+            elements.loadingOverlay.style.display = 'flex';
+            const connected = await checkServerHealth();
+            
+            if (!connected) {
+                elements.loadingModels.innerHTML = `
+                    <div class="chat-message system" style="margin: 0; color: var(--accent-red);">
+                        Cannot connect to server at ${CONFIG.serverUrl}<br>
+                        Please ensure the server is running.
+                    </div>
+                `;
+                return;
+            }
+
+            // Fetch and select models
+            elements.loadingModels.innerHTML = `
+                <div class="chat-message system" style="margin: 0;">
+                    Fetching available models...
+                </div>
+            `;
+
+            try {
+                const allModels = await fetchModels();
+                state.models = selectDebateModels(allModels);
+
+                if (state.models.length < CONFIG.numModels) {
+                    elements.loadingModels.innerHTML = `
+                        <div class="chat-message system" style="margin: 0; color: var(--accent-yellow);">
+                            Found ${state.models.length} LLM models.<br>
+                            Need ${CONFIG.numModels} GGUF models for full debate.<br>
+                            Install more models for a bigger debate!
+                        </div>
+                    `;
+                    // Still continue if we have at least 2 models
+                    if (state.models.length < 2) return;
+                    // Adjust numModels to match available
+                    CONFIG.numModels = state.models.length;
+                }
+
+                renderLoadingOverlay();
+
+                // Load all models
+                for (const model of state.models) {
+                    try {
+                        await loadModel(model.id);
+                        state.loadedModels.add(model.id);
+                        renderLoadingOverlay();
+                    } catch (e) {
+                        console.error(`Failed to load ${model.id}:`, e);
+                    }
+                }
+
+                // All loaded - hide overlay and enable input
+                elements.loadingOverlay.style.display = 'none';
+                elements.questionInput.disabled = false;
+                elements.startBtn.disabled = false;
+                renderModelsList();
+
+                addChatMessage('system', '', `🎯 ${state.loadedModels.size} LLMs ready! Ask a yes/no question.`);
+
+            } catch (e) {
+                console.error('Init error:', e);
+                elements.loadingModels.innerHTML = `
+                    <div class="chat-message system" style="margin: 0; color: var(--accent-red);">
+                        Error initializing: ${e.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Start the app
+        init();
+
+        // Periodic health check
+        setInterval(checkServerHealth, 5000);
+    </script>
+</body>
+</html>
+
