@@ -519,32 +519,31 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     response["object"] = "list";
     
     for (const auto& [model_id, model_info] : models) {
-        
-        nlohmann::json model_json = {
-            {"id", model_id},
-            {"object", "model"},
-            {"created", 1234567890},
-            {"owned_by", "lemonade"},
-            {"checkpoint", model_info.checkpoint},
-            {"recipe", model_info.recipe}
-        };
-        
-        // Add size if available
-        if (model_info.size > 0.0) {
-            model_json["size"] = model_info.size;
-        }
-        
-        // Add extra fields when showing all models (for CLI list command)
-        if (show_all) {
-            model_json["name"] = model_info.model_name;
-            model_json["downloaded"] = model_info.downloaded;
-            model_json["labels"] = model_info.labels;
-        }
-        
-        response["data"].push_back(model_json);
+        response["data"].push_back(model_info_to_json(model_id, model_info));
     }
     
     res.set_content(response.dump(), "application/json");
+}
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+    nlohmann::json model_json = {
+        {"id", model_id},
+        {"object", "model"},
+        {"created", 1234567890},
+        {"owned_by", "lemonade"},
+        {"checkpoint", info.checkpoint},
+        {"recipe", info.recipe},
+        {"downloaded", info.downloaded},
+        {"suggested", info.suggested},
+        {"labels", info.labels}
+    };
+    
+    // Add size if available
+    if (info.size > 0.0) {
+        model_json["size"] = info.size;
+    }
+    
+    return model_json;
 }
 
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
@@ -552,19 +551,7 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        nlohmann::json response = {
-            {"id", model_id},
-            {"name", info.model_name},
-            {"checkpoint", info.checkpoint},
-            {"recipe", info.recipe}
-        };
-        
-        // Add size if available
-        if (info.size > 0.0) {
-            response["size"] = info.size;
-        }
-        
-        res.set_content(response.dump(), "application/json");
+        res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
     } else {
         res.status = 404;
         res.set_content("{\"error\": \"Model not found\"}", "application/json");
