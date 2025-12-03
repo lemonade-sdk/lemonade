@@ -9,52 +9,52 @@ const apps = [
   {
     name: 'Hugging Face',
     url: 'https://huggingface.co/models?apps=lemonade&sort=trending',
-    logo: 'https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/huggingface-color.png',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/hugging_face.png',
   },
   {
     name: 'Continue',
     url: 'https://lemonade-server.ai/docs/server/apps/continue/',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png',
   },
   {
     name: 'n8n',
     url: 'https://n8n.io/integrations/lemonade-model/',
-    logo: 'https://avatars.githubusercontent.com/u/45487711?s=48&v=4',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png',
   },
   {
     name: 'Gaia',
     url: 'https://github.com/amd/gaia',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png',
   },
   {
     name: 'Infinity Arcade',
     url: 'https://github.com/lemonade-sdk/infinity-arcade',
-    logo: 'https://raw.githubusercontent.com/lemonade-sdk/lemonade-arcade/refs/heads/main/docs/assets/favicon.ico',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png',
   },
   {
     name: 'GitHub Copilot',
     url: 'https://marketplace.visualstudio.com/items?itemName=GitHub.copilot',
-    logo: 'https://www.podfeet.com/blog/wp-content/uploads/2021/09/GitHub-Copilot-logo-1040x650.png',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png',
   },
   {
     name: 'OpenHands',
     url: 'https://openhands.dev/',
-    logo: 'https://miro.medium.com/0*EnIeVG2jIaNKb0AV.png',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png',
   },
   {
     name: 'Dify',
     url: 'https://marketplace.dify.ai/plugins/langgenius/lemonade',
-    logo: 'https://framerusercontent.com/images/T7QlcM9SLN97Z5PNNvhMBZEECTM.png',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png',
   },
   {
     name: 'Deep Tutor',
     url: 'https://deeptutor.knowhiz.us/',
-    logo: 'https://ph-files.imgix.net/6b1488d0-7ae0-4bda-bdc6-8690038739c0.jpeg?auto=format',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png',
   },
   {
     name: 'Iterate.ai',
     url: 'https://www.iterate.ai/',
-    logo: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSOhHWver_g38Vk1lYflEwPu-mfnFG_7UfLeE9jk7V18pmPTqEXggt-MHaU48hZBy094xA&usqp=CAU',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png',
   },
 ];
 
