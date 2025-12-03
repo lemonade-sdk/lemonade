@@ -52,6 +52,7 @@ from lemonade.tools.server.wrapped_server import WrappedServer
 from lemonade.tools.server.llamacpp import LlamaServer
 from lemonade.tools.server.flm import FlmServer
 from lemonade.tools.server.tool_calls import extract_tool_calls, get_tool_call_pattern
+from lemonade.tools.server.webapp import get_webapp_html
 from lemonade.tools.server.utils.port import lifespan
 
 from lemonade_server.model_manager import ModelManager
@@ -286,7 +287,11 @@ class Server:
         # Set up custom routes
         self.setup_routes(["/api/v0", "/api/v1"])
 
-        # Mount a static assets dir for HTML responses
+        # Set up Web App
+        self.app.get("/")(self.webapp)
+
+        # Mount a static assets dir for HTML responses, such
+        # as the Web App
         static_dir = Path(__file__).parent / "static"
         self.app.mount(
             "/static", NoCacheStaticFiles(directory=static_dir), name="static_assets"
@@ -747,6 +752,13 @@ class Server:
 
         # Show telemetry in debug while complying with uvicorn's log indentation
         logging.debug("\n          ".join(table))
+
+    def webapp(self):
+        """
+        Serve the Web App to the user's browser.
+        """
+
+        return get_webapp_html(port=self.app.port)
 
     def initialize_load_config(
         self, request: Union[ChatCompletionRequest, CompletionRequest]
