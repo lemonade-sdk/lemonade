@@ -7,8 +7,7 @@ import {
 } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
-
-const CHAT_API_BASE = 'http://localhost:8000/api/v1';
+import { serverFetch, onServerPortChange } from './utils/serverConfig';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -46,7 +45,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const fetchDownloadedModels = useCallback(async () => {
     try {
-      const response = await fetch(`${CHAT_API_BASE}/models`);
+      const response = await serverFetch('/models');
       const data = await response.json();
       
       // Handle both array format and object with data array
@@ -60,7 +59,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const fetchCurrentLoadedModel = useCallback(async () => {
     try {
-      const response = await fetch(`${CHAT_API_BASE}/health`);
+      const response = await serverFetch('/health');
       const data = await response.json();
       
       if (data && data.model_loaded) {
@@ -102,6 +101,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     const interval = setInterval(() => {
       fetchCurrentLoadedModel();
     }, 5000);
+
+    // Listen for port changes and refetch data
+    const unsubscribePortChange = onServerPortChange(() => {
+      console.log('Server port changed, refetching model data...');
+      loadModels();
+      fetchDownloadedModels();
+      fetchCurrentLoadedModel();
+    });
     
     // === Integration API for other parts of the app ===
     // To indicate a model is loading, use either:
@@ -154,6 +161,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     
     return () => {
       clearInterval(interval);
+      unsubscribePortChange();
       window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
       window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
       delete (window as any).setModelLoading;
@@ -382,7 +390,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
       
-      const response = await fetch(`${CHAT_API_BASE}/pull`, {
+      const response = await serverFetch('/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName, ...modelData })
@@ -425,7 +433,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
       
-      const response = await fetch(`${CHAT_API_BASE}/load`, {
+      const response = await serverFetch('/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName, ...modelData })
@@ -457,7 +465,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const handleUnloadModel = async (modelName: string) => {
     try {
-      const response = await fetch(`${CHAT_API_BASE}/unload`, {
+      const response = await serverFetch('/unload', {
         method: 'POST'
       });
       
@@ -490,7 +498,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
     
     try {
-      const response = await fetch(`${CHAT_API_BASE}/delete`, {
+      const response = await serverFetch('/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName })

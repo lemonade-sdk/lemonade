@@ -52,6 +52,9 @@ declare global {
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);
       getVersion?: () => Promise<string>;
+      discoverServerPort?: () => Promise<number>;
+      getServerPort?: () => Promise<number>;
+      onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
     };
   }
 }

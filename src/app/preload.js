@@ -51,6 +51,24 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.removeListener(channel, handler);
     };
   },
-  getVersion: () => ipcRenderer.invoke('get-version')
+  getVersion: () => ipcRenderer.invoke('get-version'),
+  discoverServerPort: () => ipcRenderer.invoke('discover-server-port'),
+  getServerPort: () => ipcRenderer.invoke('get-server-port'),
+  onServerPortUpdated: (callback) => {
+    if (typeof callback !== 'function') {
+      return undefined;
+    }
+
+    const channel = 'server-port-updated';
+    const handler = (_event, port) => {
+      callback(port);
+    };
+
+    ipcRenderer.on(channel, handler);
+
+    return () => {
+      ipcRenderer.removeListener(channel, handler);
+    };
+  }
 });
 

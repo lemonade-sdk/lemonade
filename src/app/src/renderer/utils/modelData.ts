@@ -127,10 +127,10 @@ const loadUserModelsFromCache = async (): Promise<ModelsData> => {
 };
 
 const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
-  const CHAT_API_BASE = 'http://localhost:8000/api/v1';
+  const { serverFetch } = await import('./serverConfig');
   
   try {
-    const response = await fetch(`${CHAT_API_BASE}/models?show_all=true`);
+    const response = await serverFetch('/models?show_all=true');
     if (!response.ok) {
       throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
     }

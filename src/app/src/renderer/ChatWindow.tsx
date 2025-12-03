@@ -8,8 +8,7 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-
-const CHAT_API_BASE = 'http://localhost:8000/api/v1';
+import { serverFetch, onServerPortChange } from './utils/serverConfig';
 
 interface ImageContent {
   type: 'image_url';
@@ -132,10 +131,18 @@ useEffect(() => {
     fetchLoadedModel();
   }, 5000);
 
+  // Listen for port changes and refetch data
+  const unsubscribePortChange = onServerPortChange(() => {
+    console.log('Server port changed, refetching chat data...');
+    fetchModels();
+    fetchLoadedModel();
+  });
+
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
     clearInterval(healthCheckInterval);
+    unsubscribePortChange();
     if (typeof unsubscribeSettings === 'function') {
       unsubscribeSettings();
     }
@@ -201,7 +208,7 @@ useEffect(() => {
 
 const fetchModels = async () => {
   try {
-    const response = await fetch(`${CHAT_API_BASE}/models`);
+    const response = await serverFetch('/models');
     const data = await response.json();
     
     // Handle both array format and object with data array
@@ -218,7 +225,7 @@ const fetchModels = async () => {
 
 const fetchLoadedModel = async () => {
   try {
-    const response = await fetch(`${CHAT_API_BASE}/health`);
+    const response = await serverFetch('/health');
     const data = await response.json();
 
     if (data?.model_loaded) {
@@ -386,7 +393,7 @@ const sendMessage = async () => {
     let receivedFirstChunk = false;
 
     try {
-      const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
+      const response = await serverFetch('/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -767,7 +774,7 @@ const sendMessage = async () => {
     let receivedFirstChunk = false;
 
     try {
-      const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
+      const response = await serverFetch('/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getServerBaseUrl, onServerPortChange } from './utils/serverConfig';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -13,7 +14,20 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const logsContentRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [serverUrl, setServerUrl] = useState<string>('http://localhost:8000');
+  const [serverUrl, setServerUrl] = useState<string>(getServerBaseUrl());
+
+  // Listen for port changes and update server URL
+  useEffect(() => {
+    const unsubscribe = onServerPortChange(() => {
+      const newUrl = getServerBaseUrl();
+      console.log('Server port changed, updating logs URL:', newUrl);
+      setServerUrl(newUrl);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Auto-scroll to bottom when new logs arrive (if auto-scroll is enabled)
   useEffect(() => {

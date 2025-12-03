@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { exec } = require('child_process');
 
 const DEFAULT_MIN_WIDTH = 400;
 const DEFAULT_MIN_HEIGHT = 600;
@@ -17,6 +18,8 @@ const userModelsSubscribers = new Set();
 const userModelsDestroyedHandlers = new Map();
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
+const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
+let cachedServerPort = 8000; // Default port
 const BASE_APP_SETTING_VALUES = Object.freeze({
   temperature: 0.7,
   topK: 40,
@@ -201,6 +204,58 @@ const broadcastSettingsUpdated = (settings) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(SETTINGS_UPDATED_CHANNEL, settings);
   }
+};
+
+const broadcastServerPortUpdated = (port) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(SERVER_PORT_UPDATED_CHANNEL, port);
+  }
+};
+
+const discoverServerPort = () => {
+  return new Promise((resolve) => {
+    exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.warn('Failed to discover server port:', error);
+        resolve(8000); // Fall back to default
+        return;
+      }
+
+      try {
+        // Parse the output to find the port
+        // Expected format: "Server is running on port {port}" or "Server is not running"
+        const output = stdout.trim();
+        
+        // Check if server is not running
+        if (output.includes('not running')) {
+          console.log('Server is not running, using default port 8000');
+          resolve(8000);
+          return;
+        }
+
+        // Try regex pattern to extract port number
+        // Pattern matches: "Server is running on port 8080" or any similar format
+        const portMatch = output.match(/port[:\s]+(\d+)/i) || 
+                         output.match(/localhost:(\d+)/i) ||
+                         output.match(/127\.0\.0\.1:(\d+)/i);
+        
+        if (portMatch && portMatch[1]) {
+          const port = parseInt(portMatch[1], 10);
+          if (!isNaN(port) && port > 0 && port < 65536) {
+            console.log('Discovered server port:', port);
+            resolve(port);
+            return;
+          }
+        }
+
+        console.warn('Could not parse port from lemonade-server status output:', output);
+        resolve(8000);
+      } catch (parseError) {
+        console.error('Error parsing server status:', parseError);
+        resolve(8000);
+      }
+    });
+  });
 };
 
 const readUserModelsFile = async () => {
@@ -414,7 +469,7 @@ ipcMain.handle('get-version', async () => {
   try {
     const http = require('http');
     return new Promise((resolve, reject) => {
-      const req = http.get('http://localhost:8000/api/v1/health', (res) => {
+      const req = http.get(`http://localhost:${cachedServerPort}/api/v1/health`, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -435,6 +490,17 @@ ipcMain.handle('get-version', async () => {
   } catch (error) {
     return 'Unknown';
   }
+});
+
+ipcMain.handle('discover-server-port', async () => {
+  const port = await discoverServerPort();
+  cachedServerPort = port;
+  broadcastServerPortUpdated(port);
+  return port;
+});
+
+ipcMain.handle('get-server-port', async () => {
+  return cachedServerPort;
 });
 
 function updateWindowMinWidth(requestedWidth) {
