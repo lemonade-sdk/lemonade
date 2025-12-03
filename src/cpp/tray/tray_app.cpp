@@ -313,10 +313,36 @@ int TrayApp::run() {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
+            // If 'run' command and server is already running, connect to it and execute the run command
+            if (config_.command == "run") {
+                std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
+                
+                // Get the running server's info
+                auto [pid, running_port] = get_server_info();
+                if (running_port == 0) {
+                    std::cerr << "Error: Could not connect to running server" << std::endl;
+                    return 1;
+                }
+                
+                // Create server manager to communicate with running server
+                server_manager_ = std::make_unique<ServerManager>();
+                server_manager_->set_port(running_port);
+                config_.port = running_port;  // Update config to match running server
+                
+                // Use localhost to connect (works regardless of what the server is bound to)
+                if (config_.host.empty() || config_.host == "0.0.0.0") {
+                    config_.host = "localhost";
+                }
+                
+                // Execute the run command (load model and open browser)
+                return execute_run_command();
+            }
+            
+            // For 'serve' command, don't allow duplicate servers
 #ifdef _WIN32
             show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
-            std::cerr << "Error: Another instance of lemonade-server serve/run is already running.\n"
+            std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
                       << "Only one persistent server can run at a time.\n\n"
                       << "To check server status: lemonade-server status\n"
                       << "To stop the server: lemonade-server stop\n" << std::endl;
@@ -1658,11 +1684,42 @@ Menu TrayApp::create_menu() {
                 }
                 menu.add_item(MenuItem::Action(display_text, nullptr, false));
             }
-            menu.add_item(MenuItem::Action("Unload Models", [this]() { on_unload_model(); }));
         } else {
             menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
         }
     }
+    
+    // Unload Model submenu
+    auto unload_submenu = std::make_shared<Menu>();
+    if (loaded_models.empty()) {
+        unload_submenu->add_item(MenuItem::Action(
+            "No models loaded",
+            nullptr,
+            false
+        ));
+    } else {
+        for (const auto& model : loaded_models) {
+            // Display model name with type if not LLM
+            std::string display_text = model.model_name;
+            if (!model.type.empty() && model.type != "llm") {
+                display_text += " (" + model.type + ")";
+            }
+            unload_submenu->add_item(MenuItem::Action(
+                display_text,
+                [this, model_name = model.model_name]() { on_unload_specific_model(model_name); }
+            ));
+        }
+        
+        // Add "Unload all" option if multiple models are loaded
+        if (loaded_models.size() > 1) {
+            unload_submenu->add_separator();
+            unload_submenu->add_item(MenuItem::Action(
+                "Unload all",
+                [this]() { on_unload_model(); }
+            ));
+        }
+    }
+    menu.add_item(MenuItem::Submenu("Unload Model", unload_submenu));
     
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
@@ -1791,11 +1848,36 @@ void TrayApp::on_unload_model() {
         return;
     }
     
-    std::cout << "Unloading model" << std::endl;
+    std::cout << "Unloading all models" << std::endl;
     if (server_manager_->unload_model()) {
         loaded_model_.clear();
         build_menu();
     }
+}
+
+void TrayApp::on_unload_specific_model(const std::string& model_name) {
+    // Copy to avoid reference invalidation when menu is rebuilt
+    std::string model_name_copy = model_name;
+    
+    // Don't allow unload while a model is loading
+    if (is_loading_model_) {
+        show_notification("Model Loading", "Please wait for the current model to finish loading.");
+        return;
+    }
+    
+    std::cout << "Unloading model: '" << model_name_copy << "'" << std::endl;
+    std::cout.flush();
+    
+    // Launch background thread to perform the unload
+    std::thread([this, model_name_copy]() {
+        std::cout << "Background thread: Unloading model: '" << model_name_copy << "'" << std::endl;
+        std::cout.flush();
+        
+        server_manager_->unload_model(model_name_copy);
+        
+        // Update menu to show new status
+        build_menu();
+    }).detach();
 }
 
 void TrayApp::on_change_port(int new_port) {

@@ -331,12 +331,26 @@ bool ServerManager::load_model(const std::string& model_name) {
 }
 
 bool ServerManager::unload_model() {
+    // Unload all models by passing empty string
+    return unload_model("");
+}
+
+bool ServerManager::unload_model(const std::string& model_name) {
     try {
+        std::string body;
+        if (!model_name.empty()) {
+            body = "{\"model_name\": \"" + model_name + "\"}";
+        }
+        
         // Unload can take time, so use 30 second timeout
-        make_http_request("/api/v1/unload", "POST", "", 30);
+        make_http_request("/api/v1/unload", "POST", body, 30);
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Exception unloading model: " << e.what() << std::endl;
+        if (!model_name.empty()) {
+            std::cerr << "Exception unloading model '" << model_name << "': " << e.what() << std::endl;
+        } else {
+            std::cerr << "Exception unloading models: " << e.what() << std::endl;
+        }
         return false;
     }
 }

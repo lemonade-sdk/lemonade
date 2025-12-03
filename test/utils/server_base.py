@@ -45,8 +45,23 @@ MODELS_UNDER_TEST = [
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
+
 # Global variable for server binary (can be overridden via --server-binary)
-SERVER_BINARY = "lemonade-server-dev"
+# Default to finding lemonade-server-dev in the same venv as the running Python
+def _get_default_server_binary():
+    """Get the default server binary path based on the current Python interpreter."""
+    import platform
+
+    # Get the directory containing the Python executable
+    # For venv: .venv/Scripts/python.exe (Windows) or .venv/bin/python (Linux/Mac)
+    python_dir = os.path.dirname(sys.executable)
+    if platform.system() == "Windows":
+        return os.path.join(python_dir, "lemonade-server-dev.exe")
+    else:
+        return os.path.join(python_dir, "lemonade-server-dev")
+
+
+SERVER_BINARY = _get_default_server_binary()
 
 
 def is_cpp_server():
@@ -54,8 +69,8 @@ def is_cpp_server():
 
     Returns True if --server-binary argument was provided (i.e., not using the default Python server).
     """
-    # If --server-binary was provided, we're testing a custom binary (C++ server)
-    return SERVER_BINARY != "lemonade-server-dev"
+    # If --server-binary was provided and it's not our default venv binary, we're testing a custom binary (C++ server)
+    return SERVER_BINARY != _get_default_server_binary()
 
 
 def stop_lemonade():
@@ -82,8 +97,8 @@ def parse_args():
     parser.add_argument(
         "--server-binary",
         type=str,
-        default="lemonade-server-dev",
-        help="Path to server binary (default: lemonade-server-dev)",
+        default=_get_default_server_binary(),
+        help="Path to server binary (default: lemonade-server-dev in venv)",
     )
     # Use parse_known_args to ignore unknown arguments (like positional 'backend' in server_llamacpp.py)
     args, unknown = parser.parse_known_args()
@@ -237,8 +252,8 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            encoding='utf-8',
-            errors='replace',  # Replace any non-UTF-8 characters to prevent crashes
+            encoding="utf-8",
+            errors="replace",  # Replace any non-UTF-8 characters to prevent crashes
             env=os.environ.copy(),
         )
 
