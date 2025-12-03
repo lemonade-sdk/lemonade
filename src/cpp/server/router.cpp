@@ -150,7 +150,7 @@ void Router::evict_all_servers() {
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
     std::unique_ptr<WrappedServer> new_server;
 
-    if (model_info.recipe == "whisper" || model_info.recipe == "whisper-cpp") {
+    if (model_info.recipe == "whispercpp") {
         std::cout << "[Router] Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "flm") {

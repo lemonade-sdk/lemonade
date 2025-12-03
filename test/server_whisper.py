@@ -194,5 +194,3 @@ class WhisperTesting(ServerTestingBase):
 
 if __name__ == "__main__":
     run_server_tests_with_class(WhisperTesting, "WHISPER SERVER TESTS")
-
-# Copyright (c) 2025 AMD

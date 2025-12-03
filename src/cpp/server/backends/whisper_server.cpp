@@ -37,7 +37,7 @@ static std::string get_whisper_version() {
 
         if (!config.contains("whispercpp") || !config["whispercpp"].is_string()) {
             // Default version if not in config
-            return "v1.6.2";
+            return "v1.8.2";
         }
 
         return config["whispercpp"].get<std::string>();
@@ -45,8 +45,8 @@ static std::string get_whisper_version() {
     } catch (const std::exception& e) {
         std::cerr << "[WhisperServer] Warning: Could not load version from config: "
                   << e.what() << std::endl;
-        std::cerr << "[WhisperServer] Using default version: v1.6.2" << std::endl;
-        return "v1.6.2";
+        std::cerr << "[WhisperServer] Using default version: v1.8.2" << std::endl;
+        return "v1.8.2";
     }
 }
 
@@ -222,14 +222,15 @@ void WhisperServer::install(const std::string& backend) {
         std::cout << "[WhisperServer] Downloading to: " << zip_path << std::endl;
 
         // Download the file
-        bool download_success = utils::HttpClient::download_file(
+        auto download_result = utils::HttpClient::download_file(
             url,
             zip_path,
             utils::create_throttled_progress_callback()
         );
 
-        if (!download_success) {
-            throw std::runtime_error("Failed to download whisper-server from: " + url);
+        if (!download_result.success) {
+            throw std::runtime_error("Failed to download whisper-server from: " + url +
+                                    " - " + download_result.error_message);
         }
 
         std::cout << std::endl << "[WhisperServer] Download complete!" << std::endl;
@@ -314,7 +315,7 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
     model_manager_->download_model(
         checkpoint,  // model_name
         checkpoint,  // checkpoint
-        "whisper-cpp",  // recipe
+        "whispercpp",  // recipe
         false,  // reasoning
         false,  // vision
         false,  // embedding

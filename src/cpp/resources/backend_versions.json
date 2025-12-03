@@ -1,4 +1,5 @@
 {
+  "comment": "This configuration file controls which llama.cpp and whisper.cpp versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
     "vulkan": "b7188",
     "rocm": "b1122",

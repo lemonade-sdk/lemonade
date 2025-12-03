@@ -582,16 +582,6 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 - `text` - The transcribed text from the audio file
 
-#### Available Whisper Models
-
-| Model | Description |
-|-------|-------------|
-| `whisper-tiny` | Fastest, lowest accuracy (~39M parameters) |
-| `whisper-base` | Fast with improved accuracy (~74M parameters) |
-| `whisper-small` | Balanced speed and accuracy (~244M parameters) |
-| `whisper-medium` | Higher accuracy, slower (~769M parameters) |
-| `whisper-large` | Highest accuracy, slowest (~1.5B parameters) |
-
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

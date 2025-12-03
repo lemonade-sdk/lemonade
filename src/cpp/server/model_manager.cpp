@@ -314,8 +314,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         return model_cache_path;  // Return directory even if genai_config not found
     }
 
-    // For whisper-cpp, find the .bin model file
-    if (info.recipe == "whisper-cpp") {
+    // For whispercpp, find the .bin model file
+    if (info.recipe == "whispercpp") {
         if (!fs::exists(model_cache_path)) {
             return model_cache_path;  // Return directory path even if not found
         }

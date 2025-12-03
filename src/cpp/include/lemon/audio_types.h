@@ -28,26 +28,6 @@ namespace ResponseFormat {
     constexpr const char* VERBOSE_JSON = "verbose_json";
 }
 
-// Output formats for text-to-speech
-namespace TTSFormat {
-    constexpr const char* MP3 = "mp3";
-    constexpr const char* OPUS = "opus";
-    constexpr const char* AAC = "aac";
-    constexpr const char* FLAC = "flac";
-    constexpr const char* WAV = "wav";
-    constexpr const char* PCM = "pcm";
-}
-
-// Voice options for TTS (OpenAI-compatible)
-namespace Voice {
-    constexpr const char* ALLOY = "alloy";
-    constexpr const char* ECHO = "echo";
-    constexpr const char* FABLE = "fable";
-    constexpr const char* ONYX = "onyx";
-    constexpr const char* NOVA = "nova";
-    constexpr const char* SHIMMER = "shimmer";
-}
-
 // Audio-specific error types
 namespace ErrorType {
     constexpr const char* AUDIO_FORMAT_UNSUPPORTED = "audio_format_unsupported";

@@ -1521,17 +1521,17 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         }
         
         // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whisper-cpp", "whisper"};
+        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
         if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
             res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whisper-cpp"}};
+            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
 
         // Check if model files are provided (or checkpoint path for whisper)
         const auto& files = req.form.files;
-        bool is_whisper = (recipe == "whisper-cpp" || recipe == "whisper");
+        bool is_whisper = (recipe == "whispercpp");
         if (files.empty() && !is_whisper) {
             res.status = 400;
             nlohmann::json error = {{"error", "No model files provided for upload"}};
