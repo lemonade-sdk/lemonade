@@ -3352,7 +3352,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 </div>
 </div>
 <h3 id="get-apiv1models"><code>GET /api/v1/models</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
-<p>Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the <code>checkpoint</code> and <code>recipe</code> fields, which may be used to load a model using the <code>load</code> endpoint.</p>
+<p>Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like <code>checkpoint</code>, <code>recipe</code>, <code>size</code>, <code>downloaded</code>, and <code>labels</code>.</p>
 <p>By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.</p>
 <h4 id="parameters_5">Parameters</h4>
 <table>
@@ -3367,7 +3367,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <tr>
 <td><code>show_all</code></td>
 <td>No</td>
-<td>If set to <code>true</code>, returns all models from the catalog with additional fields (<code>name</code>, <code>downloaded</code>, <code>labels</code>). Used by the CLI <code>list</code> command. Defaults to <code>false</code>.</td>
+<td>If set to <code>true</code>, returns all models from the catalog including those not yet downloaded. Defaults to <code>false</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -3375,64 +3375,57 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <div class="highlight"><pre><span></span><code><span class="c1"># Show only downloaded models (OpenAI-compatible)</span>
 curl<span class="w"> </span>http://localhost:8000/api/v1/models
 
-<span class="c1"># Show all models with download status (CLI usage)</span>
+<span class="c1"># Show all models including not-yet-downloaded (extended usage)</span>
 curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
 <h4 id="response-format_5">Response format</h4>
-<p>Default response (only downloaded models):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-cpu&quot;</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-hybrid&quot;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">]</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>With <code>show_all=true</code> (includes all models with additional fields):</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen2.5-0.5B-Instruct-CPU&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-cpu&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Gemma-3-4b-it-GGUF&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-hybrid&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;hybrid&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>object</code> - Type of response object, always <code>"list"</code></li>
+<li><code>data</code> - Array of model objects with the following fields:</li>
+<li><code>id</code> - Model identifier (used for loading and inference requests)</li>
+<li><code>created</code> - Unix timestamp of when the model entry was created</li>
+<li><code>object</code> - Type of object, always <code>"model"</code></li>
+<li><code>owned_by</code> - Owner of the model, always <code>"lemonade"</code></li>
+<li><code>checkpoint</code> - Full checkpoint identifier on Hugging Face</li>
+<li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"oga-cpu"</code>, <code>"oga-hybrid"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
+<li><code>size</code> - Model size in GB (omitted for models without size information)</li>
+<li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
+<li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
+<li><code>labels</code> - Array of tags describing the model (e.g., <code>"hot"</code>, <code>"reasoning"</code>, <code>"vision"</code>, <code>"embeddings"</code>, <code>"reranking"</code>, <code>"coding"</code>, <code>"tool-calling"</code>)</li>
+</ul>
 <h3 id="get-apiv1modelsmodel_id"><code>GET /api/v1/models/{model_id}</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
-<p>Retrieve a specific model by its ID in an OpenAI-compatible format. Returns detailed information about a single model including the <code>checkpoint</code> and <code>recipe</code> fields.</p>
+<p>Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.</p>
 <h4 id="parameters_6">Parameters</h4>
 <table>
 <thead>
@@ -3451,16 +3444,21 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 </tbody>
 </table>
 <h4 id="example-request_6">Example request</h4>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/api/v1/models/Qwen3-0.6B-GGUF
 </code></pre></div>
 <h4 id="response-format_6">Response format</h4>
+<p>Returns a single model object with the same fields as described in the <a href="#get-apiv1models">models list endpoint</a> above.</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-hybrid&quot;</span>
+<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
 <h4 id="error-responses">Error responses</h4>
