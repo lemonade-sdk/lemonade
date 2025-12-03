@@ -362,7 +362,10 @@ class LMEvalHarness(Tool):
         printing.log_info(f"Running lm-eval-harness on {task}...")
 
         # Build lm-eval-harness command
+        # Use sys.executable -m to ensure cross-platform compatibility (Windows)
         cmd = [
+            sys.executable,
+            "-m",
             "lm_eval",
             "--model",
             "local-completions",

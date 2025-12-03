@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(lemon_cpp VERSION 9.0.5)
+project(lemon_cpp VERSION 9.0.6)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

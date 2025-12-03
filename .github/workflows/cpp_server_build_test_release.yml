@@ -829,9 +829,9 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running FLM tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -892,9 +892,9 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -963,9 +963,9 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
@@ -1040,9 +1040,9 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
           
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          $venvPython = ".\.venv\Scripts\python.exe"
           
           Write-Host "Pre-downloading test models..." -ForegroundColor Cyan
           
@@ -1152,8 +1152,8 @@ jobs:
           echo "Running Llamacpp Vulkan tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          source .venv/bin/activate
-          python test/server_llamacpp.py vulkan --server-binary lemonade-server
+          venvPython=".venv/bin/python"
+          $venvPython test/server_llamacpp.py vulkan --server-binary lemonade-server
           
           echo "Llamacpp Vulkan tests PASSED!"
 
@@ -1263,8 +1263,8 @@ jobs:
           echo "Running Llamacpp ROCm tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
           
-          source .venv/bin/activate
-          python test/server_llamacpp.py rocm --server-binary lemonade-server
+          venvPython=".venv/bin/python"
+          $venvPython test/server_llamacpp.py rocm --server-binary lemonade-server
           
           echo "Llamacpp ROCm tests PASSED!"
 
