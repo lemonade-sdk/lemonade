@@ -6,10 +6,20 @@
 
 # Standard library imports for file, directory, regex, system, and subprocess operations
 import os
+import platform
 import shutil
 import re
 import sys
 import subprocess
+
+
+def _get_venv_executable(name):
+    """Get an executable path from the venv based on the current Python interpreter."""
+    python_dir = os.path.dirname(sys.executable)
+    if platform.system() == "Windows":
+        return os.path.join(python_dir, f"{name}.exe")
+    else:
+        return os.path.join(python_dir, name)
 
 
 def main():
@@ -63,7 +73,8 @@ def main():
 
     # Build the documentation using mkdocs
     print("[INFO] Building documentation with mkdocs...")
-    subprocess.run(["mkdocs", "build", "--clean"], check=True)
+    mkdocs_exe = _get_venv_executable("mkdocs")
+    subprocess.run([mkdocs_exe, "build", "--clean"], check=True)
 
     # Move the generated site/ directory to docs/docs/, replacing it if it already exists
     print("[INFO] Moving site/ to docs/docs/...")
