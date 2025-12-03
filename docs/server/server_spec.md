@@ -533,7 +533,7 @@ For a full list of event types, see the [API reference for streaming](https://pl
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, and `labels`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -541,7 +541,7 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog with additional fields (`name`, `downloaded`, `labels`). Used by the CLI `list` command. Defaults to `false`. |
+| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
 
 #### Example request
 
@@ -549,73 +549,63 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 # Show only downloaded models (OpenAI-compatible)
 curl http://localhost:8000/api/v1/models
 
-# Show all models with download status (CLI usage)
+# Show all models including not-yet-downloaded (extended usage)
 curl http://localhost:8000/api/v1/models?show_all=true
 ```
 
 #### Response format
 
-Default response (only downloaded models):
-
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "Qwen2.5-0.5B-Instruct-CPU",
+      "id": "Qwen3-0.6B-GGUF",
       "created": 1744173590,
       "object": "model",
       "owned_by": "lemonade",
-      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-      "recipe": "oga-cpu"
-    },
-    {
-      "id": "Llama-3.2-1B-Instruct-Hybrid",
-      "created": 1744173590,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-      "recipe": "oga-hybrid"
-    }
-  ]
-}
-```
-
-With `show_all=true` (includes all models with additional fields):
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "Qwen2.5-0.5B-Instruct-CPU",
-      "object": "model",
-      "created": 1744173590,
-      "owned_by": "lemonade",
-      "name": "Qwen2.5-0.5B-Instruct-CPU",
-      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-      "recipe": "oga-cpu",
+      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "size": 0.38,
       "downloaded": true,
-      "labels": ["hot", "cpu"]
+      "suggested": true,
+      "labels": ["reasoning"]
     },
     {
-      "id": "Llama-3.2-1B-Instruct-Hybrid",
-      "object": "model",
+      "id": "Gemma-3-4b-it-GGUF",
       "created": 1744173590,
+      "object": "model",
       "owned_by": "lemonade",
-      "name": "Llama-3.2-1B-Instruct-Hybrid",
-      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-      "recipe": "oga-hybrid",
-      "downloaded": false,
-      "labels": ["hot", "hybrid"]
+      "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "size": 3.61,
+      "downloaded": true,
+      "suggested": true,
+      "labels": ["hot", "vision"]
     }
   ]
 }
 ```
+
+**Field Descriptions:**
+
+- `object` - Type of response object, always `"list"`
+- `data` - Array of model objects with the following fields:
+  - `id` - Model identifier (used for loading and inference requests)
+  - `created` - Unix timestamp of when the model entry was created
+  - `object` - Type of object, always `"model"`
+  - `owned_by` - Owner of the model, always `"lemonade"`
+  - `checkpoint` - Full checkpoint identifier on Hugging Face
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `size` - Model size in GB (omitted for models without size information)
+  - `downloaded` - Boolean indicating if the model is downloaded and available locally
+  - `suggested` - Boolean indicating if the model is recommended for general use
+  - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`)
+
 
 ### `GET /api/v1/models/{model_id}` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Retrieve a specific model by its ID in an OpenAI-compatible format. Returns detailed information about a single model including the `checkpoint` and `recipe` fields.
+Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.
 
 #### Parameters
 
@@ -626,19 +616,25 @@ Retrieve a specific model by its ID in an OpenAI-compatible format. Returns deta
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
+curl http://localhost:8000/api/v1/models/Qwen3-0.6B-GGUF
 ```
 
 #### Response format
 
+Returns a single model object with the same fields as described in the [models list endpoint](#get-apiv1models) above.
+
 ```json
 {
-  "id": "Llama-3.2-1B-Instruct-Hybrid",
+  "id": "Qwen3-0.6B-GGUF",
   "created": 1744173590,
   "object": "model",
   "owned_by": "lemonade",
-  "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-  "recipe": "oga-hybrid"
+  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+  "recipe": "llamacpp",
+  "size": 0.38,
+  "downloaded": true,
+  "suggested": true,
+  "labels": ["reasoning"]
 }
 ```
 

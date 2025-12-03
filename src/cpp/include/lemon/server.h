@@ -66,6 +66,9 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
     
+    // Helper function to convert ModelInfo to JSON (used by models endpoints)
+    nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
+    
     int port_;
     std::string host_;
     std::string log_level_;
