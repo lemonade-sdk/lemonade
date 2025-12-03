@@ -214,7 +214,7 @@ void WhisperServer::install(const std::string& backend) {
                          expected_version + "/" + filename;
 
         // Download ZIP to cache directory
-        fs::path cache_dir = model_manager_ ? model_manager_->get_hf_cache_dir() : fs::temp_directory_path();
+        fs::path cache_dir = model_manager_ ? fs::path(model_manager_->get_hf_cache_dir()) : fs::temp_directory_path();
         fs::create_directories(cache_dir);
         std::string zip_path = (cache_dir / ("whisper_" + expected_version + ".zip")).string();
 

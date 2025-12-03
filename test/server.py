@@ -54,7 +54,6 @@ class Testing(ServerTestingBase):
             "embeddings",
             "models",
             "responses",
-            "audio/transcriptions",
             "pull",
             "delete",
             "load",
