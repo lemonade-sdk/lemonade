@@ -1658,11 +1658,33 @@ Menu TrayApp::create_menu() {
                 }
                 menu.add_item(MenuItem::Action(display_text, nullptr, false));
             }
-            menu.add_item(MenuItem::Action("Unload Models", [this]() { on_unload_model(); }));
         } else {
             menu.add_item(MenuItem::Action("No models loaded", nullptr, false));
         }
     }
+    
+    // Unload Model submenu
+    auto unload_submenu = std::make_shared<Menu>();
+    if (loaded_models.empty()) {
+        unload_submenu->add_item(MenuItem::Action(
+            "No models loaded",
+            nullptr,
+            false
+        ));
+    } else {
+        for (const auto& model : loaded_models) {
+            // Display model name with type if not LLM
+            std::string display_text = model.model_name;
+            if (!model.type.empty() && model.type != "llm") {
+                display_text += " (" + model.type + ")";
+            }
+            unload_submenu->add_item(MenuItem::Action(
+                display_text,
+                [this, model_name = model.model_name]() { on_unload_specific_model(model_name); }
+            ));
+        }
+    }
+    menu.add_item(MenuItem::Submenu("Unload Model", unload_submenu));
     
     // Load Model submenu
     auto load_submenu = std::make_shared<Menu>();
@@ -1791,11 +1813,43 @@ void TrayApp::on_unload_model() {
         return;
     }
     
-    std::cout << "Unloading model" << std::endl;
+    std::cout << "Unloading all models" << std::endl;
     if (server_manager_->unload_model()) {
         loaded_model_.clear();
         build_menu();
     }
+}
+
+void TrayApp::on_unload_specific_model(const std::string& model_name) {
+    // CRITICAL: Make a copy IMMEDIATELY since model_name is a reference that gets invalidated
+    // when build_menu() destroys the old menu (which destroys the lambda that captured the model)
+    std::string model_name_copy = model_name;
+    
+    // Don't allow unload while a model is loading
+    if (is_loading_model_) {
+        show_notification("Model Loading", "Please wait for the current model to finish loading.");
+        return;
+    }
+    
+    std::cout << "Unloading model: '" << model_name_copy << "'" << std::endl;
+    std::cout.flush();
+    
+    // Launch background thread to perform the unload
+    std::thread([this, model_name_copy]() {
+        std::cout << "Background thread: Unloading model: '" << model_name_copy << "'" << std::endl;
+        std::cout.flush();
+        
+        bool success = server_manager_->unload_model(model_name_copy);
+        
+        // Update menu to show new status
+        build_menu();
+        
+        if (success) {
+            show_notification("Model Unloaded", "Successfully unloaded " + model_name_copy);
+        } else {
+            show_notification("Unload Failed", "Failed to unload " + model_name_copy);
+        }
+    }).detach();
 }
 
 void TrayApp::on_change_port(int new_port) {

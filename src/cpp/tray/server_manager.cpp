@@ -341,6 +341,19 @@ bool ServerManager::unload_model() {
     }
 }
 
+bool ServerManager::unload_model(const std::string& model_name) {
+    try {
+        std::string body = "{\"model_name\": \"" + model_name + "\"}";
+        
+        // Unload can take time, so use 30 second timeout
+        make_http_request("/api/v1/unload", "POST", body, 30);
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception unloading model '" << model_name << "': " << e.what() << std::endl;
+        return false;
+    }
+}
+
 std::string ServerManager::get_base_url() const {
     return "http://127.0.0.1:" + std::to_string(port_);
 }
