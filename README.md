@@ -29,7 +29,7 @@
     <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
 </p>
 <p align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner.png?raw=true" alt="Lemonade Banner" />
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
   <a href="https://lemonade-server.ai">Download</a> | 
@@ -85,12 +85,20 @@ lemonade-server list
 
 ## Model Library
 
-Lemonade supports both GGUF and ONNX models as detailed in the [Supported Configuration](#supported-configurations) section. A list of all built-in models is available [here](https://lemonade-server.ai/docs/server/server_models/).
+<table>
+<tr>
+<td width="55%" valign="top">
 
-You can also import custom GGUF and ONNX models from Hugging Face by using our [Model Manager](http://localhost:8000/#model-management) (requires server to be running).
-<p align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager.png?raw=true" alt="Model Manager" width="650" />
-</p>
+Lemonade supports **GGUF** and **ONNX** models across CPU, GPU, and NPU (see [Supported Configurations](#supported-configurations)). Browse all built-in models [here](https://lemonade-server.ai/docs/server/server_models/).
+
+Use the CLI (`lemonade-server pull`) or the App's **Model Manager** to download built-in models. You can also import custom GGUF and ONNX models directly from Hugging Face.
+
+</td>
+<td width="45%" align="center">
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="350" />
+</td>
+</tr>
+</table>
 
 ## Supported Configurations
 
