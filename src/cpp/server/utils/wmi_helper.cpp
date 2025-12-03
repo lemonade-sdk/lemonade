@@ -203,12 +203,26 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
     }
     
     uint64_t result = 0;
-    if (vtProp.vt == VT_BSTR) {
-        // Sometimes returned as string
-        std::wstring wstr(vtProp.bstrVal);
-        result = std::stoull(wstr);
-    } else if (vtProp.vt == VT_UI8) {
-        result = vtProp.ullVal;
+    try {
+        if (vtProp.vt == VT_BSTR) {
+            // Sometimes returned as string - parse safely
+            if (vtProp.bstrVal != nullptr) {
+                std::wstring wstr(vtProp.bstrVal);
+                if (!wstr.empty()) {
+                    result = std::stoull(wstr);
+                }
+            }
+        } else if (vtProp.vt == VT_UI8) {
+            result = vtProp.ullVal;
+        } else if (vtProp.vt == VT_UI4) {
+            result = vtProp.ulVal;
+        } else if (vtProp.vt == VT_I4) {
+            result = static_cast<uint64_t>(vtProp.lVal);
+        }
+    } catch (const std::exception& e) {
+        // Parsing failed - return 0 instead of crashing
+        std::cerr << "[WMI WARNING] Failed to parse uint64 property: " << e.what() << std::endl;
+        result = 0;
     }
     
     VariantClear(&vtProp);

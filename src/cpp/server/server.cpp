@@ -1658,26 +1658,17 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         return;
     }
     
-    try {
-        // Get verbose parameter from query string (default to false)
-        bool verbose = false;
-        if (req.has_param("verbose")) {
-            std::string verbose_param = req.get_param_value("verbose");
-            std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
-            verbose = (verbose_param == "true" || verbose_param == "1");
-        }
-        
-        // Get system info with cache handling
-        nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
-        
-        res.set_content(system_info.dump(), "application/json");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[Server] ERROR in handle_system_info: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
+    // Get verbose parameter from query string (default to false)
+    bool verbose = false;
+    if (req.has_param("verbose")) {
+        std::string verbose_param = req.get_param_value("verbose");
+        std::transform(verbose_param.begin(), verbose_param.end(), verbose_param.begin(), ::tolower);
+        verbose = (verbose_param == "true" || verbose_param == "1");
     }
+    
+    // Get system info - this function handles all errors internally and never throws
+    nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache(verbose);
+    res.set_content(system_info.dump(), "application/json");
 }
 
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {

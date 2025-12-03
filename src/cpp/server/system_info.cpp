@@ -45,84 +45,128 @@ json SystemInfo::get_system_info_dict() {
 json SystemInfo::get_device_dict() {
     json devices;
     
-    // Get CPU info
-    auto cpu = get_cpu_device();
-    devices["cpu"] = {
-        {"name", cpu.name},
-        {"cores", cpu.cores},
-        {"threads", cpu.threads},
-        {"available", cpu.available},
-        {"inference_engines", cpu.inference_engines}
-    };
-    if (!cpu.error.empty()) {
-        devices["cpu"]["error"] = cpu.error;
-    }
+    // NOTE: This function collects hardware info only (no inference engines).
+    // Inference engines are detected separately in get_system_info_with_cache()
+    // because they should always be fresh (not cached).
     
-    // Get AMD iGPU info
-    auto amd_igpu = get_amd_igpu_device();
-    devices["amd_igpu"] = {
-        {"name", amd_igpu.name},
-        {"available", amd_igpu.available},
-        {"inference_engines", amd_igpu.inference_engines}
-    };
-    if (!amd_igpu.error.empty()) {
-        devices["amd_igpu"]["error"] = amd_igpu.error;
-    }
-    
-    // Get AMD dGPU info
-    auto amd_dgpus = get_amd_dgpu_devices();
-    devices["amd_dgpu"] = json::array();
-    for (const auto& gpu : amd_dgpus) {
-        json gpu_json = {
-            {"name", gpu.name},
-            {"available", gpu.available},
-            {"inference_engines", gpu.inference_engines}
+    // Get CPU info - with fault tolerance
+    try {
+        auto cpu = get_cpu_device();
+        devices["cpu"] = {
+            {"name", cpu.name},
+            {"cores", cpu.cores},
+            {"threads", cpu.threads},
+            {"available", cpu.available}
         };
-        if (gpu.vram_gb > 0) {
-            gpu_json["vram_gb"] = gpu.vram_gb;
+        if (!cpu.error.empty()) {
+            devices["cpu"]["error"] = cpu.error;
         }
-        if (!gpu.driver_version.empty()) {
-            gpu_json["driver_version"] = gpu.driver_version;
-        }
-        if (!gpu.error.empty()) {
-            gpu_json["error"] = gpu.error;
-        }
-        devices["amd_dgpu"].push_back(gpu_json);
-    }
-    
-    // Get NVIDIA dGPU info
-    auto nvidia_dgpus = get_nvidia_dgpu_devices();
-    devices["nvidia_dgpu"] = json::array();
-    for (const auto& gpu : nvidia_dgpus) {
-        json gpu_json = {
-            {"name", gpu.name},
-            {"available", gpu.available},
-            {"inference_engines", gpu.inference_engines}
+    } catch (const std::exception& e) {
+        devices["cpu"] = {
+            {"name", "Unknown"},
+            {"cores", 0},
+            {"threads", 0},
+            {"available", true},  // Assume available - trust the user
+            {"error", std::string("Detection exception: ") + e.what()}
         };
-        if (gpu.vram_gb > 0) {
-            gpu_json["vram_gb"] = gpu.vram_gb;
-        }
-        if (!gpu.driver_version.empty()) {
-            gpu_json["driver_version"] = gpu.driver_version;
-        }
-        if (!gpu.error.empty()) {
-            gpu_json["error"] = gpu.error;
-        }
-        devices["nvidia_dgpu"].push_back(gpu_json);
     }
     
-    // Get NPU info
-    auto npu = get_npu_device();
-    devices["npu"] = {
-        {"name", npu.name},
-        {"available", npu.available},
-        {"inference_engines", npu.inference_engines}
-    };
-    if (!npu.power_mode.empty()) {
-        devices["npu"]["power_mode"] = npu.power_mode;
+    // Get AMD iGPU info - with fault tolerance
+    try {
+        auto amd_igpu = get_amd_igpu_device();
+        devices["amd_igpu"] = {
+            {"name", amd_igpu.name},
+            {"available", amd_igpu.available}
+        };
+        if (!amd_igpu.error.empty()) {
+            devices["amd_igpu"]["error"] = amd_igpu.error;
+        }
+    } catch (const std::exception& e) {
+        devices["amd_igpu"] = {
+            {"name", "Unknown"},
+            {"available", true},  // Assume available - trust the user
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
     }
-    if (!npu.error.empty()) {
-        devices["npu"]["error"] = npu.error;
+    
+    // Get AMD dGPU info - with fault tolerance
+    try {
+        auto amd_dgpus = get_amd_dgpu_devices();
+        devices["amd_dgpu"] = json::array();
+        for (const auto& gpu : amd_dgpus) {
+            json gpu_json = {
+                {"name", gpu.name},
+                {"available", gpu.available}
+            };
+            if (gpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (!gpu.driver_version.empty()) {
+                gpu_json["driver_version"] = gpu.driver_version;
+            }
+            if (!gpu.error.empty()) {
+                gpu_json["error"] = gpu.error;
+            }
+            devices["amd_dgpu"].push_back(gpu_json);
+        }
+    } catch (const std::exception& e) {
+        devices["amd_dgpu"] = json::array();
+        devices["amd_dgpu_error"] = std::string("Detection exception: ") + e.what();
+    }
+    
+    // Get NVIDIA dGPU info - with fault tolerance
+    try {
+        auto nvidia_dgpus = get_nvidia_dgpu_devices();
+        devices["nvidia_dgpu"] = json::array();
+        for (const auto& gpu : nvidia_dgpus) {
+            json gpu_json = {
+                {"name", gpu.name},
+                {"available", gpu.available}
+            };
+            if (gpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (!gpu.driver_version.empty()) {
+                gpu_json["driver_version"] = gpu.driver_version;
+            }
+            if (!gpu.error.empty()) {
+                gpu_json["error"] = gpu.error;
+            }
+            devices["nvidia_dgpu"].push_back(gpu_json);
+        }
+    } catch (const std::exception& e) {
+        devices["nvidia_dgpu"] = json::array();
+        devices["nvidia_dgpu_error"] = std::string("Detection exception: ") + e.what();
+    }
+    
+    // Get NPU info - with fault tolerance
+    try {
+        auto npu = get_npu_device();
+        devices["npu"] = {
+            {"name", npu.name},
+            {"available", npu.available}
+        };
+        if (!npu.power_mode.empty()) {
+            devices["npu"]["power_mode"] = npu.power_mode;
+        }
+        if (!npu.error.empty()) {
+            devices["npu"]["error"] = npu.error;
+        }
+    } catch (const std::exception& e) {
+        #ifdef _WIN32
+        // On Windows, assume NPU may be available - trust the user
+        devices["npu"] = {
+            {"name", "Unknown"},
+            {"available", true},
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
+        #else
+        devices["npu"] = {
+            {"name", "Unknown"},
+            {"available", false},
+            {"error", std::string("Detection exception: ") + e.what()}
+        };
+        #endif
     }
     
     return devices;
@@ -154,24 +198,12 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
     if (device_type == "cpu" || device_type == "amd_igpu" || 
         device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
         
-        // Check if device supports vulkan
-        bool device_supported = false;
-        if (device_type == "cpu") {
-            device_supported = true;
-        } else if (device_type == "amd_igpu" || device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
-            device_supported = check_vulkan_support();
-        }
+        bool device_supported = (device_type == "cpu") || check_vulkan_support();
         
         if (!device_supported) {
-            engines["llamacpp-vulkan"] = {
-                {"available", false},
-                {"error", "vulkan not available"}
-            };
+            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan not available"}};
         } else if (!is_llamacpp_installed("vulkan")) {
-            engines["llamacpp-vulkan"] = {
-                {"available", false},
-                {"error", "vulkan binaries not installed"}
-            };
+            engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan binaries not installed"}};
         } else {
             engines["llamacpp-vulkan"] = {
                 {"available", true},
@@ -181,21 +213,14 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
         }
     }
     
-    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only (NOT CPU, NVIDIA, or NPU)
+    // llamacpp-rocm: Available for AMD iGPU and AMD dGPU only
     if (device_type == "amd_igpu" || device_type == "amd_dgpu") {
-        // Check if device supports rocm
         bool device_supported = check_rocm_support(device_name);
         
         if (!device_supported) {
-            engines["llamacpp-rocm"] = {
-                {"available", false},
-                {"error", "rocm not available"}
-            };
+            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm not available"}};
         } else if (!is_llamacpp_installed("rocm")) {
-            engines["llamacpp-rocm"] = {
-                {"available", false},
-                {"error", "rocm binaries not installed"}
-            };
+            engines["llamacpp-rocm"] = {{"available", false}, {"error", "rocm binaries not installed"}};
         } else {
             engines["llamacpp-rocm"] = {
                 {"available", true},
@@ -208,53 +233,35 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
     // FLM: Only available for NPU (Windows only)
     if (device_type == "npu") {
         #ifdef _WIN32
-        // Check if FLM is available
         bool flm_available = false;
-        std::string flm_version = "unknown";
         
         // Check common Windows locations
-        std::vector<std::string> flm_paths = {
-            "C:\\Program Files\\AMD\\FLM\\flm.exe",
-            "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"
-        };
-        
-        for (const auto& path : flm_paths) {
+        for (const auto& path : {"C:\\Program Files\\AMD\\FLM\\flm.exe",
+                                  "C:\\Program Files (x86)\\AMD\\FLM\\flm.exe"}) {
             if (fs::exists(path)) {
                 flm_available = true;
                 break;
             }
         }
         
-        // Also check if flm is in PATH
+        // Check if flm is in PATH
         if (!flm_available) {
             FILE* pipe = _popen("where flm 2>NUL", "r");
             if (pipe) {
                 char buffer[256];
-                if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                    flm_available = true;
-                }
+                flm_available = (fgets(buffer, sizeof(buffer), pipe) != nullptr);
                 _pclose(pipe);
             }
         }
         
-        // Get FLM version if available
-        if (flm_available) {
-            flm_version = get_flm_version();
-        }
-        
         engines["flm"] = {
             {"available", flm_available},
-            {"version", flm_version}
+            {"version", flm_available ? get_flm_version() : "unknown"}
         };
         #endif
-    }
-    
-    // OGA (RyzenAI-Server): Available AMD NPU (NOT NVIDIA)
-    if (device_type == "npu") {
-        bool ryzenai_available = is_ryzenai_serve_available();
-        engines["oga"] = {
-            {"available", ryzenai_available}
-        };
+        
+        // OGA (RyzenAI-Server)
+        engines["oga"] = {{"available", is_ryzenai_serve_available()}};
     }
     
     return engines;
@@ -1826,129 +1833,109 @@ void SystemInfoCache::clear() {
 }
 
 json SystemInfoCache::get_system_info_with_cache(bool verbose) {
-    // Create cache instance
-    SystemInfoCache cache;
-    bool cache_exists = fs::exists(cache.get_cache_file_path());
-    json cached_data = cache.load_hardware_info();
     json system_info;
     
-    // Create platform-specific system info instance
-    auto sys_info = create_system_info();
-    
-    if (!cached_data.empty()) {
-        std::cout << "[Server] Using cached hardware info" << std::endl;
-        std::cout.flush();  // Ensure message appears immediately
-        system_info = cached_data;
-    } else {
-        // Provide friendly message about why we're detecting hardware
-        if (cache_exists) {
-            std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+    // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+    try {
+        // Create cache instance and load cached data
+        SystemInfoCache cache;
+        bool cache_exists = fs::exists(cache.get_cache_file_path());
+        json cached_data = cache.load_hardware_info();
+        
+        // Create platform-specific system info instance
+        auto sys_info = create_system_info();
+        
+        if (!cached_data.empty()) {
+            std::cout << "[Server] Using cached hardware info" << std::endl;
+            system_info = cached_data;
         } else {
-            std::cout << "[Server] Collecting system info" << std::endl;
-        }
-        std::cout.flush();  // Ensure message appears immediately
-        
-        // Get full system information (OS Version, Processor, Physical Memory, etc.)
-        system_info = sys_info->get_system_info_dict();
-        
-        // Get device information
-        json devices = sys_info->get_device_dict();
-        system_info["devices"] = devices;
-        
-        // Strip inference_engines before caching (hardware and system info only)
-        json cache_data = system_info;
-        if (cache_data.contains("devices")) {
-            auto& devices_cache = cache_data["devices"];
+            // Provide friendly message about why we're detecting hardware
+            if (cache_exists) {
+                std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+            } else {
+                std::cout << "[Server] Collecting system info" << std::endl;
+            }
             
-            if (devices_cache.contains("cpu") && devices_cache["cpu"].contains("inference_engines")) {
-                devices_cache["cpu"].erase("inference_engines");
+            // Get system info (OS, Processor, Memory, etc.)
+            try {
+                system_info = sys_info->get_system_info_dict();
+            } catch (...) {
+                system_info["OS Version"] = "Unknown";
             }
-            if (devices_cache.contains("amd_igpu") && devices_cache["amd_igpu"].contains("inference_engines")) {
-                devices_cache["amd_igpu"].erase("inference_engines");
+            
+            // Get device information - handles its own exceptions internally
+            system_info["devices"] = sys_info->get_device_dict();
+            
+            // Save to cache (without inference_engines which are always fresh)
+            try {
+                cache.save_hardware_info(system_info);
+            } catch (...) {
+                // Cache save failed - not critical, continue
             }
-            if (devices_cache.contains("amd_dgpu") && devices_cache["amd_dgpu"].is_array()) {
-                for (auto& gpu : devices_cache["amd_dgpu"]) {
-                    if (gpu.contains("inference_engines")) {
-                        gpu.erase("inference_engines");
+        }
+        
+        // Add inference engines (always fresh, never cached)
+        if (system_info.contains("devices")) {
+            auto& devices = system_info["devices"];
+            
+            // Helper to safely add inference engines
+            auto add_engines = [&](const std::string& key, const std::string& device_type) {
+                if (devices.contains(key) && devices[key].contains("name")) {
+                    std::string name = devices[key]["name"];
+                    devices[key]["inference_engines"] = sys_info->detect_inference_engines(device_type, name);
+                }
+            };
+            
+            add_engines("cpu", "cpu");
+            add_engines("amd_igpu", "amd_igpu");
+            add_engines("npu", "npu");
+            
+            // Handle GPU arrays
+            for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
+                if (devices.contains(gpu_type) && devices[gpu_type].is_array()) {
+                    for (auto& gpu : devices[gpu_type]) {
+                        if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                            gpu["inference_engines"] = sys_info->detect_inference_engines(gpu_type, gpu["name"]);
+                        }
                     }
                 }
             }
-            if (devices_cache.contains("nvidia_dgpu") && devices_cache["nvidia_dgpu"].is_array()) {
-                for (auto& gpu : devices_cache["nvidia_dgpu"]) {
-                    if (gpu.contains("inference_engines")) {
-                        gpu.erase("inference_engines");
-                    }
+        }
+        
+        // Filter for non-verbose mode
+        if (!verbose) {
+            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
+            json filtered_info;
+            for (const auto& key : essential_keys) {
+                if (system_info.contains(key)) {
+                    filtered_info[key] = system_info[key];
                 }
             }
-            if (devices_cache.contains("npu") && devices_cache["npu"].contains("inference_engines")) {
-                devices_cache["npu"].erase("inference_engines");
-            }
+            system_info = filtered_info;
+        } else {
+            system_info["Python Packages"] = SystemInfo::get_python_packages();
         }
         
-        // Save system info and hardware (without inference engines) to cache
-        cache.save_hardware_info(cache_data);
-    }
-    
-    // Detect inference engines (always fresh, never cached)
-    if (system_info.contains("devices")) {
-        auto& devices = system_info["devices"];
-        
-        // CPU
-        if (devices.contains("cpu") && devices["cpu"].contains("name")) {
-            std::string cpu_name = devices["cpu"]["name"];
-            devices["cpu"]["inference_engines"] = sys_info->detect_inference_engines("cpu", cpu_name);
-        }
-        
-        // AMD iGPU
-        if (devices.contains("amd_igpu") && devices["amd_igpu"].contains("name")) {
-            std::string gpu_name = devices["amd_igpu"]["name"];
-            devices["amd_igpu"]["inference_engines"] = sys_info->detect_inference_engines("amd_igpu", gpu_name);
-        }
-        
-        // AMD dGPUs
-        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
-            for (auto& gpu : devices["amd_dgpu"]) {
-                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                    std::string gpu_name = gpu["name"];
-                    gpu["inference_engines"] = sys_info->detect_inference_engines("amd_dgpu", gpu_name);
-                }
-            }
-        }
-        
-        // NVIDIA dGPUs
-        if (devices.contains("nvidia_dgpu") && devices["nvidia_dgpu"].is_array()) {
-            for (auto& gpu : devices["nvidia_dgpu"]) {
-                if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                    std::string gpu_name = gpu["name"];
-                    gpu["inference_engines"] = sys_info->detect_inference_engines("nvidia_dgpu", gpu_name);
-                }
-            }
-        }
-        
-        // NPU
-        if (devices.contains("npu") && devices["npu"].contains("name")) {
-            std::string npu_name = devices["npu"]["name"];
-            devices["npu"]["inference_engines"] = sys_info->detect_inference_engines("npu", npu_name);
-        }
-    }
-    
-    // Filter for non-verbose mode (only essential keys)
-    if (!verbose) {
-        std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
-        json filtered_info;
-        for (const auto& key : essential_keys) {
-            if (system_info.contains(key)) {
-                filtered_info[key] = system_info[key];
-            }
-        }
-        system_info = filtered_info;
-    } else {
-        // In verbose mode, add Python packages (empty for C++ implementation)
-        system_info["Python Packages"] = SystemInfo::get_python_packages();
+    } catch (const std::exception& e) {
+        // Catastrophic failure - return minimal info but don't crash
+        std::cerr << "[Server] System info failed: " << e.what() << std::endl;
+        system_info = {
+            {"OS Version", "Unknown"},
+            {"error", e.what()},
+            {"devices", json::object()}
+        };
+    } catch (...) {
+        std::cerr << "[Server] System info failed with unknown error" << std::endl;
+        system_info = {
+            {"OS Version", "Unknown"},
+            {"error", "Unknown error"},
+            {"devices", json::object()}
+        };
     }
     
     return system_info;
 }
+
 
 } // namespace lemon
 

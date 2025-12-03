@@ -205,30 +205,34 @@ static std::string identify_rocm_arch_from_name(const std::string& device_name) 
 
 // Helper to identify ROCm architecture from system
 static std::string identify_rocm_arch() {
-    auto system_info = lemon::create_system_info();
-    
-    // Check iGPU
-    auto igpu = system_info->get_amd_igpu_device();
-    if (igpu.available && !igpu.name.empty()) {
-        std::string arch = identify_rocm_arch_from_name(igpu.name);
-        if (!arch.empty()) {
-            return arch;
-        }
-    }
-    
-    // Check dGPUs
-    auto dgpus = system_info->get_amd_dgpu_devices();
-    for (const auto& gpu : dgpus) {
-        if (gpu.available && !gpu.name.empty()) {
-            std::string arch = identify_rocm_arch_from_name(gpu.name);
+    // Try to detect GPU architecture, default to gfx110X on any failure
+    try {
+        auto system_info = lemon::create_system_info();
+        
+        // Check iGPU first
+        auto igpu = system_info->get_amd_igpu_device();
+        if (igpu.available && !igpu.name.empty()) {
+            std::string arch = identify_rocm_arch_from_name(igpu.name);
             if (!arch.empty()) {
                 return arch;
             }
         }
+        
+        // Check dGPUs
+        auto dgpus = system_info->get_amd_dgpu_devices();
+        for (const auto& gpu : dgpus) {
+            if (gpu.available && !gpu.name.empty()) {
+                std::string arch = identify_rocm_arch_from_name(gpu.name);
+                if (!arch.empty()) {
+                    return arch;
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed - use default
     }
     
-    // Default to gfx110X if no specific arch detected
-    return "gfx110X";
+    return "gfx110X";  // Default architecture
 }
 
 // Helper to get the directory where llama binaries should be installed
