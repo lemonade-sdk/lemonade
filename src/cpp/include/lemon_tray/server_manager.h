@@ -72,7 +72,8 @@ public:
     nlohmann::json get_health();
     nlohmann::json get_models();
     bool load_model(const std::string& model_name);
-    bool unload_model();
+    bool unload_model();  // Unload all models
+    bool unload_model(const std::string& model_name);  // Unload specific model
     
     // HTTP communication (public for custom requests)
     std::string make_http_request(
