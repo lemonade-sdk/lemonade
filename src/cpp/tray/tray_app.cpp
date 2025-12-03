@@ -313,10 +313,36 @@ int TrayApp::run() {
         // Check for single instance - only for 'serve' and 'run' commands
         // Other commands (status, list, pull, delete, stop) can run alongside a server
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Server")) {
+            // If 'run' command and server is already running, connect to it and execute the run command
+            if (config_.command == "run") {
+                std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
+                
+                // Get the running server's info
+                auto [pid, running_port] = get_server_info();
+                if (running_port == 0) {
+                    std::cerr << "Error: Could not connect to running server" << std::endl;
+                    return 1;
+                }
+                
+                // Create server manager to communicate with running server
+                server_manager_ = std::make_unique<ServerManager>();
+                server_manager_->set_port(running_port);
+                config_.port = running_port;  // Update config to match running server
+                
+                // Use localhost to connect (works regardless of what the server is bound to)
+                if (config_.host.empty() || config_.host == "0.0.0.0") {
+                    config_.host = "localhost";
+                }
+                
+                // Execute the run command (load model and open browser)
+                return execute_run_command();
+            }
+            
+            // For 'serve' command, don't allow duplicate servers
 #ifdef _WIN32
             show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
-            std::cerr << "Error: Another instance of lemonade-server serve/run is already running.\n"
+            std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
                       << "Only one persistent server can run at a time.\n\n"
                       << "To check server status: lemonade-server status\n"
                       << "To stop the server: lemonade-server stop\n" << std::endl;
