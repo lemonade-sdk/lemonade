@@ -45,53 +45,57 @@ jobs:
         run: |
           python -m venv .venv
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
+            venvPip=".venv/Scripts/pip"
+            venvLemonadeServerDev=".venv/Scripts/lemonade-server-dev"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
+            venvPip=".venv/bin/pip"
+            venvLemonadeServerDev=".venv/bin/lemonade-server-dev"
           fi
-          python -m pip install --upgrade pip
-          python -m pip check
-          pip install -e .[dev,oga-cpu]
-          lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
-          lemonade-server-dev pull Llama-3.2-1B-Instruct-CPU
+          $venvPython -m pip install --upgrade pip
+          $venvPython -m pip check
+          $venvPip install -e .[dev,oga-cpu]
+          $venvLemonadeServerDev pull Qwen2.5-0.5B-Instruct-CPU
+          $venvLemonadeServerDev pull Llama-3.2-1B-Instruct-CPU
       - name: Run server tests (unit tests)
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
           fi
-          python test/server_unit.py
+          $venvPython test/server_unit.py
       - name: Run Model Manager Tests
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
           fi
-          python test/model_manager.py
+          $venvPython test/model_manager.py
       - name: Run server tests (network online mode)
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
           fi
-          python test/server.py
+          $venvPython test/server.py
       - name: Run server tests (offline mode)
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
           fi
-          python test/server.py --offline
+          $venvPython test/server.py --offline
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD

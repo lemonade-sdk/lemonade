@@ -22,9 +22,10 @@ jobs:
         - name: Create virtual environment and install dependencies
           run: |
             python -m venv .venv
-            source .venv/bin/activate
-            python -m pip install --upgrade pip
-            pip install -r docs/assets/mkdocs_requirements.txt
+            venvPython=".venv/bin/python"
+            venvPip=".venv/bin/pip"
+            $venvPython -m pip install --upgrade pip
+            $venvPip install -r docs/assets/mkdocs_requirements.txt
         - name: Configure git
           run: |
             git config --global user.name "Lemonade Bot"
@@ -38,8 +39,8 @@ jobs:
             git merge origin/main -X theirs
         - name: Run mkdocs update script
           run: |
-            source .venv/bin/activate
-            python docs/publish_website_docs.py
+            venvPython=".venv/bin/python"
+            $venvPython docs/publish_website_docs.py
         - name: Push updates
           run: |
             git add .
