@@ -47,7 +47,6 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
           $venvPip = ".\.venv\Scripts\pip.exe"
           
@@ -95,7 +94,6 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
           
           & $venvPython test/server_flm.py

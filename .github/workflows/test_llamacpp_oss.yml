@@ -62,7 +62,6 @@ jobs:
       - name: Install dependencies
         run: |
           $ErrorActionPreference = "Stop"
-          
           $venvPython = ".\.venv\Scripts\python.exe"
           $venvPip = ".\.venv\Scripts\pip.exe"
           
@@ -84,15 +83,14 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          $venvActivate = ".\.venv\Scripts\Activate.ps1"
-          & $venvActivate
+          $venvLemonade = ".\.venv\Scripts\lemonade.exe"
           
           if ("${{ matrix.backend }}" -ne "rocm") {
-            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+            & $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
           }
 
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench --cli -w 0 -i 2; if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Run lemonade Llamacpp API tests
         env:
@@ -137,11 +135,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          source .venv/bin/activate
-          python -m pip install --upgrade pip
-          pip install pylint
-          pip install -e .[dev]
-          pip check
+          venvPython=".venv/bin/python"
+          venvPip=".venv/bin/pip"
+          $venvPython -m pip install --upgrade pip
+          $venvPip install pylint
+          $venvPip install -e .[dev]
+          $venvPip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
@@ -149,23 +148,21 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source .venv/bin/activate
-
+          venvLemonade=".venv/bin/lemonade"
           if [ "${{ matrix.backend }}" != "rocm" ]; then
-            lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+            $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
           fi
 
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
-          lemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -i 2 --output-tokens 16 || exit 1
+          $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device igpu llm-prompt -p "Hi" --max-new-tokens 10 || exit 1
+          $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} llamacpp-bench -i 2 --output-tokens 16 || exit 1
 
       - name: Run lemonade Llamacpp API tests
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source .venv/bin/activate
-
-          python test/server_llamacpp.py ${{ matrix.backend }} || exit 1
-          python test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
+          venvPython=".venv/bin/python"
+          $venvPython test/server_llamacpp.py ${{ matrix.backend }} || exit 1
+          $venvPython test/server_llamacpp.py ${{ matrix.backend }} --offline || exit 1
 
   test-server-llamacpp-macos:
     env:
@@ -197,9 +194,9 @@ jobs:
       - name: Create virtual environment and install dependencies
         run: |
           python -m venv .venv
-          source .venv/bin/activate
-          pip install -e .[dev]
-          pip check
+          venvPip=".venv/bin/pip"
+          $venvPip install -e .[dev]
+          $venvPip check
 
           echo "HF_HOME=$(pwd)/hf-cache" >> $GITHUB_ENV
 
@@ -207,7 +204,6 @@ jobs:
         env:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
-          source .venv/bin/activate
-
-          python test/server_llamacpp.py metal || exit 1
-          python test/server_llamacpp.py metal --offline || exit 1
+          venvPython=".venv/bin/python"
+          $venvPython test/server_llamacpp.py metal || exit 1
+          $venvPython test/server_llamacpp.py metal --offline || exit 1

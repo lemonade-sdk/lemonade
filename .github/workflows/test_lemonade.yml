@@ -43,15 +43,19 @@ jobs:
         run: |
           python -m venv .venv
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
+            venvPip=".venv/Scripts/pip"
+            venvLemonadeServerDev=".venv/Scripts/lemonade-server-dev"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
+            venvPip=".venv/bin/pip"
+            venvLemonadeServerDev=".venv/bin/lemonade-server-dev"
           fi
-          python -m pip install --upgrade pip
-          pip install pylint
-          python -m pip check
-          pip install -e .[dev,oga-cpu]
-          lemonade-server-dev pull Qwen2.5-0.5B-Instruct-CPU
+          $venvPython -m pip install --upgrade pip
+          $venvPip install pylint
+          $venvPython -m pip check
+          $venvPip install -e .[dev,oga-cpu]
+          $venvLemonadeServerDev pull Qwen2.5-0.5B-Instruct-CPU
       - name: Lint with Black
         uses: psf/black@stable
         with:
@@ -61,32 +65,34 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPylint=".venv/Scripts/pylint"
           else
-            source .venv/bin/activate
+            venvPylint=".venv/bin/pylint"
           fi
-          pylint src/lemonade --rcfile .pylintrc --disable E0401
-          pylint examples --rcfile .pylintrc --disable E0401,E0611,F0010 --jobs=1 -v
+          $venvPylint src/lemonade --rcfile .pylintrc --disable E0401
+          $venvPylint examples --rcfile .pylintrc --disable E0401,E0611,F0010 --jobs=1 -v
       - name: Run lemonade tests
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source .venv/Scripts/activate
+            venvPython=".venv/Scripts/python"
+            venvLemonade=".venv/Scripts/lemonade"
           else
-            source .venv/bin/activate
+            venvPython=".venv/bin/python"
+            venvLemonade=".venv/bin/lemonade"
           fi
           # Test CLI
-          lemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
+          $venvLemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
           
           # Test low-level APIs
-          python test/llm_api.py
+          $venvPython test/llm_api.py
 
           # Test server CLI
-          python test/server_cli.py
+          $venvPython test/server_cli.py
 
           # Test high-level APIs
-          python examples/api_basic.py
-          python examples/api_streaming.py
+          $venvPython examples/api_basic.py
+          $venvPython examples/api_streaming.py
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD
