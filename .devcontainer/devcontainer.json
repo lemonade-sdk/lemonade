@@ -12,7 +12,11 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"ms-vscode.cmake-tools"
+				"ms-vscode.cmake-tools",
+				"ms-python.python",        // Official Python Extension
+				"ms-python.vscode-pylance", // (Recommended) Better IntelliSense for Python
+				"ms-vscode.cpptools",      // Official C/C++ Extension
+				"ms-vscode.cpptools-extension-pack" // (Optional) Adds CMake & Themes
 			]
 		}
 	}
