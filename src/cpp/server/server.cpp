@@ -21,12 +21,10 @@
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 #else
     #include <sys/types.h>
     #include <sys/socket.h>
-    #include <netdb.h>
-    #include <arpa/inet.h>
+    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
     #include <unistd.h>
 #endif
 
@@ -392,8 +390,25 @@ void Server::run() {
         std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
     });
     
+    // Resolve host manually, to IPv4
+    struct addrinfo hints = {0};
+    hints.ai_family = AF_INET; // <--- Forces IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo *result = nullptr;
+    if(httplib::detail::getaddrinfo_with_timeout(host_.c_str(), NULL, &hints, &result, 5000)) {
+        std::cerr << "[Server] Warning: getaddrinfo failed." << host_ << std::endl;
+        return;
+    }
+    
+    char addrstr[INET_ADDRSTRLEN];
+    struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)result->ai_addr;
+    inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), addrstr, INET_ADDRSTRLEN);
+    std::string resolved_ip(addrstr);
+    std::cout << "[Server] Resolved host " << host_ << " to IPv4 address: " << resolved_ip << std::endl;
+    freeaddrinfo(result);
     running_ = true;
-    http_server_->listen(host_, port_);
+    http_server_->listen(resolved_ip.c_str(), port_);
 }
 
 void Server::stop() {
