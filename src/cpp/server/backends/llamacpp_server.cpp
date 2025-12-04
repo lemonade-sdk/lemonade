@@ -301,36 +301,45 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 }
 
 void LlamaCppServer::install(const std::string& backend) {
-    std::string install_dir = get_install_directory(backend_.empty() ? backend : backend_);
-    std::string version_file = (fs::path(install_dir) / "version.txt").string();
-    std::string backend_file = (fs::path(install_dir) / "backend.txt").string();
-    
+    std::string install_dir;
+    std::string version_file;
+    std::string backend_file;
+
+    std::string exe_path = find_external_llama_server(backend_.empty() ? backend : backend_);
+    bool needs_install = exe_path.empty();
+
     // Get expected version from config file (or fallback to defaults)
     std::string expected_version = get_llamacpp_version(backend_.empty() ? backend : backend_);
     
-    // Check if already installed with correct version
-    std::string exe_path = find_executable_in_install_dir(install_dir);
-    bool needs_install = exe_path.empty();
-    
-    if (!needs_install && fs::exists(version_file) && fs::exists(backend_file)) {
-        std::string installed_version, installed_backend;
+    if (needs_install) {
+        install_dir = get_install_directory(backend_.empty() ? backend : backend_);
+        version_file = (fs::path(install_dir) / "version.txt").string();
+        backend_file = (fs::path(install_dir) / "backend.txt").string();
         
-        // Read version info in a separate scope to ensure files are closed
-        {
-            std::ifstream vf(version_file);
-            std::ifstream bf(backend_file);
-            std::getline(vf, installed_version);
-            std::getline(bf, installed_backend);
-        }  // Files are closed here when ifstream objects go out of scope
+        // Check if already installed with correct version
+        exe_path = find_executable_in_install_dir(install_dir);
+        needs_install = exe_path.empty();
         
-        if (installed_version != expected_version || installed_backend != backend_) {
-            std::cout << "[LlamaCpp] Upgrading from " << installed_version 
-                     << " to " << expected_version << std::endl;
-            needs_install = true;
-            fs::remove_all(install_dir);
+        if (!needs_install && fs::exists(version_file) && fs::exists(backend_file)) {
+            std::string installed_version, installed_backend;
+            
+            // Read version info in a separate scope to ensure files are closed
+            {
+                std::ifstream vf(version_file);
+                std::ifstream bf(backend_file);
+                std::getline(vf, installed_version);
+                std::getline(bf, installed_backend);
+            }  // Files are closed here when ifstream objects go out of scope
+            
+            if (installed_version != expected_version || installed_backend != backend_) {
+                std::cout << "[LlamaCpp] Upgrading from " << installed_version 
+                        << " to " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
+            }
         }
     }
-    
+
     if (needs_install) {
         std::cout << "[LlamaCpp] Installing llama-server (backend: " << backend_ 
                  << ", version: " << expected_version << ")" << std::endl;
@@ -733,9 +742,29 @@ std::string LlamaCppServer::find_executable_in_install_dir(const std::string& in
     return "";
 }
 
+std::string LlamaCppServer::find_external_llama_server(const std::string& backend) {
+    std::string upper_backend = backend;
+    std::transform(upper_backend.begin(), upper_backend.end(), upper_backend.begin(), ::toupper);
+    std::string env = "LEMONADE_LLAMACPP_" + upper_backend + "_BIN";
+    const char* llama_bin_env = std::getenv(env.c_str());
+    if (!llama_bin_env) {
+        return "";
+    }
+
+    std::string llama_bin = std::string(llama_bin_env);
+    
+    return fs::exists(llama_bin) ? llama_bin : "";
+}
+
 std::string LlamaCppServer::get_llama_server_path() {
+    std::string exe_path = find_external_llama_server(backend_);
+
+    if (!exe_path.empty()) {
+        return exe_path;
+    }
+
     std::string install_dir = get_install_directory(backend_);
-    std::string exe_path = find_executable_in_install_dir(install_dir);
+    exe_path = find_executable_in_install_dir(install_dir);
     
     if (!exe_path.empty()) {
         return exe_path;

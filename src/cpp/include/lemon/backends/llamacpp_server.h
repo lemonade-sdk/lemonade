@@ -44,6 +44,7 @@ public:
 private:
     std::string get_llama_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
+    std::string find_external_llama_server(const std::string& backend);
     
     std::string backend_;  // vulkan, rocm, metal
     std::string model_path_;

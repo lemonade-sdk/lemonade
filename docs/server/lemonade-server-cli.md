@@ -47,6 +47,8 @@ lemonade-server run MODEL_NAME [options]
 
 These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, and `LEMONADE_LLAMACPP_ARGS`.
 
+Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
+
 ## `pull` Command Options
 
 The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
