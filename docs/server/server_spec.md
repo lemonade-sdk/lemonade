@@ -532,17 +532,19 @@ For a full list of event types, see the [API reference for streaming](https://pl
 
 
 
-### `POST /api/v1/audio/transcriptions` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+### `POST /api/v1/audio/transcriptions` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
 
 Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.
 
 > **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
+>
+> **Limitations:** Only `wav` audio format and `json` response format are currently supported.
 
 #### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `file` | Yes | The audio file to transcribe. Supported formats: wav, mp3, mp4, mpeg, mpga, m4a, webm, ogg, flac. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The Whisper model to use for transcription (e.g., `whisper-tiny`, `whisper-base`, `whisper-small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

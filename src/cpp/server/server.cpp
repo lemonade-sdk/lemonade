@@ -593,13 +593,22 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             return;
         }
         
+        // Check if the loaded model supports chat completion (only LLM models do)
+        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+            std::cerr << "[Server ERROR] Model does not support chat completion" << std::endl;
+            res.status = 400;
+            res.set_content(R"({"error": {"message": "This model does not support chat completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            return;
+        }
+
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
-        
-        // Use original request body - each backend (FLM, llamacpp, etc.) handles 
+
+        // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
         std::string request_body = req.body;
-        
+
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") && 
             request_json["enable_thinking"].is_boolean() && 
@@ -795,10 +804,19 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
         }
-        
+
+        // Check if the loaded model supports completion (only LLM models do)
+        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+            std::cerr << "[Server ERROR] Model does not support completion" << std::endl;
+            res.status = 400;
+            res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            return;
+        }
+
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
-        
+
         // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
         

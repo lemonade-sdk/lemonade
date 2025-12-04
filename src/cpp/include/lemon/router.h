@@ -56,6 +56,9 @@ public:
     
     // Check if a specific model is loaded
     bool is_model_loaded(const std::string& model_name) const;
+
+    // Get the model type for a loaded model (returns LLM if not found)
+    ModelType get_model_type(const std::string& model_name = "") const;
     
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;

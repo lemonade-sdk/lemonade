@@ -1108,21 +1108,12 @@ jobs:
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
-      - name: Create minimal Python environment
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          conda create -p .\test-env python=3.10 -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Set HF_HOME environment variable in conda environment
-          conda env config vars set -p .\test-env HF_HOME="$env:HF_HOME"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          # Install test dependencies
-          conda run --no-capture-output -p .\test-env pip install -r test/requirements.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
 
       - name: Run Whisper tests with C++ server
         shell: PowerShell
@@ -1130,13 +1121,14 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
 
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
 
           Write-Host "Running Whisper tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
 
-          conda run --no-capture-output -p .\test-env python test/server_whisper.py --server-binary $serverExe
+          & $venvPython test/server_whisper.py --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: Whisper tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE

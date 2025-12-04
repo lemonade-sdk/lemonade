@@ -462,6 +462,14 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     return find_server_by_model_name(model_name) != nullptr;
 }
 
+ModelType Router::get_model_type(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = model_name.empty()
+        ? get_most_recent_server()
+        : find_server_by_model_name(model_name);
+    return server ? server->get_model_type() : ModelType::LLM;
+}
+
 std::string Router::get_backend_address() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
