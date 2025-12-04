@@ -35,23 +35,29 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: src/app/package-lock.json
       
       - name: Install Node dependencies
+        working-directory: src/app
         run: npm ci
       
       - name: Build TypeScript backend
+        working-directory: src/app
         run: npm run build:backend
       
       - name: Build Electron app (Windows)
         if: matrix.os == 'windows-latest'
+        working-directory: src/app
         run: npm run build:win
       
       - name: Build Electron app (macOS)
         if: matrix.os == 'macos-latest'
+        working-directory: src/app
         run: npm run build:mac
       
       - name: Build Electron app (Linux)
         if: matrix.os == 'ubuntu-latest'
+        working-directory: src/app
         run: npm run build:linux
       
       - name: Upload artifacts (Windows)
@@ -59,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-windows-installer
-          path: dist-app/*.exe
+          path: src/app/dist-app/*.exe
           retention-days: 5
       
       - name: Upload artifacts (macOS)
@@ -67,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-macos-installer
-          path: dist-app/*.dmg
+          path: src/app/dist-app/*.dmg
           retention-days: 5
       
       - name: Upload artifacts (Linux)
@@ -75,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-linux-installer
-          path: dist-app/*.AppImage
+          path: src/app/dist-app/*.AppImage
           retention-days: 5
       
       - name: Release
@@ -83,9 +89,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist-app/*.exe
-            dist-app/*.dmg
-            dist-app/*.AppImage
+            src/app/dist-app/*.exe
+            src/app/dist-app/*.dmg
+            src/app/dist-app/*.AppImage
           draft: false
           prerelease: false
         env:
