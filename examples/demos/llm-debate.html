@@ -655,7 +655,12 @@
             max-width: 400px;
             width: 100%;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: popInScale 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popInScale {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
 
         .help-popup h3 {
@@ -793,6 +798,19 @@
         </div>
     </div>
 
+    <!-- Error Popup for insufficient model slots -->
+    <div class="help-popup-overlay" id="errorPopup" style="display: none;">
+        <div class="help-popup" style="border-color: var(--accent-red);">
+            <h3 style="color: var(--accent-red);">⚠️ Not Enough Model Slots</h3>
+            <p id="errorPopupMessage" style="color: var(--text-secondary); margin-bottom: 1rem;"></p>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                Restart the server with more slots:<br>
+                <code id="errorPopupCommand">lemonade-server serve --max-loaded-models 9</code>
+            </p>
+            <button class="got-it-btn" style="background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);" onclick="document.getElementById('errorPopup').style.display='none'">Got it!</button>
+        </div>
+    </div>
+
     <script>
         // ============== Configuration ==============
         const CONFIG = {
@@ -811,6 +829,7 @@
             loadedModels: new Set(),
             downloadedModels: new Set(), // Models that are downloaded
             downloadProgress: {},  // { modelId: { percent, status } }
+            maxModels: null,       // { llm, embedding, reranking } from server
             debateActive: false,
             question: '',
             chatHistory: [],      // Full chat history
@@ -911,7 +930,9 @@
             try {
                 const response = await fetch(`${CONFIG.serverUrl}/api/v1/health`);
                 if (response.ok) {
+                    const data = await response.json();
                     state.connected = true;
+                    state.maxModels = data.max_models || null;
                     elements.statusDot.classList.add('connected');
                     elements.statusText.textContent = 'Connected';
                     return true;
@@ -920,6 +941,7 @@
                 // Ignore
             }
             state.connected = false;
+            state.maxModels = null;
             elements.statusDot.classList.remove('connected');
             elements.statusText.textContent = 'Disconnected';
             return false;
@@ -1116,6 +1138,16 @@
             }).join('');
         }
 
+        function showSlotError(selectedCount, maxSlots) {
+            const popup = document.getElementById('errorPopup');
+            const message = document.getElementById('errorPopupMessage');
+            const command = document.getElementById('errorPopupCommand');
+            
+            message.textContent = `You selected ${selectedCount} models, but the server only has ${maxSlots} LLM slot${maxSlots === 1 ? '' : 's'} available.`;
+            command.textContent = `lemonade-server serve --max-loaded-models ${selectedCount}`;
+            popup.style.display = 'flex';
+        }
+
         async function loadSelectedModels() {
             if (!state.selectedModels || state.selectedModels.size === 0) {
                 alert('Please select at least one model');
@@ -1124,6 +1156,12 @@
 
             // Filter models to only selected ones
             const selectedModelsList = state.models.filter(m => state.selectedModels.has(m.id));
+            
+            // Check if server has enough LLM slots
+            if (state.maxModels && state.maxModels.llm < selectedModelsList.length) {
+                showSlotError(selectedModelsList.length, state.maxModels.llm);
+                return;
+            }
             
             // Reassign colors to selected models only
             state.modelColors = {};
