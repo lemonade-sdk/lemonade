@@ -1,3 +1,6 @@
 {
-    "cmake.sourceDirectory": "/workspaces/lemonade/src/cpp"
+    "cmake.sourceDirectory": "/workspaces/lemonade/src/cpp",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.intelliSenseEngine": "Default",
+    "C_Cpp.default.intelliSenseMode": "linux-clang-x64"
 }
