@@ -70,7 +70,7 @@ lemonade-server serve --max-loaded-models 5
 
 ### Model Types
 
-Models are categorized into four types:
+Models are categorized into these types:
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
