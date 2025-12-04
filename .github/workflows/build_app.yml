@@ -41,10 +41,6 @@ jobs:
         working-directory: src/app
         run: npm ci
       
-      - name: Build TypeScript backend
-        working-directory: src/app
-        run: npm run build:backend
-      
       - name: Build Electron app (Windows)
         if: matrix.os == 'windows-latest'
         working-directory: src/app
