@@ -48,7 +48,9 @@ def make_safe_id(prefix: str, rel_path: str) -> str:
 
 
 class DirNode:
-    def __init__(self, rel_path: Path, dir_id: str, name: str | None, parent: "DirNode | None"):
+    def __init__(
+        self, rel_path: Path, dir_id: str, name: str | None, parent: "DirNode | None"
+    ):
         self.rel_path = rel_path
         self.id = dir_id
         self.name = name
@@ -56,13 +58,19 @@ class DirNode:
         self.children: dict[str, DirNode] = {}
 
 
-def ensure_directory_nodes(root: DirNode, rel_path: Path, nodes_by_rel: dict[str, DirNode]) -> DirNode:
+def ensure_directory_nodes(
+    root: DirNode, rel_path: Path, nodes_by_rel: dict[str, DirNode]
+) -> DirNode:
     """Ensure DirNode objects exist for every component of rel_path."""
     rel_str = rel_path.as_posix()
     if rel_str in nodes_by_rel:
         return nodes_by_rel[rel_str]
 
-    parent = ensure_directory_nodes(root, rel_path.parent, nodes_by_rel) if rel_path.parts else root
+    parent = (
+        ensure_directory_nodes(root, rel_path.parent, nodes_by_rel)
+        if rel_path.parts
+        else root
+    )
     dir_id = make_safe_id("ElectronDir", rel_str or "root")
     node = DirNode(rel_path, dir_id, rel_path.name or None, parent)
     parent.children[rel_path.name] = node
@@ -101,7 +109,7 @@ def generate_wxs(
         )
 
     root_node = DirNode(Path("."), root_id, None, None)
-    nodes_by_rel: dict[str, DirNode] = {"." : root_node}
+    nodes_by_rel: dict[str, DirNode] = {".": root_node}
 
     for file_path in files:
         rel_dir = file_path.relative_to(source_dir).parent
@@ -116,7 +124,9 @@ def generate_wxs(
         dir_node = nodes_by_rel[rel_dir]
         component_id = make_safe_id("ElectronComponent", rel_path)
         file_id = make_safe_id("ElectronFile", rel_path)
-        guid_value = str(uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/electron/{rel_path}")).upper()
+        guid_value = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/electron/{rel_path}")
+        ).upper()
         guid = f"{{{guid_value}}}"
         windows_rel_path = rel_path.replace("/", "\\")
         file_entries.append(
@@ -156,17 +166,41 @@ def generate_wxs(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate WiX fragment for Electron app files.")
-    parser.add_argument("--source", required=True, type=Path, help="Path to Electron win-unpacked directory.")
-    parser.add_argument("--output", required=True, type=Path, help="Destination .wxs fragment path.")
-    parser.add_argument("--component-group", required=True, help="ComponentGroup Id to emit.")
-    parser.add_argument("--root-id", required=True, help="Directory Id where the Electron app root will be installed.")
-    parser.add_argument("--path-variable", default="ElectronSourceDir",
-                        help="WiX preprocessor variable resolving to the Electron source directory.")
+    parser = argparse.ArgumentParser(
+        description="Generate WiX fragment for Electron app files."
+    )
+    parser.add_argument(
+        "--source",
+        required=True,
+        type=Path,
+        help="Path to Electron win-unpacked directory.",
+    )
+    parser.add_argument(
+        "--output", required=True, type=Path, help="Destination .wxs fragment path."
+    )
+    parser.add_argument(
+        "--component-group", required=True, help="ComponentGroup Id to emit."
+    )
+    parser.add_argument(
+        "--root-id",
+        required=True,
+        help="Directory Id where the Electron app root will be installed.",
+    )
+    parser.add_argument(
+        "--path-variable",
+        default="ElectronSourceDir",
+        help="WiX preprocessor variable resolving to the Electron source directory.",
+    )
     args = parser.parse_args()
 
     try:
-        generate_wxs(args.source.resolve(), args.output.resolve(), args.component_group, args.root_id, args.path_variable)
+        generate_wxs(
+            args.source.resolve(),
+            args.output.resolve(),
+            args.component_group,
+            args.root_id,
+            args.path_variable,
+        )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"[generate_electron_fragment] ERROR: {exc}", file=sys.stderr)
         return 1
@@ -175,4 +209,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

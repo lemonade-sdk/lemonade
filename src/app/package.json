@@ -80,7 +80,6 @@
       ]
     },
     "mac": {
-      "icon": "../../docs/assets/favicon.ico",
       "target": [
         "dmg"
       ],
