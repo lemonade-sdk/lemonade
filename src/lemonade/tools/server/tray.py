@@ -30,6 +30,14 @@ else:  # Windows/Linux
         MenuItem,
     )
 
+# adding environemnt variable support
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Loads variables from .env into os.environ
+
+LEMONADE_ENV = os.getenv("LEMONADE_ENV", "Production")
+
 
 class OutputDuplicator:
     """
@@ -444,6 +452,40 @@ class LemonadeTray(SystemTray):
             self.logger.error(f"Error toggling debug logs: {str(e)}")
             self.show_balloon_notification("Error", "Failed to toggle debug logs.")
 
+    def restart_server(self, icon, item):
+        """
+        Spawn a detached Python process to stop and restart Lemonade, then quit the tray.
+        """
+        try:
+            self.logger.debug(
+                "[Restart] Spawning detached Python process for stop and restart."
+            )
+            workspace_root = Path(__file__).resolve().parents[6]
+            vbs_path = workspace_root / "bin" / "lemonade_server.vbs"
+            self.logger.debug(f"[Restart] Using VBS path: {vbs_path}")
+            restart_script = (
+                "import subprocess, time; "
+                "subprocess.run([r'{}', '-m', 'lemonade_server.cli', 'stop'], shell=True); "
+                "time.sleep(2); "
+                "subprocess.Popen(['wscript.exe', r'{}'], shell=True)"
+            ).format(sys.executable.replace("\\", "/"), vbs_path)
+            subprocess.Popen(
+                [sys.executable, "-c", restart_script],
+                shell=True,
+                creationflags=subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+            self.show_balloon_notification(
+                "Restarted Lemonade", "Lemonade Server is restarting."
+            )
+            self.logger.debug(
+                "[Restart] Detached restart process launched. Quitting tray."
+            )
+            self.exit_app(icon, item)
+        except Exception as e:
+            self.logger.error(f"Error restarting Lemonade: {str(e)}")
+            self.show_balloon_notification("Error", f"Failed to restart: {str(e)}")
+
     def create_menu(self):
         """
         Create the Lemonade-specific context menu.
@@ -574,6 +616,8 @@ class LemonadeTray(SystemTray):
         items.append(MenuItem("Model Manager", self.open_model_manager))
         items.append(MenuItem("Logs", None, submenu=logs_submenu))
         items.append(Menu.SEPARATOR)
+        if LEMONADE_ENV == "Developer":
+            items.append(MenuItem("Restart Lemonade", self.restart_server))
         items.append(MenuItem("Quit Lemonade", self.exit_app))
         return Menu(*items)
 
