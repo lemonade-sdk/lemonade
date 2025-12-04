@@ -343,8 +343,8 @@
             z-index: 100;
             animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-            width: 85%;
-            max-width: 320px;
+            width: 90%;
+            max-width: 400px;
         }
 
         .winner-banner.yes {
@@ -398,6 +398,36 @@
         .winner-banner .close-btn:hover {
             background: var(--bg-hover);
         }
+
+        .vote-breakdown {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.3rem 0.5rem;
+            margin: 1rem 0;
+            padding: 0.75rem;
+            background: var(--bg-input);
+            border-radius: 8px;
+            font-size: 0.7rem;
+            text-align: left;
+        }
+
+        .vote-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .vote-item .model-name {
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .vote-item.yes .vote-icon { color: var(--vote-yes); }
+        .vote-item.no .vote-icon { color: var(--vote-no); }
 
         /* Loading Overlay - Mobile Friendly */
         .loading-overlay {
@@ -747,7 +777,7 @@
                                class="question-input" 
                                id="questionInput" 
                                placeholder="Ask a yes/no question..."
-                               value="Is a hotdog a sandwich?"
+                               value="Is star wars better than star trek?"
                                disabled>
                         <button class="start-btn" id="startBtn" disabled>GO</button>
                     </div>
@@ -817,9 +847,7 @@
             serverUrl: 'http://localhost:8000',
             numModels: 0,  // Will be set based on loaded models
             maxHistoryMessages: 8,
-            messagesPerPressureLevel: 8,  // ~4 rounds average before voting starts
-            minRespondsBeforePrompt: 2,
-            responseDelayMs: 500,
+            responseDelayMs: 300,  // Stagger between model prompts
         };
 
         // ============== State ==============
@@ -833,8 +861,10 @@
             debateActive: false,
             question: '',
             chatHistory: [],      // Full chat history
+            phaseSnapshot: [],    // Snapshot of chat history at start of current phase
             votes: {},            // { modelId: 'yes' | 'no' | null }
             speakingModels: new Set(),
+            phaseResponses: new Set(), // Models that have responded in current phase
             messageCount: 0,
             roundCount: 0,
             pressureLevel: 1,
@@ -849,17 +879,23 @@
             '#a855f7', '#14b8a6', '#f43f5e', '#8b5cf6'
         ];
 
-        // ============== System Prompts ==============
-        // First round - no one to reference yet
-        const FIRST_ROUND_PROMPT = `Give your thought on this yes/no question with ONE sentence, but do not use the word "yes" or "no".`;
-        
-        // Later rounds - can reference others
-        const DEBATE_PROMPTS = {
-            1: `ONE sentence. You may agree or disagree with someone mentioned above.`,
-            2: `ONE sentence. Respond to a point made above, or add your own.`,
-            3: `ONE sentence. You can now vote by saying: MY VOTE: YES or MY VOTE: NO`,
-            4: `Final round. ONE sentence then vote: MY VOTE: YES or MY VOTE: NO`,
+        // ============== Phase System ==============
+        // Phase prompts for each stage of the debate
+        const PHASE_PROMPTS = {
+            1: `Give your hot take on this yes/no question with ONE concise sentence. Do not use the word "yes" or "no".`,
+            2: `ONE concise sentence reacting by name to someone mentioned above. Agree, disagree, or add nuance.`,
+            3: `ONE concise sentence. Continue the discussion by responding to a point made above. Be dramatic!`,
+            4: `Final thoughts! ONE concise sentence, then cast your vote: MY VOTE: YES or MY VOTE: NO`,
             5: `ONLY say "MY VOTE: YES" or "MY VOTE: NO". Nothing else. No explanation.`
+        };
+        
+        // Phase announcement messages
+        const PHASE_MESSAGES = {
+            1: '🎤 Phase 1: Hot Takes!',
+            2: '💬 Phase 2: Reactions!',
+            3: '🍿 Phase 3: The Plot Thickens!',
+            4: '🎯 Phase 4: Final Thoughts & Voting!',
+            5: '⚡ Phase 5: Lightning Round - Vote Now!'
         };
 
         // ============== DOM Elements ==============
@@ -1305,11 +1341,22 @@
                 emoji = '🤝';
             }
 
+            // Build vote breakdown HTML
+            const voteBreakdownHtml = state.models.map(model => {
+                const vote = state.votes[model.id];
+                const voteIcon = vote === 'yes' ? '✅' : vote === 'no' ? '❌' : '❓';
+                const voteClass = vote || 'none';
+                // Shorten model name for display
+                const shortName = model.id.replace(/-GGUF$/i, '').replace(/-gguf$/i, '').split('-').slice(0, 2).join('-');
+                return `<div class="vote-item ${voteClass}"><span class="vote-icon">${voteIcon}</span><span class="model-name">${shortName}</span></div>`;
+            }).join('');
+
             const banner = document.createElement('div');
             banner.className = `winner-banner ${resultClass}`;
             banner.innerHTML = `
                 <h2>${emoji} ${result}</h2>
                 <p>Final Vote: ${yesVotes} YES - ${noVotes} NO</p>
+                <div class="vote-breakdown">${voteBreakdownHtml}</div>
                 <button class="close-btn" onclick="this.parentElement.remove()">Close</button>
             `;
             document.body.appendChild(banner);
@@ -1368,8 +1415,9 @@
         }
 
         function buildChatHistoryForModel(modelId) {
-            // Only include model messages (not system or user)
-            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
+            // Use the phase snapshot - only messages from PREVIOUS phases
+            // This ensures all models in the same phase see identical context
+            const modelMessages = state.phaseSnapshot.filter(m => m.type === 'model');
             const recentMessages = modelMessages.slice(-CONFIG.maxHistoryMessages);
             
             // Start with just the question
@@ -1388,13 +1436,8 @@
         }
 
         function getSystemPrompt() {
-            // First round (no model messages yet) - don't mention referencing others
-            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
-            if (modelMessages.length === 0) {
-                return FIRST_ROUND_PROMPT;
-            }
-            // Later rounds - can reference others
-            return DEBATE_PROMPTS[state.pressureLevel] || DEBATE_PROMPTS[1];
+            // Use phase-specific prompts
+            return PHASE_PROMPTS[state.pressureLevel] || PHASE_PROMPTS[1];
         }
 
         // ============== Debate Logic ==============
@@ -1516,6 +1559,9 @@
                     state.emptyResponseCount[modelId] = 0;
                 }
                 
+                // Mark that this model has responded in this phase
+                state.phaseResponses.add(modelId);
+                
                 // Add to chat history
                 state.chatHistory.push({
                     type: 'model',
@@ -1526,17 +1572,19 @@
                 state.messageCount++;
                 updateStats();
 
-                // Check for vote
-                const vote = detectVote(trimmedResponse);
-                if (vote) {
-                    state.votes[modelId] = vote;
-                    // Add vote announcement
-                    const voteDiv = document.createElement('div');
-                    voteDiv.className = `vote-announcement ${vote}`;
-                    voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
-                    contentDiv.appendChild(voteDiv);
-                    
-                    updateVoteTally();
+                // Check for vote (only after Phase 1 - Hot Takes phase is vote-free)
+                if (state.pressureLevel > 1) {
+                    const vote = detectVote(trimmedResponse);
+                    if (vote) {
+                        state.votes[modelId] = vote;
+                        // Add vote announcement
+                        const voteDiv = document.createElement('div');
+                        voteDiv.className = `vote-announcement ${vote}`;
+                        voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
+                        contentDiv.appendChild(voteDiv);
+                        
+                        updateVoteTally();
+                    }
                 }
             }
 
@@ -1550,74 +1598,71 @@
         }
 
         function scheduleNextResponses() {
-            // Get models that haven't voted and aren't currently speaking
-            const availableModels = state.models.filter(m => 
+            // Get models that haven't voted yet
+            const unvotedModels = state.models.filter(m => 
                 !state.votes[m.id] && 
-                !state.speakingModels.has(m.id) &&
                 state.loadedModels.has(m.id)
             );
+            
+            // If all models have voted, we're done
+            if (unvotedModels.length === 0) {
+                return;
+            }
 
-            // If no available models and some are still speaking, wait for them
-            if (availableModels.length === 0) {
-                // Check if any models are still speaking
-                if (state.speakingModels.size > 0) {
-                    return; // Wait for speaking models to finish
-                }
-                
-                // Check if there are models that haven't voted (stuck models)
-                const unvotedModels = state.models.filter(m => !state.votes[m.id]);
-                if (unvotedModels.length > 0 && state.debateActive) {
-                    console.log(`${unvotedModels.length} unvoted models detected, forcing retry`);
-                    // Force retry for stuck models
-                    setTimeout(() => {
-                        if (state.debateActive) {
-                            unvotedModels.forEach((m, i) => {
-                                if (!state.votes[m.id] && !state.speakingModels.has(m.id)) {
-                                    setTimeout(() => streamModelResponse(m.id), i * 1000);
-                                }
-                            });
-                        }
-                    }, 3000);
+            // Get models that need to respond this phase (haven't responded yet and not currently speaking)
+            const needToRespond = unvotedModels.filter(m => 
+                !state.phaseResponses.has(m.id) && 
+                !state.speakingModels.has(m.id)
+            );
+            
+            // If some models are still speaking, wait for them
+            if (needToRespond.length === 0 && state.speakingModels.size > 0) {
+                return;
+            }
+            
+            // Check if all unvoted models have responded this phase
+            const allRespondedThisPhase = unvotedModels.every(m => 
+                state.phaseResponses.has(m.id) || state.speakingModels.has(m.id)
+            );
+            
+            if (allRespondedThisPhase && state.speakingModels.size === 0) {
+                // All done with this phase - advance to next phase
+                if (state.pressureLevel < 5) {
+                    // Snapshot current history BEFORE advancing - new phase sees all previous responses
+                    state.phaseSnapshot = [...state.chatHistory];
+                    
+                    state.pressureLevel++;
+                    state.phaseResponses.clear(); // Reset for new phase
+                    updatePressure();
+                    
+                    // Announce new phase
+                    if (PHASE_MESSAGES[state.pressureLevel]) {
+                        addChatMessage('system', '', PHASE_MESSAGES[state.pressureLevel]);
+                    }
+                    
+                    // Start all unvoted models responding for the new phase
+                    const stillUnvoted = state.models.filter(m => !state.votes[m.id]);
+                    stillUnvoted.forEach((model, i) => {
+                        setTimeout(() => {
+                            if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id)) {
+                                streamModelResponse(model.id);
+                            }
+                        }, i * 200);
+                    });
                 }
                 return;
             }
             
-            // If there are very few models left, be more aggressive about prompting
-            const votedCount = Object.values(state.votes).filter(v => v).length;
-            const remainingCount = CONFIG.numModels - votedCount;
-            
-            // Increase pressure if needed
-            const newPressure = Math.min(5, Math.ceil(state.messageCount / CONFIG.messagesPerPressureLevel) + 1);
-            if (newPressure > state.pressureLevel) {
-                state.pressureLevel = newPressure;
-                updatePressure();
-                if (state.pressureLevel >= 4) {
-                    addChatMessage('system', '', `⚡ Pressure L${state.pressureLevel}!`);
-                }
+            // Prompt models that still need to respond this phase
+            if (needToRespond.length > 0) {
+                needToRespond.forEach((model, i) => {
+                    setTimeout(() => {
+                        if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id) && !state.phaseResponses.has(model.id)) {
+                            streamModelResponse(model.id);
+                        }
+                    }, i * CONFIG.responseDelayMs);
+                });
             }
-
-            // If only 1-2 models left, max pressure
-            if (remainingCount <= 2 && state.pressureLevel < 5) {
-                state.pressureLevel = 5;
-                updatePressure();
-                addChatMessage('system', '', '🔥 FINAL ROUND!');
-            }
-
-            // How many to prompt at once (more chaotic with more models remaining)
-            const concurrentPrompts = Math.min(availableModels.length, Math.max(2, Math.floor(remainingCount / 2)));
-
-            // Shuffle and pick models
-            const shuffled = [...availableModels].sort(() => Math.random() - 0.5);
-            const toPrompt = shuffled.slice(0, concurrentPrompts);
-
-            // Start responses with slight stagger
-            toPrompt.forEach((model, i) => {
-                setTimeout(() => {
-                    if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id)) {
-                        streamModelResponse(model.id);
-                    }
-                }, i * CONFIG.responseDelayMs);
-            });
 
             state.roundCount++;
             updateStats();
@@ -1669,7 +1714,9 @@
             state.debateActive = true;
             state.question = question;
             state.chatHistory = [];
+            state.phaseSnapshot = []; // Phase 1: models only see the question, no other opinions
             state.votes = {};
+            state.phaseResponses.clear();
             state.messageCount = 0;
             state.roundCount = 0;
             state.pressureLevel = 1;
@@ -1693,7 +1740,7 @@
                 content: question
             });
 
-            addChatMessage('system', '', `🔥 Debate begins!`);
+            addChatMessage('system', '', PHASE_MESSAGES[1]);
 
             // Start all models responding in parallel (initial burst)
             state.models.forEach((model, i) => {
