@@ -342,10 +342,17 @@ bool SystemInfo::check_vulkan_support() {
     }
     #else
     // Check for Vulkan libraries on Linux
+    // Include paths for both Debian/Ubuntu and Fedora/RHEL systems
     std::vector<std::string> vulkan_lib_paths = {
+        // Debian/Ubuntu paths
         "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+        "/lib/x86_64-linux-gnu/libvulkan.so.1",
+        // Fedora/RHEL/CentOS paths
+        "/usr/lib64/libvulkan.so.1",
+        "/lib64/libvulkan.so.1",
+        // Generic paths
         "/usr/lib/libvulkan.so.1",
-        "/lib/x86_64-linux-gnu/libvulkan.so.1"
+        "/usr/local/lib/libvulkan.so.1"
     };
     for (const auto& path : vulkan_lib_paths) {
         if (fs::exists(path)) {
