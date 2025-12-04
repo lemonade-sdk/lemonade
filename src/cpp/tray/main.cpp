@@ -4,9 +4,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <csignal>
+#include <cstring>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <io.h>  // For _write, _fileno
 #else
 #include <unistd.h>
 #endif
