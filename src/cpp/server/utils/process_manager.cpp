@@ -476,59 +476,25 @@ int ProcessManager::find_free_port(int start_port) {
 #endif
     
     for (int port = start_port; port < start_port + 1000; port++) {
-        // Test BOTH 127.0.0.1 and 0.0.0.0 - different servers bind to different addresses
-        // llama-server binds to 127.0.0.1, while FLM binds to 0.0.0.0
-        // We need to detect both cases to avoid port conflicts
-        
-        bool port_free = true;
-        
-        // Test 1: Try binding to 127.0.0.1 (catches llama-server and any loopback bind)
-        {
-            int sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock < 0) {
-                continue;
-            }
-            
-            sockaddr_in addr;
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-            
-            int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            if (result != 0) {
-                port_free = false;
-            }
+        // Test if port is free by attempting to bind to localhost
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            continue;
         }
         
-        // Test 2: Try binding to 0.0.0.0 (catches FLM and any wildcard bind)
-        if (port_free) {
-            int sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock < 0) {
-                continue;
-            }
-            
-            sockaddr_in addr;
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = INADDR_ANY;
-            
-            int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            if (result != 0) {
-                port_free = false;
-            }
-        }
+        sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
         
-        if (port_free) {
+        int result = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+        
+        if (result == 0) {
 #ifdef _WIN32
             WSACleanup();
 #endif
