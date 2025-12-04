@@ -1,8 +1,8 @@
 {
   "llamacpp": {
-    "vulkan": "b7188",
-    "rocm": "b1122",
-    "metal": "b7188"
+    "vulkan": "b7247",
+    "rocm": "b1127",
+    "metal": "b7247"
   },
   "comment": "This configuration file controls which llama.cpp versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application."
 }
