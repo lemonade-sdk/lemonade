@@ -126,15 +126,6 @@ bool ServerManager::start_server(
             // Write PID file on Linux for efficient server discovery
             DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
             write_pid_file();
-            
-            // Verify PID file was written
-            std::ifstream verify_file("/tmp/lemonade-router.pid");
-            if (verify_file.good()) {
-                DEBUG_LOG(this, "PID file verified");
-            } else {
-                std::cerr << "[ServerManager] ERROR: PID file was not created!" << std::endl;
-            }
-            verify_file.close();
 #endif
             
             DEBUG_LOG(this, "Server process is running!");
