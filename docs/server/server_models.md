@@ -363,6 +363,144 @@ lemonade-server pull Gemma-3-4b-it-GGUF
 </details>
 
 <details>
+<summary>Phi-4-mini-instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Phi-4-mini-instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF">unsloth/Phi-4-mini-instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Phi-4-mini-instruct-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>2.49</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>LFM2-1.2B-GGUF</summary>
+
+```bash
+lemonade-server pull LFM2-1.2B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/LiquidAI/LFM2-1.2B-GGUF">LiquidAI/LFM2-1.2B-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>LFM2-1.2B-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>0.731</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Jan-nano-128k-GGUF</summary>
+
+```bash
+lemonade-server pull Jan-nano-128k-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/Menlo/Jan-nano-128k-gguf">Menlo/Jan-nano-128k-gguf</a></td></tr>
+<tr><td>GGUF Variant</td><td>jan-nano-128k-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>2.5</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Jan-v1-4B-GGUF</summary>
+
+```bash
+lemonade-server pull Jan-v1-4B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/janhq/Jan-v1-4B-GGUF">janhq/Jan-v1-4B-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Jan-v1-4B-Q4_K_M.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>2.5</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Llama-3.2-1B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Llama-3.2-1B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF">unsloth/Llama-3.2-1B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>0.834</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Llama-3.2-3B-Instruct-GGUF</summary>
+
+```bash
+lemonade-server pull Llama-3.2-3B-Instruct-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF">unsloth/Llama-3.2-3B-Instruct-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>2.06</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>SmolLM3-3B-GGUF</summary>
+
+```bash
+lemonade-server pull SmolLM3-3B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/SmolLM3-3B-128K-GGUF">unsloth/SmolLM3-3B-128K-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>SmolLM3-3B-128K-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Size (GB)</td><td>1.94</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Ministral-3-3B-Instruct-2512-GGUF</summary>
+
+```bash
+lemonade-server pull Ministral-3-3B-Instruct-2512-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF">mistralai/Ministral-3-3B-Instruct-2512-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Ministral-3-3B-Instruct-2512-Q4_K_M.gguf</td></tr>
+<tr><td>Mmproj</td><td>Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>vision</td></tr>
+<tr><td>Size (GB)</td><td>2.85</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>Qwen2.5-VL-7B-Instruct-GGUF</summary>
 
 ```bash
