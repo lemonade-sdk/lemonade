@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>🍋 Lemonade LLM Debate Arena</title>
+    <title>🍋 Lemonade Debate Arena v2</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -343,8 +343,8 @@
             z-index: 100;
             animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-            width: 85%;
-            max-width: 320px;
+            width: 90%;
+            max-width: 400px;
         }
 
         .winner-banner.yes {
@@ -399,6 +399,36 @@
             background: var(--bg-hover);
         }
 
+        .vote-breakdown {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.3rem 0.5rem;
+            margin: 1rem 0;
+            padding: 0.75rem;
+            background: var(--bg-input);
+            border-radius: 8px;
+            font-size: 0.7rem;
+            text-align: left;
+        }
+
+        .vote-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .vote-item .model-name {
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .vote-item.yes .vote-icon { color: var(--vote-yes); }
+        .vote-item.no .vote-icon { color: var(--vote-no); }
+
         /* Loading Overlay - Mobile Friendly */
         .loading-overlay {
             position: fixed;
@@ -428,6 +458,7 @@
         .loading-models {
             display: flex;
             flex-direction: column;
+            align-items: center;
             gap: 0.5rem;
             width: 100%;
             max-width: 360px;
@@ -441,6 +472,7 @@
             background: var(--bg-input);
             border-radius: 10px;
             border: 1px solid var(--border-color);
+            width: 100%;
         }
 
         .loading-model-item .spinner {
@@ -459,8 +491,15 @@
             font-size: 0.9rem;
         }
 
-        .loading-model-item .model-name {
+        .loading-model-item .model-info {
             flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .loading-model-item .model-name {
             font-size: 0.8rem;
             white-space: nowrap;
             overflow: hidden;
@@ -472,6 +511,27 @@
             font-size: 0.7rem;
             color: var(--text-muted);
             flex-shrink: 0;
+        }
+
+        .loading-model-item .progress-container {
+            width: 100%;
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .loading-model-item .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-purple) 0%, var(--accent-pink) 100%);
+            border-radius: 2px;
+            transition: width 0.2s ease-out;
+        }
+
+        .loading-model-item .progress-text {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-muted);
         }
 
         @keyframes spin {
@@ -502,10 +562,193 @@
         .model-color-1 { color: #38bdf8 !important; }
         .model-color-2 { color: #facc15 !important; }
         .model-color-3 { color: #4ade80 !important; }
-        .model-color-4 { color: #c084fc !important; }
-        .model-color-5 { color: #2dd4bf !important; }
-        .model-color-6 { color: #fb923c !important; }
-        .model-color-7 { color: #f472b6 !important; }
+        .model-color-4 { color: #ec4899 !important; }
+        .model-color-5 { color: #c084fc !important; }
+        .model-color-6 { color: #2dd4bf !important; }
+        .model-color-7 { color: #fb923c !important; }
+        .model-color-8 { color: #f472b6 !important; }
+
+        /* Model Selection UI */
+        .model-selection-item {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.8rem;
+            background: var(--bg-input);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .model-selection-item:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-purple);
+        }
+
+        .model-selection-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-purple);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .model-selection-item .model-name {
+            flex: 1;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .model-selection-item .model-size {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .model-selection-item.unchecked {
+            opacity: 0.5;
+        }
+
+        /* Load and Help Buttons */
+        .loading-buttons {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1rem;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .load-btn {
+            background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-pink) 100%);
+            border: none;
+            color: white;
+            padding: 0.7rem 1.5rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .load-btn:hover:not(:disabled) {
+            transform: scale(1.02);
+            box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4);
+        }
+
+        .load-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .help-btn {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.7rem 1.2rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .help-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-blue);
+        }
+
+        /* Help Popup */
+        .help-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+            padding: 1rem;
+        }
+
+        .help-popup {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: popInScale 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popInScale {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .help-popup h3 {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: var(--accent-yellow);
+        }
+
+        .help-popup ol {
+            margin: 0;
+            padding-left: 1.25rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .help-popup li {
+            margin-bottom: 0.5rem;
+        }
+
+        .help-popup code {
+            background: var(--bg-input);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent-blue);
+        }
+
+        .help-popup a {
+            color: var(--accent-purple);
+            text-decoration: none;
+        }
+
+        .help-popup a:hover {
+            text-decoration: underline;
+        }
+
+        .help-popup .got-it-btn {
+            margin-top: 1.25rem;
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-green) 0%, #16a34a 100%);
+            border: none;
+            color: white;
+            padding: 0.6rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .help-popup .got-it-btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+        }
+
     </style>
 </head>
 <body>
@@ -513,7 +756,7 @@
         <header>
             <div class="logo">
                 <span class="logo-icon">🍋</span>
-                <h1>DEBATE ARENA</h1>
+                <h1>DEBATE ARENA v2</h1>
             </div>
             <div class="vote-display">
                 <div class="status-dot" id="statusDot"></div>
@@ -521,7 +764,7 @@
                 <div class="vote-item yes">✓ <span id="yesCountDisplay">0</span></div>
                 <div class="vote-item no">✗ <span id="noCountDisplay">0</span></div>
                 <div class="vote-divider"></div>
-                <div class="vote-item pending">⏳ <span id="pendingCountDisplay">8</span></div>
+                <div class="vote-item pending">⏳ <span id="pendingCountDisplay">0</span></div>
             </div>
             <input type="hidden" id="serverUrl" value="http://localhost:8000">
         </header>
@@ -534,15 +777,12 @@
                                class="question-input" 
                                id="questionInput" 
                                placeholder="Ask a yes/no question..."
-                               value="Is a hotdog a sandwich?"
+                               value="Is star wars better than star trek?"
                                disabled>
                         <button class="start-btn" id="startBtn" disabled>GO</button>
                     </div>
                 </div>
                 <div class="chat-container" id="chatContainer">
-                    <div class="chat-message system">
-                        🍋 8 AI models will debate your question and vote!
-                    </div>
                 </div>
             </div>
         </div>
@@ -554,7 +794,7 @@
         <span id="noCount">0</span>
         <span id="yesBar"></span>
         <span id="noBar"></span>
-        <span id="pendingCount">8</span>
+        <span id="pendingCount">0</span>
         <span id="pressureLevel"></span>
         <span id="pressureFill"></span>
         <span id="messageCount">0</span>
@@ -564,11 +804,40 @@
     </div>
 
     <div class="loading-overlay" id="loadingOverlay">
-        <h2>🍋 PREPARING DEBATE ARENA</h2>
+        <h2>🍋 DEBATE ARENA v2</h2>
         <div class="loading-models" id="loadingModels">
-            <div class="chat-message system" style="margin: 0;">
+            <div class="chat-message system" style="margin: 0; text-align: center;">
                 Connecting to server...
             </div>
+        </div>
+    </div>
+
+    <!-- Help Popup -->
+    <div class="help-popup-overlay" id="helpPopup" style="display: none;">
+        <div class="help-popup">
+            <h3>🍋 Setup Instructions</h3>
+            <ol>
+                <li>Download <strong>Lemonade Server</strong> from <br/><a href="https://lemonade-server.ai" target="_blank">lemonade-server.ai</a></li>
+                <li>Run the installer</li>
+                <li>Start the server with multi-model support:<br>
+                    <code>lemonade-server serve --max-loaded-models 9</code></li>
+                <li>Open this page and click <strong>Load</strong>!<br>
+                    <span style="color: var(--text-muted); font-size: 0.8em;">Models with ⬇️ will be downloaded automatically.</span></li>
+            </ol>
+            <button class="got-it-btn" onclick="document.getElementById('helpPopup').style.display='none'">Got it!</button>
+        </div>
+    </div>
+
+    <!-- Error Popup for insufficient model slots -->
+    <div class="help-popup-overlay" id="errorPopup" style="display: none;">
+        <div class="help-popup" style="border-color: var(--accent-red);">
+            <h3 style="color: var(--accent-red);">⚠️ Not Enough Model Slots</h3>
+            <p id="errorPopupMessage" style="color: var(--text-secondary); margin-bottom: 1rem;"></p>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                Restart the server with more slots:<br>
+                <code id="errorPopupCommand">lemonade-server serve --max-loaded-models 9</code>
+            </p>
+            <button class="got-it-btn" style="background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);" onclick="document.getElementById('errorPopup').style.display='none'">Got it!</button>
         </div>
     </div>
 
@@ -576,23 +845,26 @@
         // ============== Configuration ==============
         const CONFIG = {
             serverUrl: 'http://localhost:8000',
-            numModels: 8,
+            numModels: 0,  // Will be set based on loaded models
             maxHistoryMessages: 8,
-            messagesPerPressureLevel: 8,  // ~4 rounds average before voting starts
-            minRespondsBeforePrompt: 2,
-            responseDelayMs: 500,
+            responseDelayMs: 300,  // Stagger between model prompts
         };
 
         // ============== State ==============
         const state = {
             connected: false,
-            models: [],           // Selected 8 models
+            models: [],           // Selected models for debate
             loadedModels: new Set(),
+            downloadedModels: new Set(), // Models that are downloaded
+            downloadProgress: {},  // { modelId: { percent, status } }
+            maxModels: null,       // { llm, embedding, reranking } from server
             debateActive: false,
             question: '',
             chatHistory: [],      // Full chat history
+            phaseSnapshot: [],    // Snapshot of chat history at start of current phase
             votes: {},            // { modelId: 'yes' | 'no' | null }
             speakingModels: new Set(),
+            phaseResponses: new Set(), // Models that have responded in current phase
             messageCount: 0,
             roundCount: 0,
             pressureLevel: 1,
@@ -603,21 +875,27 @@
         // ============== Model Colors ==============
         // Softer, distinguishable colors
         const MODEL_COLORS = [
-            '#f97316', '#06b6d4', '#eab308', '#22c55e',
+            '#f97316', '#06b6d4', '#eab308', '#22c55e', '#ec4899',
             '#a855f7', '#14b8a6', '#f43f5e', '#8b5cf6'
         ];
 
-        // ============== System Prompts ==============
-        // First round - no one to reference yet
-        const FIRST_ROUND_PROMPT = `Give your thought on this yes/no question with ONE sentence, but do not use the word "yes" or "no".`;
-        
-        // Later rounds - can reference others
-        const DEBATE_PROMPTS = {
-            1: `ONE sentence. You may agree or disagree with someone mentioned above.`,
-            2: `ONE sentence. Respond to a point made above, or add your own.`,
-            3: `ONE sentence. You can now vote by saying: MY VOTE: YES or MY VOTE: NO`,
-            4: `Final round. ONE sentence then vote: MY VOTE: YES or MY VOTE: NO`,
+        // ============== Phase System ==============
+        // Phase prompts for each stage of the debate
+        const PHASE_PROMPTS = {
+            1: `Give your hot take on this yes/no question with ONE concise sentence. Do not use the word "yes" or "no".`,
+            2: `ONE concise sentence reacting by name to someone mentioned above. Agree, disagree, or add nuance.`,
+            3: `ONE concise sentence. Continue the discussion by responding to a point made above. Be dramatic!`,
+            4: `Final thoughts! ONE concise sentence, then cast your vote: MY VOTE: YES or MY VOTE: NO`,
             5: `ONLY say "MY VOTE: YES" or "MY VOTE: NO". Nothing else. No explanation.`
+        };
+        
+        // Phase announcement messages
+        const PHASE_MESSAGES = {
+            1: '🎤 Phase 1: Hot Takes!',
+            2: '💬 Phase 2: Reactions!',
+            3: '🍿 Phase 3: The Plot Thickens!',
+            4: '🎯 Phase 4: Final Thoughts & Voting!',
+            5: '⚡ Phase 5: Lightning Round - Vote Now!'
         };
 
         // ============== DOM Elements ==============
@@ -688,7 +966,9 @@
             try {
                 const response = await fetch(`${CONFIG.serverUrl}/api/v1/health`);
                 if (response.ok) {
+                    const data = await response.json();
                     state.connected = true;
+                    state.maxModels = data.max_models || null;
                     elements.statusDot.classList.add('connected');
                     elements.statusText.textContent = 'Connected';
                     return true;
@@ -697,15 +977,49 @@
                 // Ignore
             }
             state.connected = false;
+            state.maxModels = null;
             elements.statusDot.classList.remove('connected');
             elements.statusText.textContent = 'Disconnected';
             return false;
         }
 
         async function fetchModels() {
-            const response = await fetch(`${CONFIG.serverUrl}/api/v1/models`);
+            // Use show_all=true to get size info for models not yet downloaded
+            const response = await fetch(`${CONFIG.serverUrl}/api/v1/models?show_all=true`);
             const data = await response.json();
             return data.data || [];
+        }
+
+        async function pullModel(modelId, onProgress) {
+            const response = await fetch(`${CONFIG.serverUrl}/api/v1/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_name: modelId, stream: true })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (onProgress) {
+                                onProgress(data);
+                            }
+                        } catch (e) {
+                            // Ignore parse errors
+                        }
+                    }
+                }
+            }
         }
 
         async function loadModel(modelId) {
@@ -724,6 +1038,7 @@
             'Gemma-3-4b-it-GGUF',
             'Qwen3-4B-Instruct-2507-GGUF',
             'granite-4.0-h-tiny-GGUF',
+            'Jan-nano-128k-gguf',
             'SmolLM3-3B-GGUF',
             'Ministral-3-3B-Instruct-2512-GGUF',
             'Llama-3.2-3B-Instruct-GGUF',
@@ -739,14 +1054,18 @@
                 const model = allModels.find(m => m.id === modelId);
                 if (model) {
                     selected.push(model);
-                    console.log(`Found model: ${modelId}`);
+                    console.log(`Found model: ${modelId}, downloaded: ${model.downloaded}`);
+                    if (model.downloaded) {
+                        state.downloadedModels.add(modelId);
+                    }
                 } else {
                     // Model not in server list, create a minimal model object
                     console.log(`Model ${modelId} not in server list, adding manually`);
                     selected.push({
                         id: modelId,
                         recipe: 'llamacpp',
-                        size: null
+                        size: null,
+                        downloaded: false
                     });
                 }
             }
@@ -770,22 +1089,181 @@
             // Just keeping this function for compatibility
         }
 
-        function renderLoadingOverlay() {
+        function renderModelSelectionUI() {
             if (state.models.length === 0) return;
 
-            elements.loadingModels.innerHTML = state.models.map((model, i) => {
-                const isLoaded = state.loadedModels.has(model.id);
+            // Initialize selected models if not set
+            if (!state.selectedModels) {
+                state.selectedModels = new Set(state.models.map(m => m.id));
+            }
+
+            const modelsHtml = state.models.map((model, i) => {
+                const isChecked = state.selectedModels.has(model.id);
+                const needsDownload = !state.downloadedModels.has(model.id);
                 return `
-                    <div class="loading-model-item">
-                        ${isLoaded 
-                            ? '<span class="check">✓</span>' 
-                            : '<div class="spinner"></div>'
-                        }
-                        <span class="model-name">${model.id}</span>
+                    <div class="model-selection-item ${isChecked ? '' : 'unchecked'}" onclick="toggleModelSelection('${model.id}')">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); toggleModelSelection('${model.id}')">
+                        <span class="model-name">${model.id}${needsDownload ? ' ⬇️' : ''}</span>
                         <span class="model-size">${model.size ? model.size.toFixed(1) + 'GB' : ''}</span>
                     </div>
                 `;
             }).join('');
+
+            elements.loadingModels.innerHTML = `
+                ${modelsHtml}
+                <div class="loading-buttons">
+                    <button class="load-btn" id="loadModelsBtn" onclick="loadSelectedModels()">Load (${state.selectedModels.size})</button>
+                    <button class="help-btn" onclick="document.getElementById('helpPopup').style.display='flex'">Help</button>
+                </div>
+            `;
+        }
+
+        function toggleModelSelection(modelId) {
+            if (!state.selectedModels) {
+                state.selectedModels = new Set(state.models.map(m => m.id));
+            }
+            if (state.selectedModels.has(modelId)) {
+                state.selectedModels.delete(modelId);
+            } else {
+                state.selectedModels.add(modelId);
+            }
+            renderModelSelectionUI();
+        }
+
+        function renderLoadingOverlay() {
+            if (state.models.length === 0) return;
+
+            // Get only selected models for loading display
+            const selectedModelsList = state.models.filter(m => state.selectedModels.has(m.id));
+
+            elements.loadingModels.innerHTML = selectedModelsList.map((model, i) => {
+                const isLoaded = state.loadedModels.has(model.id);
+                const isDownloaded = state.downloadedModels.has(model.id);
+                const progress = state.downloadProgress[model.id];
+                
+                let statusIcon;
+                let progressHtml = '';
+                
+                if (isLoaded) {
+                    statusIcon = '<span class="check">✓</span>';
+                } else if (progress && progress.status === 'downloading') {
+                    statusIcon = '<div class="spinner"></div>';
+                    progressHtml = `
+                        <div class="progress-container">
+                            <div class="progress-bar" style="width: ${progress.percent}%"></div>
+                        </div>
+                        <span class="progress-text">Downloading: ${progress.percent}%</span>
+                    `;
+                } else if (progress && progress.status === 'loading') {
+                    statusIcon = '<div class="spinner"></div>';
+                    progressHtml = `<span class="progress-text">Loading...</span>`;
+                } else {
+                    statusIcon = '<div class="spinner"></div>';
+                }
+                
+                return `
+                    <div class="loading-model-item">
+                        ${statusIcon}
+                        <div class="model-info">
+                            <span class="model-name">${model.id}</span>
+                            ${progressHtml}
+                        </div>
+                        <span class="model-size">${model.size ? model.size.toFixed(1) + 'GB' : ''}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showSlotError(selectedCount, maxSlots) {
+            const popup = document.getElementById('errorPopup');
+            const message = document.getElementById('errorPopupMessage');
+            const command = document.getElementById('errorPopupCommand');
+            
+            message.textContent = `You selected ${selectedCount} models, but the server only has ${maxSlots} LLM slot${maxSlots === 1 ? '' : 's'} available.`;
+            command.textContent = `lemonade-server serve --max-loaded-models ${selectedCount}`;
+            popup.style.display = 'flex';
+        }
+
+        async function loadSelectedModels() {
+            if (!state.selectedModels || state.selectedModels.size === 0) {
+                alert('Please select at least one model');
+                return;
+            }
+
+            // Filter models to only selected ones
+            const selectedModelsList = state.models.filter(m => state.selectedModels.has(m.id));
+            
+            // Check if server has enough LLM slots
+            if (state.maxModels && state.maxModels.llm < selectedModelsList.length) {
+                showSlotError(selectedModelsList.length, state.maxModels.llm);
+                return;
+            }
+            
+            // Reassign colors to selected models only
+            state.modelColors = {};
+            selectedModelsList.forEach((model, i) => {
+                state.modelColors[model.id] = MODEL_COLORS[i % MODEL_COLORS.length];
+            });
+
+            // Update config
+            CONFIG.numModels = selectedModelsList.length;
+            state.models = selectedModelsList;
+
+            // Show loading UI
+            renderLoadingOverlay();
+
+            // Pull and load all selected models
+            for (const model of state.models) {
+                try {
+                    // Check if model needs to be downloaded first
+                    if (!state.downloadedModels.has(model.id)) {
+                        console.log(`Pulling model: ${model.id}`);
+                        state.downloadProgress[model.id] = { percent: 0, status: 'downloading' };
+                        renderLoadingOverlay();
+                        
+                        await pullModel(model.id, (data) => {
+                            // Handle progress updates
+                            if (data.percent !== undefined) {
+                                state.downloadProgress[model.id] = { 
+                                    percent: data.percent, 
+                                    status: 'downloading' 
+                                };
+                                renderLoadingOverlay();
+                            }
+                        });
+                        
+                        state.downloadedModels.add(model.id);
+                        console.log(`Downloaded model: ${model.id}`);
+                    }
+                    
+                    // Now load the model
+                    state.downloadProgress[model.id] = { percent: 100, status: 'loading' };
+                    renderLoadingOverlay();
+                    
+                    await loadModel(model.id);
+                    state.loadedModels.add(model.id);
+                    delete state.downloadProgress[model.id];
+                    renderLoadingOverlay();
+                } catch (e) {
+                    console.error(`Failed to load ${model.id}:`, e);
+                    state.downloadProgress[model.id] = { percent: 0, status: 'error' };
+                }
+            }
+
+            // Update CONFIG.numModels to reflect actually loaded models
+            CONFIG.numModels = state.loadedModels.size;
+            
+            // Filter state.models to only include successfully loaded models
+            state.models = state.models.filter(m => state.loadedModels.has(m.id));
+
+            // All loaded - hide overlay and enable input
+            elements.loadingOverlay.style.display = 'none';
+            elements.questionInput.disabled = false;
+            elements.startBtn.disabled = false;
+            renderModelsList();
+            updateVoteTally();
+
+            addChatMessage('system', '', `🎯 ${state.loadedModels.size} LLMs ready! Ask a yes/no question.`);
         }
 
         function updateVoteTally() {
@@ -863,11 +1341,22 @@
                 emoji = '🤝';
             }
 
+            // Build vote breakdown HTML
+            const voteBreakdownHtml = state.models.map(model => {
+                const vote = state.votes[model.id];
+                const voteIcon = vote === 'yes' ? '✅' : vote === 'no' ? '❌' : '❓';
+                const voteClass = vote || 'none';
+                // Shorten model name for display
+                const shortName = model.id.replace(/-GGUF$/i, '').replace(/-gguf$/i, '').split('-').slice(0, 2).join('-');
+                return `<div class="vote-item ${voteClass}"><span class="vote-icon">${voteIcon}</span><span class="model-name">${shortName}</span></div>`;
+            }).join('');
+
             const banner = document.createElement('div');
             banner.className = `winner-banner ${resultClass}`;
             banner.innerHTML = `
                 <h2>${emoji} ${result}</h2>
                 <p>Final Vote: ${yesVotes} YES - ${noVotes} NO</p>
+                <div class="vote-breakdown">${voteBreakdownHtml}</div>
                 <button class="close-btn" onclick="this.parentElement.remove()">Close</button>
             `;
             document.body.appendChild(banner);
@@ -921,12 +1410,14 @@
                 .replace(/^granite.*/, 'Granite')
                 .replace(/^SmolLM3.*/, 'SmolLM')
                 .replace(/^Ministral.*/, 'Ministral')
-                .replace(/^LFM2.*/, 'LFM');
+                .replace(/^LFM2.*/, 'LFM')
+                .replace(/^Jan-nano.*/, 'Jan');
         }
 
         function buildChatHistoryForModel(modelId) {
-            // Only include model messages (not system or user)
-            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
+            // Use the phase snapshot - only messages from PREVIOUS phases
+            // This ensures all models in the same phase see identical context
+            const modelMessages = state.phaseSnapshot.filter(m => m.type === 'model');
             const recentMessages = modelMessages.slice(-CONFIG.maxHistoryMessages);
             
             // Start with just the question
@@ -945,13 +1436,8 @@
         }
 
         function getSystemPrompt() {
-            // First round (no model messages yet) - don't mention referencing others
-            const modelMessages = state.chatHistory.filter(m => m.type === 'model');
-            if (modelMessages.length === 0) {
-                return FIRST_ROUND_PROMPT;
-            }
-            // Later rounds - can reference others
-            return DEBATE_PROMPTS[state.pressureLevel] || DEBATE_PROMPTS[1];
+            // Use phase-specific prompts
+            return PHASE_PROMPTS[state.pressureLevel] || PHASE_PROMPTS[1];
         }
 
         // ============== Debate Logic ==============
@@ -981,8 +1467,8 @@
             let fullResponse = '';
 
             try {
-                // Add /no_think for SmolLM3 model
-                const finalSystemPrompt = modelId === 'SmolLM3-3B-GGUF' 
+                // Add /no_think to system prompt for SmolLM3
+                const finalSystemPrompt = modelId === 'SmolLM3-3B-GGUF'
                     ? systemPrompt + '\n/no_think' 
                     : systemPrompt;
 
@@ -1073,6 +1559,9 @@
                     state.emptyResponseCount[modelId] = 0;
                 }
                 
+                // Mark that this model has responded in this phase
+                state.phaseResponses.add(modelId);
+                
                 // Add to chat history
                 state.chatHistory.push({
                     type: 'model',
@@ -1083,17 +1572,19 @@
                 state.messageCount++;
                 updateStats();
 
-                // Check for vote
-                const vote = detectVote(trimmedResponse);
-                if (vote) {
-                    state.votes[modelId] = vote;
-                    // Add vote announcement
-                    const voteDiv = document.createElement('div');
-                    voteDiv.className = `vote-announcement ${vote}`;
-                    voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
-                    contentDiv.appendChild(voteDiv);
-                    
-                    updateVoteTally();
+                // Check for vote (only after Phase 1 - Hot Takes phase is vote-free)
+                if (state.pressureLevel > 1) {
+                    const vote = detectVote(trimmedResponse);
+                    if (vote) {
+                        state.votes[modelId] = vote;
+                        // Add vote announcement
+                        const voteDiv = document.createElement('div');
+                        voteDiv.className = `vote-announcement ${vote}`;
+                        voteDiv.innerHTML = `${vote === 'yes' ? '✅' : '❌'} VOTED ${vote.toUpperCase()}`;
+                        contentDiv.appendChild(voteDiv);
+                        
+                        updateVoteTally();
+                    }
                 }
             }
 
@@ -1107,74 +1598,71 @@
         }
 
         function scheduleNextResponses() {
-            // Get models that haven't voted and aren't currently speaking
-            const availableModels = state.models.filter(m => 
+            // Get models that haven't voted yet
+            const unvotedModels = state.models.filter(m => 
                 !state.votes[m.id] && 
-                !state.speakingModels.has(m.id) &&
                 state.loadedModels.has(m.id)
             );
+            
+            // If all models have voted, we're done
+            if (unvotedModels.length === 0) {
+                return;
+            }
 
-            // If no available models and some are still speaking, wait for them
-            if (availableModels.length === 0) {
-                // Check if any models are still speaking
-                if (state.speakingModels.size > 0) {
-                    return; // Wait for speaking models to finish
-                }
-                
-                // Check if there are models that haven't voted (stuck models)
-                const unvotedModels = state.models.filter(m => !state.votes[m.id]);
-                if (unvotedModels.length > 0 && state.debateActive) {
-                    console.log(`${unvotedModels.length} unvoted models detected, forcing retry`);
-                    // Force retry for stuck models
-                    setTimeout(() => {
-                        if (state.debateActive) {
-                            unvotedModels.forEach((m, i) => {
-                                if (!state.votes[m.id] && !state.speakingModels.has(m.id)) {
-                                    setTimeout(() => streamModelResponse(m.id), i * 1000);
-                                }
-                            });
-                        }
-                    }, 3000);
+            // Get models that need to respond this phase (haven't responded yet and not currently speaking)
+            const needToRespond = unvotedModels.filter(m => 
+                !state.phaseResponses.has(m.id) && 
+                !state.speakingModels.has(m.id)
+            );
+            
+            // If some models are still speaking, wait for them
+            if (needToRespond.length === 0 && state.speakingModels.size > 0) {
+                return;
+            }
+            
+            // Check if all unvoted models have responded this phase
+            const allRespondedThisPhase = unvotedModels.every(m => 
+                state.phaseResponses.has(m.id) || state.speakingModels.has(m.id)
+            );
+            
+            if (allRespondedThisPhase && state.speakingModels.size === 0) {
+                // All done with this phase - advance to next phase
+                if (state.pressureLevel < 5) {
+                    // Snapshot current history BEFORE advancing - new phase sees all previous responses
+                    state.phaseSnapshot = [...state.chatHistory];
+                    
+                    state.pressureLevel++;
+                    state.phaseResponses.clear(); // Reset for new phase
+                    updatePressure();
+                    
+                    // Announce new phase
+                    if (PHASE_MESSAGES[state.pressureLevel]) {
+                        addChatMessage('system', '', PHASE_MESSAGES[state.pressureLevel]);
+                    }
+                    
+                    // Start all unvoted models responding for the new phase
+                    const stillUnvoted = state.models.filter(m => !state.votes[m.id]);
+                    stillUnvoted.forEach((model, i) => {
+                        setTimeout(() => {
+                            if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id)) {
+                                streamModelResponse(model.id);
+                            }
+                        }, i * 200);
+                    });
                 }
                 return;
             }
             
-            // If there are very few models left, be more aggressive about prompting
-            const votedCount = Object.values(state.votes).filter(v => v).length;
-            const remainingCount = CONFIG.numModels - votedCount;
-            
-            // Increase pressure if needed
-            const newPressure = Math.min(5, Math.ceil(state.messageCount / CONFIG.messagesPerPressureLevel) + 1);
-            if (newPressure > state.pressureLevel) {
-                state.pressureLevel = newPressure;
-                updatePressure();
-                if (state.pressureLevel >= 4) {
-                    addChatMessage('system', '', `⚡ Pressure L${state.pressureLevel}!`);
-                }
+            // Prompt models that still need to respond this phase
+            if (needToRespond.length > 0) {
+                needToRespond.forEach((model, i) => {
+                    setTimeout(() => {
+                        if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id) && !state.phaseResponses.has(model.id)) {
+                            streamModelResponse(model.id);
+                        }
+                    }, i * CONFIG.responseDelayMs);
+                });
             }
-
-            // If only 1-2 models left, max pressure
-            if (remainingCount <= 2 && state.pressureLevel < 5) {
-                state.pressureLevel = 5;
-                updatePressure();
-                addChatMessage('system', '', '🔥 FINAL ROUND!');
-            }
-
-            // How many to prompt at once (more chaotic with more models remaining)
-            const concurrentPrompts = Math.min(availableModels.length, Math.max(2, Math.floor(remainingCount / 2)));
-
-            // Shuffle and pick models
-            const shuffled = [...availableModels].sort(() => Math.random() - 0.5);
-            const toPrompt = shuffled.slice(0, concurrentPrompts);
-
-            // Start responses with slight stagger
-            toPrompt.forEach((model, i) => {
-                setTimeout(() => {
-                    if (state.debateActive && !state.votes[model.id] && !state.speakingModels.has(model.id)) {
-                        streamModelResponse(model.id);
-                    }
-                }, i * CONFIG.responseDelayMs);
-            });
 
             state.roundCount++;
             updateStats();
@@ -1226,7 +1714,9 @@
             state.debateActive = true;
             state.question = question;
             state.chatHistory = [];
+            state.phaseSnapshot = []; // Phase 1: models only see the question, no other opinions
             state.votes = {};
+            state.phaseResponses.clear();
             state.messageCount = 0;
             state.roundCount = 0;
             state.pressureLevel = 1;
@@ -1250,7 +1740,7 @@
                 content: question
             });
 
-            addChatMessage('system', '', `🔥 Debate begins!`);
+            addChatMessage('system', '', PHASE_MESSAGES[1]);
 
             // Start all models responding in parallel (initial burst)
             state.models.forEach((model, i) => {
@@ -1294,9 +1784,13 @@
             
             if (!connected) {
                 elements.loadingModels.innerHTML = `
-                    <div class="chat-message system" style="margin: 0; color: var(--accent-red);">
+                    <div class="chat-message system" style="margin: 0; color: var(--accent-red); text-align: center;">
                         Cannot connect to server at ${CONFIG.serverUrl}<br>
                         Please ensure the server is running.
+                    </div>
+                    <div class="loading-buttons">
+                        <button class="load-btn" onclick="init()">Retry</button>
+                        <button class="help-btn" onclick="document.getElementById('helpPopup').style.display='flex'">Help</button>
                     </div>
                 `;
                 return;
@@ -1304,7 +1798,7 @@
 
             // Fetch and select models
             elements.loadingModels.innerHTML = `
-                <div class="chat-message system" style="margin: 0;">
+                <div class="chat-message system" style="margin: 0; text-align: center;">
                     Fetching available models...
                 </div>
             `;
@@ -1313,46 +1807,31 @@
                 const allModels = await fetchModels();
                 state.models = selectDebateModels(allModels);
 
-                if (state.models.length < CONFIG.numModels) {
+                if (state.models.length < 2) {
                     elements.loadingModels.innerHTML = `
-                        <div class="chat-message system" style="margin: 0; color: var(--accent-yellow);">
-                            Found ${state.models.length} LLM models.<br>
-                            Need ${CONFIG.numModels} GGUF models for full debate.<br>
-                            Install more models for a bigger debate!
+                        <div class="chat-message system" style="margin: 0; color: var(--accent-red); text-align: center;">
+                            Need at least 2 models for a debate.<br>
+                            Please pull some GGUF models first.
+                        </div>
+                        <div class="loading-buttons">
+                            <button class="help-btn" onclick="document.getElementById('helpPopup').style.display='flex'">Help</button>
                         </div>
                     `;
-                    // Still continue if we have at least 2 models
-                    if (state.models.length < 2) return;
-                    // Adjust numModels to match available
-                    CONFIG.numModels = state.models.length;
+                    return;
                 }
 
-                renderLoadingOverlay();
-
-                // Load all models
-                for (const model of state.models) {
-                    try {
-                        await loadModel(model.id);
-                        state.loadedModels.add(model.id);
-                        renderLoadingOverlay();
-                    } catch (e) {
-                        console.error(`Failed to load ${model.id}:`, e);
-                    }
-                }
-
-                // All loaded - hide overlay and enable input
-                elements.loadingOverlay.style.display = 'none';
-                elements.questionInput.disabled = false;
-                elements.startBtn.disabled = false;
-                renderModelsList();
-
-                addChatMessage('system', '', `🎯 ${state.loadedModels.size} LLMs ready! Ask a yes/no question.`);
+                // Show model selection UI instead of auto-loading
+                renderModelSelectionUI();
 
             } catch (e) {
                 console.error('Init error:', e);
                 elements.loadingModels.innerHTML = `
-                    <div class="chat-message system" style="margin: 0; color: var(--accent-red);">
+                    <div class="chat-message system" style="margin: 0; color: var(--accent-red); text-align: center;">
                         Error initializing: ${e.message}
+                    </div>
+                    <div class="loading-buttons">
+                        <button class="load-btn" onclick="init()">Retry</button>
+                        <button class="help-btn" onclick="document.getElementById('helpPopup').style.display='flex'">Help</button>
                     </div>
                 `;
             }
