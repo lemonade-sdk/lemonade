@@ -40,7 +40,7 @@ lemonade-server run MODEL_NAME [options]
 | `--port [port]`                | Specify the port number to run the server on | 8000 |
 | `--host [host]`                | Specify the host address for where to listen connections | `localhost` |
 | `--log-level [level]`          | Set the logging level               | info |
-| `--llamacpp [vulkan\|rocm]`    | Default LlamaCpp backend to use when loading models. Can be overridden per-model via the `/api/v1/load` endpoint. | vulkan |
+| `--llamacpp [vulkan\|rocm\cpu]`    | Default LlamaCpp backend to use when loading models. Can be overridden per-model via the `/api/v1/load` endpoint. | vulkan |
 | `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS]` | Maximum number of models to keep loaded simultaneously. Accepts 1-3 values for LLM, embedding, and reranking models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1` loads up to 3 LLMs, 2 embedding models, and 1 reranking model. | `1 1 1` |

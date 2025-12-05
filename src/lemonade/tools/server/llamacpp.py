@@ -148,7 +148,7 @@ class LlamaServer(WrappedServer):
             snapshot_files: Dictionary of model files to load
             use_gpu: Whether to use GPU acceleration
             telemetry: Telemetry object for tracking performance metrics
-            backend: Backend to use (e.g., 'vulkan', 'rocm')
+            backend: Backend to use (e.g., 'vulkan', 'rocm', 'cpu')
             supports_embeddings: Whether the model supports embeddings
             supports_reranking: Whether the model supports reranking
 

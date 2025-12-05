@@ -606,7 +606,7 @@ def _add_server_arguments(parser):
         "--llamacpp",
         type=str,
         help="LlamaCpp backend to use",
-        choices=["vulkan", "rocm", "metal"],
+        choices=["vulkan", "rocm", "metal", "cpu"],
         default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(

@@ -389,7 +389,7 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --host HOST              Bind address (default: localhost)
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
-#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
+#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu
 #   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS]
 #                            Maximum models to keep loaded (default: 1 1 1)
 #   --version, -v            Show version

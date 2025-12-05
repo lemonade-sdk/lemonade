@@ -315,7 +315,7 @@ void LlamaCppServer::install(const std::string& backend) {
         install_dir = get_install_directory(backend_.empty() ? backend : backend_);
         version_file = (fs::path(install_dir) / "version.txt").string();
         backend_file = (fs::path(install_dir) / "backend.txt").string();
-        
+    
         // Check if already installed with correct version
         exe_path = find_executable_in_install_dir(install_dir);
         needs_install = exe_path.empty();
@@ -371,6 +371,18 @@ void LlamaCppServer::install(const std::string& backend) {
             filename = "llama-" + expected_version + "-bin-macos-arm64.zip";
 #else
             throw std::runtime_error("Metal llamacpp only supported on macOS");
+#endif
+
+        } else if (backend_ == "cpu") {
+            // CPU-only builds from ggml-org/llama.cpp
+            repo = "ggml-org/llama.cpp";
+
+#ifdef _WIN32
+            filename = "llama-" + expected_version + "-bin-win-cpu-x64.zip";
+#elif defined(__linux__)
+            filename = "llama-" + expected_version + "-bin-ubuntu-x64.zip";
+#else
+            throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
             
         } else {  // vulkan
@@ -487,6 +499,22 @@ void LlamaCppServer::load(const std::string& model_name,
                          const std::string& llamacpp_args) {
     
     std::cout << "[LlamaCpp] Loading model: " << model_name << std::endl;
+
+    
+    // Check environment variables for backend configuration
+    bool use_gpu = true;  // default
+    const char* env_backend = std::getenv("LEMONADE_LLAMACPP_BACKEND");
+
+
+    if (env_backend && std::string(env_backend) == "cpu" || backend_ == "cpu") {
+        use_gpu = false;
+        backend_ = "cpu";
+    }
+
+    // Llamacpp Backend logging
+    std::cout << "[LlamaCpp] Using backend: " << backend_ << "\n"
+            << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false")
+            << std::endl;    
     std::cout << "[LlamaCpp] Per-model settings: backend=" << llamacpp_backend 
               << ", ctx_size=" << ctx_size 
               << ", args=" << (llamacpp_args.empty() ? "(none)" : llamacpp_args) << std::endl;
@@ -582,12 +610,17 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size));
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja");
+
+    std::cout << "[LlamaCpp] Using backend: " << backend_ << "\n"
+            << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
     
     // Add mmproj file if present (for vision models)
     if (!mmproj_path.empty()) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
-        // Note: Python implementation adds --no-mmproj-offload for CPU mode
-        // C++ currently only supports GPU mode; CPU fallback would need to be implemented
+        if (!use_gpu) {
+            std::cout << "[LlamaCpp] Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+            push_arg(args, reserved_flags, "--no-mmproj-offload");
+        }
     }
     
     // Enable context shift for vulkan/rocm (not supported on Metal)
@@ -615,7 +648,12 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     
     // Configure GPU layers
-    push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
+    if (use_gpu) {
+        push_arg(args, reserved_flags, "-ngl", "99");  // 99 for GPU, 0 for CPU-only
+    } else {
+        std::cout << "[LlamaCpp] ngl set to 0" << std::endl;
+        push_arg(args, reserved_flags, "-ngl", "0");   // 0
+    }
     
     // Validate and append custom arguments
     if (!custom_args_.empty()) {
