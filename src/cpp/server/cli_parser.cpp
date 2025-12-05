@@ -22,7 +22,7 @@ CLIParser::CLIParser()
         ->default_val("info");
     
     app_.add_option("--llamacpp", config_.llamacpp_backend, "LlamaCpp backend to use")
-        ->check(CLI::IsMember({"vulkan", "rocm", "metal"}))
+        ->check(CLI::IsMember({"vulkan", "rocm", "metal", "cpu"}))
         ->default_val("vulkan");
     
     app_.add_option("--ctx-size", config_.ctx_size, "Context size for the model")
