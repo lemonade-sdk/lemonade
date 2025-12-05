@@ -544,27 +544,22 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 #### Example request
 
-=== "PowerShell"
+=== "Windows"
 
-    ```powershell
-    $audioFile = "C:\path\to\audio.wav"
-    $form = @{
-        file = Get-Item $audioFile
-        model = "Whisper-Tiny"
-    }
-    Invoke-RestMethod -Uri "http://localhost:8000/api/v1/audio/transcriptions" `
-      -Method POST `
-      -Form $form
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions ^
+      -F "file=@C:\path\to\audio.wav" ^
+      -F "model=Whisper-Tiny"
     ```
 
-=== "Bash"
+=== "Linux/macOS"
 
     ```bash
     curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
