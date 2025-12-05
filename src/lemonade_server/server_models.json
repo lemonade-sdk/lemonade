@@ -591,5 +591,47 @@
         "recipe": "flm",
         "suggested": true,
         "size": 2.62
+    },
+    "Whisper-Tiny": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.075
+    },
+    "Whisper-Base": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-base.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.142
+    },
+    "Whisper-Small": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-small.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.466
+    },
+    "Whisper-Medium": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-medium.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 1.42
+    },
+    "Whisper-Large-v3": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 2.87
+    },
+    "Whisper-Large-v3-Turbo": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription", "hot"],
+        "size": 1.55
     }
 }

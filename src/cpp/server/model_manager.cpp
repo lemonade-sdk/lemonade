@@ -99,10 +99,10 @@ static GGUFFiles identify_gguf_models(
         // Use first file as primary (this is how llamacpp handles it)
         variant_name = sharded_files[0];
     }
-    // (case 1) If variant ends in .gguf, use it directly
-    else if (!variant.empty() && ends_with_ignore_case(variant, ".gguf")) {
+    // (case 1) If variant ends in .gguf or .bin, use it directly
+    else if (!variant.empty() && (ends_with_ignore_case(variant, ".gguf") || ends_with_ignore_case(variant, ".bin"))) {
         variant_name = variant;
-        
+
         // Validate file exists in repo
         bool found = false;
         for (const auto& f : repo_files) {
@@ -111,7 +111,7 @@ static GGUFFiles identify_gguf_models(
                 break;
             }
         }
-        
+
         if (!found) {
             throw std::runtime_error(
                 "File " + variant + " not found in Hugging Face repository " + checkpoint + ". " + hint
@@ -268,9 +268,14 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     if (info.recipe == "flm") {
         return info.checkpoint;
     }
-    
+
+    // Local path models use checkpoint as-is (absolute path to file)
+    if (info.source == "local_path") {
+        return info.checkpoint;
+    }
+
     std::string hf_cache = get_hf_cache_dir();
-    
+
     // Local uploads: checkpoint is relative path from HF cache
     if (info.source == "local_upload") {
         std::string normalized = info.checkpoint;
@@ -308,7 +313,45 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
         }
         return model_cache_path;  // Return directory even if genai_config not found
     }
-    
+
+    // For whispercpp, find the .bin model file
+    if (info.recipe == "whispercpp") {
+        if (!fs::exists(model_cache_path)) {
+            return model_cache_path;  // Return directory path even if not found
+        }
+
+        // Collect all .bin files
+        std::vector<std::string> all_bin_files;
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                if (filename.find(".bin") != std::string::npos) {
+                    all_bin_files.push_back(entry.path().string());
+                }
+            }
+        }
+
+        if (all_bin_files.empty()) {
+            return model_cache_path;  // Return directory if no .bin found
+        }
+
+        // Sort files for consistent ordering
+        std::sort(all_bin_files.begin(), all_bin_files.end());
+
+        // If variant specified, try to match it
+        if (!variant.empty()) {
+            for (const auto& filepath : all_bin_files) {
+                std::string filename = fs::path(filepath).filename().string();
+                if (filename == variant) {
+                    return filepath;
+                }
+            }
+        }
+
+        // Return first .bin file as fallback
+        return all_bin_files[0];
+    }
+
     // For llamacpp, find the GGUF file with advanced sharded model support
     if (info.recipe == "llamacpp") {
         if (!fs::exists(model_cache_path)) {
@@ -1093,8 +1136,8 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade);
-    } else if (actual_recipe == "llamacpp") {
-        // For llamacpp (GGUF) models, use variant-aware download
+    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp") {
+        // For llamacpp (GGUF) and whispercpp (.bin) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
     } else {
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)

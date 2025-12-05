@@ -1077,6 +1077,69 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
+  test-exe-whisper:
+    name: Test .exe - Whisper
+    runs-on: [stx, Windows]
+    needs: build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run Whisper tests with C++ server
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
+
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+
+          Write-Host "Running Whisper tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+
+          & $venvPython test/server_whisper.py --server-binary $serverExe
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Whisper tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          Write-Host "Whisper tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
     runs-on: [stx, Linux]
@@ -1576,7 +1639,7 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: 
+    needs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
       - build-ryzenai-server
@@ -1585,6 +1648,7 @@ jobs:
       - test-exe-llamacpp-vulkan
       - test-exe-llamacpp-rocm
       - test-exe-rai-cpu
+      - test-exe-whisper
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
       - test-deb-endpoints

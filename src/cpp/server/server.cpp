@@ -28,7 +28,7 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                int ctx_size, bool tray, const std::string& llamacpp_backend,
                const std::string& llamacpp_args, int max_llm_models,
-               int max_embedding_models, int max_reranking_models)
+               int max_embedding_models, int max_reranking_models, int max_audio_models)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
       running_(false) {
@@ -56,9 +56,9 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args, 
-                                       model_manager_.get(), max_llm_models, 
-                                       max_embedding_models, max_reranking_models);
+    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
+                                       model_manager_.get(), max_llm_models,
+                                       max_embedding_models, max_reranking_models, max_audio_models);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -142,7 +142,12 @@ void Server::setup_routes() {
     register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
         handle_reranking(req, res);
     });
-    
+
+    // Audio endpoints (OpenAI /v1/audio/* compatible)
+    register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_audio_transcriptions(req, res);
+    });
+
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -591,13 +596,22 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             return;
         }
         
+        // Check if the loaded model supports chat completion (only LLM models do)
+        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+            std::cerr << "[Server ERROR] Model does not support chat completion" << std::endl;
+            res.status = 400;
+            res.set_content(R"({"error": {"message": "This model does not support chat completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            return;
+        }
+
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
-        
-        // Use original request body - each backend (FLM, llamacpp, etc.) handles 
+
+        // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
         std::string request_body = req.body;
-        
+
         // Handle enable_thinking=false by prepending /no_think to last user message
         if (request_json.contains("enable_thinking") && 
             request_json["enable_thinking"].is_boolean() && 
@@ -793,10 +807,19 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
         }
-        
+
+        // Check if the loaded model supports completion (only LLM models do)
+        std::string model_to_check = request_json.contains("model") ? request_json["model"].get<std::string>() : "";
+        if (router_->get_model_type(model_to_check) != ModelType::LLM) {
+            std::cerr << "[Server ERROR] Model does not support completion" << std::endl;
+            res.status = 400;
+            res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
+            return;
+        }
+
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
-        
+
         // Use original request body - each backend handles model name transformation internally
         std::string request_body = req.body;
         
@@ -970,7 +993,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
 void Server::handle_reranking(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -981,15 +1004,121 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
         }
-        
+
         // Call router's reranking method
         auto response = router_->reranking(request_json);
         res.set_content(response.dump(), "application/json");
-        
+
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_reranking: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/audio/transcriptions" << std::endl;
+
+        // OpenAI audio API uses multipart form data
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Request must be multipart/form-data"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Build request JSON for router
+        nlohmann::json request_json;
+
+        // Extract form fields
+        if (req.form.has_field("model")) {
+            request_json["model"] = req.form.get_field("model");
+        }
+        if (req.form.has_field("language")) {
+            request_json["language"] = req.form.get_field("language");
+        }
+        if (req.form.has_field("prompt")) {
+            request_json["prompt"] = req.form.get_field("prompt");
+        }
+        if (req.form.has_field("response_format")) {
+            request_json["response_format"] = req.form.get_field("response_format");
+        }
+        if (req.form.has_field("temperature")) {
+            request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+
+        // Extract audio file
+        const auto& files = req.form.files;
+        bool found_audio = false;
+        for (const auto& file_pair : files) {
+            if (file_pair.first == "file") {
+                const auto& file = file_pair.second;
+                request_json["file_data"] = file.content;
+                request_json["filename"] = file.filename;
+                found_audio = true;
+                std::cout << "[Server] Audio file: " << file.filename
+                          << " (" << file.content.size() << " bytes)" << std::endl;
+                break;
+            }
+        }
+
+        if (!found_audio) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'file' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load audio model: " << e.what() << std::endl;
+                res.status = 404;
+                nlohmann::json error = {{"error", {
+                    {"message", e.what()},
+                    {"type", "model_not_found"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Forward to router
+        auto response = router_->audio_transcriptions(request_json);
+
+        // Check for error in response
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_audio_transcriptions: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
         res.set_content(error.dump(), "application/json");
     }
 }
@@ -1413,21 +1542,33 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         }
         
         // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu"};
+        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
         if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
             res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu"}};
+            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
-        
-        // Check if model files are provided
+
+        // Check if model files are provided (or checkpoint path for whisper)
         const auto& files = req.form.files;
-        if (files.empty()) {
+        bool is_whisper = (recipe == "whispercpp");
+        if (files.empty() && !is_whisper) {
             res.status = 400;
             nlohmann::json error = {{"error", "No model files provided for upload"}};
             res.set_content(error.dump(), "application/json");
             return;
+        }
+
+        // For whisper models, checkpoint can be a local path
+        if (is_whisper && !checkpoint.empty() && files.empty()) {
+            // Use checkpoint as local path - validate it exists
+            if (!std::filesystem::exists(checkpoint)) {
+                res.status = 400;
+                nlohmann::json error = {{"error", "Checkpoint file does not exist: " + checkpoint}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
         }
         
         // For llamacpp, ensure at least one .gguf file is present
@@ -1584,17 +1725,25 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         
         // Build checkpoint for registration - store as relative path from HF cache
         std::string checkpoint_to_register;
-        if (!resolved_checkpoint.empty()) {
+        std::string source_type = "local_upload";
+
+        // For whisper models with local checkpoint path (no files uploaded), use the path directly
+        if (is_whisper && files.empty() && !checkpoint.empty()) {
+            // Store absolute path for whisper local models
+            checkpoint_to_register = checkpoint;
+            source_type = "local_path";  // Use special source so it's resolved as-is
+            std::cout << "[Server] Using local whisper model path: " << checkpoint_to_register << std::endl;
+        } else if (!resolved_checkpoint.empty()) {
             std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
             checkpoint_to_register = rel.string();
         } else {
             // Fallback if no files found - use directory path
             checkpoint_to_register = "models--" + repo_cache_name;
         }
-        
+
         std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
-        
-        // Register the model with source="local_upload" to mark it as locally uploaded
+
+        // Register the model with source to mark how it was added
         model_manager_->register_user_model(
             model_name,
             checkpoint_to_register,
@@ -1604,7 +1753,7 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
             embedding,
             reranking,
             resolved_mmproj.empty() ? mmproj : resolved_mmproj,
-            "local_upload"
+            source_type
         );
         
         std::cout << "[Server] Model registered successfully" << std::endl;

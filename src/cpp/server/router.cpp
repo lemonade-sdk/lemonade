@@ -2,6 +2,8 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/whisper_server.h"
+#include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <algorithm>
@@ -11,15 +13,17 @@ namespace lemon {
 
 Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level,
                const std::string& llamacpp_args, ModelManager* model_manager,
-               int max_llm_models, int max_embedding_models, int max_reranking_models)
+               int max_llm_models, int max_embedding_models, int max_reranking_models,
+               int max_audio_models)
     : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level),
       llamacpp_args_(llamacpp_args), model_manager_(model_manager),
       max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
-      max_reranking_models_(max_reranking_models) {
-    
-    std::cout << "[Router] Multi-model limits: LLM=" << max_llm_models_ 
-              << ", Embedding=" << max_embedding_models_ 
-              << ", Reranking=" << max_reranking_models_ << std::endl;
+      max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models) {
+
+    std::cout << "[Router] Multi-model limits: LLM=" << max_llm_models_
+              << ", Embedding=" << max_embedding_models_
+              << ", Reranking=" << max_reranking_models_
+              << ", Audio=" << max_audio_models_ << std::endl;
 }
 
 Router::~Router() {
@@ -145,11 +149,14 @@ void Router::evict_all_servers() {
 // Helper: Create backend server based on recipe
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
     std::unique_ptr<WrappedServer> new_server;
-    
-    if (model_info.recipe == "flm") {
+
+    if (model_info.recipe == "whispercpp") {
+        std::cout << "[Router] Creating WhisperServer backend" << std::endl;
+        new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
+    } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
-    } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" || 
+    } else if (model_info.recipe == "oga-npu" || model_info.recipe == "oga-hybrid" ||
                model_info.recipe == "oga-cpu" || model_info.recipe == "ryzenai") {
         std::cout << "[Router] Creating RyzenAI-Server backend: " << model_info.recipe << std::endl;
         
@@ -241,6 +248,9 @@ void Router::load_model(const std::string& model_name,
                 break;
             case ModelType::RERANKING:
                 max_models = max_reranking_models_;
+                break;
+            case ModelType::AUDIO:
+                max_models = max_audio_models_;
                 break;
         }
         
@@ -460,6 +470,14 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     return find_server_by_model_name(model_name) != nullptr;
 }
 
+ModelType Router::get_model_type(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = model_name.empty()
+        ? get_most_recent_server()
+        : find_server_by_model_name(model_name);
+    return server ? server->get_model_type() : ModelType::LLM;
+}
+
 std::string Router::get_backend_address() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
@@ -592,6 +610,18 @@ json Router::reranking(const json& request) {
 json Router::responses(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         return server->responses(request);
+    });
+}
+
+json Router::audio_transcriptions(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto audio_server = dynamic_cast<IAudioServer*>(server);
+        if (!audio_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Audio transcription", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return audio_server->audio_transcriptions(request);
     });
 }
 
