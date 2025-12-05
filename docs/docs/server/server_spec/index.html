@@ -3799,7 +3799,12 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;backend_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:8002/v1&quot;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">]</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;max_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;llm&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;reranking&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -3814,6 +3819,10 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>type</code> - Model type: <code>"llm"</code>, <code>"embedding"</code>, or <code>"reranking"</code></li>
 <li><code>device</code> - Space-separated device list: <code>"cpu"</code>, <code>"gpu"</code>, <code>"npu"</code>, or combinations like <code>"gpu npu"</code></li>
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
+<li><code>max_models</code> - Maximum number of models that can be loaded simultaneously (set via <code>--max-loaded-models</code>):</li>
+<li><code>llm</code> - Maximum LLM/chat models</li>
+<li><code>embedding</code> - Maximum embedding models</li>
+<li><code>reranking</code> - Maximum reranking models</li>
 </ul>
 <h3 id="get-apiv1stats"><code>GET /api/v1/stats</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Performance statistics from the last request.</p>
