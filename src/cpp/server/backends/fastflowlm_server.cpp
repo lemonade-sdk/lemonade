@@ -140,11 +140,13 @@ void FastFlowLMServer::load(const std::string& model_name,
     std::string flm_path = get_flm_path();
     
     // Construct flm serve command
+    // Bind to localhost only for security
     std::vector<std::string> args = {
         "serve",
         model_info.checkpoint,
         "--ctx-len", std::to_string(ctx_size),
-        "--port", std::to_string(port_)
+        "--port", std::to_string(port_),
+        "--host", "127.0.0.1"
     };
     
     std::cout << "[FastFlowLM] Starting flm-server..." << std::endl;
