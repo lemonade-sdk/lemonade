@@ -28,9 +28,11 @@
     "@types/react-dom": "^19.2.2",
     "copy-webpack-plugin": "^13.0.1",
     "css-loader": "^7.1.2",
-    "electron": "^28.0.0",
+    "electron": "^39.2.4",
     "electron-builder": "^24.9.1",
+    "glob": ">=10.5.0",
     "html-webpack-plugin": "^5.6.4",
+    "node-forge": ">=1.3.2",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.3.3",
@@ -61,7 +63,9 @@
       {
         "from": "dist/renderer",
         "to": "dist/renderer",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
