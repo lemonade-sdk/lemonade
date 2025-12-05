@@ -171,7 +171,7 @@ class Install:
         parser.add_argument(
             "--llamacpp",
             help="Install llama.cpp binaries with specified backend",
-            choices=["rocm", "vulkan"],
+            choices=["rocm", "vulkan", "cpu"],
         )
 
         parser.add_argument(
@@ -188,7 +188,7 @@ class Install:
         Install llama.cpp binaries with the specified backend.
 
         Args:
-            backend: The backend to use ('rocm' or 'vulkan')
+            backend: The backend to use ('rocm' or 'vulkan' or 'cpu').
         """
 
         from lemonade.tools.llamacpp.utils import install_llamacpp
