@@ -2105,7 +2105,7 @@ void TrayApp::open_url(const std::string& url) {
 }
 
 bool TrayApp::find_electron_app() {
-    // Get directory of this executable (lemonade-server.exe)
+    // Get directory of this executable (lemonade-tray.exe)
     fs::path exe_dir;
     
 #ifdef _WIN32
@@ -2123,46 +2123,37 @@ bool TrayApp::find_electron_app() {
     }
 #endif
     
-    // Try different possible locations for the Electron app
-    std::vector<fs::path> possible_paths;
+    // The Electron app has exactly two possible locations:
+    // 1. Production (WIX installer): ../app/ relative to bin/ directory
+    // 2. Development: same directory (copied by CopyElectronApp.cmake)
     
 #ifdef _WIN32
-    // Windows: Look for Lemonade.exe in common locations
-    possible_paths.push_back(exe_dir / "Lemonade.exe");
-    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade.exe");
-    possible_paths.push_back(exe_dir / ".." / "Lemonade.exe");
-    // Check in Program Files
-    possible_paths.push_back(fs::path("C:\\Program Files\\Lemonade\\Lemonade.exe"));
+    constexpr const char* exe_name = "Lemonade.exe";
 #elif defined(__APPLE__)
-    // macOS: Look for Lemonade.app
-    possible_paths.push_back(exe_dir / "Lemonade.app");
-    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade.app");
-    possible_paths.push_back(fs::path("/Applications/Lemonade.app"));
+    constexpr const char* exe_name = "Lemonade.app";
 #else
-    // Linux: Look for lemonade AppImage or binary
-    possible_paths.push_back(exe_dir / "Lemonade");
-    possible_paths.push_back(exe_dir / "lemonade");
-    possible_paths.push_back(exe_dir / ".." / "app" / "Lemonade");
-    possible_paths.push_back(exe_dir / ".." / "app" / "lemonade");
-    // Check standard install location for full installer
-    possible_paths.push_back(fs::path("/usr/local/share/lemonade-server/app/lemonade"));
-    // Check user-local install location
-    const char* home = std::getenv("HOME");
-    if (home) {
-        possible_paths.push_back(fs::path(home) / ".local/share/lemonade-server/app/lemonade");
-    }
+    constexpr const char* exe_name = "lemonade";
 #endif
     
-    // Check each possible path
-    for (const auto& path : possible_paths) {
-        if (fs::exists(path)) {
-            electron_app_path_ = path.string();
-            std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
-            return true;
-        }
+    // Check production path first (most common case)
+    fs::path production_path = exe_dir / ".." / "app" / exe_name;
+    if (fs::exists(production_path)) {
+        electron_app_path_ = fs::canonical(production_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+    
+    // Check development path (same directory as tray executable)
+    fs::path dev_path = exe_dir / exe_name;
+    if (fs::exists(dev_path)) {
+        electron_app_path_ = fs::canonical(dev_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
     }
     
     std::cerr << "Warning: Could not find Electron app" << std::endl;
+    std::cerr << "  Checked: " << production_path.string() << std::endl;
+    std::cerr << "  Checked: " << dev_path.string() << std::endl;
     return false;
 }
 
