@@ -851,7 +851,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 |-----------|----------|-------------|
 | `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
 | `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
-| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, or `metal`). Only applies to llamacpp models. Overrides the default value for this model. |
+| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. Overrides the default value for this model. |
 | `llamacpp_args` | No | Custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Overrides the default value for this model. |
 
 **Setting Priority:**
@@ -983,7 +983,12 @@ curl http://localhost:8000/api/v1/health
       "device": "gpu",
       "backend_url": "http://127.0.0.1:8002/v1"
     }
-  ]
+  ],
+  "max_models": {
+    "llm": 3,
+    "embedding": 1,
+    "reranking": 1
+  }
 }
 ```
 
@@ -999,6 +1004,10 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
+- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+  - `llm` - Maximum LLM/chat models
+  - `embedding` - Maximum embedding models
+  - `reranking` - Maximum reranking models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

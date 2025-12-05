@@ -44,8 +44,9 @@ public:
 private:
     std::string get_llama_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
+    std::string find_external_llama_server(const std::string& backend);
     
-    std::string backend_;  // vulkan, rocm, metal
+    std::string backend_;  // vulkan, rocm, metal, cpu
     std::string model_path_;
     std::string custom_args_;  // Custom arguments to pass to llama-server
 };
