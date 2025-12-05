@@ -29,7 +29,7 @@
     <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
 </p>
 <p align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
   <a href="https://lemonade-server.ai">Download</a> | 
@@ -47,13 +47,14 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 
 | Step 1: Download & Install | Step 2: Launch and Pull Models | Step 3: Start chatting! |
 |:---------------------------:|:-------------------------------:|:------------------------:|
+| <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/install.gif?raw=true" alt="Download & Install" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/launch_and_pull.gif?raw=true" alt="Launch and Pull Models" width="245" /> | <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/chat.gif?raw=true" alt="Start chatting!" width="245" /> |
 |Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
 </div>
 
 ### Use it with your favorite OpenAI-compatible app!
 
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=GitHub.copilot" title="GitHub Copilot" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
+  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/continue_dev.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/gaia.ico" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/anything_llm.png" alt="AnythingLLM" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/ai-dev-gallery/" title="AI Dev Gallery" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_dev_gallery.webp" alt="AI Dev Gallery" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/lm-eval/" title="LM-Eval" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/lm_eval.png" alt="LM-Eval" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/lemonade-arcade" title="Lemonade Arcade" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/lemonade-arcade/refs/heads/main/docs/assets/favicon.ico" alt="Lemonade Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/server/apps/ai-toolkit.md" title="AI Toolkit" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/ai_toolkit.png" alt="AI Toolkit" width="60" /></a>
 </p>
 
 > [!TIP]
@@ -84,20 +85,12 @@ lemonade-server list
 
 ## Model Library
 
-<table>
-<tr>
-<td width="55%" valign="top">
+Lemonade supports both GGUF and ONNX models as detailed in the [Supported Configuration](#supported-configurations) section. A list of all built-in models is available [here](https://lemonade-server.ai/docs/server/server_models/).
 
-Lemonade supports **GGUF** and **ONNX** models across CPU, GPU, and NPU (see [Supported Configurations](#supported-configurations)). Browse all built-in models [here](https://lemonade-server.ai/docs/server/server_models/).
-
-Use the CLI (`lemonade-server pull`) or the App's **Model Manager** to download built-in models. You can also import custom GGUF and ONNX models directly from Hugging Face.
-
-</td>
-<td width="45%" align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="350" />
-</td>
-</tr>
-</table>
+You can also import custom GGUF and ONNX models from Hugging Face by using our [Model Manager](http://localhost:8000/#model-management) (requires server to be running).
+<p align="center">
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager.png?raw=true" alt="Model Manager" width="650" />
+</p>
 
 ## Supported Configurations
 
@@ -144,12 +137,12 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 ## Project Roadmap
 
-| Under Development                            | Under Consideration                            | Recently Completed                       |
-|----------------------------------------------|------------------------------------------------|------------------------------------------|
-| FastFlowLM speech-to-text                    | vLLM support                                   | Rewrite the server in C++                |
-| General speech-to-text support (whisper.cpp) | Handheld devices: Ryzen AI Z2 Extreme APUs     | .msi and .deb installers                 |
-|                                              | ROCm support for Ryzen AI 360-375 (Strix) APUs | Multiple models loaded at the same time  |
-|                                              |                                                | Electron desktop app                     |
+| Under Development                       | Under Consideration                            | Recently Completed        |
+|-----------------------------------------|------------------------------------------------|---------------------------|
+| Electron desktop app (replacing web ui) | General speech-to-text support (whisper.cpp)   | Rewrite the server in C++ |
+| Multiple models loaded at the same time | vLLM integration                               | .msi and .deb installers  |
+| FastFlowLM speech-to-text               | Handheld devices: Ryzen AI Z2 Extreme APUs     | Ryzen AI SW 1.6           |
+|                                         | ROCm support for Ryzen AI 360-375 (Strix) APUs | FastFlowLM integration    |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -193,7 +186,6 @@ The [Lemonade SDK](./docs/README.md) also include the following components:
 
 - 🐍 **[Lemonade API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
 - 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
-- 💻 **[Lemonade Desktop App](./src/app/README.md)**: Cross-platform desktop app.
 
 ## FAQ
 
@@ -230,4 +222,3 @@ This project is:
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
-
