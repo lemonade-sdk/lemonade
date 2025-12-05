@@ -312,6 +312,44 @@
         "labels": ["hot","vision"],
         "size": 3.61
     },
+    "Phi-4-mini-instruct-GGUF": {
+        "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.49
+    },
+    "LFM2-1.2B-GGUF": {
+        "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 0.731
+    },
+    "Llama-3.2-1B-Instruct-GGUF": {
+        "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 0.834
+    },
+    "Llama-3.2-3B-Instruct-GGUF": {
+        "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.06
+    },
+    "SmolLM3-3B-GGUF": {
+        "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 1.94
+    },
+    "Ministral-3-3B-Instruct-2512-GGUF": {
+        "checkpoint": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+        "mmproj": "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["vision"],
+        "size": 2.85
+    },
     "Qwen2.5-VL-7B-Instruct-GGUF": {
         "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
         "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
