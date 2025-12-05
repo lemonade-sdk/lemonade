@@ -191,6 +191,12 @@ static bool is_process_alive_not_zombie(pid_t pid) {
 TrayApp::TrayApp(int argc, char* argv[])
     : current_version_(LEMON_VERSION_STRING)
     , should_exit_(false)
+#ifdef _WIN32
+    , electron_app_process_(nullptr)
+    , electron_job_object_(nullptr)
+#else
+    , electron_app_pid_(0)
+#endif
 {
     // Load defaults from environment variables before parsing command-line arguments
     load_env_defaults();
@@ -1233,10 +1239,9 @@ int TrayApp::execute_run_command() {
     if (server_manager_->load_model(model_name)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Open browser to chat interface
-        std::string url = "http://" + config_.host + ":" + std::to_string(config_.port) + "/?model=" + model_name + "#llm-chat";
-        std::cout << "Opening browser: " << url << std::endl;
-        open_url(url);
+        // Launch the Electron app
+        std::cout << "Launching Lemonade app..." << std::endl;
+        launch_electron_app();
     } else {
         std::cerr << "Failed to load model" << std::endl;
         return 1;
@@ -1666,6 +1671,18 @@ void TrayApp::build_menu() {
 Menu TrayApp::create_menu() {
     Menu menu;
     
+    // Open app - at the very top (only if Electron app is available on full installer)
+    if (electron_app_path_.empty()) {
+        // Try to find the Electron app if we haven't already
+        const_cast<TrayApp*>(this)->find_electron_app();
+    }
+    if (!electron_app_path_.empty()) {
+        menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
+        menu.add_separator();
+    }
+    
+    // Get loaded model once and cache it to avoid redundant health checks
+    std::string loaded = is_loading_model_ ? "" : get_loaded_model();
     // Get all loaded models to display at top and for checkmarks
     std::vector<LoadedModelInfo> loaded_models = is_loading_model_ ? std::vector<LoadedModelInfo>() : get_all_loaded_models();
     
@@ -1781,10 +1798,6 @@ Menu TrayApp::create_menu() {
     
     // Main menu items
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
-    menu.add_item(MenuItem::Action("LLM Chat", [this]() { on_open_llm_chat(); }));
-    menu.add_item(MenuItem::Action("Model Manager", [this]() { on_open_model_manager(); }));
-    
-    // Logs menu item (simplified - always debug logs now)
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
     
     menu.add_separator();
@@ -1993,14 +2006,6 @@ void TrayApp::on_open_documentation() {
     open_url("https://lemonade-server.ai/docs/");
 }
 
-void TrayApp::on_open_llm_chat() {
-    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#llm-chat");
-}
-
-void TrayApp::on_open_model_manager() {
-    open_url("http://" + config_.host + ":" + std::to_string(config_.port) + "/#model-management");
-}
-
 void TrayApp::on_upgrade() {
     // TODO: Implement upgrade functionality
     std::cout << "Upgrade functionality not yet implemented" << std::endl;
@@ -2043,6 +2048,44 @@ void TrayApp::shutdown() {
     }
 #endif
     
+    // Close Electron app if open
+#ifdef _WIN32
+    if (electron_app_process_) {
+        // The job object will automatically terminate the process when we close it
+        // But we can optionally terminate it gracefully first
+        CloseHandle(electron_app_process_);
+        electron_app_process_ = nullptr;
+    }
+    if (electron_job_object_) {
+        // Closing the job object will terminate all processes in it
+        CloseHandle(electron_job_object_);
+        electron_job_object_ = nullptr;
+    }
+#else
+    // macOS/Linux: Terminate the Electron app if it's running
+    if (electron_app_pid_ > 0) {
+        if (is_process_alive_not_zombie(electron_app_pid_)) {
+            std::cout << "Terminating Electron app (PID: " << electron_app_pid_ << ")..." << std::endl;
+            kill(electron_app_pid_, SIGTERM);
+            
+            // Wait briefly for graceful shutdown
+            for (int i = 0; i < 10; i++) {
+                if (!is_process_alive_not_zombie(electron_app_pid_)) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            
+            // Force kill if still alive
+            if (is_process_alive_not_zombie(electron_app_pid_)) {
+                std::cout << "Force killing Electron app..." << std::endl;
+                kill(electron_app_pid_, SIGKILL);
+            }
+        }
+        electron_app_pid_ = 0;
+    }
+#endif
+    
     // Stop the server
     if (server_manager_) {
         stop_server();
@@ -2063,6 +2106,219 @@ void TrayApp::open_url(const std::string& url) {
 #else
     int result = system(("xdg-open \"" + url + "\" &").c_str());
     (void)result;  // Suppress unused variable warning
+#endif
+}
+
+bool TrayApp::find_electron_app() {
+    // Get directory of this executable (lemonade-tray.exe)
+    fs::path exe_dir;
+    
+#ifdef _WIN32
+    wchar_t exe_path[MAX_PATH];
+    GetModuleFileNameW(NULL, exe_path, MAX_PATH);
+    exe_dir = fs::path(exe_path).parent_path();
+#else
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        exe_dir = fs::path(exe_path).parent_path();
+    } else {
+        return false;
+    }
+#endif
+    
+    // The Electron app has exactly two possible locations:
+    // 1. Production (WIX installer): ../app/ relative to bin/ directory
+    // 2. Development: same directory (copied by CopyElectronApp.cmake)
+    
+#ifdef _WIN32
+    constexpr const char* exe_name = "Lemonade.exe";
+#elif defined(__APPLE__)
+    constexpr const char* exe_name = "Lemonade.app";
+#else
+    constexpr const char* exe_name = "lemonade";
+#endif
+    
+    // Check production path first (most common case)
+    fs::path production_path = exe_dir / ".." / "app" / exe_name;
+    if (fs::exists(production_path)) {
+        electron_app_path_ = fs::canonical(production_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+    
+    // Check development path (same directory as tray executable)
+    fs::path dev_path = exe_dir / exe_name;
+    if (fs::exists(dev_path)) {
+        electron_app_path_ = fs::canonical(dev_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+    
+    std::cerr << "Warning: Could not find Electron app" << std::endl;
+    std::cerr << "  Checked: " << production_path.string() << std::endl;
+    std::cerr << "  Checked: " << dev_path.string() << std::endl;
+    return false;
+}
+
+void TrayApp::launch_electron_app() {
+    // Try to find the app if we haven't already
+    if (electron_app_path_.empty()) {
+        if (!find_electron_app()) {
+            std::cerr << "Error: Cannot launch Electron app - not found" << std::endl;
+            return;
+        }
+    }
+    
+#ifdef _WIN32
+    // Single-instance enforcement: Only allow one Electron app to be open at a time
+    // Reuse child process tracking to determine if the app is already running
+    if (electron_app_process_ != nullptr) {
+        // Check if the process is still alive
+        DWORD exit_code = 0;
+        if (GetExitCodeProcess(electron_app_process_, &exit_code) && exit_code == STILL_ACTIVE) {
+            std::cout << "Electron app is already running" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, clean up the handle
+            CloseHandle(electron_app_process_);
+            electron_app_process_ = nullptr;
+        }
+    }
+#endif
+    
+    // Launch the Electron app
+#ifdef _WIN32
+    // Windows: Create a job object to ensure the Electron app closes when tray closes
+    if (!electron_job_object_) {
+        electron_job_object_ = CreateJobObjectA(NULL, NULL);
+        if (electron_job_object_) {
+            // Configure job to terminate all processes when the last handle is closed
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {};
+            job_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            
+            if (!SetInformationJobObject(
+                electron_job_object_,
+                JobObjectExtendedLimitInformation,
+                &job_info,
+                sizeof(job_info))) {
+                std::cerr << "Warning: Failed to configure job object: " << GetLastError() << std::endl;
+                CloseHandle(electron_job_object_);
+                electron_job_object_ = nullptr;
+            } else {
+                std::cout << "Created job object for Electron app process management" << std::endl;
+            }
+        } else {
+            std::cerr << "Warning: Failed to create job object: " << GetLastError() << std::endl;
+        }
+    }
+    
+    // Launch the .exe
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    
+    // Create the process
+    if (CreateProcessA(
+        electron_app_path_.c_str(),  // Application name
+        NULL,                         // Command line
+        NULL,                         // Process security attributes
+        NULL,                         // Thread security attributes
+        FALSE,                        // Don't inherit handles
+        CREATE_SUSPENDED,             // Create suspended so we can add to job before it runs
+        NULL,                         // Environment
+        NULL,                         // Current directory
+        &si,                          // Startup info
+        &pi))                         // Process info
+    {
+        // Add the process to the job object if we have one
+        if (electron_job_object_) {
+            if (AssignProcessToJobObject(electron_job_object_, pi.hProcess)) {
+                std::cout << "Added Electron app to job object (will close with tray)" << std::endl;
+            } else {
+                std::cerr << "Warning: Failed to add process to job object: " << GetLastError() << std::endl;
+            }
+        }
+        
+        // Resume the process now that it's in the job object
+        ResumeThread(pi.hThread);
+        
+        // Store the process handle (don't close it - we need it for cleanup)
+        electron_app_process_ = pi.hProcess;
+        CloseHandle(pi.hThread);  // We don't need the thread handle
+        
+        std::cout << "Launched Electron app" << std::endl;
+    } else {
+        std::cerr << "Failed to launch Electron app: " << GetLastError() << std::endl;
+    }
+#elif defined(__APPLE__)
+    // Single-instance enforcement: Check if the Electron app is already running
+    if (electron_app_pid_ > 0) {
+        // Check if the process is still alive
+        if (kill(electron_app_pid_, 0) == 0) {
+            std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, reset the PID
+            electron_app_pid_ = 0;
+        }
+    }
+    
+    // macOS: Use 'open' command to launch the .app
+    // Note: 'open' doesn't give us the PID directly, so we'll need to find it
+    std::string cmd = "open \"" + electron_app_path_ + "\"";
+    int result = system(cmd.c_str());
+    if (result == 0) {
+        std::cout << "Launched Electron app" << std::endl;
+        
+        // Try to find the PID of the Electron app we just launched
+        // Look for process named "Lemonade" (the app name, not the .app bundle name)
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Give it time to start
+        FILE* pipe = popen("pgrep -n Lemonade", "r");  // -n = newest matching process
+        if (pipe) {
+            char buffer[128];
+            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                electron_app_pid_ = atoi(buffer);
+                std::cout << "Tracking Electron app (PID: " << electron_app_pid_ << ")" << std::endl;
+            }
+            pclose(pipe);
+        }
+    } else {
+        std::cerr << "Failed to launch Electron app" << std::endl;
+    }
+#else
+    // Single-instance enforcement: Check if the Electron app is already running
+    if (electron_app_pid_ > 0) {
+        // Check if the process is still alive (and not a zombie)
+        if (is_process_alive_not_zombie(electron_app_pid_)) {
+            std::cout << "Electron app is already running (PID: " << electron_app_pid_ << ")" << std::endl;
+            show_notification("App Already Running", "The Lemonade app is already open");
+            return;
+        } else {
+            // Process has exited, reset the PID
+            electron_app_pid_ = 0;
+        }
+    }
+    
+    // Linux: Launch the binary directly using fork/exec for proper PID tracking
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process: execute the Electron app
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        // If execl returns, it failed
+        std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process: store the PID
+        electron_app_pid_ = pid;
+        std::cout << "Launched Electron app (PID: " << electron_app_pid_ << ")" << std::endl;
+    } else {
+        // Fork failed
+        std::cerr << "Failed to launch Electron app: " << strerror(errno) << std::endl;
+    }
 #endif
 }
 

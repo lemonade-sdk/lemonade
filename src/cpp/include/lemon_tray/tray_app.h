@@ -109,13 +109,13 @@ private:
     void on_change_context_size(int new_ctx_size);
     void on_show_logs();
     void on_open_documentation();
-    void on_open_llm_chat();
-    void on_open_model_manager();
     void on_upgrade();
     void on_quit();
     
     // Helpers
     void open_url(const std::string& url);
+    void launch_electron_app();
+    bool find_electron_app();
     void show_notification(const std::string& title, const std::string& message);
     std::string get_loaded_model();
     std::vector<LoadedModelInfo> get_all_loaded_models();
@@ -125,6 +125,7 @@ private:
     AppConfig config_;
     std::unique_ptr<TrayInterface> tray_;
     std::unique_ptr<ServerManager> server_manager_;
+    std::string electron_app_path_;
     
     // State
     std::string loaded_model_;
@@ -145,6 +146,14 @@ private:
     HANDLE log_viewer_process_ = nullptr;
 #else
     pid_t log_viewer_pid_ = 0;
+#endif
+
+    // Electron app process tracking (for child process management and single-instance enforcement)
+#ifdef _WIN32
+    HANDLE electron_app_process_ = nullptr;
+    HANDLE electron_job_object_ = nullptr;  // Job object to ensure child closes with parent
+#else
+    pid_t electron_app_pid_ = 0;  // Process ID of the Electron app (macOS/Linux)
 #endif
 
     // Log tail thread for console output (when show_console is true)

@@ -1,5 +1,30 @@
 cmake_minimum_required(VERSION 3.20)
-project(lemon_cpp VERSION 9.0.8)
+
+# Use static runtime library on Windows to avoid DLL dependencies
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+project(lemon_cpp VERSION 9.1.0)
+
+# ============================================================
+# Electron source paths (used by both runtime and installers)
+# ============================================================
+get_filename_component(ELECTRON_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../../src/app" ABSOLUTE)
+set(ELECTRON_APP_BUILD_DIR "${ELECTRON_APP_SOURCE_DIR}/dist-app")
+if(WIN32)
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
+    set(ELECTRON_EXE_NAME "Lemonade.exe")
+elseif(APPLE)
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac")
+    set(ELECTRON_EXE_NAME "Lemonade.app")
+else()
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
+    # Electron builder uses lowercase product name on Linux
+    set(ELECTRON_EXE_NAME "lemonade")
+endif()
+
+# C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -177,11 +202,14 @@ if(WIN32)
         @ONLY
     )
     
-    # Find WiX Toolset 5.0+ (unified 'wix' command)
+    set(WIX_PRODUCT_WXS "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs")
+    set(WIX_FRAGMENT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/installer/generate_electron_fragment.py")
+    
+    # Find WiX Toolset 5.0+ (unified 'wix' command) and Python for fragment generation
     find_program(WIX_EXECUTABLE wix)
+    find_package(Python3 COMPONENTS Interpreter)
     
     if(WIX_EXECUTABLE)
-        # Get WiX version
         execute_process(
             COMMAND ${WIX_EXECUTABLE} --version
             OUTPUT_VARIABLE WIX_VERSION_OUTPUT
@@ -190,28 +218,72 @@ if(WIN32)
         message(STATUS "WiX Toolset found: ${WIX_EXECUTABLE}")
         message(STATUS "WiX version: ${WIX_VERSION_OUTPUT}")
         
-        # Create custom target for building MSI installer using WiX 5.0
-        add_custom_target(wix_installer
-            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer with WiX 5.0..."
-            
-            # WiX 5.0 uses 'wix build' command - single file, simple approach
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" WIX_SOURCE_DIR_NATIVE)
+        file(TO_NATIVE_PATH "${WIX_PRODUCT_WXS}" WIX_PRODUCT_WXS_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi" WIX_MINIMAL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lemonade.msi" WIX_FULL_OUTPUT_NATIVE)
+        file(TO_NATIVE_PATH "${ELECTRON_APP_UNPACKED_DIR}" WIX_ELECTRON_SOURCE_NATIVE)
+        set(WIX_ELECTRON_FRAGMENT "${CMAKE_CURRENT_BINARY_DIR}/installer/ElectronAppFragment.wxs")
+        file(TO_NATIVE_PATH "${WIX_ELECTRON_FRAGMENT}" WIX_ELECTRON_FRAGMENT_NATIVE)
+        
+        # Minimal installer (server only)
+        add_custom_target(wix_installer_minimal
+            COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (server only)..."
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -ext WixToolset.UI.wixext
-                -d SourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
-                -out "${CMAKE_CURRENT_SOURCE_DIR}/lemonade-server-minimal.msi"
-                "${CMAKE_CURRENT_BINARY_DIR}/installer/Product.wxs"
-            
+                -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                -d IncludeElectron=0
+                -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
+                "${WIX_PRODUCT_WXS_NATIVE}"
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
-            
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-            COMMENT "Building WiX MSI installer"
+            COMMENT "Building WiX MSI installer (server only)"
         )
         
-        message(STATUS "WiX installer target 'wix_installer' configured. Run 'cmake --build . --target wix_installer' to build MSI.")
+        set(WIX_INSTALLER_TARGETS wix_installer_minimal)
+        
+        if(Python3_FOUND)
+            add_custom_target(wix_installer_full
+                COMMAND ${CMAKE_COMMAND} -E echo "Building WiX MSI installer (with Electron app)..."
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${ELECTRON_APP_UNPACKED_DIR}"
+                    --output "${WIX_ELECTRON_FRAGMENT}"
+                    --component-group "ElectronAppComponents"
+                    --root-id "ElectronAppDir"
+                    --path-variable "ElectronSourceDir"
+                COMMAND ${WIX_EXECUTABLE} build
+                    -arch x64
+                    -ext WixToolset.UI.wixext
+                    -d SourceDir="${WIX_SOURCE_DIR_NATIVE}"
+                    -d IncludeElectron=1
+                    -d ElectronSourceDir="${WIX_ELECTRON_SOURCE_NATIVE}"
+                    -out "${WIX_FULL_OUTPUT_NATIVE}"
+                    "${WIX_PRODUCT_WXS_NATIVE}"
+                    "${WIX_ELECTRON_FRAGMENT_NATIVE}"
+                COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
+                DEPENDS ${EXECUTABLE_NAME}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                COMMENT "Building WiX MSI installer (with Electron app)"
+            )
+            
+            if(TARGET electron-app)
+                add_dependencies(wix_installer_full electron-app)
+            endif()
+            
+            list(APPEND WIX_INSTALLER_TARGETS wix_installer_full)
+        else()
+            message(STATUS "Python 3 interpreter not found. Skipping the Electron-enabled MSI target 'wix_installer_full'.")
+        endif()
+        
+        add_custom_target(wix_installers
+            DEPENDS ${WIX_INSTALLER_TARGETS}
+        )
+        
+        message(STATUS "WiX installer targets configured. Run 'cmake --build . --target wix_installer_minimal' or 'wix_installer_full'.")
     else()
-        message(STATUS "WiX Toolset not found. MSI installer will not be available.")
+        message(STATUS "WiX Toolset not found. MSI installers will not be available.")
         message(STATUS "  Install WiX Toolset 5.0.2 from: https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi")
         message(STATUS "  Or visit: https://wixtoolset.org/")
     endif()
@@ -320,14 +392,54 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     COMMENT "Copying resources to output directory"
 )
 
-
 # ============================================================
-# Applications:
-#   - lemonade-server
-#   - lemonade-tray (Windows only)
-#   - lemonade-log-viewer (Windows only)
+# Electron App Integration (Cross-Platform)
 # ============================================================
 
+# Find Node.js and npm for building the Electron app
+find_program(NODE_EXECUTABLE node)
+find_program(NPM_EXECUTABLE npm)
+
+# Custom target to build the Electron app
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
+    if(WIN32)
+        set(ELECTRON_BUILD_TARGET "build:win")
+    elseif(APPLE)
+        set(ELECTRON_BUILD_TARGET "build:mac")
+    else()
+        set(ELECTRON_BUILD_TARGET "build:linux")
+    endif()
+    
+    add_custom_target(electron-app
+        COMMAND ${CMAKE_COMMAND} -E echo "Building Electron app for current platform..."
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} install
+        COMMAND ${CMAKE_COMMAND} -E chdir "${ELECTRON_APP_SOURCE_DIR}" ${NPM_EXECUTABLE} run ${ELECTRON_BUILD_TARGET}
+        COMMENT "Building Electron app with npm"
+        WORKING_DIRECTORY "${ELECTRON_APP_SOURCE_DIR}"
+        VERBATIM
+    )
+    
+    message(STATUS "Node.js found: ${NODE_EXECUTABLE}")
+    message(STATUS "npm found: ${NPM_EXECUTABLE}")
+    message(STATUS "Electron app can be built with: cmake --build . --target electron-app")
+else()
+    message(STATUS "Node.js or npm not found - Electron app build target disabled")
+    message(STATUS "Install Node.js to enable: https://nodejs.org/")
+endif()
+
+# Custom command to copy Electron app files after building the C++ server
+add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
+    COMMAND ${CMAKE_COMMAND}
+        -DELECTRON_APP_UNPACKED_DIR=${ELECTRON_APP_UNPACKED_DIR}
+        -DTARGET_DIR=$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>
+        -DELECTRON_EXE_NAME=${ELECTRON_EXE_NAME}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/CopyElectronApp.cmake
+    COMMENT "Copying Electron app if available"
+    VERBATIM
+)
+
+# Add tray application subdirectory
 add_subdirectory(tray)
 
 
@@ -336,7 +448,6 @@ add_subdirectory(tray)
 # ============================================================
 if(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -347,9 +458,7 @@ if(UNIX AND NOT APPLE)
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-    set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
     
     # Installation paths - use ~/.local for user install (no sudo needed)
     # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
@@ -368,8 +477,45 @@ if(UNIX AND NOT APPLE)
         DESTINATION share/lemonade-server/resources
     )
     
-    # Post-install script to make directories writable
-    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+    # Check if Electron app is available for full package
+    option(INCLUDE_ELECTRON_APP "Include Electron app in deb package" OFF)
+    
+    if(INCLUDE_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+        message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
+        message(STATUS "Building full deb package with Electron app")
+        
+        # Full package name
+        set(CPACK_PACKAGE_NAME "lemonade")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0")
+        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+        
+        # Install Electron app
+        install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
+            DESTINATION share/lemonade-server/app
+            USE_SOURCE_PERMISSIONS
+            PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+        
+        # Post-install script for full package
+        # Note: CPack requires the script to be named 'postinst' exactly
+        # We copy postinst-full to a temporary postinst file for CPack
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
+                       "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
+    else()
+        # Minimal package (server only)
+        set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
+        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+        
+        # Post-install script for minimal package
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+        
+        if(INCLUDE_ELECTRON_APP)
+            message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
+            message(WARNING "Building minimal deb package instead")
+        endif()
+    endif()
     
     include(CPack)
 endif()

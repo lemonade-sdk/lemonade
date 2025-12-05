@@ -421,7 +421,7 @@ void LlamaCppServer::install(const std::string& backend) {
             throw std::runtime_error("Failed to download llama-server: " + result.error_message);
         }
         
-        std::cout << std::endl << "[LlamaCpp] Download complete!" << std::endl;
+        std::cout << "[LlamaCpp] Download complete!" << std::endl;
         
         // Verify the downloaded file exists and is valid
         if (!fs::exists(zip_path)) {

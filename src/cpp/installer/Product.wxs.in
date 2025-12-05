@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<?ifndef IncludeElectron?>
+<?define IncludeElectron = 0?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   
@@ -92,6 +95,9 @@
             </Directory>
           </Directory>
         </Directory>
+<?if $(var.IncludeElectron) = 1 ?>
+        <Directory Id="ElectronAppDir" Name="app" />
+<?endif?>
       </Directory>
     </StandardDirectory>
     
@@ -143,12 +149,12 @@
         <File Id="logs.html" Source="$(var.SourceDir)\build\Release\resources\static\logs.html" KeyPath="yes" />
       </Component>
       
-      <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
-        <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
+      <Component Id="IndexHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
+        <File Id="index.html" Source="$(var.SourceDir)\build\Release\resources\static\index.html" KeyPath="yes" />
       </Component>
       
-      <Component Id="WebappHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
-        <File Id="webapp.html" Source="$(var.SourceDir)\build\Release\resources\static\webapp.html" KeyPath="yes" />
+      <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
+        <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
       </Component>
       
       <Component Id="ChatJs" Directory="JsDir" Guid="a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d">
@@ -215,6 +221,9 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+<?if $(var.IncludeElectron) = 1 ?>
+      <ComponentGroupRef Id="ElectronAppComponents" />
+<?endif?>
       <ComponentRef Id="PathEnvironment" />
       <ComponentRef Id="RegistryEntries" />
       <ComponentRef Id="ProgramMenuShortcuts" />
