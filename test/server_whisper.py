@@ -6,7 +6,7 @@ and make sure that the response is valid.
 
 Examples:
     python server_whisper.py
-    python server_whisper.py --server-binary ./lemonade-router
+    python server_whisper.py --server-binary ./lemonade-server
 
 If you get the `ImportError: cannot import name 'TypeIs' from 'typing_extensions'` error:
     1. pip uninstall typing_extensions

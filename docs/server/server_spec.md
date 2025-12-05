@@ -59,14 +59,14 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 Use the `--max-loaded-models` option to specify how many models to keep loaded:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, and 1 reranking model
-lemonade-server serve --max-loaded-models 3 2 1
+# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
+lemonade-server serve --max-loaded-models 3 2 1 1
 
-# Load up to 5 LLMs (embeddings and reranking default to 1 each)
+# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
 lemonade-server serve --max-loaded-models 5
 ```
 
-**Default:** `1 1 1` (one model of each type)
+**Default:** `1 1 1 1` (one model of each type)
 
 ### Model Types
 
@@ -545,7 +545,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The Whisper model to use for transcription (e.g., `whisper-tiny`, `whisper-base`, `whisper-small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
@@ -557,7 +557,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
     $audioFile = "C:\path\to\audio.wav"
     $form = @{
         file = Get-Item $audioFile
-        model = "whisper-tiny"
+        model = "Whisper-Tiny"
     }
     Invoke-RestMethod -Uri "http://localhost:8000/api/v1/audio/transcriptions" `
       -Method POST `
@@ -569,7 +569,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
     ```bash
     curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
       -F "file=@/path/to/audio.wav" \
-      -F "model=whisper-tiny"
+      -F "model=Whisper-Tiny"
     ```
 
 #### Response format
