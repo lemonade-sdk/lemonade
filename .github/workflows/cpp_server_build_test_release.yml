@@ -159,6 +159,44 @@ jobs:
           
           Write-Host "C++ build successful!" -ForegroundColor Green
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Electron App
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          
+          Write-Host "Building Electron app..." -ForegroundColor Cyan
+          
+          cd src\app
+          
+          # Install dependencies
+          Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+          npm install
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: npm install failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Build the Electron app for Windows
+          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
+          npm run build:win
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
+              exit $LASTEXITCODE 
+          }
+          
+          # Verify the build output exists
+          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
+              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Electron app build successful!" -ForegroundColor Green
+
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
@@ -169,19 +207,26 @@ jobs:
           # Run the build installer script
           .\build_installer.ps1
           
-          # Verify installer was created
+          # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Installer not created!" -ForegroundColor Red
+              Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
               exit 1
           }
           
-          Write-Host "Installer created successfully!" -ForegroundColor Green
+          if (-not (Test-Path "lemonade.msi")) {
+              Write-Host "ERROR: Full installer not created!" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host "Installers created successfully!" -ForegroundColor Green
 
-      - name: Upload Lemonade Server Installer
+      - name: Upload Lemonade Server Installers
         uses: actions/upload-artifact@v4
         with:
           name: Lemonade_Server_MSI
-          path: src\cpp\lemonade-server-minimal.msi
+          path: |
+            src\cpp\lemonade-server-minimal.msi
+            src\cpp\lemonade.msi
           retention-days: 7
 
   build-ryzenai-server:
@@ -323,116 +368,43 @@ jobs:
         id: get_version
         uses: ./.github/actions/get-version
 
-      - name: Install build dependencies
-        run: |
-          set -e
-          
-          echo "Updating package lists..."
-          sudo apt-get update
-          
-          echo "Installing build dependencies..."
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            pkg-config \
-            libcurl4-openssl-dev \
-            libssl-dev \
-            zlib1g-dev \
-            git
-          
-          echo "Verifying installations..."
-          cmake --version
-          gcc --version
-          pkg-config --version
-          
-          echo "Build dependencies installed successfully!"
-
-      - name: Build C++ Server with CMake
-        run: |
-          set -e
-          
-          echo "Building lemonade-router and lemonade-server for Linux..."
-          
-          cd src/cpp
-          
-          # Create build directory
-          if [ -d "build" ]; then
-              echo "Removing existing build directory..."
-              rm -rf build
-          fi
-          mkdir build
-          cd build
-          
-          # Configure with explicit Release build type
-          echo "Configuring CMake..."
-          cmake .. -DCMAKE_BUILD_TYPE=Release
-          
-          # Build using all available cores
-          echo "Building binaries..."
-          cmake --build . -j$(nproc)
-          
-          # Verify binaries exist
-          if [ ! -f "lemonade-router" ]; then
-              echo "ERROR: lemonade-router not found!"
-              echo "Build directory contents:"
-              ls -lh
-              exit 1
-          fi
-          
-          if [ ! -f "lemonade-server" ]; then
-              echo "ERROR: lemonade-server not found!"
-              echo "Build directory contents:"
-              ls -lh
-              exit 1
-          fi
-          
-          echo "✓ Binaries found successfully"
-          
-          echo "Verifying binary executability..."
-          ./lemonade-router --version
-          ./lemonade-server --version
-          
-          echo "C++ build successful!"
-
-      - name: Build .deb package
-        run: |
-          set -e
-          
-          cd src/cpp/build
-          
-          echo "Creating .deb package with CPack..."
-          cpack -G DEB -V
-          
-          # List generated files
-          echo "Files in build directory:"
-          ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
-          
-          # Verify package was created (using dynamic version)
-          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-          echo "Looking for: $DEB_FILE"
-          
-          if [ ! -f "$DEB_FILE" ]; then
-              echo "ERROR: .deb package not created!"
-              echo "Contents of build directory:"
-              ls -lR .
-              exit 1
-          fi
-          
-          echo ".deb package created successfully!"
-          ls -lh "$DEB_FILE"
-          
-          # Show package info
-          echo "Package information:"
-          dpkg-deb --info "$DEB_FILE"
-          
-          echo "Package contents:"
-          dpkg-deb --contents "$DEB_FILE"
+      - name: Build Linux .deb package (minimal)
+        uses: ./.github/actions/build-linux-deb
+        with:
+          include-electron: 'false'
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
           path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          retention-days: 7
+
+  build-lemonade-deb-full:
+    name: Build Lemonade Full .deb Package (with Electron App)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Build Linux .deb package (full with Electron)
+        uses: ./.github/actions/build-linux-deb
+        with:
+          include-electron: 'true'
+
+      - name: Upload full .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-deb-full
+          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================
@@ -1642,6 +1614,7 @@ jobs:
     needs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
+      - build-lemonade-deb-full
       - build-ryzenai-server
       - test-exe-rai-hybrid-basics
       - test-exe-flm
@@ -1662,10 +1635,16 @@ jobs:
           name: Lemonade_Server_MSI
           path: .
 
-      - name: Download Lemonade Server .deb Package (Linux)
+      - name: Download Lemonade Server .deb Package (Linux - Minimal)
         uses: actions/download-artifact@v4
         with:
           name: lemonade-server-deb
+          path: .
+
+      - name: Download Lemonade Full .deb Package (Linux - with Electron App)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-deb-full
           path: .
 
       - name: Download RyzenAI Server Package
@@ -1685,7 +1664,9 @@ jobs:
         run: |
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
+          ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
+          ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
           ls -lh ryzenai-server.zip
 
       - name: Create Release
@@ -1693,7 +1674,9 @@ jobs:
         with:
           files: |
             lemonade-server-minimal.msi
+            lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+            lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
             ryzenai-server.zip
           fail_on_unmatched_files: true
 

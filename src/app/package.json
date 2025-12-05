@@ -64,10 +64,18 @@
         "from": "dist/renderer",
         "to": "dist/renderer",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/*.map"
         ]
-      }
+      },
+      "!node_modules",
+      "!src",
+      "!**/*.ts",
+      "!**/*.tsx",
+      "!**/*.map"
     ],
+    "extraResources": [],
+    "asarUnpack": [],
     "win": {
       "icon": "../../docs/assets/favicon.ico",
       "target": [
@@ -79,8 +87,8 @@
         }
       ]
     },
+    "electronLanguages": ["en-US"],
     "mac": {
-      "icon": "../../docs/assets/favicon.ico",
       "target": [
         "dmg"
       ],

@@ -1,11 +1,11 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
-module.exports = {
-  mode: 'development',
+module.exports = (env, argv) => ({
+  mode: argv.mode || 'development',
   entry: './src/renderer/index.tsx',
   target: 'electron-renderer',
-  devtool: 'source-map',
+  devtool: argv.mode === 'production' ? false : 'source-map',
   module: {
     rules: [
       {
@@ -49,5 +49,4 @@ module.exports = {
       filename: 'index.html',
     }),
   ],
-};
-
+});

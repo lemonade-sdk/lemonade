@@ -121,6 +121,15 @@ bool ServerManager::start_server(
         try {
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
+            
+            server_started_ = true;
+            
+#ifndef _WIN32
+            // Write PID file on Linux for efficient server discovery
+            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
+            write_pid_file();
+#endif
+            
             DEBUG_LOG(this, "Server process is running!");
             process_started = true;
             break;  // Process is up, move to next step
@@ -148,7 +157,9 @@ bool ServerManager::start_server(
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
             // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
             std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-            std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+            std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
+            std::cout << "Connect your apps to the endpoint above." << std::endl;
+            std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
         }
         
         server_started_ = true;
@@ -180,7 +191,9 @@ bool ServerManager::start_server(
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
                 // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
                 std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+                std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
+                std::cout << "Connect your apps to the endpoint above." << std::endl;
+                std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
             }
             
             server_started_ = true;

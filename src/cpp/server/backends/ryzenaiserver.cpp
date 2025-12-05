@@ -161,7 +161,7 @@ void RyzenAIServer::download_and_install() {
         throw std::runtime_error("Failed to download ryzenai-server from release");
     }
     
-    std::cout << std::endl << "[RyzenAI-Server] Download complete!" << std::endl;
+    std::cout << "[RyzenAI-Server] Download complete!" << std::endl;
     
     // Verify the downloaded file exists and is valid
     if (!fs::exists(zip_path)) {

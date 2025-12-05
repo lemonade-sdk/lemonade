@@ -58,7 +58,9 @@ class FlmTesting(ServerTestingBase):
                 finish_reason = chunk.choices[0].finish_reason
 
         assert chunk_count > 5, f"Expected >5 content chunks, got {chunk_count}"
-        assert len(complete_response) > 5, f"Expected >5 chars in response, got {len(complete_response)}"
+        assert (
+            len(complete_response) > 5
+        ), f"Expected >5 chars in response, got {len(complete_response)}"
         assert finish_reason is not None, "Stream did not complete with finish_reason"
 
 

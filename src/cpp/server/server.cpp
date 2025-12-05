@@ -4,6 +4,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
+#include "lemon/version.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -220,20 +221,15 @@ void Server::setup_static_files() {
     // Determine static files directory (relative to executable)
     std::string static_dir = utils::get_resource_path("resources/static");
     
-    // Root path redirects to web UI
-    http_server_->Get("/", [](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("/webapp.html");
-    });
-    
-    // Special handler for webapp.html to replace template variables
-    http_server_->Get("/webapp.html", [this, static_dir](const httplib::Request&, httplib::Response& res) {
-        std::string webapp_path = static_dir + "/webapp.html";
-        std::ifstream file(webapp_path);
+    // Root path - serve index.html with template variable replacement
+    http_server_->Get("/", [this, static_dir](const httplib::Request&, httplib::Response& res) {
+        std::string index_path = static_dir + "/index.html";
+        std::ifstream file(index_path);
         
         if (!file.is_open()) {
-            std::cerr << "[Server] Could not open webapp.html at: " << webapp_path << std::endl;
+            std::cerr << "[Server] Could not open index.html at: " << index_path << std::endl;
             res.status = 404;
-            res.set_content("{\"error\": \"webapp.html not found\"}", "application/json");
+            res.set_content("{\"error\": \"index.html not found\"}", "application/json");
             return;
         }
         
@@ -283,7 +279,7 @@ void Server::setup_static_files() {
         
         // Replace {{SERVER_PORT}}
         while ((pos = html_template.find("{{SERVER_PORT}}")) != std::string::npos) {
-            html_template.replace(pos, 17, std::to_string(port_));
+            html_template.replace(pos, 15, std::to_string(port_));
         }
         
         // Replace {{SERVER_MODELS_JS}}
@@ -318,7 +314,6 @@ void Server::setup_static_files() {
     });
 
     // Mount static files directory for other files (CSS, JS, images)
-    // Use /static prefix to avoid conflicts with webapp.html
     if (!http_server_->set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
         std::cerr << "[Server] Web UI assets will not be available" << std::endl;
@@ -478,7 +473,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     
     nlohmann::json response = {{"status", "ok"}};
     
-    // Add model loaded information (most recent for backward compatibility)
+    // Add version information
+    response["version"] = LEMON_VERSION_STRING;
+    
+    // Add model loaded information like Python implementation
     std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
