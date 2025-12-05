@@ -483,6 +483,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Multi-model support: Add all loaded models
     response["all_models_loaded"] = router_->get_all_loaded_models();
     
+    // Add max model limits
+    response["max_models"] = router_->get_max_model_limits();
+    
     // Add context size
     response["context_size"] = router_->get_ctx_size();
     

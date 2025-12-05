@@ -442,6 +442,14 @@ json Router::get_all_loaded_models() const {
     return result;
 }
 
+json Router::get_max_model_limits() const {
+    return {
+        {"llm", max_llm_models_},
+        {"embedding", max_embedding_models_},
+        {"reranking", max_reranking_models_}
+    };
+}
+
 bool Router::is_model_loaded() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     return !loaded_servers_.empty();

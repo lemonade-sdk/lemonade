@@ -50,6 +50,9 @@ public:
     // Get the context size
     int get_ctx_size() const { return ctx_size_; }
     
+    // Get max model limits
+    json get_max_model_limits() const;
+    
     // Check if any model is loaded
     bool is_model_loaded() const;
     

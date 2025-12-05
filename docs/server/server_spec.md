@@ -933,7 +933,12 @@ curl http://localhost:8000/api/v1/health
       "device": "gpu",
       "backend_url": "http://127.0.0.1:8002/v1"
     }
-  ]
+  ],
+  "max_models": {
+    "llm": 3,
+    "embedding": 1,
+    "reranking": 1
+  }
 }
 ```
 
@@ -949,6 +954,10 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
+- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+  - `llm` - Maximum LLM/chat models
+  - `embedding` - Maximum embedding models
+  - `reranking` - Maximum reranking models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
