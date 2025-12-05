@@ -666,7 +666,7 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --port PORT              Server port (default: 8000)\n";
         std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
-        std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal (default: vulkan)\n";
+        std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
         std::cout << "  --max-loaded-models N [E] [R]\n";
         std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] (default: 1 1 1)\n";
