@@ -53,7 +53,8 @@ public:
         const std::string& host = "127.0.0.1",
         int max_llm_models = 1,
         int max_embedding_models = 1,
-        int max_reranking_models = 1
+        int max_reranking_models = 1,
+        int max_audio_models = 1
     );
     
     bool stop_server();
@@ -112,6 +113,7 @@ private:
     int max_llm_models_;
     int max_embedding_models_;
     int max_reranking_models_;
+    int max_audio_models_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;

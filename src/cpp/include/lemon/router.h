@@ -16,14 +16,15 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(int ctx_size = 4096, 
+    Router(int ctx_size = 4096,
            const std::string& llamacpp_backend = "vulkan",
            const std::string& log_level = "info",
            const std::string& llamacpp_args = "",
            ModelManager* model_manager = nullptr,
            int max_llm_models = 1,
            int max_embedding_models = 1,
-           int max_reranking_models = 1);
+           int max_reranking_models = 1,
+           int max_audio_models = 1);
     
     ~Router();
     
@@ -58,6 +59,9 @@ public:
     
     // Check if a specific model is loaded
     bool is_model_loaded(const std::string& model_name) const;
+
+    // Get the model type for a loaded model (returns LLM if not found)
+    ModelType get_model_type(const std::string& model_name = "") const;
     
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
@@ -68,6 +72,9 @@ public:
     json embeddings(const json& request);
     json reranking(const json& request);
     json responses(const json& request);
+
+    // Audio endpoints (OpenAI /v1/audio/* compatible)
+    json audio_transcriptions(const json& request);
     
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -99,6 +106,7 @@ private:
     int max_llm_models_;
     int max_embedding_models_;
     int max_reranking_models_;
+    int max_audio_models_;
     
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_

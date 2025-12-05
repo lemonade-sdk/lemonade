@@ -245,10 +245,11 @@ src/cpp/
 │   ├── streaming_proxy.cpp     # Server-Sent Events for streaming
 │   ├── system_info.cpp         # NPU/GPU device detection
 │   │
-│   ├── backends/               # LLM backend implementations
-│   │   ├── llamacpp_server.cpp # Wraps llama.cpp (CPU/GPU)
-│   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM (NPU)
-│   │   └── ryzenaiserver.cpp   # Wraps RyzenAI server
+│   ├── backends/               # Model backend implementations
+│   │   ├── llamacpp_server.cpp   # Wraps llama.cpp for LLM inference (CPU/GPU)
+│   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
+│   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
 │   │
 │   └── utils/                  # Utility functions
 │       ├── http_client.cpp     # HTTP client using libcurl
@@ -263,7 +264,8 @@ src/cpp/
 │   ├── backends/               # Backend headers
 │   │   ├── llamacpp_server.h
 │   │   ├── fastflowlm_server.h
-│   │   └── ryzenaiserver.h
+│   │   ├── ryzenaiserver.h
+│   │   └── whisper_server.h
 │   └── utils/                  # Utility headers
 │       ├── http_client.h, json_utils.h
 │       ├── process_manager.h, path_utils.h
@@ -302,13 +304,13 @@ A pure HTTP server that:
 - **HTTP Layer:** Uses cpp-httplib for HTTP server
 - **Router:** Determines which backend handles each request based on model recipe, manages multiple WrappedServer instances with LRU cache
 - **Model Manager:** Handles model discovery, downloads, and registry management
-- **Backend Wrappers:** Manages llama.cpp, FastFlowLM, and RyzenAI backends
+- **Backend Wrappers:** Manages llama.cpp, FastFlowLM, RyzenAI, and whisper.cpp backends
 
 **Multi-Model Support:**
 - Router maintains multiple WrappedServer instances simultaneously
-- Separate LRU caches for LLM, embedding, and reranking model types
+- Separate LRU caches for LLM, embedding, reranking, and audio model types
 - NPU exclusivity: only one model can use NPU at a time
-- Configurable limits via `--max-loaded-models` (default: 1 1 1)
+- Configurable limits via `--max-loaded-models` (default: 1 1 1 1)
 - Automatic eviction of least-recently-used models when limits reached
 - Thread-safe model loading with serialization to prevent races
 - Protection against evicting models actively serving inference requests
@@ -341,7 +343,7 @@ The `lemonade-server` client communicates with `lemonade-router` server via HTTP
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
 - **Server management:** `/api/v1/health`, `/internal/shutdown`
-- **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`
+- **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
 - Detects if a server is already running
@@ -389,9 +391,9 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --host HOST              Bind address (default: localhost)
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
-#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu
-#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS]
-#                            Maximum models to keep loaded (default: 1 1 1)
+#   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
+#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]
+#                            Maximum models to keep loaded (default: 1 1 1 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
@@ -441,7 +443,7 @@ The `lemonade-server` executable is the command-line interface for terminal user
 - `--log-file PATH` - Custom log file location
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
-- `--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS]` - Maximum number of models to keep loaded simultaneously (default: 1 1 1)
+- `--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]` - Maximum number of models to keep loaded simultaneously (default: 1 1 1 1)
 
 **Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 

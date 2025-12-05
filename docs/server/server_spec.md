@@ -22,6 +22,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
+- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -58,21 +59,22 @@ Lemonade Server supports loading multiple models simultaneously, allowing you to
 Use the `--max-loaded-models` option to specify how many models to keep loaded:
 
 ```bash
-# Load up to 3 LLMs, 2 embedding models, and 1 reranking model
-lemonade-server serve --max-loaded-models 3 2 1
+# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
+lemonade-server serve --max-loaded-models 3 2 1 1
 
-# Load up to 5 LLMs (embeddings and reranking default to 1 each)
+# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
 lemonade-server serve --max-loaded-models 5
 ```
 
-**Default:** `1 1 1` (one model of each type)
+**Default:** `1 1 1 1` (one model of each type)
 
 ### Model Types
 
-Models are categorized into three types:
+Models are categorized into these types:
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
+- **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
 
 Each type has its own independent limit and LRU cache.
 
@@ -528,6 +530,54 @@ For a full list of event types, see the [API reference for streaming](https://pl
 === "Streaming Responses"
     For streaming responses, the API returns a series of events. Refer to [OpenAI streaming guide](https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses) for details.
 
+
+
+### `POST /api/v1/audio/transcriptions` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
+
+Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.
+
+> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
+>
+> **Limitations:** Only `wav` audio format and `json` response format are currently supported.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "Windows"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions ^
+      -F "file=@C:\path\to\audio.wav" ^
+      -F "model=Whisper-Tiny"
+    ```
+
+=== "Linux/macOS"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
+      -F "file=@/path/to/audio.wav" \
+      -F "model=Whisper-Tiny"
+    ```
+
+#### Response format
+
+```json
+{
+  "text": "Hello, this is a sample transcription of the audio file."
+}
+```
+
+**Field Descriptions:**
+
+- `text` - The transcribed text from the audio file
 
 
 

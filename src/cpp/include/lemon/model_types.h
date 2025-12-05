@@ -8,7 +8,8 @@ namespace lemon {
 enum class ModelType {
     LLM,        // Chat/completion models
     EMBEDDING,  // Embedding models
-    RERANKING   // Reranking models
+    RERANKING,  // Reranking models
+    AUDIO       // Audio models (speech-to-text transcription)
 };
 
 // Device type flags for tracking hardware usage
@@ -40,6 +41,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::LLM: return "llm";
         case ModelType::EMBEDDING: return "embedding";
         case ModelType::RERANKING: return "reranking";
+        case ModelType::AUDIO: return "audio";
         default: return "unknown";
     }
 }
@@ -71,6 +73,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "reranking") {
             return ModelType::RERANKING;
         }
+        if (label == "audio") {
+            return ModelType::AUDIO;
+        }
     }
     return ModelType::LLM;
 }
@@ -87,6 +92,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
+    } else if (recipe == "whispercpp") {
+        return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
     }
     return DEVICE_NONE;
 }

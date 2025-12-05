@@ -15,7 +15,7 @@ namespace lemon {
 
 class Server {
 public:
-    Server(int port = 8000, 
+    Server(int port = 8000,
            const std::string& host = "127.0.0.1",
            const std::string& log_level = "info",
            int ctx_size = 4096,
@@ -24,7 +24,8 @@ public:
            const std::string& llamacpp_args = "",
            int max_llm_models = 1,
            int max_embedding_models = 1,
-           int max_reranking_models = 1);
+           int max_reranking_models = 1,
+           int max_audio_models = 1);
     
     ~Server();
     
@@ -62,6 +63,9 @@ private:
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
     void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
+
+    // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
+    void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);

@@ -281,6 +281,7 @@
         .label.llm { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); }
         .label.embedding { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
         .label.reranking { background: rgba(245, 158, 11, 0.2); color: var(--accent-orange); }
+        .label.audio { background: rgba(255, 0, 128, 0.2); color: var(--accent-pink); }
         .label.loaded { background: rgba(0, 212, 255, 0.2); color: var(--accent-cyan); }
 
         /* Loaded Models Table */
@@ -354,6 +355,7 @@
         .meta-value.type-llm { color: var(--accent-purple); }
         .meta-value.type-embedding { color: var(--accent-green); }
         .meta-value.type-reranking { color: var(--accent-orange); }
+        .meta-value.type-audio { color: var(--accent-pink); }
 
         .eject-btn {
             background: rgba(239, 68, 68, 0.1);
@@ -432,6 +434,125 @@
         /* For reranking - documents input */
         .documents-input {
             min-height: 100px;
+        }
+
+        /* Audio drop zone */
+        .audio-drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: var(--bg-tertiary);
+        }
+
+        .audio-drop-zone:hover,
+        .audio-drop-zone.drag-over {
+            border-color: var(--accent-pink);
+            background: rgba(255, 0, 128, 0.05);
+        }
+
+        .audio-drop-zone.drag-over {
+            transform: scale(1.02);
+        }
+
+        .audio-drop-zone .drop-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .audio-drop-zone .drop-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .audio-drop-zone .drop-hint {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .audio-drop-zone input[type="file"] {
+            display: none;
+        }
+
+        .audio-file-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-top: 0.75rem;
+        }
+
+        .audio-file-info .file-icon {
+            font-size: 1.5rem;
+        }
+
+        .audio-file-info .file-details {
+            flex: 1;
+        }
+
+        .audio-file-info .file-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            word-break: break-all;
+        }
+
+        .audio-file-info .file-size {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .audio-file-info .remove-file {
+            background: transparent;
+            border: none;
+            color: var(--accent-red);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0.25rem;
+            opacity: 0.7;
+            transition: opacity 0.2s ease;
+        }
+
+        .audio-file-info .remove-file:hover {
+            opacity: 1;
+        }
+
+        .audio-options {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.75rem;
+        }
+
+        .audio-options select {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .audio-options select:focus {
+            outline: none;
+            border-color: var(--accent-pink);
+        }
+
+        .audio-options label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
         }
 
         .send-btn {
@@ -856,6 +977,13 @@
         // Get model type from model info
         function getModelType(model) {
             const labels = model.labels || [];
+            const recipe = (model.recipe || '').toLowerCase();
+            const modelId = (model.id || '').toLowerCase();
+
+            // Check for audio/whisper models
+            if (labels.includes('audio') || recipe.includes('whisper') || modelId.includes('whisper')) {
+                return 'audio';
+            }
             if (labels.includes('embedding') || labels.includes('embeddings')) return 'embedding';
             if (labels.includes('reranking')) return 'reranking';
             return 'llm';
@@ -1098,17 +1226,61 @@
                 return `
                     <div class="input-section">
                         <span class="input-label">Query <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
-                        <textarea id="input-${modelName}" 
+                        <textarea id="input-${modelName}"
                                   placeholder="Enter your search query..."
                                   style="min-height: 50px;"
                                   onkeydown="handleKeyDown(event, 'reranking', '${escapedModelName}')"></textarea>
                         <span class="input-label">Documents (one per line)</span>
-                        <textarea id="docs-${modelName}" 
+                        <textarea id="docs-${modelName}"
                                   class="documents-input"
                                   placeholder="Document 1&#10;Document 2&#10;Document 3..."
                                   onkeydown="handleKeyDown(event, 'reranking', '${escapedModelName}')"></textarea>
                         <button class="send-btn" onclick="sendReranking('${escapedModelName}')">
                             📊 Rerank Documents
+                        </button>
+                    </div>
+                `;
+            } else if (type === 'audio') {
+                return `
+                    <div class="input-section">
+                        <span class="input-label">Audio File <span class="key-hint">(Drag & drop or click to select)</span></span>
+                        <div class="audio-drop-zone"
+                             id="dropzone-${modelName}"
+                             ondragover="handleDragOver(event)"
+                             ondragleave="handleDragLeave(event)"
+                             ondrop="handleDrop(event, '${escapedModelName}')"
+                             onclick="document.getElementById('file-${modelName}').click()">
+                            <div class="drop-icon">🎵</div>
+                            <div class="drop-text">Drop audio file here</div>
+                            <div class="drop-hint">Supports WAV, MP3, M4A, FLAC, OGG, WEBM</div>
+                            <input type="file"
+                                   id="file-${modelName}"
+                                   accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.webm"
+                                   onchange="handleFileSelect(event, '${escapedModelName}')">
+                        </div>
+                        <div id="fileinfo-${modelName}"></div>
+                        <div class="audio-options">
+                            <label>
+                                Language (optional)
+                                <select id="lang-${modelName}">
+                                    <option value="">Auto-detect</option>
+                                    <option value="en">English</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="fr">French</option>
+                                    <option value="de">German</option>
+                                    <option value="it">Italian</option>
+                                    <option value="pt">Portuguese</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ko">Korean</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ru">Russian</option>
+                                    <option value="ar">Arabic</option>
+                                    <option value="hi">Hindi</option>
+                                </select>
+                            </label>
+                        </div>
+                        <button class="send-btn" id="sendbtn-${modelName}" onclick="sendAudioTranscription('${escapedModelName}')" disabled style="background: var(--gradient-2);">
+                            🎤 Transcribe Audio
                         </button>
                     </div>
                 `;
@@ -1391,6 +1563,172 @@
                 statusEl.classList.remove('streaming');
                 statusEl.textContent = 'Error';
             }
+        }
+
+        // Audio file storage per model
+        const audioFiles = {};
+
+        // Format file size for display
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // Handle drag over event
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.add('drag-over');
+        }
+
+        // Handle drag leave event
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('drag-over');
+        }
+
+        // Handle file drop event
+        function handleDrop(event, modelName) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('drag-over');
+
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                setAudioFile(modelName, files[0]);
+            }
+        }
+
+        // Handle file input selection
+        function handleFileSelect(event, modelName) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                setAudioFile(modelName, files[0]);
+            }
+        }
+
+        // Set audio file for a model
+        function setAudioFile(modelName, file) {
+            // Validate file type
+            const validTypes = ['audio/wav', 'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a',
+                               'audio/flac', 'audio/ogg', 'audio/webm', 'audio/x-wav'];
+            const validExtensions = ['.wav', '.mp3', '.m4a', '.flac', '.ogg', '.webm'];
+
+            const extension = '.' + file.name.split('.').pop().toLowerCase();
+            const isValidType = validTypes.includes(file.type) || validExtensions.includes(extension);
+
+            if (!isValidType) {
+                showToast('Invalid audio file type. Please use WAV, MP3, M4A, FLAC, OGG, or WEBM.', 'error');
+                return;
+            }
+
+            // Store the file
+            audioFiles[modelName] = file;
+
+            // Update UI
+            const fileInfoEl = document.getElementById(`fileinfo-${modelName}`);
+            const sendBtn = document.getElementById(`sendbtn-${modelName}`);
+
+            if (fileInfoEl) {
+                fileInfoEl.innerHTML = `
+                    <div class="audio-file-info">
+                        <span class="file-icon">🎵</span>
+                        <div class="file-details">
+                            <div class="file-name">${escapeHtml(file.name)}</div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        </div>
+                        <button class="remove-file" onclick="removeAudioFile('${modelName}')" title="Remove file">✕</button>
+                    </div>
+                `;
+            }
+
+            if (sendBtn) {
+                sendBtn.disabled = false;
+            }
+
+            showToast(`Selected: ${file.name}`, 'success');
+        }
+
+        // Remove audio file for a model
+        function removeAudioFile(modelName) {
+            delete audioFiles[modelName];
+
+            const fileInfoEl = document.getElementById(`fileinfo-${modelName}`);
+            const sendBtn = document.getElementById(`sendbtn-${modelName}`);
+            const fileInput = document.getElementById(`file-${modelName}`);
+
+            if (fileInfoEl) fileInfoEl.innerHTML = '';
+            if (sendBtn) sendBtn.disabled = true;
+            if (fileInput) fileInput.value = '';
+        }
+
+        // Send audio transcription request
+        async function sendAudioTranscription(modelName) {
+            const file = audioFiles[modelName];
+            if (!file) {
+                showToast('Please select an audio file first', 'error');
+                return;
+            }
+
+            const responseBox = document.getElementById(`response-${modelName}`);
+            const statusEl = document.getElementById(`status-${modelName}`);
+            const sendBtn = document.getElementById(`sendbtn-${modelName}`);
+            const langSelect = document.getElementById(`lang-${modelName}`);
+
+            const language = langSelect?.value || '';
+
+            // Update UI to show processing
+            responseBox.innerHTML = '<div class="spinner"></div> Processing audio...';
+            responseBox.classList.add('streaming');
+            statusEl.classList.add('streaming');
+            statusEl.textContent = 'Processing...';
+            sendBtn.disabled = true;
+
+            try {
+                // Create FormData for multipart upload
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('model', modelName);
+                if (language) {
+                    formData.append('language', language);
+                }
+
+                const endpoint = `${serverUrl}/api/v1/audio/transcriptions`;
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
+                const data = await response.json();
+
+                // Format the response
+                let output = `🎤 Transcription Complete\n\n`;
+                output += `File: ${file.name}\n`;
+                output += `Size: ${formatFileSize(file.size)}\n`;
+                if (language) output += `Language: ${language}\n`;
+                output += `\n${'─'.repeat(40)}\n\n`;
+                output += data.text || 'No transcription returned';
+
+                responseBox.innerHTML = escapeHtml(output);
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Complete';
+
+            } catch (error) {
+                responseBox.innerHTML = `<span style="color: var(--accent-red)">Error: ${escapeHtml(error.message)}</span>`;
+                statusEl.classList.remove('streaming');
+                statusEl.textContent = 'Error';
+            }
+
+            responseBox.classList.remove('streaming');
+            sendBtn.disabled = false;
         }
 
         // Utility: Escape HTML

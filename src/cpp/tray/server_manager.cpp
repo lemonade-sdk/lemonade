@@ -82,19 +82,21 @@ bool ServerManager::start_server(
     const std::string& host,
     int max_llm_models,
     int max_embedding_models,
-    int max_reranking_models)
+    int max_reranking_models,
+    int max_audio_models)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
         return true;
     }
-    
+
     server_binary_path_ = server_binary_path;
     port_ = port;
     ctx_size_ = ctx_size;
     max_llm_models_ = max_llm_models;
     max_embedding_models_ = max_embedding_models;
     max_reranking_models_ = max_reranking_models;
+    max_audio_models_ = max_audio_models;
     log_file_ = log_file;
     log_level_ = log_level;
     llamacpp_backend_ = llamacpp_backend;
@@ -375,8 +377,9 @@ bool ServerManager::spawn_process() {
         cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
     }
     // Multi-model support
-    cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " + 
-               std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_);
+    cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
+               std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
+               std::to_string(max_audio_models_);
     
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
@@ -588,10 +591,12 @@ bool ServerManager::spawn_process() {
         std::string max_llm_str = std::to_string(max_llm_models_);
         std::string max_emb_str = std::to_string(max_embedding_models_);
         std::string max_rer_str = std::to_string(max_reranking_models_);
+        std::string max_aud_str = std::to_string(max_audio_models_);
         args.push_back(max_llm_str.c_str());
         args.push_back(max_emb_str.c_str());
         args.push_back(max_rer_str.c_str());
-        
+        args.push_back(max_aud_str.c_str());
+
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));

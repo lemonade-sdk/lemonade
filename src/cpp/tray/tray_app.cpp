@@ -605,16 +605,19 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                     max_models.push_back(val);
                 }
                 
-                // Validate: must have exactly 1 or 3 values
-                if (max_models.size() != 1 && max_models.size() != 3) {
-                    std::cerr << "Error: --max-loaded-models requires 1 value (LLMS) or 3 values (LLMS EMBEDDINGS RERANKINGS), got " << max_models.size() << std::endl;
+                // Validate: must have exactly 1, 3, or 4 values
+                if (max_models.size() != 1 && max_models.size() != 3 && max_models.size() != 4) {
+                    std::cerr << "Error: --max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), or 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), got " << max_models.size() << std::endl;
                     exit(1);
                 }
-                
+
                 config_.max_llm_models = max_models[0];
-                if (max_models.size() == 3) {
+                if (max_models.size() >= 3) {
                     config_.max_embedding_models = max_models[1];
                     config_.max_reranking_models = max_models[2];
+                }
+                if (max_models.size() == 4) {
+                    config_.max_audio_models = max_models[3];
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
@@ -668,8 +671,8 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
-        std::cout << "  --max-loaded-models N [E] [R]\n";
-        std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] (default: 1 1 1)\n";
+        std::cout << "  --max-loaded-models N [E] [R] [A]\n";
+        std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] (default: 1 1 1 1)\n";
         std::cout << "  --log-file PATH          Log file path\n";
         std::cout << "  --log-level LEVEL        Log level: info, debug, trace (default: info)\n";
 #if defined(__linux__) && !defined(__ANDROID__)
@@ -884,9 +887,10 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.host,  // Pass host to ServerManager
         config_.max_llm_models,
         config_.max_embedding_models,
-        config_.max_reranking_models
+        config_.max_reranking_models,
+        config_.max_audio_models
     );
-    
+
     if (!success) {
         std::cerr << "Failed to start ephemeral server" << std::endl;
         return false;
@@ -1627,9 +1631,10 @@ bool TrayApp::start_server() {
         config_.host,        // Pass host to ServerManager
         config_.max_llm_models,
         config_.max_embedding_models,
-        config_.max_reranking_models
+        config_.max_reranking_models,
+        config_.max_audio_models
     );
-    
+
     // Start log tail thread to show logs in console
     if (success) {
         stop_tail_thread_ = false;
