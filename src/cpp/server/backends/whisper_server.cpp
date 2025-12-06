@@ -188,15 +188,15 @@ void WhisperServer::install(const std::string& backend) {
     bool needs_install = exe_path.empty();
 
     if (needs_install) {
-        std::string install_dir = get_whisper_install_dir();
-        std::string version_file = (fs::path(install_dir) / "version.txt").string();
+        install_dir = get_whisper_install_dir();
+        version_file = (fs::path(install_dir) / "version.txt").string();
 
         // Get expected version from config
         expected_version = get_whisper_version();
 
         // Check if already installed with correct version
-        std::string exe_path = find_executable_in_install_dir(install_dir);
-        bool needs_install = exe_path.empty();
+        exe_path = find_executable_in_install_dir(install_dir);
+        needs_install = exe_path.empty();
 
         if (!needs_install && fs::exists(version_file)) {
             std::string installed_version;
