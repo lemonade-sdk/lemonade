@@ -42,6 +42,7 @@ public:
 private:
     std::string get_whisper_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
+    std::string find_external_whisper_server();
 
     // Audio file handling
     std::string save_audio_to_temp(const std::string& audio_data,
