@@ -74,7 +74,10 @@ def identify_rocm_arch() -> str:
     target_arch = None
     for gpu in [amd_igpu] + amd_dgpu:
         if gpu.get("available") and gpu.get("name"):
-            target_arch = identify_rocm_arch_from_name(gpu["name"].lower())
+            if gpu["name"].lower().startswith("gfx"):
+                target_arch = gpu["name"].lower()
+            else:
+                target_arch = identify_rocm_arch_from_name(gpu["name"].lower())
             if target_arch:
                 break
 
