@@ -112,7 +112,7 @@ const newsData = [
     title: "Unlocking a Wave of LLM Apps on Ryzen™ AI through Lemonade Server",
     url: "https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html",
     date: "April 17, 2025",
-    description: "Lemonade Server enables LLM acceleration on Windows and Linux without code changes—using hybrid NPU+iGPU execution on Ryzen™ AI 300-series PCs and GPU acceleration on Linux.",
+    description: "Lemonade Server enables LLM acceleration on Windows and Linux without code changes—using hybrid NPU+iGPU execution on Ryzen™ AI 300/400-series PCs and GPU acceleration on Linux.",
     image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/projects/technical-blogs/3328050-lemonade-server/3328050-lemonade-server-blog.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "blog"
@@ -121,7 +121,7 @@ const newsData = [
     title: "LLMs on AMD Ryzen™ AI PCs",
     url: "https://www.youtube.com/watch/qMdMJF89c8g",
     date: "March 31, 2025",
-    description: "The video explains how Ryzen™ AI 300-series PCs use NPUs and integrated GPUs to accelerate LLMs through hybrid task partitioning, and introduces the Ryzen AI Software Stack.",
+    description: "The video explains how Ryzen™ AI 300/400-series PCs use NPUs and integrated GPUs to accelerate LLMs through hybrid task partitioning, and introduces the Ryzen AI Software Stack.",
     image: "https://img.youtube.com/vi/qMdMJF89c8g/maxresdefault.jpg",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "video"
@@ -130,7 +130,7 @@ const newsData = [
     title: "Running LLMs on AMD Ryzen™ AI PCs using Lemonade SDK",
     url: "https://www.youtube.com/watch/Ys7n5OouwtI",
     date: "March 31, 2025",
-    description: "Watch how the Lemonade SDK lets you experiment with LLMs on Ryzen™ AI 300-series PCs using high-level APIs, including setup and prompting via its CLI.",
+    description: "Watch how the Lemonade SDK lets you experiment with LLMs on Ryzen™ AI 300/400-series PCs using high-level APIs, including setup and prompting via its CLI.",
     image: "https://img.youtube.com/vi/Ys7n5OouwtI/maxresdefault.jpg",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "video"
@@ -148,7 +148,7 @@ const newsData = [
     title: "Integrating Lemonade into your Python App",
     url: "https://www.youtube.com/watch/aeHRGzxxYRQ",
     date: "March 31, 2025",
-    description: "This video shows how to use the Lemonade SDK to integrate LLMs into an app, enhancing a basic search tool and running it locally on Ryzen™ AI 300-series PCs.",
+    description: "This video shows how to use the Lemonade SDK to integrate LLMs into an app, enhancing a basic search tool and running it locally on Ryzen™ AI 300/400-series PCs.",
     image: "https://img.youtube.com/vi/aeHRGzxxYRQ/maxresdefault.jpg",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "video"

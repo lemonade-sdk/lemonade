@@ -141,7 +141,7 @@
    - **Any x86 CPU**: Yes
    - **Intel/NVIDIA systems**: CPU inference, with GPU support if compatible drivers are available
    
-   While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
+   While you won't get NPU acceleration on non-Ryzen AI 300/400 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
 
 ### 4. **How do I know what model architectures are supported by the NPU?**
 

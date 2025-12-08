@@ -33,7 +33,7 @@ The `lemonade -h` command will show you which options and Tools are available, a
 Before we jump in to the tools, to use **NPU** or **Hybrid** acceleration, you need specific hardware and software:
 
 ### Requirements
-- **Processor**: AMD Ryzen™ AI 300-series processors (e.g., Strix Point, Krackan Point)
+- **Processor**: AMD Ryzen™ AI 300/400-series processors (e.g., Strix Point, Krackan Point)
 - **Operating System**: Windows 11
 - **NPU Driver**: Download and install the [NPU Driver](https://ryzenai.docs.amd.com/en/latest/inst.html#install-npu-drivers) before proceeding
 - **Installation**: Use `pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple` to install with NPU and Hybrid support

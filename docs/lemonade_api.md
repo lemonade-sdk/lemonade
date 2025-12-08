@@ -97,14 +97,14 @@ The following table explains what checkpoints work with each recipe, the hardwar
   <tr>
     <td><code>oga-hybrid</code></td>
     <td>Pre-quantized OGA ONNX</td>
-    <td>AMD Ryzen AI 300 series PC</td>
+    <td>AMD Ryzen AI 300/400 series PC</td>
     <td>Windows</td>
     <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0">Hybrid Collection</a>. Optimized with AWQ to INT4.</td>
   </tr>
   <tr>
     <td><code>oga-npu</code></td>
     <td>Pre-quantized OGA ONNX</td>
-    <td>AMD Ryzen AI 300 series PC</td>
+    <td>AMD Ryzen AI 300/400 series PC</td>
     <td>Windows</td>
     <td>Use models from the <a href="https://huggingface.co/collections/amd/ryzenai-15-llm-npu-models-6859846d7c13f81298990db0">NPU Collection</a>. Optimized with AWQ to INT4.</td>
   </tr>

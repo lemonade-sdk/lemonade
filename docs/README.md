@@ -59,7 +59,7 @@ The goal of Lemonade is to help achieve maximum LLM performance on your PC. To c
 
 | Mode | Description |
 | :--- | :--- |
-| **NPU & Hybrid** | Ryzen™ AI 300-series devices have a neural processing unit (NPU) that can run LLMs and accelerate time-to-first-token (TTFT) performance. The typical way of utilizing the NPU is called *hybrid execution*, where the prompt is processed on the NPU to produce the first token, and the remaining tokens are computed on the Ryzen AI integrated GPU (iGPU). |
+| **NPU & Hybrid** | Ryzen™ AI 300/400-series devices have a neural processing unit (NPU) that can run LLMs and accelerate time-to-first-token (TTFT) performance. The typical way of utilizing the NPU is called *hybrid execution*, where the prompt is processed on the NPU to produce the first token, and the remaining tokens are computed on the Ryzen AI integrated GPU (iGPU). |
 | **GPU** | PCs with an integrated GPU (iGPU), such as many laptop SoCs, and/or discrete GPU (dGPU), such as many desktop and workstation PCs, can run LLMs on that GPU hardware. Lemonade Server provides GPU support via Vulkan llama.cpp binaries (Windows, Linux, macOS), ROCm binaries (Windows, Linux), and Metal binaries (macOS with Apple Silicon).<br/><br/> <sub>Note: GPU support is not currently provided for CLI tasks such as benchmarking.</sub> |
 
 ### Supported Inference Engines
@@ -67,7 +67,7 @@ The goal of Lemonade is to help achieve maximum LLM performance on your PC. To c
 | :--- | :--- |
 | **OnnxRuntime GenAI (OGA)** | Microsoft engine that runs `.onnx` models and enables hardware vendors to provide their own execution providers (EPs) to support specialized hardware, such as neural processing units (NPUs). |
 | **llamacpp** | Community-driven engine with strong GPU acceleration, support for thousands of `.gguf` models, and advanced features such as vision-language models (VLMs) and mixture-of-experts (MoEs). |
-| **FastFlowLM** | A [startup-driven engine](https://github.com/FastFlowLM/FastFlowLM) optimized for Ryzen™ AI 300-series NPUs, with support for `.q4nx` models with vision-language model (VLM) support. Available in early access; commercial licensing terms apply. |
+| **FastFlowLM** | A [startup-driven engine](https://github.com/FastFlowLM/FastFlowLM) optimized for Ryzen™ AI 300/400-series NPUs, with support for `.q4nx` models with vision-language model (VLM) support. Available in early access; commercial licensing terms apply. |
 | **Hugging Face (HF)** | Hugging Face's `transformers` library can run the original `.safetensors` trained weights for models on Meta's PyTorch engine, which provides a source of truth for accuracy measurement. |
 
 ## Contributing
