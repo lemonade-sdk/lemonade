@@ -8,6 +8,7 @@ import {
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { downloadTracker } from './utils/downloadTracker';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -391,22 +392,97 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
       
-      const response = await serverFetch('/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, ...modelData })
-      });
+      // Create abort controller for this download
+      const abortController = new AbortController();
+      const downloadId = downloadTracker.startDownload(modelName, abortController);
       
-      if (!response.ok) {
-        throw new Error(`Failed to download model: ${response.statusText}`);
+      // Listen for cancel event
+      const handleCancel = (event: CustomEvent) => {
+        if (event.detail.modelName === modelName) {
+          abortController.abort();
+        }
+      };
+      window.addEventListener('download:cancelled' as any, handleCancel);
+      
+      try {
+        const response = await serverFetch('/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: modelName, ...modelData }),
+          signal: abortController.signal,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download model: ${response.statusText}`);
+        }
+        
+        // Read SSE stream for progress updates
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+        
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            
+            if (line.startsWith('event:')) {
+              const eventType = line.substring(6).trim();
+              continue;
+            }
+            
+            if (line.startsWith('data:')) {
+              const data = JSON.parse(line.substring(5).trim());
+              
+              // Determine event type from previous line or from data
+              const eventLine = lines[lines.indexOf(line) - 1];
+              const eventType = eventLine?.startsWith('event:') 
+                ? eventLine.substring(6).trim() 
+                : 'progress';
+              
+              if (eventType === 'progress') {
+                downloadTracker.updateProgress(downloadId, data);
+              } else if (eventType === 'complete') {
+                downloadTracker.completeDownload(downloadId);
+                break;
+              } else if (eventType === 'error') {
+                downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                throw new Error(data.error || 'Download failed');
+              }
+            }
+          }
+        }
+        
+        downloadTracker.completeDownload(downloadId);
+        
+        // Refresh downloaded models and current loaded model status
+        await fetchDownloadedModels();
+        await fetchCurrentLoadedModel();
+        
+        // Show success notification
+        showSuccess(`Model "${modelName}" downloaded successfully.`);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          downloadTracker.cancelDownload(downloadId);
+          showWarning(`Download cancelled: ${modelName}`);
+        } else {
+          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+          throw error;
+        }
+      } finally {
+        window.removeEventListener('download:cancelled' as any, handleCancel);
       }
-      
-      // Refresh downloaded models and current loaded model status
-      await fetchDownloadedModels();
-      await fetchCurrentLoadedModel();
-      
-      // Show success notification
-      showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
       console.error('Error downloading model:', error);
       showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);

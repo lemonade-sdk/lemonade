@@ -5,6 +5,7 @@ import ModelManager from './ModelManager';
 import LogsWindow from './LogsWindow';
 import CenterPanel from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
+import DownloadManager from './DownloadManager';
 import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
@@ -20,6 +21,7 @@ const App: React.FC = () => {
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(true);
   const [isCenterPanelVisible, setIsCenterPanelVisible] = useState(true);
   const [isLogsVisible, setIsLogsVisible] = useState(false);
+  const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(280);
   const [chatWidth, setChatWidth] = useState(350);
   const [logsHeight, setLogsHeight] = useState(200);
@@ -227,6 +229,12 @@ const App: React.FC = () => {
         onToggleCenterPanel={() => setIsCenterPanelVisible(!isCenterPanelVisible)}
         isLogsVisible={isLogsVisible}
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
+        isDownloadManagerVisible={isDownloadManagerVisible}
+        onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+      />
+      <DownloadManager 
+        isVisible={isDownloadManagerVisible}
+        onClose={() => setIsDownloadManagerVisible(false)}
       />
       <div className="app-layout">
         {isModelManagerVisible && (
