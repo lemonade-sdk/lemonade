@@ -396,6 +396,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       const abortController = new AbortController();
       const downloadId = downloadTracker.startDownload(modelName, abortController);
       
+      let downloadCompleted = false;
+      
       // Listen for cancel event
       const handleCancel = (event: CustomEvent) => {
         if (event.detail.modelName === modelName) {
@@ -429,48 +431,56 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         const decoder = new TextDecoder();
         let buffer = '';
         let currentEventType = 'progress';
-        let completed = false;
         
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-          
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
             
-            if (line.startsWith('event:')) {
-              currentEventType = line.substring(6).trim();
-            } else if (line.startsWith('data:')) {
-              try {
-                const data = JSON.parse(line.substring(5).trim());
-                
-                if (currentEventType === 'progress') {
-                  downloadTracker.updateProgress(downloadId, data);
-                } else if (currentEventType === 'complete') {
-                  downloadTracker.completeDownload(downloadId);
-                  completed = true;
-                } else if (currentEventType === 'error') {
-                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                  throw new Error(data.error || 'Download failed');
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              
+              if (line.startsWith('event:')) {
+                currentEventType = line.substring(6).trim();
+              } else if (line.startsWith('data:')) {
+                try {
+                  const data = JSON.parse(line.substring(5).trim());
+                  
+                  if (currentEventType === 'progress') {
+                    downloadTracker.updateProgress(downloadId, data);
+                  } else if (currentEventType === 'complete') {
+                    downloadTracker.completeDownload(downloadId);
+                    downloadCompleted = true;
+                  } else if (currentEventType === 'error') {
+                    downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                    throw new Error(data.error || 'Download failed');
+                  }
+                } catch (parseError) {
+                  console.error('Failed to parse SSE data:', line, parseError);
                 }
-              } catch (parseError) {
-                console.error('Failed to parse SSE data:', line, parseError);
+              } else if (line.trim() === '') {
+                // Empty line resets event type to default
+                currentEventType = 'progress';
               }
-            } else if (line.trim() === '') {
-              // Empty line resets event type to default
-              currentEventType = 'progress';
             }
           }
+        } catch (streamError: any) {
+          // If we already got the complete event, ignore stream errors (connection closing is expected)
+          if (!downloadCompleted) {
+            throw streamError;
+          }
+          // Otherwise, it's a normal completion after the server closed the connection
         }
         
         // Mark as complete if not already done
-        if (!completed) {
+        if (!downloadCompleted) {
           downloadTracker.completeDownload(downloadId);
+          downloadCompleted = true;
         }
         
         // Refresh downloaded models and current loaded model status
@@ -480,6 +490,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         // Show success notification
         showSuccess(`Model "${modelName}" downloaded successfully.`);
       } catch (error: any) {
+        // Only handle as error if download didn't complete successfully
+        if (downloadCompleted) {
+          // Download actually succeeded, ignore any network errors from connection closing
+          return;
+        }
+        
         if (error.name === 'AbortError') {
           downloadTracker.cancelDownload(downloadId);
           showWarning(`Download cancelled: ${modelName}`);
