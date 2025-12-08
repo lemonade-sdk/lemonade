@@ -408,7 +408,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         const response = await serverFetch('/pull', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: modelName, ...modelData }),
+          body: JSON.stringify({ 
+            model_name: modelName, 
+            ...modelData,
+            stream: true  // Enable SSE streaming for progress updates
+          }),
           signal: abortController.signal,
         });
         
@@ -424,6 +428,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEventType = 'progress';
+        let completed = false;
         
         while (true) {
           const { done, value } = await reader.read();
@@ -434,37 +440,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
           
-          for (const line of lines) {
-            if (!line.trim()) continue;
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
             
             if (line.startsWith('event:')) {
-              const eventType = line.substring(6).trim();
-              continue;
-            }
-            
-            if (line.startsWith('data:')) {
-              const data = JSON.parse(line.substring(5).trim());
-              
-              // Determine event type from previous line or from data
-              const eventLine = lines[lines.indexOf(line) - 1];
-              const eventType = eventLine?.startsWith('event:') 
-                ? eventLine.substring(6).trim() 
-                : 'progress';
-              
-              if (eventType === 'progress') {
-                downloadTracker.updateProgress(downloadId, data);
-              } else if (eventType === 'complete') {
-                downloadTracker.completeDownload(downloadId);
-                break;
-              } else if (eventType === 'error') {
-                downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                throw new Error(data.error || 'Download failed');
+              currentEventType = line.substring(6).trim();
+            } else if (line.startsWith('data:')) {
+              try {
+                const data = JSON.parse(line.substring(5).trim());
+                
+                if (currentEventType === 'progress') {
+                  downloadTracker.updateProgress(downloadId, data);
+                } else if (currentEventType === 'complete') {
+                  downloadTracker.completeDownload(downloadId);
+                  completed = true;
+                } else if (currentEventType === 'error') {
+                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                  throw new Error(data.error || 'Download failed');
+                }
+              } catch (parseError) {
+                console.error('Failed to parse SSE data:', line, parseError);
               }
+            } else if (line.trim() === '') {
+              // Empty line resets event type to default
+              currentEventType = 'progress';
             }
           }
         }
         
-        downloadTracker.completeDownload(downloadId);
+        // Mark as complete if not already done
+        if (!completed) {
+          downloadTracker.completeDownload(downloadId);
+        }
         
         // Refresh downloaded models and current loaded model status
         await fetchDownloadedModels();

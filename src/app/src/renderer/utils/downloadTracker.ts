@@ -201,6 +201,7 @@ export async function trackDownload(
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let currentEventType = 'progress';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -211,28 +212,30 @@ export async function trackDownload(
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
         if (line.startsWith('event:')) {
-          const eventType = line.substring(6).trim();
-          
-          // Get next line which should be data
-          const nextLineIndex = lines.indexOf(line) + 1;
-          if (nextLineIndex < lines.length) {
-            const dataLine = lines[nextLineIndex];
-            if (dataLine.startsWith('data:')) {
-              const data = JSON.parse(dataLine.substring(5).trim());
-              
-              if (eventType === 'progress') {
-                downloadTracker.updateProgress(downloadId, data);
-              } else if (eventType === 'complete') {
-                downloadTracker.completeDownload(downloadId);
-                return;
-              } else if (eventType === 'error') {
-                downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                throw new Error(data.error || 'Download failed');
-              }
+          currentEventType = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          try {
+            const data = JSON.parse(line.substring(5).trim());
+            
+            if (currentEventType === 'progress') {
+              downloadTracker.updateProgress(downloadId, data);
+            } else if (currentEventType === 'complete') {
+              downloadTracker.completeDownload(downloadId);
+              return;
+            } else if (currentEventType === 'error') {
+              downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+              throw new Error(data.error || 'Download failed');
             }
+          } catch (parseError) {
+            console.error('Failed to parse SSE data:', line, parseError);
           }
+        } else if (line.trim() === '') {
+          // Empty line resets event type to default
+          currentEventType = 'progress';
         }
       }
     }
