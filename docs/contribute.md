@@ -27,6 +27,41 @@ To contribute code or examples, first open an [Issue](https://github.com/lemonad
 
 One of the maintainers will get back to you ASAP with guidance.
 
+### UI/Frontend Contributions
+
+We love the enthusiasm for improving Lemonade's user interface! The community's design ideas and feature requests have been incredibly valuable in shaping the product direction.
+
+**Current UI Development Approach:**  
+For now, UI and frontend development is being handled exclusively by core maintainers. Here's why: AI-assisted coding has made building UIs incredibly fast, but it's also made reviewing UI PRs quite challenging. UI changes often involve complex state management, visual consistency, accessibility considerations, and cross-platform considerations that require deep context about the entire application architecture.
+
+**How You Can Still Influence the UI:**
+
+We want your creativity and insights! Instead of submitting UI code directly, please:
+
+- **Share UI/UX Ideas**: Open an [Issue](https://github.com/lemonade-sdk/lemonade/issues) with mockups, screenshots, or descriptions of features you'd like to see. Visual examples are especially helpful!
+- **Report UI Bugs**: Found something that doesn't look right or doesn't work as expected? File an issue with screenshots and steps to reproduce.
+- **Feature Requests**: Describe user workflows or pain points you're experiencing. "I wish I could..." issues are gold to us.
+- **Join the Conversation**: Discuss UI ideas on [Discord](https://discord.gg/5xXzkMu8Zk) - the core team actively participates and we often turn great discussions into features.
+
+Your input shapes our roadmap! Many of our best UI features originated from community suggestions. We're just handling the implementation internally to maintain velocity and consistency.
+
+**Looking Ahead:**  
+As the project matures and we establish clearer UI patterns and component guidelines, we may open up specific UI contribution areas. Stay tuned!
+
+### For Core Maintainers: UI Quality Standards
+
+When working on UI features, we follow the **SLC principle: Simple, Lovable, Complete**.
+
+Our priority is making existing features perfectly functional rather than rushing to add new ones. Every UI element should be polished, reliable, and delightful before moving forward.
+
+**No "Two Steps Forward, One Step Back":**  
+PRs that introduce regressions or even minor UI bugs should not be merged. It's better to take the time to get it right than to create technical debt. A slower, steady pace with rock-solid quality beats rapid iteration with rough edges.
+
+**Small PRs Are Your Friend:**  
+Many tiny, focused PRs are highly preferred over large ones. Small changes are easier to review thoroughly, reduce the risk of bugs, and allow for faster iteration. Break big features into incremental, shippable pieces.
+
+Our users trust Lemonade to work flawlessly. Let's honor that trust.
+
 ## Issues
 
 Use [Issues](https://github.com/lemonade-sdk/lemonade/issues) to report bugs or suggest features. 
