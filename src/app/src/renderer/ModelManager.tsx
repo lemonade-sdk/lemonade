@@ -472,7 +472,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const handleUnloadModel = async (modelName: string) => {
     try {
       const response = await serverFetch('/unload', {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelName })
       });
       
       if (!response.ok) {
