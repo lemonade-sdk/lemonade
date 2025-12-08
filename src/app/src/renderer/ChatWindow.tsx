@@ -466,7 +466,8 @@ const sendMessage = async () => {
                     };
                     
                     // Auto-expand thinking section if thinking content is present
-                    if (accumulatedThinking) {
+                    // and collapseThinkingByDefault is not enabled
+                    if (accumulatedThinking && !appSettings?.collapseThinkingByDefault?.value) {
                       setExpandedThinking(prevExpanded => {
                         const next = new Set(prevExpanded);
                         next.add(messageIndex);
@@ -847,7 +848,8 @@ const sendMessage = async () => {
                     };
                     
                     // Auto-expand thinking section if thinking content is present
-                    if (accumulatedThinking) {
+                    // and collapseThinkingByDefault is not enabled
+                    if (accumulatedThinking && !appSettings?.collapseThinkingByDefault?.value) {
                       setExpandedThinking(prevExpanded => {
                         const next = new Set(prevExpanded);
                         next.add(messageIndex);
