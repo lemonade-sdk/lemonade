@@ -43,8 +43,6 @@ We want your creativity and insights! Instead of submitting UI code directly, pl
 - **Feature Requests**: Describe user workflows or pain points you're experiencing. "I wish I could..." issues are gold to us.
 - **Join the Conversation**: Discuss UI ideas on [Discord](https://discord.gg/5xXzkMu8Zk) - the core team actively participates and we often turn great discussions into features.
 
-Your input shapes our roadmap! Many of our best UI features originated from community suggestions. We're just handling the implementation internally to maintain velocity and consistency.
-
 **Looking Ahead:**  
 As the project matures and we establish clearer UI patterns and component guidelines, we may open up specific UI contribution areas. Stay tuned!
 
@@ -61,7 +59,7 @@ PRs that introduce regressions or even minor UI/UX bugs should not be merged. It
 Many tiny, focused PRs are highly preferred over large ones. Small changes are easier to review thoroughly, reduce the risk of bugs, and allow for faster iteration. Break big features into incremental, shippable pieces.
 
 **UI Scope: Management, Not Competition:**  
-Our UI exists to facilitate Lemonade management—not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
+Our UI exists to facilitate Lemonade management - not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
 
 ## Issues
 
