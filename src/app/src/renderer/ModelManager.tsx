@@ -396,6 +396,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       const abortController = new AbortController();
       const downloadId = downloadTracker.startDownload(modelName, abortController);
       
+      // Dispatch event to open download manager
+      window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
+      
       let downloadCompleted = false;
       
       // Listen for cancel event

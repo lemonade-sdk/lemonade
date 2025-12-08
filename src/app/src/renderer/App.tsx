@@ -89,6 +89,19 @@ const App: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [saveLayoutSettings, layoutLoaded]);
 
+  // Listen for download start events to automatically open download manager
+  useEffect(() => {
+    const handleDownloadStart = () => {
+      setIsDownloadManagerVisible(true);
+    };
+
+    window.addEventListener('download:started' as any, handleDownloadStart);
+
+    return () => {
+      window.removeEventListener('download:started' as any, handleDownloadStart);
+    };
+  }, []);
+
   useEffect(() => {
     const hasMainColumn = isCenterPanelVisible || isLogsVisible;
     let computedMinWidth = 0;
