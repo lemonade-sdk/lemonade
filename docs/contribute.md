@@ -55,12 +55,13 @@ When working on UI features, we follow the **SLC principle: Simple, Lovable, Com
 Our priority is making existing features perfectly functional rather than rushing to add new ones. Every UI element should be polished, reliable, and delightful before moving forward.
 
 **No "Two Steps Forward, One Step Back":**  
-PRs that introduce regressions or even minor UI bugs should not be merged. It's better to take the time to get it right than to create technical debt. A slower, steady pace with rock-solid quality beats rapid iteration with rough edges.
+PRs that introduce regressions or even minor UI/UX bugs should not be merged. It's better to take the time to get it right than to create technical debt. A slower, steady pace with rock-solid quality beats rapid iteration with rough edges.
 
-**Small PRs Are Your Friend:**  
+**Small PRs Are Preferred:**  
 Many tiny, focused PRs are highly preferred over large ones. Small changes are easier to review thoroughly, reduce the risk of bugs, and allow for faster iteration. Break big features into incremental, shippable pieces.
 
-Our users trust Lemonade to work flawlessly. Let's honor that trust.
+**UI Scope: Management, Not Competition:**  
+Our UI exists to facilitate Lemonade management—not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
 
 ## Issues
 
