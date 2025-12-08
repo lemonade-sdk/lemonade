@@ -578,7 +578,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                   <path d="M12 8V16" />
                   <path d="M5 20H19" />
                 </svg>
-                Eject
               </button>
             </div>
           ))}
