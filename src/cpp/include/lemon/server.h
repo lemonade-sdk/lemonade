@@ -38,6 +38,7 @@ public:
     bool is_running() const;
     
 private:
+    std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes();
     void setup_static_files();
     void setup_cors();

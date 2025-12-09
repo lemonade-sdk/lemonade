@@ -382,6 +382,51 @@ void Server::setup_cors() {
     });
 }
 
+std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
+    struct addrinfo hints = {0};
+    
+    // Use the passed argument, don't force AF_INET or 6
+    hints.ai_family = ai_family; 
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_ADDRCONFIG; // Optional: Only return IPs configured on system
+
+    struct addrinfo *result = nullptr;
+    
+    // Check return value (0 is success)
+    if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), nullptr, &hints, &result, 5000) != 0) {
+        std::cerr << "[Server] Warning: resolution failed for " << host << std::endl;
+        return ""; // FIX 2: Return empty string on failure, don't return void
+    }
+
+    if (result == nullptr) return "";
+
+    // FIX 3: Use INET6_ADDRSTRLEN to be safe for both (it's larger)
+    char addrstr[INET6_ADDRSTRLEN]; 
+    void *ptr = nullptr;
+
+    // FIX 4: Safety Check - verify what we actually got back
+    if (result->ai_family == AF_INET) {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)result->ai_addr;
+        ptr = &(ipv4->sin_addr);
+    } else if (result->ai_family == AF_INET6) {
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)result->ai_addr;
+        ptr = &(ipv6->sin6_addr);
+    } else {
+        freeaddrinfo(result);
+        return "";
+    }
+
+    // Convert binary IP to string
+    inet_ntop(result->ai_family, ptr, addrstr, sizeof(addrstr));
+    
+    std::string resolved_ip(addrstr);
+    std::cout << "[Server] Resolved " << host << " (" << (ai_family == AF_INET ? "v4" : "v6") 
+              << ") -> " << resolved_ip << std::endl;
+              
+    freeaddrinfo(result);
+    return resolved_ip;
+}
+
 void Server::run() {
     std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
     
@@ -391,24 +436,16 @@ void Server::run() {
     });
     
     // Resolve host manually, to IPv4
-    struct addrinfo hints = {0};
-    hints.ai_family = AF_INET; // <--- Forces IPv4
-    hints.ai_socktype = SOCK_STREAM;
+    std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
+    std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
+    // Resolve host manually to IPv6
 
-    struct addrinfo *result = nullptr;
-    if(httplib::detail::getaddrinfo_with_timeout(host_.c_str(), NULL, &hints, &result, 5000)) {
-        std::cerr << "[Server] Warning: getaddrinfo failed." << host_ << std::endl;
-        return;
-    }
-    
-    char addrstr[INET_ADDRSTRLEN];
-    struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)result->ai_addr;
-    inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), addrstr, INET_ADDRSTRLEN);
-    std::string resolved_ip(addrstr);
-    std::cout << "[Server] Resolved host " << host_ << " to IPv4 address: " << resolved_ip << std::endl;
-    freeaddrinfo(result);
     running_ = true;
-    http_server_->listen(resolved_ip.c_str(), port_);
+    if (!ipv4.empty())
+        http_server_->bind_to_port(ipv4, port_);
+    if (!ipv6.empty())
+        http_server_->bind_to_port(ipv6, port_);
+    http_server_->listen_after_bind();
 }
 
 void Server::stop() {
