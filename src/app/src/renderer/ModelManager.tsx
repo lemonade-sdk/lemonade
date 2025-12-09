@@ -520,7 +520,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
       await loadModels();
-      
       showSuccess(`Model "${modelName}" deleted successfully.`);
     } catch (error) {
       console.error('Error deleting model:', error);
