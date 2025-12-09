@@ -324,6 +324,18 @@
         "suggested": true,
         "size": 0.731
     },
+    "Jan-nano-128k-GGUF": {
+        "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.5
+    },
+    "Jan-v1-4B-GGUF": {
+        "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 2.5
+    },
     "Llama-3.2-1B-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp",
@@ -579,5 +591,47 @@
         "recipe": "flm",
         "suggested": true,
         "size": 2.62
+    },
+    "Whisper-Tiny": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.075
+    },
+    "Whisper-Base": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-base.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.142
+    },
+    "Whisper-Small": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-small.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 0.466
+    },
+    "Whisper-Medium": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-medium.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 1.42
+    },
+    "Whisper-Large-v3": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription"],
+        "size": 2.87
+    },
+    "Whisper-Large-v3-Turbo": {
+        "checkpoint": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
+        "recipe": "whispercpp",
+        "suggested": true,
+        "labels": ["audio", "transcription", "hot"],
+        "size": 1.55
     }
 }

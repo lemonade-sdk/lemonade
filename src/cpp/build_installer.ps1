@@ -87,9 +87,9 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  Build complete" -ForegroundColor Green
 Write-Host ""
 
-# Step 3: Build the MSI installer
-Write-Host "Building WiX MSI installer..." -ForegroundColor Yellow
-cmake --build $BuildDir --config $Configuration --target wix_installer
+# Step 3: Build both MSI installers
+Write-Host "Building WiX MSI installers..." -ForegroundColor Yellow
+cmake --build $BuildDir --config $Configuration --target wix_installers
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: MSI build failed!" -ForegroundColor Red
     exit $LASTEXITCODE
@@ -97,26 +97,34 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 
 # Success!
-$MsiPath = Join-Path $ScriptDir "lemonade-server-minimal.msi"
-if (Test-Path $MsiPath) {
-    $MsiSize = (Get-Item $MsiPath).Length / 1MB
-    Write-Host "================================================" -ForegroundColor Green
-    Write-Host "  SUCCESS!" -ForegroundColor Green
-    Write-Host "================================================" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "MSI installer created:" -ForegroundColor Cyan
-    Write-Host "  Path: $MsiPath" -ForegroundColor White
-    Write-Host "  Size: $([math]::Round($MsiSize, 2)) MB" -ForegroundColor White
-    Write-Host ""
-    Write-Host "To install:" -ForegroundColor Yellow
-    Write-Host "  msiexec /i lemonade-server-minimal.msi" -ForegroundColor White
-    Write-Host ""
-    Write-Host "To install silently:" -ForegroundColor Yellow
-    Write-Host "  msiexec /i lemonade-server-minimal.msi /qn" -ForegroundColor White
+$MinimalMsi = Join-Path $ScriptDir "lemonade-server-minimal.msi"
+$FullMsi = Join-Path $ScriptDir "lemonade.msi"
+
+Write-Host "================================================" -ForegroundColor Green
+Write-Host "  SUCCESS!" -ForegroundColor Green
+Write-Host "================================================" -ForegroundColor Green
+Write-Host ""
+
+if (Test-Path $MinimalMsi) {
+    $size = (Get-Item $MinimalMsi).Length / 1MB
+    Write-Host "Minimal server installer:" -ForegroundColor Cyan
+    Write-Host "  Path: $MinimalMsi" -ForegroundColor White
+    Write-Host "  Size: $([math]::Round($size, 2)) MB" -ForegroundColor White
+    Write-Host "  Install: msiexec /i lemonade-server-minimal.msi" -ForegroundColor Yellow
+    Write-Host "  Silent : msiexec /i lemonade-server-minimal.msi /qn" -ForegroundColor Yellow
     Write-Host ""
 } else {
-    Write-Host "WARNING: MSI file not found at expected location!" -ForegroundColor Yellow
-    Write-Host "  Expected: $MsiPath" -ForegroundColor Yellow
+    Write-Host "WARNING: lemonade-server-minimal.msi was not found!" -ForegroundColor Yellow
 }
 
-
+if (Test-Path $FullMsi) {
+    $size = (Get-Item $FullMsi).Length / 1MB
+    Write-Host "Full installer (with Electron app):" -ForegroundColor Cyan
+    Write-Host "  Path: $FullMsi" -ForegroundColor White
+    Write-Host "  Size: $([math]::Round($size, 2)) MB" -ForegroundColor White
+    Write-Host "  Install: msiexec /i lemonade.msi" -ForegroundColor Yellow
+    Write-Host "  Silent : msiexec /i lemonade.msi /qn" -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "WARNING: lemonade.msi was not found (Python 3 + Electron build required)." -ForegroundColor Yellow
+}

@@ -109,9 +109,9 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
                 int percent = is_complete ? 100 : static_cast<int>((adjusted_current * 100) / adjusted_total);
                 double mb_current = adjusted_current / (1024.0 * 1024.0);
                 double mb_total = adjusted_total / (1024.0 * 1024.0);
-                std::cout << "\r  Progress: " << percent << "% (" 
+                std::cout << "  Progress: " << percent << "% (" 
                          << std::fixed << std::setprecision(1) 
-                         << mb_current << "/" << mb_total << " MB)" << std::flush;
+                         << mb_current << "/" << mb_total << " MB)" << std::endl;
                 *last_print_time = now;
                 
                 if (is_complete) {
