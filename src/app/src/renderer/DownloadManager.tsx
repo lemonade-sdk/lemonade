@@ -103,7 +103,21 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
-  const handleCancelDownload = (download: DownloadItem) => {
+  const handlePauseDownload = (download: DownloadItem) => {
+    if (download.abortController) {
+      download.abortController.abort();
+    }
+    setDownloads(prev => prev.map(d => 
+      d.id === download.id ? { ...d, status: 'paused' as const } : d
+    ));
+    
+    // Dispatch event for other components to react
+    window.dispatchEvent(new CustomEvent('download:paused', { 
+      detail: { id: download.id, modelName: download.modelName } 
+    }));
+  };
+
+  const handleCancelDownload = async (download: DownloadItem) => {
     if (download.abortController) {
       download.abortController.abort();
     }
@@ -115,6 +129,67 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     window.dispatchEvent(new CustomEvent('download:cancelled', { 
       detail: { id: download.id, modelName: download.modelName } 
     }));
+
+    // Call delete endpoint to clean up any partial downloads
+    try {
+      const serverFetch = (window as any).serverFetch;
+      if (serverFetch) {
+        const response = await serverFetch('/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: download.modelName })
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to delete model files:', response.statusText);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting model files:', error);
+    }
+  };
+
+  const handleDeleteDownload = async (download: DownloadItem) => {
+    // Call delete endpoint to clean up files
+    try {
+      const serverFetch = (window as any).serverFetch;
+      if (serverFetch) {
+        const response = await serverFetch('/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: download.modelName })
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to delete model files:', response.statusText);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting model files:', error);
+    }
+
+    // Remove from downloads list
+    handleRemoveDownload(download.id);
+  };
+
+  const handleResumeDownload = (download: DownloadItem) => {
+    // Dispatch event to trigger a new download
+    window.dispatchEvent(new CustomEvent('download:resume', { 
+      detail: { modelName: download.modelName } 
+    }));
+    
+    // Remove the paused download from the list as a new one will be created
+    handleRemoveDownload(download.id);
+  };
+
+  const handleRetryDownload = (download: DownloadItem) => {
+    // Dispatch event to trigger a new download
+    window.dispatchEvent(new CustomEvent('download:retry', { 
+      detail: { modelName: download.modelName } 
+    }));
+    
+    // Remove the cancelled download from the list as a new one will be created
+    handleRemoveDownload(download.id);
   };
 
   const handleRemoveDownload = (downloadId: string) => {
@@ -123,7 +198,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const handleClearCompleted = () => {
     setDownloads(prev => prev.filter(d => 
-      d.status !== 'completed' && d.status !== 'error' && d.status !== 'cancelled'
+      d.status !== 'completed' && d.status !== 'error' && d.status !== 'cancelled' && d.status !== 'paused'
     ));
   };
 
@@ -226,6 +301,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                                 File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
                               </>
                             )}
+                            {download.status === 'paused' && (
+                              <>
+                                Paused • File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
+                              </>
+                            )}
                             {download.status === 'completed' && (
                               <>Completed • {formatBytes(download.bytesTotal)}</>
                             )}
@@ -244,18 +324,64 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                             <span className="download-speed">{formatSpeed(speed)}</span>
                             <span className="download-eta">{eta}</span>
                             <button
+                              className="download-action-btn pause-btn"
+                              onClick={() => handlePauseDownload(download)}
+                              title="Pause download"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="6" y="4" width="4" height="16"/>
+                                <rect x="14" y="4" width="4" height="16"/>
+                              </svg>
+                            </button>
+                            <button
                               className="download-action-btn cancel-btn"
                               onClick={() => handleCancelDownload(download)}
-                              title="Cancel download"
+                              title="Cancel download and delete files"
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <circle cx="12" cy="12" r="10"/>
-                                <line x1="8" y1="12" x2="16" y2="12"/>
+                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                <line x1="9" y1="9" x2="15" y2="15"/>
                               </svg>
                             </button>
                           </>
                         )}
-                        {(download.status === 'completed' || download.status === 'error' || download.status === 'cancelled') && (
+                        {download.status === 'paused' && (
+                          <>
+                            <button
+                              className="download-action-btn resume-btn"
+                              onClick={() => handleResumeDownload(download)}
+                              title="Resume download"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polygon points="5,3 19,12 5,21" fill="currentColor"/>
+                              </svg>
+                            </button>
+                            <button
+                              className="download-action-btn delete-btn"
+                              onClick={() => handleDeleteDownload(download)}
+                              title="Delete partial download"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3,6 5,6 21,6"/>
+                                <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"/>
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                        {download.status === 'cancelled' && (
+                          <button
+                            className="download-action-btn retry-btn"
+                            onClick={() => handleRetryDownload(download)}
+                            title="Retry download"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="23,4 23,10 17,10"/>
+                              <path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10"/>
+                            </svg>
+                          </button>
+                        )}
+                        {(download.status === 'completed' || download.status === 'error') && (
                           <button
                             className="download-action-btn remove-btn"
                             onClick={() => handleRemoveDownload(download.id)}
@@ -321,7 +447,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           )}
         </div>
 
-        {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled') && (
+        {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled' || d.status === 'paused') && (
           <div className="download-manager-footer">
             <button 
               className="clear-completed-btn"

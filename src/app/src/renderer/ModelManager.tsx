@@ -158,7 +158,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         loadModels();
       }
     };
-    
+
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
 
@@ -386,7 +386,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }));
   };
 
-  const handleDownloadModel = async (modelName: string) => {
+  const handleDownloadModel = useCallback(async (modelName: string) => {
     try {
       const modelData = supportedModelsData[modelName];
       if (!modelData) {
@@ -405,14 +405,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
       
       let downloadCompleted = false;
+      let isPaused = false;
+      let isCancelled = false;
       
-      // Listen for cancel event
+      // Listen for cancel and pause events
       const handleCancel = (event: CustomEvent) => {
         if (event.detail.modelName === modelName) {
+          isCancelled = true;
+          abortController.abort();
+        }
+      };
+      const handlePause = (event: CustomEvent) => {
+        if (event.detail.modelName === modelName) {
+          isPaused = true;
           abortController.abort();
         }
       };
       window.addEventListener('download:cancelled' as any, handleCancel);
+      window.addEventListener('download:paused' as any, handlePause);
       
       try {
         const response = await serverFetch('/pull', {
@@ -505,14 +515,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         }
         
         if (error.name === 'AbortError') {
-          downloadTracker.cancelDownload(downloadId);
-          showWarning(`Download cancelled: ${modelName}`);
+          if (isPaused) {
+            downloadTracker.pauseDownload(downloadId);
+            showWarning(`Download paused: ${modelName}`);
+          } else if (isCancelled) {
+            downloadTracker.cancelDownload(downloadId);
+            showWarning(`Download cancelled: ${modelName}`);
+          } else {
+            downloadTracker.cancelDownload(downloadId);
+            showWarning(`Download cancelled: ${modelName}`);
+          }
         } else {
           downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
           throw error;
         }
       } finally {
         window.removeEventListener('download:cancelled' as any, handleCancel);
+        window.removeEventListener('download:paused' as any, handlePause);
       }
     } catch (error) {
       console.error('Error downloading model:', error);
@@ -525,7 +544,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     }
-  };
+  }, [supportedModelsData, showError, showSuccess, showWarning, fetchDownloadedModels, fetchCurrentLoadedModel]);
+
+  // Separate useEffect for download resume/retry to avoid stale closure issues
+  useEffect(() => {
+    const handleDownloadResume = (event: CustomEvent) => {
+      const { modelName } = event.detail;
+      if (modelName) {
+        handleDownloadModel(modelName);
+      }
+    };
+
+    const handleDownloadRetry = (event: CustomEvent) => {
+      const { modelName } = event.detail;
+      if (modelName) {
+        handleDownloadModel(modelName);
+      }
+    };
+    
+    window.addEventListener('download:resume' as any, handleDownloadResume);
+    window.addEventListener('download:retry' as any, handleDownloadRetry);
+    
+    return () => {
+      window.removeEventListener('download:resume' as any, handleDownloadResume);
+      window.removeEventListener('download:retry' as any, handleDownloadRetry);
+    };
+  }, [handleDownloadModel]);
 
   const handleLoadModel = async (modelName: string) => {
     try {
