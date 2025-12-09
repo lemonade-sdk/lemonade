@@ -6,7 +6,10 @@
 #endif
 
 #include <string>
+#include <thread>
 #include <memory>
+#include <atomic>
+#include <chrono>
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
@@ -40,9 +43,10 @@ public:
     
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
-    void setup_routes();
-    void setup_static_files();
-    void setup_cors();
+    void setup_routes(httplib::Server &web_server);
+    void setup_static_files(httplib::Server &web_server);
+    void setup_cors(httplib::Server &web_server);
+    void setup_http_logger(httplib::Server &web_server) ;
     
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
@@ -82,8 +86,14 @@ private:
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
     std::string log_file_path_;
+
+    std::thread http_v4_thread_;
+    std::thread http_v6_thread_;
+
     
     std::unique_ptr<httplib::Server> http_server_;
+    std::unique_ptr<httplib::Server> http_server_v6_;
+    
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     
