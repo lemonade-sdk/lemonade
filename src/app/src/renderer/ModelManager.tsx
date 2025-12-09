@@ -33,7 +33,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showAddModelForm, setShowAddModelForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
+  const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
@@ -62,16 +62,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       const response = await serverFetch('/health');
       const data = await response.json();
       
-      if (data && data.model_loaded) {
-        setCurrentLoadedModel(data.model_loaded);
-        // Remove from loading state if it was loading
+      if (data && data.all_models_loaded && Array.isArray(data.all_models_loaded)) {
+        // Extract model names from the all_models_loaded array
+        const loadedModelNames = new Set<string>(
+          data.all_models_loaded.map((model: any) => model.model_name)
+        );
+        setLoadedModels(loadedModelNames);
+        
+        // Remove loaded models from loading state
         setLoadingModels(prev => {
           const newSet = new Set(prev);
-          newSet.delete(data.model_loaded);
+          loadedModelNames.forEach(modelName => newSet.delete(modelName));
           return newSet;
         });
       } else {
-        setCurrentLoadedModel(null);
+        setLoadedModels(new Set());
       }
     } catch (error) {
       console.error('Failed to fetch current loaded model:', error);
@@ -467,7 +472,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const handleUnloadModel = async (modelName: string) => {
     try {
       const response = await serverFetch('/unload', {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: modelName })
       });
       
       if (!response.ok) {
@@ -551,28 +558,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         </div>
       </div>
       
-      {/* Currently Loaded Model Section */}
-      {currentLoadedModel && (
+      {/* Currently Loaded Models Section */}
+      {loadedModels.size > 0 && (
         <div className="loaded-model-section">
-          <div className="loaded-model-label">CURRENTLY LOADED</div>
-          <div className="loaded-model-info">
-            <div className="loaded-model-details">
-              <span className="loaded-model-indicator">●</span>
-              <span className="loaded-model-name">{currentLoadedModel}</span>
+          <div className="loaded-model-label">CURRENTLY LOADED ({loadedModels.size})</div>
+          {Array.from(loadedModels).map(modelName => (
+            <div key={modelName} className="loaded-model-info">
+              <div className="loaded-model-details">
+                <span className="loaded-model-indicator">●</span>
+                <span className="loaded-model-name">{modelName}</span>
+              </div>
+              <button 
+                className="eject-model-button"
+                onClick={() => handleUnloadModel(modelName)}
+                title="Eject model"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 11L12 8L15 11" />
+                  <path d="M12 8V16" />
+                  <path d="M5 20H19" />
+                </svg>
+              </button>
             </div>
-            <button 
-              className="eject-model-button"
-              onClick={() => handleUnloadModel(currentLoadedModel)}
-              title="Eject model"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 11L12 8L15 11" />
-                <path d="M12 8V16" />
-                <path d="M5 20H19" />
-              </svg>
-              Eject
-            </button>
-          </div>
+          ))}
         </div>
       )}
       
@@ -594,7 +602,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               <div className="model-list">
                 {groupedModels[category].map(model => {
                   const isDownloaded = downloadedModels.has(model.name);
-                  const isLoaded = currentLoadedModel === model.name;
+                  const isLoaded = loadedModels.has(model.name);
                   const isLoading = loadingModels.has(model.name);
                   
                   let statusClass = 'not-downloaded';
