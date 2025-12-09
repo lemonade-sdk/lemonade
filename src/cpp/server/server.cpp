@@ -1440,6 +1440,13 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             request_json["model_name"].get<std::string>();
         
         std::cout << "[Server] Deleting model: " << model_name << std::endl;
+        
+        // If the model is currently loaded, unload it first to release file locks
+        if (router_->is_model_loaded(model_name)) {
+            std::cout << "[Server] Model is loaded, unloading before delete: " << model_name << std::endl;
+            router_->unload_model(model_name);
+        }
+        
         model_manager_->delete_model(model_name);
         
         nlohmann::json response = {
