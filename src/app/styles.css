@@ -773,6 +773,7 @@ footer {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    margin-bottom: 4px;
 }
 
 .loaded-model-details {
@@ -812,31 +813,33 @@ footer {
 .eject-model-button {
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 6px 12px;
-    background: #1a1a1a;
+    justify-content: center;
+    padding: 2px;
+    background: transparent;
     border: 1px solid #333;
-    border-radius: 6px;
-    color: #fff;
-    font-size: 0.7rem;
-    font-weight: 500;
+    border-radius: 3px;
+    color: #888;
     cursor: pointer;
     transition: all 0.2s ease;
-    white-space: nowrap;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 .eject-model-button:hover {
-    background: #252525;
-    border-color: #444;
-    transform: translateY(-1px);
+    background: #1a1a1a;
+    border-color: #555;
+    color: #fff;
 }
 
 .eject-model-button:active {
-    transform: translateY(0);
+    transform: scale(0.95);
 }
 
 .eject-model-button svg {
     flex-shrink: 0;
+    width: 16px;
+    height: 16px;
 }
 
 .downloaded-filter {
