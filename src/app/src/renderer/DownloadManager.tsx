@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { serverFetch } from './utils/serverConfig';
 
 export interface DownloadItem {
   id: string;
@@ -120,9 +121,12 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const handleCancelDownload = async (download: DownloadItem) => {
+    // First, abort the download to stop any active streams
     if (download.abortController) {
       download.abortController.abort();
     }
+    
+    // Update UI to show cancelled status
     setDownloads(prev => prev.map(d => 
       d.id === download.id ? { ...d, status: 'cancelled' as const } : d
     ));
@@ -132,46 +136,70 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       detail: { id: download.id, modelName: download.modelName } 
     }));
 
+    // Wait for the download stream to fully close and release file handles
+    // We listen for the cleanup-complete event with a timeout fallback
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 2000); // Fallback timeout if event doesn't fire
+
+      const cleanup = () => {
+        window.removeEventListener('download:cleanup-complete' as any, handler);
+        clearTimeout(timeout);
+      };
+
+      const handler = (event: CustomEvent) => {
+        if (event.detail.id === download.id) {
+          cleanup();
+          resolve();
+        }
+      };
+
+      window.addEventListener('download:cleanup-complete' as any, handler);
+    });
+
     // Call delete endpoint to clean up any partial downloads
     try {
-      const serverFetch = (window as any).serverFetch;
-      if (serverFetch) {
-        const response = await serverFetch('/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: download.modelName })
-        });
-        
-        if (!response.ok) {
-          console.error('Failed to delete model files:', response.statusText);
-        }
+      const response = await serverFetch('/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: download.modelName })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to delete partial download files:', response.statusText, errorText);
+        alert(`Download cancelled, but failed to delete files: ${response.statusText}\nPartial files may remain on disk.`);
       }
     } catch (error) {
-      console.error('Error deleting model files:', error);
+      console.error('Error deleting partial download files:', error);
+      alert(`Download cancelled, but failed to delete files: ${error instanceof Error ? error.message : 'Unknown error'}\nPartial files may remain on disk.`);
     }
   };
 
   const handleDeleteDownload = async (download: DownloadItem) => {
     // Call delete endpoint to clean up files
     try {
-      const serverFetch = (window as any).serverFetch;
-      if (serverFetch) {
-        const response = await serverFetch('/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: download.modelName })
-        });
-        
-        if (!response.ok) {
-          console.error('Failed to delete model files:', response.statusText);
-        }
+      const response = await serverFetch('/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: download.modelName })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to delete model files:', response.statusText, errorText);
+        alert(`Failed to delete model files: ${response.statusText}`);
+        return;
       }
+
+      // Only remove from downloads list if deletion was successful
+      handleRemoveDownload(download.id);
     } catch (error) {
       console.error('Error deleting model files:', error);
+      alert(`Error deleting model files: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-
-    // Remove from downloads list
-    handleRemoveDownload(download.id);
   };
 
   const handleResumeDownload = (download: DownloadItem) => {

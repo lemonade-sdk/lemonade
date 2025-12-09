@@ -339,6 +339,11 @@ export async function trackDownload(
     if (error.name === 'AbortError') {
       // Download was cancelled
       downloadTracker.cancelDownload(downloadId);
+      
+      // Dispatch event to signal that download is fully cleaned up and file handles are released
+      window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
+        detail: { id: downloadId, modelName }
+      }));
     } else {
       downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
       throw error;
