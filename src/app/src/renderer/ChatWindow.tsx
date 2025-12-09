@@ -113,6 +113,9 @@ useEffect(() => {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
+
+    // Refresh the models list so newly loaded models appear in the dropdown
+    fetchModels();
   };
 
   const handleModelUnload = () => {
