@@ -113,9 +113,6 @@ useEffect(() => {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
-
-    // Refresh the models list so newly loaded models appear in the dropdown
-    fetchModels();
   };
 
   const handleModelUnload = () => {
@@ -123,20 +120,8 @@ useEffect(() => {
     setCurrentLoadedModel(null);
   };
 
-  const handleModelDownloaded = () => {
-    // Model was downloaded - refresh the models list
-    fetchModels();
-  };
-
-  const handleModelDeleted = () => {
-    // Model was deleted - refresh the models list
-    fetchModels();
-  };
-
   window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
   window.addEventListener('modelUnload' as any, handleModelUnload);
-  window.addEventListener('modelDownloaded' as any, handleModelDownloaded);
-  window.addEventListener('modelDeleted' as any, handleModelDeleted);
 
   // Periodically check health status to detect when another app unloads the model
   const healthCheckInterval = setInterval(() => {
@@ -153,8 +138,6 @@ useEffect(() => {
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
-    window.removeEventListener('modelDownloaded' as any, handleModelDownloaded);
-    window.removeEventListener('modelDeleted' as any, handleModelDeleted);
     clearInterval(healthCheckInterval);
     unsubscribePortChange();
     if (typeof unsubscribeSettings === 'function') {
@@ -1160,6 +1143,7 @@ const sendMessage = async () => {
                   userHasSelectedModelRef.current = true;
                   setSelectedModel(e.target.value);
                 }}
+                onFocus={() => fetchModels()}
                 disabled={isLoading}
               >
                 {models.map((model) => (

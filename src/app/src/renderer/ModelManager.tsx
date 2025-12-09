@@ -410,9 +410,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
       
-      // Dispatch event to notify other components (e.g., ChatWindow) that a model was downloaded
-      window.dispatchEvent(new CustomEvent('modelDownloaded', { detail: { modelId: modelName } }));
-      
       // Show success notification
       showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
@@ -523,9 +520,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
       await loadModels();
-      
-      // Dispatch event to notify other components (e.g., ChatWindow) that a model was deleted
-      window.dispatchEvent(new CustomEvent('modelDeleted', { detail: { modelId: modelName } }));
       
       showSuccess(`Model "${modelName}" deleted successfully.`);
     } catch (error) {
