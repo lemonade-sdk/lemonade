@@ -11,9 +11,15 @@ export interface DownloadProgressEvent {
 
 class DownloadTracker {
   private activeDownloads: Map<string, DownloadItem>;
+  // Track cumulative data per download
+  private cumulativeData: Map<string, {
+    completedFilesBytes: number;  // Total bytes from completed files
+    fileSizes: Map<number, number>;  // Map of file_index -> file size
+  }>;
 
   constructor() {
     this.activeDownloads = new Map();
+    this.cumulativeData = new Map();
   }
 
   /**
@@ -37,6 +43,10 @@ class DownloadTracker {
     };
 
     this.activeDownloads.set(downloadId, downloadItem);
+    this.cumulativeData.set(downloadId, {
+      completedFilesBytes: 0,
+      fileSizes: new Map(),
+    });
     this.emitUpdate(downloadItem);
     
     return downloadId;
@@ -49,14 +59,37 @@ class DownloadTracker {
     const download = this.activeDownloads.get(downloadId);
     if (!download) return;
 
+    const cumulative = this.cumulativeData.get(downloadId);
+    if (!cumulative) return;
+
+    // Track the size of each file
+    if (!cumulative.fileSizes.has(progress.file_index)) {
+      cumulative.fileSizes.set(progress.file_index, progress.bytes_total);
+    }
+
+    // If we moved to a new file, add the previous file's size to completed bytes
+    if (progress.file_index > download.fileIndex) {
+      const previousFileSize = cumulative.fileSizes.get(download.fileIndex) || download.bytesTotal;
+      cumulative.completedFilesBytes += previousFileSize;
+    }
+
+    // Calculate cumulative totals
+    const cumulativeBytesDownloaded = cumulative.completedFilesBytes + progress.bytes_downloaded;
+    const cumulativeBytesTotal = Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
+    
+    // Calculate overall percent based on cumulative totals
+    const overallPercent = cumulativeBytesTotal > 0 
+      ? Math.round((cumulativeBytesDownloaded / cumulativeBytesTotal) * 100)
+      : 0;
+
     const updatedDownload: DownloadItem = {
       ...download,
       fileName: progress.file,
       fileIndex: progress.file_index,
       totalFiles: progress.total_files,
-      bytesDownloaded: progress.bytes_downloaded,
-      bytesTotal: progress.bytes_total,
-      percent: progress.percent,
+      bytesDownloaded: cumulativeBytesDownloaded,
+      bytesTotal: cumulativeBytesTotal,
+      percent: overallPercent,
     };
 
     this.activeDownloads.set(downloadId, updatedDownload);
@@ -79,9 +112,10 @@ class DownloadTracker {
     this.activeDownloads.set(downloadId, completedDownload);
     this.emitComplete(downloadId);
     
-    // Remove from active downloads after a delay
+    // Remove from active downloads and cumulative data after a delay
     setTimeout(() => {
       this.activeDownloads.delete(downloadId);
+      this.cumulativeData.delete(downloadId);
     }, 1000);
   }
 
@@ -100,6 +134,9 @@ class DownloadTracker {
 
     this.activeDownloads.set(downloadId, failedDownload);
     this.emitError(downloadId, error);
+    
+    // Clean up cumulative data
+    this.cumulativeData.delete(downloadId);
   }
 
   /**
@@ -120,6 +157,9 @@ class DownloadTracker {
 
     this.activeDownloads.set(downloadId, cancelledDownload);
     this.emitUpdate(cancelledDownload);
+    
+    // Clean up cumulative data
+    this.cumulativeData.delete(downloadId);
   }
 
   /**
