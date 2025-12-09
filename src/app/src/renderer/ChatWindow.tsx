@@ -1089,6 +1089,60 @@ const sendMessage = async () => {
                     : modelType === 'reranking' ? 'Document Reranker'
                     : 'LLM Chat';
 
+  // Reusable components
+  const EmptyState = ({ title }: { title: string }) => (
+    <div className="chat-empty-state">
+      <img src={logoSvg} alt="Lemonade Logo" className="chat-empty-logo" />
+      <h2 className="chat-empty-title">{title}</h2>
+    </div>
+  );
+
+  const TypingIndicator = ({ size = 'normal' }: { size?: 'normal' | 'small' }) => (
+    <div className={`typing-indicator${size === 'small' ? ' small' : ''}`}>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  );
+
+  const ModelSelector = ({ disabled }: { disabled: boolean }) => (
+    <select
+      className="model-selector"
+      value={selectedModel}
+      onChange={(e) => {
+        userHasSelectedModelRef.current = true;
+        setSelectedModel(e.target.value);
+      }}
+      disabled={disabled}
+    >
+      {models.map((model) => (
+        <option key={model.id} value={model.id}>
+          {model.id}
+        </option>
+      ))}
+    </select>
+  );
+
+  const SendButton = ({ onClick, disabled }: { onClick: () => void; disabled: boolean }) => (
+    <button
+      className="chat-send-button"
+      onClick={onClick}
+      disabled={disabled}
+      title="Send"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          transform="translate(-1, 1)"
+        />
+      </svg>
+    </button>
+  );
+
   return (
     <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
@@ -1115,20 +1169,11 @@ const sendMessage = async () => {
       {modelType === 'embedding' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            {embeddingHistory.length === 0 && (
-              <div className="chat-empty-state">
-                <img 
-                  src={logoSvg} 
-                  alt="Lemonade Logo" 
-                  className="chat-empty-logo"
-                />
-                <h2 className="chat-empty-title">Lemonade Embeddings</h2>
-              </div>
-            )}
+            {embeddingHistory.length === 0 && <EmptyState title="Lemonade Embeddings" />}
             
             {embeddingHistory.map((item, index) => {
               const isExpanded = expandedEmbeddings.has(index);
-              const previewLength = 10; // Show first 10 values in preview
+              const previewLength = 10;
               const embeddingPreview = item.embedding.slice(0, previewLength);
               
               return (
@@ -1169,11 +1214,7 @@ const sendMessage = async () => {
             
             {isProcessingEmbedding && (
               <div className="chat-message assistant-message">
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
+                <TypingIndicator />
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -1201,39 +1242,9 @@ const sendMessage = async () => {
               />
               <div className="chat-controls">
                 <div className="chat-controls-left">
-                  <select
-                    className="model-selector"
-                    value={selectedModel}
-                    onChange={(e) => {
-                      userHasSelectedModelRef.current = true;
-                      setSelectedModel(e.target.value);
-                    }}
-                    disabled={isProcessingEmbedding}
-                  >
-                    {models.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
+                  <ModelSelector disabled={isProcessingEmbedding} />
                 </div>
-                <button
-                  className="chat-send-button"
-                  onClick={handleEmbedding}
-                  disabled={!embeddingInput.trim() || isProcessingEmbedding}
-                  title="Generate embedding"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      transform="translate(-1, 1)"
-                    />
-                  </svg>
-                </button>
+                <SendButton onClick={handleEmbedding} disabled={!embeddingInput.trim() || isProcessingEmbedding} />
               </div>
             </div>
           </div>
@@ -1245,15 +1256,12 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             <div className="reranking-container">
-              <div className="reranking-empty-state">
-                <img 
-                  src={logoSvg} 
-                  alt="Lemonade Logo" 
-                  className="chat-empty-logo"
-                />
-                <h2 className="chat-empty-title">Rerank Documents</h2>
-                <p className="reranking-description">Enter a query and documents to rerank by relevance</p>
-              </div>
+              {!rerankResult && (
+                <div className="reranking-empty-state">
+                  <EmptyState title="Rerank Documents" />
+                  <p className="reranking-description">Enter a query and documents to rerank by relevance</p>
+                </div>
+              )}
               
               {rerankResult && (
                 <div className="reranking-result">
@@ -1303,21 +1311,7 @@ const sendMessage = async () => {
               
               <div className="chat-controls">
                 <div className="chat-controls-left">
-                  <select
-                    className="model-selector"
-                    value={selectedModel}
-                    onChange={(e) => {
-                      userHasSelectedModelRef.current = true;
-                      setSelectedModel(e.target.value);
-                    }}
-                    disabled={isProcessingRerank}
-                  >
-                    {models.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
+                  <ModelSelector disabled={isProcessingRerank} />
                 </div>
                 <button
                   className="chat-send-button"
@@ -1326,11 +1320,7 @@ const sendMessage = async () => {
                   title="Rerank documents"
                 >
                   {isProcessingRerank ? (
-                    <div className="typing-indicator small">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
+                    <TypingIndicator size="small" />
                   ) : (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path
@@ -1358,16 +1348,7 @@ const sendMessage = async () => {
             onScroll={handleScroll}
             onClick={editingIndex !== null ? cancelEdit : undefined}
           >
-            {messages.length === 0 && (
-              <div className="chat-empty-state">
-                <img 
-                  src={logoSvg} 
-                  alt="Lemonade Logo" 
-                  className="chat-empty-logo"
-                />
-                <h2 className="chat-empty-title">Lemonade Chat</h2>
-              </div>
-            )}
+            {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
             {messages.map((message, index) => {
               const isGrayedOut = editingIndex !== null && index > editingIndex;
               return (
@@ -1468,11 +1449,7 @@ const sendMessage = async () => {
             )}
             {isLoading && !isModelLoading && (
               <div className="chat-message assistant-message">
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
+                <TypingIndicator />
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -1533,21 +1510,7 @@ const sendMessage = async () => {
                       </button>
                     </>
                   )}
-                  <select
-                    className="model-selector"
-                    value={selectedModel}
-                    onChange={(e) => {
-                      userHasSelectedModelRef.current = true;
-                      setSelectedModel(e.target.value);
-                    }}
-                    disabled={isLoading}
-                  >
-                    {models.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.id}
-                      </option>
-                    ))}
-                  </select>
+                  <ModelSelector disabled={isLoading} />
                 </div>
                 {isLoading ? (
                   <button
@@ -1567,23 +1530,7 @@ const sendMessage = async () => {
                     </svg>
                   </button>
                 ) : (
-                  <button
-                    className="chat-send-button"
-                    onClick={sendMessage}
-                    disabled={!inputValue.trim() && uploadedImages.length === 0}
-                    title="Send message"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        transform="translate(-1, 1)"
-                      />
-                    </svg>
-                  </button>
+                  <SendButton onClick={sendMessage} disabled={!inputValue.trim() && uploadedImages.length === 0} />
                 )}
               </div>
             </div>
