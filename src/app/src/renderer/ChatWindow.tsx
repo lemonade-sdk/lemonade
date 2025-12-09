@@ -329,6 +329,141 @@ const buildChatRequestBody = (messageHistory: Message[]) => ({
   ...buildChatRequestOverrides(appSettings),
 });
 
+// Helper function to extract thinking from content with <think> tags
+const extractThinking = (content: string): { content: string; thinking: string } => {
+  let extractedThinking = '';
+  let cleanedContent = content;
+  
+  // Extract all complete <think>...</think> blocks
+  const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+  let match;
+  
+  while ((match = thinkRegex.exec(content)) !== null) {
+    extractedThinking += match[1];
+  }
+  
+  // Remove all complete <think>...</think> blocks from content
+  cleanedContent = cleanedContent.replace(thinkRegex, '');
+  
+  return {
+    content: cleanedContent,
+    thinking: extractedThinking
+  };
+};
+
+// Shared streaming handler for both new messages and edits
+const handleStreamingResponse = async (messageHistory: Message[]): Promise<void> => {
+  let accumulatedContent = '';
+  let accumulatedThinking = '';
+  let receivedFirstChunk = false;
+
+  const response = await serverFetch('/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(buildChatRequestBody(messageHistory)),
+    signal: abortControllerRef.current!.signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error('Response body is null');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          
+          if (data === '[DONE]') {
+            continue;
+          }
+
+          if (!data) {
+            continue;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+            const content = delta?.content;
+            const thinkingContent = delta?.reasoning_content || delta?.thinking;
+            
+            if (content) {
+              accumulatedContent += content;
+            }
+            
+            if (thinkingContent) {
+              accumulatedThinking += thinkingContent;
+            }
+            
+            if (content || thinkingContent) {
+              // First response received - model is loaded, clear loading indicator
+              if (!receivedFirstChunk) {
+                receivedFirstChunk = true;
+                setIsModelLoading(false);
+                setCurrentLoadedModel(selectedModel);
+              }
+              
+              // Extract thinking from <think> tags in content
+              const extracted = extractThinking(accumulatedContent);
+              const displayContent = extracted.content;
+              const embeddedThinking = extracted.thinking;
+              
+              // Combine thinking from both sources (API field and embedded tags)
+              const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
+              
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const messageIndex = newMessages.length - 1;
+                newMessages[messageIndex] = {
+                  role: 'assistant',
+                  content: displayContent,
+                  thinking: totalThinking || undefined,
+                };
+                
+                // Auto-expand thinking section if thinking content is present
+                if (totalThinking) {
+                  setExpandedThinking(prevExpanded => {
+                    const next = new Set(prevExpanded);
+                    next.add(messageIndex);
+                    return next;
+                  });
+                }
+                
+                return newMessages;
+              });
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE data:', data, e);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!accumulatedContent) {
+    throw new Error('No content received from stream');
+  }
+};
+
 const sendMessage = async () => {
     if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading) return;
 
@@ -388,116 +523,20 @@ const sendMessage = async () => {
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
-    let accumulatedContent = '';
-    let accumulatedThinking = '';
-    let receivedFirstChunk = false;
-
     try {
-      const response = await serverFetch('/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(buildChatRequestBody(messageHistory)),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              
-              if (data === '[DONE]') {
-                continue;
-              }
-
-              if (!data) {
-                continue;
-              }
-
-              try {
-                const parsed = JSON.parse(data);
-                const delta = parsed.choices?.[0]?.delta;
-                const content = delta?.content;
-                const thinkingContent = delta?.reasoning_content || delta?.thinking;
-                
-                if (content) {
-                  accumulatedContent += content;
-                }
-                
-                if (thinkingContent) {
-                  accumulatedThinking += thinkingContent;
-                }
-                
-                if (content || thinkingContent) {
-                  // First response received - model is loaded, clear loading indicator
-                  if (!receivedFirstChunk) {
-                    receivedFirstChunk = true;
-                    setIsModelLoading(false);
-                    setCurrentLoadedModel(selectedModel);
-                  }
-                  
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    const messageIndex = newMessages.length - 1;
-                    newMessages[messageIndex] = {
-                      role: 'assistant',
-                      content: accumulatedContent,
-                      thinking: accumulatedThinking || undefined,
-                    };
-                    
-                    // Auto-expand thinking section if thinking content is present
-                    if (accumulatedThinking) {
-                      setExpandedThinking(prevExpanded => {
-                        const next = new Set(prevExpanded);
-                        next.add(messageIndex);
-                        return next;
-                      });
-                    }
-                    
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                console.warn('Failed to parse SSE data:', data, e);
-              }
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      if (!accumulatedContent) {
-        throw new Error('No content received from stream');
-      }
+      await handleStreamingResponse(messageHistory);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
         // Keep the partial message that was received
         // If no content was received, remove the empty message
-        if (!accumulatedContent && !accumulatedThinking) {
-          setMessages(prev => prev.slice(0, -1));
-        }
+        setMessages(prev => {
+          const lastMessage = prev[prev.length - 1];
+          if (!lastMessage || (!lastMessage.content && !lastMessage.thinking)) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
       } else {
         console.error('Failed to send message:', error);
         setMessages(prev => {
@@ -769,116 +808,20 @@ const sendMessage = async () => {
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
-    let accumulatedContent = '';
-    let accumulatedThinking = '';
-    let receivedFirstChunk = false;
-
     try {
-      const response = await serverFetch('/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(buildChatRequestBody(messageHistory)),
-        signal: abortControllerRef.current.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              
-              if (data === '[DONE]') {
-                continue;
-              }
-
-              if (!data) {
-                continue;
-              }
-
-              try {
-                const parsed = JSON.parse(data);
-                const delta = parsed.choices?.[0]?.delta;
-                const content = delta?.content;
-                const thinkingContent = delta?.reasoning_content || delta?.thinking;
-                
-                if (content) {
-                  accumulatedContent += content;
-                }
-                
-                if (thinkingContent) {
-                  accumulatedThinking += thinkingContent;
-                }
-                
-                if (content || thinkingContent) {
-                  // First response received - model is loaded, clear loading indicator
-                  if (!receivedFirstChunk) {
-                    receivedFirstChunk = true;
-                    setIsModelLoading(false);
-                    setCurrentLoadedModel(selectedModel);
-                  }
-                  
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    const messageIndex = newMessages.length - 1;
-                    newMessages[messageIndex] = {
-                      role: 'assistant',
-                      content: accumulatedContent,
-                      thinking: accumulatedThinking || undefined,
-                    };
-                    
-                    // Auto-expand thinking section if thinking content is present
-                    if (accumulatedThinking) {
-                      setExpandedThinking(prevExpanded => {
-                        const next = new Set(prevExpanded);
-                        next.add(messageIndex);
-                        return next;
-                      });
-                    }
-                    
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                console.warn('Failed to parse SSE data:', data, e);
-              }
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      if (!accumulatedContent) {
-        throw new Error('No content received from stream');
-      }
+      await handleStreamingResponse(messageHistory);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
         // Keep the partial message that was received
         // If no content was received, remove the empty message
-        if (!accumulatedContent && !accumulatedThinking) {
-          setMessages(prev => prev.slice(0, -1));
-        }
+        setMessages(prev => {
+          const lastMessage = prev[prev.length - 1];
+          if (!lastMessage || (!lastMessage.content && !lastMessage.thinking)) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
       } else {
         console.error('Failed to send message:', error);
         setMessages(prev => {
