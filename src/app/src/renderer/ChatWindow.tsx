@@ -1086,7 +1086,7 @@ const sendMessage = async () => {
 
   const modelType = getModelType();
   const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
-                    : modelType === 'reranking' ? 'Document Reranker'
+                    : modelType === 'reranking' ? 'Lemonade Reranker'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1256,12 +1256,7 @@ const sendMessage = async () => {
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
             <div className="reranking-container">
-              {!rerankResult && (
-                <div className="reranking-empty-state">
-                  <EmptyState title="Rerank Documents" />
-                  <p className="reranking-description">Enter a query and documents to rerank by relevance</p>
-                </div>
-              )}
+              {!rerankResult && <EmptyState title="Lemonade Reranker" />}
               
               {rerankResult && (
                 <div className="reranking-result">
