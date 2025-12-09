@@ -17,7 +17,7 @@ Guides should:
 - Require no code changes to the app.
 - Use OpenAI API-compatible apps with configurable base URLs.
 
-## SDK Contributions
+## Backend Contributions
 
 To contribute code or examples, first open an [Issue](https://github.com/lemonade-sdk/lemonade/issues) with:
    - A descriptive title.
@@ -27,7 +27,7 @@ To contribute code or examples, first open an [Issue](https://github.com/lemonad
 
 One of the maintainers will get back to you ASAP with guidance.
 
-### UI/Frontend Contributions
+## UI/Frontend Contributions
 
 We love the enthusiasm for improving Lemonade's user interface! The community's design ideas and feature requests have been incredibly valuable in shaping the product direction.
 
@@ -42,21 +42,6 @@ We want your creativity and insights! Instead of submitting UI code directly, pl
 - **Report UI Bugs**: Found something that doesn't look right or doesn't work as expected? File an issue with screenshots and steps to reproduce.
 - **Feature Requests**: Describe user workflows or pain points you're experiencing. "I wish I could..." issues are gold to us.
 - **Join the Conversation**: Discuss UI ideas on [Discord](https://discord.gg/5xXzkMu8Zk) - the core team actively participates and we often turn great discussions into features.
-
-**Looking Ahead:**  
-As the project matures and we establish clearer UI patterns and component guidelines, we may open up specific UI contribution areas. Stay tuned!
-
-### For Core Maintainers: UI Quality Standards
-
-When working on UI features, we follow the **SLC principle: Simple, Lovable, Complete**.
-
-Our priority is making existing features perfectly functional rather than rushing to add new ones. Every UI element should be polished, reliable, and delightful before moving forward.
-
-**No "Two Steps Forward, One Step Back":**  
-PRs that introduce regressions or even minor UI/UX bugs should not be merged. It's better to take the time to get it right than to create technical debt. A slower, steady pace with rock-solid quality beats rapid iteration with rough edges.
-
-**Small PRs Are Preferred:**  
-Many tiny, focused PRs are highly preferred over large ones. Small changes are easier to review thoroughly, reduce the risk of bugs, and allow for faster iteration. Break big features into incremental, shippable pieces.
 
 **UI Scope: Management, Not Competition:**  
 Our UI exists to facilitate Lemonade management - not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
