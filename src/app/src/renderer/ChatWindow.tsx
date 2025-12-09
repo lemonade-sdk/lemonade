@@ -1046,7 +1046,7 @@ const sendMessage = async () => {
       // Parse documents - assume one document per line
       const docs = rerankDocuments.split('\n').filter(d => d.trim());
       
-      const response = await serverFetch('/rerank', {
+      const response = await serverFetch('/reranking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1255,27 +1255,19 @@ const sendMessage = async () => {
       {modelType === 'reranking' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            <div className="reranking-container">
-              {!rerankResult && <EmptyState title="Lemonade Reranker" />}
-              
-              {rerankResult && (
-                <div className="reranking-result">
-                  <h4>Reranked Results</h4>
-                  <div className="reranked-documents">
-                    {rerankResult.map((doc, idx) => (
-                      <div key={idx} className="reranked-document">
-                        <div className="reranked-document-header">
-                          <span className="reranked-rank">#{idx + 1}</span>
-                          <span className="reranked-score">Score: {doc.score.toFixed(4)}</span>
-                          <span className="reranked-original-index">(Original: #{doc.index + 1})</span>
-                        </div>
-                        <div className="reranked-document-text">{doc.text}</div>
-                      </div>
-                    ))}
+            {!rerankResult && <EmptyState title="Lemonade Reranker" />}
+            
+            {rerankResult && (
+              <div className="reranking-result">
+                {rerankResult.map((doc, idx) => (
+                  <div key={idx} className="reranked-document">
+                    <span className="reranked-rank">#{idx + 1}</span>
+                    <span className="reranked-score">{doc.score.toFixed(3)}</span>
+                    <span className="reranked-document-text">{doc.text}</span>
                   </div>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="chat-input-container">
@@ -1285,9 +1277,12 @@ const sendMessage = async () => {
                 <textarea
                   className="chat-input reranking-query"
                   value={rerankQuery}
-                  onChange={(e) => setRerankQuery(e.target.value)}
+                  onChange={(e) => {
+                    setRerankQuery(e.target.value);
+                    adjustTextareaHeight(e.target);
+                  }}
                   placeholder="Enter your search query..."
-                  rows={2}
+                  rows={1}
                   disabled={isProcessingRerank}
                 />
               </div>
@@ -1297,9 +1292,12 @@ const sendMessage = async () => {
                 <textarea
                   className="chat-input reranking-documents"
                   value={rerankDocuments}
-                  onChange={(e) => setRerankDocuments(e.target.value)}
+                  onChange={(e) => {
+                    setRerankDocuments(e.target.value);
+                    adjustTextareaHeight(e.target);
+                  }}
                   placeholder="Enter documents to rerank, one per line..."
-                  rows={5}
+                  rows={3}
                   disabled={isProcessingRerank}
                 />
               </div>
