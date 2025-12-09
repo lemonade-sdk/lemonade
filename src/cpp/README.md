@@ -45,7 +45,7 @@ xcode-select --install
 4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
 5. in the extensions search type ```Dev Containers``` and install it.
 6. Once completed with the prior steps you may run command
-```>Dev Containers: Open Workspace in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
 7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
 
 #### Build & Compile Options

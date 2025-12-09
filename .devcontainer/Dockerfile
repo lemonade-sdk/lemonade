@@ -2,8 +2,6 @@ FROM mcr.microsoft.com/devcontainers/cpp:1-debian-12
 
 ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.22.2"
 
-# [FIX IS HERE] We must specify the path relative to the Project Root
-# because devcontainer.json context is set to ".."
 COPY .devcontainer/reinstall-cmake.sh /tmp/
 
 RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
@@ -31,7 +29,3 @@ WORKDIR /usr/src/app
 
 # Copy the Project Root into the container
 COPY . .
-
-# Install the package
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install ".[dev]"
