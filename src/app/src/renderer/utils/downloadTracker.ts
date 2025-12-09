@@ -79,8 +79,8 @@ class DownloadTracker {
     const cumulative = this.cumulativeData.get(downloadId);
     if (!cumulative) return;
 
-    // Track the size of each file
-    if (!cumulative.fileSizes.has(progress.file_index)) {
+    // Track the size of each file (only if we have real byte data)
+    if (progress.bytes_total > 0 && !cumulative.fileSizes.has(progress.file_index)) {
       cumulative.fileSizes.set(progress.file_index, progress.bytes_total);
     }
 
@@ -94,10 +94,20 @@ class DownloadTracker {
     const cumulativeBytesDownloaded = cumulative.completedFilesBytes + progress.bytes_downloaded;
     const cumulativeBytesTotal = Array.from(cumulative.fileSizes.values()).reduce((sum, size) => sum + size, 0);
     
-    // Calculate overall percent based on cumulative totals
-    const overallPercent = cumulativeBytesTotal > 0 
-      ? Math.round((cumulativeBytesDownloaded / cumulativeBytesTotal) * 100)
-      : 0;
+    // Calculate overall percent
+    let overallPercent: number;
+    if (cumulativeBytesTotal > 0) {
+      // Have byte-level data: calculate from cumulative bytes
+      overallPercent = Math.round((cumulativeBytesDownloaded / cumulativeBytesTotal) * 100);
+    } else if (progress.total_files > 0) {
+      // No byte data: estimate from file count + intra-file percent from server
+      // (file_index - 1) completed files + current file progress (percent/100)
+      const completedFiles = progress.file_index - 1;
+      const currentFileProgress = progress.percent / 100;  // Server sends intra-file percent
+      overallPercent = Math.round(((completedFiles + currentFileProgress) / progress.total_files) * 100);
+    } else {
+      overallPercent = 0;
+    }
 
     const updatedDownload: DownloadItem = {
       ...download,

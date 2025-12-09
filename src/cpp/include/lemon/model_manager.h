@@ -128,7 +128,9 @@ private:
                                    DownloadProgressCallback progress_callback = nullptr);
     
     // Download from FLM
-    void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);
+    void download_from_flm(const std::string& checkpoint, 
+                          bool do_not_upgrade = true,
+                          DownloadProgressCallback progress_callback = nullptr);
     
     json server_models_;
     json user_models_;
