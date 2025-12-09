@@ -26,6 +26,23 @@ class DownloadTracker {
    * Start tracking a new download
    */
   startDownload(modelName: string, abortController: AbortController): string {
+    // Remove any existing downloads for this model (completed, error, cancelled, or paused)
+    // This ensures only one entry per model is shown
+    const existingDownloads = Array.from(this.activeDownloads.entries());
+    for (const [id, download] of existingDownloads) {
+      if (download.modelName === modelName) {
+        // If there's an active download, cancel it first
+        if (download.status === 'downloading') {
+          if (download.abortController) {
+            download.abortController.abort();
+          }
+        }
+        // Remove the old entry
+        this.activeDownloads.delete(id);
+        this.cumulativeData.delete(id);
+      }
+    }
+    
     const downloadId = `${modelName}-${Date.now()}`;
     
     const downloadItem: DownloadItem = {
@@ -194,6 +211,23 @@ class DownloadTracker {
    */
   getDownload(downloadId: string): DownloadItem | undefined {
     return this.activeDownloads.get(downloadId);
+  }
+
+  /**
+   * Get download by model name
+   */
+  getDownloadByModelName(modelName: string): DownloadItem | undefined {
+    return Array.from(this.activeDownloads.values()).find(
+      download => download.modelName === modelName
+    );
+  }
+
+  /**
+   * Check if a model is currently being downloaded
+   */
+  isDownloading(modelName: string): boolean {
+    const download = this.getDownloadByModelName(modelName);
+    return download?.status === 'downloading';
   }
 
   /**

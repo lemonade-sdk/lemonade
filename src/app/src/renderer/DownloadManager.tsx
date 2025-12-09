@@ -35,7 +35,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           newDownloads[existingIndex] = downloadItem;
           return newDownloads;
         } else {
-          return [downloadItem, ...prev];
+          // Remove any previous downloads for this model before adding the new one
+          const filtered = prev.filter(d => d.modelName !== downloadItem.modelName);
+          return [downloadItem, ...filtered];
         }
       });
     };
