@@ -521,9 +521,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           } else if (isCancelled) {
             downloadTracker.cancelDownload(downloadId);
             showWarning(`Download cancelled: ${modelName}`);
+            // Dispatch cleanup-complete event to signal that file handles are released
+            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
+              detail: { id: downloadId, modelName }
+            }));
           } else {
             downloadTracker.cancelDownload(downloadId);
             showWarning(`Download cancelled: ${modelName}`);
+            // Dispatch cleanup-complete event to signal that file handles are released
+            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
+              detail: { id: downloadId, modelName }
+            }));
           }
         } else {
           downloadTracker.failDownload(downloadId, error.message || 'Unknown error');

@@ -10,7 +10,7 @@ export interface DownloadItem {
   bytesDownloaded: number;
   bytesTotal: number;
   percent: number;
-  status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled';
+  status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | 'deleting';
   error?: string;
   startTime: number;
   abortController?: AbortController;
@@ -24,6 +24,8 @@ interface DownloadManagerProps {
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [expandedDownloads, setExpandedDownloads] = useState<Set<string>>(new Set());
+  // Track models that are currently being deleted to prevent retry during cleanup
+  const [deletingModels, setDeletingModels] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // Listen for download events from the global download tracker
@@ -121,14 +123,17 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const handleCancelDownload = async (download: DownloadItem) => {
+    // Mark as deleting to prevent retry during cleanup
+    setDeletingModels(prev => new Set(prev).add(download.modelName));
+    
     // First, abort the download to stop any active streams
     if (download.abortController) {
       download.abortController.abort();
     }
     
-    // Update UI to show cancelled status
+    // Update UI to show deleting status (visual feedback during cleanup)
     setDownloads(prev => prev.map(d => 
-      d.id === download.id ? { ...d, status: 'cancelled' as const } : d
+      d.id === download.id ? { ...d, status: 'deleting' as const } : d
     ));
     
     // Dispatch event for other components to react
@@ -175,10 +180,29 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     } catch (error) {
       console.error('Error deleting partial download files:', error);
       alert(`Download cancelled, but failed to delete files: ${error instanceof Error ? error.message : 'Unknown error'}\nPartial files may remain on disk.`);
+    } finally {
+      // Mark as cancelled now that deletion is complete
+      setDownloads(prev => prev.map(d => 
+        d.id === download.id ? { ...d, status: 'cancelled' as const } : d
+      ));
+      // Remove from deleting set
+      setDeletingModels(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(download.modelName);
+        return newSet;
+      });
     }
   };
 
   const handleDeleteDownload = async (download: DownloadItem) => {
+    // Mark as deleting to prevent retry during cleanup
+    setDeletingModels(prev => new Set(prev).add(download.modelName));
+    
+    // Update UI to show deleting status
+    setDownloads(prev => prev.map(d => 
+      d.id === download.id ? { ...d, status: 'deleting' as const } : d
+    ));
+    
     // Call delete endpoint to clean up files
     try {
       const response = await serverFetch('/delete', {
@@ -199,6 +223,17 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     } catch (error) {
       console.error('Error deleting model files:', error);
       alert(`Error deleting model files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Revert status on error
+      setDownloads(prev => prev.map(d => 
+        d.id === download.id ? { ...d, status: 'paused' as const } : d
+      ));
+    } finally {
+      // Remove from deleting set
+      setDeletingModels(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(download.modelName);
+        return newSet;
+      });
     }
   };
 
@@ -212,7 +247,30 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     handleRemoveDownload(download.id);
   };
 
-  const handleRetryDownload = (download: DownloadItem) => {
+  const handleRetryDownload = async (download: DownloadItem) => {
+    // Check if this model is currently being deleted
+    if (deletingModels.has(download.modelName)) {
+      // Wait for deletion to complete before retrying
+      // We'll poll the deletingModels set until the model is no longer being deleted
+      await new Promise<void>((resolve) => {
+        const checkInterval = setInterval(() => {
+          setDeletingModels(prev => {
+            if (!prev.has(download.modelName)) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+            return prev;
+          });
+        }, 100);
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve();
+        }, 10000);
+      });
+    }
+    
     // Dispatch event to trigger a new download
     window.dispatchEvent(new CustomEvent('download:retry', { 
       detail: { modelName: download.modelName } 
@@ -345,6 +403,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                             {download.status === 'cancelled' && (
                               <>Cancelled</>
                             )}
+                            {download.status === 'deleting' && (
+                              <>Deleting files...</>
+                            )}
                           </span>
                         </div>
                       </div>
@@ -399,11 +460,15 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                             </button>
                           </>
                         )}
+                        {download.status === 'deleting' && (
+                          <span className="download-deleting-text">Deleting...</span>
+                        )}
                         {download.status === 'cancelled' && (
                           <button
                             className="download-action-btn retry-btn"
                             onClick={() => handleRetryDownload(download)}
                             title="Retry download"
+                            disabled={deletingModels.has(download.modelName)}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="23,4 23,10 17,10"/>
@@ -477,7 +542,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           )}
         </div>
 
-        {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled' || d.status === 'paused') && (
+        {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled' || d.status === 'paused' || d.status === 'deleting') && (
           <div className="download-manager-footer">
             <button 
               className="clear-completed-btn"

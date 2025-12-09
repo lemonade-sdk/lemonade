@@ -3471,6 +3471,11 @@ footer {
     opacity: 0.5;
 }
 
+.download-item.deleting {
+    opacity: 0.6;
+    background: rgba(251, 191, 36, 0.05);
+}
+
 .download-item-header {
     display: flex;
     justify-content: space-between;
@@ -3536,10 +3541,16 @@ footer {
 }
 
 .download-speed,
-.download-eta {
+.download-eta,
+.download-deleting-text {
     font-size: 0.7rem;
     color: #888;
     white-space: nowrap;
+}
+
+.download-deleting-text {
+    color: #f59e0b;
+    font-style: italic;
 }
 
 .download-action-btn {
@@ -3555,9 +3566,14 @@ footer {
     border-radius: 4px;
 }
 
-.download-action-btn:hover {
+.download-action-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.08);
     color: #999;
+}
+
+.download-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .download-action-btn.cancel-btn:hover {
