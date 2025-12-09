@@ -145,8 +145,14 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   if (!isVisible) return null;
 
   return (
-    <div className="download-manager-overlay">
-      <div className="download-manager-panel">
+    <div 
+      className="download-manager-overlay"
+      onClick={onClose}
+    >
+      <div 
+        className="download-manager-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="download-manager-header">
           <h3>DOWNLOAD MANAGER</h3>
           <div className="download-manager-stats">
