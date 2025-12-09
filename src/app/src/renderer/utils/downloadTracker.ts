@@ -140,6 +140,26 @@ class DownloadTracker {
   }
 
   /**
+   * Pause a download
+   */
+  pauseDownload(downloadId: string): void {
+    const download = this.activeDownloads.get(downloadId);
+    if (!download) return;
+
+    if (download.abortController) {
+      download.abortController.abort();
+    }
+
+    const pausedDownload: DownloadItem = {
+      ...download,
+      status: 'paused',
+    };
+
+    this.activeDownloads.set(downloadId, pausedDownload);
+    this.emitUpdate(pausedDownload);
+  }
+
+  /**
    * Cancel a download
    */
   cancelDownload(downloadId: string): void {
