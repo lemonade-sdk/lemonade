@@ -1245,7 +1245,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                     
                     try {
                         // Create progress callback that emits SSE events
-                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) {
+                        // Returns false if client disconnects to cancel download
+                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
                             nlohmann::json event_data;
                             event_data["file"] = p.file;
                             event_data["file_index"] = p.file_index;
@@ -1255,13 +1256,20 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                             event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
                             event_data["percent"] = p.percent;
                             
+                            std::string event;
                             if (p.complete) {
-                                std::string event = "event: complete\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: complete\ndata: " + event_data.dump() + "\n\n";
                             } else {
-                                std::string event = "event: progress\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                             }
+                            
+                            // Check if client is still connected
+                            // sink.write() returns false when client disconnects
+                            if (!sink.write(event.c_str(), event.size())) {
+                                std::cout << "[Server] Client disconnected, cancelling download" << std::endl;
+                                return false;  // Cancel download
+                            }
+                            return true;  // Continue download
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
@@ -1269,10 +1277,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                                                       mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
-                        // Send error event
-                        nlohmann::json error_data = {{"error", e.what()}};
-                        std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
-                        sink.write(event.c_str(), event.size());
+                        // Send error event (only if it's not a cancellation)
+                        std::string error_msg = e.what();
+                        if (error_msg != "Download cancelled") {
+                            nlohmann::json error_data = {{"error", error_msg}};
+                            std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                            sink.write(event.c_str(), event.size());
+                        }
                     }
                     
                     return false; // Signal completion

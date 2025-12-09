@@ -1350,7 +1350,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             
             std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
             
-            // Send progress update if callback provided
+            // Send progress update if callback provided (and check for cancellation)
             if (progress_callback) {
                 DownloadProgress progress;
                 progress.file = filename;
@@ -1359,7 +1359,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                 progress.bytes_downloaded = 0;
                 progress.bytes_total = file_sizes.count(filename) ? file_sizes[filename] : 0;
                 progress.percent = 0;
-                progress_callback(progress);
+                if (!progress_callback(progress)) {
+                    std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                    throw std::runtime_error("Download cancelled");
+                }
             }
             
             utils::DownloadOptions download_opts;
@@ -1372,9 +1375,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             download_opts.connect_timeout = 60;
             
             // Create progress callback that reports to both console and SSE callback
+            // Returns bool: true = continue, false = cancel
             utils::ProgressCallback http_progress_cb;
             if (progress_callback) {
-                http_progress_cb = [&](size_t downloaded, size_t total) {
+                http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
                     DownloadProgress progress;
                     progress.file = filename;
                     progress.file_index = file_index;
@@ -1382,10 +1386,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                     progress.bytes_downloaded = downloaded;
                     progress.bytes_total = total;
                     progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
-                    progress_callback(progress);
+                    return progress_callback(progress);  // Propagate cancellation
                 };
             } else {
-                // Default console progress callback
+                // Default console progress callback (never cancels)
                 http_progress_cb = utils::create_throttled_progress_callback();
             }
             
@@ -1396,6 +1400,12 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                 headers,
                 download_opts
             );
+            
+            // Check if download was cancelled
+            if (result.cancelled) {
+                std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                throw std::runtime_error("Download cancelled");
+            }
             
             if (result.success) {
                 std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
@@ -1467,13 +1477,15 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         }
         
         // Send completion event
+        // Note: We ignore the return value here since the download is already complete
+        // If the client disconnected, the write will simply fail silently
         if (progress_callback) {
             DownloadProgress progress;
             progress.complete = true;
             progress.file_index = total_files;
             progress.total_files = total_files;
             progress.percent = 100;
-            progress_callback(progress);
+            (void)progress_callback(progress);  // Ignore return - download already complete
         }
         
         std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;

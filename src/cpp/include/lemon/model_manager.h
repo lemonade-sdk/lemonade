@@ -25,7 +25,8 @@ struct DownloadProgress {
 };
 
 // Callback for download progress updates
-using DownloadProgressCallback = std::function<void(const DownloadProgress&)>;
+// Returns bool: true = continue download, false = cancel download
+using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
 struct ModelInfo {
     std::string model_name;
