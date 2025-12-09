@@ -69,6 +69,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  
+  // Embedding model state
+  const [embeddingInput, setEmbeddingInput] = useState('');
+  const [embeddingHistory, setEmbeddingHistory] = useState<Array<{input: string, embedding: number[], dimensions?: number}>>([]);
+  const [isProcessingEmbedding, setIsProcessingEmbedding] = useState(false);
+  const [expandedEmbeddings, setExpandedEmbeddings] = useState<Set<number>>(new Set());
+  
+  // Reranking model state
+  const [rerankQuery, setRerankQuery] = useState('');
+  const [rerankDocuments, setRerankDocuments] = useState('');
+  const [rerankResult, setRerankResult] = useState<Array<{index: number, text: string, score: number}> | null>(null);
+  const [isProcessingRerank, setIsProcessingRerank] = useState(false);
 
 useEffect(() => {
   fetchModels();
@@ -275,6 +287,28 @@ useEffect(() => {
     const modelInfo = supportedModelsData[selectedModel];
     
     return modelInfo?.labels?.includes('vision') || false;
+  };
+
+  const isEmbeddingModel = (): boolean => {
+    if (!selectedModel) return false;
+    
+    const modelInfo = supportedModelsData[selectedModel];
+    
+    return !!(modelInfo?.labels?.includes('embeddings') || (modelInfo as any)?.embedding);
+  };
+
+  const isRerankingModel = (): boolean => {
+    if (!selectedModel) return false;
+    
+    const modelInfo = supportedModelsData[selectedModel];
+    
+    return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
+  };
+
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' => {
+    if (isEmbeddingModel()) return 'embedding';
+    if (isRerankingModel()) return 'reranking';
+    return 'llm';
   };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -932,19 +966,138 @@ const sendMessage = async () => {
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    
+    // Clear embedding/reranking state
+    setEmbeddingInput('');
+    setEmbeddingHistory([]);
+    setRerankQuery('');
+    setRerankDocuments('');
+    setRerankResult(null);
+  };
+
+  const handleEmbedding = async () => {
+    if (!embeddingInput.trim() || isProcessingEmbedding) return;
+
+    const currentInput = embeddingInput;
+    setIsProcessingEmbedding(true);
+    setEmbeddingInput(''); // Clear input after submitting
+
+    try {
+      const requestBody: any = {
+        model: selectedModel,
+        input: currentInput
+      };
+      
+      const response = await serverFetch('/embeddings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Extract the embedding from the response
+      // OpenAI format: { data: [{ embedding: [...] }] }
+      let embedding: number[];
+      if (data.data && data.data[0] && data.data[0].embedding) {
+        embedding = data.data[0].embedding;
+      } else if (Array.isArray(data)) {
+        embedding = data;
+      } else {
+        throw new Error('Unexpected response format');
+      }
+      
+      // Add to history
+      setEmbeddingHistory(prev => [...prev, { 
+        input: currentInput, 
+        embedding
+      }]);
+    } catch (error: any) {
+      console.error('Failed to get embedding:', error);
+      alert(`Failed to get embedding: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsProcessingEmbedding(false);
+    }
+  };
+
+  const toggleEmbeddingExpansion = (index: number) => {
+    setExpandedEmbeddings(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const handleReranking = async () => {
+    if (!rerankQuery.trim() || !rerankDocuments.trim() || isProcessingRerank) return;
+
+    setIsProcessingRerank(true);
+    setRerankResult(null);
+
+    try {
+      // Parse documents - assume one document per line
+      const docs = rerankDocuments.split('\n').filter(d => d.trim());
+      
+      const response = await serverFetch('/rerank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: selectedModel,
+          query: rerankQuery,
+          documents: docs
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Extract the reranking results from the response
+      // Expected format: { results: [{ index: 0, relevance_score: 0.95 }] }
+      if (data.results && Array.isArray(data.results)) {
+        const results = data.results.map((r: any) => ({
+          index: r.index,
+          text: docs[r.index],
+          score: r.relevance_score || r.score || 0
+        }));
+        setRerankResult(results);
+      } else {
+        throw new Error('Unexpected response format');
+      }
+    } catch (error: any) {
+      console.error('Failed to rerank:', error);
+      alert(`Failed to rerank: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsProcessingRerank(false);
+    }
   };
 
   if (!isVisible) return null;
 
+  const modelType = getModelType();
+  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
+                    : modelType === 'reranking' ? 'Document Reranker'
+                    : 'LLM Chat';
+
   return (
     <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
-        <h3>LLM Chat</h3>
+        <h3>{headerTitle}</h3>
         <button 
           className="new-chat-button"
           onClick={handleNewChat}
-          disabled={isLoading}
-          title="Start a new chat"
+          disabled={isLoading || isProcessingEmbedding || isProcessingRerank}
+          title={modelType === 'llm' ? 'Start a new chat' : 'Clear'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path
@@ -958,242 +1111,485 @@ const sendMessage = async () => {
         </button>
       </div>
 
-      <div 
-        className="chat-messages" 
-        ref={messagesContainerRef}
-        onScroll={handleScroll}
-        onClick={editingIndex !== null ? cancelEdit : undefined}
-      >
-        {messages.length === 0 && (
-          <div className="chat-empty-state">
-            <img 
-              src={logoSvg} 
-              alt="Lemonade Logo" 
-              className="chat-empty-logo"
-            />
-            <h2 className="chat-empty-title">Lemonade Chat</h2>
-          </div>
-        )}
-        {messages.map((message, index) => {
-          const isGrayedOut = editingIndex !== null && index > editingIndex;
-          return (
-            <div
-              key={index}
-              className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
-                message.role === 'user' && !isLoading ? 'editable' : ''
-              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
-            >
-              {editingIndex === index ? (
-                <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
-                  {editingImages.length > 0 && (
-                    <div className="edit-image-preview-container">
-                      {editingImages.map((imageUrl, imgIndex) => (
-                        <div key={imgIndex} className="image-preview-item">
-                          <img src={imageUrl} alt={`Edit ${imgIndex + 1}`} className="image-preview" />
-                          <button
-                            className="image-remove-button"
-                            onClick={() => removeEditImage(imgIndex)}
-                            title="Remove image"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+      {/* Embedding Model UI */}
+      {modelType === 'embedding' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef}>
+            {embeddingHistory.length === 0 && (
+              <div className="chat-empty-state">
+                <img 
+                  src={logoSvg} 
+                  alt="Lemonade Logo" 
+                  className="chat-empty-logo"
+                />
+                <h2 className="chat-empty-title">Lemonade Embeddings</h2>
+              </div>
+            )}
+            
+            {embeddingHistory.map((item, index) => {
+              const isExpanded = expandedEmbeddings.has(index);
+              const previewLength = 10; // Show first 10 values in preview
+              const embeddingPreview = item.embedding.slice(0, previewLength);
+              
+              return (
+                <div key={index} className="embedding-history-item">
+                  <div className="embedding-user-input">
+                    <div className="embedding-input-label">Input</div>
+                    <div className="embedding-input-text">{item.input}</div>
+                  </div>
+                  <div className="embedding-result">
+                    <div className="embedding-result-header">
+                      <h4>Embedding Vector</h4>
+                      <span className="embedding-dimensions-badge">{item.embedding.length} dimensions</span>
                     </div>
-                  )}
-                  <div className="edit-message-content">
-                    <textarea
-                      ref={editTextareaRef}
-                      className="edit-message-input"
-                      value={editingValue}
-                      onChange={handleEditInputChange}
-                      onKeyDown={handleEditKeyPress}
-                      onPaste={handleEditImagePaste}
-                      autoFocus
-                      rows={1}
-                    />
-                    <div className="edit-message-controls">
-                      {isVisionModel() && (
-                        <>
-                          <input
-                            ref={editFileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleEditImageUpload}
-                            style={{ display: 'none' }}
-                          />
-                          <button
-                            className="image-upload-button"
-                            onClick={() => editFileInputRef.current?.click()}
-                            title="Upload image"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                              <path
-                                d="M21 19V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19ZM8.5 13.5L11 16.51L14.5 12L19 18H5L8.5 13.5Z"
-                                fill="currentColor"
-                              />
-                            </svg>
-                          </button>
-                        </>
+                    <div className="embedding-vector">
+                      {isExpanded ? (
+                        <pre>{JSON.stringify(item.embedding, null, 2)}</pre>
+                      ) : (
+                        <div className="embedding-preview">
+                          <pre>[{embeddingPreview.map(v => v.toFixed(6)).join(', ')}, ...]</pre>
+                        </div>
                       )}
-                      <button
-                        className="edit-send-button"
-                        onClick={submitEdit}
-                        disabled={!editingValue.trim() && editingImages.length === 0}
-                        title="Send edited message"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            transform="translate(-1, 1)"
-                          />
-                        </svg>
-                      </button>
+                    </div>
+                    <button 
+                      className="embedding-toggle-button"
+                      onClick={() => toggleEmbeddingExpansion(index)}
+                    >
+                      {isExpanded ? 'Show less' : 'Show all'}
+                    </button>
+                    <div className="embedding-stats">
+                      <span>Min: {Math.min(...item.embedding).toFixed(6)}</span>
+                      <span>Max: {Math.max(...item.embedding).toFixed(6)}</span>
+                      <span>Mean: {(item.embedding.reduce((a, b) => a + b, 0) / item.embedding.length).toFixed(6)}</span>
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div
-                  onClick={(e) => message.role === 'user' && !isLoading && handleEditMessage(index, e)}
-                  style={{ cursor: message.role === 'user' && !isLoading ? 'pointer' : 'default' }}
+              );
+            })}
+            
+            {isProcessingEmbedding && (
+              <div className="chat-message assistant-message">
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={embeddingInput}
+                onChange={(e) => {
+                  setEmbeddingInput(e.target.value);
+                  adjustTextareaHeight(e.target);
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleEmbedding();
+                  }
+                }}
+                placeholder="Enter text to generate embeddings..."
+                rows={1}
+                disabled={isProcessingEmbedding}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <select
+                    className="model-selector"
+                    value={selectedModel}
+                    onChange={(e) => {
+                      userHasSelectedModelRef.current = true;
+                      setSelectedModel(e.target.value);
+                    }}
+                    disabled={isProcessingEmbedding}
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  className="chat-send-button"
+                  onClick={handleEmbedding}
+                  disabled={!embeddingInput.trim() || isProcessingEmbedding}
+                  title="Generate embedding"
                 >
-                  {renderMessageContent(message.content, message.thinking, index)}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      transform="translate(-1, 1)"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Reranking Model UI */}
+      {modelType === 'reranking' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef}>
+            <div className="reranking-container">
+              <div className="reranking-empty-state">
+                <img 
+                  src={logoSvg} 
+                  alt="Lemonade Logo" 
+                  className="chat-empty-logo"
+                />
+                <h2 className="chat-empty-title">Rerank Documents</h2>
+                <p className="reranking-description">Enter a query and documents to rerank by relevance</p>
+              </div>
+              
+              {rerankResult && (
+                <div className="reranking-result">
+                  <h4>Reranked Results</h4>
+                  <div className="reranked-documents">
+                    {rerankResult.map((doc, idx) => (
+                      <div key={idx} className="reranked-document">
+                        <div className="reranked-document-header">
+                          <span className="reranked-rank">#{idx + 1}</span>
+                          <span className="reranked-score">Score: {doc.score.toFixed(4)}</span>
+                          <span className="reranked-original-index">(Original: #{doc.index + 1})</span>
+                        </div>
+                        <div className="reranked-document-text">{doc.text}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          );
-        })}
-        {isLoading && isModelLoading && (
-          <div className="model-loading-indicator">
-            <span className="model-loading-text">Loading model</span>
           </div>
-        )}
-        {isLoading && !isModelLoading && (
-          <div className="chat-message assistant-message">
-            <div className="typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
 
-      <div className="chat-input-container">
-        <div className="chat-input-wrapper">
-          {uploadedImages.length > 0 && (
-            <div className="image-preview-container">
-              {uploadedImages.map((imageUrl, index) => (
-                <div key={index} className="image-preview-item">
-                  <img src={imageUrl} alt={`Upload ${index + 1}`} className="image-preview" />
-                  <button
-                    className="image-remove-button"
-                    onClick={() => removeImage(index)}
-                    title="Remove image"
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper reranking-input-wrapper">
+              <div className="reranking-query-section">
+                <label className="reranking-label">Query</label>
+                <textarea
+                  className="chat-input reranking-query"
+                  value={rerankQuery}
+                  onChange={(e) => setRerankQuery(e.target.value)}
+                  placeholder="Enter your search query..."
+                  rows={2}
+                  disabled={isProcessingRerank}
+                />
+              </div>
+              
+              <div className="reranking-documents-section">
+                <label className="reranking-label">Documents (one per line)</label>
+                <textarea
+                  className="chat-input reranking-documents"
+                  value={rerankDocuments}
+                  onChange={(e) => setRerankDocuments(e.target.value)}
+                  placeholder="Enter documents to rerank, one per line..."
+                  rows={5}
+                  disabled={isProcessingRerank}
+                />
+              </div>
+              
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <select
+                    className="model-selector"
+                    value={selectedModel}
+                    onChange={(e) => {
+                      userHasSelectedModelRef.current = true;
+                      setSelectedModel(e.target.value);
+                    }}
+                    disabled={isProcessingRerank}
                   >
-                    ×
-                  </button>
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={inputTextareaRef}
-            className="chat-input"
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
-            onPaste={handleImagePaste}
-            placeholder="Type your message..."
-            rows={1}
-            disabled={isLoading}
-          />
-          <div className="chat-controls">
-            <div className="chat-controls-left">
-              {isVisionModel() && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    className="image-upload-button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isLoading}
-                    title="Upload image"
-                  >
+                <button
+                  className="chat-send-button"
+                  onClick={handleReranking}
+                  disabled={!rerankQuery.trim() || !rerankDocuments.trim() || isProcessingRerank}
+                  title="Rerank documents"
+                >
+                  {isProcessingRerank ? (
+                    <div className="typing-indicator small">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  ) : (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path
-                        d="M21 19V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19ZM8.5 13.5L11 16.51L14.5 12L19 18H5L8.5 13.5Z"
+                        d="M3 8L6 5L9 8M6 5V19M21 16L18 19L15 16M18 19V5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* LLM Chat UI (default) */}
+      {modelType === 'llm' && (
+        <>
+          <div 
+            className="chat-messages" 
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            onClick={editingIndex !== null ? cancelEdit : undefined}
+          >
+            {messages.length === 0 && (
+              <div className="chat-empty-state">
+                <img 
+                  src={logoSvg} 
+                  alt="Lemonade Logo" 
+                  className="chat-empty-logo"
+                />
+                <h2 className="chat-empty-title">Lemonade Chat</h2>
+              </div>
+            )}
+            {messages.map((message, index) => {
+              const isGrayedOut = editingIndex !== null && index > editingIndex;
+              return (
+                <div
+                  key={index}
+                  className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
+                    message.role === 'user' && !isLoading ? 'editable' : ''
+                  } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
+                >
+                  {editingIndex === index ? (
+                    <div className="edit-message-wrapper" onClick={handleEditContainerClick}>
+                      {editingImages.length > 0 && (
+                        <div className="edit-image-preview-container">
+                          {editingImages.map((imageUrl, imgIndex) => (
+                            <div key={imgIndex} className="image-preview-item">
+                              <img src={imageUrl} alt={`Edit ${imgIndex + 1}`} className="image-preview" />
+                              <button
+                                className="image-remove-button"
+                                onClick={() => removeEditImage(imgIndex)}
+                                title="Remove image"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="edit-message-content">
+                        <textarea
+                          ref={editTextareaRef}
+                          className="edit-message-input"
+                          value={editingValue}
+                          onChange={handleEditInputChange}
+                          onKeyDown={handleEditKeyPress}
+                          onPaste={handleEditImagePaste}
+                          autoFocus
+                          rows={1}
+                        />
+                        <div className="edit-message-controls">
+                          {isVisionModel() && (
+                            <>
+                              <input
+                                ref={editFileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleEditImageUpload}
+                                style={{ display: 'none' }}
+                              />
+                              <button
+                                className="image-upload-button"
+                                onClick={() => editFileInputRef.current?.click()}
+                                title="Upload image"
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                  <path
+                                    d="M21 19V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19ZM8.5 13.5L11 16.51L14.5 12L19 18H5L8.5 13.5Z"
+                                    fill="currentColor"
+                                  />
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                          <button
+                            className="edit-send-button"
+                            onClick={submitEdit}
+                            disabled={!editingValue.trim() && editingImages.length === 0}
+                            title="Send edited message"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                transform="translate(-1, 1)"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={(e) => message.role === 'user' && !isLoading && handleEditMessage(index, e)}
+                      style={{ cursor: message.role === 'user' && !isLoading ? 'pointer' : 'default' }}
+                    >
+                      {renderMessageContent(message.content, message.thinking, index)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {isLoading && isModelLoading && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Loading model</span>
+              </div>
+            )}
+            {isLoading && !isModelLoading && (
+              <div className="chat-message assistant-message">
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper">
+              {uploadedImages.length > 0 && (
+                <div className="image-preview-container">
+                  {uploadedImages.map((imageUrl, index) => (
+                    <div key={index} className="image-preview-item">
+                      <img src={imageUrl} alt={`Upload ${index + 1}`} className="image-preview" />
+                      <button
+                        className="image-remove-button"
+                        onClick={() => removeImage(index)}
+                        title="Remove image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyPress={handleKeyPress}
+                onPaste={handleImagePaste}
+                placeholder="Type your message..."
+                rows={1}
+                disabled={isLoading}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  {isVisionModel() && (
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        style={{ display: 'none' }}
+                      />
+                      <button
+                        className="image-upload-button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading}
+                        title="Upload image"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M21 19V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19ZM8.5 13.5L11 16.51L14.5 12L19 18H5L8.5 13.5Z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                  <select
+                    className="model-selector"
+                    value={selectedModel}
+                    onChange={(e) => {
+                      userHasSelectedModelRef.current = true;
+                      setSelectedModel(e.target.value);
+                    }}
+                    disabled={isLoading}
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {isLoading ? (
+                  <button
+                    className="chat-stop-button"
+                    onClick={handleStopGeneration}
+                    title="Stop generation"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <rect
+                        x="6"
+                        y="6"
+                        width="12"
+                        height="12"
                         fill="currentColor"
+                        rx="2"
                       />
                     </svg>
                   </button>
-                </>
-              )}
-              <select
-                className="model-selector"
-                value={selectedModel}
-                onChange={(e) => {
-                  userHasSelectedModelRef.current = true;
-                  setSelectedModel(e.target.value);
-                }}
-                disabled={isLoading}
-              >
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.id}
-                  </option>
-                ))}
-              </select>
+                ) : (
+                  <button
+                    className="chat-send-button"
+                    onClick={sendMessage}
+                    disabled={!inputValue.trim() && uploadedImages.length === 0}
+                    title="Send message"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        transform="translate(-1, 1)"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
-            {isLoading ? (
-              <button
-                className="chat-stop-button"
-                onClick={handleStopGeneration}
-                title="Stop generation"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <rect
-                    x="6"
-                    y="6"
-                    width="12"
-                    height="12"
-                    fill="currentColor"
-                    rx="2"
-                  />
-                </svg>
-              </button>
-            ) : (
-              <button
-                className="chat-send-button"
-                onClick={sendMessage}
-                disabled={!inputValue.trim() && uploadedImages.length === 0}
-                title="Send message"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    transform="translate(-1, 1)"
-                  />
-                </svg>
-              </button>
-            )}
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };
