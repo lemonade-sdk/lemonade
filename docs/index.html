@@ -314,29 +314,33 @@
     
     // Parse the headline section from release body
     function parseHeadlineSection(body) {
-      const lines = body.split('\n');
+      // Handle both \r\n and \n line endings
+      const lines = body.replace(/\r\n/g, '\n').split('\n');
       const headlines = [];
       let inHeadlineSection = false;
       
       for (const line of lines) {
-        if (line.trim() === '## Headline') {
+        const trimmedLine = line.trim();
+        if (trimmedLine === '## Headline') {
           inHeadlineSection = true;
           continue;
         }
         
         if (inHeadlineSection) {
-          if (line.trim().startsWith('## ')) {
+          if (trimmedLine.startsWith('## ')) {
             // End of headline section
             break;
           }
           
-          if (line.trim().startsWith('- ')) {
+          if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
             // Extract headline item, remove markdown formatting
-            let item = line.trim().substring(2).trim();
+            let item = trimmedLine.substring(2).trim();
             // Remove backticks for cleaner display
             item = item.replace(/`([^`]+)`/g, '$1');
             item = item.trim();
-            headlines.push(item);
+            if (item) {
+              headlines.push(item);
+            }
           }
         }
       }
