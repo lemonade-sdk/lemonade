@@ -2145,7 +2145,7 @@ bool TrayApp::find_electron_app() {
     // On Linux, check the production installation path first
     // If the executable is in /usr/local/bin, the app is in /usr/local/share/lemonade-server/app/
     if (exe_dir == "/usr/local/bin") {
-        fs::path linux_production_path = "/usr/local/share/lemonade-server/app" / std::string(exe_name);
+        fs::path linux_production_path = fs::path("/usr/local/share/lemonade-server/app") / exe_name;
         if (fs::exists(linux_production_path)) {
             electron_app_path_ = fs::canonical(linux_production_path).string();
             std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
