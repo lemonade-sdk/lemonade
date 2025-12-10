@@ -939,23 +939,20 @@ void ModelManager::register_user_model(const std::string& model_name,
 std::vector<std::string> ModelManager::get_flm_installed_models() {
     std::vector<std::string> installed_models;
 
-#ifdef _WIN32
-    std::string command = "where flm > nul 2>&1";
-#else
-    std::string command = "which flm > /dev/null 2>&1";
-#endif
-
-    // Check if flm is available
-    if (system(command.c_str()) != 0) {
+    // Find the flm executable using shared utility
+    std::string flm_path = utils::find_flm_executable();
+    if (flm_path.empty()) {
         return installed_models; // FLM not installed
     }
 
     // Run 'flm list --filter installed --quiet' to get only installed models
-    // This uses FLM's native filtering instead of emoji parsing
+    // Use the full path to flm.exe to avoid PATH issues
+    std::string command = "\"" + flm_path + "\" list --filter installed --quiet";
+    
 #ifdef _WIN32
-    FILE* pipe = _popen("flm list --filter installed --quiet", "r");
+    FILE* pipe = _popen(command.c_str(), "r");
 #else
-    FILE* pipe = popen("flm list --filter installed --quiet", "r");
+    FILE* pipe = popen(command.c_str(), "r");
 #endif
 
     if (!pipe) {
