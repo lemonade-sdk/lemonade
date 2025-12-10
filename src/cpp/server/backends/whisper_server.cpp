@@ -158,34 +158,59 @@ std::string WhisperServer::find_executable_in_install_dir(const std::string& ins
     return "";
 }
 
+std::string WhisperServer::find_external_whisper_server() {
+    const char* whisper_bin_env = std::getenv("LEMONADE_WHISPERCPP_BIN");
+    if (!whisper_bin_env) {
+        return "";
+    }
+
+    std::string whisper_bin = std::string(whisper_bin_env);
+    
+    return fs::exists(whisper_bin) ? whisper_bin : "";
+}
+
 std::string WhisperServer::get_whisper_server_path() {
+    std::string exe_path = find_external_whisper_server();
+
+    if (!exe_path.empty()) {
+        return exe_path;
+    }
+
     std::string install_dir = get_whisper_install_dir();
     return find_executable_in_install_dir(install_dir);
 }
 
 void WhisperServer::install(const std::string& backend) {
-    std::string install_dir = get_whisper_install_dir();
-    std::string version_file = (fs::path(install_dir) / "version.txt").string();
-
-    // Get expected version from config
-    std::string expected_version = get_whisper_version();
-
-    // Check if already installed with correct version
-    std::string exe_path = find_executable_in_install_dir(install_dir);
+    std::string install_dir;
+    std::string version_file;
+    std::string expected_version;
+    std::string exe_path = find_external_whisper_server();
     bool needs_install = exe_path.empty();
 
-    if (!needs_install && fs::exists(version_file)) {
-        std::string installed_version;
+    if (needs_install) {
+        install_dir = get_whisper_install_dir();
+        version_file = (fs::path(install_dir) / "version.txt").string();
 
-        std::ifstream vf(version_file);
-        std::getline(vf, installed_version);
-        vf.close();
+        // Get expected version from config
+        expected_version = get_whisper_version();
 
-        if (installed_version != expected_version) {
-            std::cout << "[WhisperServer] Upgrading from " << installed_version
-                     << " to " << expected_version << std::endl;
-            needs_install = true;
-            fs::remove_all(install_dir);
+        // Check if already installed with correct version
+        exe_path = find_executable_in_install_dir(install_dir);
+        needs_install = exe_path.empty();
+
+        if (!needs_install && fs::exists(version_file)) {
+            std::string installed_version;
+
+            std::ifstream vf(version_file);
+            std::getline(vf, installed_version);
+            vf.close();
+
+            if (installed_version != expected_version) {
+                std::cout << "[WhisperServer] Upgrading from " << installed_version
+                        << " to " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
+            }
         }
     }
 
