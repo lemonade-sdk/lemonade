@@ -44,7 +44,7 @@ These entries help in understanding how the model is performing at each step of 
 ## How to Interpret Perplexity Results
 
 Understanding Perplexity
-Definition: Perplexity is defined as the exponential of the average negative log-likelihood of a model on a given test set. 
+Definition: Perplexity is defined as the exponential of the average negative log-likelihood of a model on a given test set.
 
 Lower Values are Better: A lower perplexity score indicates that the model has a higher probability of correctly predicting the sample, suggesting better performance. A lower perplexity means the model is more certain about its predictions.
 

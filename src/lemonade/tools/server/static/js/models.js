@@ -49,7 +49,7 @@ function populateModelDropdown() {
 	const indicator = document.getElementById('model-status-indicator');
     const select = document.getElementById('model-select');
     select.innerHTML = '';
-    
+
     // Add the default option
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
@@ -62,10 +62,10 @@ function populateModelDropdown() {
 	hiddenOption.textContent = 'Server Offline';
 	hiddenOption.hidden = true;
 	select.appendChild(hiddenOption);
-	
+
     // Get all installed models from the global set
     const sortedModels = Array.from(installedModels).sort();
-    
+
     // Add options for each installed model
     sortedModels.forEach(modelId => {
         const option = document.createElement('option');
@@ -80,13 +80,13 @@ async function updateModelStatusIndicator() {
     const indicator = document.getElementById('model-status-indicator');
     const select = document.getElementById('model-select');
 	const buttonIcons = document.querySelectorAll('button');
-      
+
     // Fetch both health and installed models
     const [health] = await Promise.all([
         checkModelHealth(),
         fetchInstalledModels()
     ]);
-	
+
 	// Populate the dropdown with the newly fetched installed models
     populateModelDropdown();
 
@@ -95,16 +95,16 @@ async function updateModelStatusIndicator() {
     if (modelsTab && modelsTab.classList.contains('active')) {
         // Use the display-only version to avoid re-fetching data we just fetched
         refreshModelMgmtUIDisplay();
-        
+
         // Also refresh the model browser to show updated button states
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
         else if (currentCategory === 'labels') displayModelsByLabel(currentFilter);
     }
-	
+
     if (health && health.model_loaded) {
         // Model is loaded - show model name with online status
-		indicator.classList.remove('online', 'offline', 'loading'); 
+		indicator.classList.remove('online', 'offline', 'loading');
         currentLoadedModel = health.model_loaded;
         indicator.classList.add('loaded');
         select.value = currentLoadedModel;
@@ -139,7 +139,7 @@ async function updateModelStatusIndicator() {
 // Unload current model
 async function unloadModel() {
     if (!currentLoadedModel) return;
-    
+
     try {
         // Set loading state
         const indicator = document.getElementById('model-status-indicator');
@@ -152,9 +152,9 @@ async function unloadModel() {
         await httpRequest(getServerBaseUrl() + '/api/v1/unload', {
             method: 'POST'
         });
-        
+
         await updateModelStatusIndicator();
-        
+
         // Refresh model list to show updated button states
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -171,7 +171,7 @@ async function unloadModel() {
 // Update visibility of categories/subcategories based on available models
 function updateCategoryVisibility() {
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Count models for each recipe
     const recipeCounts = {};
     const recipes = ['llamacpp', 'oga-hybrid', 'oga-npu', 'oga-cpu', 'flm'];
@@ -182,7 +182,7 @@ function updateCategoryVisibility() {
                 recipeCounts[recipe]++;
             }
         });
-        
+
         // Show/hide recipe subcategory
         const subcategory = document.querySelector(`[data-recipe="${recipe}"]`);
         if (subcategory) {
@@ -195,14 +195,14 @@ function updateCategoryVisibility() {
 function toggleCategory(categoryName) {
     const header = document.querySelector(`[data-category="${categoryName}"] .category-header`);
     const content = document.getElementById(`category-${categoryName}`);
-    
+
     if (categoryName === 'hot') {
         // Check if hot models is already selected
         const isCurrentlyActive = header.classList.contains('active');
-        
+
         // Clear all other active states
         document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
-        
+
         if (!isCurrentlyActive) {
             // Show hot models
             header.classList.add('active');
@@ -221,17 +221,17 @@ function showAddModelForm() {
     document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
     document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
     document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
-    
+
     // Highlight "Add a Model" as selected
     const addModelHeader = document.querySelector('[data-category="add"] .category-header');
     if (addModelHeader) {
         addModelHeader.classList.add('active');
     }
-    
+
     // Hide model list and show form
     document.getElementById('model-list').style.display = 'none';
     document.getElementById('add-model-form-main').style.display = 'block';
-    
+
     // Set current state
     currentCategory = 'add';
     currentFilter = null;
@@ -242,13 +242,13 @@ function selectRecipe(recipe) {
     // Clear hot models active state
     document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
     document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
-    
+
     // Clear all subcategory selections
     document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
-    
+
     // Set this recipe as active
     document.querySelector(`[data-recipe="${recipe}"]`).classList.add('active');
-    
+
     currentCategory = 'recipes';
     currentFilter = recipe;
     displayModelsByRecipe(recipe);
@@ -259,13 +259,13 @@ function selectLabel(label) {
     // Clear hot models active state
     document.querySelectorAll('.category-header').forEach(h => h.classList.remove('active'));
     document.querySelectorAll('.category-content').forEach(c => c.classList.remove('expanded'));
-    
+
     // Clear all subcategory selections
     document.querySelectorAll('.subcategory').forEach(s => s.classList.remove('active'));
-    
+
     // Set this label as active
     document.querySelector(`[data-label="${label}"]`).classList.add('active');
-    
+
     currentCategory = 'labels';
     currentFilter = label;
     displayModelsByLabel(label);
@@ -275,21 +275,21 @@ function selectLabel(label) {
 function displaySuggestedModels() {
     const modelList = document.getElementById('model-list');
     const allModels = window.SERVER_MODELS || {};
-    
+
     modelList.innerHTML = '';
-    
+
     // First show Qwen3-0.6B-GGUF as the default suggested model
     if (allModels['Qwen3-0.6B-GGUF']) {
         createModelItem('Qwen3-0.6B-GGUF', allModels['Qwen3-0.6B-GGUF'], modelList);
     }
-    
+
     // Then show other suggested models (excluding the one already shown)
     Object.entries(allModels).forEach(([modelId, modelData]) => {
         if (modelData.suggested && modelId !== 'Qwen3-0.6B-GGUF') {
             createModelItem(modelId, modelData, modelList);
         }
     });
-    
+
     if (modelList.innerHTML === '') {
         modelList.innerHTML = '<p>No suggested models available</p>';
     }
@@ -300,13 +300,13 @@ function displayHotModels() {
     const modelList = document.getElementById('model-list');
     const addModelForm = document.getElementById('add-model-form-main');
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Show model list, hide form
     modelList.style.display = 'block';
     addModelForm.style.display = 'none';
-    
+
     modelList.innerHTML = '';
-    
+
     Object.entries(allModels).forEach(([modelId, modelData]) => {
         if (modelData.labels && modelData.labels.includes('hot') && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
@@ -319,13 +319,13 @@ function displayModelsByRecipe(recipe) {
     const modelList = document.getElementById('model-list');
     const addModelForm = document.getElementById('add-model-form-main');
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Show model list, hide form
     modelList.style.display = 'block';
     addModelForm.style.display = 'none';
-    
+
     modelList.innerHTML = '';
-    
+
     // Add FastFlowLM notice if this is the FLM recipe
     if (recipe === 'flm') {
         const notice = document.createElement('div');
@@ -340,7 +340,7 @@ function displayModelsByRecipe(recipe) {
         `;
         modelList.appendChild(notice);
     }
-    
+
     Object.entries(allModels).forEach(([modelId, modelData]) => {
         if (modelData.recipe === recipe && (modelData.suggested || installedModels.has(modelId))) {
             createModelItem(modelId, modelData, modelList);
@@ -353,13 +353,13 @@ function displayModelsByLabel(label) {
     const modelList = document.getElementById('model-list');
     const addModelForm = document.getElementById('add-model-form-main');
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Show model list, hide form
     modelList.style.display = 'block';
     addModelForm.style.display = 'none';
-    
+
     modelList.innerHTML = '';
-    
+
     Object.entries(allModels).forEach(([modelId, modelData]) => {
         if (label === 'custom') {
             // Show user-added models (those starting with 'user.')
@@ -376,16 +376,16 @@ function displayModelsByLabel(label) {
 function createModelItem(modelId, modelData, container) {
     const item = document.createElement('div');
     item.className = 'model-item';
-    
+
     const info = document.createElement('div');
     info.className = 'model-item-info';
-    
+
     const name = document.createElement('div');
     name.className = 'model-item-name';
     name.appendChild(createModelNameWithLabels(modelId, window.SERVER_MODELS || {}));
-    
+
     info.appendChild(name);
-    
+
     // Only add description if it exists and is not empty
     if (modelData.description && modelData.description.trim()) {
         const description = document.createElement('div');
@@ -393,14 +393,14 @@ function createModelItem(modelId, modelData, container) {
         description.textContent = modelData.description;
         info.appendChild(description);
     }
-    
+
     const actions = document.createElement('div');
     actions.className = 'model-item-actions';
-    
+
     // Check if model is actually installed by looking at the installedModels set
     const isInstalled = installedModels.has(modelId);
     const isLoaded = currentLoadedModel === modelId;
-    
+
     if (!isInstalled) {
         const installBtn = document.createElement('button');
         installBtn.className = 'model-item-btn install';
@@ -436,7 +436,7 @@ function createModelItem(modelId, modelData, container) {
             };
             actions.appendChild(loadBtn);
         }
-        
+
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'model-item-btn delete';
         deleteBtn.textContent = '🗑️';
@@ -444,7 +444,7 @@ function createModelItem(modelId, modelData, container) {
         deleteBtn.onclick = () => deleteModel(modelId);
         actions.appendChild(deleteBtn);
     }
-    
+
     item.appendChild(info);
     item.appendChild(actions);
     container.appendChild(item);
@@ -455,22 +455,22 @@ async function installModel(modelId) {
     // Find the install button and show loading state
     const modelItems = document.querySelectorAll('.model-item');
     let installBtn = null;
-    
+
     modelItems.forEach(item => {
         const nameElement = item.querySelector('.model-item-name .model-labels-container span');
         if (nameElement && nameElement.getAttribute('data-model-id') === modelId) {
             installBtn = item.querySelector('.model-item-btn.install');
         }
     });
-    
+
     if (installBtn) {
         installBtn.disabled = true;
         installBtn.textContent = '⏳';
     }
-    
+
     // Track this download as active
     activeOperations.add(modelId);
-    
+
     try {
         // For registered models, only send model_name (per API spec)
         await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
@@ -478,19 +478,19 @@ async function installModel(modelId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model_name: modelId })
         });
-        
+
         // Download complete - remove from active operations
         activeOperations.delete(modelId);
-        
+
         // Refresh installed models and model status
         await fetchInstalledModels();
         await updateModelStatusIndicator();
-        
+
         // Refresh model dropdown in chat
         if (window.initializeModelDropdown) {
             window.initializeModelDropdown();
         }
-        
+
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -498,10 +498,10 @@ async function installModel(modelId) {
     } catch (error) {
         console.error('Error installing model:', error);
         showErrorBanner('Failed to install model: ' + error.message);
-        
+
         // Remove from active operations on error too
         activeOperations.delete(modelId);
-        
+
         // Reset button state on error
         if (installBtn) {
             installBtn.disabled = false;
@@ -516,23 +516,23 @@ async function deleteModel(modelId) {
     if (!confirm(`Are you sure you want to delete the model "${modelId}"?`)) {
         return;
     }
-    
+
     // Find the delete button and show loading state
     const modelItems = document.querySelectorAll('.model-item');
     let deleteBtn = null;
-    
+
     modelItems.forEach(item => {
         const nameElement = item.querySelector('.model-item-name .model-labels-container span');
         if (nameElement && nameElement.getAttribute('data-model-id') === modelId) {
             deleteBtn = item.querySelector('.model-item-btn.delete');
         }
     });
-    
+
     if (deleteBtn) {
         deleteBtn.disabled = true;
         deleteBtn.textContent = '⏳';
     }
-    
+
     try {
         await httpRequest(getServerBaseUrl() + '/api/v1/delete', {
             method: 'POST',
@@ -547,12 +547,12 @@ async function deleteModel(modelId) {
         // Refresh installed models and model status
         await fetchInstalledModels();
         await updateModelStatusIndicator();
-        
+
         // Refresh model dropdown in chat
         if (window.initializeModelDropdown) {
             window.initializeModelDropdown();
         }
-        
+
         // Refresh model list
         if (currentCategory === 'hot') displayHotModels();
         else if (currentCategory === 'recipes') displayModelsByRecipe(currentFilter);
@@ -560,7 +560,7 @@ async function deleteModel(modelId) {
     } catch (error) {
         console.error('Error deleting model:', error);
         showErrorBanner('Failed to delete model: ' + error.message);
-        
+
         // Reset button state on error
         if (deleteBtn) {
             deleteBtn.disabled = false;
@@ -576,13 +576,13 @@ function createModelNameWithLabels(modelId, serverModels) {
     const modelData = serverModels[modelId];
     const container = document.createElement('div');
     container.className = 'model-labels-container';
-    
+
     // Model name
     const nameSpan = document.createElement('span');
 
     // Store the original modelId as a data attribute for button finding
     nameSpan.setAttribute('data-model-id', modelId);
-    
+
     // Append size if available
     let displayName = modelId;
     if (modelData && typeof modelData.size === 'number') {
@@ -590,17 +590,17 @@ function createModelNameWithLabels(modelId, serverModels) {
     }
     nameSpan.textContent = displayName;
     container.appendChild(nameSpan);
-    
+
     // Labels
     if (modelData && modelData.labels && Array.isArray(modelData.labels)) {
         modelData.labels.forEach(label => {
             const labelLower = label.toLowerCase();
-            
+
             // Skip "hot" labels since they have their own section
             if (labelLower === 'hot') {
                 return;
             }
-            
+
             const labelSpan = document.createElement('span');
             let labelClass = 'other';
             if (labelLower === 'vision') {
@@ -621,7 +621,7 @@ function createModelNameWithLabels(modelId, serverModels) {
             container.appendChild(labelSpan);
         });
     }
-    
+
     return container;
 }
 
@@ -634,34 +634,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (unloadBtn) {
         unloadBtn.onclick = unloadModel;
     }
-    
+
     // Initial fetch of model data - this will populate installedModels
     await updateModelStatusIndicator();
-    
+
     // Update category visibility on initial load
     updateCategoryVisibility();
-    
+
     // Initialize model browser with hot models
     displayHotModels();
-    
+
     // Initial load of model management UI - this will use the populated installedModels
     await refreshModelMgmtUI();
-    
+
     // Refresh when switching to the models tab
     const modelsTab = document.getElementById('tab-models');
     if (modelsTab) {
         modelsTab.addEventListener('click', refreshModelMgmtUI);
     }
-    
+
     // Set up register model form
     setupRegisterModelForm();
     setupFolderSelection();
-    
+
     // Set up smart periodic refresh to detect external model changes
     // Poll every 15 seconds (much less aggressive than 1 second)
     // Only poll when page is visible to save resources
     let pollInterval = null;
-    
+
     function startPolling() {
         if (!pollInterval) {
             pollInterval = setInterval(async () => {
@@ -673,14 +673,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             }, 15000); // Check every 15 seconds
         }
     }
-    
+
     function stopPolling() {
         if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
         }
     }
-    
+
     // Start polling when page is visible, stop when hidden
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -692,7 +692,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             stopPolling();
         }
     });
-    
+
     // Start polling initially
     startPolling();
 });
@@ -721,7 +721,7 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
         models.forEach(mid => {
             const tr = document.createElement('tr');
             const tdName = document.createElement('td');
-            
+
             tdName.appendChild(createModelNameWithLabels(mid, allModels));
             tdName.style.paddingRight = '1em';
             tdName.style.verticalAlign = 'middle';
@@ -735,20 +735,20 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                 btn.disabled = true;
                 btn.textContent = '⏳';
                 btn.classList.add('installing-btn');
-                
+
                 // Track this download as active
                 activeOperations.add(mid);
-                
+
                 try {
                     await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model_name: mid })
                     });
-                    
+
                     // Download complete - remove from active operations
                     activeOperations.delete(mid);
-                    
+
                     await refreshModelMgmtUI();
                     // Update chat dropdown too if loadModels function exists
                     if (typeof loadModels === 'function') {
@@ -758,7 +758,7 @@ function renderModelTable(tbody, models, allModels, emptyMessage) {
                     btn.textContent = 'Error';
                     btn.disabled = false;
                     showErrorBanner(`Failed to install model: ${e.message}`);
-                    
+
                     // Remove from active operations on error too
                     activeOperations.delete(mid);
                 }
@@ -783,27 +783,27 @@ async function refreshModelMgmtUI() {
     } catch (e) {
         showErrorBanner(`Error loading models: ${e.message}`);
     }
-    
+
     // Update the global installedModels set
     installedModels.clear();
     installed.forEach(modelId => {
         installedModels.add(modelId);
     });
-    
+
     // All models from server_models.json (window.SERVER_MODELS)
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Separate hot models and regular suggested models not installed
     const hotModels = [];
     const regularSuggested = [];
-    
+
     Object.keys(allModels).forEach(k => {
         if (allModels[k].suggested && !installed.includes(k)) {
             const modelData = allModels[k];
-            const hasHotLabel = modelData.labels && modelData.labels.some(label => 
+            const hasHotLabel = modelData.labels && modelData.labels.some(label =>
                 label.toLowerCase() === 'hot'
             );
-            
+
             if (hasHotLabel) {
                 hotModels.push(k);
             } else {
@@ -811,7 +811,7 @@ async function refreshModelMgmtUI() {
             }
         }
     });
-    
+
     // Render installed models as a table (two columns, second is invisible)
     const installedTbody = document.getElementById('installed-models-tbody');
     if (installedTbody) {
@@ -819,11 +819,11 @@ async function refreshModelMgmtUI() {
         installed.forEach(function(mid) {
             var tr = document.createElement('tr');
             var tdName = document.createElement('td');
-            
+
             tdName.appendChild(createModelNameWithLabels(mid, allModels));
             tdName.style.paddingRight = '1em';
             tdName.style.verticalAlign = 'middle';
-            
+
             var tdBtn = document.createElement('td');
             tdBtn.style.width = '1%';
             tdBtn.style.verticalAlign = 'middle';
@@ -862,23 +862,23 @@ async function refreshModelMgmtUI() {
             installedTbody.appendChild(tr);
         });
     }
-    
+
     // Render hot models and suggested models using the helper function
     const hotTbody = document.getElementById('hot-models-tbody');
     const suggestedTbody = document.getElementById('suggested-models-tbody');
-    
+
     if (hotTbody) {
         renderModelTable(hotTbody, hotModels, allModels, "Nice, you've already installed all these models!");
     }
     if (suggestedTbody) {
         renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
     }
-    
+
     // Refresh model dropdown in chat after updating installed models
     if (window.initializeModelDropdown) {
         window.initializeModelDropdown();
     }
-    
+
     // Update system message when installed models change
     if (window.displaySystemMessage) {
         window.displaySystemMessage();
@@ -892,14 +892,14 @@ window.refreshModelMgmtUI = refreshModelMgmtUI;
 function refreshModelMgmtUIDisplay() {
     // Use the already-populated installedModels set
     const installed = Array.from(installedModels);
-    
+
     // All models from server_models.json (window.SERVER_MODELS)
     const allModels = window.SERVER_MODELS || {};
-    
+
     // Separate hot models and regular suggested models not installed
     const hotModels = [];
     const regularSuggested = [];
-    
+
     Object.keys(allModels).forEach(k => {
         if (allModels[k].suggested && !installed.includes(k)) {
             if (allModels[k].labels && allModels[k].labels.some(label => label.toLowerCase() === 'hot')) {
@@ -909,7 +909,7 @@ function refreshModelMgmtUIDisplay() {
             }
         }
     });
-    
+
     // Render installed models as a table (two columns, second is invisible)
     const installedTbody = document.getElementById('installed-models-tbody');
     if (installedTbody) {
@@ -917,11 +917,11 @@ function refreshModelMgmtUIDisplay() {
         installed.forEach(function(mid) {
             var tr = document.createElement('tr');
             var tdName = document.createElement('td');
-            
+
             tdName.appendChild(createModelNameWithLabels(mid, allModels));
             tdName.style.paddingRight = '1em';
             tdName.style.verticalAlign = 'middle';
-            
+
             var tdBtn = document.createElement('td');
             tdBtn.style.width = '1%';
             tdBtn.style.verticalAlign = 'middle';
@@ -966,18 +966,18 @@ function refreshModelMgmtUIDisplay() {
             installedTbody.appendChild(tr);
         });
     }
-    
+
     // Render hot models and suggested models using the helper function
     const hotTbody = document.getElementById('hot-models-tbody');
     const suggestedTbody = document.getElementById('suggested-models-tbody');
-    
+
     if (hotTbody) {
         renderModelTable(hotTbody, hotModels, allModels, "Nice, you've already installed all these models!");
     }
     if (suggestedTbody) {
         renderModelTable(suggestedTbody, regularSuggested, allModels, "Nice, you've already installed all these models!");
     }
-    
+
     // Refresh model dropdown in chat after updating installed models
     if (window.initializeModelDropdown) {
         window.initializeModelDropdown();
@@ -988,13 +988,13 @@ function refreshModelMgmtUIDisplay() {
 function setupRegisterModelForm() {
     const registerForm = document.getElementById('register-model-form');
     const registerStatus = document.getElementById('register-model-status');
-    
+
     if (registerForm && registerStatus) {
         registerForm.onsubmit = async function(e) {
             e.preventDefault();
             registerStatus.textContent = '';
             let name = document.getElementById('register-model-name').value.trim();
-            
+
             // Always prepend 'user.' if not already present
             if (!name.startsWith('user.')) {
                 name = 'user.' + name;
@@ -1017,15 +1017,15 @@ function setupRegisterModelForm() {
             const embedding = document.getElementById('register-embedding').checked;
             const reranking = document.getElementById('register-reranking').checked;
             const mmproj = document.getElementById('register-mmproj').value.trim();
-            
-            if (!name || !recipe) { 
-                return; 
+
+            if (!name || !recipe) {
+                return;
             }
-            
+
             const btn = document.getElementById('register-submit');
             btn.disabled = true;
             btn.textContent = 'Installing...';
-            
+
             try {
                 if (isLocalModel && selectedModelFiles) {
                     if (recipe === 'llamacpp' && !Array.from(selectedModelFiles).some(file => file.name.toLowerCase().endsWith('.gguf'))) {
@@ -1057,7 +1057,7 @@ function setupRegisterModelForm() {
                     const payload = { model_name: name, recipe, reasoning, vision, embedding, reranking };
                     if (checkpoint) payload.checkpoint = checkpoint;
                     if (mmproj) payload.mmproj = mmproj;
-                    
+
                     await httpRequest(getServerBaseUrl() + '/api/v1/pull', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1101,7 +1101,7 @@ function setupRegisterModelForm() {
                 registerStatus.className = 'register-status error';
                 showErrorBanner(`Model install failed: ${e.message}`);
             }
-            
+
             btn.disabled = false;
             btn.textContent = 'Install';
             refreshModelMgmtUI();

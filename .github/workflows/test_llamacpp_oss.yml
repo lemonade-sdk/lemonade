@@ -64,16 +64,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
           $venvPip = ".\.venv\Scripts\pip.exe"
-          
+
           & $venvPython -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPip install pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -84,7 +84,7 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $venvLemonade = ".\.venv\Scripts\lemonade.exe"
-          
+
           if ("${{ matrix.backend }}" -ne "rocm") {
             & $venvLemonade -i unsloth/Qwen3-0.6B-GGUF:Q4_0 llamacpp-load --backend ${{ matrix.backend }} --device cpu llm-prompt -p "Hi" --max-new-tokens 10; if ($LASTEXITCODE -ne 0) { exit 1 }
           }
@@ -97,7 +97,7 @@ jobs:
           HF_HOME: "${{ env.HF_HOME }}"
         run: |
           $venvPython = ".\.venv\Scripts\python.exe"
-          
+
           & $venvPython test/server_llamacpp.py ${{ matrix.backend }}; if ($LASTEXITCODE -ne 0) { exit 1 }
           & $venvPython test/server_llamacpp.py ${{ matrix.backend }} --offline; if ($LASTEXITCODE -ne 0) { exit 1 }
 

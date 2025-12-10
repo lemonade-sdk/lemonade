@@ -23,7 +23,7 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager), 
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager),
       model_name_(model_name),
       execution_mode_("auto"),
       is_loaded_(false) {
@@ -46,9 +46,9 @@ void RyzenAIServer::install(const std::string& backend) {
         std::cout << "[RyzenAI-Server] Found existing installation at: " << path << std::endl;
         return;
     }
-    
+
     std::cout << "[RyzenAI-Server] ryzenai-server not found, downloading..." << std::endl;
-    
+
     // Download and install ryzenai-server
     download_and_install();
 }
@@ -64,32 +64,32 @@ std::string RyzenAIServer::get_ryzenai_server_path() {
 #else
     std::string exe_name = "ryzenai-server";
 #endif
-    
+
     // 1. Check in PATH first (highest priority)
 #ifdef _WIN32
     std::string check_cmd = "where " + exe_name + " >nul 2>&1";
 #else
     std::string check_cmd = "which " + exe_name + " >/dev/null 2>&1";
 #endif
-    
+
     if (system(check_cmd.c_str()) == 0) {
         return exe_name;
     }
-    
+
     // 2. Check in source tree location (for developers)
     // From executable location to ../../../ryzenai-server/build/bin/Release
     std::string relative_path = utils::get_resource_path("../../../ryzenai-server/build/bin/Release/" + exe_name);
     if (fs::exists(relative_path)) {
         return fs::absolute(relative_path).string();
     }
-    
+
     // 3. Check in downloaded/installed location next to lemonade binary
     // This is where download_and_install() will place it
     std::string install_path = utils::get_resource_path("ryzenai-server/" + exe_name);
     if (fs::exists(install_path)) {
         return fs::absolute(install_path).string();
     }
-    
+
     return ""; // Not found
 }
 
@@ -97,12 +97,12 @@ std::string RyzenAIServer::get_ryzenai_server_path() {
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
 #ifdef _WIN32
     std::cout << "[RyzenAI-Server] Extracting ZIP to " << dest_dir << std::endl;
-    
+
     // Use PowerShell to extract with error handling
-    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
-                         zip_path + "' -DestinationPath '" + dest_dir + 
+    std::string command = "powershell -Command \"try { Expand-Archive -Path '" +
+                         zip_path + "' -DestinationPath '" + dest_dir +
                          "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-    
+
     int result = system(command.c_str());
     if (result != 0) {
         std::cerr << "[RyzenAI-Server] PowerShell extraction failed with code: " << result << std::endl;
@@ -119,13 +119,13 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 
 void RyzenAIServer::download_and_install() {
     std::cout << "[RyzenAI-Server] Downloading ryzenai-server..." << std::endl;
-    
+
     // Download from latest GitHub release
     // Format: https://github.com/{owner}/{repo}/releases/latest/download/{asset_name}
     std::string repo = "lemonade-sdk/lemonade";
     std::string filename = "ryzenai-server.zip";
     std::string url = "https://github.com/" + repo + "/releases/latest/download/" + filename;
-    
+
     // Determine install directory (next to lemonade-router.exe)
 #ifdef _WIN32
     char exe_path[MAX_PATH];
@@ -134,23 +134,23 @@ void RyzenAIServer::download_and_install() {
 #else
     fs::path exe_dir = fs::current_path();
 #endif
-    
+
     fs::path install_dir = exe_dir / "ryzenai-server";
     std::string zip_path = (exe_dir / filename).string();
-    
+
     std::cout << "[RyzenAI-Server] Downloading from latest GitHub release..." << std::endl;
     std::cout << "[RyzenAI-Server] Installing to: " << install_dir.string() << std::endl;
-    
+
     // Download the ZIP file with throttled progress updates (once per second)
     // No authentication needed for public releases
     std::map<std::string, std::string> headers;
     auto download_result = utils::HttpClient::download_file(
-        url, 
+        url,
         zip_path,
         utils::create_throttled_progress_callback(),
         headers
     );
-    
+
     if (!download_result.success) {
         std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server: " << download_result.error_message << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Possible causes:" << std::endl;
@@ -160,17 +160,17 @@ void RyzenAIServer::download_and_install() {
         std::cerr << "[RyzenAI-Server ERROR] Check releases at: https://github.com/" << repo << "/releases" << std::endl;
         throw std::runtime_error("Failed to download ryzenai-server from release");
     }
-    
+
     std::cout << "[RyzenAI-Server] Download complete!" << std::endl;
-    
+
     // Verify the downloaded file exists and is valid
     if (!fs::exists(zip_path)) {
         throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
     }
-    
+
     std::uintmax_t file_size = fs::file_size(zip_path);
     std::cout << "[RyzenAI-Server] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
-    
+
     const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
     if (file_size < MIN_ZIP_SIZE) {
         std::cerr << "[RyzenAI-Server ERROR] Downloaded file is too small (" << file_size << " bytes)" << std::endl;
@@ -178,10 +178,10 @@ void RyzenAIServer::download_and_install() {
         fs::remove(zip_path);
         throw std::runtime_error("Downloaded file is too small (< 1 MB), likely corrupted or incomplete");
     }
-    
+
     // Create install directory
     fs::create_directories(install_dir);
-    
+
     // Extract ZIP
     if (!extract_zip(zip_path, install_dir.string())) {
         // Clean up corrupted files
@@ -189,7 +189,7 @@ void RyzenAIServer::download_and_install() {
         fs::remove_all(install_dir);
         throw std::runtime_error("Failed to extract ryzenai-server archive");
     }
-    
+
     // Debug: List what was extracted
     std::cout << "[RyzenAI-Server DEBUG] Contents of extracted directory:" << std::endl;
     try {
@@ -205,36 +205,36 @@ void RyzenAIServer::download_and_install() {
     } catch (const std::exception& e) {
         std::cerr << "[RyzenAI-Server ERROR] Failed to list directory: " << e.what() << std::endl;
     }
-    
+
     // Verify extraction succeeded by checking if executable exists
 #ifdef _WIN32
     std::string exe_name = "ryzenai-server.exe";
 #else
     std::string exe_name = "ryzenai-server";
 #endif
-    
+
     fs::path exe_path_check = install_dir / exe_name;
     std::cout << "[RyzenAI-Server DEBUG] Looking for executable at: " << exe_path_check << std::endl;
-    
+
     if (!fs::exists(exe_path_check)) {
-        std::cerr << "[RyzenAI-Server ERROR] Extraction completed but executable not found at: " 
+        std::cerr << "[RyzenAI-Server ERROR] Extraction completed but executable not found at: "
                   << exe_path_check << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] This usually indicates the ZIP structure is different than expected." << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Check the extracted files above for the correct location." << std::endl;
         // Don't clean up yet - let user inspect the directory
         throw std::runtime_error("Extraction failed: executable not found in expected location.");
     }
-    
+
     std::cout << "[RyzenAI-Server] Executable verified at: " << exe_path_check << std::endl;
-    
+
 #ifndef _WIN32
     // Make executable on Linux/macOS
     chmod(exe_path_check.c_str(), 0755);
 #endif
-    
+
     // Delete ZIP file
     fs::remove(zip_path);
-    
+
     std::cout << "[RyzenAI-Server] Installation complete!" << std::endl;
 }
 
@@ -246,7 +246,7 @@ std::string RyzenAIServer::download_model(const std::string& checkpoint,
     std::cout << "[RyzenAI-Server] Note: RyzenAI-Server requires pre-downloaded ONNX models" << std::endl;
     std::cout << "[RyzenAI-Server] Expected checkpoint format: repository/model-name" << std::endl;
     std::cout << "[RyzenAI-Server] Model will be loaded from Hugging Face cache" << std::endl;
-    
+
     return checkpoint;
 }
 
@@ -275,43 +275,43 @@ void RyzenAIServer::load(const std::string& model_name,
     // They are part of the uniform interface for polymorphism
     (void)llamacpp_backend;  // Suppress unused parameter warning
     (void)llamacpp_args;     // Suppress unused parameter warning
-    
+
     std::cout << "[RyzenAI-Server] Loading model: " << model_name << std::endl;
-    
+
     // Install/check RyzenAI-Server (will download if not found)
     install();
-    
+
     // Get the path to ryzenai-server
     std::string ryzenai_server_path = get_ryzenai_server_path();
     if (ryzenai_server_path.empty()) {
         // This shouldn't happen after install(), but check anyway
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
-    
+
     std::cout << "[RyzenAI-Server] Found ryzenai-server at: " << ryzenai_server_path << std::endl;
-    
+
     // Model path should have been set via set_model_path() before calling load()
     if (model_path_.empty()) {
         throw std::runtime_error("Model path is required for RyzenAI-Server. Call set_model_path() before load()");
     }
-    
+
     if (!fs::exists(model_path_)) {
         throw std::runtime_error("Model path does not exist: " + model_path_);
     }
-    
+
     model_name_ = model_name;
-    
+
     // execution_mode_ should have been set via set_execution_mode() before calling load()
     if (execution_mode_.empty()) {
         execution_mode_ = "auto";
     }
-    
+
     std::cout << "[RyzenAI-Server] Model path: " << model_path_ << std::endl;
     std::cout << "[RyzenAI-Server] Execution mode: " << execution_mode_ << std::endl;
-    
+
     // Find available port
     port_ = choose_port();
-    
+
     // Build command line arguments
     std::vector<std::string> args = {
         "-m", model_path_,
@@ -319,13 +319,13 @@ void RyzenAIServer::load(const std::string& model_name,
         "--mode", execution_mode_,
         "--ctx-size", std::to_string(ctx_size)
     };
-    
+
     if (is_debug()) {
         args.push_back("--verbose");
     }
-    
+
     std::cout << "[RyzenAI-Server] Starting ryzenai-server..." << std::endl;
-    
+
     // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(
         ryzenai_server_path,
@@ -334,19 +334,19 @@ void RyzenAIServer::load(const std::string& model_name,
         is_debug(),
         true
     );
-    
+
     if (!utils::ProcessManager::is_running(process_handle_)) {
         throw std::runtime_error("Failed to start ryzenai-server process");
     }
-    
-    std::cout << "[ProcessManager] Process started successfully, PID: " 
+
+    std::cout << "[ProcessManager] Process started successfully, PID: "
               << process_handle_.pid << std::endl;
-    
+
     // Wait for server to be ready
     if (!wait_for_ready()) {
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
     }
-    
+
     is_loaded_ = true;
     std::cout << "[RyzenAI-Server] Model loaded on port " << port_ << std::endl;
 }
@@ -355,9 +355,9 @@ void RyzenAIServer::unload() {
     if (!is_loaded_) {
         return;
     }
-    
+
     std::cout << "[RyzenAI-Server] Unloading model..." << std::endl;
-    
+
 #ifdef _WIN32
     if (process_handle_.handle) {
 #else
@@ -366,7 +366,7 @@ void RyzenAIServer::unload() {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
     }
-    
+
     is_loaded_ = false;
     port_ = 0;
     model_path_.clear();
@@ -376,7 +376,7 @@ json RyzenAIServer::chat_completion(const json& request) {
     if (!is_loaded_) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
-    
+
     // Forward to /v1/chat/completions endpoint
     return forward_request("/v1/chat/completions", request);
 }
@@ -385,7 +385,7 @@ json RyzenAIServer::completion(const json& request) {
     if (!is_loaded_) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
-    
+
     // Forward to /v1/completions endpoint
     return forward_request("/v1/completions", request);
 }
@@ -394,10 +394,9 @@ json RyzenAIServer::responses(const json& request) {
     if (!is_loaded_) {
         throw ModelNotLoadedException("RyzenAI-Server");
     }
-    
+
     // Forward to /v1/responses endpoint
     return forward_request("/v1/responses", request);
 }
 
 } // namespace lemon
-

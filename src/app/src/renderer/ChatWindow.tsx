@@ -156,7 +156,7 @@ useEffect(() => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
-      
+
       // Use requestAnimationFrame to scroll after render completes
       requestAnimationFrame(() => {
         if (!userScrolledAwayRef.current) {
@@ -164,7 +164,7 @@ useEffect(() => {
         }
       });
     }
-    
+
     return () => {
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -182,7 +182,7 @@ useEffect(() => {
   const checkIfAtBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
-    
+
     const threshold = 20; // pixels from bottom to consider "at bottom"
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     return isAtBottom;
@@ -191,7 +191,7 @@ useEffect(() => {
   const handleScroll = () => {
     const atBottom = checkIfAtBottom();
     setIsUserAtBottom(atBottom);
-    
+
     // Track immediately via ref - if user scrolls away during streaming, respect it
     if (!atBottom && isLoading) {
       userScrolledAwayRef.current = true;
@@ -210,11 +210,11 @@ const fetchModels = async () => {
   try {
     const response = await serverFetch('/models');
     const data = await response.json();
-    
+
     // Handle both array format and object with data array
     const modelList = Array.isArray(data) ? data : data.data || [];
     setModels(modelList);
-    
+
     if (modelList.length > 0) {
       setSelectedModel(prev => prev || modelList[0].id);
     }
@@ -271,9 +271,9 @@ useEffect(() => {
 
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = supportedModelsData[selectedModel];
-    
+
     return modelInfo?.labels?.includes('vision') || false;
   };
 
@@ -283,28 +283,28 @@ useEffect(() => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setUploadedImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -333,18 +333,18 @@ const buildChatRequestBody = (messageHistory: Message[]) => ({
 const extractThinking = (content: string): { content: string; thinking: string } => {
   let extractedThinking = '';
   let cleanedContent = content;
-  
+
   // Extract all complete <think>...</think> blocks
   const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
   let match;
-  
+
   while ((match = thinkRegex.exec(content)) !== null) {
     extractedThinking += match[1];
   }
-  
+
   // Remove all complete <think>...</think> blocks from content
   cleanedContent = cleanedContent.replace(thinkRegex, '');
-  
+
   return {
     content: cleanedContent,
     thinking: extractedThinking
@@ -380,7 +380,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   try {
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) break;
 
       const chunk = decoder.decode(value, { stream: true });
@@ -389,7 +389,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6).trim();
-          
+
           if (data === '[DONE]') {
             continue;
           }
@@ -403,15 +403,15 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
             const delta = parsed.choices?.[0]?.delta;
             const content = delta?.content;
             const thinkingContent = delta?.reasoning_content || delta?.thinking;
-            
+
             if (content) {
               accumulatedContent += content;
             }
-            
+
             if (thinkingContent) {
               accumulatedThinking += thinkingContent;
             }
-            
+
             if (content || thinkingContent) {
               // First response received - model is loaded, clear loading indicator
               if (!receivedFirstChunk) {
@@ -419,15 +419,15 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                 setIsModelLoading(false);
                 setCurrentLoadedModel(selectedModel);
               }
-              
+
               // Extract thinking from <think> tags in content
               const extracted = extractThinking(accumulatedContent);
               const displayContent = extracted.content;
               const embeddedThinking = extracted.thinking;
-              
+
               // Combine thinking from both sources (API field and embedded tags)
               const totalThinking = (accumulatedThinking || '') + (embeddedThinking || '');
-              
+
               setMessages(prev => {
                 const newMessages = [...prev];
                 const messageIndex = newMessages.length - 1;
@@ -436,7 +436,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                   content: displayContent,
                   thinking: totalThinking || undefined,
                 };
-                
+
                 // Auto-expand thinking section if thinking content is present
                 if (totalThinking) {
                   setExpandedThinking(prevExpanded => {
@@ -445,7 +445,7 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                     return next;
                   });
                 }
-                
+
                 return newMessages;
               });
             }
@@ -474,7 +474,7 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
@@ -490,14 +490,14 @@ const sendMessage = async () => {
     let messageContent: MessageContent;
     if (uploadedImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (inputValue.trim()) {
         contentArray.push({
           type: 'text',
           text: inputValue
         });
       }
-      
+
       uploadedImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -506,7 +506,7 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = inputValue;
@@ -514,7 +514,7 @@ const sendMessage = async () => {
 
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
-    
+
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setUploadedImages([]);
@@ -604,25 +604,25 @@ const sendMessage = async () => {
       <>
         {thinking && (
           <div className="thinking-section">
-            <button 
+            <button
               className="thinking-toggle"
               onClick={() => messageIndex !== undefined && toggleThinking(messageIndex)}
             >
-              <svg 
-                width="12" 
-                height="12" 
-                viewBox="0 0 24 24" 
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
                 fill="none"
-                style={{ 
+                style={{
                   transform: expandedThinking.has(messageIndex!) ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.2s'
                 }}
               >
-                <path 
-                  d="M6 9L12 15L18 9" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
+                <path
+                  d="M6 9L12 15L18 9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
@@ -644,10 +644,10 @@ const sendMessage = async () => {
                 return <MarkdownMessage key={index} content={item.text} />;
               } else if (item.type === 'image_url') {
                 return (
-                  <img 
-                    key={index} 
-                    src={item.image_url.url} 
-                    alt="Uploaded" 
+                  <img
+                    key={index}
+                    src={item.image_url.url}
+                    alt="Uploaded"
                     className="message-image"
                   />
                 );
@@ -662,7 +662,7 @@ const sendMessage = async () => {
 
   const handleEditMessage = (index: number, e: React.MouseEvent) => {
     if (isLoading) return; // Don't allow editing while loading
-    
+
     e.stopPropagation(); // Prevent triggering the outside click
     const message = messages[index];
     if (message.role === 'user') {
@@ -675,7 +675,7 @@ const sendMessage = async () => {
         // If content is an array, extract the text and image parts
         const textContent = message.content.find(item => item.type === 'text');
         setEditingValue(textContent ? textContent.text : '');
-        
+
         const imageContents = message.content.filter(item => item.type === 'image_url');
         setEditingImages(imageContents.map(img => img.image_url.url));
       }
@@ -701,28 +701,28 @@ const sendMessage = async () => {
 
     const file = files[0];
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string') {
         setEditingImages(prev => [...prev, result]);
       }
     };
-    
+
     reader.readAsDataURL(file);
   };
 
   const handleEditImagePaste = (event: React.ClipboardEvent) => {
     const items = event.clipboardData.items;
-    
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       if (item.type.indexOf('image') !== -1) {
         event.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
@@ -755,26 +755,26 @@ const sendMessage = async () => {
 
     // Create new abort controller
     abortControllerRef.current = new AbortController();
-    
+
     // When submitting an edit, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
 
     // Truncate messages up to the edited message
     const truncatedMessages = messages.slice(0, editingIndex);
-    
+
     // Build edited message content with images if present
     let messageContent: MessageContent;
     if (editingImages.length > 0) {
       const contentArray: Array<TextContent | ImageContent> = [];
-      
+
       if (editingValue.trim()) {
         contentArray.push({
           type: 'text',
           text: editingValue
         });
       }
-      
+
       editingImages.forEach(imageUrl => {
         contentArray.push({
           type: 'image_url',
@@ -783,16 +783,16 @@ const sendMessage = async () => {
           }
         });
       });
-      
+
       messageContent = contentArray;
     } else {
       messageContent = editingValue;
     }
-    
+
     // Add the edited message
     const editedMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...truncatedMessages, editedMessage];
-    
+
     setMessages(messageHistory);
     setEditingIndex(null);
     setEditingValue('');
@@ -863,7 +863,7 @@ const sendMessage = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // Clear all messages and reset state
     setMessages([]);
     setInputValue('');
@@ -883,7 +883,7 @@ const sendMessage = async () => {
     <div className="chat-window" style={width ? { width: `${width}px` } : undefined}>
       <div className="chat-header">
         <h3>LLM Chat</h3>
-        <button 
+        <button
           className="new-chat-button"
           onClick={handleNewChat}
           disabled={isLoading}
@@ -901,17 +901,17 @@ const sendMessage = async () => {
         </button>
       </div>
 
-      <div 
-        className="chat-messages" 
+      <div
+        className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
         onClick={editingIndex !== null ? cancelEdit : undefined}
       >
         {messages.length === 0 && (
           <div className="chat-empty-state">
-            <img 
-              src={logoSvg} 
-              alt="Lemonade Logo" 
+            <img
+              src={logoSvg}
+              alt="Lemonade Logo"
               className="chat-empty-logo"
             />
             <h2 className="chat-empty-title">Lemonade Chat</h2>
@@ -1143,5 +1143,3 @@ const sendMessage = async () => {
 };
 
 export default ChatWindow;
-
-

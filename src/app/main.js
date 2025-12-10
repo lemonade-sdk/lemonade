@@ -225,7 +225,7 @@ const discoverServerPort = () => {
         // Parse the output to find the port
         // Expected format: "Server is running on port {port}" or "Server is not running"
         const output = stdout.trim();
-        
+
         // Check if server is not running
         if (output.includes('not running')) {
           console.log('Server is not running, using default port 8000');
@@ -235,10 +235,10 @@ const discoverServerPort = () => {
 
         // Try regex pattern to extract port number
         // Pattern matches: "Server is running on port 8080" or any similar format
-        const portMatch = output.match(/port[:\s]+(\d+)/i) || 
+        const portMatch = output.match(/port[:\s]+(\d+)/i) ||
                          output.match(/localhost:(\d+)/i) ||
                          output.match(/127\.0\.0\.1:(\d+)/i);
-        
+
         if (portMatch && portMatch[1]) {
           const port = parseInt(portMatch[1], 10);
           if (!isNaN(port) && port > 0 && port < 65536) {
@@ -552,10 +552,10 @@ function createWindow() {
   });
 
   // In development, load from dist/renderer; in production from root
-  const htmlPath = app.isPackaged 
+  const htmlPath = app.isPackaged
     ? path.join(__dirname, 'dist', 'renderer', 'index.html')
     : path.join(__dirname, 'dist', 'renderer', 'index.html');
-  
+
   mainWindow.loadFile(htmlPath);
 
   // Open all external links in the default browser
@@ -587,12 +587,12 @@ function createWindow() {
 
 app.on('ready', () => {
   createWindow();
-  
+
   // Window control handlers
   ipcMain.on('minimize-window', () => {
     if (mainWindow) mainWindow.minimize();
   });
-  
+
   ipcMain.on('maximize-window', () => {
     if (mainWindow) {
       if (mainWindow.isMaximized()) {
@@ -602,11 +602,11 @@ app.on('ready', () => {
       }
     }
   });
-  
+
   ipcMain.on('close-window', () => {
     if (mainWindow) mainWindow.close();
   });
-  
+
   ipcMain.on('open-external', (event, url) => {
     shell.openExternal(url);
   });
@@ -635,5 +635,3 @@ app.on('activate', function () {
     createWindow();
   }
 });
-
-

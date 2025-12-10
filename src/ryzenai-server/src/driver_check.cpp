@@ -30,18 +30,18 @@ public:
     WMIConnection() {
         HRESULT hres = CoInitializeEx(0, COINIT_MULTITHREADED);
         if (FAILED(hres) && hres != RPC_E_CHANGED_MODE) return;
-        
-        hres = CoInitializeSecurity(NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_DEFAULT, 
+
+        hres = CoInitializeSecurity(NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_DEFAULT,
                                   RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL);
-        
-        hres = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER, 
+
+        hres = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                               IID_IWbemLocator, (LPVOID*)&pLoc_);
         if (FAILED(hres)) return;
-        
+
         hres = pLoc_->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), NULL, NULL, 0, NULL, 0, 0, &pSvc_);
         if (FAILED(hres)) { pLoc_->Release(); pLoc_ = nullptr; return; }
-        
-        hres = CoSetProxyBlanket(pSvc_, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL, 
+
+        hres = CoSetProxyBlanket(pSvc_, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
                                RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
         if (FAILED(hres)) { pSvc_->Release(); pSvc_ = nullptr; pLoc_->Release(); pLoc_ = nullptr; }
     }
@@ -56,9 +56,9 @@ public:
 
     bool query(const std::wstring& wql, std::string& result_version) {
         if (!pSvc_) return false;
-        
+
         IEnumWbemClassObject* pEnumerator = nullptr;
-        HRESULT hres = pSvc_->ExecQuery(bstr_t("WQL"), bstr_t(wql.c_str()), 
+        HRESULT hres = pSvc_->ExecQuery(bstr_t("WQL"), bstr_t(wql.c_str()),
                                       WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnumerator);
         if (FAILED(hres)) return false;
 
@@ -73,7 +73,7 @@ public:
             VARIANT vtProp;
             VariantInit(&vtProp);
             hr = pclsObj->Get(L"DriverVersion", 0, &vtProp, 0, 0);
-            
+
             if (SUCCEEDED(hr) && vtProp.vt == VT_BSTR && vtProp.bstrVal != nullptr) {
                 std::wstring wstr(vtProp.bstrVal, SysStringLen(vtProp.bstrVal));
                 int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
@@ -103,7 +103,7 @@ std::string GetNPUDriverVersion() {
     // Query for "NPU Compute Accelerator Device"
     // Need to escape special characters in query if any, but specific name is simple
     std::wstring query = L"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceName LIKE '%NPU Compute Accelerator Device%'";
-    
+
     if (wmi.query(query, version)) {
         return version;
     }
@@ -117,7 +117,7 @@ void OpenBrowser(const std::string& url) {
 #else
 
 std::string GetNPUDriverVersion() { return "0.0.0.0"; }
-void OpenBrowser(const std::string& url) { 
+void OpenBrowser(const std::string& url) {
     std::cout << "Please visit: " << url << std::endl;
 }
 
@@ -156,14 +156,14 @@ bool IsVersionLessThan(const std::string& v1, const std::string& v2) {
 
 bool CheckNPUDriverVersion() {
     std::string version = GetNPUDriverVersion();
-    
+
     if (version.empty()) {
         std::cout << "[Server] NPU Driver Version: Unknown (Could not detect)" << std::endl;
         return true; // Assume OK if we can't detect, to not block users with weird setups
     }
-    
+
     std::cout << "[Server] NPU Driver Version: " << version << std::endl;
-    
+
     if (IsVersionLessThan(version, RYZENAI_SERVER_MINIMUM_DRIVER)) {
         std::cerr << "\n===============================================================" << std::endl;
         std::cerr << "ERROR: NPU Driver Version is too old!" << std::endl;
@@ -171,7 +171,7 @@ bool CheckNPUDriverVersion() {
         std::cerr << "Minimum: " << RYZENAI_SERVER_MINIMUM_DRIVER << std::endl;
         std::cerr << "Please update your NPU driver at: " << DRIVER_INSTALL_URL << std::endl;
         std::cerr << "===============================================================\n" << std::endl;
-        
+
         OpenBrowser(DRIVER_INSTALL_URL);
         return false;
     }
@@ -180,4 +180,3 @@ bool CheckNPUDriverVersion() {
 }
 
 } // namespace ryzenai
-

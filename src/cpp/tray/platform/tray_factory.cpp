@@ -24,4 +24,3 @@ std::unique_ptr<TrayInterface> create_tray() {
 }
 
 } // namespace lemon_tray
-

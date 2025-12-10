@@ -5,36 +5,36 @@
   --primary-yellow-dark: #ffd43b;
   --accent-gold: #e6b800;
   --accent-gold-dark: #bfa100;
-  
+
   --text-primary: #222;
   --text-secondary: #555;
   --text-muted: #666;
-  
+
   --bg-primary: #fffbe9;
   --bg-secondary: #fff8dd;
   --bg-tertiary: #fff5d1;
-  
+
   /* Cohesive Button Color Palette */
   --success-primary: #2d7f47;
   --success-hover: #236338;
   --success-light: #e8f5e8;
-  
+
   --danger-primary: #c8586c;
   --danger-hover: #a94858;
   --danger-light: #fdf2f4;
-  
+
   --info-primary: #5b8db8;
   --info-hover: #4a7396;
   --info-light: #f0f5fa;
-  
+
   --neutral-primary: #6b7280;
   --neutral-hover: #4b5563;
   --neutral-light: #f9fafb;
-  
+
   --purple-primary: #8b5a96;
   --purple-hover: #744f7e;
   --purple-light: #f5f1f6;
-  
+
   /* Status Colors */
   --status-green: #28a745;
   --status-red: #dc3545;
@@ -63,7 +63,7 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background: 
+  background:
     radial-gradient(circle at 20% 20%, rgba(255, 224, 102, 0.1) 0%, transparent 50%),
     radial-gradient(circle at 80% 80%, rgba(255, 212, 59, 0.1) 0%, transparent 50%);
   pointer-events: none;
@@ -178,7 +178,7 @@ body::before {
   margin-right: 1rem;
   /* Removing only the bottom border and shadow for the content tab gap to look nicer */
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0);
-  border-bottom: none;    
+  border-bottom: none;
 }
 
 .tabs {
@@ -298,11 +298,11 @@ body::before {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { 
+  0%, 100% {
     transform: scale(1);
     opacity: 0.3;
   }
-  50% { 
+  50% {
     transform: scale(1.4);
     opacity: 0.1;
   }
@@ -354,21 +354,21 @@ body::before {
 
 /* Ensure options in the list are not affected by the select's styling */
 .model-select option {
-  color: var(--text-primary); 
+  color: var(--text-primary);
   font-weight: normal;
   font-style: normal;
-  background-color: white; 
+  background-color: white;
   padding: 0.5rem;
 }
 
 /* Highlight the selected option ONLY in the open list (if desired) */
 .model-select option:checked {
-  background-color: #f0f0f0; 
+  background-color: #f0f0f0;
   color: var(--text-primary);
 }
 
 .model-select option:checked.server-offline {
-  background-color: #f0f0f0; 
+  background-color: #f0f0f0;
   color: var(--status-red);
 }
 
@@ -424,7 +424,7 @@ button:disabled {
   border-radius: 0 0 8px 8px;
   /* adding border and shadow that was removed for the gap look from higher div */
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  border: 1px solid #e0e0e0;  
+  border: 1px solid #e0e0e0;
 }
 
 .tab-content.active {
@@ -435,9 +435,9 @@ button:disabled {
 .chat-container {
   display: flex;
   flex-direction: column;
-  /* Max space available in viewport 
+  /* Max space available in viewport
      This also prevents the chat-history section to resize lower than a certain point */
-  min-height: calc(100vh - 550px); 
+  min-height: calc(100vh - 550px);
   min-width: 300px;
   max-width: 100%;
   width: 100%;
@@ -887,22 +887,22 @@ button:disabled {
   .attachments-preview-row {
     gap: 6px;
   }
-  
+
   .attachment-preview {
     padding: 3px 6px;
     gap: 4px;
   }
-  
+
   .attachment-thumbnail {
     width: 18px;
     height: 18px;
   }
-  
+
   .attachment-filename {
     max-width: 100px;
     font-size: 0.8em;
   }
-  
+
   .attachment-remove-btn {
     font-size: 12px;
   }
@@ -973,7 +973,7 @@ button:disabled {
   border: 1px solid rgba(107, 114, 128, 0.3) !important;
   cursor: wait !important;
   backdrop-filter: blur(8px) !important;
-  box-shadow: 
+  box-shadow:
     0 2px 8px rgba(107, 114, 128, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
@@ -1566,7 +1566,7 @@ button:disabled {
     flex-direction: column;
     gap: 1.5em;
   }
-  
+
   .model-mgmt-pane {
     flex: none;
     width: 100%;
@@ -1574,26 +1574,26 @@ button:disabled {
 }
 
 @media (max-width: 600px) {
-  .title { 
-    font-size: 2rem; 
+  .title {
+    font-size: 2rem;
   }
-  .navbar { 
-    font-size: 1rem; 
-    gap: 1.2rem; 
+  .navbar {
+    font-size: 1rem;
+    gap: 1.2rem;
   }
-  .main { 
-    margin-top: 1rem; 
+  .main {
+    margin-top: 1rem;
   }
   .model-mgmt-container {
     gap: 1em;
   }
-  
+
   .tab-container {
     margin-left: 0.5rem;
     margin-right: 0.5rem;
     width: calc(100% - 1rem);
   }
-  
+
   /* Ensure all input fields are properly constrained on very narrow screens */
   #register-model-name, #register-mmproj, #register-checkpoint, #register-recipe {
     max-width: 100%;
@@ -1610,20 +1610,20 @@ button:disabled {
     padding: 1rem 1rem 0.5rem 1rem;
     align-items: center;
   }
-  
+
   .navbar-brand {
     margin-bottom: 0.5rem;
   }
-  
+
   .brand-title {
     font-size: 1.3rem;
   }
-  
+
   .brand-icon {
     width: 1.3rem;
     height: 1.3rem;
   }
-  
+
   .navbar-links {
     gap: 1.5rem;
     font-size: 1rem;
@@ -1634,23 +1634,23 @@ button:disabled {
   .navbar {
     padding: 0.5rem 0.5rem 0.25rem 0.5rem;
   }
-  
+
   .brand-title {
     font-size: 1.2rem;
   }
-  
+
   .brand-icon {
     width: 1.2rem;
     height: 1.2rem;
   }
-  
+
   .navbar-links {
     gap: 1rem;
     font-size: 0.9rem;
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .main {
     margin-top: 0.5rem;
   }
@@ -1802,26 +1802,26 @@ button:disabled {
     gap: 0.5rem;
     padding: 0 0.5rem;
   }
-  
+
   .app-logo-item {
     width: 48px;
     height: 48px;
   }
-  
+
   .app-logo-img {
     border-radius: 3px;
   }
-  
+
   .suggestion-text {
     font-size: 0.9rem;
     margin-bottom: 0.5rem;
   }
-  
+
   .app-logo-item.image-failed .app-name {
     font-size: 0.6rem;
     line-height: 1.0;
   }
-  
+
   .app-logo-item.image-failed {
     padding: 0.3rem;
   }
@@ -2492,7 +2492,7 @@ button:disabled {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 
+  box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
@@ -2505,7 +2505,7 @@ button:disabled {
 /* Elegant hover animation with subtle scaling */
 .model-item-btn:hover {
   transform: translateY(-2px) scale(1.05);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(0, 0, 0, 0.15),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -2516,7 +2516,7 @@ button:disabled {
 /* Satisfying active state */
 .model-item-btn:active {
   transform: translateY(-1px) scale(1.02);
-  box-shadow: 
+  box-shadow:
     0 3px 12px rgba(0, 0, 0, 0.12),
     0 1px 5px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
@@ -2528,7 +2528,7 @@ button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none !important;
-  box-shadow: 
+  box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
   background: linear-gradient(145deg, rgba(248, 248, 248, 0.8), rgba(240, 240, 240, 0.6)) !important;
@@ -2547,7 +2547,7 @@ button:disabled {
   border: 1px solid rgba(107, 114, 128, 0.3);
   cursor: wait;
   backdrop-filter: blur(8px);
-  box-shadow: 
+  box-shadow:
     0 2px 8px rgba(107, 114, 128, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -2562,11 +2562,11 @@ button:disabled {
 }
 
 @keyframes gentle-pulse {
-  0%, 100% { 
+  0%, 100% {
     opacity: 1;
     transform: scale(1);
   }
-  50% { 
+  50% {
     opacity: 0.8;
     transform: scale(1.02);
   }
@@ -2576,7 +2576,7 @@ button:disabled {
 .model-item-btn.install:hover {
   background: linear-gradient(145deg, rgba(230, 184, 0, 0.2), rgba(230, 184, 0, 0.1));
   border-color: rgba(230, 184, 0, 0.4);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(230, 184, 0, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -2585,7 +2585,7 @@ button:disabled {
 .model-item-btn.load:hover {
   background: linear-gradient(145deg, rgba(45, 127, 71, 0.2), rgba(45, 127, 71, 0.1));
   border-color: rgba(45, 127, 71, 0.4);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(45, 127, 71, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -2594,7 +2594,7 @@ button:disabled {
 .model-item-btn.unload:hover {
   background: linear-gradient(145deg, rgba(107, 114, 128, 0.2), rgba(107, 114, 128, 0.1));
   border-color: rgba(107, 114, 128, 0.4);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(107, 114, 128, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -2603,7 +2603,7 @@ button:disabled {
 .model-item-btn.delete:hover {
   background: linear-gradient(145deg, rgba(200, 88, 108, 0.2), rgba(200, 88, 108, 0.1));
   border-color: rgba(200, 88, 108, 0.4);
-  box-shadow: 
+  box-shadow:
     0 8px 25px rgba(200, 88, 108, 0.2),
     0 3px 10px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);

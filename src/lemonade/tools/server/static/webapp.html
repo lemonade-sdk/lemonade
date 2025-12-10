@@ -16,7 +16,7 @@
     <nav class="navbar" id="navbar">
         <div class="navbar-brand">
             <span class="brand-title"><a href="https://lemonade-server.ai"><img src="/favicon.ico" alt="🍋" class="brand-icon"> Lemonade Server</a></span>
-        </div>  
+        </div>
         <div class="navbar-links">
             <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a>
             <a href="https://lemonade-server.ai/docs/" target="_blank">Docs</a>
@@ -36,8 +36,8 @@
     </div>
     <main class="main">
         <div class="tab-content-wrapper">
-        <div class="tab-container"> 
-            <div class="tabs"> 
+        <div class="tab-container">
+            <div class="tabs">
                 <div class="tab-group">
 					<button class="tab active" id="tab-chat" onclick="showTab('chat')">LLM Chat</button>
 					<button class="tab" id="tab-model-settings" onclick="showTab('settings')">Model Settings</button>
@@ -60,13 +60,13 @@
                         </div>
                     </div>
 				</div>
-			</div>            
+			</div>
             <div class="tab-content active" id="content-chat">
                 <div class="chat-container">
                     <div class="chat-history" id="chat-history" style="overflow-y: auto;"></div>
                     <div class="chat-input-row">
                         <div class="input-with-indicator">
-                            <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea> 
+                            <textarea id="chat-input" placeholder="Type your message..." rows="1"></textarea>
                         </div>
                         <input type="file" id="file-attachment" style="display: none;" multiple accept="image/*">
                         <button id="attachment-btn" title="Attach files">&#x1F4CE;</button>
@@ -74,7 +74,7 @@
                     </div>
                     <div class="attachments-preview-container" id="attachments-preview-container">
                         <div class="attachments-preview-row" id="attachments-preview-row"></div>
-                    </div> 
+                    </div>
                 </div>
                 <!-- App Suggestions Section -->
                 <div class="app-suggestions-section">
@@ -116,7 +116,7 @@
                     </a>
                     </div>
                 </div>
-            </div> 
+            </div>
             <div class="tab-content" id="content-settings">
                 <div class="model-settings-container">
                     <div class="settings-form">
@@ -141,10 +141,10 @@
                             <span class="setting-description">Penalty for repeating tokens (1 = no penalty, >1 = less repetition)</span>
                         </div>
                        <div class="setting-field">
-                         <label for="enable-thinking">Enable Thinking:</label> 
-                         <input type="checkbox" id="enable-thinking"> 
+                         <label for="enable-thinking">Enable Thinking:</label>
+                         <input type="checkbox" id="enable-thinking">
                          <br>
-                            <span class="setting-description">Determines whether hybrid reasoning models, such as Qwen3, will use thinking.</span> 
+                            <span class="setting-description">Determines whether hybrid reasoning models, such as Qwen3, will use thinking.</span>
                         </div>
                         <div class="setting-actions">
                             <button id="reset-settings-btn" class="reset-btn">Reset to Defaults</button>
@@ -199,7 +199,7 @@
                     </div>
                     <div class="model-browser-main">
                         <div class="model-list" id="model-list"></div>
-                        
+
                         <!-- Add Model Form (hidden by default) -->
                         <div class="add-model-form-main" id="add-model-form-main" style="display: none;">
                             <form id="register-model-form" autocomplete="off" class="form-content">
@@ -275,20 +275,20 @@
                         </div>
                     </div>
                 </div>
-            </div> 
             </div>
-        </div> 
+            </div>
+        </div>
     </main>
     <footer class="site-footer">
         <div class="dad-joke">When life gives you LLMs, make an LLM aide.</div>
         <div class="copyright">Copyright 2025 AMD</div>
     </footer>
-    
+
     <!-- External libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/openai@6.7.0/dist/openai.min.js"></script> 
+    <script src="https://cdn.jsdelivr.net/npm/openai@6.7.0/dist/openai.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.0/marked.min.js"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    
+
     <!-- Migration Cleanup Modal -->
     <div id="migration-modal" class="modal" style="display:none;">
         <div class="modal-content">

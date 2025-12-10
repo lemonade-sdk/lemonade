@@ -6,7 +6,7 @@ Run transformer models using llama.cpp. This integration allows you to:
 3. Use the models with other tools like chat or MMLU accuracy testing
 
 Note: The tool will download and install the necessary platform llama.cpp
-executable files the first time the `llamacpp-load` tool is used. 
+executable files the first time the `llamacpp-load` tool is used.
 
 ## Installation
 
@@ -63,7 +63,7 @@ The benchmark will measure and report:
 - Token generation speed (tokens per second)
 - Maximum memory used for each prompt by the external `llama-bench.exe` or `llama-cli.exe` application.  Note that the `Peak memory` reported in the status output is only for the `lemonade` execution.
 
-By default, the `llamacpp-bench` tool will use the `llama-bench.exe` executable for benchmarking.  Use the 
+By default, the `llamacpp-bench` tool will use the `llama-bench.exe` executable for benchmarking.  Use the
 `--cli` flag to use `llama-cli.exe`.  In this case, the bench tool will make multiple calls to the executable,
 one per sample, which will have lower overall performance.
 

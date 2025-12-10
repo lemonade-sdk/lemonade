@@ -7,4 +7,3 @@ namespace ryzenai {
 bool CheckNPUDriverVersion();
 
 }
-

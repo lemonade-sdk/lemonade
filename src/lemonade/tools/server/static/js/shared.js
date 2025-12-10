@@ -92,7 +92,7 @@ function showBanner(msg, type = 'error') {
             fullMsg = `${msg}<br>Check the Lemonade Server logs <a href="${logsUrl}" target="_blank" rel="noopener noreferrer">on the browser</a> or via the system tray app for more information.`;
             break;
     }
-    
+
     if (msgEl) {
         msgEl.innerHTML = fullMsg;
     } else {
@@ -139,11 +139,11 @@ function updateStatusIndicator(text, state = 'default') {
     const statusText = document.getElementById('model-status-text');
     const statusLight = document.getElementById('status-light');
     const indicator = document.getElementById('model-status-indicator');
-    
+
     if (statusText) {
         statusText.textContent = text;
     }
-    
+
     if (statusLight) {
         // Set the status light class based on state
         switch (state) {
@@ -165,7 +165,7 @@ function updateStatusIndicator(text, state = 'default') {
                 break;
         }
     }
-    
+
     if (indicator) {
         // Also update the indicator container class for consistent styling
         switch (state) {
@@ -203,25 +203,25 @@ async function loadModelStandardized(modelId, options = {}) {
         onSuccess = null,            // Optional callback on successful load
         onError = null               // Optional callback on error
     } = options;
-    
+
     // Store original states for restoration on error
     const originalStatusText = document.getElementById('model-status-text')?.textContent || '';
-    
+
     // Track this load operation as active to prevent polling interference
     if (window.activeOperations) {
         window.activeOperations.add(modelId);
     }
-    
+
     try {
         // Update load button if provided
         if (loadButton) {
             loadButton.disabled = true;
             loadButton.textContent = '⏳';
         }
-        
+
         // Update status indicator to show loading state
         updateStatusIndicator(`Loading ${modelId}...`, 'loading');
-        
+
         // Update chat dropdown and send button to show loading state
         const modelSelect = document.getElementById('model-select');
         const sendBtn = document.getElementById('toggle-btn');
@@ -235,7 +235,7 @@ async function loadModelStandardized(modelId, options = {}) {
                 modelOption.textContent = modelId;
                 modelSelect.appendChild(modelOption);
             }
-            
+
             // Set the dropdown to the new model and disable it
             if (modelOption) {
                 modelSelect.value = modelId;
@@ -243,19 +243,19 @@ async function loadModelStandardized(modelId, options = {}) {
             modelSelect.disabled = true;
             sendBtn.disabled = true;
             sendBtn.textContent = 'Loading...';
-            
+
             // Update the loading option text
             const loadingOption = modelSelect.querySelector('option[value=""]');
             if (loadingOption) {
                 loadingOption.textContent = `Loading ${modelId}...`;
             }
         }
-        
+
         // Call custom loading start callback
         if (onLoadingStart) {
             onLoadingStart(modelId);
         }
-        
+
         // Make the API call to load the model
         // Include mmproj if the model has it defined
         const loadPayload = { model_name: modelId };
@@ -270,72 +270,72 @@ async function loadModelStandardized(modelId, options = {}) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(loadPayload)
         });
-        
+
         // Update model status indicator after successful load
         if (window.updateModelStatusIndicator) {
             await window.updateModelStatusIndicator();
         }
-        
+
         // Update chat dropdown value
         if (window.updateModelSelectValue) {
             window.updateModelSelectValue();
         }
-        
+
         // Update attachment button state
         if (window.updateAttachmentButtonState) {
             window.updateAttachmentButtonState();
         }
-        
+
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
             loadButton.textContent = '🚀';
             loadButton.classList.remove('loading');
         }
-        
+
         // Reset chat controls
         if (modelSelect && sendBtn) {
             modelSelect.disabled = false;
             sendBtn.disabled = false;
             sendBtn.textContent = 'Send';
-            
+
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) {
                 defaultOption.textContent = 'Click to select a model ▼';
             }
         }
-        
+
         // Call custom loading end callback
         if (onLoadingEnd) {
             onLoadingEnd(modelId, true);
         }
-        
+
         // Call success callback
         if (onSuccess) {
             onSuccess(modelId);
         }
-        
+
         // Remove from active operations on success
         if (window.activeOperations) {
             window.activeOperations.delete(modelId);
         }
-        
+
         return true;
-        
+
     } catch (error) {
         console.error('Error loading model:', error);
-        
+
         // Reset load button if provided
         if (loadButton) {
             loadButton.disabled = false;
             loadButton.textContent = '🚀';
             loadButton.classList.remove('loading');
         }
-        
+
         // Reset status indicator on error
         updateStatusIndicator(originalStatusText, 'error');
-        
+
         // Reset chat controls on error
         const modelSelect = document.getElementById('model-select');
         const sendBtn = document.getElementById('toggle-btn');
@@ -343,36 +343,36 @@ async function loadModelStandardized(modelId, options = {}) {
             modelSelect.disabled = false;
             sendBtn.disabled = false;
             sendBtn.textContent = 'Send';
-            
+
             // Reset dropdown value
             if (window.updateModelSelectValue) {
                 window.updateModelSelectValue();
             }
-            
+
             // Reset the default option text
             const defaultOption = modelSelect.querySelector('option[value=""]');
             if (defaultOption) {
                 defaultOption.textContent = 'Click to select a model ▼';
             }
         }
-        
+
         // Call custom loading end callback
         if (onLoadingEnd) {
             onLoadingEnd(modelId, false);
         }
-        
+
         // Call error callback and always show default error banner as fallback
         if (onError) {
             onError(error, modelId);
         }
         // Always show error banner to ensure user sees the error
         showErrorBanner('Failed to load model: ' + error.message);
-        
+
         // Remove from active operations on error too
         if (window.activeOperations) {
             window.activeOperations.delete(modelId);
         }
-        
+
         return false;
     }
 }
@@ -380,23 +380,23 @@ async function loadModelStandardized(modelId, options = {}) {
 // Make standardized load function globally accessible
 window.loadModelStandardized = loadModelStandardized;
 
-// Tab switching logic 
-function showTab(tab, updateHash = true) { 
-    document.getElementById('tab-chat').classList.remove('active'); 
-    document.getElementById('tab-models').classList.remove('active'); 
+// Tab switching logic
+function showTab(tab, updateHash = true) {
+    document.getElementById('tab-chat').classList.remove('active');
+    document.getElementById('tab-models').classList.remove('active');
     document.getElementById('tab-model-settings').classList.remove('active');
-    document.getElementById('content-chat').classList.remove('active'); 
-    document.getElementById('content-models').classList.remove('active'); 
+    document.getElementById('content-chat').classList.remove('active');
+    document.getElementById('content-models').classList.remove('active');
     document.getElementById('content-settings').classList.remove('active');
-    
-    if (tab === 'chat') { 
-        document.getElementById('tab-chat').classList.add('active'); 
+
+    if (tab === 'chat') {
+        document.getElementById('tab-chat').classList.add('active');
         document.getElementById('content-chat').classList.add('active');
         if (updateHash) {
             window.location.hash = 'llm-chat';
         }
-    } else if (tab === 'models') { 
-        document.getElementById('tab-models').classList.add('active'); 
+    } else if (tab === 'models') {
+        document.getElementById('tab-models').classList.add('active');
         document.getElementById('content-models').classList.add('active');
         if (updateHash) {
             window.location.hash = 'model-management';
@@ -461,22 +461,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const logoImages = document.querySelectorAll('.app-logo-img');
     logoImages.forEach(function(img) {
         let imageLoaded = false;
-        
+
         img.addEventListener('load', function() {
             imageLoaded = true;
         });
-        
+
         img.addEventListener('error', function() {
             if (!imageLoaded) {
                 handleImageFailure(this);
             }
         });
-        
+
         // Also check if image is already broken (cached failure)
         if (img.complete && img.naturalWidth === 0) {
             handleImageFailure(img);
         }
-        
+
         // Timeout fallback for slow connections (5 seconds)
         setTimeout(function() {
             if (!imageLoaded && !img.complete) {
@@ -508,23 +508,23 @@ function createModelNameWithLabels(modelId, allModels) {
     // Create container for model name and labels
     const container = document.createElement('div');
     container.className = 'model-labels-container';
-    
+
     // Add model name
     const nameSpan = document.createElement('span');
     nameSpan.textContent = modelId;
     container.appendChild(nameSpan);
-    
+
     // Add labels if they exist
     const modelData = allModels[modelId];
     if (modelData && modelData.labels && Array.isArray(modelData.labels)) {
         modelData.labels.forEach(label => {
             const labelLower = label.toLowerCase();
-            
+
             // Skip "hot" labels since they have their own section
             if (labelLower === 'hot') {
                 return;
             }
-            
+
             const labelSpan = document.createElement('span');
             let labelClass = 'other';
             if (labelLower === 'vision') {
@@ -545,7 +545,7 @@ function createModelNameWithLabels(modelId, allModels) {
             container.appendChild(labelSpan);
         });
     }
-    
+
     return container;
 }
 

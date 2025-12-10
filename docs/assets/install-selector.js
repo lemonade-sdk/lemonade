@@ -92,7 +92,7 @@ function lmnFindClosestValid(newState) {
 
 window.lmnSet = function(type, val) {
   let newState = {...lmnState, [type]: val};
-  
+
   // Handle special cases first
   if (type === 'fw' && val === 'torch') {
     // PyTorch only works with Python SDK, so force that
@@ -116,7 +116,7 @@ window.lmnSet = function(type, val) {
     // If trying to select Server (C++) on macOS, switch to Windows
     newState.os = 'win';
   }
-  
+
   // Always ensure the clicked option is selected in the resulting state
   if (!lmnIsAllowed(newState.os, newState.method, newState.fw, newState.dev, newState.type)) {
     // Find the first valid combination that includes the user's chosen value for the changed type
@@ -129,7 +129,7 @@ window.lmnSet = function(type, val) {
       if (!lmnIsAllowed(c.os, c.method, c.fw, c.dev, newState.type)) return false;
       return true;
     });
-    
+
     if (candidates.length > 0) {
       // When switching OS and NPU was selected, prefer GPU over CPU
       let fallback = candidates[0];
@@ -174,7 +174,7 @@ window.lmnSet = function(type, val) {
       }
     }
   }
-  
+
   window.lmnState = {...newState};
   lmnRender();
 };
@@ -282,16 +282,16 @@ window.lmnRender = function() {
   });
 
   // Command rendering
-  
+
   // Generate FastFlowLM notice
   function generateFlmNotice() {
     return '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank" style="color:#666; text-decoration:underline;">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com" style="color:#666; text-decoration:underline;">lemonade@amd.com</a> for inquiries.</div>';
   }
-  
+
   // Generate badges
   function generateBadges() {
     var badges = '';
-    
+
     // Python version badge (only for Python SDK, not Server C++)
     if (lmnState.type === 'full') {
       var pythonVersions = '';
@@ -302,7 +302,7 @@ window.lmnRender = function() {
       }
       badges += '<img src="https://img.shields.io/badge/Python-' + pythonVersions + '-blue" alt="Python versions" style="margin-right: 0.5em;">';
     }
-    
+
     // OS version badge
     var osVersions = '';
     if (lmnState.os === 'linux') {
@@ -313,10 +313,10 @@ window.lmnRender = function() {
       osVersions = 'Windows%2011';
     }
     badges += '<img src="https://img.shields.io/badge/OS-' + osVersions + '-green" alt="OS versions">';
-    
+
     return badges;
   }
-  
+
   // Generate explore commands
   function generateExploreCommands() {
     var commands = [];
@@ -361,7 +361,7 @@ window.lmnRender = function() {
 
     return commands;
   }
-  
+
   var cmd = '';
   var link = '';
   var pythonSetupNote = '';
@@ -404,7 +404,7 @@ window.lmnRender = function() {
       // C++ build instructions for Server (C++)
       const sep = lmnState.os === 'win' ? '\\' : '/';
       const cdSep = lmnState.os === 'win' ? 'cd' : 'cd';
-      
+
       if (lmnState.fw === 'oga' && lmnState.dev === 'npu') {
         // NPU/Hybrid: need to build ryzenai-server first
         if (lmnState.os === 'win') {
@@ -450,7 +450,7 @@ window.lmnRender = function() {
       // Use quotes for package specs with brackets on macOS/Linux
       const needsQuotes = (lmnState.os === 'macos' || lmnState.os === 'linux');
       const q = needsQuotes ? '"' : '';
-      
+
       if (lmnState.fw === 'oga') {
         if (lmnState.dev === 'cpu') {
           if (lmnState.method === 'pypi') {
@@ -514,12 +514,12 @@ window.lmnRender = function() {
   var badgesDiv = document.getElementById('lmn-badges');
   var exploreDiv = document.getElementById('lmn-explore-command');
   var exploreSection = document.getElementById('lmn-explore-section');
-  
+
   // Render badges
   if (badgesDiv) {
     badgesDiv.innerHTML = generateBadges();
   }
-  
+
   // Handle GUI downloads vs commands
   if (link && cmd !== '' && lmnState.method === 'gui') {
     // Show download area, hide command area
@@ -537,7 +537,7 @@ window.lmnRender = function() {
       if (lmnState.dev === 'npu') {
         cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
       }
-      
+
       // Add FastFlowLM Early Access notice
       if (lmnState.fw === 'flm') {
         cmdDiv.innerHTML += generateFlmNotice();
@@ -551,22 +551,22 @@ window.lmnRender = function() {
     if (cmdDiv) {
       var fullBlock = (pythonSetupNote ? pythonSetupNote : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
       cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
-      
+
       // Add a note if NPU is selected
       if (lmnState.dev === 'npu') {
         cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
       }
-      
+
       // Add Linux .deb version note
       if (lmnState.os === 'linux' && lmnState.method === 'gui') {
         cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> Replace <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">&lt;VERSION&gt;</span> with the latest version number from the <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" target="_blank" style="color:#666; text-decoration:underline;">releases page</a> (e.g., <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">9.0.2</span>).</div>';
       }
-      
+
       // Add FastFlowLM Early Access notice
       if (lmnState.fw === 'flm') {
         cmdDiv.innerHTML += generateFlmNotice();
       }
-      
+
       // Render command lines with copy buttons
       setTimeout(function() {
         var pre = document.getElementById('lmn-pre-block');
@@ -584,14 +584,14 @@ window.lmnRender = function() {
     if (cmdDiv) cmdDiv.innerHTML = '';
     if (downloadArea) downloadArea.style.display = 'none';
   }
-  
+
   // Render explore commands
   if (exploreDiv && exploreSection) {
     var exploreCommands = generateExploreCommands();
     if (exploreCommands.length > 0) {
       exploreSection.style.display = 'block';
       exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
-      
+
       // Add llama.cpp tip below Quick Start commands
       if (lmnState.fw === 'llama' && lmnState.dev === 'gpu' && lmnState.os !== 'macos') {
         exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';

@@ -32,15 +32,15 @@
 ### 3. **Is Linux supported? What about macOS?**
 
    Yes! Both Linux and macOS are supported:
-   
+
    - **Linux**: Visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions.
    - **macOS**: Requires macOS 14+ with Apple Silicon (arm64/aarch64). Intel Macs are not supported.
-   
+
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
 ### 4. **How do I uninstall Lemonade Server? (Windows)**
 
-   To uninstall Lemonade Server, use the Windows Add/Remove Programs menu. 
+   To uninstall Lemonade Server, use the Windows Add/Remove Programs menu.
 
    **Optional: Remove cached files**
    - Open File Explorer and navigate to `%USERPROFILE%\.cache`
@@ -62,7 +62,7 @@
 ### 2. **What models are supported?**
 
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
-   
+
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
 
 ### 3. **How do I know what size model will work with my setup?**
@@ -98,7 +98,7 @@
 ### 1. **What are the performance benchmarks that can be collected using Lemonade SDK?**
 
    You can measure:
-   
+
    - Inference speed
    - Time to first token
    - Tokens per second
@@ -127,7 +127,7 @@
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
 
    Yes. In hybrid mode:
-   
+
    - The NPU handles prompt processing.
    - The GPU handles token generation.
    - If your prompt is short, the NPU finishes quickly. Try a longer prompt to see more NPU activity.
@@ -135,12 +135,12 @@
 ### 3. **Does Lemonade work on older AMD processors or non-Ryzen AI systems?**
 
    Yes! Lemonade supports multiple execution modes:
-   
+
    - **AMD Ryzen 7000/8000/200 series**: GPU acceleration via llama.cpp + Vulkan backend
    - **Systems with Radeon GPUs**: Yes
    - **Any x86 CPU**: Yes
    - **Intel/NVIDIA systems**: CPU inference, with GPU support if compatible drivers are available
-   
+
    While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
 
 ### 4. **How do I know what model architectures are supported by the NPU?**
@@ -166,7 +166,7 @@
 ### 1. **What if I encounter installation or runtime errors?**
 
    Check the Lemonade Server logs via the tray icon (Windows and macOS). Common issues include model compatibility or outdated versions.
-   
+
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 
 ### 2. **Lemonade is missing a feature I really want. What should I do?**
@@ -176,5 +176,5 @@
 ### 3. **Do you plan to share a roadmap?**
 
    Yes! We tag roadmap items on GitHub with the "on roadmap" label.
-   
+
    👉 [Lemonade SDK Roadmap Issues](https://github.com/lemonade-sdk/lemonade/issues?q=is%3Aissue%20state%3Aopen%20label%3A"on%20roadmap")

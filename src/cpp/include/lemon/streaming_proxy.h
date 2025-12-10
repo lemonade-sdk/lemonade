@@ -17,21 +17,21 @@ public:
         int output_tokens = 0;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
-        
+
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
                 std::cout << "\n=== Telemetry ===" << std::endl;
                 std::cout << "Input tokens:  " << input_tokens << std::endl;
                 std::cout << "Output tokens: " << output_tokens << std::endl;
-                std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3) 
+                std::cout << "TTFT (s):      " << std::fixed << std::setprecision(3)
                           << time_to_first_token << std::endl;
-                std::cout << "TPS:           " << std::fixed << std::setprecision(2) 
+                std::cout << "TPS:           " << std::fixed << std::setprecision(2)
                           << tokens_per_second << std::endl;
                 std::cout << "=================" << std::endl;
             }
         }
     };
-    
+
     // Stream a request to backend and forward SSE chunks to client
     static void forward_sse_stream(
         const std::string& backend_url,
@@ -40,7 +40,7 @@ public:
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300
     );
-    
+
 private:
     // Parse telemetry from SSE chunks
     static TelemetryData parse_telemetry(const std::string& buffer);

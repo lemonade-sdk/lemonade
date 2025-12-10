@@ -108,4 +108,4 @@ the report tool (`lemonade report --perf`).
 
 ## Further Information
 
-For more details on lm-evaluation-harness and its capabilities, see the [official documentation](https://github.com/EleutherAI/lm-evaluation-harness). 
+For more details on lm-evaluation-harness and its capabilities, see the [official documentation](https://github.com/EleutherAI/lm-evaluation-harness).

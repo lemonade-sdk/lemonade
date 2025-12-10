@@ -33,32 +33,32 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
-      
+
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
-          
+
       - name: Install dependencies
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
           $venvPip = ".\.venv\Scripts\pip.exe"
-          
+
           & $venvPython -m pip install --upgrade pip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPip install pylint
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPython -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           & $venvPip install -e .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -74,7 +74,7 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe" -OutFile "flm-setup.exe"
           .\flm-setup.exe /VERYSILENT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
+
           # Add FLM to PATH for all subsequent steps
           echo "C:\Program Files\flm" >> $env:GITHUB_PATH
 
@@ -95,7 +95,6 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
-          
+
           & $venvPython test/server_flm.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-

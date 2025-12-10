@@ -23,29 +23,28 @@ public:
         bool inherit_output = false,
         bool filter_health_logs = false,
         const std::vector<std::pair<std::string, std::string>>& env_vars = {});
-    
+
     // Stop a process
     static void stop_process(ProcessHandle handle);
-    
+
     // Check if process is running
     static bool is_running(ProcessHandle handle);
-    
+
     // Get process exit code (returns -1 if still running)
     static int get_exit_code(ProcessHandle handle);
-    
+
     // Wait for process to exit
     static int wait_for_exit(ProcessHandle handle, int timeout_seconds = -1);
-    
+
     // Read process output
     static std::string read_output(ProcessHandle handle, int max_bytes = 4096);
-    
+
     // Kill process forcefully
     static void kill_process(ProcessHandle handle);
-    
+
     // Find a free network port
     static int find_free_port(int start_port = 8001);
 };
 
 } // namespace utils
 } // namespace lemon
-

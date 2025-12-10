@@ -26,7 +26,9 @@ from utils.server_base import (
 )
 
 # Test audio file URL from lemonade-sdk assets repository
-TEST_AUDIO_URL = "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
+TEST_AUDIO_URL = (
+    "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
+)
 WHISPER_MODEL = "Whisper-Tiny"
 
 
@@ -72,9 +74,7 @@ class WhisperTesting(ServerTestingBase):
     # Test 1: Basic transcription
     def test_001_test_whisper_transcription(self):
         """Test basic audio transcription with Whisper."""
-        self.assertIsNotNone(
-            self._test_audio_path, "Test audio file not downloaded"
-        )
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
         self.assertTrue(
             os.path.exists(self._test_audio_path),
             f"Test audio file not found at {self._test_audio_path}",
@@ -82,20 +82,15 @@ class WhisperTesting(ServerTestingBase):
 
         # Prepare multipart form data
         with open(self._test_audio_path, "rb") as audio_file:
-            files = {
-                "file": ("test_speech.wav", audio_file, "audio/wav")
-            }
-            data = {
-                "model": WHISPER_MODEL,
-                "response_format": "json"
-            }
+            files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
+            data = {"model": WHISPER_MODEL, "response_format": "json"}
 
             print(f"[INFO] Sending transcription request with model {WHISPER_MODEL}")
             response = requests.post(
                 f"{self.base_url}/audio/transcriptions",
                 files=files,
                 data=data,
-                timeout=300  # 5 minute timeout for model loading + transcription
+                timeout=300,  # 5 minute timeout for model loading + transcription
             )
 
         self.assertEqual(
@@ -106,7 +101,9 @@ class WhisperTesting(ServerTestingBase):
 
         result = response.json()
         self.assertIn("text", result, "Response should contain 'text' field")
-        self.assertIsInstance(result["text"], str, "Transcription text should be a string")
+        self.assertIsInstance(
+            result["text"], str, "Transcription text should be a string"
+        )
         self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
         print(f"[OK] Transcription result: {result['text']}")
@@ -114,18 +111,14 @@ class WhisperTesting(ServerTestingBase):
     # Test 2: Transcription with language parameter
     def test_002_test_whisper_transcription_with_language(self):
         """Test audio transcription with explicit language parameter."""
-        self.assertIsNotNone(
-            self._test_audio_path, "Test audio file not downloaded"
-        )
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
         with open(self._test_audio_path, "rb") as audio_file:
-            files = {
-                "file": ("test_speech.wav", audio_file, "audio/wav")
-            }
+            files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
             data = {
                 "model": WHISPER_MODEL,
                 "language": "en",  # Explicitly set English
-                "response_format": "json"
+                "response_format": "json",
             }
 
             print(f"[INFO] Sending transcription request with language=en")
@@ -133,7 +126,7 @@ class WhisperTesting(ServerTestingBase):
                 f"{self.base_url}/audio/transcriptions",
                 files=files,
                 data=data,
-                timeout=300
+                timeout=300,
             )
 
         self.assertEqual(
@@ -156,9 +149,7 @@ class WhisperTesting(ServerTestingBase):
         }
 
         response = requests.post(
-            f"{self.base_url}/audio/transcriptions",
-            data=data,
-            timeout=60
+            f"{self.base_url}/audio/transcriptions", data=data, timeout=60
         )
 
         # Should return an error (400 or 422)
@@ -173,14 +164,10 @@ class WhisperTesting(ServerTestingBase):
     def test_004_test_transcription_missing_model(self):
         """Test error handling when model is missing."""
         with open(self._test_audio_path, "rb") as audio_file:
-            files = {
-                "file": ("test_speech.wav", audio_file, "audio/wav")
-            }
+            files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
 
             response = requests.post(
-                f"{self.base_url}/audio/transcriptions",
-                files=files,
-                timeout=60
+                f"{self.base_url}/audio/transcriptions", files=files, timeout=60
             )
 
         # Should return an error (400 or 422)
