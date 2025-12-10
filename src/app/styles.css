@@ -3428,6 +3428,66 @@ footer {
 }
 
 /* Reranking Model Styles */
+.reranking-history-item {
+    margin-bottom: 16px;
+}
+
+.reranking-user-input {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.reranking-input-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.reranking-input-text {
+    color: #fff;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.reranking-result-container {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.reranking-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.reranking-result-header h4 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.reranking-count-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #888;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
 .reranking-input-wrapper {
     display: flex;
     flex-direction: column;
@@ -3461,7 +3521,6 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 8px;
 }
 
 .reranked-document {

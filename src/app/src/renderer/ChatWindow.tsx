@@ -79,7 +79,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   // Reranking model state
   const [rerankQuery, setRerankQuery] = useState('');
   const [rerankDocuments, setRerankDocuments] = useState('');
-  const [rerankResult, setRerankResult] = useState<Array<{index: number, text: string, score: number}> | null>(null);
+  const [rerankHistory, setRerankHistory] = useState<Array<{
+    query: string;
+    documents: string;
+    results: Array<{index: number, text: string, score: number}>;
+  }>>([]);
   const [isProcessingRerank, setIsProcessingRerank] = useState(false);
 
 useEffect(() => {
@@ -972,7 +976,7 @@ const sendMessage = async () => {
     setEmbeddingHistory([]);
     setRerankQuery('');
     setRerankDocuments('');
-    setRerankResult(null);
+    setRerankHistory([]);
   };
 
   const handleEmbedding = async () => {
@@ -1039,19 +1043,21 @@ const sendMessage = async () => {
   const handleReranking = async () => {
     if (!rerankQuery.trim() || !rerankDocuments.trim() || isProcessingRerank) return;
 
+    const currentQuery = rerankQuery;
+    const currentDocuments = rerankDocuments;
+    
     setIsProcessingRerank(true);
-    setRerankResult(null);
 
     try {
       // Parse documents - assume one document per line
-      const docs = rerankDocuments.split('\n').filter(d => d.trim());
+      const docs = currentDocuments.split('\n').filter(d => d.trim());
       
       const response = await serverFetch('/reranking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
-          query: rerankQuery,
+          query: currentQuery,
           documents: docs
         })
       });
@@ -1070,7 +1076,13 @@ const sendMessage = async () => {
           text: docs[r.index],
           score: r.relevance_score || r.score || 0
         }));
-        setRerankResult(results);
+        
+        // Add to history
+        setRerankHistory(prev => [...prev, {
+          query: currentQuery,
+          documents: currentDocuments,
+          results
+        }]);
       } else {
         throw new Error('Unexpected response format');
       }
@@ -1086,7 +1098,7 @@ const sendMessage = async () => {
 
   const modelType = getModelType();
   const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
-                    : modelType === 'reranking' ? 'Lemonade Reranker'
+                    : modelType === 'reranking' ? 'Lemonade Reranking'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1255,19 +1267,44 @@ const sendMessage = async () => {
       {modelType === 'reranking' && (
         <>
           <div className="chat-messages" ref={messagesContainerRef}>
-            {!rerankResult && <EmptyState title="Lemonade Reranker" />}
+            {rerankHistory.length === 0 && <EmptyState title="Lemonade Reranking" />}
             
-            {rerankResult && (
-              <div className="reranking-result">
-                {rerankResult.map((doc, idx) => (
-                  <div key={idx} className="reranked-document">
-                    <span className="reranked-rank">#{idx + 1}</span>
-                    <span className="reranked-score">{doc.score.toFixed(3)}</span>
-                    <span className="reranked-document-text">{doc.text}</span>
+            {rerankHistory.map((item, index) => (
+              <div key={index} className="reranking-history-item">
+                <div className="reranking-user-input">
+                  <div className="reranking-input-label">Query</div>
+                  <div className="reranking-input-text">{item.query}</div>
+                </div>
+                
+                <div className="reranking-user-input">
+                  <div className="reranking-input-label">Documents</div>
+                  <div className="reranking-input-text">{item.documents.split('\n').filter(d => d.trim()).length} documents</div>
+                </div>
+                
+                <div className="reranking-result-container">
+                  <div className="reranking-result-header">
+                    <h4>Ranked Results</h4>
+                    <span className="reranking-count-badge">{item.results.length} results</span>
                   </div>
-                ))}
+                  <div className="reranking-result">
+                    {item.results.map((doc, idx) => (
+                      <div key={idx} className="reranked-document">
+                        <span className="reranked-rank">#{idx + 1}</span>
+                        <span className="reranked-score">{doc.score.toFixed(3)}</span>
+                        <span className="reranked-document-text">{doc.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {isProcessingRerank && (
+              <div className="chat-message assistant-message">
+                <TypingIndicator />
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           <div className="chat-input-container">
