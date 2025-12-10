@@ -1132,7 +1132,7 @@ void ModelManager::download_model(const std::string& model_name,
     
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
-        download_from_flm(actual_checkpoint, do_not_upgrade);
+        download_from_flm(actual_checkpoint, do_not_upgrade, progress_callback);
     } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp") {
         // For llamacpp (GGUF) and whispercpp (.bin) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
@@ -1347,7 +1347,7 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             
             std::cout << "[ModelManager] Downloading: " << filename << "..." << std::endl;
             
-            // Send progress update if callback provided
+            // Send progress update if callback provided (and check for cancellation)
             if (progress_callback) {
                 DownloadProgress progress;
                 progress.file = filename;
@@ -1356,7 +1356,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                 progress.bytes_downloaded = 0;
                 progress.bytes_total = file_sizes.count(filename) ? file_sizes[filename] : 0;
                 progress.percent = 0;
-                progress_callback(progress);
+                if (!progress_callback(progress)) {
+                    std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                    throw std::runtime_error("Download cancelled");
+                }
             }
             
             utils::DownloadOptions download_opts;
@@ -1369,9 +1372,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
             download_opts.connect_timeout = 60;
             
             // Create progress callback that reports to both console and SSE callback
+            // Returns bool: true = continue, false = cancel
             utils::ProgressCallback http_progress_cb;
             if (progress_callback) {
-                http_progress_cb = [&](size_t downloaded, size_t total) {
+                http_progress_cb = [&](size_t downloaded, size_t total) -> bool {
                     DownloadProgress progress;
                     progress.file = filename;
                     progress.file_index = file_index;
@@ -1379,10 +1383,10 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                     progress.bytes_downloaded = downloaded;
                     progress.bytes_total = total;
                     progress.percent = (total > 0) ? static_cast<int>((downloaded * 100) / total) : 0;
-                    progress_callback(progress);
+                    return progress_callback(progress);  // Propagate cancellation
                 };
             } else {
-                // Default console progress callback
+                // Default console progress callback (never cancels)
                 http_progress_cb = utils::create_throttled_progress_callback();
             }
             
@@ -1393,6 +1397,12 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
                 headers,
                 download_opts
             );
+            
+            // Check if download was cancelled
+            if (result.cancelled) {
+                std::cout << "[ModelManager] Download cancelled by client" << std::endl;
+                throw std::runtime_error("Download cancelled");
+            }
             
             if (result.success) {
                 std::cout << "\n[ModelManager] Downloaded: " << filename << std::endl;
@@ -1464,13 +1474,15 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         }
         
         // Send completion event
+        // Note: We ignore the return value here since the download is already complete
+        // If the client disconnected, the write will simply fail silently
         if (progress_callback) {
             DownloadProgress progress;
             progress.complete = true;
             progress.file_index = total_files;
             progress.total_files = total_files;
             progress.percent = 100;
-            progress_callback(progress);
+            (void)progress_callback(progress);  // Ignore return - download already complete
         }
         
         std::cout << "[ModelManager] ✓ All files downloaded and validated successfully!" << std::endl;
@@ -1482,7 +1494,9 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
     }
 }
 
-void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_upgrade) {
+void ModelManager::download_from_flm(const std::string& checkpoint, 
+                                     bool do_not_upgrade,
+                                     DownloadProgressCallback progress_callback) {
     std::cout << "[ModelManager] Pulling FLM model: " << checkpoint << std::endl;
     
     // Ensure FLM is installed
@@ -1496,14 +1510,7 @@ void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_
     }
     
     // Find flm executable
-    std::string flm_path;
-#ifdef _WIN32
-    // On Windows, check if flm.exe is in PATH
-    flm_path = "flm";
-#else
-    // On Unix, check if flm is in PATH
-    flm_path = "flm";
-#endif
+    std::string flm_path = "flm";
     
     // Prepare arguments
     std::vector<std::string> args = {"pull", checkpoint};
@@ -1517,34 +1524,192 @@ void ModelManager::download_from_flm(const std::string& checkpoint, bool do_not_
     }
     std::cout << std::endl;
     
-    // Run flm pull command
-    auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
+    // State for parsing FLM output
+    int total_files = 0;
+    int current_file_index = 0;
+    std::string current_filename;
+    bool cancelled = false;
     
-    // Wait for download to complete
-    if (!utils::ProcessManager::is_running(handle)) {
-        int exit_code = utils::ProcessManager::get_exit_code(handle);
-        std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
-        throw std::runtime_error("FLM pull failed");
+    // Run flm pull command and parse output
+    int exit_code = utils::ProcessManager::run_process_with_output(
+        flm_path, args,
+        [&](const std::string& line) -> bool {
+            // Always print the line to console
+            std::cout << line << std::endl;
+            
+            // Parse FLM output to extract progress information
+            // Pattern: "[FLM]  Downloading X/Y: filename"
+            if (line.find("[FLM]  Downloading ") != std::string::npos && 
+                line.find("/") != std::string::npos && 
+                line.find(":") != std::string::npos) {
+                
+                // Extract "X/Y: filename" from "[FLM]  Downloading X/Y: filename"
+                size_t start = line.find("Downloading ") + 12;
+                size_t slash = line.find("/", start);
+                size_t colon = line.find(":", slash);
+                
+                if (slash != std::string::npos && colon != std::string::npos) {
+                    try {
+                        current_file_index = std::stoi(line.substr(start, slash - start));
+                        total_files = std::stoi(line.substr(slash + 1, colon - slash - 1));
+                        current_filename = line.substr(colon + 2);  // Skip ": "
+                        
+                        // Send progress update
+                        if (progress_callback) {
+                            DownloadProgress progress;
+                            progress.file = current_filename;
+                            progress.file_index = current_file_index;
+                            progress.total_files = total_files;
+                            progress.bytes_downloaded = 0;
+                            progress.bytes_total = 0;
+                            progress.percent = (total_files > 0) ? 
+                                ((current_file_index - 1) * 100 / total_files) : 0;
+                            
+                            if (!progress_callback(progress)) {
+                                cancelled = true;
+                                return false;  // Kill the process
+                            }
+                        }
+                    } catch (...) {
+                        // Ignore parse errors
+                    }
+                }
+            }
+            // Pattern: "[FLM]  Downloading: XX.X% (XXX.XMB / XXX.XMB)"
+            else if (line.find("[FLM]  Downloading: ") != std::string::npos && 
+                     line.find("%") != std::string::npos) {
+                
+                // Extract percentage and bytes
+                size_t start = line.find("Downloading: ") + 13;
+                size_t pct_end = line.find("%", start);
+                
+                if (pct_end != std::string::npos) {
+                    try {
+                        std::string pct_str = line.substr(start, pct_end - start);
+                        double file_percent = std::stod(pct_str);
+                        
+                        // Try to extract bytes (XXX.XMB / XXX.XMB)
+                        size_t open_paren = line.find("(", pct_end);
+                        size_t slash = line.find("/", open_paren);
+                        size_t close_paren = line.find(")", slash);
+                        
+                        size_t bytes_downloaded = 0;
+                        size_t bytes_total = 0;
+                        
+                        if (open_paren != std::string::npos && slash != std::string::npos) {
+                            std::string downloaded_str = line.substr(open_paren + 1, slash - open_paren - 1);
+                            std::string total_str = line.substr(slash + 1, close_paren - slash - 1);
+                            
+                            // Parse "XXX.XMB" format
+                            auto parse_size = [](const std::string& s) -> size_t {
+                                double val = 0;
+                                size_t mb_pos = s.find("MB");
+                                size_t gb_pos = s.find("GB");
+                                size_t kb_pos = s.find("KB");
+                                
+                                if (mb_pos != std::string::npos) {
+                                    val = std::stod(s.substr(0, mb_pos));
+                                    return static_cast<size_t>(val * 1024 * 1024);
+                                } else if (gb_pos != std::string::npos) {
+                                    val = std::stod(s.substr(0, gb_pos));
+                                    return static_cast<size_t>(val * 1024 * 1024 * 1024);
+                                } else if (kb_pos != std::string::npos) {
+                                    val = std::stod(s.substr(0, kb_pos));
+                                    return static_cast<size_t>(val * 1024);
+                                }
+                                return 0;
+                            };
+                            
+                            bytes_downloaded = parse_size(downloaded_str);
+                            bytes_total = parse_size(total_str);
+                        }
+                        
+                        // Send progress update with byte-level info
+                        if (progress_callback) {
+                            DownloadProgress progress;
+                            progress.file = current_filename;
+                            progress.file_index = current_file_index;
+                            progress.total_files = total_files;
+                            progress.bytes_downloaded = bytes_downloaded;
+                            progress.bytes_total = bytes_total;
+                            // Use intra-file percent when we have byte-level progress
+                            progress.percent = static_cast<int>(file_percent);
+                            
+                            if (!progress_callback(progress)) {
+                                cancelled = true;
+                                return false;  // Kill the process
+                            }
+                        }
+                    } catch (...) {
+                        // Ignore parse errors
+                    }
+                }
+            }
+            // Pattern: "[FLM]  Overall progress: XX.X% (X/Y files)"
+            else if (line.find("[FLM]  Overall progress: ") != std::string::npos) {
+                size_t start = line.find("progress: ") + 10;
+                size_t pct_end = line.find("%", start);
+                
+                if (pct_end != std::string::npos) {
+                    try {
+                        int overall_percent = static_cast<int>(std::stod(line.substr(start, pct_end - start)));
+                        
+                        if (progress_callback) {
+                            DownloadProgress progress;
+                            progress.file = current_filename;
+                            progress.file_index = current_file_index;
+                            progress.total_files = total_files;
+                            progress.bytes_downloaded = 0;  // Not available for overall progress
+                            progress.bytes_total = 0;
+                            progress.percent = overall_percent;
+                            
+                            if (!progress_callback(progress)) {
+                                cancelled = true;
+                                return false;  // Kill the process
+                            }
+                        }
+                    } catch (...) {
+                        // Ignore parse errors
+                    }
+                }
+            }
+            // Pattern: "[FLM]  Missing files (N):"
+            else if (line.find("[FLM]  Missing files (") != std::string::npos) {
+                size_t start = line.find("(") + 1;
+                size_t end = line.find(")", start);
+                if (end != std::string::npos) {
+                    try {
+                        total_files = std::stoi(line.substr(start, end - start));
+                    } catch (...) {
+                        // Ignore parse errors
+                    }
+                }
+            }
+            
+            return true;  // Continue
+        },
+        "",  // Working directory
+        3600  // 1 hour timeout for large model downloads
+    );
+    
+    if (cancelled) {
+        std::cout << "[ModelManager] FLM download cancelled by client" << std::endl;
+        throw std::runtime_error("Download cancelled");
     }
     
-    // Wait for process to complete
-    int timeout_seconds = 300; // 5 minutes
-    std::cout << "[ModelManager] Waiting for FLM model download to complete..." << std::endl;
-    for (int i = 0; i < timeout_seconds * 10; ++i) {
-        if (!utils::ProcessManager::is_running(handle)) {
-            int exit_code = utils::ProcessManager::get_exit_code(handle);
-            if (exit_code != 0) {
-                std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
-                throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-            }
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        
-        // Print progress every 5 seconds
-        if (i % 50 == 0 && i > 0) {
-            std::cout << "[ModelManager] Still downloading... (" << (i/10) << "s elapsed)" << std::endl;
-        }
+    if (exit_code != 0) {
+        std::cerr << "[ModelManager ERROR] FLM pull failed with exit code: " << exit_code << std::endl;
+        throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
+    }
+    
+    // Send completion event
+    if (progress_callback) {
+        DownloadProgress progress;
+        progress.complete = true;
+        progress.file_index = total_files;
+        progress.total_files = total_files;
+        progress.percent = 100;
+        (void)progress_callback(progress);  // Ignore return - download already complete
     }
     
     std::cout << "[ModelManager] FLM model pull completed successfully" << std::endl;

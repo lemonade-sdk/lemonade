@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
@@ -1254,7 +1255,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                     
                     try {
                         // Create progress callback that emits SSE events
-                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) {
+                        // Returns false if client disconnects to cancel download
+                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
                             nlohmann::json event_data;
                             event_data["file"] = p.file;
                             event_data["file_index"] = p.file_index;
@@ -1264,13 +1266,20 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                             event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
                             event_data["percent"] = p.percent;
                             
+                            std::string event;
                             if (p.complete) {
-                                std::string event = "event: complete\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: complete\ndata: " + event_data.dump() + "\n\n";
                             } else {
-                                std::string event = "event: progress\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                             }
+                            
+                            // Check if client is still connected
+                            // sink.write() returns false when client disconnects
+                            if (!sink.write(event.c_str(), event.size())) {
+                                std::cout << "[Server] Client disconnected, cancelling download" << std::endl;
+                                return false;  // Cancel download
+                            }
+                            return true;  // Continue download
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
@@ -1278,10 +1287,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                                                       mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
-                        // Send error event
-                        nlohmann::json error_data = {{"error", e.what()}};
-                        std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
-                        sink.write(event.c_str(), event.size());
+                        // Send error event (only if it's not a cancellation)
+                        std::string error_msg = e.what();
+                        if (error_msg != "Download cancelled") {
+                            nlohmann::json error_data = {{"error", error_msg}};
+                            std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                            sink.write(event.c_str(), event.size());
+                        }
                     }
                     
                     return false; // Signal completion
@@ -1438,13 +1450,53 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             request_json["model_name"].get<std::string>();
         
         std::cout << "[Server] Deleting model: " << model_name << std::endl;
-        model_manager_->delete_model(model_name);
         
-        nlohmann::json response = {
-            {"status", "success"}, 
-            {"message", "Deleted model: " + model_name}
-        };
-        res.set_content(response.dump(), "application/json");
+        // If the model is currently loaded, unload it first to release file locks
+        if (router_->is_model_loaded(model_name)) {
+            std::cout << "[Server] Model is loaded, unloading before delete: " << model_name << std::endl;
+            router_->unload_model(model_name);
+        }
+        
+        // Retry delete with delays to handle in-progress downloads releasing file handles
+        // This handles the race condition where a cancelled download hasn't yet released
+        // its file handles when the delete request arrives
+        const int max_retries = 3;
+        const int retry_delay_seconds = 5;
+        std::string last_error;
+        
+        for (int attempt = 0; attempt <= max_retries; ++attempt) {
+            try {
+                model_manager_->delete_model(model_name);
+                
+                // Success - send response and return
+                nlohmann::json response = {
+                    {"status", "success"}, 
+                    {"message", "Deleted model: " + model_name}
+                };
+                res.set_content(response.dump(), "application/json");
+                return;
+                
+            } catch (const std::exception& e) {
+                last_error = e.what();
+                
+                // Only retry on "file in use" type errors (Windows and POSIX patterns)
+                bool is_file_locked = 
+                    last_error.find("being used by another process") != std::string::npos ||
+                    last_error.find("Permission denied") != std::string::npos ||
+                    last_error.find("resource busy") != std::string::npos;
+                
+                if (is_file_locked && attempt < max_retries) {
+                    std::cout << "[Server] Delete failed (file in use), retry " 
+                              << (attempt + 1) << "/" << max_retries 
+                              << " in " << retry_delay_seconds << "s..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(retry_delay_seconds));
+                    continue;
+                }
+                
+                // Non-retryable error or max retries exceeded - rethrow
+                throw;
+            }
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_delete: " << e.what() << std::endl;
