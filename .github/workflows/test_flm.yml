@@ -33,7 +33,7 @@ jobs:
       cancel-in-progress: true
     defaults:
       run:
-        shell: powershell
+        shell: PowerShell
 
     steps:
       - uses: actions/checkout@v3
@@ -81,7 +81,6 @@ jobs:
           echo "C:\Program Files\flm" >> $env:GITHUB_PATH
 
       - name: Download FLM Model
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -106,13 +105,10 @@ jobs:
           LEMONADE_CACHE_DIR: ".\\ci-cache"
         run: |
           $ErrorActionPreference = "Stop"
-
-          $venvActivate = ".\.venv\Scripts\Activate.ps1"
           $venvLemonade = ".\.venv\Scripts\lemonade.exe"
           
-          & $venvActivate
-          $venvLemonade -i llama3.2:1b -d .\ci-cache flm-load llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          & $venvLemonade -i llama3.2:1b flm-load llm-prompt -p "Alice and Bob" --max-new-tokens 10
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $venvLemonade -i llama3.2:1b -d .\ci-cache flm-load flm-bench -w 0 -i 2
+          & $venvLemonade -i llama3.2:1b flm-load flm-bench -w 0 -i 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
