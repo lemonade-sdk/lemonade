@@ -1,5 +1,5 @@
 export type NumericSettingKey = 'temperature' | 'topK' | 'topP' | 'repeatPenalty';
-export type BooleanSettingKey = 'enableThinking';
+export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault';
 export type SettingKey = NumericSettingKey | BooleanSettingKey;
 
 export interface NumericSetting {
@@ -28,11 +28,13 @@ export interface AppSettings {
   topP: NumericSetting;
   repeatPenalty: NumericSetting;
   enableThinking: BooleanSetting;
+  collapseThinkingByDefault: BooleanSetting;
   layout: LayoutSettings;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
   enableThinking: boolean;
+  collapseThinkingByDefault: boolean;
 };
 
 export const BASE_SETTING_VALUES: BaseSettingValues = {
@@ -41,6 +43,7 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   topP: 0.9,
   repeatPenalty: 1.1,
   enableThinking: true,
+  collapseThinkingByDefault: false,
 };
 
 export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; max: number; step: number }> = {
@@ -68,6 +71,7 @@ export const createDefaultSettings = (): AppSettings => ({
   topP: { value: BASE_SETTING_VALUES.topP, useDefault: true },
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -77,6 +81,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   topP: { ...settings.topP },
   repeatPenalty: { ...settings.repeatPenalty },
   enableThinking: { ...settings.enableThinking },
+  collapseThinkingByDefault: { ...settings.collapseThinkingByDefault },
   layout: { ...settings.layout },
 });
 
@@ -132,6 +137,24 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
         : defaults.enableThinking.value;
 
     defaults.enableThinking = {
+      value,
+      useDefault,
+    };
+  }
+
+  const rawCollapseThinkingByDefault = incoming.collapseThinkingByDefault;
+  if (rawCollapseThinkingByDefault && typeof rawCollapseThinkingByDefault === 'object') {
+    const useDefault =
+      typeof rawCollapseThinkingByDefault.useDefault === 'boolean'
+        ? rawCollapseThinkingByDefault.useDefault
+        : defaults.collapseThinkingByDefault.useDefault;
+    const value = useDefault
+      ? defaults.collapseThinkingByDefault.value
+      : typeof rawCollapseThinkingByDefault.value === 'boolean'
+        ? rawCollapseThinkingByDefault.value
+        : defaults.collapseThinkingByDefault.value;
+
+    defaults.collapseThinkingByDefault = {
       value,
       useDefault,
     };

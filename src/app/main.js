@@ -26,6 +26,7 @@ const BASE_APP_SETTING_VALUES = Object.freeze({
   topP: 0.9,
   repeatPenalty: 1.1,
   enableThinking: true,
+  collapseThinkingByDefault: false,
 });
 const DEFAULT_APP_SETTINGS = Object.freeze({
   temperature: { value: BASE_APP_SETTING_VALUES.temperature, useDefault: true },
@@ -33,6 +34,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
   topP: { value: BASE_APP_SETTING_VALUES.topP, useDefault: true },
   repeatPenalty: { value: BASE_APP_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_APP_SETTING_VALUES.enableThinking, useDefault: true },
+  collapseThinkingByDefault: { value: BASE_APP_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
 });
 const NUMERIC_APP_SETTING_LIMITS = Object.freeze({
   temperature: { min: 0, max: 2 },
@@ -96,6 +98,7 @@ const createDefaultAppSettings = () => ({
   topP: { ...DEFAULT_APP_SETTINGS.topP },
   repeatPenalty: { ...DEFAULT_APP_SETTINGS.repeatPenalty },
   enableThinking: { ...DEFAULT_APP_SETTINGS.enableThinking },
+  collapseThinkingByDefault: { ...DEFAULT_APP_SETTINGS.collapseThinkingByDefault },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
 });
 
@@ -142,6 +145,22 @@ const sanitizeAppSettings = (incoming = {}) => {
         : typeof rawEnableThinking.value === 'boolean'
           ? rawEnableThinking.value
           : sanitized.enableThinking.value,
+      useDefault,
+    };
+  }
+
+  const rawCollapseThinkingByDefault = incoming.collapseThinkingByDefault;
+  if (rawCollapseThinkingByDefault && typeof rawCollapseThinkingByDefault === 'object') {
+    const useDefault =
+      typeof rawCollapseThinkingByDefault.useDefault === 'boolean'
+        ? rawCollapseThinkingByDefault.useDefault
+        : sanitized.collapseThinkingByDefault.useDefault;
+    sanitized.collapseThinkingByDefault = {
+      value: useDefault
+        ? sanitized.collapseThinkingByDefault.value
+        : typeof rawCollapseThinkingByDefault.value === 'boolean'
+          ? rawCollapseThinkingByDefault.value
+          : sanitized.collapseThinkingByDefault.value,
       useDefault,
     };
   }

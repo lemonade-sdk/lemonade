@@ -438,7 +438,8 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
                 };
                 
                 // Auto-expand thinking section if thinking content is present
-                if (totalThinking) {
+                // and collapseThinkingByDefault is not enabled
+                if (totalThinking && !appSettings?.collapseThinkingByDefault?.value) {
                   setExpandedThinking(prevExpanded => {
                     const next = new Set(prevExpanded);
                     next.add(messageIndex);
