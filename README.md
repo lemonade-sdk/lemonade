@@ -41,26 +41,12 @@ Lemonade helps users run local LLMs with the highest performance by configuring 
 
 Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/), research teams like [Hazy Research at Stanford](https://www.amd.com/en/developer/resources/technical-articles/2025/minions--on-device-and-cloud-language-model-collaboration-on-ryz.html), and large companies like [AMD](https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html) use Lemonade to run LLMs.
 
-<h2 align="center">Getting Started</h2>
+## Getting Started
 
-<table align="center">
-<tr>
-<td align="center" width="280">
-<h3>Install</h3>
-<a href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server.msi">Windows</a> · <a href="https://lemonade-server.ai/install_options.html">Ubuntu</a> · <a href="https://lemonade-server.ai/install_options.html">Source</a>
-</td>
-<td align="center" width="280">
-<h3>Get Models</h3>
-Browse and download models<br>with the <a href="#model-library"><strong>Model Manager</strong></a>
-</td>
-<td align="center" width="280">
-<h3>Chat</h3>
-Try models with the<br><strong>built-in chat interface</strong>
-</td>
-</tr>
-</table>
-
-<h3 align="center">Then connect to your favorite apps!</h3>
+1. **Install**: [Windows](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi) · [Ubuntu](https://lemonade-server.ai/install_options.html) · [Source](https://lemonade-server.ai/install_options.html)
+2. **Get Models**: Browse and download with the [Model Manager](#model-library)
+3. **Chat**: Try models with the built-in chat interface
+4. **Connect**: Use Lemonade with your favorite apps:
 
 <p align="center">
   <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=GitHub.copilot" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
@@ -95,11 +81,11 @@ lemonade-server list
 
 <img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports **GGUF** and **ONNX** models across CPU, GPU, and NPU ([supported configurations](#supported-configurations)).
+Lemonade supports **GGUF**, **FLM**, and **ONNX** models across CPU, GPU, and NPU ([supported configurations](#supported-configurations)).
 
 Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
-**[📦 Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
+**[Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
 
 <br clear="right"/>
 
