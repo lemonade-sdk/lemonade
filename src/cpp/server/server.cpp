@@ -400,7 +400,7 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     
     // Check return value (0 is success)
     if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), nullptr, &hints, &result, 5000) != 0) {
-        std::cerr << "[Server] Warning: resolution failed for " << host << std::endl;
+        std::cerr << "[Server] Warning: resolution failed for " << host << " no " << (ai_family == AF_INET ? "IPv4" : ai_family == AF_INET6 ? "IPv6" : "") << " resolution found." << std::endl;
         return ""; // FIX 2: Return empty string on failure, don't return void
     }
 
@@ -445,7 +445,7 @@ void Server::run() {
     
     std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
-    
+
     running_ = true;
     if (!ipv4.empty()) {
         // setup ipv4 thread
