@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
@@ -22,12 +23,10 @@
     #include <windows.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
 #else
     #include <sys/types.h>
     #include <sys/socket.h>
-    #include <netdb.h>
-    #include <arpa/inet.h>
+    #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
     #include <unistd.h>
 #endif
 
@@ -55,13 +54,18 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
 #endif
     
     http_server_ = std::make_unique<httplib::Server>();
+    http_server_v6_ = std::make_unique<httplib::Server>();
     
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
-    http_server_->new_task_queue = [] { 
+     
+    std::function<httplib::TaskQueue *(void)> task_queue_factory = [] { 
         std::cout << "[Server DEBUG] Creating new thread pool with 8 threads" << std::endl;
         return new httplib::ThreadPool(8);
     };
+
+    http_server_->new_task_queue = task_queue_factory;
+    http_server_v6_->new_task_queue = task_queue_factory;
     
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
@@ -74,42 +78,43 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
     }
     
-    setup_routes();
+    setup_routes(*http_server_);
+    setup_routes(*http_server_v6_);
 }
 
 Server::~Server() {
     stop();
 }
 
-void Server::setup_routes() {
+void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests
-    http_server_->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+    web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
         return httplib::Server::HandlerResponse::Unhandled;
     });
     
     // Setup CORS for all routes
-    setup_cors();
+    setup_cors(web_server);
     
     // Helper lambda to register routes for both v0 and v1
-    auto register_get = [this](const std::string& endpoint, 
+    auto register_get = [this, &web_server](const std::string& endpoint, 
                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
-        http_server_->Get("/api/v0/" + endpoint, handler);
-        http_server_->Get("/api/v1/" + endpoint, handler);
+        web_server.Get("/api/v0/" + endpoint, handler);
+        web_server.Get("/api/v1/" + endpoint, handler);
     };
     
-    auto register_post = [this](const std::string& endpoint, 
+    auto register_post = [this, &web_server](const std::string& endpoint, 
                                 std::function<void(const httplib::Request&, httplib::Response&)> handler) {
-        http_server_->Post("/api/v0/" + endpoint, handler);
-        http_server_->Post("/api/v1/" + endpoint, handler);
+        web_server.Post("/api/v0/" + endpoint, handler);
+        web_server.Post("/api/v1/" + endpoint, handler);
         // Also register as GET for HEAD request support (HEAD uses GET handler)
         // Return 405 Method Not Allowed (endpoint exists but wrong method)
-        http_server_->Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+        web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
-        http_server_->Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+        web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
@@ -126,10 +131,10 @@ void Server::setup_routes() {
     });
     
     // Model by ID (need to register for both versions with regex)
-    http_server_->Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+    web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
-    http_server_->Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+    web_server.Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
     
@@ -210,28 +215,28 @@ void Server::setup_routes() {
     // The stop command now sends termination signal directly to the process
     
     // Internal shutdown endpoint (not part of public API)
-    http_server_->Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
+    web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
         handle_shutdown(req, res);
     });
     
     // Test endpoint to verify POST works
-    http_server_->Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
+    web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
         std::cout << "[Server] TEST POST endpoint hit!" << std::endl;
         res.set_content("{\"test\": \"ok\"}", "application/json");
     });
     
     // Setup static file serving for web UI
-    setup_static_files();
+    setup_static_files(web_server);
     
     std::cout << "[Server] Routes setup complete" << std::endl;
 }
 
-void Server::setup_static_files() {
+void Server::setup_static_files(httplib::Server &web_server) {
     // Determine static files directory (relative to executable)
     std::string static_dir = utils::get_resource_path("resources/static");
     
     // Root path - serve index.html with template variable replacement
-    http_server_->Get("/", [this, static_dir](const httplib::Request&, httplib::Response& res) {
+    web_server.Get("/", [this, static_dir](const httplib::Request&, httplib::Response& res) {
         std::string index_path = static_dir + "/index.html";
         std::ifstream file(index_path);
         
@@ -309,7 +314,7 @@ void Server::setup_static_files() {
     });
     
     // Serve favicon.ico from root as expected by most browsers
-    http_server_->Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
+    web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
         std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
         if (ifs) {
             // Read favicon bytes to string to pass to response
@@ -323,7 +328,7 @@ void Server::setup_static_files() {
     });
 
     // Mount static files directory for other files (CSS, JS, images)
-    if (!http_server_->set_mount_point("/static", static_dir)) {
+    if (!web_server.set_mount_point("/static", static_dir)) {
         std::cerr << "[Server WARNING] Could not mount static files from: " << static_dir << std::endl;
         std::cerr << "[Server] Web UI assets will not be available" << std::endl;
     } else {
@@ -332,7 +337,7 @@ void Server::setup_static_files() {
     
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
-    http_server_->set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
+    web_server.set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
         // Add no-cache headers for static files
         res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
         res.set_header("Pragma", "no-cache");
@@ -340,21 +345,21 @@ void Server::setup_static_files() {
     });
 }
 
-void Server::setup_cors() {
+void Server::setup_cors(httplib::Server &web_server) {
     // Set CORS headers for all responses
-    http_server_->set_default_headers({
+    web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
         {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
     });
     
     // Handle preflight OPTIONS requests
-    http_server_->Options(".*", [](const httplib::Request&, httplib::Response& res) {
+    web_server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.status = 204;
     });
     
     // Catch-all error handler - must be last!
-    http_server_->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
+    web_server.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
         std::cerr << "[Server] Error " << res.status << ": " << req.method << " " << req.path << std::endl;
         
         if (res.status == 404) {
@@ -384,21 +389,89 @@ void Server::setup_cors() {
     });
 }
 
+std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
+    struct addrinfo hints = {0};
+    hints.ai_family = ai_family; 
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_ADDRCONFIG; // Optional: Only return IPs configured on system
+
+    struct addrinfo *result = nullptr;
+    
+    // Check return value (0 is success)
+    if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), "", &hints, &result, 5000) != 0) {
+        std::cerr << "[Server] Warning: resolution failed for " << host << " no " << (ai_family == AF_INET ? "IPv4" : ai_family == AF_INET6 ? "IPv6" : "") << " resolution found." << std::endl;
+        return ""; // Return empty string on failure, don't return void
+    }
+
+    if (result == nullptr) return "";
+
+    // Use INET6_ADDRSTRLEN to be safe for both (it's larger)
+    char addrstr[INET6_ADDRSTRLEN]; 
+    void *ptr = nullptr;
+
+    // Safety Check - verify what we actually got back
+    if (result->ai_family == AF_INET) {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)result->ai_addr;
+        ptr = &(ipv4->sin_addr);
+    } else if (result->ai_family == AF_INET6) {
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)result->ai_addr;
+        ptr = &(ipv6->sin6_addr);
+    } else {
+        freeaddrinfo(result);
+        return "";
+    }
+
+    // Convert binary IP to string
+    inet_ntop(result->ai_family, ptr, addrstr, sizeof(addrstr));
+    
+    std::string resolved_ip(addrstr);
+    std::cout << "[Server] Resolved " << host << " (" << (ai_family == AF_INET ? "v4" : "v6") 
+              << ") -> " << resolved_ip << std::endl;
+              
+    freeaddrinfo(result);
+    return resolved_ip;
+}
+
+void Server::setup_http_logger(httplib::Server &web_server) {
+    // Add request logging for ALL requests
+    web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+        std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+    });
+}
+
 void Server::run() {
     std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
     
-    // Add request logging for ALL requests
-    http_server_->set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
-    });
-    
+    std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
+    std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
+
     running_ = true;
-    http_server_->listen(host_, port_);
+    if (!ipv4.empty()) {
+        // setup ipv4 thread
+        setup_http_logger(*http_server_);
+        http_v4_thread_ = std::thread([this, ipv4]() {
+            http_server_->bind_to_port(ipv4, port_);
+            http_server_->listen_after_bind();
+        });
+    }
+    if (!ipv6.empty()) {
+        // setup ipv6 thread
+        setup_http_logger(*http_server_v6_);
+        http_v6_thread_ = std::thread([this, ipv6]() {
+            http_server_v6_->bind_to_port(ipv6, port_);
+            http_server_v6_->listen_after_bind();
+        });
+    }
+    if(http_v4_thread_.joinable())
+        http_v4_thread_.join();
+    if(http_v6_thread_.joinable())
+        http_v6_thread_.join();
 }
 
 void Server::stop() {
     if (running_) {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
+        http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
         
@@ -1254,7 +1327,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                     
                     try {
                         // Create progress callback that emits SSE events
-                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) {
+                        // Returns false if client disconnects to cancel download
+                        DownloadProgressCallback progress_cb = [&sink](const DownloadProgress& p) -> bool {
                             nlohmann::json event_data;
                             event_data["file"] = p.file;
                             event_data["file_index"] = p.file_index;
@@ -1264,13 +1338,20 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                             event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
                             event_data["percent"] = p.percent;
                             
+                            std::string event;
                             if (p.complete) {
-                                std::string event = "event: complete\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: complete\ndata: " + event_data.dump() + "\n\n";
                             } else {
-                                std::string event = "event: progress\ndata: " + event_data.dump() + "\n\n";
-                                sink.write(event.c_str(), event.size());
+                                event = "event: progress\ndata: " + event_data.dump() + "\n\n";
                             }
+                            
+                            // Check if client is still connected
+                            // sink.write() returns false when client disconnects
+                            if (!sink.write(event.c_str(), event.size())) {
+                                std::cout << "[Server] Client disconnected, cancelling download" << std::endl;
+                                return false;  // Cancel download
+                            }
+                            return true;  // Continue download
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
@@ -1278,10 +1359,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                                                       mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
-                        // Send error event
-                        nlohmann::json error_data = {{"error", e.what()}};
-                        std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
-                        sink.write(event.c_str(), event.size());
+                        // Send error event (only if it's not a cancellation)
+                        std::string error_msg = e.what();
+                        if (error_msg != "Download cancelled") {
+                            nlohmann::json error_data = {{"error", error_msg}};
+                            std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                            sink.write(event.c_str(), event.size());
+                        }
                     }
                     
                     return false; // Signal completion
@@ -1438,13 +1522,53 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             request_json["model_name"].get<std::string>();
         
         std::cout << "[Server] Deleting model: " << model_name << std::endl;
-        model_manager_->delete_model(model_name);
         
-        nlohmann::json response = {
-            {"status", "success"}, 
-            {"message", "Deleted model: " + model_name}
-        };
-        res.set_content(response.dump(), "application/json");
+        // If the model is currently loaded, unload it first to release file locks
+        if (router_->is_model_loaded(model_name)) {
+            std::cout << "[Server] Model is loaded, unloading before delete: " << model_name << std::endl;
+            router_->unload_model(model_name);
+        }
+        
+        // Retry delete with delays to handle in-progress downloads releasing file handles
+        // This handles the race condition where a cancelled download hasn't yet released
+        // its file handles when the delete request arrives
+        const int max_retries = 3;
+        const int retry_delay_seconds = 5;
+        std::string last_error;
+        
+        for (int attempt = 0; attempt <= max_retries; ++attempt) {
+            try {
+                model_manager_->delete_model(model_name);
+                
+                // Success - send response and return
+                nlohmann::json response = {
+                    {"status", "success"}, 
+                    {"message", "Deleted model: " + model_name}
+                };
+                res.set_content(response.dump(), "application/json");
+                return;
+                
+            } catch (const std::exception& e) {
+                last_error = e.what();
+                
+                // Only retry on "file in use" type errors (Windows and POSIX patterns)
+                bool is_file_locked = 
+                    last_error.find("being used by another process") != std::string::npos ||
+                    last_error.find("Permission denied") != std::string::npos ||
+                    last_error.find("resource busy") != std::string::npos;
+                
+                if (is_file_locked && attempt < max_retries) {
+                    std::cout << "[Server] Delete failed (file in use), retry " 
+                              << (attempt + 1) << "/" << max_retries 
+                              << " in " << retry_delay_seconds << "s..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(retry_delay_seconds));
+                    continue;
+                }
+                
+                // Non-retryable error or max retries exceeded - rethrow
+                throw;
+            }
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_delete: " << e.what() << std::endl;
@@ -1964,4 +2088,3 @@ void Server::handle_logs_stream(const httplib::Request& req, httplib::Response& 
 }
 
 } // namespace lemon
-

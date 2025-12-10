@@ -30,17 +30,28 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
 // Callback for download progress
 struct ProgressData {
     ProgressCallback callback;
+    bool cancelled = false;  // Set to true when callback returns false
 };
 
+// CURL progress callback - returns non-zero to abort transfer
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow, 
                              curl_off_t ultotal, curl_off_t ulnow) {
-    if (dltotal > 0) {
-        ProgressData* data = static_cast<ProgressData*>(clientp);
-        if (data && data->callback) {
-            data->callback(dlnow, dltotal);
+    ProgressData* data = static_cast<ProgressData*>(clientp);
+    if (!data) return 0;
+    
+    // Check if already cancelled
+    if (data->cancelled) {
+        return 1;  // Abort transfer
+    }
+    
+    if (dltotal > 0 && data->callback) {
+        // Call user callback - returns false to cancel
+        if (!data->callback(dlnow, dltotal)) {
+            data->cancelled = true;
+            return 1;  // Abort transfer
         }
     }
-    return 0;
+    return 0;  // Continue transfer
 }
 
 HttpResponse HttpClient::get(const std::string& url,
@@ -288,6 +299,9 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     
     CURLcode res = curl_easy_perform(curl);
     
+    // Check if download was cancelled by user callback
+    bool was_cancelled = (prog_data && prog_data->cancelled);
+    
     curl_off_t downloaded = 0;
     curl_off_t total = 0;
     curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &downloaded);
@@ -308,6 +322,14 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     // Clean up progress data
     if (prog_data) {
         delete prog_data;
+    }
+    
+    // Handle user cancellation
+    if (was_cancelled || res == CURLE_ABORTED_BY_CALLBACK) {
+        result.cancelled = true;
+        result.error_message = "Download cancelled by user";
+        result.can_resume = true;  // Partial file can be resumed later
+        return result;
     }
     
     if (res != CURLE_OK) {
@@ -476,16 +498,23 @@ DownloadResult HttpClient::download_file(const std::string& url,
             // Adjust progress to account for resume offset
             // curl reports: current = bytes downloaded this session, total = remaining bytes
             // We want to show: (resume_offset + current) / (resume_offset + total)
-            adjusted_callback = [callback, resume_offset](size_t current, size_t total) {
+            adjusted_callback = [callback, resume_offset](size_t current, size_t total) -> bool {
                 if (total > 0) {  // Only call when we have valid progress info
-                    callback(resume_offset + current, resume_offset + total);
+                    return callback(resume_offset + current, resume_offset + total);
                 }
+                return true;  // Continue if no progress info yet
             };
         }
         
         // Download to .partial file
         final_result = download_attempt(url, partial_path, resume_offset, 
                                         adjusted_callback, headers, options);
+        
+        // If cancelled by user, return immediately without retrying
+        if (final_result.cancelled) {
+            std::cout << "\n[Download] Cancelled by user" << std::endl;
+            return final_result;
+        }
         
         if (final_result.success) {
             // Download complete - rename .partial to final path
