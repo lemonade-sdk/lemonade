@@ -178,6 +178,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     };
   }, [fetchDownloadedModels, fetchCurrentLoadedModel, loadModels]);
 
+  // Auto-expand the single category if only one is available
+  useEffect(() => {
+    const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
+    const categories = Object.keys(groupedModels);
+    
+    // If only one category exists and it's not already expanded, expand it
+    if (categories.length === 1 && !expandedCategories.has(categories[0])) {
+      setExpandedCategories(new Set([categories[0]]));
+    }
+  }, [models, organizationMode, showDownloadedOnly, searchQuery]);
+
   const getFilteredModels = () => {
     let filtered = models;
     
