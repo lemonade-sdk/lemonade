@@ -1499,69 +1499,43 @@ const sendMessage = async () => {
                 style={{ display: 'none' }}
               />
               
-              <div className="transcription-upload-area">
-                <button
-                  className="audio-file-select-button"
-                  onClick={() => audioFileInputRef.current?.click()}
-                  disabled={isProcessingTranscription}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M12 15V3M12 15L8 11M12 15L16 11"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L20.053 20.737C20.442 20.658 20.636 20.618 20.791 20.531C20.927 20.454 21.042 20.345 21.127 20.213C21.223 20.064 21.275 19.871 21.379 19.485L22 17"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  {transcriptionFile ? transcriptionFile.name : 'Choose audio file'}
-                </button>
-                
-                {transcriptionFile && (
-                  <span className="file-size-indicator">
-                    {(transcriptionFile.size / 1024 / 1024).toFixed(2)} MB
-                  </span>
+              <div className="transcription-file-display">
+                {transcriptionFile ? (
+                  <div className="transcription-file-info-display">
+                    <span className="file-name">{transcriptionFile.name}</span>
+                    <span className="file-size-indicator">
+                      {(transcriptionFile.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                  </div>
+                ) : (
+                  <span className="transcription-placeholder">No audio file selected</span>
                 )}
               </div>
               
               <div className="chat-controls">
                 <div className="chat-controls-left">
-                  <ModelSelector disabled={isProcessingTranscription} />
-                </div>
-                <button
-                  className="chat-send-button"
-                  onClick={handleTranscription}
-                  disabled={!transcriptionFile || isProcessingTranscription}
-                  title="Transcribe audio"
-                >
-                  {isProcessingTranscription ? (
-                    <TypingIndicator size="small" />
-                  ) : (
+                  <button
+                    className="audio-file-button"
+                    onClick={() => audioFileInputRef.current?.click()}
+                    disabled={isProcessingTranscription}
+                    title="Choose audio file"
+                  >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path
-                        d="M12 1C8.13 1 5 4.13 5 8V12C5 15.87 8.13 19 12 19C15.87 19 19 15.87 19 12V8C19 4.13 15.87 1 12 1Z"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M12 19V23M8 23H16"
+                        d="M21 15V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V15M17 8L12 3M12 3L7 8M12 3V15"
                         stroke="currentColor"
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
                     </svg>
-                  )}
-                </button>
+                  </button>
+                  <ModelSelector disabled={isProcessingTranscription} />
+                </div>
+                <SendButton 
+                  onClick={handleTranscription} 
+                  disabled={!transcriptionFile || isProcessingTranscription} 
+                />
               </div>
             </div>
           </div>
