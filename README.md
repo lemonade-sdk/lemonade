@@ -9,8 +9,6 @@
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/#linux" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
-  <a href="https://lemonade-server.ai/" title="macOS 14+ with Apple Silicon">
-    <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white" alt="macOS 14+" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
@@ -81,7 +79,7 @@ lemonade-server list
 
 <img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports **GGUF**, **FLM**, and **ONNX** models across CPU, GPU, and NPU ([supported configurations](#supported-configurations)).
+Lemonade supports **GGUF**, **FLM**, and **ONNX** models across CPU, GPU, and NPU (see [supported configurations](#supported-configurations)).
 
 Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
@@ -93,11 +91,11 @@ Use `lemonade-server pull` or the built-in **Model Manager** to download models.
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
 
-| Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux | macOS |
-|----------|-------------|------------------|------------|---------|-------|-------|
-| **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ | ✅ |
-| **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ | ✅ |
-| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — | — |
+| Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux |
+|----------|-------------|------------------|------------|---------|-------|
+| **🧠 CPU** | All platforms | All platforms | - | ✅ | ✅ |
+| **🎮 GPU** | — | Vulkan: All platforms<br>ROCm: Selected AMD platforms*<br>Metal: Apple Silicon | — | ✅ | ✅ |
+| **🤖 NPU** | AMD Ryzen™ AI 300 series | — | Ryzen™ AI 300 series | ✅ | — |
 
 <details>
 <summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
@@ -136,9 +134,9 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| General speech-to-text support (whisper.cpp)      | vLLM support                                   | .msi and .deb installers                 |
-| Update app with multi-model and STT capability    | Handheld devices: Ryzen AI Z2 Extreme APUs     | Multiple models loaded at the same time  |
-| ROCm support for Ryzen AI 360-375 (Strix) APUs    | Image Generation                               | Lemonade desktop app                     |
+| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
+| Add imagegen and transcription to app    | Handheld devices: Ryzen AI Z2 Extreme APUs     | Multiple models loaded at the same time  |
+| ROCm support for Ryzen AI 360-375 (Strix) APUs    | Text to speech                               | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -178,11 +176,10 @@ For more detailed integration instructions, see the [Integration Guide](./docs/s
 
 ## Beyond an LLM Server
 
-The [Lemonade SDK](./docs/README.md) also include the following components:
+The [Lemonade Python SDK](./docs/README.md) is also available, which includes the following components:
 
-- 🐍 **[Lemonade API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
+- 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
 - 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
-- 💻 **[Lemonade Desktop App](./src/app/README.md)**: Cross-platform desktop app.
 
 ## FAQ
 
