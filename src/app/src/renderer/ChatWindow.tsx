@@ -1089,6 +1089,7 @@ const sendMessage = async () => {
                   userHasSelectedModelRef.current = true;
                   setSelectedModel(e.target.value);
                 }}
+                onFocus={() => fetchModels()}
                 disabled={isLoading}
               >
                 {models.map((model) => (
