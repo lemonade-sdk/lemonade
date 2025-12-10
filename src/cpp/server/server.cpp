@@ -390,8 +390,6 @@ void Server::setup_cors(httplib::Server &web_server) {
 
 std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     struct addrinfo hints = {0};
-    
-    // Use the passed argument, don't force AF_INET or 6
     hints.ai_family = ai_family; 
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_ADDRCONFIG; // Optional: Only return IPs configured on system
@@ -401,16 +399,16 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     // Check return value (0 is success)
     if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), "", &hints, &result, 5000) != 0) {
         std::cerr << "[Server] Warning: resolution failed for " << host << " no " << (ai_family == AF_INET ? "IPv4" : ai_family == AF_INET6 ? "IPv6" : "") << " resolution found." << std::endl;
-        return ""; // FIX 2: Return empty string on failure, don't return void
+        return ""; // Return empty string on failure, don't return void
     }
 
     if (result == nullptr) return "";
 
-    // FIX 3: Use INET6_ADDRSTRLEN to be safe for both (it's larger)
+    // Use INET6_ADDRSTRLEN to be safe for both (it's larger)
     char addrstr[INET6_ADDRSTRLEN]; 
     void *ptr = nullptr;
 
-    // FIX 4: Safety Check - verify what we actually got back
+    // Safety Check - verify what we actually got back
     if (result->ai_family == AF_INET) {
         struct sockaddr_in *ipv4 = (struct sockaddr_in *)result->ai_addr;
         ptr = &(ipv4->sin_addr);
