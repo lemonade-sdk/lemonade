@@ -13,6 +13,10 @@ struct ProcessHandle {
     int pid;
 };
 
+// Callback for process output lines
+// Returns: true to continue, false to kill the process
+using OutputLineCallback = std::function<bool(const std::string& line)>;
+
 class ProcessManager {
 public:
     // Start a process with arguments
@@ -23,6 +27,16 @@ public:
         bool inherit_output = false,
         bool filter_health_logs = false,
         const std::vector<std::pair<std::string, std::string>>& env_vars = {});
+    
+    // Run a process and capture its output line by line
+    // Blocks until process exits or callback returns false (which kills the process)
+    // Returns: exit code, or -1 if killed by callback
+    static int run_process_with_output(
+        const std::string& executable,
+        const std::vector<std::string>& args,
+        OutputLineCallback on_line,
+        const std::string& working_dir = "",
+        int timeout_seconds = -1);
     
     // Stop a process
     static void stop_process(ProcessHandle handle);

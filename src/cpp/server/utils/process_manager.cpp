@@ -17,6 +17,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <errno.h>
 #endif
 
 namespace lemon {
@@ -452,6 +454,351 @@ std::string ProcessManager::read_output(ProcessHandle handle, int max_bytes) {
     // Note: This is a simplified version. Full implementation would need pipes
     // for stdout/stderr capture during process creation
     return "";
+}
+
+int ProcessManager::run_process_with_output(
+    const std::string& executable,
+    const std::vector<std::string>& args,
+    OutputLineCallback on_line,
+    const std::string& working_dir,
+    int timeout_seconds) {
+    
+#ifdef _WIN32
+    // Windows implementation
+    std::string cmdline = "\"" + executable + "\"";
+    for (const auto& arg : args) {
+        cmdline += " \"" + arg + "\"";
+    }
+    
+    // Create pipes for stdout
+    HANDLE stdout_read = nullptr;
+    HANDLE stdout_write = nullptr;
+    
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+    
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        throw std::runtime_error("Failed to create stdout pipe");
+    }
+    
+    // Make sure the read handle is not inherited
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+    
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = stdout_write;
+    si.hStdError = stdout_write;  // Merge stderr into stdout
+    ZeroMemory(&pi, sizeof(pi));
+    
+    BOOL success = CreateProcessA(
+        nullptr,
+        const_cast<char*>(cmdline.c_str()),
+        nullptr,
+        nullptr,
+        TRUE,  // Inherit handles
+        CREATE_NO_WINDOW,
+        nullptr,
+        working_dir.empty() ? nullptr : working_dir.c_str(),
+        &si,
+        &pi
+    );
+    
+    // Close write end in parent
+    CloseHandle(stdout_write);
+    
+    if (!success) {
+        CloseHandle(stdout_read);
+        DWORD error = GetLastError();
+        throw std::runtime_error("Failed to start process: error " + std::to_string(error));
+    }
+    
+    // Read output line by line
+    std::string line_buffer;
+    char buffer[4096];
+    DWORD bytes_read;
+    bool killed_by_callback = false;
+    
+    auto start_time = std::chrono::steady_clock::now();
+    
+    while (true) {
+        // Check timeout
+        if (timeout_seconds > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+            if (elapsed > timeout_seconds) {
+                TerminateProcess(pi.hProcess, 1);
+                killed_by_callback = true;
+                break;
+            }
+        }
+        
+        // Check if there's data to read (non-blocking peek)
+        DWORD available = 0;
+        if (!PeekNamedPipe(stdout_read, nullptr, 0, nullptr, &available, nullptr)) {
+            break;  // Pipe closed or error
+        }
+        
+        if (available > 0) {
+            DWORD to_read = (std::min)(available, (DWORD)(sizeof(buffer) - 1));
+            if (ReadFile(stdout_read, buffer, to_read, &bytes_read, nullptr) && bytes_read > 0) {
+                buffer[bytes_read] = '\0';
+                line_buffer += buffer;
+                
+                // Process complete lines (split on \n or \r for in-place progress updates)
+                size_t pos;
+                while (true) {
+                    // Find the first line terminator (\n or \r)
+                    size_t newline_pos = line_buffer.find('\n');
+                    size_t cr_pos = line_buffer.find('\r');
+                    
+                    if (newline_pos == std::string::npos && cr_pos == std::string::npos) {
+                        break;  // No complete line yet
+                    }
+                    
+                    // Use whichever comes first
+                    if (newline_pos == std::string::npos) {
+                        pos = cr_pos;
+                    } else if (cr_pos == std::string::npos) {
+                        pos = newline_pos;
+                    } else {
+                        pos = (std::min)(newline_pos, cr_pos);
+                    }
+                    
+                    std::string line = line_buffer.substr(0, pos);
+                    
+                    // Skip \r\n as a single delimiter
+                    size_t skip = 1;
+                    if (pos + 1 < line_buffer.size() && 
+                        line_buffer[pos] == '\r' && line_buffer[pos + 1] == '\n') {
+                        skip = 2;
+                    }
+                    line_buffer = line_buffer.substr(pos + skip);
+                    
+                    // Skip empty lines
+                    if (line.empty()) {
+                        continue;
+                    }
+                    
+                    // Call the callback
+                    if (on_line && !on_line(line)) {
+                        TerminateProcess(pi.hProcess, 1);
+                        killed_by_callback = true;
+                        break;
+                    }
+                }
+                
+                if (killed_by_callback) break;
+            }
+        } else {
+            // No data available, check if process is still running
+            DWORD exit_code;
+            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
+                // Process exited, drain any remaining output
+                while (ReadFile(stdout_read, buffer, sizeof(buffer) - 1, &bytes_read, nullptr) && bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    line_buffer += buffer;
+                }
+                break;
+            }
+            
+            // Sleep briefly to avoid busy-waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    
+    // Process any remaining partial line
+    if (!line_buffer.empty() && on_line && !killed_by_callback) {
+        // Remove trailing \r if present
+        if (!line_buffer.empty() && line_buffer.back() == '\r') {
+            line_buffer.pop_back();
+        }
+        if (!line_buffer.empty()) {
+            on_line(line_buffer);
+        }
+    }
+    
+    CloseHandle(stdout_read);
+    
+    // Get exit code
+    DWORD exit_code = 0;
+    WaitForSingleObject(pi.hProcess, 5000);
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    
+    return killed_by_callback ? -1 : static_cast<int>(exit_code);
+    
+#else
+    // Unix implementation
+    int stdout_pipe[2];
+    
+    if (pipe(stdout_pipe) < 0) {
+        throw std::runtime_error("Failed to create pipe");
+    }
+    
+    pid_t pid = fork();
+    
+    if (pid < 0) {
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
+        throw std::runtime_error("Failed to fork process");
+    }
+    
+    if (pid == 0) {
+        // Child process
+        close(stdout_pipe[0]);  // Close read end
+        
+        // Redirect stdout and stderr to pipe
+        dup2(stdout_pipe[1], STDOUT_FILENO);
+        dup2(stdout_pipe[1], STDERR_FILENO);
+        close(stdout_pipe[1]);
+        
+        if (!working_dir.empty()) {
+            chdir(working_dir.c_str());
+        }
+        
+        // Prepare argv
+        std::vector<char*> argv_ptrs;
+        argv_ptrs.push_back(const_cast<char*>(executable.c_str()));
+        for (const auto& arg : args) {
+            argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv_ptrs.push_back(nullptr);
+        
+        execvp(executable.c_str(), argv_ptrs.data());
+        
+        // If execvp returns, it failed
+        _exit(127);
+    }
+    
+    // Parent process
+    close(stdout_pipe[1]);  // Close write end
+    
+    // Read output line by line
+    std::string line_buffer;
+    char buffer[4096];
+    ssize_t bytes_read;
+    bool killed_by_callback = false;
+    
+    auto start_time = std::chrono::steady_clock::now();
+    
+    // Set non-blocking mode
+    int flags = fcntl(stdout_pipe[0], F_GETFL, 0);
+    fcntl(stdout_pipe[0], F_SETFL, flags | O_NONBLOCK);
+    
+    while (true) {
+        // Check timeout
+        if (timeout_seconds > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+            if (elapsed > timeout_seconds) {
+                kill(pid, SIGKILL);
+                killed_by_callback = true;
+                break;
+            }
+        }
+        
+        bytes_read = read(stdout_pipe[0], buffer, sizeof(buffer) - 1);
+        
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            line_buffer += buffer;
+            
+            // Process complete lines (split on \n or \r for in-place progress updates)
+            size_t pos;
+            while (true) {
+                // Find the first line terminator (\n or \r)
+                size_t newline_pos = line_buffer.find('\n');
+                size_t cr_pos = line_buffer.find('\r');
+                
+                if (newline_pos == std::string::npos && cr_pos == std::string::npos) {
+                    break;  // No complete line yet
+                }
+                
+                // Use whichever comes first
+                if (newline_pos == std::string::npos) {
+                    pos = cr_pos;
+                } else if (cr_pos == std::string::npos) {
+                    pos = newline_pos;
+                } else {
+                    pos = std::min(newline_pos, cr_pos);
+                }
+                
+                std::string line = line_buffer.substr(0, pos);
+                
+                // Skip \r\n as a single delimiter
+                size_t skip = 1;
+                if (pos + 1 < line_buffer.size() && 
+                    line_buffer[pos] == '\r' && line_buffer[pos + 1] == '\n') {
+                    skip = 2;
+                }
+                line_buffer = line_buffer.substr(pos + skip);
+                
+                // Skip empty lines
+                if (line.empty()) {
+                    continue;
+                }
+                
+                // Call the callback
+                if (on_line && !on_line(line)) {
+                    kill(pid, SIGKILL);
+                    killed_by_callback = true;
+                    break;
+                }
+            }
+            
+            if (killed_by_callback) break;
+        } else if (bytes_read == 0) {
+            // EOF - pipe closed
+            break;
+        } else {
+            // EAGAIN/EWOULDBLOCK - no data available
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Check if process is still running
+                int status;
+                pid_t result = waitpid(pid, &status, WNOHANG);
+                if (result > 0) {
+                    // Process exited, drain remaining output
+                    fcntl(stdout_pipe[0], F_SETFL, flags);  // Back to blocking
+                    while ((bytes_read = read(stdout_pipe[0], buffer, sizeof(buffer) - 1)) > 0) {
+                        buffer[bytes_read] = '\0';
+                        line_buffer += buffer;
+                    }
+                    break;
+                }
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            } else {
+                // Real error
+                break;
+            }
+        }
+    }
+    
+    // Process any remaining partial line
+    if (!line_buffer.empty() && on_line && !killed_by_callback) {
+        on_line(line_buffer);
+    }
+    
+    close(stdout_pipe[0]);
+    
+    // Wait for process and get exit code
+    int status;
+    waitpid(pid, &status, 0);
+    
+    if (killed_by_callback) {
+        return -1;
+    }
+    
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
 }
 
 void ProcessManager::kill_process(ProcessHandle handle) {

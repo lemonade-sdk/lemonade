@@ -8,6 +8,7 @@ import {
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { downloadTracker } from './utils/downloadTracker';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -157,7 +158,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         loadModels();
       }
     };
-    
+
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
 
@@ -385,7 +386,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }));
   };
 
-  const handleDownloadModel = async (modelName: string) => {
+  const handleDownloadModel = useCallback(async (modelName: string) => {
     try {
       const modelData = supportedModelsData[modelName];
       if (!modelData) {
@@ -396,22 +397,150 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
       
-      const response = await serverFetch('/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: modelName, ...modelData })
-      });
+      // Create abort controller for this download
+      const abortController = new AbortController();
+      const downloadId = downloadTracker.startDownload(modelName, abortController);
       
-      if (!response.ok) {
-        throw new Error(`Failed to download model: ${response.statusText}`);
+      // Dispatch event to open download manager
+      window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
+      
+      let downloadCompleted = false;
+      let isPaused = false;
+      let isCancelled = false;
+      
+      // Listen for cancel and pause events
+      const handleCancel = (event: CustomEvent) => {
+        if (event.detail.modelName === modelName) {
+          isCancelled = true;
+          abortController.abort();
+        }
+      };
+      const handlePause = (event: CustomEvent) => {
+        if (event.detail.modelName === modelName) {
+          isPaused = true;
+          abortController.abort();
+        }
+      };
+      window.addEventListener('download:cancelled' as any, handleCancel);
+      window.addEventListener('download:paused' as any, handlePause);
+      
+      try {
+        const response = await serverFetch('/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            model_name: modelName, 
+            ...modelData,
+            stream: true  // Enable SSE streaming for progress updates
+          }),
+          signal: abortController.signal,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download model: ${response.statusText}`);
+        }
+        
+        // Read SSE stream for progress updates
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+        
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEventType = 'progress';
+        
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              
+              if (line.startsWith('event:')) {
+                currentEventType = line.substring(6).trim();
+              } else if (line.startsWith('data:')) {
+                try {
+                  const data = JSON.parse(line.substring(5).trim());
+                  
+                  if (currentEventType === 'progress') {
+                    downloadTracker.updateProgress(downloadId, data);
+                  } else if (currentEventType === 'complete') {
+                    downloadTracker.completeDownload(downloadId);
+                    downloadCompleted = true;
+                  } else if (currentEventType === 'error') {
+                    downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                    throw new Error(data.error || 'Download failed');
+                  }
+                } catch (parseError) {
+                  console.error('Failed to parse SSE data:', line, parseError);
+                }
+              } else if (line.trim() === '') {
+                // Empty line resets event type to default
+                currentEventType = 'progress';
+              }
+            }
+          }
+        } catch (streamError: any) {
+          // If we already got the complete event, ignore stream errors (connection closing is expected)
+          if (!downloadCompleted) {
+            throw streamError;
+          }
+          // Otherwise, it's a normal completion after the server closed the connection
+        }
+        
+        // Mark as complete if not already done
+        if (!downloadCompleted) {
+          downloadTracker.completeDownload(downloadId);
+          downloadCompleted = true;
+        }
+        
+        // Refresh downloaded models and current loaded model status
+        await fetchDownloadedModels();
+        await fetchCurrentLoadedModel();
+        
+        // Show success notification
+        showSuccess(`Model "${modelName}" downloaded successfully.`);
+      } catch (error: any) {
+        // Only handle as error if download didn't complete successfully
+        if (downloadCompleted) {
+          // Download actually succeeded, ignore any network errors from connection closing
+          return;
+        }
+        
+        if (error.name === 'AbortError') {
+          if (isPaused) {
+            downloadTracker.pauseDownload(downloadId);
+            showWarning(`Download paused: ${modelName}`);
+          } else if (isCancelled) {
+            downloadTracker.cancelDownload(downloadId);
+            showWarning(`Download cancelled: ${modelName}`);
+            // Dispatch cleanup-complete event to signal that file handles are released
+            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
+              detail: { id: downloadId, modelName }
+            }));
+          } else {
+            downloadTracker.cancelDownload(downloadId);
+            showWarning(`Download cancelled: ${modelName}`);
+            // Dispatch cleanup-complete event to signal that file handles are released
+            window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
+              detail: { id: downloadId, modelName }
+            }));
+          }
+        } else {
+          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+          throw error;
+        }
+      } finally {
+        window.removeEventListener('download:cancelled' as any, handleCancel);
+        window.removeEventListener('download:paused' as any, handlePause);
       }
-      
-      // Refresh downloaded models and current loaded model status
-      await fetchDownloadedModels();
-      await fetchCurrentLoadedModel();
-      
-      // Show success notification
-      showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
       console.error('Error downloading model:', error);
       showError(`Failed to download model: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -423,7 +552,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     }
-  };
+  }, [supportedModelsData, showError, showSuccess, showWarning, fetchDownloadedModels, fetchCurrentLoadedModel]);
+
+  // Separate useEffect for download resume/retry to avoid stale closure issues
+  useEffect(() => {
+    const handleDownloadResume = (event: CustomEvent) => {
+      const { modelName } = event.detail;
+      if (modelName) {
+        handleDownloadModel(modelName);
+      }
+    };
+
+    const handleDownloadRetry = (event: CustomEvent) => {
+      const { modelName } = event.detail;
+      if (modelName) {
+        handleDownloadModel(modelName);
+      }
+    };
+    
+    window.addEventListener('download:resume' as any, handleDownloadResume);
+    window.addEventListener('download:retry' as any, handleDownloadRetry);
+    
+    return () => {
+      window.removeEventListener('download:resume' as any, handleDownloadResume);
+      window.removeEventListener('download:retry' as any, handleDownloadRetry);
+    };
+  }, [handleDownloadModel]);
 
   const handleLoadModel = async (modelName: string) => {
     try {

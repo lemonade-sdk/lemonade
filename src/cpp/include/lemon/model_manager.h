@@ -25,7 +25,8 @@ struct DownloadProgress {
 };
 
 // Callback for download progress updates
-using DownloadProgressCallback = std::function<void(const DownloadProgress&)>;
+// Returns bool: true = continue download, false = cancel download
+using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
 struct ModelInfo {
     std::string model_name;
@@ -127,7 +128,9 @@ private:
                                    DownloadProgressCallback progress_callback = nullptr);
     
     // Download from FLM
-    void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);
+    void download_from_flm(const std::string& checkpoint, 
+                          bool do_not_upgrade = true,
+                          DownloadProgressCallback progress_callback = nullptr);
     
     json server_models_;
     json user_models_;
