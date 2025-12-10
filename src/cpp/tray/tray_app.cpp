@@ -1788,7 +1788,7 @@ Menu TrayApp::create_menu() {
         bool is_current = (size == config_.ctx_size);
         ctx_submenu->add_item(MenuItem::Checkable(
             "Context size " + label,
-            [this, size]() { on_change_context_size(size); },
+            [this, size = size]() { on_change_context_size(size); },
             is_current
         ));
     }
@@ -2499,6 +2499,3 @@ void TrayApp::tail_log_to_console() {
 }
 
 } // namespace lemon_tray
-
-
-

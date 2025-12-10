@@ -55,6 +55,18 @@ xcode-select --install
 3. Once done with that you may select which building toolkit you are using under Configure and then begin configure.
 4. Under Build, Test, Debug and/or Launch you may select whatever configuration you want to build, test, debug and/or launch.
 
+#### Debug / Runtime / Console arguments
+1. You may find arguments which are passed through to the application you are debugging in .vscode/settings.json which will look like the following:
+```
+"cmake.debugConfig": {
+        "args": [
+            "--llamacpp", "cpu"
+        ]
+    }
+```
+2. If you want to debug lemonade-router you may pass --llamacpp cpu for cpu based tests.
+3. For lemonade-server you may pass serve as a argument as well.
+
 ##### The hard way - commands only.
 1. Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
 ```
