@@ -41,23 +41,32 @@ Lemonade helps users run local LLMs with the highest performance by configuring 
 
 Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/), research teams like [Hazy Research at Stanford](https://www.amd.com/en/developer/resources/technical-articles/2025/minions--on-device-and-cloud-language-model-collaboration-on-ryz.html), and large companies like [AMD](https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html) use Lemonade to run LLMs.
 
-## Getting Started
+<h2 align="center">Getting Started</h2>
 
-<div align="center">
+<table align="center">
+<tr>
+<td align="center" width="280">
+<h3>Install</h3>
+<a href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server.msi">Windows</a> · <a href="https://lemonade-server.ai/install_options.html">Ubuntu</a> · <a href="https://lemonade-server.ai/install_options.html">Source</a>
+</td>
+<td align="center" width="280">
+<h3>Get Models</h3>
+Browse and download models<br>with the <a href="#model-library"><strong>Model Manager</strong></a>
+</td>
+<td align="center" width="280">
+<h3>Chat</h3>
+Try models with the<br><strong>built-in chat interface</strong>
+</td>
+</tr>
+</table>
 
-| Step 1: Download & Install | Step 2: Launch and Pull Models | Step 3: Start chatting! |
-|:---------------------------:|:-------------------------------:|:------------------------:|
-|Install using a [GUI](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi) (Windows only), [pip](https://lemonade-server.ai/install_options.html), or [from source](https://lemonade-server.ai/install_options.html). |Use the [Model Manager](#model-library) to install models|A built-in chat interface is available!|
-</div>
-
-### Use it with your favorite OpenAI-compatible app!
+<h3 align="center">Then connect to your favorite apps!</h3>
 
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=GitHub.copilot" title="GitHub Copilot" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai" target="_blank"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
+  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=GitHub.copilot" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
 </p>
 
-> [!TIP]
-> Want your app featured here? Let's do it! Shoot us a message on [Discord](https://discord.gg/5xXzkMu8Zk), [create an issue](https://github.com/lemonade-sdk/lemonade/issues), or [email](lemonade@amd.com).
+<p align="center"><em>Want your app featured here? <a href="https://discord.gg/5xXzkMu8Zk">Discord</a> · <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issue</a> · <a href="mailto:lemonade@amd.com">Email</a></em></p>
 
 ## Using the CLI
 
@@ -84,20 +93,15 @@ lemonade-server list
 
 ## Model Library
 
-<table>
-<tr>
-<td width="55%" valign="top">
+<img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-Lemonade supports **GGUF** and **ONNX** models across CPU, GPU, and NPU (see [Supported Configurations](#supported-configurations)). Browse all built-in models [here](https://lemonade-server.ai/docs/server/server_models/).
+Lemonade supports **GGUF** and **ONNX** models across CPU, GPU, and NPU ([supported configurations](#supported-configurations)).
 
-Use the CLI (`lemonade-server pull`) or the App's **Model Manager** to download built-in models. You can also import custom GGUF and ONNX models directly from Hugging Face.
+Use `lemonade-server pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
-</td>
-<td width="45%" align="center">
-  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="350" />
-</td>
-</tr>
-</table>
+**[📦 Browse all built-in models →](https://lemonade-server.ai/docs/server/server_models/)**
+
+<br clear="right"/>
 
 ## Supported Configurations
 
