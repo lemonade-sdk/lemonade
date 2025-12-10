@@ -105,23 +105,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }));
   };
 
-  const handleBooleanChange = (value: boolean) => {
+  const handleBooleanChange = (key: 'enableThinking' | 'collapseThinkingByDefault', value: boolean) => {
     setSettings((prev) => ({
       ...prev,
-      enableThinking: {
+      [key]: {
         value,
         useDefault: false,
       },
     }));
   };
 
-  const handleResetField = (key: NumericSettingKey | 'enableThinking') => {
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault') => {
     setSettings((prev) => {
       if (key === 'enableThinking') {
         return {
           ...prev,
           enableThinking: {
             value: BASE_SETTING_VALUES.enableThinking,
+            useDefault: true,
+          },
+        };
+      }
+
+      if (key === 'collapseThinkingByDefault') {
+        return {
+          ...prev,
+          collapseThinkingByDefault: {
+            value: BASE_SETTING_VALUES.collapseThinkingByDefault,
             useDefault: true,
           },
         };
@@ -263,12 +273,43 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="checkbox"
                   checked={settings.enableThinking.value}
-                  onChange={(e) => handleBooleanChange(e.target.checked)}
+                  onChange={(e) => handleBooleanChange('enableThinking', e.target.checked)}
                   className="settings-checkbox"
                 />
                 <div className="settings-checkbox-content">
                   <span className="settings-description">
                     Determines whether hybrid reasoning models, such as Qwen3, will use thinking.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div
+              className={`settings-section ${
+                settings.collapseThinkingByDefault.useDefault ? 'settings-section-default' : ''
+              }`}
+            >
+              <div className="settings-label-row">
+                <span className="settings-label-text">Collapse Thinking by Default</span>
+                <button
+                  type="button"
+                  className="settings-field-reset"
+                  onClick={() => handleResetField('collapseThinkingByDefault')}
+                  disabled={settings.collapseThinkingByDefault.useDefault}
+                >
+                  Reset
+                </button>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.collapseThinkingByDefault.value}
+                  onChange={(e) => handleBooleanChange('collapseThinkingByDefault', e.target.checked)}
+                  className="settings-checkbox"
+                />
+                <div className="settings-checkbox-content">
+                  <span className="settings-description">
+                    When enabled, thinking sections will be collapsed by default instead of automatically expanded.
                   </span>
                 </div>
               </label>
