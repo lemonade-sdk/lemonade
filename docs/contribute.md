@@ -17,7 +17,7 @@ Guides should:
 - Require no code changes to the app.
 - Use OpenAI API-compatible apps with configurable base URLs.
 
-## SDK Contributions
+## Backend Contributions
 
 To contribute code or examples, first open an [Issue](https://github.com/lemonade-sdk/lemonade/issues) with:
    - A descriptive title.
@@ -26,6 +26,19 @@ To contribute code or examples, first open an [Issue](https://github.com/lemonad
    - The use case it supports.
 
 One of the maintainers will get back to you ASAP with guidance.
+
+## UI/Frontend Contributions
+
+**Current UI Development Approach:**
+
+For now, UI and frontend development is being handled exclusively by core maintainers. Here's why: AI-assisted coding has made building UIs incredibly fast, but it's also made reviewing UI PRs quite challenging. UI changes often involve complex state management, visual consistency, accessibility considerations, and cross-platform considerations that require deep context about the entire application architecture.
+
+**How You Can Still Influence the UI:**
+
+We want your creativity and insights! Share UI/UX ideas, report bugs, or request features via [Issue](https://github.com/lemonade-sdk/lemonade/issues) or [Discord](https://discord.gg/5xXzkMu8Zk). Include mockups, screenshots, and reproduction steps where relevant.
+
+**UI Scope: Management, Not Competition:**  
+Our UI exists to facilitate Lemonade management - not to compete with the apps built on top of Lemonade. While it's tempting to add agentic workflows, advanced chat features, or other sophisticated capabilities, that's not our goal. We focus on making model management, configuration, and monitoring delightful and effortless. Defining this line isn't always easy, but use this principle as your guide when considering new UI features.
 
 ## Issues
 
