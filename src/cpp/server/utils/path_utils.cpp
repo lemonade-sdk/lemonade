@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <vector>
 #include <string>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -82,6 +83,55 @@ std::string get_resource_path(const std::string& relative_path) {
     
     // Fallback: return original path (will fail but with clear error)
     return resource_path.string();
+}
+
+std::string find_flm_executable() {
+#ifdef _WIN32
+    // Refresh PATH from Windows registry to pick up any changes since process started
+    // This is important because users may install FLM after starting lemonade-server
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        char buffer[32767];
+        DWORD bufferSize = sizeof(buffer);
+        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr, 
+                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
+            std::string system_path = buffer;
+            // Combine with current process PATH (system PATH takes priority for FLM lookup)
+            const char* current_path = std::getenv("PATH");
+            if (current_path) {
+                system_path = system_path + ";" + std::string(current_path);
+            }
+            _putenv(("PATH=" + system_path).c_str());
+        }
+        RegCloseKey(hKey);
+    }
+    
+    // Use SearchPathA which is the same API that CreateProcessA uses internally
+    // This ensures we find the exact same executable that will be launched
+    char found_path[MAX_PATH];
+    DWORD result = SearchPathA(
+        nullptr,      // Use system PATH
+        "flm.exe",    // File to search for
+        nullptr,      // No default extension needed
+        MAX_PATH,
+        found_path,
+        nullptr
+    );
+    
+    if (result > 0 && result < MAX_PATH) {
+        return found_path;
+    }
+    
+    return "";
+#else
+    // On Linux/Mac, check PATH using which
+    if (system("which flm > /dev/null 2>&1") == 0) {
+        return "flm";
+    }
+    return "";
+#endif
 }
 
 } // namespace utils

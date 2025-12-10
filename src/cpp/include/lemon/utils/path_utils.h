@@ -18,6 +18,14 @@ std::string get_executable_dir();
  */
 std::string get_resource_path(const std::string& relative_path);
 
+/**
+ * Find the FLM executable (flm.exe on Windows, flm on Unix).
+ * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
+ * then falls back to the default installation directory.
+ * @return Full path to flm executable, or empty string if not found.
+ */
+std::string find_flm_executable();
+
 } // namespace utils
 } // namespace lemon
 
