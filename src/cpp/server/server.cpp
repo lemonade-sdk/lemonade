@@ -235,8 +235,8 @@ void Server::setup_static_files(httplib::Server &web_server) {
     // Determine static files directory (relative to executable)
     std::string static_dir = utils::get_resource_path("resources/static");
     
-    // Root path - serve index.html with template variable replacement
-    web_server.Get("/", [this, static_dir](const httplib::Request&, httplib::Response& res) {
+    // Create a reusable handler for serving index.html with template variable replacement
+    auto serve_index_html = [this, static_dir](const httplib::Request&, httplib::Response& res) {
         std::string index_path = static_dir + "/index.html";
         std::ifstream file(index_path);
         
@@ -311,7 +311,13 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_header("Pragma", "no-cache");
         res.set_header("Expires", "0");
         res.set_content(html_template, "text/html");
-    });
+    };
+    
+    // Root path - serve index.html
+    web_server.Get("/", serve_index_html);
+    
+    // Also serve index.html at /api/v1
+    web_server.Get("/api/v1", serve_index_html);
     
     // Serve favicon.ico from root as expected by most browsers
     web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
