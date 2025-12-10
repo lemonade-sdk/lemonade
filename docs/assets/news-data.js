@@ -10,7 +10,7 @@ const newsData = [
     type: "video"
     },
     {
-    title: "Dify + Lemonade for Agentic Worflows",
+    title: "Dify + Lemonade for Agentic Workflows",
     url: "https://www.amd.com/en/developer/resources/technical-articles/2025/harnessing-dify-and-local-llms-on-ryzen-ai-pcs-for-private-workf.html",
     date: "October 6, 2025",
     description: "Lemonade now available with Dify, enabling private AI workflows to run locally. Build powerful LLM + RAG apps without cloud dependencies or ML expertise.",
