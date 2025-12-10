@@ -8,6 +8,8 @@
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <future>
+#include <chrono>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -1833,107 +1835,131 @@ void SystemInfoCache::clear() {
 }
 
 json SystemInfoCache::get_system_info_with_cache(bool verbose) {
-    json system_info;
+    constexpr int TIMEOUT_SECONDS = 20;
     
-    // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
-    try {
-        // Create cache instance and load cached data
-        SystemInfoCache cache;
-        bool cache_exists = fs::exists(cache.get_cache_file_path());
-        json cached_data = cache.load_hardware_info();
+    // Run collection in background thread with timeout
+    auto future = std::async(std::launch::async, [verbose]() -> json {
+        json system_info;
         
-        // Create platform-specific system info instance
-        auto sys_info = create_system_info();
-        
-        if (!cached_data.empty()) {
-            std::cout << "[Server] Using cached hardware info" << std::endl;
-            system_info = cached_data;
-        } else {
-            // Provide friendly message about why we're detecting hardware
-            if (cache_exists) {
-                std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        try {
+            // Create cache instance and load cached data
+            SystemInfoCache cache;
+            bool cache_exists = fs::exists(cache.get_cache_file_path());
+            json cached_data = cache.load_hardware_info();
+            
+            // Create platform-specific system info instance
+            auto sys_info = create_system_info();
+            
+            if (!cached_data.empty()) {
+                std::cout << "[Server] Using cached hardware info" << std::endl;
+                system_info = cached_data;
             } else {
-                std::cout << "[Server] Collecting system info" << std::endl;
-            }
-            
-            // Get system info (OS, Processor, Memory, etc.)
-            try {
-                system_info = sys_info->get_system_info_dict();
-            } catch (...) {
-                system_info["OS Version"] = "Unknown";
-            }
-            
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-            
-            // Save to cache (without inference_engines which are always fresh)
-            try {
-                cache.save_hardware_info(system_info);
-            } catch (...) {
-                // Cache save failed - not critical, continue
-            }
-        }
-        
-        // Add inference engines (always fresh, never cached)
-        if (system_info.contains("devices")) {
-            auto& devices = system_info["devices"];
-            
-            // Helper to safely add inference engines
-            auto add_engines = [&](const std::string& key, const std::string& device_type) {
-                if (devices.contains(key) && devices[key].contains("name")) {
-                    std::string name = devices[key]["name"];
-                    devices[key]["inference_engines"] = sys_info->detect_inference_engines(device_type, name);
+                // Provide friendly message about why we're detecting hardware
+                if (cache_exists) {
+                    std::cout << "[Server] Collecting system info (Lemonade was updated)" << std::endl;
+                } else {
+                    std::cout << "[Server] Collecting system info" << std::endl;
                 }
-            };
+                
+                // Get system info (OS, Processor, Memory, etc.)
+                try {
+                    system_info = sys_info->get_system_info_dict();
+                } catch (...) {
+                    system_info["OS Version"] = "Unknown";
+                }
+                
+                // Get device information - handles its own exceptions internally
+                system_info["devices"] = sys_info->get_device_dict();
+                
+                // Save to cache (without inference_engines which are always fresh)
+                try {
+                    cache.save_hardware_info(system_info);
+                } catch (...) {
+                    // Cache save failed - not critical, continue
+                }
+            }
             
-            add_engines("cpu", "cpu");
-            add_engines("amd_igpu", "amd_igpu");
-            add_engines("npu", "npu");
-            
-            // Handle GPU arrays
-            for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
-                if (devices.contains(gpu_type) && devices[gpu_type].is_array()) {
-                    for (auto& gpu : devices[gpu_type]) {
-                        if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
-                            gpu["inference_engines"] = sys_info->detect_inference_engines(gpu_type, gpu["name"]);
+            // Add inference engines (always fresh, never cached)
+            if (system_info.contains("devices")) {
+                auto& devices = system_info["devices"];
+                
+                // Helper to safely add inference engines
+                auto add_engines = [&](const std::string& key, const std::string& device_type) {
+                    if (devices.contains(key) && devices[key].contains("name")) {
+                        std::string name = devices[key]["name"];
+                        devices[key]["inference_engines"] = sys_info->detect_inference_engines(device_type, name);
+                    }
+                };
+                
+                add_engines("cpu", "cpu");
+                add_engines("amd_igpu", "amd_igpu");
+                add_engines("npu", "npu");
+                
+                // Handle GPU arrays
+                for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
+                    if (devices.contains(gpu_type) && devices[gpu_type].is_array()) {
+                        for (auto& gpu : devices[gpu_type]) {
+                            if (gpu.contains("name") && !gpu["name"].get<std::string>().empty()) {
+                                gpu["inference_engines"] = sys_info->detect_inference_engines(gpu_type, gpu["name"]);
+                            }
                         }
                     }
                 }
             }
-        }
-        
-        // Filter for non-verbose mode
-        if (!verbose) {
-            std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
-            json filtered_info;
-            for (const auto& key : essential_keys) {
-                if (system_info.contains(key)) {
-                    filtered_info[key] = system_info[key];
+            
+            // Filter for non-verbose mode
+            if (!verbose) {
+                std::vector<std::string> essential_keys = {"OS Version", "Processor", "Physical Memory", "devices"};
+                json filtered_info;
+                for (const auto& key : essential_keys) {
+                    if (system_info.contains(key)) {
+                        filtered_info[key] = system_info[key];
+                    }
                 }
+                system_info = filtered_info;
+            } else {
+                system_info["Python Packages"] = SystemInfo::get_python_packages();
             }
-            system_info = filtered_info;
-        } else {
-            system_info["Python Packages"] = SystemInfo::get_python_packages();
+            
+        } catch (const std::exception& e) {
+            // Catastrophic failure - return minimal info but don't crash
+            std::cerr << "[Server] System info failed: " << e.what() << std::endl;
+            system_info = {
+                {"OS Version", "Unknown"},
+                {"error", e.what()},
+                {"devices", json::object()}
+            };
+        } catch (...) {
+            std::cerr << "[Server] System info failed with unknown error" << std::endl;
+            system_info = {
+                {"OS Version", "Unknown"},
+                {"error", "Unknown error"},
+                {"devices", json::object()}
+            };
         }
         
-    } catch (const std::exception& e) {
-        // Catastrophic failure - return minimal info but don't crash
-        std::cerr << "[Server] System info failed: " << e.what() << std::endl;
-        system_info = {
+        return system_info;
+    });
+    
+    if (future.wait_for(std::chrono::seconds(TIMEOUT_SECONDS)) == std::future_status::timeout) {
+        std::cout << "[Server] Warning: System info collection timed out after " 
+                  << TIMEOUT_SECONDS << " seconds. All models will be shown." << std::endl;
+        // Return fallback that allows all devices
+        return {
             {"OS Version", "Unknown"},
-            {"error", e.what()},
-            {"devices", json::object()}
-        };
-    } catch (...) {
-        std::cerr << "[Server] System info failed with unknown error" << std::endl;
-        system_info = {
-            {"OS Version", "Unknown"},
-            {"error", "Unknown error"},
-            {"devices", json::object()}
+            {"error", "System info collection timed out"},
+            {"devices", {
+                {"cpu", {{"name", "Unknown"}, {"available", true}}},
+                {"amd_igpu", {{"name", "Unknown"}, {"available", true}}},
+                {"npu", {{"name", "Unknown"}, {"available", true}}},
+                {"amd_dgpu", json::array()},
+                {"nvidia_dgpu", json::array()}
+            }}
         };
     }
     
-    return system_info;
+    return future.get();
 }
 
 
