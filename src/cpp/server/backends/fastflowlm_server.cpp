@@ -1,6 +1,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
@@ -262,38 +263,17 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
-    // Check common locations for flm executable
-#ifdef _WIN32
-    // On Windows, check PATH
-    const char* paths[] = {
-        "flm.exe",
-        "C:\\Program Files\\FastFlowLM\\flm.exe",
-        "C:\\Program Files (x86)\\FastFlowLM\\flm.exe"
-    };
+    // Use shared utility function to find flm executable
+    // (find_flm_executable refreshes PATH from registry on Windows)
+    std::string flm_path = utils::find_flm_executable();
     
-    for (const auto& path : paths) {
-        // Try to find in PATH
-        std::string cmd = "where " + std::string(path) + " >nul 2>&1";
-        if (system(cmd.c_str()) == 0) {
-            // Found in PATH, return just the name
-            if (std::string(path) == "flm.exe") {
-                return "flm";
-            }
-            return path;
-        }
-        // Check if file exists at absolute path
-        if (fs::exists(path)) {
-            return path;
-        }
+    if (!flm_path.empty()) {
+        std::cout << "[FastFlowLM] Found flm at: " << flm_path << std::endl;
+    } else {
+        std::cerr << "[FastFlowLM] flm not found in PATH" << std::endl;
     }
-#else
-    // On Linux/Mac, check PATH
-    if (system("which flm >/dev/null 2>&1") == 0) {
-        return "flm";
-    }
-#endif
     
-    return ""; // Not found
+    return flm_path;
 }
 
 std::string FastFlowLMServer::get_flm_latest_version() {
@@ -604,25 +584,13 @@ void FastFlowLMServer::refresh_environment_path() {
         RegCloseKey(hKey);
     }
     
-    // Also add common FLM installation paths
-    std::vector<std::string> common_paths = {
-        "C:\\Program Files\\FastFlowLM",
-        "C:\\Program Files (x86)\\FastFlowLM"
-    };
-    
-    // Add user-specific path
-    char* local_app_data = getenv("LOCALAPPDATA");
-    if (local_app_data) {
-        common_paths.push_back(std::string(local_app_data) + "\\FastFlowLM");
-    }
-    
-    for (const auto& path : common_paths) {
-        if (fs::exists(path)) {
-            const char* current_path = getenv("PATH");
-            std::string current_path_str = current_path ? current_path : "";
-            if (current_path_str.find(path) == std::string::npos) {
-                _putenv(("PATH=" + path + ";" + current_path_str).c_str());
-            }
+    // Add default FLM installation path if not already in PATH
+    const std::string flm_dir = "C:\\Program Files\\flm";
+    if (fs::exists(flm_dir)) {
+        const char* current_path = getenv("PATH");
+        std::string current_path_str = current_path ? current_path : "";
+        if (current_path_str.find(flm_dir) == std::string::npos) {
+            _putenv(("PATH=" + flm_dir + ";" + current_path_str).c_str());
         }
     }
 #endif

@@ -19,7 +19,16 @@
 #include <algorithm>
 
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #pragma comment(lib, "ws2_32.lib") // Link with Winsock library
+#else
+    #include <sys/types.h>
+    #include <sys/socket.h>
+    #include <netdb.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
