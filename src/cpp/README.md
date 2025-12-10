@@ -36,6 +36,48 @@ sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-confi
 xcode-select --install
 ```
 
+### Developer IDE & IDE Build Steps
+#### Visual Studio Code Setup Guide
+1. Clone the repository into a blank folder locally on your computer.
+2. Open the folder in visual studio code.
+3. Install Dev Containers extension in visual studio code by using
+  control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
+4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
+5. in the extensions search type ```Dev Containers``` and install it.
+6. Once completed with the prior steps you may run command
+```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
+
+#### Build & Compile Options
+
+1. Assuming your VSCode IDE is open and the dev container is working.
+2. Go to the CMake plugin you may select the "Folder" that is where you currently want to build.
+3. Once done with that you may select which building toolkit you are using under Configure and then begin configure.
+4. Under Build, Test, Debug and/or Launch you may select whatever configuration you want to build, test, debug and/or launch.
+
+##### The hard way - commands only.
+1. Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
+```
+
+> Cmake: Select a Kit
+# Select a kit or Scan for kit. (Two options should be available gcc or clang)
+> Cmake: Configure
+# Optional commands are: 
+> Cmake: Build Target
+# use this to select a cmake target to build
+> Cmake: Set Launch/Debug target
+# use this to select/set your cmake target you want to build/debug
+
+# This next command lets you debug
+> Cmake: Debug
+
+# This command lets you delete the cmake cache and reconfigure which is rarely needed.
+> Cmake: Delete Cache and Reconfigure
+```
+
+2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
+
+
 ### Build Steps
 
 ```bash
