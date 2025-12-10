@@ -33,4 +33,3 @@ done
 find "$APP_DIR" -name "*.so*" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
 exit 0
-

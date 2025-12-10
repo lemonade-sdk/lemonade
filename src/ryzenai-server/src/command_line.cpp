@@ -6,10 +6,10 @@ namespace ryzenai {
 
 CommandLineArgs CommandLineParser::parse(int argc, char* argv[]) {
     CommandLineArgs args;
-    
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
         if (arg == "-m" || arg == "--model") {
             if (i + 1 < argc) {
                 args.model_path = argv[++i];
@@ -67,7 +67,7 @@ CommandLineArgs CommandLineParser::parse(int argc, char* argv[]) {
             throw std::runtime_error("Unknown argument: " + arg);
         }
     }
-    
+
     return args;
 }
 
@@ -92,4 +92,3 @@ void CommandLineParser::printUsage(const char* program_name) {
 }
 
 } // namespace ryzenai
-

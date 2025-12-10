@@ -83,7 +83,7 @@ jobs:
           fi
           # Test CLI
           $venvLemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
-          
+
           # Test low-level APIs
           $venvPython test/llm_api.py
 

@@ -62,7 +62,7 @@ xcode-select --install
 > Cmake: Select a Kit
 # Select a kit or Scan for kit. (Two options should be available gcc or clang)
 > Cmake: Configure
-# Optional commands are: 
+# Optional commands are:
 > Cmake: Build Target
 # use this to select a cmake target to build
 > Cmake: Set Launch/Debug target
@@ -100,12 +100,12 @@ cmake --build . --config Release -j
 
 ### Build Outputs
 
-- **Windows:** 
+- **Windows:**
   - `build/Release/lemonade-router.exe` - HTTP server
   - `build/Release/lemonade-server.exe` - Console CLI client
   - `build/Release/lemonade-tray.exe` - GUI tray launcher
   - `build/Release/lemonade-log-viewer.exe` - Log file viewer
-- **Linux/macOS:** 
+- **Linux/macOS:**
   - `build/lemonade-router` - HTTP server
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
@@ -121,7 +121,7 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
    mkdir build && cd build
    cmake .. -G "Visual Studio 17 2022"
    cmake --build . --config Release
-   
+
    # The executable will be at: src/ryzenai-server/build/bin/Release/ryzenai-server.exe
    ```
 

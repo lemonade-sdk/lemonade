@@ -34,7 +34,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
-      
+
       if (e.key === 'Escape') {
         onCancel();
       } else if (e.key === 'Enter') {
@@ -60,13 +60,13 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <h3 className="confirm-dialog-title">{title}</h3>
         <p className="confirm-dialog-message">{message}</p>
         <div className="confirm-dialog-actions">
-          <button 
+          <button
             className="confirm-dialog-btn confirm-dialog-btn-cancel"
             onClick={onCancel}
           >
             {cancelText}
           </button>
-          <button 
+          <button
             ref={confirmButtonRef}
             className={`confirm-dialog-btn ${danger ? 'confirm-dialog-btn-danger' : 'confirm-dialog-btn-confirm'}`}
             onClick={onConfirm}
@@ -134,4 +134,3 @@ export const useConfirmDialog = () => {
 };
 
 export default ConfirmDialog;
-

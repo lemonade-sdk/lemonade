@@ -86,7 +86,7 @@ not_in_nav: |
   /lemonade_api.md
   /self_hosted_runners.md
   /dev_cli/finetuned_model_export.md
-  
+
 exclude_docs: |
   code.md
   versioning.md

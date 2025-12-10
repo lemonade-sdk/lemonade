@@ -36,7 +36,7 @@
             this.connection = null;
             this.type = null; // 'websocket' or 'sse'
         }
-        
+
         async connect() {
             // Try WebSocket first (Python server)
             try {
@@ -46,7 +46,7 @@
             } catch (wsError) {
                 console.log('[LogStreamer] WebSocket failed, trying SSE...', wsError);
             }
-            
+
             // Fallback to SSE (C++ server)
             try {
                 this.connectSSE();
@@ -58,30 +58,30 @@
                 }
             }
         }
-        
+
         connectWebSocket() {
             return new Promise((resolve, reject) => {
                 const wsUrl = this.baseUrl
                     .replace('http://', 'ws://')
                     .replace('https://', 'wss://') + '/api/v1/logs/ws';
-                
+
                 const ws = new WebSocket(wsUrl);
                 let connectionTimeout = setTimeout(() => {
                     reject(new Error('WebSocket connection timeout'));
                     ws.close();
                 }, 3000); // 3 second timeout
-                
+
                 ws.onopen = () => {
                     clearTimeout(connectionTimeout);
                     this.connection = ws;
                     this.type = 'websocket';
                     resolve();
                 };
-                
+
                 ws.onmessage = (event) => {
                     this.onMessage(event.data);
                 };
-                
+
                 ws.onerror = (error) => {
                     clearTimeout(connectionTimeout);
                     if (this.onError && this.connection) {
@@ -89,7 +89,7 @@
                     }
                     reject(error);
                 };
-                
+
                 ws.onclose = () => {
                     if (this.type === 'websocket') {
                         console.log('[LogStreamer] WebSocket closed');
@@ -100,20 +100,20 @@
                 };
             });
         }
-        
+
         connectSSE() {
             const sseUrl = this.baseUrl + '/api/v1/logs/stream';
             const eventSource = new EventSource(sseUrl);
-            
+
             eventSource.onopen = () => {
                 this.connection = eventSource;
                 this.type = 'sse';
             };
-            
+
             eventSource.onmessage = (event) => {
                 this.onMessage(event.data);
             };
-            
+
             eventSource.onerror = (error) => {
                 console.error('[LogStreamer] SSE error:', error);
                 if (this.onError) {
@@ -121,20 +121,20 @@
                 }
             };
         }
-        
+
         disconnect() {
             if (!this.connection) return;
-            
+
             if (this.type === 'websocket') {
                 this.connection.close();
             } else if (this.type === 'sse') {
                 this.connection.close();
             }
-            
+
             this.connection = null;
             this.type = null;
         }
-        
+
         getConnectionType() {
             return this.type;
         }
@@ -153,7 +153,7 @@
     // Initialize log streaming
     const logContainer = document.getElementById("log-container");
     const baseUrl = `${location.protocol}//${location.host}`;
-    
+
     const logStreamer = new LogStreamer(
         baseUrl,
         (logLine) => {
@@ -175,10 +175,10 @@
             logContainer.appendChild(msg);
         }
     );
-    
+
     // Connect to log stream
     logStreamer.connect();
-    
+
     // Show connection type in console
     setTimeout(() => {
         const type = logStreamer.getConnectionType();

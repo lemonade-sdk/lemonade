@@ -12,32 +12,32 @@
     function generateNewsTiles(filterType = 'all', sortOrder = 'newest') {
       const newsPostsContainer = document.querySelector('.news-posts');
       newsPostsContainer.innerHTML = ''; // Clear existing tiles
-      
-      let filteredData = filterType === 'all' 
-        ? [...newsData] 
+
+      let filteredData = filterType === 'all'
+        ? [...newsData]
         : newsData.filter(item => item.type === filterType);
-      
+
       // Sort data by date
       filteredData.sort((a, b) => {
         const dateA = new Date(a.date);
         const dateB = new Date(b.date);
-        
+
         if (sortOrder === 'newest') {
           return dateB - dateA; // Newest first
         } else {
           return dateA - dateB; // Oldest first
         }
       });
-      
+
       filteredData.forEach(item => {
         const article = document.createElement('article');
         article.className = 'news-tile';
-        
+
         const isVideo = item.type === 'video';
         const isTutorial = item.type === 'tutorial';
         const isRelease = item.type === 'release';
         let badgeText, badgeClass;
-        
+
         if (isVideo) {
           badgeText = 'Video';
           badgeClass = 'video-badge';
@@ -51,9 +51,9 @@
           badgeText = 'Blog';
           badgeClass = 'blog-badge';
         }
-        
+
         const playButton = isVideo ? '<div class="youtube-play-button">▶</div>' : '';
-        
+
         article.innerHTML = `
           <a href="${item.url}" target="_blank" class="news-tile-link">
             <div class="news-image">
@@ -68,7 +68,7 @@
             </div>
           </a>
         `;
-        
+
         newsPostsContainer.appendChild(article);
       });
     }
@@ -80,10 +80,10 @@
         btn.classList.remove('active');
       });
       document.querySelector(`[data-filter="${filterType}"]`).classList.add('active');
-      
+
       // Get current sort order
       const sortOrder = document.getElementById('sortSelect').value;
-      
+
       // Re-generate tiles with filter and sort
       generateNewsTiles(filterType, sortOrder);
     }
@@ -92,7 +92,7 @@
     function handleSortChange(sortOrder) {
       // Get current filter
       const activeFilter = document.querySelector('.filter-btn.active').getAttribute('data-filter');
-      
+
       // Re-generate tiles with current filter and new sort
       generateNewsTiles(activeFilter, sortOrder);
     }
@@ -100,10 +100,10 @@
     // Generate tiles when page loads
     document.addEventListener('DOMContentLoaded', () => {
       generateNewsTiles();
-      
+
       // Initialize footer with star count for news page (uses ../ basePath)
       initializeFooter('../');
-      
+
       // Add event listeners to filter buttons
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -111,15 +111,15 @@
           handleFilterChange(filterType);
         });
       });
-      
+
       // Add event listener to sort dropdown
       document.getElementById('sortSelect').addEventListener('change', (e) => {
         handleSortChange(e.target.value);
       });
-      
+
       // Back to top button functionality
       const backToTopBtn = document.getElementById('backToTop');
-      
+
       // Show/hide button based on scroll position
       window.addEventListener('scroll', () => {
         if (window.scrollY > 300) {
@@ -128,7 +128,7 @@
           backToTopBtn.classList.remove('show');
         }
       });
-      
+
       // Smooth scroll to top when clicked
       backToTopBtn.addEventListener('click', () => {
         window.scrollTo({
@@ -136,7 +136,7 @@
           behavior: 'smooth'
         });
       });
-      
+
       // Sidebar toggle functionality for mobile
       const sidebarToggle = document.getElementById('sidebarToggle');
       const newsSidebar = document.getElementById('newsSidebar');
@@ -144,19 +144,19 @@
       const collapseBtn = document.getElementById('collapseBtn');
       const expandBtn = document.getElementById('expandBtn');
       const newsView = document.querySelector('.news-view');
-      
+
       // Mobile sidebar toggle
       sidebarToggle.addEventListener('click', () => {
         newsSidebar.classList.toggle('mobile-open');
         sidebarOverlay.classList.toggle('active');
       });
-      
+
       // Close sidebar when clicking overlay
       sidebarOverlay.addEventListener('click', () => {
         newsSidebar.classList.remove('mobile-open');
         sidebarOverlay.classList.remove('active');
       });
-      
+
       // Desktop sidebar collapse/expand
       collapseBtn.addEventListener('click', () => {
         newsSidebar.classList.add('collapsed');
@@ -164,14 +164,14 @@
         expandBtn.classList.add('show');
         localStorage.setItem('sidebarCollapsed', 'true');
       });
-      
+
       expandBtn.addEventListener('click', () => {
         newsSidebar.classList.remove('collapsed');
         newsView.classList.remove('sidebar-collapsed');
         expandBtn.classList.remove('show');
         localStorage.setItem('sidebarCollapsed', 'false');
       });
-      
+
       // Restore sidebar state from localStorage
       const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
       if (sidebarCollapsed && window.innerWidth > 768) {
@@ -179,13 +179,13 @@
         newsView.classList.add('sidebar-collapsed');
         expandBtn.classList.add('show');
       }
-      
+
       // Close sidebar when window is resized to desktop
       window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {
           newsSidebar.classList.remove('mobile-open');
           sidebarOverlay.classList.remove('active');
-          
+
           // Restore collapsed state on desktop
           const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
           if (sidebarCollapsed) {
@@ -283,6 +283,6 @@
 
   <!-- Footer will be inserted here by footer.js -->
   <div class="footer-placeholder"></div>
-  
+
   <script src="../assets/footer.js"></script>
 </html>

@@ -1,6 +1,6 @@
 # Lemonade Examples
 
-This folder contains examples of how to deploy `lemonade` into applications. 
+This folder contains examples of how to deploy `lemonade` into applications.
 
 ## Notebooks
 

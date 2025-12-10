@@ -26,23 +26,23 @@ public:
            int max_embedding_models = 1,
            int max_reranking_models = 1,
            int max_audio_models = 1);
-    
+
     ~Server();
-    
+
     // Start the server
     void run();
-    
+
     // Stop the server
     void stop();
-    
+
     // Get server status
     bool is_running() const;
-    
+
 private:
     void setup_routes();
     void setup_static_files();
     void setup_cors();
-    
+
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
@@ -66,13 +66,13 @@ private:
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
-    
+
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
-    
+
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
-    
+
     int port_;
     std::string host_;
     std::string log_level_;
@@ -81,13 +81,12 @@ private:
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
     std::string log_file_path_;
-    
+
     std::unique_ptr<httplib::Server> http_server_;
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
-    
+
     bool running_;
 };
 
 } // namespace lemon
-

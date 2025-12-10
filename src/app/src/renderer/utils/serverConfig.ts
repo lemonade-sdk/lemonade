@@ -131,8 +131,8 @@ class ServerConfig {
    * Wrapper for fetch that automatically discovers port on connection failures
    */
   async fetch(endpoint: string, options?: RequestInit): Promise<Response> {
-    const fullUrl = endpoint.startsWith('http') 
-      ? endpoint 
+    const fullUrl = endpoint.startsWith('http')
+      ? endpoint
       : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     try {
@@ -141,13 +141,13 @@ class ServerConfig {
     } catch (error) {
       // If fetch fails, try discovering the port and retry once
       console.warn('Fetch failed, attempting port discovery...', error);
-      
+
       try {
         await this.discoverPort();
         const newUrl = endpoint.startsWith('http')
           ? endpoint.replace(/localhost:\d+/, `localhost:${this.port}`)
           : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-        
+
         return await fetch(newUrl, options);
       } catch (retryError) {
         // If retry also fails, throw the original error

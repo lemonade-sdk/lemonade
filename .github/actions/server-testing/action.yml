@@ -31,14 +31,14 @@ runs:
         $Env:AMD_OGA = "${{ inputs.amd_oga }}"
         $Env:HF_HOME = "${{ inputs.hf_home }}"
         $Env:HF_TOKEN = "${{ inputs.hf_token }}" # Required by OGA model_builder in OGA 0.4.0 but not future versions
-        
+
         $outputFile = "output.log"
         $errorFile = "error.log"
         $serverProcess = Start-Process -FilePath "conda" -ArgumentList "run ${{ inputs.conda_env }} lemonade -d .\ci-cache ${{ inputs.load_command }} serve --max-new-tokens 10" -RedirectStandardOutput $outputFile -RedirectStandardError $errorFile -PassThru -NoNewWindow
 
         Write-Host "Wait for 30 seconds to let the server come up"
         Start-Sleep -Seconds 30
-        
+
         Write-Host "Check if server process successfully launched"
         $serverRunning = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
         if (-not $serverRunning) {
@@ -55,7 +55,7 @@ runs:
 
         Write-Host "Wait for the server port to come up"
         while ($true) {
-          
+
           $llmPortCheck = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000
           if (-not $llmPortCheck.TcpTestSucceeded) {
             Write-Host "LLM server is not yet running on port 8000!"

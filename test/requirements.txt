@@ -19,4 +19,3 @@ pytest
 
 # Numerical computing (required for some tests)
 numpy
-

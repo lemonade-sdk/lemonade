@@ -14,7 +14,7 @@ Topics:
 
 ## What are Self-Hosted Runners?
 
-A "runner" is a computer that has installed GitHub's runner software, which runs a service that makes the laptop available to run GitHub Actions. In turn, Actions are defined by Workflows, which specify when the Action should run (manual trigger, CI, CD, etc.) and what the Action does (run tests, build packages, run an experiment, etc.). 
+A "runner" is a computer that has installed GitHub's runner software, which runs a service that makes the laptop available to run GitHub Actions. In turn, Actions are defined by Workflows, which specify when the Action should run (manual trigger, CI, CD, etc.) and what the Action does (run tests, build packages, run an experiment, etc.).
 
 You can read about all this here: [GitHub: About self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners).
 
@@ -38,7 +38,7 @@ This guide will help you set up a Ryzen AI laptop as a GitHub self-hosted runner
 
 These steps will place your machine in the `stx-test` pool, which is where we put machines while we are setting them up. In the next section we will finalize setup and then move the runner into the production pool.
 
-1. IMPORTANT: before doing step 2, read this: 
+1. IMPORTANT: before doing step 2, read this:
     - Use a powershell administrator mode terminal
     - Enable permissions by running `Set-ExecutionPolicy RemoteSigned`
     - When running `./config.cmd` in step 2, make the following choices:
@@ -48,7 +48,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
          - Accept the default for the work folder
          - You want the runner to function as a service (respond Y)
          - User account to use for the service = `NT AUTHORITY\SYSTEM` (not the default of `NT AUTHORITY\NETWORK SERVICE`)
-    
+
 1. Follow the instructions here for Windows|Ubuntu, minding what we said in step 1: https://github.com/organizations/lemonade-sdk/settings/actions/runners/new
 1. You should see your runner show up in the `stx` runner group in the lemonade-sdk org
 
@@ -83,7 +83,7 @@ If there have been any problems recently, they may show up like:
 
 ### Actions are failing unexpectedly
 
-Actions fail all the time, often because they are testing buggy code. However, sometimes an Action will fail because something is wrong with the specific runner that ran the Action. 
+Actions fail all the time, often because they are testing buggy code. However, sometimes an Action will fail because something is wrong with the specific runner that ran the Action.
 
 If this happens to you, here are some steps you can take (in order):
 1. Take note of which runner executed your Action. You can check this by going to the `Set up job` section of the Action's log and checking the `Runner name:` field. The machine name in that field will correspond to a machine on the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners).
@@ -138,7 +138,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 - PowerShell scripts do not necessarily raise errors by programs they call.
     - That means PowerShell can call a Python test, and then keep going and claim "success" even if that Python test fails and raises an error (non-zero exit code).
     - You can add `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }` after any line of script where it is that is particularly important to fail the workflow if the program in the preceding line raised an error.
-        - For example, this will make sure that lemonade installed correctly: 
+        - For example, this will make sure that lemonade installed correctly:
             1. pip install -e .
             2. if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 - Be considerate of how long your workflow will run for, and how often it will be triggered.

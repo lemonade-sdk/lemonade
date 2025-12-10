@@ -8,12 +8,12 @@ The [AI Toolkit for Visual Studio Code](https://learn.microsoft.com/en-us/window
 
 ▶️ [Watch on YouTube](https://www.youtube.com/watch?v=JecpotOZ6qo)
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/JecpotOZ6qo?si=9YcWwVEx7UX5A812" 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/JecpotOZ6qo?si=9YcWwVEx7UX5A812"
 title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 ## Expectations
 
-We have found that most LLMs work well with this application. 
+We have found that most LLMs work well with this application.
 
 However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see [server_spec.md](../server_spec.md) for details).
 

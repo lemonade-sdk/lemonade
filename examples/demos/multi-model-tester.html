@@ -51,7 +51,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: 
+            background:
                 radial-gradient(ellipse at 20% 20%, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
                 radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
                 radial-gradient(ellipse at 50% 50%, rgba(255, 0, 128, 0.04) 0%, transparent 50%);
@@ -802,9 +802,9 @@
                         <button class="refresh-btn" onclick="fetchModels()">Refresh</button>
                     </div>
                     <div class="filter-box">
-                        <input type="text" 
-                               id="modelFilter" 
-                               placeholder="🔍 Filter models..." 
+                        <input type="text"
+                               id="modelFilter"
+                               placeholder="🔍 Filter models..."
                                oninput="filterModels()">
                     </div>
                     <div class="model-list" id="modelList">
@@ -894,7 +894,7 @@
         // Fetch available models
         async function fetchModels() {
             const modelList = document.getElementById('modelList');
-            
+
             try {
                 const response = await fetch(`${serverUrl}/api/v1/models`);
                 const data = await response.json();
@@ -913,7 +913,7 @@
         // Render model list
         function renderModelList() {
             const modelList = document.getElementById('modelList');
-            
+
             if (availableModels.length === 0) {
                 modelList.innerHTML = `
                     <div class="empty-state">
@@ -927,9 +927,9 @@
             modelList.innerHTML = availableModels.map(model => {
                 const isLoaded = loadedModels.some(lm => lm.model_name === model.id);
                 const modelType = getModelType(model);
-                
+
                 return `
-                    <div class="model-item ${isLoaded ? 'loaded' : ''}" 
+                    <div class="model-item ${isLoaded ? 'loaded' : ''}"
                          onclick="loadModel('${model.id}')"
                          data-model-id="${model.id}"
                          data-model-name="${model.id.toLowerCase()}"
@@ -944,7 +944,7 @@
                     </div>
                 `;
             }).join('');
-            
+
             // Re-apply filter if there's text in the filter box
             filterModels();
         }
@@ -954,22 +954,22 @@
             const filterInput = document.getElementById('modelFilter');
             const filterText = (filterInput?.value || '').toLowerCase().trim();
             const modelItems = document.querySelectorAll('.model-item');
-            
+
             modelItems.forEach(item => {
                 if (!filterText) {
                     item.classList.remove('hidden');
                     return;
                 }
-                
+
                 const modelName = item.dataset.modelName || '';
                 const modelType = item.dataset.modelType || '';
                 const modelRecipe = item.dataset.modelRecipe || '';
-                
+
                 // Search in name, type, and recipe
-                const matches = modelName.includes(filterText) || 
-                               modelType.includes(filterText) || 
+                const matches = modelName.includes(filterText) ||
+                               modelType.includes(filterText) ||
                                modelRecipe.includes(filterText);
-                
+
                 item.classList.toggle('hidden', !matches);
             });
         }
@@ -996,7 +996,7 @@
 
             try {
                 showToast(`Loading ${modelName}...`, 'info');
-                
+
                 const response = await fetch(`${serverUrl}/api/v1/load`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1004,7 +1004,7 @@
                 });
 
                 const data = await response.json();
-                
+
                 if (data.status === 'success') {
                     showToast(`Loaded ${modelName}`, 'success');
                     await checkHealth();
@@ -1022,7 +1022,7 @@
         async function unloadModel(modelName) {
             try {
                 showToast(`Unloading ${modelName}...`, 'info');
-                
+
                 const response = await fetch(`${serverUrl}/api/v1/unload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1030,7 +1030,7 @@
                 });
 
                 const data = await response.json();
-                
+
                 if (data.status === 'success') {
                     showToast(`Unloaded ${modelName}`, 'success');
                     await checkHealth();
@@ -1046,10 +1046,10 @@
         function updateLoadedModels(models) {
             // Check if models have actually changed to avoid unnecessary re-renders
             const modelsChanged = hasModelsChanged(loadedModels, models);
-            
+
             loadedModels = models;
             renderModelList(); // Update sidebar labels (lightweight)
-            
+
             // Only re-render if models changed (added/removed)
             if (modelsChanged) {
                 renderLoadedModels();
@@ -1062,17 +1062,17 @@
         // Check if the loaded models list has changed (added/removed models)
         function hasModelsChanged(oldModels, newModels) {
             if (oldModels.length !== newModels.length) return true;
-            
+
             const oldNames = new Set(oldModels.map(m => m.model_name));
             const newNames = new Set(newModels.map(m => m.model_name));
-            
+
             for (const name of oldNames) {
                 if (!newNames.has(name)) return true;
             }
             for (const name of newNames) {
                 if (!oldNames.has(name)) return true;
             }
-            
+
             return false;
         }
 
@@ -1081,7 +1081,7 @@
             models.forEach(model => {
                 const column = document.querySelector(`[data-model-name="${model.model_name}"]`);
                 if (!column) return;
-                
+
                 // Update last used timestamp
                 const lastUse = model.last_use ? new Date(model.last_use * 1000).toLocaleTimeString() : 'N/A';
                 const metaItems = column.querySelectorAll('.meta-item');
@@ -1098,7 +1098,7 @@
         // Render loaded models columns
         function renderLoadedModels() {
             const container = document.getElementById('loadedModels');
-            
+
             if (loadedModels.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="min-width: 400px;">
@@ -1114,13 +1114,13 @@
             const existingResponses = {};
             const existingInputs = {};
             const existingStatuses = {};
-            
+
             loadedModels.forEach(model => {
                 const responseBox = document.getElementById(`response-${model.model_name}`);
                 const inputBox = document.getElementById(`input-${model.model_name}`);
                 const docsBox = document.getElementById(`docs-${model.model_name}`);
                 const statusEl = document.getElementById(`status-${model.model_name}`);
-                
+
                 if (responseBox) existingResponses[model.model_name] = responseBox.innerHTML;
                 if (inputBox) existingInputs[model.model_name] = { type: 'input', value: inputBox.value };
                 if (docsBox) existingInputs[model.model_name + '_docs'] = { type: 'docs', value: docsBox.value };
@@ -1133,7 +1133,7 @@
             container.innerHTML = loadedModels.map(model => {
                 const type = model.type || 'llm';
                 const lastUse = model.last_use ? new Date(model.last_use * 1000).toLocaleTimeString() : 'N/A';
-                
+
                 return `
                     <div class="model-column" data-model-name="${model.model_name}">
                         <div class="column-header">
@@ -1207,13 +1207,13 @@
             const modelName = model.model_name;
             // Escape model name for use in JS strings (handle quotes and backslashes)
             const escapedModelName = modelName.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
-            
+
             if (type === 'embedding') {
                 return `
                     <div class="input-section">
                         <span class="input-label">Text to Embed <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
                         <div class="input-group">
-                            <textarea id="input-${modelName}" 
+                            <textarea id="input-${modelName}"
                                       placeholder="Enter text to generate embeddings for...&#10;&#10;You can enter multiple texts separated by newlines"
                                       onkeydown="handleKeyDown(event, 'embedding', '${escapedModelName}')"></textarea>
                             <button class="send-btn" onclick="sendEmbedding('${escapedModelName}')">
@@ -1290,7 +1290,7 @@
                     <div class="input-section">
                         <span class="input-label">Message <span class="key-hint">(Enter to send, Shift+Enter for newline)</span></span>
                         <div class="input-group">
-                            <textarea id="input-${modelName}" 
+                            <textarea id="input-${modelName}"
                                       placeholder="Enter your message..."
                                       onkeydown="handleKeyDown(event, 'chat', '${escapedModelName}')"></textarea>
                             <button class="send-btn" onclick="sendChat('${escapedModelName}')">
@@ -1376,17 +1376,17 @@
                             try {
                                 const json = JSON.parse(data);
                                 const delta = json.choices?.[0]?.delta || {};
-                                
+
                                 // Handle reasoning_content (for reasoning models like DeepSeek)
                                 if (delta.reasoning_content) {
                                     reasoningContent += delta.reasoning_content;
                                 }
-                                
+
                                 // Handle regular content
                                 if (delta.content) {
                                     mainContent += delta.content;
                                 }
-                                
+
                                 // Build display with both reasoning and content
                                 let display = '';
                                 if (reasoningContent) {
@@ -1396,7 +1396,7 @@
                                     display += escapeHtml(mainContent);
                                 }
                                 display += '<span class="cursor"></span>';
-                                
+
                                 responseBox.innerHTML = display;
                                 responseBox.scrollTop = responseBox.scrollHeight;
                             } catch (e) {
@@ -1413,7 +1413,7 @@
                 }
                 finalDisplay += escapeHtml(mainContent);
                 responseBox.innerHTML = finalDisplay;
-                
+
                 statusEl.classList.remove('streaming');
                 statusEl.textContent = 'Complete';
 
@@ -1445,7 +1445,7 @@
             try {
                 // Split by newlines for multiple texts
                 const inputs = text.split('\n').filter(t => t.trim());
-                
+
                 const response = await fetch(`${serverUrl}/api/v1/embeddings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1460,12 +1460,12 @@
                 }
 
                 const data = await response.json();
-                
+
                 // Format the response nicely
                 let output = `📊 Embeddings Generated\n\n`;
                 output += `Model: ${data.model}\n`;
                 output += `Usage: ${data.usage?.total_tokens || 'N/A'} tokens\n\n`;
-                
+
                 data.data.forEach((item, i) => {
                     const embedding = item.embedding;
                     const preview = embedding.slice(0, 5).map(n => n.toFixed(4)).join(', ');
@@ -1491,7 +1491,7 @@
             const docsEl = document.getElementById(`docs-${modelName}`);
             const responseBox = document.getElementById(`response-${modelName}`);
             const statusEl = document.getElementById(`status-${modelName}`);
-            
+
             const query = queryEl.value.trim();
             const docsText = docsEl.value.trim();
 
@@ -1532,10 +1532,10 @@
                 }
 
                 const data = await response.json();
-                
+
                 // Sort by relevance score
                 const sortedResults = [...data.results].sort((a, b) => b.relevance_score - a.relevance_score);
-                
+
                 // Format the response nicely
                 let output = `📊 Reranking Results\n\n`;
                 output += `Query: "${query}"\n`;
@@ -1543,12 +1543,12 @@
                 output += `Usage: ${data.usage?.total_tokens || 'N/A'} tokens\n\n`;
                 output += `Ranked Documents (highest relevance first):\n`;
                 output += `${'─'.repeat(50)}\n\n`;
-                
+
                 sortedResults.forEach((result, rank) => {
                     const doc = documents[result.index];
                     const score = result.relevance_score.toFixed(4);
                     const bar = '█'.repeat(Math.max(0, Math.min(20, Math.floor((result.relevance_score + 10) * 1))));
-                    
+
                     output += `#${rank + 1} [Score: ${score}]\n`;
                     output += `   ${bar}\n`;
                     output += `   "${doc.length > 60 ? doc.slice(0, 60) + '...' : doc}"\n\n`;
@@ -1754,4 +1754,3 @@
     </script>
 </body>
 </html>
-

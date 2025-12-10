@@ -63,7 +63,7 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', duration = 4000, 
   };
 
   return (
-    <div 
+    <div
       className={`toast toast-${type} ${isExiting ? 'toast-exit' : ''}`}
       onClick={handleClick}
     >
@@ -142,4 +142,3 @@ export const useToast = () => {
 };
 
 export default Toast;
-

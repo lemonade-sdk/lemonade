@@ -8,7 +8,7 @@ Lemonade Server is available as a standalone tool with a [one-click Windows GUI 
 
 ▶️ [Watch on YouTube](https://www.youtube.com/watch?v=mcf7dDybUco)
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/mcf7dDybUco" 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/mcf7dDybUco"
 title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 Once you've installed, we recommend checking out these resources:

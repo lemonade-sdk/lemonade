@@ -11,7 +11,7 @@
 int main(int argc, char* argv[]) {
     // Note: Single-instance check moved to serve command specifically
     // This allows status, list, pull, delete, stop to run while server is active
-    
+
     try {
         lemon_tray::TrayApp app(argc, argv);
         return app.run();
@@ -23,4 +23,3 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 }
-

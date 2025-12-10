@@ -36,7 +36,7 @@ struct CompletionRequest {
     bool stream = false;
     bool echo = false;
     std::vector<std::string> stop;
-    
+
     // Parse from JSON
     static CompletionRequest fromJSON(const json& j);
 };
@@ -52,10 +52,10 @@ struct ChatCompletionRequest {
     bool stream = false;
     std::vector<std::string> stop;
     json tools;  // Tool definitions (OpenAI format)
-    
+
     // Parse from JSON
     static ChatCompletionRequest fromJSON(const json& j);
-    
+
     // Convert messages to a single prompt string
     std::string toPrompt() const;
 };
@@ -77,4 +77,3 @@ struct GenerationParams {
 using StreamCallback = std::function<bool(const std::string& token, bool is_final)>;
 
 } // namespace ryzenai
-

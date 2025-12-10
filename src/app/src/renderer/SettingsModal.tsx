@@ -181,7 +181,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <div className="settings-category-header">
               <h3>LLM Chat</h3>
             </div>
-            
+
             {numericSettingsConfig.map(({ key, label, description }) => {
               const limits = NUMERIC_SETTING_LIMITS[key];
               const isDefault = settings[key].useDefault;
@@ -298,4 +298,3 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 };
 
 export default SettingsModal;
-

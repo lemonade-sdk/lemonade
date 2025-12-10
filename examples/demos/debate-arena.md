@@ -15,7 +15,7 @@ Debate Arena is a single-file HTML/CSS/JS web app that pits up to 9 LLMs against
 - Web app connects to Lemonade at `http://localhost:8000`
     - Uses the `pull` endpoint to download the models
     - Uses the `load` endpoint to start 9 `llama-server` background processes, one each for Qwen, Jan, LFM, etc.
-- The user’s prompt is sent to all 9 LLMs simultaneously for a hot take by starting 9 streaming `chat/completions` requests with Lemonade’s base URL. 
+- The user’s prompt is sent to all 9 LLMs simultaneously for a hot take by starting 9 streaming `chat/completions` requests with Lemonade’s base URL.
     - The request with `model=Qwen...` gets routed to Qwen's `llama-server`, and so on.
-- The 9 LLM responses go into a shared chat history, which is then sent back to the LLMs for reactions in debate phase 2. 
+- The 9 LLM responses go into a shared chat history, which is then sent back to the LLMs for reactions in debate phase 2.
 - Process repeats until all 9 have voted, with escalating system prompts in each phase.

@@ -6,11 +6,11 @@ namespace ryzenai {
 
 CompletionRequest CompletionRequest::fromJSON(const json& j) {
     CompletionRequest req;
-    
+
     if (j.contains("prompt") && j["prompt"].is_string()) {
         req.prompt = j["prompt"];
     }
-    
+
     // Support both max_tokens (deprecated) and max_completion_tokens (newer OpenAI API)
     // max_completion_tokens takes precedence if both are provided
     if (j.contains("max_completion_tokens")) {
@@ -18,19 +18,19 @@ CompletionRequest CompletionRequest::fromJSON(const json& j) {
     } else if (j.contains("max_tokens")) {
         req.max_tokens = j["max_tokens"];
     }
-    
+
     if (j.contains("temperature")) {
         req.temperature = j["temperature"];
     }
-    
+
     if (j.contains("top_p")) {
         req.top_p = j["top_p"];
     }
-    
+
     if (j.contains("top_k")) {
         req.top_k = j["top_k"];
     }
-    
+
     if (j.contains("repeat_penalty")) {
         req.repeat_penalty = j["repeat_penalty"];
     } else if (j.contains("repetition_penalty")) {
@@ -39,15 +39,15 @@ CompletionRequest CompletionRequest::fromJSON(const json& j) {
         // OpenAI uses frequency_penalty, we map it to repeat_penalty
         req.repeat_penalty = 1.0f + j["frequency_penalty"].get<float>();
     }
-    
+
     if (j.contains("stream")) {
         req.stream = j["stream"];
     }
-    
+
     if (j.contains("echo")) {
         req.echo = j["echo"];
     }
-    
+
     if (j.contains("stop")) {
         if (j["stop"].is_string()) {
             req.stop.push_back(j["stop"]);
@@ -57,13 +57,13 @@ CompletionRequest CompletionRequest::fromJSON(const json& j) {
             }
         }
     }
-    
+
     return req;
 }
 
 ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
     ChatCompletionRequest req;
-    
+
     if (j.contains("messages") && j["messages"].is_array()) {
         for (const auto& msg : j["messages"]) {
             ChatMessage message;
@@ -72,7 +72,7 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
             req.messages.push_back(message);
         }
     }
-    
+
     // Support both max_tokens (deprecated) and max_completion_tokens (newer OpenAI API)
     // max_completion_tokens takes precedence if both are provided
     if (j.contains("max_completion_tokens")) {
@@ -84,19 +84,19 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
     } else {
         std::cout << "[ChatCompletionRequest] No max_tokens specified, using default=" << req.max_tokens << std::endl;
     }
-    
+
     if (j.contains("temperature")) {
         req.temperature = j["temperature"];
     }
-    
+
     if (j.contains("top_p")) {
         req.top_p = j["top_p"];
     }
-    
+
     if (j.contains("top_k")) {
         req.top_k = j["top_k"];
     }
-    
+
     if (j.contains("repeat_penalty")) {
         req.repeat_penalty = j["repeat_penalty"];
     } else if (j.contains("repetition_penalty")) {
@@ -104,11 +104,11 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
     } else if (j.contains("frequency_penalty")) {
         req.repeat_penalty = 1.0f + j["frequency_penalty"].get<float>();
     }
-    
+
     if (j.contains("stream")) {
         req.stream = j["stream"];
     }
-    
+
     if (j.contains("stop")) {
         if (j["stop"].is_string()) {
             req.stop.push_back(j["stop"]);
@@ -118,20 +118,20 @@ ChatCompletionRequest ChatCompletionRequest::fromJSON(const json& j) {
             }
         }
     }
-    
+
     if (j.contains("tools")) {
         req.tools = j["tools"];
     }
-    
+
     return req;
 }
 
 std::string ChatCompletionRequest::toPrompt() const {
     std::ostringstream prompt;
-    
+
     for (size_t i = 0; i < messages.size(); ++i) {
         const auto& msg = messages[i];
-        
+
         // Simple chat template formatting
         if (msg.role == "system") {
             prompt << "System: " << msg.content << "\n\n";
@@ -141,12 +141,11 @@ std::string ChatCompletionRequest::toPrompt() const {
             prompt << "Assistant: " << msg.content << "\n\n";
         }
     }
-    
+
     // Add final "Assistant: " prompt for the model to complete
     prompt << "Assistant: ";
-    
+
     return prompt.str();
 }
 
 } // namespace ryzenai
-

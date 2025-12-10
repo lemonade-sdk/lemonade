@@ -199,7 +199,7 @@ function updateAttachmentButtonState() {
             toggleBtn.textContent = 'Send';
         }
     }
-    
+
     if (!currentLoadedModel) {
         attachmentBtn.style.opacity = '0.5';
         attachmentBtn.style.cursor = 'not-allowed';
@@ -332,7 +332,7 @@ async function handleChatInputPaste(e) {
     // If we have images, prevent default and handle specially
     if (hasImage && attachedFiles.length > 0) {
         e.preventDefault();
-        
+
         // If there's also text, insert it at cursor position
         if (pastedText) {
             insertTextAtCursor(chatInput, pastedText);
@@ -351,15 +351,15 @@ function insertTextAtCursor(textElement, text) {
     const start = textElement.selectionStart;
     const end = textElement.selectionEnd;
     const currentValue = textElement.value;
-    
+
     // Insert the text at the cursor position
     const newValue = currentValue.substring(0, start) + text + currentValue.substring(end);
     textElement.value = newValue;
-    
+
     // Move cursor to end of inserted text
     const newCursorPos = start + text.length;
     textElement.setSelectionRange(newCursorPos, newCursorPos);
-    
+
     // Focus the element to ensure cursor is visible
     textElement.focus();
 }

@@ -9,7 +9,7 @@ from lemonade.tools.server.serve import StopOnEvent
 employee_handbook = """
 1. You will work very hard every day.\n
 2. You are allowed to listen to music, but must wear headphones.\n
-3. Remember, the break room fridge is not a science experiment. 
+3. Remember, the break room fridge is not a science experiment.
     Please label and remove your leftovers regularly!\n
 """
 

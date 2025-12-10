@@ -26,13 +26,13 @@ endif()
 message(STATUS "Using Ryzen AI from: ${OGA_ROOT}")
 
 # Find ONNX Runtime GenAI library (it's in LLM subfolder)
-find_library(OGA_LIB 
+find_library(OGA_LIB
     NAMES onnxruntime-genai
     PATHS ${OGA_ROOT}/LLM/lib
     REQUIRED
 )
 
-find_path(OGA_INCLUDE 
+find_path(OGA_INCLUDE
     NAMES ort_genai.h
     PATHS ${OGA_ROOT}/LLM/include
     REQUIRED
@@ -103,7 +103,7 @@ if(WIN32)
     # Target Windows 10 or later (required for cpp-httplib v0.26.0)
     target_compile_definitions(ryzenai-server PRIVATE _WIN32_WINNT=0x0A00)
     target_link_libraries(ryzenai-server PRIVATE ws2_32 wbemuuid ole32 oleaut32 shell32)
-    
+
     # Copy required DLLs to output directory (they're in deployment folder)
     set(REQUIRED_DLLS
         "${OGA_ROOT}/deployment/onnxruntime-genai.dll"
@@ -123,12 +123,12 @@ if(WIN32)
         "${OGA_ROOT}/deployment/ryzen_mm.dll"
         "${OGA_ROOT}/deployment/aiecompiler_client.dll"
     )
-    
+
     # Set console subsystem explicitly
     set_target_properties(ryzenai-server PROPERTIES
         LINK_FLAGS "/SUBSYSTEM:CONSOLE"
     )
-    
+
     foreach(DLL ${REQUIRED_DLLS})
         if(EXISTS ${DLL})
             add_custom_command(TARGET ryzenai-server POST_BUILD
@@ -141,7 +141,7 @@ if(WIN32)
             message(WARNING "DLL not found: ${DLL}")
         endif()
     endforeach()
-    
+
     # Copy AMD_LICENSE to output directory
     add_custom_command(TARGET ryzenai-server POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -170,4 +170,3 @@ message(STATUS "  Build type:        ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Ryzen AI path:     ${OGA_ROOT}")
 message(STATUS "  Output directory:  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 message(STATUS "==========================================================")
-

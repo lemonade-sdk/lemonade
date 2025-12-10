@@ -28,5 +28,3 @@ std::string find_flm_executable();
 
 } // namespace utils
 } // namespace lemon
-
-

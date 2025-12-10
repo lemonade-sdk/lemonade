@@ -23,4 +23,3 @@ std::pair<std::vector<ToolCall>, std::string> extractToolCalls(const std::string
 json formatToolCallsForOpenAI(const std::vector<ToolCall>& tool_calls);
 
 } // namespace ryzenai
-

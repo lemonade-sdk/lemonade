@@ -22,20 +22,20 @@ function loadModelSettingsFromStorage() {
 function loadModelSettings() {
     // First load from storage
     loadModelSettingsFromStorage();
-    
+
     // Update UI - set values only if they exist, otherwise leave placeholder
     const tempInput = document.getElementById('setting-temperature');
     const topKInput = document.getElementById('setting-top-k');
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
-    const thinkingCheckbox = document.getElementById('enable-thinking');  
+    const thinkingCheckbox = document.getElementById('enable-thinking');
 
-    
+
     // Check if DOM elements exist
     if (!tempInput || !topKInput || !topPInput || !repeatInput || !thinkingCheckbox) {
         return;
     }
-    
+
     // Load saved values or leave as placeholder "default"
     if (modelSettings.temperature !== undefined) {
         tempInput.value = modelSettings.temperature;
@@ -51,17 +51,17 @@ function loadModelSettings() {
     }
     if (modelSettings.enable_thinking !== undefined) {
     thinkingCheckbox.checked = modelSettings.enable_thinking;
-    
+
     } else {
     thinkingCheckbox.checked = true; // default to enabled
-    
+
     }
 }
 
 // Auto-save model settings whenever inputs change
 function setupAutoSaveSettings() {
     const inputs = ['setting-temperature', 'setting-top-k', 'setting-top-p', 'setting-repeat-penalty', 'enable-thinking'];
-    
+
     inputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) {
@@ -88,15 +88,15 @@ function updateModelSettings() {
     const topPInput = document.getElementById('setting-top-p');
     const repeatInput = document.getElementById('setting-repeat-penalty');
     const thinkingCheckbox = document.getElementById('enable-thinking');
-    
+
     // Check if DOM elements exist (might not be available if DOM isn't ready)
     if (!tempInput || !topKInput || !topPInput || !repeatInput || !thinkingCheckbox) {
         return;
     }
-    
+
     // Only set values if user has entered something, otherwise use undefined (default)
     modelSettings = {};
-    
+
     if (tempInput.value && tempInput.value.trim() !== '') {
         modelSettings.temperature = parseFloat(tempInput.value);
     }
@@ -110,7 +110,7 @@ function updateModelSettings() {
         modelSettings.repeat_penalty = parseFloat(repeatInput.value);
     }
     modelSettings.enable_thinking = thinkingCheckbox.checked;
-    
+
     // Save to localStorage
     localStorage.setItem('lemonade_model_settings', JSON.stringify(modelSettings));
 }
@@ -118,14 +118,14 @@ function updateModelSettings() {
 // Reset model settings to defaults (clear all inputs)
 function resetModelSettings() {
     modelSettings = {};
-    
+
     // Clear all input values to show placeholders
     document.getElementById('setting-temperature').value = '';
     document.getElementById('setting-top-k').value = '';
     document.getElementById('setting-top-p').value = '';
     document.getElementById('setting-repeat-penalty').value = '';
     document.getElementById('enable-thinking').checked = true;
-    
+
     localStorage.removeItem('lemonade_model_settings');
 }
 
@@ -138,7 +138,7 @@ function getCurrentModelSettings() {
         // DOM elements are available, update from current form state
         updateModelSettings();
     }
-    
+
     // Return only the settings that have actual values (not defaults)
     const currentSettings = {};
     if (modelSettings.temperature !== undefined) {
@@ -156,7 +156,7 @@ function getCurrentModelSettings() {
     if (modelSettings.enable_thinking !== undefined) {
         currentSettings.enable_thinking = modelSettings.enable_thinking;
     }
-    
+
     console.log('getCurrentModelSettings returning:', currentSettings);
     return currentSettings;
 }
@@ -174,10 +174,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (resetBtn) {
         resetBtn.onclick = resetModelSettings;
     }
-    
+
     // Load initial model settings
     loadModelSettings();
-    
+
     // Set up auto-save for settings
     setupAutoSaveSettings();
 });

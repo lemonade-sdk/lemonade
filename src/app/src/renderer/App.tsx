@@ -218,7 +218,7 @@ const App: React.FC = () => {
 
   return (
     <>
-      <TitleBar 
+      <TitleBar
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
         isModelManagerVisible={isModelManagerVisible}
@@ -243,15 +243,15 @@ const App: React.FC = () => {
               </div>
             )}
             {isCenterPanelVisible && isLogsVisible && (
-              <ResizableDivider 
-                onMouseDown={handleBottomDividerMouseDown} 
+              <ResizableDivider
+                onMouseDown={handleBottomDividerMouseDown}
                 orientation="horizontal"
               />
             )}
             {isLogsVisible && (
-              <LogsWindow 
-                isVisible={true} 
-                height={isCenterPanelVisible ? logsHeight : undefined} 
+              <LogsWindow
+                isVisible={true}
+                height={isCenterPanelVisible ? logsHeight : undefined}
               />
             )}
           </div>
@@ -261,8 +261,8 @@ const App: React.FC = () => {
             {(isCenterPanelVisible || isLogsVisible) && (
               <ResizableDivider onMouseDown={handleRightDividerMouseDown} />
             )}
-            <ChatWindow 
-              isVisible={true} 
+            <ChatWindow
+              isVisible={true}
               width={(isCenterPanelVisible || isLogsVisible) ? chatWidth : undefined}
             />
           </>
@@ -273,4 +273,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

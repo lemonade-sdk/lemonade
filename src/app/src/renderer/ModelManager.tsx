@@ -39,7 +39,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [newModel, setNewModel] = useState(createEmptyModelForm);
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
-  
+
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
@@ -47,7 +47,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     try {
       const response = await serverFetch('/models');
       const data = await response.json();
-      
+
       // Handle both array format and object with data array
       const modelList = Array.isArray(data) ? data : data.data || [];
       const downloadedModelIds = new Set<string>(modelList.map((m: any) => m.id as string));
@@ -61,14 +61,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     try {
       const response = await serverFetch('/health');
       const data = await response.json();
-      
+
       if (data && data.all_models_loaded && Array.isArray(data.all_models_loaded)) {
         // Extract model names from the all_models_loaded array
         const loadedModelNames = new Set<string>(
           data.all_models_loaded.map((model: any) => model.model_name)
         );
         setLoadedModels(loadedModelNames);
-        
+
         // Remove loaded models from loading state
         setLoadingModels(prev => {
           const newSet = new Set(prev);
@@ -102,7 +102,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     loadModels();
     fetchDownloadedModels();
     fetchCurrentLoadedModel();
-    
+
     // Poll for model status every 5 seconds to detect loaded models
     const interval = setInterval(() => {
       fetchCurrentLoadedModel();
@@ -115,13 +115,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       fetchDownloadedModels();
       fetchCurrentLoadedModel();
     });
-    
+
     // === Integration API for other parts of the app ===
     // To indicate a model is loading, use either:
     // 1. window.setModelLoading(modelId, true/false)
     // 2. window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId } }))
     // The health endpoint polling will automatically detect when loading completes
-    
+
     // Expose the loading state updater globally for integration with other parts of the app
     (window as any).setModelLoading = (modelId: string, isLoading: boolean) => {
       setLoadingModels(prev => {
@@ -134,7 +134,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     };
-    
+
     // Listen for custom events that indicate model loading
     const handleModelLoadStart = (event: CustomEvent) => {
       const { modelId } = event.detail;
@@ -142,7 +142,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         setLoadingModels(prev => new Set(prev).add(modelId));
       }
     };
-    
+
     const handleModelLoadEnd = (event: CustomEvent) => {
       const { modelId } = event.detail;
       if (modelId) {
@@ -157,14 +157,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         loadModels();
       }
     };
-    
+
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
 
     const stopWatchingUserModels = window.api?.watchUserModels?.(() => {
       loadModels();
     });
-    
+
     return () => {
       clearInterval(interval);
       unsubscribePortChange();
@@ -179,27 +179,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const getFilteredModels = () => {
     let filtered = models;
-    
+
     // Filter by downloaded status
     if (showDownloadedOnly) {
       filtered = filtered.filter(model => downloadedModels.has(model.name));
     }
-    
+
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(model => 
+      filtered = filtered.filter(model =>
         model.name.toLowerCase().includes(query)
       );
     }
-    
+
     return filtered;
   };
 
   const groupModelsByRecipe = () => {
     const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
     const filteredModels = getFilteredModels();
-    
+
     filteredModels.forEach(model => {
       const recipe = model.info.recipe || 'other';
       if (!grouped[recipe]) {
@@ -207,14 +207,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       }
       grouped[recipe].push(model);
     });
-    
+
     return grouped;
   };
 
   const groupModelsByCategory = () => {
     const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
     const filteredModels = getFilteredModels();
-    
+
     filteredModels.forEach(model => {
       if (model.info.labels && model.info.labels.length > 0) {
         model.info.labels.forEach(label => {
@@ -231,7 +231,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         grouped['uncategorized'].push(model);
       }
     });
-    
+
     return grouped;
   };
 
@@ -289,7 +289,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   const groupedModels = organizationMode === 'recipe' ? groupModelsByRecipe() : groupModelsByCategory();
   const categories = Object.keys(groupedModels).sort();
-  
+
   // Auto-expand all categories when searching
   const shouldShowCategory = (category: string): boolean => {
     if (searchQuery.trim()) {
@@ -297,7 +297,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
     return expandedCategories.has(category);
   };
-  
+
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
       // Use friendly names for recipes
@@ -392,24 +392,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
-      
+
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
-      
+
       const response = await serverFetch('/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName, ...modelData })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to download model: ${response.statusText}`);
       }
-      
+
       // Refresh downloaded models and current loaded model status
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
-      
+
       // Show success notification
       showSuccess(`Model "${modelName}" downloaded successfully.`);
     } catch (error) {
@@ -432,23 +432,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
-      
+
       // Add to loading state
       setLoadingModels(prev => new Set(prev).add(modelName));
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('modelLoadStart', { detail: { modelId: modelName } }));
-      
+
       const response = await serverFetch('/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName, ...modelData })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load model: ${response.statusText}`);
       }
-      
+
       // Wait a bit for the model to actually load, then refresh status
       setTimeout(async () => {
         await fetchCurrentLoadedModel();
@@ -457,14 +457,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     } catch (error) {
       console.error('Error loading model:', error);
       showError(`Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
+
       // Remove from loading state on error
       setLoadingModels(prev => {
         const newSet = new Set(prev);
         newSet.delete(modelName);
         return newSet;
       });
-      
+
       window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
     }
   };
@@ -476,14 +476,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to unload model: ${response.statusText}`);
       }
-      
+
       // Refresh current loaded model status
       await fetchCurrentLoadedModel();
-      
+
       // Dispatch event to notify other components (e.g., ChatWindow) that model was unloaded
       window.dispatchEvent(new CustomEvent('modelUnload'));
     } catch (error) {
@@ -500,22 +500,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       cancelText: 'Cancel',
       danger: true
     });
-    
+
     if (!confirmed) {
       return;
     }
-    
+
     try {
       const response = await serverFetch('/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name: modelName })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to delete model: ${response.statusText}`);
       }
-      
+
       // Refresh downloaded models and current loaded model status
       await fetchDownloadedModels();
       await fetchCurrentLoadedModel();
@@ -534,13 +534,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       <div className="model-manager-header">
         <h3>MODEL MANAGER</h3>
         <div className="organization-toggle">
-          <button 
+          <button
             className={`toggle-button ${organizationMode === 'recipe' ? 'active' : ''}`}
             onClick={() => setOrganizationMode('recipe')}
           >
             By Recipe
           </button>
-          <button 
+          <button
             className={`toggle-button ${organizationMode === 'category' ? 'active' : ''}`}
             onClick={() => setOrganizationMode('category')}
           >
@@ -548,7 +548,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           </button>
         </div>
         <div className="model-search">
-          <input 
+          <input
             type="text"
             className="model-search-input"
             placeholder="Search models..."
@@ -557,7 +557,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           />
         </div>
       </div>
-      
+
       {/* Currently Loaded Models Section */}
       {loadedModels.size > 0 && (
         <div className="loaded-model-section">
@@ -568,7 +568,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                 <span className="loaded-model-indicator">●</span>
                 <span className="loaded-model-name">{modelName}</span>
               </div>
-              <button 
+              <button
                 className="eject-model-button"
                 onClick={() => handleUnloadModel(modelName)}
                 title="Eject model"
@@ -583,11 +583,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           ))}
         </div>
       )}
-      
+
       <div className="model-manager-content">
         {categories.map(category => (
           <div key={category} className="model-category">
-            <div 
+            <div
               className="model-category-header"
               onClick={() => toggleCategory(category)}
             >
@@ -597,17 +597,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               <span className="category-label">{getDisplayLabel(category)}</span>
               <span className="category-count">({groupedModels[category].length})</span>
             </div>
-            
+
             {shouldShowCategory(category) && (
               <div className="model-list">
                 {groupedModels[category].map(model => {
                   const isDownloaded = downloadedModels.has(model.name);
                   const isLoaded = loadedModels.has(model.name);
                   const isLoading = loadingModels.has(model.name);
-                  
+
                   let statusClass = 'not-downloaded';
                   let statusTitle = 'Not downloaded';
-                  
+
                   if (isLoading) {
                     statusClass = 'loading';
                     statusTitle = 'Loading...';
@@ -618,12 +618,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                     statusClass = 'available';
                     statusTitle = 'Available locally';
                   }
-                  
+
                   const isHovered = hoveredModel === model.name;
-                  
+
                   return (
-                    <div 
-                      key={model.name} 
+                    <div
+                      key={model.name}
                       className={`model-item ${isDownloaded ? 'downloaded' : ''}`}
                       onMouseEnter={() => setHoveredModel(model.name)}
                       onMouseLeave={() => setHoveredModel(null)}
@@ -631,8 +631,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                       <div className="model-item-content">
                         <div className="model-info-left">
                           <span className="model-name">
-                            <span 
-                              className={`model-status-indicator ${statusClass}`} 
+                            <span
+                              className={`model-status-indicator ${statusClass}`}
                               title={statusTitle}
                             >
                               ●
@@ -640,13 +640,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                             {model.name}
                           </span>
                           <span className="model-size">{formatSize(model.info.size)}</span>
-                          
+
                           {/* Action buttons appear right after size on hover */}
                           {isHovered && (
                             <span className="model-actions">
                               {/* Not downloaded: show download button */}
                               {!isDownloaded && (
-                                <button 
+                                <button
                                   className="model-action-btn download-btn"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -661,11 +661,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                   </svg>
                                 </button>
                               )}
-                              
+
                               {/* Downloaded but not loaded: show load button + delete button */}
                               {isDownloaded && !isLoaded && !isLoading && (
                                 <>
-                                  <button 
+                                  <button
                                     className="model-action-btn load-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -677,7 +677,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <polygon points="5 3 19 12 5 21" fill="currentColor" />
                                     </svg>
                                   </button>
-                                  <button 
+                                  <button
                                     className="model-action-btn delete-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -692,11 +692,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                   </button>
                                 </>
                               )}
-                              
+
                               {/* Downloaded and loaded: show unload button + delete button */}
                               {isLoaded && (
                                 <>
-                                  <button 
+                                  <button
                                     className="model-action-btn unload-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -710,7 +710,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                                       <path d="M5 20H19" />
                                     </svg>
                                   </button>
-                                  <button 
+                                  <button
                                     className="model-action-btn delete-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -731,8 +731,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                         {model.info.labels && model.info.labels.length > 0 && (
                           <span className="model-labels">
                             {model.info.labels.map(label => (
-                              <span 
-                                key={label} 
+                              <span
+                                key={label}
                                 className={`model-label label-${label}`}
                                 title={getCategoryLabel(label)}
                               />
@@ -753,7 +753,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         <label className="toggle-switch-label">
           <span className="toggle-label-text">Downloaded only</span>
           <div className="toggle-switch">
-            <input 
+            <input
               type="checkbox"
               checked={showDownloadedOnly}
               onChange={(e) => setShowDownloadedOnly(e.target.checked)}
@@ -765,7 +765,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
       <div className="model-manager-footer">
         {!showAddModelForm ? (
-          <button 
+          <button
             className="add-model-button"
             onClick={() => {
               setNewModel(createEmptyModelForm());
@@ -780,7 +780,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               <label className="form-label" title="A unique name to identify your model in the catalog">Model Name</label>
               <div className="input-with-prefix">
                 <span className="input-prefix">user.</span>
-                <input 
+                <input
                   type="text"
                   className="form-input with-prefix"
                   placeholder="Gemma-3-12b-it-GGUF"
@@ -792,7 +792,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
             <div className="form-section">
               <label className="form-label" title="Hugging Face model path (repo/model:quantization)">Checkpoint</label>
-              <input 
+              <input
                 type="text"
                 className="form-input"
                 placeholder="unsloth/gemma-3-12b-it-GGUF:Q4_0"
@@ -803,7 +803,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
             <div className="form-section">
               <label className="form-label" title="Inference backend to use for this model">Recipe</label>
-              <select 
+              <select
                 className="form-input form-select"
                 value={newModel.recipe}
                 onChange={(e) => handleInputChange('recipe', e.target.value)}
@@ -821,7 +821,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
               <label className="form-label">More info</label>
               <div className="form-subsection">
                 <label className="form-label-secondary" title="Multimodal projection file for vision models">mmproj file (Optional)</label>
-                <input 
+                <input
                   type="text"
                   className="form-input"
                   placeholder="mmproj-F16.gguf"
@@ -829,37 +829,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
                   onChange={(e) => handleInputChange('mmproj', e.target.value)}
                 />
               </div>
-              
+
               <div className="form-checkboxes">
                 <label className="checkbox-label" title="Enable if model supports chain-of-thought reasoning">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={newModel.reasoning}
                     onChange={(e) => handleInputChange('reasoning', e.target.checked)}
                   />
                   <span>Reasoning</span>
                 </label>
-                
+
                 <label className="checkbox-label" title="Enable if model can process images">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={newModel.vision}
                     onChange={(e) => handleInputChange('vision', e.target.checked)}
                   />
                   <span>Vision</span>
                 </label>
-                
+
                 <label className="checkbox-label" title="Enable if model generates text embeddings">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={newModel.embedding}
                     onChange={(e) => handleInputChange('embedding', e.target.checked)}
                   />
                   <span>Embedding</span>
                 </label>
-                
+
                 <label className="checkbox-label" title="Enable if model performs reranking">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={newModel.reranking}
                     onChange={(e) => handleInputChange('reranking', e.target.checked)}
@@ -870,13 +870,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             </div>
 
             <div className="form-actions">
-              <button 
+              <button
                 className="install-button"
                 onClick={handleInstallModel}
               >
                 Install
               </button>
-              <button 
+              <button
                 className="cancel-button"
                 onClick={resetNewModelForm}
               >
@@ -891,4 +891,3 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 };
 
 export default ModelManager;
-
