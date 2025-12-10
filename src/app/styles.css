@@ -3591,3 +3591,97 @@ footer {
     animation-delay: 0.4s;
 }
 
+/* Transcription Model Styles */
+.transcription-history-item {
+    margin-bottom: 16px;
+}
+
+.transcription-file-info {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.transcription-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #aaa;
+}
+
+.transcription-result-container {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.transcription-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.transcription-result-header h4 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.transcription-result {
+    color: #fff;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.transcription-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.audio-file-select-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex: 1;
+}
+
+.audio-file-select-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #444;
+}
+
+.audio-file-select-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.file-size-indicator {
+    font-size: 0.75rem;
+    color: #888;
+    font-family: 'Courier New', monospace;
+}
+

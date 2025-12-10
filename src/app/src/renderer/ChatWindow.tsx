@@ -85,6 +85,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     results: Array<{index: number, text: string, score: number}>;
   }>>([]);
   const [isProcessingRerank, setIsProcessingRerank] = useState(false);
+  
+  // Transcription model state
+  const [transcriptionFile, setTranscriptionFile] = useState<File | null>(null);
+  const [transcriptionHistory, setTranscriptionHistory] = useState<Array<{
+    filename: string;
+    text: string;
+  }>>([]);
+  const [isProcessingTranscription, setIsProcessingTranscription] = useState(false);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
 
 useEffect(() => {
   fetchModels();
@@ -309,9 +318,18 @@ useEffect(() => {
     return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' => {
+  const isTranscriptionModel = (): boolean => {
+    if (!selectedModel) return false;
+    
+    const modelInfo = supportedModelsData[selectedModel];
+    
+    return modelInfo?.recipe === 'whispercpp';
+  };
+
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
+    if (isTranscriptionModel()) return 'transcription';
     return 'llm';
   };
 
@@ -1094,11 +1112,71 @@ const sendMessage = async () => {
     }
   };
 
+  const handleAudioFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    setTranscriptionFile(file);
+  };
+
+  const handleTranscription = async () => {
+    if (!transcriptionFile || isProcessingTranscription) return;
+
+    const currentFile = transcriptionFile;
+    setIsProcessingTranscription(true);
+
+    try {
+      // Create FormData for multipart/form-data request
+      const formData = new FormData();
+      formData.append('file', currentFile);
+      formData.append('model', selectedModel);
+      
+      const response = await serverFetch('/audio/transcriptions', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Extract the transcription text from the response
+      let transcriptionText: string;
+      if (data.text) {
+        transcriptionText = data.text;
+      } else {
+        throw new Error('Unexpected response format');
+      }
+      
+      // Add to history
+      setTranscriptionHistory(prev => [...prev, { 
+        filename: currentFile.name, 
+        text: transcriptionText
+      }]);
+      
+      // Clear the file input
+      setTranscriptionFile(null);
+      if (audioFileInputRef.current) {
+        audioFileInputRef.current.value = '';
+      }
+      
+    } catch (error: any) {
+      console.error('Failed to transcribe:', error);
+      alert(`Failed to transcribe: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsProcessingTranscription(false);
+    }
+  };
+
   if (!isVisible) return null;
 
   const modelType = getModelType();
   const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
                     : modelType === 'reranking' ? 'Lemonade Reranking'
+                    : modelType === 'transcription' ? 'Lemonade Transcriber'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1355,6 +1433,127 @@ const sendMessage = async () => {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path
                         d="M3 8L6 5L9 8M6 5V19M21 16L18 19L15 16M18 19V5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Transcription Model UI */}
+      {modelType === 'transcription' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef}>
+            {transcriptionHistory.length === 0 && <EmptyState title="Lemonade Transcriber" />}
+            
+            {transcriptionHistory.map((item, index) => (
+              <div key={index} className="transcription-history-item">
+                <div className="transcription-file-info">
+                  <div className="transcription-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ marginRight: '8px' }}>
+                      <path
+                        d="M12 15V3M12 15L8 11M12 15L16 11M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L11.053 22.147C11.442 22.226 11.636 22.266 11.791 22.179C11.927 22.102 12.042 21.993 12.127 21.861C12.223 21.712 12.275 21.519 12.379 21.133L13 18.5M22 17L21.379 19.485C21.275 19.871 21.223 20.064 21.127 20.213C21.042 20.345 20.927 20.454 20.791 20.531C20.636 20.618 20.442 20.658 20.053 20.737L12.947 22.147C12.558 22.226 12.364 22.266 12.209 22.179C12.073 22.102 11.958 21.993 11.873 21.861C11.777 21.712 11.725 21.519 11.621 21.133L11 18.5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    {item.filename}
+                  </div>
+                </div>
+                
+                <div className="transcription-result-container">
+                  <div className="transcription-result-header">
+                    <h4>Transcription</h4>
+                  </div>
+                  <div className="transcription-result">
+                    {item.text}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {isProcessingTranscription && (
+              <div className="chat-message assistant-message">
+                <TypingIndicator />
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper">
+              <input
+                ref={audioFileInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={handleAudioFileSelect}
+                style={{ display: 'none' }}
+              />
+              
+              <div className="transcription-upload-area">
+                <button
+                  className="audio-file-select-button"
+                  onClick={() => audioFileInputRef.current?.click()}
+                  disabled={isProcessingTranscription}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M12 15V3M12 15L8 11M12 15L16 11"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M2 17L2.621 19.485C2.725 19.871 2.777 20.064 2.873 20.213C2.958 20.345 3.073 20.454 3.209 20.531C3.364 20.618 3.558 20.658 3.947 20.737L20.053 20.737C20.442 20.658 20.636 20.618 20.791 20.531C20.927 20.454 21.042 20.345 21.127 20.213C21.223 20.064 21.275 19.871 21.379 19.485L22 17"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {transcriptionFile ? transcriptionFile.name : 'Choose audio file'}
+                </button>
+                
+                {transcriptionFile && (
+                  <span className="file-size-indicator">
+                    {(transcriptionFile.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                )}
+              </div>
+              
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isProcessingTranscription} />
+                </div>
+                <button
+                  className="chat-send-button"
+                  onClick={handleTranscription}
+                  disabled={!transcriptionFile || isProcessingTranscription}
+                  title="Transcribe audio"
+                >
+                  {isProcessingTranscription ? (
+                    <TypingIndicator size="small" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 1C8.13 1 5 4.13 5 8V12C5 15.87 8.13 19 12 19C15.87 19 19 15.87 19 12V8C19 4.13 15.87 1 12 1Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M12 19V23M8 23H16"
                         stroke="currentColor"
                         strokeWidth="2"
                         strokeLinecap="round"
