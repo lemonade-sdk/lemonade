@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <thread>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
@@ -1456,13 +1457,46 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             router_->unload_model(model_name);
         }
         
-        model_manager_->delete_model(model_name);
+        // Retry delete with delays to handle in-progress downloads releasing file handles
+        // This handles the race condition where a cancelled download hasn't yet released
+        // its file handles when the delete request arrives
+        const int max_retries = 3;
+        const int retry_delay_seconds = 5;
+        std::string last_error;
         
-        nlohmann::json response = {
-            {"status", "success"}, 
-            {"message", "Deleted model: " + model_name}
-        };
-        res.set_content(response.dump(), "application/json");
+        for (int attempt = 0; attempt <= max_retries; ++attempt) {
+            try {
+                model_manager_->delete_model(model_name);
+                
+                // Success - send response and return
+                nlohmann::json response = {
+                    {"status", "success"}, 
+                    {"message", "Deleted model: " + model_name}
+                };
+                res.set_content(response.dump(), "application/json");
+                return;
+                
+            } catch (const std::exception& e) {
+                last_error = e.what();
+                
+                // Only retry on "file in use" type errors (Windows and POSIX patterns)
+                bool is_file_locked = 
+                    last_error.find("being used by another process") != std::string::npos ||
+                    last_error.find("Permission denied") != std::string::npos ||
+                    last_error.find("resource busy") != std::string::npos;
+                
+                if (is_file_locked && attempt < max_retries) {
+                    std::cout << "[Server] Delete failed (file in use), retry " 
+                              << (attempt + 1) << "/" << max_retries 
+                              << " in " << retry_delay_seconds << "s..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(retry_delay_seconds));
+                    continue;
+                }
+                
+                // Non-retryable error or max retries exceeded - rethrow
+                throw;
+            }
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "[Server] ERROR in handle_delete: " << e.what() << std::endl;
