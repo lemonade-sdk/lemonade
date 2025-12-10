@@ -272,7 +272,7 @@ function renderQuickStart() {
   
   // llama.cpp backend tip for GPU
   if (fw === 'llama' && dev === 'gpu') {
-    notes += `<div class="lmn-note"><strong>Tip:</strong> Use <code>--llamacpp rocm</code> or <code>--llamacpp vulkan</code> to select backends.</div>`;
+    notes += `<div class="lmn-note"><strong>Tip:</strong> To select a backend, use <code>--llamacpp rocm</code> or <code>--llamacpp vulkan</code></div>`;
     if (os === 'linux') {
       notes += `<div class="lmn-note"><strong>Note:</strong> You may need to run <code>sudo update-pciids</code> for GPU detection on Linux.</div>`;
     }
