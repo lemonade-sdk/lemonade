@@ -1,6 +1,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
@@ -113,11 +114,19 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint,
 void FastFlowLMServer::load(const std::string& model_name,
                            const ModelInfo& model_info,
                            int ctx_size,
-                           bool do_not_upgrade) {
+                           bool do_not_upgrade,
+                           const std::string& llamacpp_backend,
+                           const std::string& llamacpp_args) {
+    // Note: llamacpp_backend and llamacpp_args parameters are not used by FastFlowLM
+    // They are part of the uniform interface for polymorphism
+    (void)llamacpp_backend;  // Suppress unused parameter warning
+    (void)llamacpp_args;     // Suppress unused parameter warning
+    (void)ctx_size;          // FastFlowLM doesn't currently use ctx_size either
+    
     std::cout << "[FastFlowLM] Loading model: " << model_name << std::endl;
     
-    // Store model name for later use
-    model_name_ = model_info.checkpoint;
+    // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
+    // We use checkpoint_ (base class field) for FLM API calls
     
     // Install/check FLM
     install();
@@ -132,11 +141,13 @@ void FastFlowLMServer::load(const std::string& model_name,
     std::string flm_path = get_flm_path();
     
     // Construct flm serve command
+    // Bind to localhost only for security
     std::vector<std::string> args = {
         "serve",
         model_info.checkpoint,
         "--ctx-len", std::to_string(ctx_size),
-        "--port", std::to_string(port_)
+        "--port", std::to_string(port_),
+        "--host", "127.0.0.1"
     };
     
     std::cout << "[FastFlowLM] Starting flm-server..." << std::endl;
@@ -167,7 +178,6 @@ void FastFlowLMServer::unload() {
         utils::ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
-        model_name_.clear();
         is_loaded_ = false;
     }
 }
@@ -207,10 +217,10 @@ bool FastFlowLMServer::wait_for_ready() {
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
-    // FLM requires the correct checkpoint name in the request
+    // FLM requires the checkpoint name in the request (e.g., "gemma3:4b")
     // (whereas llama-server ignores the model name field)
     json modified_request = request;
-    modified_request["model"] = model_name_;  // Use the checkpoint (e.g., "qwen3:0.6b")
+    modified_request["model"] = checkpoint_;  // Use base class checkpoint field
     
     return forward_request("/v1/chat/completions", modified_request);
 }
@@ -234,39 +244,36 @@ json FastFlowLMServer::responses(const json& request) {
     );
 }
 
+void FastFlowLMServer::forward_streaming_request(const std::string& endpoint, 
+                                                  const std::string& request_body,
+                                                  httplib::DataSink& sink) {
+    // FLM requires the checkpoint name in the model field (e.g., "gemma3:4b"),
+    // not the Lemonade model name (e.g., "Gemma3-4b-it-FLM")
+    try {
+        json request = json::parse(request_body);
+        request["model"] = checkpoint_;  // Use base class checkpoint field
+        std::string modified_body = request.dump();
+        
+        // Call base class with modified request
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink);
+    } catch (const json::exception& e) {
+        // If JSON parsing fails, forward original request
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink);
+    }
+}
+
 std::string FastFlowLMServer::get_flm_path() {
-    // Check common locations for flm executable
-#ifdef _WIN32
-    // On Windows, check PATH
-    const char* paths[] = {
-        "flm.exe",
-        "C:\\Program Files\\FastFlowLM\\flm.exe",
-        "C:\\Program Files (x86)\\FastFlowLM\\flm.exe"
-    };
+    // Use shared utility function to find flm executable
+    // (find_flm_executable refreshes PATH from registry on Windows)
+    std::string flm_path = utils::find_flm_executable();
     
-    for (const auto& path : paths) {
-        // Try to find in PATH
-        std::string cmd = "where " + std::string(path) + " >nul 2>&1";
-        if (system(cmd.c_str()) == 0) {
-            // Found in PATH, return just the name
-            if (std::string(path) == "flm.exe") {
-                return "flm";
-            }
-            return path;
-        }
-        // Check if file exists at absolute path
-        if (fs::exists(path)) {
-            return path;
-        }
+    if (!flm_path.empty()) {
+        std::cout << "[FastFlowLM] Found flm at: " << flm_path << std::endl;
+    } else {
+        std::cerr << "[FastFlowLM] flm not found in PATH" << std::endl;
     }
-#else
-    // On Linux/Mac, check PATH
-    if (system("which flm >/dev/null 2>&1") == 0) {
-        return "flm";
-    }
-#endif
     
-    return ""; // Not found
+    return flm_path;
 }
 
 std::string FastFlowLMServer::get_flm_latest_version() {
@@ -577,25 +584,13 @@ void FastFlowLMServer::refresh_environment_path() {
         RegCloseKey(hKey);
     }
     
-    // Also add common FLM installation paths
-    std::vector<std::string> common_paths = {
-        "C:\\Program Files\\FastFlowLM",
-        "C:\\Program Files (x86)\\FastFlowLM"
-    };
-    
-    // Add user-specific path
-    char* local_app_data = getenv("LOCALAPPDATA");
-    if (local_app_data) {
-        common_paths.push_back(std::string(local_app_data) + "\\FastFlowLM");
-    }
-    
-    for (const auto& path : common_paths) {
-        if (fs::exists(path)) {
-            const char* current_path = getenv("PATH");
-            std::string current_path_str = current_path ? current_path : "";
-            if (current_path_str.find(path) == std::string::npos) {
-                _putenv(("PATH=" + path + ";" + current_path_str).c_str());
-            }
+    // Add default FLM installation path if not already in PATH
+    const std::string flm_dir = "C:\\Program Files\\flm";
+    if (fs::exists(flm_dir)) {
+        const char* current_path = getenv("PATH");
+        std::string current_path_str = current_path ? current_path : "";
+        if (current_path_str.find(flm_dir) == std::string::npos) {
+            _putenv(("PATH=" + flm_dir + ";" + current_path_str).c_str());
         }
     }
 #endif

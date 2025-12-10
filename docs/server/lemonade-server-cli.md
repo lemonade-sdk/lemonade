@@ -40,11 +40,16 @@ lemonade-server run MODEL_NAME [options]
 | `--port [port]`                | Specify the port number to run the server on | 8000 |
 | `--host [host]`                | Specify the host address for where to listen connections | `localhost` |
 | `--log-level [level]`          | Set the logging level               | info |
-| `--llamacpp [vulkan\|rocm]`    | Specify the LlamaCpp backend to use | vulkan |
-| `--ctx-size [size]`            | Set the context size for the model. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. | 4096 |
-| `--llamacpp-args [args]`       | Custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Example: `--llamacpp-args "--flash-attn --no-mmap"` | "" |
+| `--llamacpp [vulkan\|rocm\cpu]`    | Default LlamaCpp backend to use when loading models. Can be overridden per-model via the `/api/v1/load` endpoint. | vulkan |
+| `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
+| `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
+| `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
 
 These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, and `LEMONADE_LLAMACPP_ARGS`.
+
+Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`, `LEMONADE_LLAMACPP_CPU_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
+
+The same can also be done for the `whisper-server` binary. The environment variable to set in this case is `LEMONADE_WHISPERCPP_BIN`.
 
 ## `pull` Command Options
 

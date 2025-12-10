@@ -36,6 +36,60 @@ sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-confi
 xcode-select --install
 ```
 
+### Developer IDE & IDE Build Steps
+#### Visual Studio Code Setup Guide
+1. Clone the repository into a blank folder locally on your computer.
+2. Open the folder in visual studio code.
+3. Install Dev Containers extension in visual studio code by using
+  control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
+4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
+5. in the extensions search type ```Dev Containers``` and install it.
+6. Once completed with the prior steps you may run command
+```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
+7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
+
+#### Build & Compile Options
+
+1. Assuming your VSCode IDE is open and the dev container is working.
+2. Go to the CMake plugin you may select the "Folder" that is where you currently want to build.
+3. Once done with that you may select which building toolkit you are using under Configure and then begin configure.
+4. Under Build, Test, Debug and/or Launch you may select whatever configuration you want to build, test, debug and/or launch.
+
+#### Debug / Runtime / Console arguments
+1. You may find arguments which are passed through to the application you are debugging in .vscode/settings.json which will look like the following:
+```
+"cmake.debugConfig": {
+        "args": [
+            "--llamacpp", "cpu"
+        ]
+    }
+```
+2. If you want to debug lemonade-router you may pass --llamacpp cpu for cpu based tests.
+3. For lemonade-server you may pass serve as a argument as well.
+
+##### The hard way - commands only.
+1. Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
+```
+
+> Cmake: Select a Kit
+# Select a kit or Scan for kit. (Two options should be available gcc or clang)
+> Cmake: Configure
+# Optional commands are: 
+> Cmake: Build Target
+# use this to select a cmake target to build
+> Cmake: Set Launch/Debug target
+# use this to select/set your cmake target you want to build/debug
+
+# This next command lets you debug
+> Cmake: Debug
+
+# This command lets you delete the cmake cache and reconfigure which is rarely needed.
+> Cmake: Delete Cache and Reconfigure
+```
+
+2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
+
+
 ### Build Steps
 
 ```bash
@@ -245,10 +299,11 @@ src/cpp/
 │   ├── streaming_proxy.cpp     # Server-Sent Events for streaming
 │   ├── system_info.cpp         # NPU/GPU device detection
 │   │
-│   ├── backends/               # LLM backend implementations
-│   │   ├── llamacpp_server.cpp # Wraps llama.cpp (CPU/GPU)
-│   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM (NPU)
-│   │   └── ryzenaiserver.cpp   # Wraps RyzenAI server
+│   ├── backends/               # Model backend implementations
+│   │   ├── llamacpp_server.cpp   # Wraps llama.cpp for LLM inference (CPU/GPU)
+│   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
+│   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription
 │   │
 │   └── utils/                  # Utility functions
 │       ├── http_client.cpp     # HTTP client using libcurl
@@ -263,7 +318,8 @@ src/cpp/
 │   ├── backends/               # Backend headers
 │   │   ├── llamacpp_server.h
 │   │   ├── fastflowlm_server.h
-│   │   └── ryzenaiserver.h
+│   │   ├── ryzenaiserver.h
+│   │   └── whisper_server.h
 │   └── utils/                  # Utility headers
 │       ├── http_client.h, json_utils.h
 │       ├── process_manager.h, path_utils.h
@@ -294,14 +350,24 @@ A pure HTTP server that:
 - Serves OpenAI-compatible REST API endpoints (supports both `/api/v0` and `/api/v1`)
 - Routes requests to appropriate LLM backends (llamacpp, fastflowlm, ryzenai)
 - Manages model loading/unloading and backend processes
+- Supports loading multiple models simultaneously with LRU eviction
 - Handles all inference requests
 - No command-based user interface - only accepts startup options
 
 **Key Layers:**
 - **HTTP Layer:** Uses cpp-httplib for HTTP server
-- **Router:** Determines which backend handles each request based on model recipe
+- **Router:** Determines which backend handles each request based on model recipe, manages multiple WrappedServer instances with LRU cache
 - **Model Manager:** Handles model discovery, downloads, and registry management
-- **Backend Wrappers:** Manages llama.cpp, FastFlowLM, and RyzenAI backends
+- **Backend Wrappers:** Manages llama.cpp, FastFlowLM, RyzenAI, and whisper.cpp backends
+
+**Multi-Model Support:**
+- Router maintains multiple WrappedServer instances simultaneously
+- Separate LRU caches for LLM, embedding, reranking, and audio model types
+- NPU exclusivity: only one model can use NPU at a time
+- Configurable limits via `--max-loaded-models` (default: 1 1 1 1)
+- Automatic eviction of least-recently-used models when limits reached
+- Thread-safe model loading with serialization to prevent races
+- Protection against evicting models actively serving inference requests
 
 #### lemonade-server (CLI Client Component)
 
@@ -331,7 +397,7 @@ The `lemonade-server` client communicates with `lemonade-router` server via HTTP
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
 - **Server management:** `/api/v1/health`, `/internal/shutdown`
-- **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`
+- **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
 - Detects if a server is already running
@@ -380,6 +446,8 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --ctx-size SIZE          Context size (default: 4096)
 #   --log-level LEVEL        Log level: critical, error, warning, info, debug, trace
 #   --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal
+#   --max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]
+#                            Maximum models to keep loaded (default: 1 1 1 1)
 #   --version, -v            Show version
 #   --help, -h               Show help
 ```
@@ -429,6 +497,7 @@ The `lemonade-server` executable is the command-line interface for terminal user
 - `--log-file PATH` - Custom log file location
 - `--server-binary PATH` - Path to lemonade-router executable
 - `--no-tray` - Run without tray (headless mode)
+- `--max-loaded-models LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]` - Maximum number of models to keep loaded simultaneously (default: 1 1 1 1)
 
 **Note:** `lemonade-router` is always launched with `--log-level debug` for optimal troubleshooting. Use `--log-level debug` on `lemonade-server` commands to see client-side debug output.
 

@@ -302,7 +302,7 @@ def run(
     ctx_size: int = None,
 ):
     """
-    Start the server if not running and open the webapp with the specified model
+    Start the server if not running and open the chat interface with the specified model
     """
     import webbrowser
     import time
@@ -344,7 +344,7 @@ def run(
     # Load model
     load(model_name, port)
 
-    # Open the webapp with the specified model
+    # Open the chat interface with the specified model
     url = f"http://{host}:{port}/?model={model_name}#llm-chat"
     print(f"You can now chat with {model_name} at {url}")
 
@@ -606,7 +606,7 @@ def _add_server_arguments(parser):
         "--llamacpp",
         type=str,
         help="LlamaCpp backend to use",
-        choices=["vulkan", "rocm", "metal"],
+        choices=["vulkan", "rocm", "metal", "cpu"],
         default=DEFAULT_LLAMACPP_BACKEND,
     )
     parser.add_argument(

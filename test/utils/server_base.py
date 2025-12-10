@@ -45,8 +45,23 @@ MODELS_UNDER_TEST = [
 MODEL_CHECKPOINT = "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx"
 PORT = 8000
 
+
 # Global variable for server binary (can be overridden via --server-binary)
-SERVER_BINARY = "lemonade-server-dev"
+# Default to finding lemonade-server-dev in the same venv as the running Python
+def _get_default_server_binary():
+    """Get the default server binary path based on the current Python interpreter."""
+    import platform
+
+    # Get the directory containing the Python executable
+    # For venv: .venv/Scripts/python.exe (Windows) or .venv/bin/python (Linux/Mac)
+    python_dir = os.path.dirname(sys.executable)
+    if platform.system() == "Windows":
+        return os.path.join(python_dir, "lemonade-server-dev.exe")
+    else:
+        return os.path.join(python_dir, "lemonade-server-dev")
+
+
+SERVER_BINARY = _get_default_server_binary()
 
 
 def is_cpp_server():
@@ -54,8 +69,8 @@ def is_cpp_server():
 
     Returns True if --server-binary argument was provided (i.e., not using the default Python server).
     """
-    # If --server-binary was provided, we're testing a custom binary (C++ server)
-    return SERVER_BINARY != "lemonade-server-dev"
+    # If --server-binary was provided and it's not our default venv binary, we're testing a custom binary (C++ server)
+    return SERVER_BINARY != _get_default_server_binary()
 
 
 def stop_lemonade():
@@ -82,8 +97,8 @@ def parse_args():
     parser.add_argument(
         "--server-binary",
         type=str,
-        default="lemonade-server-dev",
-        help="Path to server binary (default: lemonade-server-dev)",
+        default=_get_default_server_binary(),
+        help="Path to server binary (default: lemonade-server-dev in venv)",
     )
     # Use parse_known_args to ignore unknown arguments (like positional 'backend' in server_llamacpp.py)
     args, unknown = parser.parse_known_args()
@@ -226,6 +241,10 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
         if self.llamacpp_backend:
             cmd.extend(["--llamacpp", self.llamacpp_backend])
 
+        # Add any additional server arguments
+        if hasattr(self.__class__, "additional_server_args"):
+            cmd.extend(self.__class__.additional_server_args)
+
         # Start the lemonade server
         lemonade_process = subprocess.Popen(
             cmd,
@@ -233,8 +252,8 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            encoding='utf-8',
-            errors='replace',  # Replace any non-UTF-8 characters to prevent crashes
+            encoding="utf-8",
+            errors="replace",  # Replace any non-UTF-8 characters to prevent crashes
             env=os.environ.copy(),
         )
 
@@ -283,14 +302,27 @@ class ServerTestingBase(unittest.IsolatedAsyncioTestCase):
             )
 
 
-def run_server_tests_with_class(test_class, description="SERVER TESTS", offline=None):
-    """Utility function to run server tests with a given test class."""
+def run_server_tests_with_class(
+    test_class, description="SERVER TESTS", offline=None, additional_args=None
+):
+    """Utility function to run server tests with a given test class.
+
+    Args:
+        test_class: The unittest.TestCase class to run
+        description: Description for the test run
+        offline: Whether to run in offline mode (defaults to parsed --offline arg)
+        additional_args: List of additional command-line arguments to pass to the server
+    """
     # Always parse args to set SERVER_BINARY global
     args = parse_args()
 
     # If offline parameter is not provided, use parsed value
     if offline is None:
         offline = args.offline
+
+    # Store additional args in a class variable so setUp can access them
+    if additional_args:
+        test_class.additional_server_args = additional_args
 
     if offline:
         print(f"\n=== STARTING {description} IN OFFLINE MODE ===")

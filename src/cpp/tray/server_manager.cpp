@@ -79,16 +79,24 @@ bool ServerManager::start_server(
     bool show_console,
     bool is_ephemeral,
     const std::string& llamacpp_args,
-    const std::string& host)
+    const std::string& host,
+    int max_llm_models,
+    int max_embedding_models,
+    int max_reranking_models,
+    int max_audio_models)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
         return true;
     }
-    
+
     server_binary_path_ = server_binary_path;
     port_ = port;
     ctx_size_ = ctx_size;
+    max_llm_models_ = max_llm_models;
+    max_embedding_models_ = max_embedding_models;
+    max_reranking_models_ = max_reranking_models;
+    max_audio_models_ = max_audio_models;
     log_file_ = log_file;
     log_level_ = log_level;
     llamacpp_backend_ = llamacpp_backend;
@@ -113,6 +121,15 @@ bool ServerManager::start_server(
         try {
             DEBUG_LOG(this, "Making HTTP request...");
             auto health = get_health();
+            
+            server_started_ = true;
+            
+#ifndef _WIN32
+            // Write PID file on Linux for efficient server discovery
+            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
+            write_pid_file();
+#endif
+            
             DEBUG_LOG(this, "Server process is running!");
             process_started = true;
             break;  // Process is up, move to next step
@@ -140,7 +157,9 @@ bool ServerManager::start_server(
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
             // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
             std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-            std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+            std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
+            std::cout << "Connect your apps to the endpoint above." << std::endl;
+            std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
         }
         
         server_started_ = true;
@@ -172,7 +191,9 @@ bool ServerManager::start_server(
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
                 // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
                 std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-                std::cout << "Chat and manage models: http://" << display_host << ":" << port_ << std::endl;
+                std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
+                std::cout << "Connect your apps to the endpoint above." << std::endl;
+                std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
             }
             
             server_started_ = true;
@@ -325,12 +346,26 @@ bool ServerManager::load_model(const std::string& model_name) {
 }
 
 bool ServerManager::unload_model() {
+    // Unload all models by passing empty string
+    return unload_model("");
+}
+
+bool ServerManager::unload_model(const std::string& model_name) {
     try {
+        std::string body;
+        if (!model_name.empty()) {
+            body = "{\"model_name\": \"" + model_name + "\"}";
+        }
+        
         // Unload can take time, so use 30 second timeout
-        make_http_request("/api/v1/unload", "POST", "", 30);
+        make_http_request("/api/v1/unload", "POST", body, 30);
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Exception unloading model: " << e.what() << std::endl;
+        if (!model_name.empty()) {
+            std::cerr << "Exception unloading model '" << model_name << "': " << e.what() << std::endl;
+        } else {
+            std::cerr << "Exception unloading models: " << e.what() << std::endl;
+        }
         return false;
     }
 }
@@ -354,6 +389,10 @@ bool ServerManager::spawn_process() {
     if (!llamacpp_args_.empty()) {
         cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
     }
+    // Multi-model support
+    cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
+               std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
+               std::to_string(max_audio_models_);
     
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
@@ -560,6 +599,17 @@ bool ServerManager::spawn_process() {
             args.push_back(llamacpp_args_.c_str());
         }
         
+        // Multi-model support
+        args.push_back("--max-loaded-models");
+        std::string max_llm_str = std::to_string(max_llm_models_);
+        std::string max_emb_str = std::to_string(max_embedding_models_);
+        std::string max_rer_str = std::to_string(max_reranking_models_);
+        std::string max_aud_str = std::to_string(max_audio_models_);
+        args.push_back(max_llm_str.c_str());
+        args.push_back(max_emb_str.c_str());
+        args.push_back(max_rer_str.c_str());
+        args.push_back(max_aud_str.c_str());
+
         args.push_back(nullptr);
         
         execv(server_binary_path_.c_str(), const_cast<char**>(args.data()));

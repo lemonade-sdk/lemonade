@@ -6,6 +6,7 @@
 #include <mutex>
 #include <functional>
 #include <nlohmann/json.hpp>
+#include "model_types.h"
 
 namespace lemon {
 
@@ -24,7 +25,8 @@ struct DownloadProgress {
 };
 
 // Callback for download progress updates
-using DownloadProgressCallback = std::function<void(const DownloadProgress&)>;
+// Returns bool: true = continue download, false = cancel download
+using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
 struct ModelInfo {
     std::string model_name;
@@ -37,6 +39,10 @@ struct ModelInfo {
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
+    
+    // Multi-model support fields
+    ModelType type = ModelType::LLM;      // Model type for LRU cache management
+    DeviceType device = DEVICE_NONE;      // Target device(s) for this model
 };
 
 class ModelManager {
@@ -122,7 +128,9 @@ private:
                                    DownloadProgressCallback progress_callback = nullptr);
     
     // Download from FLM
-    void download_from_flm(const std::string& checkpoint, bool do_not_upgrade = true);
+    void download_from_flm(const std::string& checkpoint, 
+                          bool do_not_upgrade = true,
+                          DownloadProgressCallback progress_callback = nullptr);
     
     json server_models_;
     json user_models_;

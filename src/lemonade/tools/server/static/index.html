@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lemonade Server</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(145deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #e0e0e0;
+            padding: 40px 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        body::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 30%, rgba(255, 220, 0, 0.03) 0%, transparent 40%),
+                        radial-gradient(circle at 70% 70%, rgba(255, 200, 0, 0.02) 0%, transparent 30%);
+            pointer-events: none;
+        }
+        
+        .container {
+            max-width: 700px;
+            width: 100%;
+            text-align: center;
+            z-index: 1;
+        }
+        
+        .logo {
+            font-size: 64px;
+            margin-bottom: 16px;
+            filter: drop-shadow(0 0 30px rgba(255, 220, 0, 0.3));
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #FFE566 0%, #FFCC00 50%, #FF9500 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+        
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin-bottom: 32px;
+            font-size: 0.9rem;
+            color: #22c55e;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+            50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            text-align: left;
+        }
+        
+        .card h2 {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 16px;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .card h2 .icon {
+            font-size: 1.1rem;
+        }
+        
+        .code-block {
+            background: #0d0d0d;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 14px 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #a0a0a0;
+            overflow-x: auto;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        
+        .code-block:last-child {
+            margin-bottom: 0;
+        }
+        
+        .code-block .comment {
+            color: #5a5a5a;
+        }
+        
+        .code-block .string {
+            color: #98c379;
+        }
+        
+        .code-block .keyword {
+            color: #FFCC00;
+        }
+        
+        .code-block code {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .copy-btn {
+            float: right;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #888;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            font-family: 'Space Grotesk', sans-serif;
+            transition: all 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: rgba(255, 204, 0, 0.2);
+            color: #FFCC00;
+        }
+        
+        .footer {
+            margin-top: 24px;
+            font-size: 0.8rem;
+            color: #555;
+        }
+        
+        .footer a {
+            color: #888;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            color: #FFCC00;
+        }
+        
+        .section-desc {
+            color: #808080;
+            font-size: 0.85rem;
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+        
+        .section-desc code {
+            background: rgba(255, 204, 0, 0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #FFCC00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🍋</div>
+        <h1>Lemonade Server</h1>
+        <div class="status">
+            <span class="status-dot"></span>
+            Running on port {{SERVER_PORT}}
+        </div>
+        
+        <!-- Quick Start -->
+        <div class="card">
+            <h2><span class="icon">⚡</span> Quick Test</h2>
+            <p class="section-desc">Send a chat completion request to verify the server is working:</p>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyCode(this)">copy</button>
+                <code><span class="comment"># List available models</span>
+curl http://localhost:{{SERVER_PORT}}/api/v1/models</code>
+            </div>
+            <div class="code-block">
+                <button class="copy-btn" onclick="copyCode(this)">copy</button>
+                <code><span class="comment"># Chat with a model (replace MODEL_NAME)</span>
+curl -X POST http://localhost:{{SERVER_PORT}}/api/v1/chat/completions \
+  -H <span class="string">"Content-Type: application/json"</span> \
+  -d <span class="string">'{"model": "MODEL_NAME", "messages": [{"role": "user", "content": "Hello!"}]}'</span></code>
+            </div>
+        </div>
+
+        <!-- Desktop App Hint -->
+        <div class="card">
+            <h2><span class="icon">💻</span> Want a GUI?</h2>
+            <p class="section-desc" id="gui-hint-windows" style="display: none;">
+                If you installed the <strong>full version</strong> of Lemonade, look for the 🍋 icon in your system tray to open the desktop app.
+                <br><br>
+                Using the minimal install? Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
+            </p>
+            <p class="section-desc" id="gui-hint-linux" style="display: none;">
+                If you installed the <strong>full version</strong> of Lemonade, launch the UI by running:<br>
+                <code>/usr/local/share/lemonade-server/app/lemonade</code>
+                <br><br>
+                Using the minimal install? Get the full version from <a href="https://github.com/lemonade-sdk/lemonade">github.com/lemonade-sdk/lemonade</a> for a built-in chat interface and model manager.
+            </p>
+        </div>
+        
+        <div class="footer">
+            <a href="https://github.com/lemonade-sdk/lemonade" target="_blank">GitHub</a> · 
+            <a href="https://lemonade-server.ai/docs/" target="_blank">Documentation</a>
+        </div>
+    </div>
+
+    <script>
+        function copyCode(btn) {
+            const codeBlock = btn.parentElement;
+            const code = codeBlock.querySelector('code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                btn.textContent = 'copied!';
+                setTimeout(() => btn.textContent = 'copy', 1500);
+            });
+        }
+
+        // Detect platform and show appropriate GUI hint
+        (function() {
+            const platform = navigator.platform.toLowerCase();
+            const isWindows = platform.includes('win');
+            const hintWindows = document.getElementById('gui-hint-windows');
+            const hintLinux = document.getElementById('gui-hint-linux');
+            
+            if (isWindows) {
+                hintWindows.style.display = 'block';
+            } else {
+                hintLinux.style.display = 'block';
+            }
+        })();
+    </script>
+</body>
+</html>

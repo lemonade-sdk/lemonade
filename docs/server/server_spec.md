@@ -22,6 +22,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/completions` - Text Completions (prompt -> completion)
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
+- POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -48,6 +49,57 @@ The additional endpoints are:
 - GET `/api/v1/health` - Check server health
 - GET `/api/v1/stats` - Performance statistics from the last request
 - GET `/api/v1/system-info` - System information and device enumeration
+
+## Multi-Model Support
+
+Lemonade Server supports loading multiple models simultaneously, allowing you to keep frequently-used models in memory for faster switching. The server uses a Least Recently Used (LRU) cache policy to automatically manage model eviction when limits are reached.
+
+### Configuration
+
+Use the `--max-loaded-models` option to specify how many models to keep loaded:
+
+```bash
+# Load up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model
+lemonade-server serve --max-loaded-models 3 2 1 1
+
+# Load up to 5 LLMs (embeddings, reranking, and audio default to 1 each)
+lemonade-server serve --max-loaded-models 5
+```
+
+**Default:** `1 1 1 1` (one model of each type)
+
+### Model Types
+
+Models are categorized into these types:
+- **LLM** - Chat and completion models (default type)
+- **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
+- **Reranking** - Models for document reranking (identified by the `reranking` label)
+- **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+
+Each type has its own independent limit and LRU cache.
+
+### Device Constraints
+
+- **NPU Exclusivity:** Only one model can use the NPU at a time. Loading a new NPU model will evict any existing NPU model regardless of type or limits.
+- **CPU/GPU:** No inherent limits beyond available RAM. Multiple models can coexist on CPU or GPU.
+
+### Eviction Policy
+
+When a model slot is full:
+1. The least recently used model of that type is evicted
+2. The new model is loaded
+3. If loading fails (except file-not-found errors), all models are evicted and the load is retried
+
+Models currently processing inference requests cannot be evicted until they finish.
+
+### Per-Model Settings
+
+Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the `/api/v1/load` endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the [`/api/v1/load` endpoint documentation](#post-apiv1load) for details.
+
+**Setting Priority Order:**
+1. Values passed explicitly in `/api/v1/load` request (highest priority)
+2. Values from `lemonade-server` CLI arguments or environment variables
+3. Hardcoded defaults in `lemonade-router` (lowest priority)
 
 ## Start the HTTP Server
 
@@ -480,10 +532,58 @@ For a full list of event types, see the [API reference for streaming](https://pl
 
 
 
+### `POST /api/v1/audio/transcriptions` <sub>![Status](https://img.shields.io/badge/status-partial-yellow)</sub>
+
+Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.
+
+> **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
+>
+> **Limitations:** Only `wav` audio format and `json` response format are currently supported.
+
+#### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "Windows"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions ^
+      -F "file=@C:\path\to\audio.wav" ^
+      -F "model=Whisper-Tiny"
+    ```
+
+=== "Linux/macOS"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
+      -F "file=@/path/to/audio.wav" \
+      -F "model=Whisper-Tiny"
+    ```
+
+#### Response format
+
+```json
+{
+  "text": "Hello, this is a sample transcription of the audio file."
+}
+```
+
+**Field Descriptions:**
+
+- `text` - The transcribed text from the audio file
+
+
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of key models available on the server in an OpenAI-compatible format. We also expanded each model object with the `checkpoint` and `recipe` fields, which may be used to load a model using the `load` endpoint.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, and `labels`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -491,7 +591,7 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog with additional fields (`name`, `downloaded`, `labels`). Used by the CLI `list` command. Defaults to `false`. |
+| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
 
 #### Example request
 
@@ -499,73 +599,63 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 # Show only downloaded models (OpenAI-compatible)
 curl http://localhost:8000/api/v1/models
 
-# Show all models with download status (CLI usage)
+# Show all models including not-yet-downloaded (extended usage)
 curl http://localhost:8000/api/v1/models?show_all=true
 ```
 
 #### Response format
 
-Default response (only downloaded models):
-
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "Qwen2.5-0.5B-Instruct-CPU",
+      "id": "Qwen3-0.6B-GGUF",
       "created": 1744173590,
       "object": "model",
       "owned_by": "lemonade",
-      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-      "recipe": "oga-cpu"
-    },
-    {
-      "id": "Llama-3.2-1B-Instruct-Hybrid",
-      "created": 1744173590,
-      "object": "model",
-      "owned_by": "lemonade",
-      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-      "recipe": "oga-hybrid"
-    }
-  ]
-}
-```
-
-With `show_all=true` (includes all models with additional fields):
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "Qwen2.5-0.5B-Instruct-CPU",
-      "object": "model",
-      "created": 1744173590,
-      "owned_by": "lemonade",
-      "name": "Qwen2.5-0.5B-Instruct-CPU",
-      "checkpoint": "amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx",
-      "recipe": "oga-cpu",
+      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "size": 0.38,
       "downloaded": true,
-      "labels": ["hot", "cpu"]
+      "suggested": true,
+      "labels": ["reasoning"]
     },
     {
-      "id": "Llama-3.2-1B-Instruct-Hybrid",
-      "object": "model",
+      "id": "Gemma-3-4b-it-GGUF",
       "created": 1744173590,
+      "object": "model",
       "owned_by": "lemonade",
-      "name": "Llama-3.2-1B-Instruct-Hybrid",
-      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-      "recipe": "oga-hybrid",
-      "downloaded": false,
-      "labels": ["hot", "hybrid"]
+      "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "size": 3.61,
+      "downloaded": true,
+      "suggested": true,
+      "labels": ["hot", "vision"]
     }
   ]
 }
 ```
+
+**Field Descriptions:**
+
+- `object` - Type of response object, always `"list"`
+- `data` - Array of model objects with the following fields:
+  - `id` - Model identifier (used for loading and inference requests)
+  - `created` - Unix timestamp of when the model entry was created
+  - `object` - Type of object, always `"model"`
+  - `owned_by` - Owner of the model, always `"lemonade"`
+  - `checkpoint` - Full checkpoint identifier on Hugging Face
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `size` - Model size in GB (omitted for models without size information)
+  - `downloaded` - Boolean indicating if the model is downloaded and available locally
+  - `suggested` - Boolean indicating if the model is recommended for general use
+  - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`)
+
 
 ### `GET /api/v1/models/{model_id}` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Retrieve a specific model by its ID in an OpenAI-compatible format. Returns detailed information about a single model including the `checkpoint` and `recipe` fields.
+Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.
 
 #### Parameters
 
@@ -576,19 +666,25 @@ Retrieve a specific model by its ID in an OpenAI-compatible format. Returns deta
 #### Example request
 
 ```bash
-curl http://localhost:8000/api/v1/models/Llama-3.2-1B-Instruct-Hybrid
+curl http://localhost:8000/api/v1/models/Qwen3-0.6B-GGUF
 ```
 
 #### Response format
 
+Returns a single model object with the same fields as described in the [models list endpoint](#get-apiv1models) above.
+
 ```json
 {
-  "id": "Llama-3.2-1B-Instruct-Hybrid",
+  "id": "Qwen3-0.6B-GGUF",
   "created": 1744173590,
   "object": "model",
   "owned_by": "lemonade",
-  "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
-  "recipe": "oga-hybrid"
+  "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+  "recipe": "llamacpp",
+  "size": 0.38,
+  "downloaded": true,
+  "suggested": true,
+  "labels": ["reasoning"]
 }
 ```
 
@@ -754,8 +850,20 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | [Lemonade Server model name](./server_models.md) to load. |
+| `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
+| `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. Overrides the default value for this model. |
+| `llamacpp_args` | No | Custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Overrides the default value for this model. |
 
-Example request:
+**Setting Priority:**
+
+When loading a model, settings are applied in this priority order:
+1. Values explicitly passed in the `load` request (highest priority)
+2. Values set via `lemonade-server` CLI arguments or environment variables
+3. Default hardcoded values in `lemonade-router` (lowest priority)
+
+#### Example requests
+
+Basic load:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/load \
@@ -765,7 +873,20 @@ curl -X POST http://localhost:8000/api/v1/load \
   }'
 ```
 
-Response format:
+Load with custom settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "llama-3.2-3b-instruct-GGUF",
+    "ctx_size": 8192,
+    "llamacpp_backend": "rocm",
+    "llamacpp_args": "--flash-attn on --no-mmap"
+  }'
+```
+
+#### Response format
 
 ```json
 {
@@ -782,9 +903,21 @@ Explicitly unload a model from memory. This is useful to free up memory while st
 
 #### Parameters
 
-This endpoint does not take any parameters.
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | No | Name of the specific model to unload. If not provided, all loaded models will be unloaded. |
 
-#### Example request
+#### Example requests
+
+Unload a specific model:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/unload \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "Llama-3.2-1B-Instruct-Hybrid"}'
+```
+
+Unload all models:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/unload
@@ -792,13 +925,89 @@ curl -X POST http://localhost:8000/api/v1/unload
 
 #### Response format
 
+Success response:
+
 ```json
 {
   "status": "success",
   "message": "Model unloaded successfully"
 }
 ```
+
+Error response (model not found):
+
+```json
+{
+  "status": "error",
+  "message": "Model not found: Llama-3.2-1B-Instruct-Hybrid"
+}
+```
+
 In case of an error, the status will be `error` and the message will contain the error message.
+
+### `GET /api/v1/health` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Check the health of the server. This endpoint returns information about loaded models.
+
+#### Parameters
+
+This endpoint does not take any parameters.
+
+#### Example request
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+#### Response format
+
+```json
+{
+  "status": "ok",
+  "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+  "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
+  "all_models_loaded": [
+    {
+      "model_name": "Llama-3.2-1B-Instruct-Hybrid",
+      "checkpoint": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
+      "last_use": 1732123456.789,
+      "type": "llm",
+      "device": "gpu npu",
+      "backend_url": "http://127.0.0.1:8001/v1"
+    },
+    {
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 1732123450.123,
+      "type": "embedding",
+      "device": "gpu",
+      "backend_url": "http://127.0.0.1:8002/v1"
+    }
+  ],
+  "max_models": {
+    "llm": 3,
+    "embedding": 1,
+    "reranking": 1
+  }
+}
+```
+
+**Field Descriptions:**
+
+- `status` - Server health status, always `"ok"`
+- `checkpoint_loaded` - Checkpoint identifier of the most recently accessed model
+- `model_loaded` - Model name of the most recently accessed model
+- `all_models_loaded` - Array of all currently loaded models with details:
+  - `model_name` - Name of the loaded model
+  - `checkpoint` - Full checkpoint identifier
+  - `last_use` - Unix timestamp of last access (load or inference)
+  - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
+  - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `backend_url` - URL of the backend server process handling this model (useful for debugging)
+- `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
+  - `llm` - Maximum LLM/chat models
+  - `embedding` - Maximum embedding models
+  - `reranking` - Maximum reranking models
 
 ### `GET /api/v1/stats` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

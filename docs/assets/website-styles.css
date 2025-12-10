@@ -624,6 +624,88 @@ body.install-options {
   border-radius: var(--radius-xxl);
 }
 
+/* Features Section */
+.features-section {
+  margin: var(--spacing-xxl) auto;
+  max-width: 1200px;
+  width: 100%;
+  padding: 0 var(--spacing-md);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: var(--spacing-xl);
+  margin: 0 auto;
+}
+
+.feature-box {
+  background: transparent;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  text-align: center;
+  border: 2px solid #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 280px;
+  position: relative;
+}
+
+.feature-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feature-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.feature-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-md);
+  line-height: 1.3;
+}
+
+.feature-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Responsive design for features */
+@media (max-width: 1024px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: var(--spacing-lg);
+  }
+}
+
+@media (max-width: 768px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(8, 1fr);
+    gap: var(--spacing-md);
+  }
+  
+  .feature-box {
+    min-height: 240px;
+    padding: var(--spacing-lg);
+  }
+}
+
 /* Release Announcement */
 .release-announcement {
   margin: var(--spacing-xl) auto;
@@ -1055,13 +1137,10 @@ body.install-options {
 
 /* Download section styling */
 .lmn-download-section {
-  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 100%);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  padding: 0.5em 0 1em 0;
+  margin-bottom: 0.8em;
   text-align: center;
-  box-shadow: var(--shadow-medium);
-  border: 2px solid rgba(255, 255, 255, 0.2);
 }
 
 .lmn-download-section a {
@@ -1071,18 +1150,18 @@ body.install-options {
   font-size: 1.1rem;
   display: inline-block;
   padding: var(--spacing-md) var(--spacing-xl);
-  background: rgba(255, 255, 255, 0.3);
+  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 100%);
   border-radius: var(--radius-md);
   transition: var(--transition-medium);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: var(--shadow-light);
+  border: 1px solid rgba(230, 184, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(255, 224, 102, 0.4);
   min-width: 250px;
 }
 
 .lmn-download-section a:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(135deg, var(--primary-yellow-dark) 0%, var(--primary-yellow-darker) 100%);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-medium);
+  box-shadow: 0 6px 20px rgba(255, 224, 102, 0.5);
 }
 
 .lmn-command-area {
@@ -1157,13 +1236,10 @@ body.install-options {
 }
 
 .lmn-download-section {
-  background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
   border-radius: 12px;
-  padding: 1.5em 2em;
-  margin-bottom: 1.2em;
+  padding: 0.5em 0 1em 0;
+  margin-bottom: 0.8em;
   text-align: center;
-  box-shadow: 0 4px 16px rgba(255, 224, 102, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.2);
 }
 
 .lmn-download-section a {
@@ -1173,19 +1249,19 @@ body.install-options {
   font-size: 1.15rem;
   display: inline-block;
   padding: 1em 2em;
-  background: rgba(255,255,255,0.4);
+  background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
   border-radius: 10px;
   transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid rgba(230, 184, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(255, 224, 102, 0.4);
   min-width: 280px;
   line-height: 1.3;
 }
 
 .lmn-download-section a:hover {
-  background: rgba(255,255,255,0.6);
+  background: linear-gradient(135deg, #ffd43b 0%, #ffcc00 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 6px 20px rgba(255, 224, 102, 0.5);
 }
 
 .lmn-command code {
@@ -2078,13 +2154,10 @@ body.install-options {
 }
 
 .lmn-download-section {
-  background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
   border-radius: 12px;
-  padding: 1.5em 2em;
-  margin-bottom: 1.2em;
+  padding: 0.5em 0 1em 0;
+  margin-bottom: 0.8em;
   text-align: center;
-  box-shadow: 0 4px 16px rgba(255, 224, 102, 0.3);
-  border: 2px solid rgba(255, 255, 255, 0.2);
 }
 
 .lmn-download-section a {
@@ -2094,19 +2167,19 @@ body.install-options {
   font-size: 1.15rem;
   display: inline-block;
   padding: 1em 2em;
-  background: rgba(255,255,255,0.4);
+  background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
   border-radius: 10px;
   transition: all 0.2s ease;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid rgba(230, 184, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(255, 224, 102, 0.4);
   min-width: 280px;
   line-height: 1.3;
 }
 
 .lmn-download-section a:hover {
-  background: rgba(255,255,255,0.6);
+  background: linear-gradient(135deg, #ffd43b 0%, #ffcc00 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 6px 20px rgba(255, 224, 102, 0.5);
 }
 
 .lmn-command code {
@@ -2128,6 +2201,55 @@ body.install-options {
 
 .lmn-command a:hover {
   color: #bfa100;
+}
+
+.lmn-note {
+  margin-top: 0.8em;
+  color: #666;
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+.lmn-note a {
+  color: #666;
+  text-decoration: underline;
+}
+
+.lmn-note a:hover {
+  color: #444;
+}
+
+.lmn-note code {
+  font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+
+.lmn-source-note {
+  margin-top: 0.8em;
+}
+
+.lmn-coming-soon {
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #666;
+  padding: 2em 1em;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+  border-radius: 12px;
+  border: 1px solid #ddd;
+}
+
+.lmn-quickstart-table {
+  margin-top: 1.5em;
+}
+
+.lmn-embedded-table {
+  margin: 0 0 1.2em 0;
+  box-shadow: none;
+  border: 1px solid rgba(255, 224, 102, 0.4);
 }
 
 .lmn-command-line {
