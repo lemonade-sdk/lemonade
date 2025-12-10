@@ -802,6 +802,33 @@ static bool is_oga_available(const json& hardware) {
     return is_npu_available(hardware);
 }
 
+// Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double
+// Returns 0.0 if parsing fails
+static double parse_physical_memory_gb(const std::string& memory_str) {
+    if (memory_str.empty()) {
+        return 0.0;
+    }
+    
+    // Expected format: "XX.XX GB" or "XX GB"
+    std::istringstream iss(memory_str);
+    double value = 0.0;
+    std::string unit;
+    
+    if (iss >> value >> unit) {
+        // Convert to lowercase for comparison
+        std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+        if (unit == "gb") {
+            return value;
+        } else if (unit == "mb") {
+            return value / 1024.0;
+        } else if (unit == "tb") {
+            return value * 1024.0;
+        }
+    }
+    
+    return 0.0;
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
@@ -823,6 +850,13 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool flm_available = is_flm_available(hardware);
     bool oga_available = is_oga_available(hardware);
     
+    // Get system RAM for memory-based filtering
+    double system_ram_gb = 0.0;
+    if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
+        system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
+    }
+    double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
+    
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
     if (!debug_printed) {
@@ -830,6 +864,10 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         std::cout << "  - NPU hardware: " << (npu_available ? "Yes" : "No") << std::endl;
         std::cout << "  - FLM available: " << (flm_available ? "Yes" : "No") << std::endl;
         std::cout << "  - OGA available: " << (oga_available ? "Yes" : "No") << std::endl;
+        if (system_ram_gb > 0.0) {
+            std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb 
+                      << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+        }
         debug_printed = true;
     }
     
@@ -865,6 +903,21 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (is_macos && recipe != "llamacpp") {
             filter_out = true;
             filter_reason = "macOS only supports llamacpp";
+        }
+        
+        // Filter out models that are too large for system RAM
+        // Heuristic: if model size > 80% of system RAM, filter it out
+        if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
+            if (info.size > max_model_size_gb) {
+                filter_out = true;
+                filter_reason = "Model too large for system RAM";
+            }
+        }
+        
+        // Special rule: filter out gpt-oss-20b-FLM on systems with less than 64 GB RAM
+        if (!filter_out && name == "gpt-oss-20b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
+            filter_out = true;
+            filter_reason = "gpt-oss-20b-FLM requires 64 GB RAM";
         }
         
         if (filter_out) {
