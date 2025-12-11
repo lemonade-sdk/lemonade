@@ -68,6 +68,10 @@ set(COMMON_SOURCES
     tray_app.cpp
     server_manager.cpp
     platform/tray_factory.cpp
+    commands/commands.cpp
+    cli/cli_parser.cpp
+    tray/tray_menu.cpp
+    electron_integration.cpp
 )
 
 # Add version resource file on Windows
