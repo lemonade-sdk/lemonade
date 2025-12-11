@@ -1,4 +1,4 @@
-#include "lemon_tray/tray_app.h"
+#include "lemon_server/tray_app.h"
 #include <iostream>
 #include <exception>
 
@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     // This allows status, list, pull, delete, stop to run while server is active
     
     try {
-        lemon_tray::TrayApp app(argc, argv);
+        lemon_server::TrayApp app(argc, argv);
         return app.run();
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;

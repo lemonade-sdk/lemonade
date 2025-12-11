@@ -186,8 +186,8 @@ configure_file(
 # Generate manifest files from templates (Windows only)
 if(WIN32)
     configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/server/lemonade.manifest.in
-        ${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest
+        ${CMAKE_CURRENT_SOURCE_DIR}/lemonade-router/lemonade.manifest.in
+        ${CMAKE_CURRENT_BINARY_DIR}/lemonade-router/lemonade.manifest
         @ONLY
     )
     
@@ -299,28 +299,28 @@ include_directories(
 
 # Source files
 set(SOURCES
-    server/main.cpp
-    server/server.cpp
-    server/router.cpp
-    server/cli_parser.cpp
-    server/model_manager.cpp
-    server/wrapped_server.cpp
-    server/streaming_proxy.cpp
-    server/system_info.cpp
-    server/utils/http_client.cpp
-    server/utils/json_utils.cpp
-    server/utils/process_manager.cpp
-    server/utils/path_utils.cpp
-    server/utils/wmi_helper.cpp
-    server/backends/llamacpp_server.cpp
-    server/backends/fastflowlm_server.cpp
-    server/backends/ryzenaiserver.cpp
-    server/backends/whisper_server.cpp
+    lemonade-router/main.cpp
+    lemonade-router/server.cpp
+    lemonade-router/router.cpp
+    lemonade-router/cli_parser.cpp
+    lemonade-router/model_manager.cpp
+    lemonade-router/wrapped_server.cpp
+    lemonade-router/streaming_proxy.cpp
+    lemonade-router/system_info.cpp
+    lemonade-router/utils/http_client.cpp
+    lemonade-router/utils/json_utils.cpp
+    lemonade-router/utils/process_manager.cpp
+    lemonade-router/utils/path_utils.cpp
+    lemonade-router/utils/wmi_helper.cpp
+    lemonade-router/backends/llamacpp_server.cpp
+    lemonade-router/backends/fastflowlm_server.cpp
+    lemonade-router/backends/ryzenaiserver.cpp
+    lemonade-router/backends/whisper_server.cpp
 )
 
 # Add version resource file on Windows
 if(WIN32)
-    list(APPEND SOURCES server/version.rc)
+    list(APPEND SOURCES lemonade-router/version.rc)
 endif()
 
 # Create executable
@@ -342,7 +342,7 @@ if(WIN32)
         )
         # Embed manifest file
         set_target_properties(${EXECUTABLE_NAME} PROPERTIES
-            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest"
+            LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_BINARY_DIR}/lemonade-router/lemonade.manifest"
         )
     endif()
 endif()
@@ -439,8 +439,8 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
     VERBATIM
 )
 
-# Add tray application subdirectory
-add_subdirectory(tray)
+# Add lemonade-server CLI application subdirectory
+add_subdirectory(lemonade-server)
 
 
 # ============================================================
@@ -467,7 +467,7 @@ if(UNIX AND NOT APPLE)
     endif()
     
     # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
+    # Note: lemonade-server installation is handled in lemonade-server/CMakeLists.txt
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION bin
     )

@@ -9,7 +9,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace lemon_tray {
+namespace lemon_server {
 
 struct AppConfig {
     std::string command;  // No default - must be explicitly specified
@@ -169,5 +169,5 @@ private:
 #endif
 };
 
-} // namespace lemon_tray
+} // namespace lemon_server
 

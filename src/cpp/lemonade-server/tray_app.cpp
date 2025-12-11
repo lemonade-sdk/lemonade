@@ -1,5 +1,5 @@
-#include "lemon_tray/tray_app.h"
-#include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#include "lemon_server/tray_app.h"
+#include "lemon_server/platform/windows_tray.h"  // For set_menu_update_callback
 #include <lemon/single_instance.h>
 #include <lemon/version.h>
 #include <httplib.h>
@@ -36,7 +36,7 @@
 
 namespace fs = std::filesystem;
 
-namespace lemon_tray {
+namespace lemon_server {
 
 // Helper macro for debug logging
 #define DEBUG_LOG(app, msg) \
@@ -2512,4 +2512,4 @@ void TrayApp::tail_log_to_console() {
 #endif
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server

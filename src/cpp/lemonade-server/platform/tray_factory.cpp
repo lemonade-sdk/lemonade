@@ -1,14 +1,14 @@
-#include "lemon_tray/platform/tray_interface.h"
+#include "lemon_server/platform/tray_interface.h"
 
 #ifdef _WIN32
-#include "lemon_tray/platform/windows_tray.h"
+#include "lemon_server/platform/windows_tray.h"
 #elif defined(__APPLE__)
-#include "lemon_tray/platform/macos_tray.h"
+#include "lemon_server/platform/macos_tray.h"
 #elif defined(__linux__) && !defined(__ANDROID__)
-#include "lemon_tray/platform/linux_tray.h"
+#include "lemon_server/platform/linux_tray.h"
 #endif
 
-namespace lemon_tray {
+namespace lemon_server {
 
 std::unique_ptr<TrayInterface> create_tray() {
 #ifdef _WIN32
@@ -23,5 +23,5 @@ std::unique_ptr<TrayInterface> create_tray() {
 #endif
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server
 

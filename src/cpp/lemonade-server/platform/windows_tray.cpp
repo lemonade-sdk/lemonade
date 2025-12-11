@@ -1,6 +1,6 @@
 #ifdef _WIN32
 
-#include "lemon_tray/platform/windows_tray.h"
+#include "lemon_server/platform/windows_tray.h"
 #include <iostream>
 #include <codecvt>
 #include <locale>
@@ -36,7 +36,7 @@
 #define NIN_POPUPCLOSE (WM_USER + 7)
 #endif
 
-namespace lemon_tray {
+namespace lemon_server {
 
 namespace {
     // Helper function to convert UTF-8 string to wide string
@@ -522,7 +522,7 @@ void WindowsTray::on_destroy() {
     PostQuitMessage(0);
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // _WIN32
 

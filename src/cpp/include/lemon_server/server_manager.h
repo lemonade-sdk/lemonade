@@ -25,7 +25,7 @@ using pid_t = DWORD;
 #include <sys/types.h>
 #endif
 
-namespace lemon_tray {
+namespace lemon_server {
 
 enum class LogLevel {
     DEBUG,
@@ -123,5 +123,5 @@ private:
 #endif
 };
 
-} // namespace lemon_tray
+} // namespace lemon_server
 

@@ -277,6 +277,8 @@ lemonade-server serve
 
 ## Code Structure
 
+Folders are named after the executable they produce for clarity:
+
 ```
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
@@ -289,8 +291,8 @@ src/cpp/
 │   ├── installer_banner_wix.bmp  # Left-side banner (493×312)
 │   └── top_banner.bmp          # Top banner with lemon icon (493×58)
 │
-├── server/                     # Server implementation
-│   ├── main.cpp                # Entry point, CLI routing
+├── lemonade-router/            # HTTP server (builds lemonade-router.exe)
+│   ├── main.cpp                # Entry point
 │   ├── server.cpp              # HTTP server (cpp-httplib)
 │   ├── router.cpp              # Routes requests to backends
 │   ├── model_manager.cpp       # Model registry, downloads, caching
@@ -312,7 +314,20 @@ src/cpp/
 │       ├── path_utils.cpp      # Path manipulation
 │       └── wmi_helper.cpp      # Windows WMI for NPU detection
 │
-├── include/lemon/              # Public headers
+├── lemonade-server/            # CLI application (builds lemonade-server.exe)
+│   ├── CMakeLists.txt          # CLI-specific build config
+│   ├── main.cpp                # CLI entry point
+│   ├── tray_app.cpp            # Main CLI application logic
+│   ├── server_manager.cpp      # Manages lemonade-router process
+│   ├── tray_launcher.cpp       # GUI launcher (builds lemonade-tray.exe, Windows only)
+│   ├── log-viewer.cpp          # Log viewer (builds lemonade-log-viewer.exe, Windows only)
+│   └── platform/               # Platform-specific tray implementations
+│       ├── windows_tray.cpp    # Win32 system tray API
+│       ├── macos_tray.mm       # Objective-C++ NSStatusBar
+│       ├── linux_tray.cpp      # Headless stub (no GUI on Linux)
+│       └── tray_factory.cpp    # Platform detection
+│
+├── include/lemon/              # Router headers (lemon:: namespace)
 │   ├── server.h, router.h, model_manager.h, cli_parser.h
 │   ├── wrapped_server.h, streaming_proxy.h, system_info.h
 │   ├── backends/               # Backend headers
@@ -324,18 +339,14 @@ src/cpp/
 │       ├── http_client.h, json_utils.h
 │       ├── process_manager.h, path_utils.h
 │
-└── tray/                       # System tray application
-    ├── CMakeLists.txt          # Tray-specific build config
-    ├── main.cpp                # Tray entry point (lemonade-server)
-    ├── tray_launcher.cpp       # GUI launcher (lemonade-tray)
-    ├── log-viewer.cpp          # Log file viewer (lemonade-log-viewer)
-    ├── server_manager.cpp      # Manages lemonade-router process
-    ├── tray_app.cpp            # Main tray application logic
-    └── platform/               # Platform-specific implementations
-        ├── windows_tray.cpp    # Win32 system tray API
-        ├── macos_tray.mm       # Objective-C++ NSStatusBar
-        ├── linux_tray.cpp      # GTK/AppIndicator
-        └── tray_factory.cpp    # Platform detection
+└── include/lemon_server/       # CLI headers (lemon_server:: namespace)
+    ├── tray_app.h              # Main CLI application class
+    ├── server_manager.h        # Server process management
+    └── platform/               # Platform-specific tray headers
+        ├── tray_interface.h    # Abstract tray interface
+        ├── windows_tray.h
+        ├── macos_tray.h
+        └── linux_tray.h
 ```
 
 ## Architecture Overview
@@ -594,7 +605,9 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 - CamelCase for classes and types
 - 4-space indentation
 - Header guards using `#pragma once`
-- All code in `lemon::` namespace
+- Namespaces:
+  - `lemon::` - Router code (HTTP server, backends, model management)
+  - `lemon_server::` - CLI application code (commands, tray, server lifecycle)
 
 ### Key Resources
 

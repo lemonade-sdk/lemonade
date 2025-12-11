@@ -1,5 +1,5 @@
-# Tray application subproject
-# Note: This is included from parent CMakeLists.txt via add_subdirectory(tray)
+# Lemonade Server CLI application
+# Note: This is included from parent CMakeLists.txt via add_subdirectory(lemonade-server)
 # Parent project already sets C++ standard and fetches dependencies
 
 # Generate manifest files from templates (Windows only)
@@ -185,7 +185,7 @@ install(TARGETS lemonade-server
 # Note: Icon resources are copied by parent CMakeLists.txt
 
 # Print configuration summary
-message(STATUS "=== Lemonade Tray Application Configuration ===")
+message(STATUS "=== Lemonade Server CLI Configuration ===")
 message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
@@ -197,5 +197,5 @@ elseif(UNIX)
     message(STATUS "Linux tray support: HEADLESS ONLY (use --no-tray)")
     message(STATUS "  No LGPL dependencies - permissively licensed only")
 endif()
-message(STATUS "===============================================")
+message(STATUS "===========================================")
 

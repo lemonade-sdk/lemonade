@@ -1,12 +1,12 @@
 #ifdef __APPLE__
 
-#include "lemon_tray/platform/macos_tray.h"
+#include "lemon_server/platform/macos_tray.h"
 #include <iostream>
 
 // TODO: Implement macOS tray using Objective-C++
 // This will use NSStatusBar, NSMenu, NSMenuItem, etc.
 
-namespace lemon_tray {
+namespace lemon_server {
 
 MacOSTray::MacOSTray()
     : impl_(nullptr)
@@ -81,7 +81,7 @@ void MacOSTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // __APPLE__
 

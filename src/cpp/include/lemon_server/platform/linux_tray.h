@@ -4,7 +4,7 @@
 
 #include "tray_interface.h"
 
-namespace lemon_tray {
+namespace lemon_server {
 
 class LinuxTray : public TrayInterface {
 public:
@@ -37,7 +37,7 @@ private:
     bool should_exit_;
 };
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // __linux__ && !__ANDROID__
 
