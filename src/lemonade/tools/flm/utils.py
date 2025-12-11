@@ -467,6 +467,7 @@ class FLMAdapter(ModelAdapter):
             cmd.extend(["--ctx-len", str(ctx_len)])
         self.server_process = subprocess.Popen(
             cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -512,6 +513,9 @@ class FLMAdapter(ModelAdapter):
 
     def stop_server(self):
         if self.server_process:
+            printing.log_info("Stopping FLM server...")
+            self.server_process.stdin.write("exit\n")
+            self.server_process.stdin.flush()
             self.server_process.terminate()
             self.server_process = None
         self.server_port = None
