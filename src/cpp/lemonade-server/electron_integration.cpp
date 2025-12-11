@@ -19,6 +19,41 @@
 
 namespace fs = std::filesystem;
 
+#if defined(__linux__)
+#include <fstream>
+#include <sys/types.h>
+
+// Helper function to check if a process is alive (and not a zombie)
+static bool is_process_alive_not_zombie(pid_t pid) {
+    if (pid <= 0) return false;
+    
+    // First check if process exists at all
+    if (kill(pid, 0) != 0) {
+        return false;  // Process doesn't exist
+    }
+    
+    // Check if it's a zombie by reading /proc/PID/stat
+    std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
+    std::ifstream stat_file(stat_path);
+    if (!stat_file) {
+        return false;  // Can't read stat, assume dead
+    }
+    
+    std::string line;
+    std::getline(stat_file, line);
+    
+    // Find the state character (after the closing paren of the process name)
+    size_t paren_pos = line.rfind(')');
+    if (paren_pos != std::string::npos && paren_pos + 2 < line.length()) {
+        char state = line[paren_pos + 2];
+        // Return false if zombie
+        return (state != 'Z');
+    }
+    
+    return true;  // Assume alive if we can't determine
+}
+#endif
+
 namespace lemon_server {
 
 // ============================================================
