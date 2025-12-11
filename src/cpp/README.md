@@ -14,7 +14,7 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 ### Prerequisites
 
 **All Platforms:**
-- CMake 3.20 or higher
+- CMake 3.28 or higher
 - C++17 compatible compiler
 - Git (for fetching dependencies)
 - Internet connection (first build downloads dependencies)
@@ -423,7 +423,7 @@ All dependencies are automatically fetched by CMake via FetchContent:
 - **nlohmann/json** (v3.11.3) - JSON parsing and serialization [MIT License]
 - **CLI11** (v2.4.2) - Command-line argument parsing [BSD 3-Clause]
 - **libcurl** (8.5.0) - HTTP client for model downloads [curl license]
-- **zstd** (v1.5.5) - Compression library for HTTP [BSD License]
+- **zstd** (v1.5.7) - Compression library for HTTP [BSD License]
 
 Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on macOS, OpenSSL on Linux).
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
@@ -50,13 +50,15 @@ FetchContent_Declare(CLI11
 FetchContent_Declare(curl
     GIT_REPOSITORY https://github.com/curl/curl.git
     GIT_TAG curl-8_5_0
+    EXCLUDE_FROM_ALL
 )
 
 # zstd (BSD License) - required by httplib for compression
 FetchContent_Declare(zstd
     GIT_REPOSITORY https://github.com/facebook/zstd.git
-    GIT_TAG v1.5.5
+    GIT_TAG v1.5.7
     SOURCE_SUBDIR build/cmake
+    EXCLUDE_FROM_ALL
 )
 
 # cpp-httplib (MIT License)
@@ -101,26 +103,17 @@ elseif(APPLE)
 else()
     set(CURL_USE_OPENSSL ON CACHE INTERNAL "")
 endif()
-# Fetch curl and prevent it from installing
-FetchContent_GetProperties(curl)
-if(NOT curl_POPULATED)
-    FetchContent_Populate(curl)
-    add_subdirectory(${curl_SOURCE_DIR} ${curl_BINARY_DIR} EXCLUDE_FROM_ALL)
-endif()
+# Fetch curl (EXCLUDE_FROM_ALL prevents installation)
+FetchContent_MakeAvailable(curl)
 
 # === zstd ===
 set(ZSTD_BUILD_STATIC ON CACHE INTERNAL "")
 set(ZSTD_BUILD_PROGRAMS OFF CACHE INTERNAL "")
 set(ZSTD_BUILD_SHARED OFF CACHE INTERNAL "")
 set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
-# Fetch zstd and prevent it from installing
-# FetchContent_MakeAvailable(zstd) forces zstd installation, therefore not used
-FetchContent_GetProperties(zstd)
-if(NOT zstd_POPULATED)
-    FetchContent_Populate(zstd)
-    add_subdirectory(${zstd_SOURCE_DIR}/build/cmake ${zstd_BINARY_DIR} EXCLUDE_FROM_ALL)
-    add_library(zstd::libzstd ALIAS libzstd_static)  # Alias for httplib
-endif()
+# Fetch zstd (EXCLUDE_FROM_ALL prevents installation)
+FetchContent_MakeAvailable(zstd)
+add_library(zstd::libzstd ALIAS libzstd_static)  # Alias for httplib
 
 # === httplib ===
 # Disable OpenSSL in httplib (not needed for localhost HTTP server)
