@@ -291,7 +291,7 @@ src/cpp/
 │   ├── installer_banner_wix.bmp  # Left-side banner (493×312)
 │   └── top_banner.bmp          # Top banner with lemon icon (493×58)
 │
-├── lemonade-router/            # HTTP server (builds lemonade-router.exe)
+├── lemonade_router/            # HTTP server (builds lemonade-router.exe)
 │   ├── main.cpp                # Entry point
 │   ├── server.cpp              # HTTP server (cpp-httplib)
 │   ├── router.cpp              # Routes requests to backends
@@ -314,7 +314,7 @@ src/cpp/
 │       ├── path_utils.cpp      # Path manipulation
 │       └── wmi_helper.cpp      # Windows WMI for NPU detection
 │
-├── lemonade-server/            # CLI application (builds lemonade-server.exe)
+├── lemonade_server/            # CLI application (builds lemonade-server.exe)
 │   ├── CMakeLists.txt          # CLI-specific build config
 │   ├── main.cpp                # CLI entry point
 │   ├── tray_app.cpp            # Main CLI application logic
