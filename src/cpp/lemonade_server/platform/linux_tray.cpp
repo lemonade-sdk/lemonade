@@ -1,13 +1,13 @@
 #if defined(__linux__) && !defined(__ANDROID__)
 
-#include "lemon_tray/platform/linux_tray.h"
+#include "lemon_server/platform/linux_tray.h"
 #include <iostream>
 
 // Headless stub implementation for Linux
 // This avoids LGPL dependencies (GTK3, libappindicator3, libnotify)
 // Users should run with --no-tray flag on Linux
 
-namespace lemon_tray {
+namespace lemon_server {
 
 LinuxTray::LinuxTray()
     : should_exit_(false)
@@ -100,6 +100,6 @@ void LinuxTray::set_log_level(const std::string& log_level) {
     log_level_ = log_level;
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // __linux__ && !__ANDROID__

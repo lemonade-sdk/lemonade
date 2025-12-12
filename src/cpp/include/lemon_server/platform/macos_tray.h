@@ -4,7 +4,7 @@
 
 #include "tray_interface.h"
 
-namespace lemon_tray {
+namespace lemon_server {
 
 class MacOSTray : public TrayInterface {
 public:
@@ -35,7 +35,7 @@ private:
     std::function<void()> ready_callback_;
 };
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // __APPLE__
 

@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-namespace lemon_tray {
+namespace lemon_server {
 
 // Forward declarations
 struct MenuItem;
@@ -113,5 +113,5 @@ public:
 // Factory function to create platform-specific tray
 std::unique_ptr<TrayInterface> create_tray();
 
-} // namespace lemon_tray
+} // namespace lemon_server
 

@@ -1,4 +1,4 @@
-#include "lemon_tray/server_manager.h"
+#include "lemon_server/server_manager.h"
 #include "lemon/version.h"
 #include <iostream>
 #include <sstream>
@@ -45,7 +45,7 @@
 // Note: Not using OpenSSL support since we only connect to localhost
 #include <httplib.h>
 
-namespace lemon_tray {
+namespace lemon_server {
 
 ServerManager::ServerManager()
     : server_pid_(0)
@@ -872,5 +872,5 @@ std::string ServerManager::make_http_request(
     return res->body;
 }
 
-} // namespace lemon_tray
+} // namespace lemon_server
 

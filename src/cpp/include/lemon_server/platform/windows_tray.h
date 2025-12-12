@@ -14,7 +14,7 @@
 #include <map>
 #include <atomic>
 
-namespace lemon_tray {
+namespace lemon_server {
 
 class WindowsTray : public TrayInterface {
 public:
@@ -89,7 +89,7 @@ private:
     static constexpr int MENU_ID_START = 1000;
 };
 
-} // namespace lemon_tray
+} // namespace lemon_server
 
 #endif // _WIN32
 
