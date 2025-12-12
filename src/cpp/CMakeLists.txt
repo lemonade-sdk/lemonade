@@ -309,6 +309,9 @@ set(SOURCES
     lemonade_router/backends/fastflowlm_server.cpp
     lemonade_router/backends/ryzenaiserver.cpp
     lemonade_router/backends/whisper_server.cpp
+    lemonade_router/endpoints/inference_handlers.cpp
+    lemonade_router/endpoints/model_handlers.cpp
+    lemonade_router/endpoints/system_handlers.cpp
 )
 
 # Add version resource file on Windows
