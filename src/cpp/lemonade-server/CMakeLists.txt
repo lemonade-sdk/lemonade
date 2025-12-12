@@ -97,12 +97,14 @@ target_link_libraries(lemonade-server PRIVATE
     ${PLATFORM_LIBS}
 )
 
-# Set output directory to build root
-# Windows uses Debug/Release subdirectories (multi-config generator)
-# Linux/Mac use default output location (in subdirectory build folder)
+# Set output directory to build root for all platforms
+# This ensures lemonade-server is in build/ not build/lemonade-server/
+set_target_properties(lemonade-server PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+# Windows also needs config-specific directories for multi-config generators
 if(WIN32)
     set_target_properties(lemonade-server PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
     )
