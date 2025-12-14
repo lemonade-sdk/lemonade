@@ -341,7 +341,17 @@ class OgaLoad(FirstTool):
         """
 
         # For RyzenAI 1.6.0, check NPU driver version for NPU and hybrid devices
-        if device in ["npu", "hybrid"]:
+        if device not in ["npu", "hybrid"]:
+            return
+
+        if not sys.platform.startswith("win"):
+            printing.log_info(
+                f"[OGA] Skipping Windows-only NPU dependency checks "
+                f"for device={device} on platform={sys.platform}."
+            )
+            return
+
+        else:
             required_driver_version = REQUIRED_NPU_DRIVER_VERSION
 
             current_driver_version = _get_npu_driver_version()

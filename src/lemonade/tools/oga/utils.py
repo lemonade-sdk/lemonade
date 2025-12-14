@@ -1,4 +1,6 @@
 import os
+import re
+import sys
 import time
 import json
 import logging
@@ -62,9 +64,40 @@ class OrtGenaiModel(ModelAdapter):
 
     def __init__(self, input_folder):
         super().__init__()
-        self.model = og.Model(input_folder)
-        self.type = "ort-genai"
         self.config = self.load_config(input_folder)
+        try:
+            self.model = og.Model(input_folder)
+        except:
+            self.fix_model_config(input_folder)
+            self.model = og.Model(input_folder)
+
+        self.type = "ort-genai"
+
+    def normalize_lib_path(self, config):
+        # Fix custom_ops library if any
+        if (
+            "model" in config
+            and "decoder" in config["model"]
+            and "session_options" in config["model"]["decoder"]
+            and "custom_ops_library" in config["model"]["decoder"]["session_options"]
+        ):
+            lib = config["model"]["decoder"]["session_options"]["custom_ops_library"]
+            if sys.platform.startswith("win") and not lib.endswith('.dll'):
+                lib = re.sub('^lib', '', lib)
+                lib = re.sub('.so$', '.dll', lib)
+            elif sys.platform.startswith("linux") and not lib.endswith('.so'):
+                lib = "lib" + re.sub('.dll$', '.so', lib)
+
+            config["model"]["decoder"]["session_options"]["custom_ops_library"] = lib
+
+    def fix_model_config(self, input_folder):
+        config = self.load_config(input_folder)
+
+        config_path = os.path.join(input_folder, "genai_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f)
+        logging.warning("Fixed genai_config.json for platform " + sys.platform)
 
     def load_config(self, input_folder):
         rai_config_path = os.path.join(input_folder, "rai_config.json")
@@ -90,6 +123,7 @@ class OrtGenaiModel(ModelAdapter):
         if os.path.exists(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 config_dict = json.load(f)
+                self.normalize_lib_path(config_dict)
                 config_dict["max_prompt_length"] = max_prompt_length
                 return config_dict
         return None
