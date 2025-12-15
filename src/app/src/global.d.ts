@@ -36,16 +36,6 @@ declare global {
       updateMinWidth: (width: number) => void;
       zoomIn: () => void;
       zoomOut: () => void;
-      addUserModel?: (payload: {
-        name: string;
-        checkpoint: string;
-        recipe: string;
-        mmproj?: string;
-        reasoning?: boolean;
-        vision?: boolean;
-        embedding?: boolean;
-        reranking?: boolean;
-      }) => Promise<unknown>;
       getSettings?: () => Promise<AppSettings>;
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);

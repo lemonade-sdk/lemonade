@@ -15,6 +15,17 @@ interface ModelManagerProps {
   width?: number;
 }
 
+// Registration data for new custom models
+interface ModelRegistrationData {
+  checkpoint: string;
+  recipe: string;
+  mmproj?: string;
+  reasoning?: boolean;
+  vision?: boolean;
+  embedding?: boolean;
+  reranking?: boolean;
+}
+
 const createEmptyModelForm = () => ({
   name: '',
   checkpoint: '',
@@ -37,7 +48,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
-  const [isAddingModel, setIsAddingModel] = useState(false);
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
   
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
@@ -308,16 +318,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     setShowAddModelForm(false);
   };
 
-  const handleInstallModel = async () => {
-    if (isAddingModel) {
-      return;
-    }
-
-    if (!window.api?.addUserModel) {
-      showError('Adding custom models is not supported in this build.');
-      return;
-    }
-
+  const handleInstallModel = () => {
     const trimmedName = newModel.name.trim();
     const trimmedCheckpoint = newModel.checkpoint.trim();
     const trimmedRecipe = newModel.recipe.trim();
@@ -338,35 +339,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       return;
     }
 
-    setIsAddingModel(true);
-    try {
-      await window.api.addUserModel({
-        name: trimmedName,
-        checkpoint: trimmedCheckpoint,
-        recipe: trimmedRecipe,
-        mmproj: trimmedMmproj,
-        reasoning: newModel.reasoning,
-        vision: newModel.vision,
-        embedding: newModel.embedding,
-        reranking: newModel.reranking,
-      });
-
-      await loadModels();
-      resetNewModelForm();
-      showSuccess('Model added to your catalog.');
-      
-      // Notify other components (e.g., ChatWindow) that models have been updated
-      window.dispatchEvent(new CustomEvent('modelsUpdated'));
-    } catch (error) {
-      console.error('Failed to add model:', error);
-      showError(
-        `Failed to add model: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`
-      );
-    } finally {
-      setIsAddingModel(false);
+    // Validate GGUF checkpoint format
+    if (trimmedCheckpoint.toLowerCase().includes('gguf') && !trimmedCheckpoint.includes(':')) {
+      showWarning('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax');
+      return;
     }
+
+    // Close the form and start the download
+    const modelName = `user.${trimmedName}`;
+    resetNewModelForm();
+    
+    // Use the same download flow as registered models, but include registration data
+    handleDownloadModel(modelName, {
+      checkpoint: trimmedCheckpoint,
+      recipe: trimmedRecipe,
+      mmproj: trimmedMmproj || undefined,
+      reasoning: newModel.reasoning,
+      vision: newModel.vision,
+      embedding: newModel.embedding,
+      reranking: newModel.reranking,
+    });
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -376,9 +368,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }));
   };
 
-  const handleDownloadModel = useCallback(async (modelName: string) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     try {
-      if (!supportedModelsData[modelName]) {
+      // For registered models, verify metadata exists; for new models, we're registering now
+      if (!registrationData && !supportedModelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
@@ -414,12 +407,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       window.addEventListener('download:paused' as any, handlePause);
       
       try {
-        // Only send model_name - the server looks up checkpoint/recipe from its registry
-        // (User models are registered via "Add a Model" form before download)
+        // Build request body - include registration data for new custom models
+        const requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
+        if (registrationData) {
+          requestBody.checkpoint = registrationData.checkpoint;
+          requestBody.recipe = registrationData.recipe;
+          if (registrationData.mmproj) requestBody.mmproj = registrationData.mmproj;
+          if (registrationData.reasoning) requestBody.reasoning = registrationData.reasoning;
+          if (registrationData.vision) requestBody.vision = registrationData.vision;
+          if (registrationData.embedding) requestBody.embedding = registrationData.embedding;
+          if (registrationData.reranking) requestBody.reranking = registrationData.reranking;
+        }
+        
         const response = await serverFetch('/pull', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: modelName, stream: true }),
+          body: JSON.stringify(requestBody),
           signal: abortController.signal,
         });
         
@@ -447,39 +450,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              
+            for (const line of lines) {
               if (line.startsWith('event:')) {
                 currentEventType = line.substring(6).trim();
               } else if (line.startsWith('data:')) {
+                // Parse JSON separately so server errors aren't swallowed
+                let data;
                 try {
-                  const data = JSON.parse(line.substring(5).trim());
-                  
-                  if (currentEventType === 'progress') {
-                    downloadTracker.updateProgress(downloadId, data);
-                  } else if (currentEventType === 'complete') {
-                    downloadTracker.completeDownload(downloadId);
-                    downloadCompleted = true;
-                  } else if (currentEventType === 'error') {
-                    downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                    throw new Error(data.error || 'Download failed');
-                  }
+                  data = JSON.parse(line.substring(5).trim());
                 } catch (parseError) {
                   console.error('Failed to parse SSE data:', line, parseError);
+                  continue;
+                }
+                
+                if (currentEventType === 'progress') {
+                  downloadTracker.updateProgress(downloadId, data);
+                } else if (currentEventType === 'complete') {
+                  downloadTracker.completeDownload(downloadId);
+                  downloadCompleted = true;
+                } else if (currentEventType === 'error') {
+                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                  throw new Error(data.error || 'Download failed');
                 }
               } else if (line.trim() === '') {
-                // Empty line resets event type to default
                 currentEventType = 'progress';
               }
             }
           }
         } catch (streamError: any) {
-          // If we already got the complete event, ignore stream errors (connection closing is expected)
+          // If we already got the complete event, ignore stream errors
           if (!downloadCompleted) {
             throw streamError;
           }
-          // Otherwise, it's a normal completion after the server closed the connection
         }
         
         // Mark as complete if not already done

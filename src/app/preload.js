@@ -13,7 +13,6 @@ contextBridge.exposeInMainWorld('api', {
   updateMinWidth: (width) => ipcRenderer.send('update-min-width', width),
   zoomIn: () => ipcRenderer.send('zoom-in'),
   zoomOut: () => ipcRenderer.send('zoom-out'),
-  addUserModel: (payload) => ipcRenderer.invoke('add-user-model', payload),
   getSettings: () => ipcRenderer.invoke('get-app-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
   onSettingsUpdated: (callback) => {
