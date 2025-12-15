@@ -1316,6 +1316,18 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             std::cout << "[Server]   recipe: " << recipe << std::endl;
         }
         
+        // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
+        if (!checkpoint.empty() || !recipe.empty()) {
+            if (model_name.substr(0, 5) != "user.") {
+                res.status = 400;
+                nlohmann::json error = {{"error", 
+                    "When providing 'checkpoint' or 'recipe', the model name must include the "
+                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+        
         if (stream) {
             // SSE streaming mode - send progress events
             res.set_header("Content-Type", "text/event-stream");

@@ -436,14 +436,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       window.addEventListener('download:paused' as any, handlePause);
       
       try {
+        // For registered models (not user-added), only send model_name
+        // User-added models need full metadata (checkpoint, recipe, etc.)
+        const isUserModel = modelName.startsWith(USER_MODEL_PREFIX);
+        const requestBody = isUserModel
+          ? { model_name: modelName, ...modelData, stream: true }
+          : { model_name: modelName, stream: true };
+        
         const response = await serverFetch('/pull', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            model_name: modelName, 
-            ...modelData,
-            stream: true  // Enable SSE streaming for progress updates
-          }),
+          body: JSON.stringify(requestBody),
           signal: abortController.signal,
         });
         
