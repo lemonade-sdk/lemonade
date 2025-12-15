@@ -627,6 +627,13 @@ void FastFlowLMServer::install_flm_if_needed() {
     
     std::cout << "[FastFlowLM] Successfully installed FLM " 
               << required_version << std::endl;
+    
+    // Refresh FLM model download status in the model cache
+    // This ensures any pre-existing FLM models are now detected
+    if (model_manager_) {
+        std::cout << "[FastFlowLM] Refreshing FLM model download status..." << std::endl;
+        model_manager_->refresh_flm_download_status();
+    }
 }
 
 bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {
