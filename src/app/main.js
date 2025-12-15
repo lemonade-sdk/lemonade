@@ -13,9 +13,6 @@ const ZOOM_STEP = 0.2;
 
 let mainWindow;
 let currentMinWidth = DEFAULT_MIN_WIDTH;
-let userModelsWatcher = null;
-const userModelsSubscribers = new Set();
-const userModelsDestroyedHandlers = new Map();
 const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
@@ -57,14 +54,6 @@ const getCacheDirectory = () => {
     return '';
   }
   return path.join(homeDir, '.cache', 'lemonade');
-};
-
-const getUserModelsFilePath = () => {
-  const cacheDir = getCacheDirectory();
-  if (!cacheDir) {
-    return '';
-  }
-  return path.join(cacheDir, 'user_models.json');
 };
 
 const getAppSettingsFilePath = () => {
@@ -277,103 +266,6 @@ const discoverServerPort = () => {
   });
 };
 
-const readUserModelsFile = async () => {
-  const userModelsPath = getUserModelsFilePath();
-  if (!userModelsPath) {
-    return {};
-  }
-
-  try {
-    const content = await fs.promises.readFile(userModelsPath, 'utf-8');
-    return JSON.parse(content);
-  } catch (error) {
-    if (error && error.code === 'ENOENT') {
-      return {};
-    }
-    console.error('Failed to read user_models.json:', error);
-    return {};
-  }
-};
-
-const notifyUserModelsUpdated = () => {
-  for (const webContents of userModelsSubscribers) {
-    if (!webContents.isDestroyed()) {
-      webContents.send('user-models-updated');
-    }
-  }
-};
-
-const disposeUserModelsWatcher = () => {
-  if (userModelsSubscribers.size === 0 && userModelsWatcher) {
-    userModelsWatcher.close();
-    userModelsWatcher = null;
-  }
-};
-
-const ensureUserModelsWatcher = () => {
-  if (userModelsWatcher || userModelsSubscribers.size === 0) {
-    return;
-  }
-
-  const cacheDir = getCacheDirectory();
-  if (!cacheDir) {
-    return;
-  }
-
-  try {
-    fs.mkdirSync(cacheDir, { recursive: true });
-  } catch (error) {
-    console.warn('Unable to ensure Lemonade cache directory exists:', error);
-  }
-
-  try {
-    userModelsWatcher = fs.watch(cacheDir, { persistent: false }, (_eventType, filename) => {
-      if (!filename) {
-        return;
-      }
-
-      if (filename.toLowerCase() === 'user_models.json') {
-        notifyUserModelsUpdated();
-      }
-    });
-  } catch (error) {
-    console.error('Failed to watch user_models.json:', error);
-  }
-};
-
-const subscribeToUserModels = (webContentsInstance) => {
-  if (!webContentsInstance || userModelsSubscribers.has(webContentsInstance)) {
-    return;
-  }
-
-  userModelsSubscribers.add(webContentsInstance);
-
-  const handleDestroyed = () => {
-    userModelsSubscribers.delete(webContentsInstance);
-    userModelsDestroyedHandlers.delete(webContentsInstance.id);
-    disposeUserModelsWatcher();
-    webContentsInstance.removeListener('destroyed', handleDestroyed);
-  };
-
-  userModelsDestroyedHandlers.set(webContentsInstance.id, handleDestroyed);
-  webContentsInstance.on('destroyed', handleDestroyed);
-  ensureUserModelsWatcher();
-};
-
-const unsubscribeFromUserModels = (webContentsInstance) => {
-  if (!webContentsInstance || !userModelsSubscribers.has(webContentsInstance)) {
-    return;
-  }
-
-  userModelsSubscribers.delete(webContentsInstance);
-  const handler = userModelsDestroyedHandlers.get(webContentsInstance.id);
-  if (handler) {
-    webContentsInstance.removeListener('destroyed', handler);
-    userModelsDestroyedHandlers.delete(webContentsInstance.id);
-  }
-  disposeUserModelsWatcher();
-};
-
 const addUserModelEntry = async (payload = {}) => {
   const { name, checkpoint, recipe, mmproj = '', reasoning = false, vision = false, embedding = false, reranking = false } = payload;
 
@@ -407,68 +299,62 @@ const addUserModelEntry = async (payload = {}) => {
     );
   }
 
-  const userModelsPath = getUserModelsFilePath();
-  if (!userModelsPath) {
-    throw new Error('Unable to locate the Lemonade cache directory');
-  }
-
-  const userModels = await readUserModelsFile();
-  if (Object.prototype.hasOwnProperty.call(userModels, sanitizedName)) {
-    throw new Error(`Model "${sanitizedName}" already exists`);
-  }
-
-  const labels = ['custom'];
-  if (reasoning) {
-    labels.push('reasoning');
-  }
-  if (vision) {
-    labels.push('vision');
-  }
-  if (embedding) {
-    labels.push('embeddings');
-  }
-  if (reranking) {
-    labels.push('reranking');
-  }
-
-  const entry = {
+  // Call the server's /pull endpoint to register and download the model
+  // This keeps the server as the source of truth for user_models.json
+  const http = require('http');
+  const requestBody = JSON.stringify({
+    model_name: `user.${sanitizedName}`,
     checkpoint: sanitizedCheckpoint,
     recipe: sanitizedRecipe,
-    suggested: true,
-    labels,
-  };
+    mmproj: sanitizedMmproj || undefined,
+    reasoning,
+    vision,
+    embedding,
+    reranking,
+  });
 
-  if (sanitizedMmproj) {
-    entry.mmproj = sanitizedMmproj;
-  }
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: 'localhost',
+      port: cachedServerPort,
+      path: '/api/v1/pull',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(requestBody),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode >= 400) {
+            reject(new Error(parsed.error || `Server error: ${res.statusCode}`));
+            return;
+          }
+          resolve({
+            modelName: sanitizedName,
+            entry: {
+              checkpoint: sanitizedCheckpoint,
+              recipe: sanitizedRecipe,
+              suggested: true,
+            },
+          });
+        } catch (e) {
+          reject(new Error('Failed to parse server response'));
+        }
+      });
+    });
 
-  userModels[sanitizedName] = entry;
-  await fs.promises.mkdir(path.dirname(userModelsPath), { recursive: true });
-  await fs.promises.writeFile(
-    userModelsPath,
-    JSON.stringify(userModels, null, 2),
-    'utf-8'
-  );
+    req.on('error', (e) => {
+      reject(new Error(`Failed to connect to server: ${e.message}`));
+    });
 
-  notifyUserModelsUpdated();
-
-  return {
-    modelName: sanitizedName,
-    entry,
-  };
+    req.write(requestBody);
+    req.end();
+  });
 };
-
-ipcMain.handle('read-user-models', async () => {
-  return readUserModelsFile();
-});
-
-ipcMain.on('start-watch-user-models', (event) => {
-  subscribeToUserModels(event.sender);
-});
-
-ipcMain.on('stop-watch-user-models', (event) => {
-  unsubscribeFromUserModels(event.sender);
-});
 
 ipcMain.handle('add-user-model', async (_event, payload) => {
   return addUserModelEntry(payload);
