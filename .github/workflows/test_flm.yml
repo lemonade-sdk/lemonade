@@ -27,7 +27,7 @@ jobs:
     env:
         LEMONADE_CI_MODE: "True"
         PYTHONIOENCODING: utf-8
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
