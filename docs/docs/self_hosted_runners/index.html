@@ -1109,10 +1109,10 @@
 <p>If you need to do some maintenance on your laptop, use it for dev/demo work, etc. you can remove it from the runners pool.</p>
 <p>Also, if someone else's laptop is misbehaving and causing Actions to fail unexpectedly, you can remove that laptop from the runners pool to make sure that only healthy laptops are selected for work.</p>
 <p>There are three options:</p>
-<p>Option 1, which is available to anyone in the <code>lemonade-sdk</code> org: remove the <code>stx</code> label from the runner.
-- Workflows use <code>runs-on: stx</code> to target runners with the <code>stx</code> label. Removing this label from the runner will thus remove the runner from the pool.
-- Go to the <a href="https://github.com/organizations/lemonade-sdk/settings/actions/runners">runners page</a>, click the specific runner in question, click the gear icon in the Labels section, and uncheck <code>stx</code>.
-- To reverse this action later, go back to the <a href="https://github.com/organizations/lemonade-sdk/settings/actions/runners">runners page</a>, click the gear icon, and check <code>stx</code>.</p>
+<p>Option 1, which is available to anyone in the <code>lemonade-sdk</code> org: remove the <code>rai300_400</code> label from the runner.
+- Workflows use <code>runs-on: rai300_400</code> to target runners with the <code>rai300_400</code> label. Removing this label from the runner will thus remove the runner from the pool.
+- Go to the <a href="https://github.com/organizations/lemonade-sdk/settings/actions/runners">runners page</a>, click the specific runner in question, click the gear icon in the Labels section, and uncheck <code>rai300_400</code>.
+- To reverse this action later, go back to the <a href="https://github.com/organizations/lemonade-sdk/settings/actions/runners">runners page</a>, click the gear icon, and check <code>rai300_400</code>.</p>
 <p>Option 2, which requires physical/remote access to the laptop:
 - In a PowerShell terminal, run <code>Stop-Service "actions.runner.*"</code>.
 - To reverse this action, run <code>Start-Service "actions.runner.*"</code>.</p>
@@ -1130,7 +1130,7 @@
 </ul>
 </li>
 <li>Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include <code>on: pull request:</code> in your workflow until after a reviewer has signed off.</li>
-<li>Only map a workflow with <code>runs on: stx</code> if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-self-hosted runner like <code>runs on: windows-latest</code>.</li>
+<li>Only map a workflow with <code>runs on: rai300_400</code> if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-self-hosted runner like <code>runs on: windows-latest</code>.</li>
 <li>Be very considerate about installing software on to the runners:<ul>
 <li>Installing software into the CWD (e.g., a path of <code>.\</code>) is always ok, because that will end up in <code>C:\actions-runner\_work\REPO</code>, which is always wiped between tests.</li>
 <li>Installing software into <code>AppData</code>, <code>Program Files</code>, etc. is not advisable because that software will persist across tests. See the <a href="#npu-runner-setup">setup</a> section to see which software is already expected on the system.</li>
