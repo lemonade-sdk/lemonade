@@ -42,7 +42,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
     - Use a powershell administrator mode terminal
     - Enable permissions by running `Set-ExecutionPolicy RemoteSigned`
     - When running `./config.cmd` in step 2, make the following choices:
-         - Name of the runner group = `rai300_400`
+         - Name of the runner group = `stx`
          - For the runner name, call it `NAME-stx-NUMBER`, where NAME is your alias and NUMBER would tell you this is the Nth STX machine you've added.
          - Apply the label `stx-test` as well as a label with your name to indicate that you are maintaining the runner.
          - Accept the default for the work folder
@@ -50,7 +50,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
          - User account to use for the service = `NT AUTHORITY\SYSTEM` (not the default of `NT AUTHORITY\NETWORK SERVICE`)
     
 1. Follow the instructions here for Windows|Ubuntu, minding what we said in step 1: https://github.com/organizations/lemonade-sdk/settings/actions/runners/new
-1. You should see your runner show up in the `rai300_400` runner group in the lemonade-sdk org
+1. You should see your runner show up in the `stx` runner group in the lemonade-sdk org
 
 ### Runner Setup
 
@@ -63,7 +63,7 @@ These steps will use GitHub Actions to run automated setup and validation for yo
     - Expand the `Set up job` section and make sure `Runner name:` refers to your new runner. Otherwise, the job may have gone to someone else's runner in the test group. You can re-queue the workflow until it lands on your runner.
     - Wait for the workflow to finish successfully.
 1. Repeat step 1. Wait for it to finish successfully. Congrats, your new runner is working!
-1. Go to the rai300_400 Runner Group, click your new runner, and click the gear icon to change labels. Uncheck `stx-test` and check `rai300_400`.
+1. Go to the stx Runner Group, click your new runner, and click the gear icon to change labels. Uncheck `stx-test` and check `stx`.
 1. Done!
 
 ## Maintenance and Troubleshooting
