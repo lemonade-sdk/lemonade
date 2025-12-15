@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
           - backend: vulkan
-            runner: [stx, Windows]
+            runner: [rai300_400, Windows]
           - backend: rocm
             runner: [stx-halo, Windows]
 
@@ -114,7 +114,7 @@ jobs:
           - backend: rocm
             runner: [stx-halo, Linux]
           - backend: vulkan
-            runner: [stx, Linux]
+            runner: [rai300_400, Linux]
 
     runs-on: ${{ matrix.runner }}
     defaults:

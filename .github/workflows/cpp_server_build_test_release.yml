@@ -408,12 +408,12 @@ jobs:
           retention-days: 7
 
   # ========================================================================
-  # TEST JOBS - Run on stx-halo + Windows workers
+  # TEST JOBS - Run on Ryzen AI 300/400 Windows workers
   # ========================================================================
 
   test-exe-rai-hybrid-basics:
     name: Test .exe - Basic RAI Hybird Functionality
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
       - build-ryzenai-server
@@ -759,7 +759,7 @@ jobs:
 
   test-exe-flm:
     name: Test .exe - FLM
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -822,7 +822,7 @@ jobs:
 
   test-exe-llamacpp-vulkan:
     name: Test .exe - Llamacpp (Vulkan)
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -956,7 +956,7 @@ jobs:
 
   test-exe-rai-cpu:
     name: Test .exe - ryzenai-server CPU
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
       - build-ryzenai-server
@@ -1051,7 +1051,7 @@ jobs:
 
   test-exe-whisper:
     name: Test .exe - Whisper
-    runs-on: [stx, Windows]
+    runs-on: [rai300_400, Windows]
     needs: build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
@@ -1114,7 +1114,7 @@ jobs:
 
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
-    runs-on: [stx, Linux]
+    runs-on: [rai300_400, Linux]
     needs: build-lemonade-server-deb
     env:
       LEMONADE_CI_MODE: "True"
