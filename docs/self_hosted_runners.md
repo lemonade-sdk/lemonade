@@ -42,7 +42,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
     - Use a powershell administrator mode terminal
     - Enable permissions by running `Set-ExecutionPolicy RemoteSigned`
     - When running `./config.cmd` in step 2, make the following choices:
-         - Name of the runner group = `stx`
+         - Name of the runner group = `rai300_400`
          - For the runner name, call it `NAME-stx-NUMBER`, where NAME is your alias and NUMBER would tell you this is the Nth STX machine you've added.
          - Apply the label `stx-test` as well as a label with your name to indicate that you are maintaining the runner.
          - Accept the default for the work folder
@@ -50,7 +50,7 @@ These steps will place your machine in the `stx-test` pool, which is where we pu
          - User account to use for the service = `NT AUTHORITY\SYSTEM` (not the default of `NT AUTHORITY\NETWORK SERVICE`)
     
 1. Follow the instructions here for Windows|Ubuntu, minding what we said in step 1: https://github.com/organizations/lemonade-sdk/settings/actions/runners/new
-1. You should see your runner show up in the `stx` runner group in the lemonade-sdk org
+1. You should see your runner show up in the `rai300_400` runner group in the lemonade-sdk org
 
 ### Runner Setup
 
@@ -63,7 +63,7 @@ These steps will use GitHub Actions to run automated setup and validation for yo
     - Expand the `Set up job` section and make sure `Runner name:` refers to your new runner. Otherwise, the job may have gone to someone else's runner in the test group. You can re-queue the workflow until it lands on your runner.
     - Wait for the workflow to finish successfully.
 1. Repeat step 1. Wait for it to finish successfully. Congrats, your new runner is working!
-1. Go to the stx Runner Group, click your new runner, and click the gear icon to change labels. Uncheck `stx-test` and check `stx`.
+1. Go to the rai300_400 Runner Group, click your new runner, and click the gear icon to change labels. Uncheck `stx-test` and check `rai300_400`.
 1. Done!
 
 ## Maintenance and Troubleshooting
@@ -102,10 +102,10 @@ Also, if someone else's laptop is misbehaving and causing Actions to fail unexpe
 
 There are three options:
 
-Option 1, which is available to anyone in the `lemonade-sdk` org: remove the `stx` label from the runner.
-- Workflows use `runs-on: stx` to target runners with the `stx` label. Removing this label from the runner will thus remove the runner from the pool.
-- Go to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the specific runner in question, click the gear icon in the Labels section, and uncheck `stx`.
-- To reverse this action later, go back to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the gear icon, and check `stx`.
+Option 1, which is available to anyone in the `lemonade-sdk` org: remove the `rai300_400` label from the runner.
+- Workflows use `runs-on: rai300_400` to target runners with the `rai300_400` label. Removing this label from the runner will thus remove the runner from the pool.
+- Go to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the specific runner in question, click the gear icon in the Labels section, and uncheck `rai300_400`.
+- To reverse this action later, go back to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the gear icon, and check `rai300_400`.
 
 Option 2, which requires physical/remote access to the laptop:
 - In a PowerShell terminal, run `Stop-Service "actions.runner.*"`.
@@ -128,7 +128,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Place a 🌩️ emoji in the name of all of your self-host workflows, so that PR reviewers can see at a glance which workflows are using self-hosted resources.
     - Example: `name: Test Lemonade on NPU and Hybrid with OGA environment 🌩️`
 - Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include `on: pull request:` in your workflow until after a reviewer has signed off.
-- Only map a workflow with `runs on: stx` if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-self-hosted runner like `runs on: windows-latest`.
+- Only map a workflow with `runs on: rai300_400` if it actually requires Ryzen AI compute. If a step in your workflow can use generic compute (e.g., running a Hugging Face LLM on CPU), put that step on a generic non-self-hosted runner like `runs on: windows-latest`.
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#npu-runner-setup) section to see which software is already expected on the system.
