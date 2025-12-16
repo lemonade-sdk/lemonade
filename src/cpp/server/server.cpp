@@ -511,7 +511,25 @@ bool Server::is_running() const {
 nlohmann::json Server::create_model_not_found_error(const std::string& requested_model, const std::string& exception_msg) {
     nlohmann::json error_response;
     
-    // Start building the message
+    // First, check if this model exists but was filtered out due to system requirements
+    std::string filter_reason = model_manager_->get_model_filter_reason(requested_model);
+    
+    if (!filter_reason.empty()) {
+        // Model exists but is not available on this system
+        std::string message = "Model '" + requested_model + "' is not available on this system. " + filter_reason;
+        
+        error_response["error"] = {
+            {"message", message},
+            {"type", "model_not_supported"},
+            {"param", "model"},
+            {"code", "model_not_supported"},
+            {"requested_model", requested_model}
+        };
+        
+        return error_response;
+    }
+    
+    // Model doesn't exist at all - provide suggestions
     std::string message = "Model '" + requested_model + "' was not found. ";
     
     // Get available models and suggest some
@@ -528,7 +546,7 @@ nlohmann::json Server::create_model_not_found_error(const std::string& requested
         // Sort alphabetically for consistent output
         std::sort(model_names.begin(), model_names.end());
         
-        // Show up to 10 available models
+        // Show up to 3 available models
         const size_t max_suggestions = 3;
         size_t count = std::min(model_names.size(), max_suggestions);
         
