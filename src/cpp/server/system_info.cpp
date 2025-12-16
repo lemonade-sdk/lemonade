@@ -392,8 +392,12 @@ static std::string identify_rocm_arch_from_name(const std::string& device_name) 
     }
     
     // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 890m Graphics
-    if (device_lower.find("890m") != std::string::npos) {
+    // Radeon 820M / 840M / 860M / 880M / 890M Graphics
+    if (device_lower.find("820m") != std::string::npos ||
+        device_lower.find("840m") != std::string::npos ||
+        device_lower.find("860m") != std::string::npos ||
+        device_lower.find("880m") != std::string::npos ||
+        device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
     

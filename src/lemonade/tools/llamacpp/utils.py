@@ -37,6 +37,14 @@ def identify_rocm_arch_from_name(device_name: str) -> str | None:
     if any(halo_igpu in device_name_lower.lower() for halo_igpu in ["8050s", "8060s"]):
         return "gfx1151"
 
+    # STX Point iGPUs (gfx1150 architecture)
+    # Radeon 880M / 890M Graphics (and other 8xxM models in the 800M series)
+    if any(
+        point_igpu in device_name_lower.lower()
+        for point_igpu in ["860m", "870", "880m", "890m"]
+    ):
+        return "gfx1150"
+
     # Check dGPUs
     # RDNA4 GPUs (gfx120X architecture)
     # AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
