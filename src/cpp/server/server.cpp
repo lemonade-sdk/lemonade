@@ -87,10 +87,13 @@ Server::~Server() {
 }
 
 void Server::setup_routes(httplib::Server &web_server) {
-    // Add pre-routing handler to log ALL incoming requests
+    // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
-        std::cout.flush();
+        // Skip logging health checks to reduce log noise
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+            std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
+            std::cout.flush();
+        }
         return httplib::Server::HandlerResponse::Unhandled;
     });
     
@@ -443,9 +446,12 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 }
 
 void Server::setup_http_logger(httplib::Server &web_server) {
-    // Add request logging for ALL requests
+    // Add request logging for ALL requests (except health checks)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+        // Skip logging health checks to reduce log noise
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+            std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+        }
     });
 }
 
