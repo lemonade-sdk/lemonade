@@ -238,7 +238,17 @@ const fetchModels = async () => {
     
     // Handle both array format and object with data array
     const modelList = Array.isArray(data) ? data : data.data || [];
-    setModels(modelList);
+    
+    // Only update models if the list has changed to avoid re-rendering
+    // while the user is interacting with the dropdown
+    setModels(prevModels => {
+      const prevIds = prevModels.map(m => m.id).sort().join(',');
+      const newIds = modelList.map((m: Model) => m.id).sort().join(',');
+      if (prevIds === newIds) {
+        return prevModels; // No change, don't trigger re-render
+      }
+      return modelList;
+    });
     
     if (modelList.length > 0) {
       setSelectedModel(prev => prev || modelList[0].id);
