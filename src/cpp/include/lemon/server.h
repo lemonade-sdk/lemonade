@@ -78,8 +78,8 @@ private:
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
     
-    // Helper function to generate detailed model-not-found error responses
-    nlohmann::json create_model_not_found_error(const std::string& requested_model, const std::string& exception_msg);
+    // Helper function to generate detailed model error responses (not found, not supported, load failure)
+    nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
     
     int port_;
     std::string host_;
