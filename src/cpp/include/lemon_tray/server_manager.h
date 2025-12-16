@@ -54,7 +54,8 @@ public:
         int max_llm_models = 1,
         int max_embedding_models = 1,
         int max_reranking_models = 1,
-        int max_audio_models = 1
+        int max_audio_models = 1,
+        const std::string& extra_models_dir = ""
     );
     
     bool stop_server();
@@ -107,6 +108,7 @@ private:
     std::string log_level_;
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
+    std::string extra_models_dir_;
     std::string host_;
     int port_;
     int ctx_size_;

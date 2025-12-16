@@ -263,6 +263,169 @@ std::string ModelManager::get_hf_cache_dir() const {
 #endif
 }
 
+void ModelManager::set_extra_models_dir(const std::string& dir) {
+    extra_models_dir_ = dir;
+    
+    // Invalidate cache so discovered models are included on next access
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
+    
+    if (!extra_models_dir_.empty()) {
+        std::cout << "[ModelManager] Extra models directory set to: " << extra_models_dir_ << std::endl;
+    }
+}
+
+std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
+    std::map<std::string, ModelInfo> discovered;
+    
+    // If no extra models directory configured, return empty
+    if (extra_models_dir_.empty()) {
+        return discovered;
+    }
+    
+    if (!fs::exists(extra_models_dir_)) {
+        // Directory doesn't exist, return empty
+        return discovered;
+    }
+    
+    std::string search_dir = extra_models_dir_;
+    
+    std::cout << "[ModelManager] Scanning for GGUF models in: " << search_dir << std::endl;
+    
+    // Track which directories we've processed (for multimodal/multi-shard detection)
+    std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
+    std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
+    
+    // Recursively find all .gguf files
+    try {
+        for (const auto& entry : fs::recursive_directory_iterator(search_dir)) {
+            if (!entry.is_regular_file()) continue;
+            
+            std::string filename = entry.path().filename().string();
+            std::string filename_lower = to_lower(filename);
+            
+            if (!ends_with_ignore_case(filename, ".gguf")) continue;
+            
+            fs::path parent_dir = entry.path().parent_path();
+            
+            // Check if this file is directly in the search directory or in a subdirectory
+            if (parent_dir == fs::path(search_dir)) {
+                // Standalone file in the root of search directory
+                standalone_files.push_back(entry.path());
+            } else {
+                // File in a subdirectory - group by parent directory
+                dirs_with_gguf[parent_dir.string()].push_back(entry.path());
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ModelManager] Error scanning directory " << search_dir << ": " << e.what() << std::endl;
+        return discovered;
+    }
+    
+    // Process standalone files (single-file models)
+    for (const auto& gguf_path : standalone_files) {
+        std::string filename = gguf_path.filename().string();
+        
+        // Skip mmproj files - they're part of multimodal models
+        if (contains_ignore_case(filename, "mmproj")) continue;
+        
+        // Use exact filename as model name
+        std::string model_name = filename;
+        
+        ModelInfo info;
+        info.model_name = model_name;
+        info.checkpoint = gguf_path.string();  // Use full path as checkpoint
+        info.resolved_path = gguf_path.string();
+        info.recipe = "llamacpp";
+        info.suggested = true;
+        info.downloaded = true;
+        info.source = "extra_models_dir";
+        info.labels.push_back("custom");
+        
+        // Calculate size in GB
+        try {
+            uintmax_t file_size = fs::file_size(gguf_path);
+            info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+        } catch (...) {
+            info.size = 0.0;
+        }
+        
+        // Set type and device
+        info.type = ModelType::LLM;
+        info.device = get_device_type_from_recipe("llamacpp");
+        
+        discovered[model_name] = info;
+    }
+    
+    // Process directories (multimodal and multi-shard models)
+    for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
+        if (gguf_files.empty()) continue;
+        
+        fs::path dir = fs::path(dir_path);
+        std::string dir_name = dir.filename().string();
+        std::string model_name = dir_name;  // Use exact directory name
+        
+        // Find the main model file and mmproj file
+        fs::path main_model_path;
+        std::string mmproj_file;
+        double total_size = 0.0;
+        
+        for (const auto& gguf_path : gguf_files) {
+            std::string filename = gguf_path.filename().string();
+            
+            // Calculate total size
+            try {
+                uintmax_t file_size = fs::file_size(gguf_path);
+                total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+            } catch (...) {}
+            
+            // Check if this is an mmproj file (can be anywhere in filename)
+            if (contains_ignore_case(filename, "mmproj")) {
+                mmproj_file = filename;
+                continue;
+            }
+            
+            // This is a model file - for sharded models, we want the first shard
+            // For non-sharded, this is the only model file
+            if (main_model_path.empty() || gguf_path < main_model_path) {
+                main_model_path = gguf_path;
+            }
+        }
+        
+        if (main_model_path.empty()) {
+            // No main model file found (only mmproj?), skip
+            continue;
+        }
+        
+        ModelInfo info;
+        info.model_name = model_name;
+        info.checkpoint = dir_path;  // Use directory as checkpoint
+        info.resolved_path = main_model_path.string();  // First GGUF file as resolved path
+        info.recipe = "llamacpp";
+        info.suggested = true;
+        info.downloaded = true;
+        info.source = "extra_models_dir";
+        info.labels.push_back("custom");
+        info.size = total_size;
+        
+        // If mmproj found, set it and add vision label
+        if (!mmproj_file.empty()) {
+            info.mmproj = mmproj_file;
+            info.labels.push_back("vision");
+        }
+        
+        // Set type and device
+        info.type = get_model_type_from_labels(info.labels);
+        info.device = get_device_type_from_recipe("llamacpp");
+        
+        discovered[model_name] = info;
+    }
+    
+    std::cout << "[ModelManager] Discovered " << discovered.size() << " models from extra directory" << std::endl;
+    
+    return discovered;
+}
+
 std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
@@ -549,6 +712,18 @@ void ModelManager::build_cache() {
         
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
+    }
+    
+    // Step 1.5: Discover models from extra_models_dir
+    auto discovered_models = discover_extra_models();
+    for (const auto& [name, info] : discovered_models) {
+        // Check for conflicts with registered models
+        if (all_models.find(name) != all_models.end()) {
+            std::cout << "[ModelManager] Warning: Discovered model '" << name 
+                      << "' conflicts with registered model, skipping." << std::endl;
+            continue;
+        }
+        all_models[name] = info;
     }
     
     // Step 2: Filter by backend availability

@@ -51,13 +51,28 @@
 
 ### 1. **Where are models stored and how do I change that?**
 
-   Lemonade adheres to the Hugging Face Hub specification for storing models on your hard drive. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
+   Lemonade uses two model locations:
+
+   **Primary: Hugging Face Cache**
+   
+   Models downloaded through Lemonade are stored using the Hugging Face Hub specification. By default, models are located at `~/.cache/huggingface/hub/`, where `~` is your home directory.
 
    For example, `Qwen/Qwen2.5-0.5B` is stored at `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B`.
 
    You can change this location by setting the `HF_HOME` env var, which will store your models in `$HF_HOME/hub` (e.g., `$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B`). Alternatively, you can set `HF_HUB_CACHE` and your models will be in `$HF_HUB_CACHE` (e.g., `$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B`).
 
    You can use the official Hugging Face Hub utility (`pip install huggingface-hub`) to manage models outside of Lemonade, e.g., `hf cache ls` will print all models and their sizes.
+
+   **Secondary: Extra Models Directory (GGUF)**
+
+   Lemonade Server can discover GGUF models from a secondary directory using the `--extra-models-dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
+   
+   - **Windows:** `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
+   - **Linux/macOS:** `~/.cache/llama.cpp`
+
+   Example: `lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"`
+
+   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list using their exact filename (e.g., `Qwen3-8B-Q4_K_M.gguf`).
 
 ### 2. **What models are supported?**
 
