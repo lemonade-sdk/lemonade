@@ -391,6 +391,12 @@ static std::string identify_rocm_arch_from_name(const std::string& device_name) 
         return "gfx1151";
     }
     
+    // STX Point iGPUs (gfx1150 architecture)
+    // Radeon 8090M Graphics
+    if (device_lower.find("8090m") != std::string::npos) {
+        return "gfx1150";
+    }
+    
     // RDNA4 GPUs (gfx120X architecture)
     // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
     // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
