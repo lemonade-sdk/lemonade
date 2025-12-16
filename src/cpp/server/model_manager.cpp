@@ -865,6 +865,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     
     std::map<std::string, ModelInfo> filtered;
     
+    // Clear the filtered-out models cache (will be repopulated below)
+    filtered_out_models_.clear();
+    
     // Detect platform
 #ifdef __APPLE__
     bool is_macos = true;
@@ -887,6 +890,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
     double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
+    
+    // Get processor and OS for user-friendly error messages
+    std::string processor = "Unknown";
+    std::string os_version = "Unknown";
+    if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
+        processor = system_info["Processor"].get<std::string>();
+    }
+    if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
+        os_version = system_info["OS Version"].get<std::string>();
+    }
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
@@ -912,28 +925,41 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (recipe == "flm") {
             if (!flm_available) {
                 filter_out = true;
-                filter_reason = "FLM not available";
+                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
+                               "Detected processor: " + processor + ". "
+                               "Detected operating system: " + os_version + ".";
             }
         }
         
         // Filter OGA models based on NPU availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
+        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
             if (!oga_available) {
                 filter_out = true;
-                filter_reason = "OGA not available";
+                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
+                               "Detected processor: " + processor + ". "
+                               "Detected operating system: " + os_version + ".";
             }
+        }
+        
+        // OGA-CPU models
+        if (recipe == "oga-cpu" && !oga_available) {
+            filter_out = true;
+            filter_reason = "OGA-CPU models require AMD Ryzen AI 300- and 400-series processors running Windows 11. "
+                           "Detected processor: " + processor + ". "
+                           "Detected operating system: " + os_version + ".";
         }
         
         // Filter out other OGA models (not yet implemented)
         if (recipe == "oga-igpu") {
             filter_out = true;
-            filter_reason = "oga-igpu not implemented";
+            filter_reason = "The oga-igpu recipe is not yet implemented in this version of Lemonade Server.";
         }
         
         // On macOS, only show llamacpp models
         if (is_macos && recipe != "llamacpp") {
             filter_out = true;
-            filter_reason = "macOS only supports llamacpp";
+            filter_reason = "This model uses the '" + recipe + "' recipe which is not supported on macOS. "
+                           "Only llamacpp models are supported on macOS.";
         }
         
         // Filter out models that are too large for system RAM
@@ -941,18 +967,29 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
-                filter_reason = "Model too large for system RAM";
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(1);
+                oss << "This model requires approximately " << info.size << " GB of memory, "
+                    << "but your system only has " << system_ram_gb << " GB of RAM. "
+                    << "Models larger than " << max_model_size_gb << " GB (80% of system RAM) are filtered out.";
+                filter_reason = oss.str();
             }
         }
         
         // Special rule: filter out gpt-oss-20b-FLM on systems with less than 64 GB RAM
         if (!filter_out && name == "gpt-oss-20b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
             filter_out = true;
-            filter_reason = "gpt-oss-20b-FLM requires 64 GB RAM";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "The gpt-oss-20b-FLM model requires at least 64 GB of RAM. "
+                << "Your system has " << system_ram_gb << " GB.";
+            filter_reason = oss.str();
         }
         
         if (filter_out) {
             filtered_count++;
+            // Store the filter reason for later lookup
+            filtered_out_models_[name] = filter_reason;
             continue;
         }
         
@@ -1954,6 +1991,77 @@ bool ModelManager::model_exists(const std::string& model_name) {
     // O(1) lookup in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     return models_cache_.find(model_name) != models_cache_.end();
+}
+
+bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
+    // Check raw server_models_ JSON (before filtering)
+    if (server_models_.contains(model_name)) {
+        return true;
+    }
+    // Also check user models
+    if (user_models_.contains(model_name)) {
+        return true;
+    }
+    return false;
+}
+
+ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
+    ModelInfo info;
+    
+    // Check server models first
+    json* model_json = nullptr;
+    if (server_models_.contains(model_name)) {
+        model_json = &server_models_[model_name];
+    } else if (user_models_.contains(model_name)) {
+        model_json = &user_models_[model_name];
+    }
+    
+    if (!model_json) {
+        throw std::runtime_error("Model not found in registry: " + model_name);
+    }
+    
+    // Parse model info from JSON
+    info.model_name = model_name;
+    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
+    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    
+    // Parse labels array
+    if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
+        for (const auto& label : (*model_json)["labels"]) {
+            if (label.is_string()) {
+                info.labels.push_back(label.get<std::string>());
+            }
+        }
+    }
+    
+    // Parse size
+    if (model_json->contains("size")) {
+        if ((*model_json)["size"].is_number()) {
+            info.size = (*model_json)["size"].get<double>();
+        }
+    }
+    
+    return info;
+}
+
+std::string ModelManager::get_model_filter_reason(const std::string& model_name) {
+    // Ensure cache is built (this populates filtered_out_models_)
+    build_cache();
+    
+    // Look up in the filtered-out models cache
+    // This is populated by filter_models_by_backend() during cache building
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    auto it = filtered_out_models_.find(model_name);
+    if (it != filtered_out_models_.end()) {
+        return it->second;
+    }
+    
+    // Model wasn't filtered out (either it's available or doesn't exist)
+    return "";
 }
 
 } // namespace lemon
