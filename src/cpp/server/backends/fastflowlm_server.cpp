@@ -363,11 +363,12 @@ std::string FastFlowLMServer::get_flm_installed_version() {
     }
     
     try {
-        // Run flm --version command and capture output
+        // Run flm --version command using the full path (not relying on PATH)
+        std::string command = "\"" + flm_path + "\" --version 2>&1";
 #ifdef _WIN32
-        FILE* pipe = _popen("flm --version 2>&1", "r");
+        FILE* pipe = _popen(command.c_str(), "r");
 #else
-        FILE* pipe = popen("flm --version 2>&1", "r");
+        FILE* pipe = popen(command.c_str(), "r");
 #endif
         if (!pipe) {
             return "";
@@ -385,11 +386,11 @@ std::string FastFlowLMServer::get_flm_installed_version() {
         pclose(pipe);
 #endif
         
-        // Parse output like "FLM v0.9.23" or just "v0.9.23"
-        // Look for version pattern with 'v' prefix
-        size_t pos = output.find("v");
+        // Parse output like "FLM v0.9.23" - look for "FLM v" specifically
+        // to avoid matching 'v' in other text (like error messages)
+        size_t pos = output.find("FLM v");
         if (pos != std::string::npos) {
-            std::string version_str = output.substr(pos);
+            std::string version_str = output.substr(pos + 4);  // Skip "FLM "
             // Remove trailing whitespace and newlines
             size_t end = version_str.find_first_of(" \n\r\t");
             if (end != std::string::npos) {
