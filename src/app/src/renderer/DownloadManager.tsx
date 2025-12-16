@@ -97,6 +97,10 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     if (speed === 0) return '--';
     
     const remainingBytes = download.bytesTotal - download.bytesDownloaded;
+    
+    // Handle edge case where bytesDownloaded > bytesTotal (incomplete byte tracking)
+    if (remainingBytes <= 0) return '--';
+    
     const remainingSeconds = remainingBytes / speed;
     
     if (remainingSeconds < 60) {

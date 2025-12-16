@@ -86,7 +86,10 @@ class DownloadTracker {
 
     // If we moved to a new file, add the previous file's size to completed bytes
     if (progress.file_index > download.fileIndex) {
-      const previousFileSize = cumulative.fileSizes.get(download.fileIndex) || download.bytesTotal;
+      // Only add the previous file's size if we have it tracked
+      // Use 0 as fallback - if we never got byte data for a file, we can't count it
+      // Note: download.bytesTotal is the CUMULATIVE total, not the individual file size!
+      const previousFileSize = cumulative.fileSizes.get(download.fileIndex) || 0;
       cumulative.completedFilesBytes += previousFileSize;
     }
 
@@ -108,13 +111,21 @@ class DownloadTracker {
     } else {
       overallPercent = 0;
     }
+    
+    // Cap percentage at 100% to handle edge cases where byte tracking is incomplete
+    overallPercent = Math.min(overallPercent, 100);
+    
+    // Cap bytesDownloaded to not exceed bytesTotal for display consistency
+    const displayBytesDownloaded = cumulativeBytesTotal > 0 
+      ? Math.min(cumulativeBytesDownloaded, cumulativeBytesTotal) 
+      : cumulativeBytesDownloaded;
 
     const updatedDownload: DownloadItem = {
       ...download,
       fileName: progress.file,
       fileIndex: progress.file_index,
       totalFiles: progress.total_files,
-      bytesDownloaded: cumulativeBytesDownloaded,
+      bytesDownloaded: displayBytesDownloaded,
       bytesTotal: cumulativeBytesTotal,
       percent: overallPercent,
     };
