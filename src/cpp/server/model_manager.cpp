@@ -757,6 +757,35 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     }
 }
 
+void ModelManager::refresh_flm_download_status() {
+    // Get fresh list of installed FLM models
+    // This is called on every get_supported_models() to ensure FLM status is up-to-date
+    // since users can install/uninstall FLM models outside of lemonade
+    auto flm_models = get_flm_installed_models();
+    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
+    
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return;  // Cache will be built fresh on next access
+    }
+    
+    // Update download status for all FLM models in cache
+    for (auto& [name, info] : models_cache_) {
+        if (info.recipe == "flm") {
+            bool was_downloaded = info.downloaded;
+            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            
+            // Log changes for debugging
+            if (was_downloaded != info.downloaded) {
+                std::cout << "[ModelManager] FLM status changed: " << name 
+                          << " (checkpoint: " << info.checkpoint << ") -> " 
+                          << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
+            }
+        }
+    }
+}
+
 std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();

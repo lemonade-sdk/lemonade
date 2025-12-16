@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.0)
+project(lemon_cpp VERSION 9.1.1)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
