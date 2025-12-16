@@ -101,6 +101,9 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
     
+    // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
+    void refresh_flm_download_status();
+    
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
     
