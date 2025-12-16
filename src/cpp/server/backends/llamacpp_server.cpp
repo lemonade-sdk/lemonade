@@ -163,56 +163,6 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
-// Helper to identify ROCm architecture from GPU name
-static std::string identify_rocm_arch_from_name(const std::string& device_name) {
-    std::string device_lower = device_name;
-    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
-    
-    if (device_lower.find("radeon") == std::string::npos) {
-        return "";
-    }
-    
-    // STX Halo iGPUs (gfx1151 architecture)
-    // Radeon 8050S Graphics / Radeon 8060S Graphics
-    if (device_lower.find("8050s") != std::string::npos || 
-        device_lower.find("8060s") != std::string::npos) {
-        return "gfx1151";
-    }
-    
-    // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 820M / 840M / 860M / 880M / 890M Graphics
-    if (device_lower.find("820m") != std::string::npos ||
-        device_lower.find("840m") != std::string::npos ||
-        device_lower.find("860m") != std::string::npos ||
-        device_lower.find("880m") != std::string::npos ||
-        device_lower.find("890m") != std::string::npos) {
-        return "gfx1150";
-    }
-    
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
-    if (device_lower.find("r9700") != std::string::npos ||
-        device_lower.find("9060") != std::string::npos ||
-        device_lower.find("9070") != std::string::npos) {
-        return "gfx120X";
-    }
-    
-    // RDNA3 GPUs (gfx110X architecture)
-    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
-    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
-    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
-    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
-    if (device_lower.find("7700") != std::string::npos ||
-        device_lower.find("7800") != std::string::npos ||
-        device_lower.find("7900") != std::string::npos ||
-        device_lower.find("v710") != std::string::npos) {
-        return "gfx110X";
-    }
-    
-    return "";
-}
-
 // Helper to identify ROCm architecture from system
 static std::string identify_rocm_arch() {
     // Try to detect GPU architecture, default to gfx110X on any failure

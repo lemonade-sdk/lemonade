@@ -375,8 +375,8 @@ bool SystemInfo::check_vulkan_support() {
     return false;
 }
 
-// Helper to identify ROCm architecture from GPU name (same logic as llamacpp_server.cpp)
-static std::string identify_rocm_arch_from_name(const std::string& device_name) {
+// Helper to identify ROCm architecture from GPU name
+std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
     
