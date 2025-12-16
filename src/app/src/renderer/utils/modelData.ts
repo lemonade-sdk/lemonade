@@ -102,30 +102,6 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   return normalized;
 };
 
-const loadUserModelsFromCache = async (): Promise<ModelsData> => {
-  if (typeof window === 'undefined' || !window.api?.readUserModels) {
-    return {};
-  }
-
-  try {
-    const raw = await window.api.readUserModels();
-    if (!isRecord(raw)) {
-      return {};
-    }
-
-    return Object.entries(raw).reduce((acc, [modelName, modelInfo]) => {
-      const normalized = normalizeModelInfo(modelInfo);
-      if (normalized) {
-        acc[`${USER_MODEL_PREFIX}${modelName}`] = normalized;
-      }
-      return acc;
-    }, {} as ModelsData);
-  } catch (error) {
-    console.error('Failed to load user models from cache:', error);
-    return {};
-  }
-};
-
 const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
   const { serverFetch } = await import('./serverConfig');
   
@@ -193,15 +169,9 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  const [builtInModels, userModels] = await Promise.all([
-    fetchBuiltInModelsFromAPI(),
-    loadUserModelsFromCache(),
-  ]);
-  
-  return {
-    ...builtInModels,
-    ...userModels,
-  };
+  // Server is the source of truth for all models (including user models)
+  // The /models?show_all=true endpoint returns both built-in and user models
+  return fetchBuiltInModelsFromAPI();
 };
 
 

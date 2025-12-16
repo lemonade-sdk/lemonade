@@ -253,19 +253,16 @@ const fetchSupportedModels = useCallback(async () => {
   }
 }, []);
 
+// Listen for modelsUpdated events from ModelManager
 useEffect(() => {
-  if (!window.api?.watchUserModels) {
-    return;
-  }
-
-  const stopWatching = window.api.watchUserModels(() => {
+  const handleModelsUpdated = () => {
     fetchSupportedModels();
-  });
+  };
+
+  window.addEventListener('modelsUpdated', handleModelsUpdated);
 
   return () => {
-    if (typeof stopWatching === 'function') {
-      stopWatching();
-    }
+    window.removeEventListener('modelsUpdated', handleModelsUpdated);
   };
 }, [fetchSupportedModels]);
 

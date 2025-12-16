@@ -1292,6 +1292,12 @@ footer {
     color: #666;
 }
 
+.form-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #1a1a1a;
+}
+
 .form-select {
     cursor: pointer;
     appearance: none;
@@ -1340,6 +1346,16 @@ footer {
     accent-color: #4a4a4a;
 }
 
+.checkbox-label input[type="checkbox"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.checkbox-label:has(input:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .checkbox-label span {
     user-select: none;
 }
@@ -1374,6 +1390,19 @@ footer {
     border-color: #3a3a3a;
 }
 
+.install-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    border-color: #2a2a2a;
+    color: #555;
+}
+
+.install-button:disabled:hover {
+    background: transparent;
+    border-color: #2a2a2a;
+    color: #555;
+}
+
 .cancel-button {
     flex: 1;
     padding: 5px 10px;
@@ -1396,6 +1425,17 @@ footer {
 .cancel-button:focus {
     outline: none;
     border-color: #3a3a3a;
+}
+
+.cancel-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cancel-button:disabled:hover {
+    background: transparent;
+    border-color: #2a2a2a;
+    color: #777;
 }
 
 /* Chat Window Styles */
