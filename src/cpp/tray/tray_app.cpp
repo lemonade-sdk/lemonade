@@ -1788,7 +1788,7 @@ Menu TrayApp::create_menu() {
         bool is_current = (size == config_.ctx_size);
         ctx_submenu->add_item(MenuItem::Checkable(
             "Context size " + label,
-            [this, size]() { on_change_context_size(size); },
+            [this, size = size]() { on_change_context_size(size); },
             is_current
         ));
     }
@@ -2131,6 +2131,7 @@ bool TrayApp::find_electron_app() {
     // The Electron app has exactly two possible locations:
     // 1. Production (WIX installer): ../app/ relative to bin/ directory
     // 2. Development: same directory (copied by CopyElectronApp.cmake)
+    // 3. Linux production: /usr/local/share/lemonade-server/app/lemonade
     
 #ifdef _WIN32
     constexpr const char* exe_name = "Lemonade.exe";
@@ -2138,6 +2139,19 @@ bool TrayApp::find_electron_app() {
     constexpr const char* exe_name = "Lemonade.app";
 #else
     constexpr const char* exe_name = "lemonade";
+#endif
+    
+#if defined(__linux__)
+    // On Linux, check the production installation path first
+    // If the executable is in /usr/local/bin, the app is in /usr/local/share/lemonade-server/app/
+    if (exe_dir == "/usr/local/bin") {
+        fs::path linux_production_path = fs::path("/usr/local/share/lemonade-server/app") / exe_name;
+        if (fs::exists(linux_production_path)) {
+            electron_app_path_ = fs::canonical(linux_production_path).string();
+            std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+            return true;
+        }
+    }
 #endif
     
     // Check production path first (most common case)
@@ -2499,6 +2513,3 @@ void TrayApp::tail_log_to_console() {
 }
 
 } // namespace lemon_tray
-
-
-

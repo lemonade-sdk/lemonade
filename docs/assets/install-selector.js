@@ -1,711 +1,357 @@
-// Lemonade Install Selector - Shared JavaScript
-// Updated allowlist based on clarified compatibility
-const lmnAllowlist = [
-  // Installer (Windows and Linux)
-  // Windows installer: OGA (NPU, CPU), llama.cpp (CPU, GPU), FastFlowLM (NPU)
-  {os:'win', method:'gui', fw:'oga', dev:'npu'},
-  {os:'win', method:'gui', fw:'oga', dev:'cpu'},
-  {os:'win', method:'gui', fw:'llama', dev:'cpu'},
-  {os:'win', method:'gui', fw:'llama', dev:'gpu'},
-  // Linux .deb installer: llama.cpp (CPU, GPU) only
-  {os:'linux', method:'gui', fw:'llama', dev:'cpu'},
-  {os:'linux', method:'gui', fw:'llama', dev:'gpu'},
-  // PyPI and From Source (Windows & Linux)
-  // OGA: NPU, CPU
-  {os:'win', method:'pypi', fw:'oga', dev:'npu'},
-  {os:'win', method:'pypi', fw:'oga', dev:'cpu'},
-  {os:'linux', method:'pypi', fw:'oga', dev:'cpu'},
-  {os:'win', method:'src', fw:'oga', dev:'npu'},
-  {os:'win', method:'src', fw:'oga', dev:'cpu'},
-  {os:'linux', method:'src', fw:'oga', dev:'cpu'},
-  // PyTorch: CPU only (GPU removed)
-  {os:'win', method:'pypi', fw:'torch', dev:'cpu'},
-  {os:'linux', method:'pypi', fw:'torch', dev:'cpu'},
-  {os:'win', method:'src', fw:'torch', dev:'cpu'},
-  {os:'linux', method:'src', fw:'torch', dev:'cpu'},
-  // llama.cpp: CPU, GPU
-  {os:'win', method:'pypi', fw:'llama', dev:'cpu'},
-  {os:'win', method:'pypi', fw:'llama', dev:'gpu'},
-  {os:'linux', method:'pypi', fw:'llama', dev:'cpu'},
-  {os:'linux', method:'pypi', fw:'llama', dev:'gpu'},
-  {os:'win', method:'src', fw:'llama', dev:'cpu'},
-  {os:'win', method:'src', fw:'llama', dev:'gpu'},
-  {os:'linux', method:'src', fw:'llama', dev:'cpu'},
-  {os:'linux', method:'src', fw:'llama', dev:'gpu'},
-  // FastFlowLM: NPU only (Windows only)
-  {os:'win', method:'gui', fw:'flm', dev:'npu'},
-  {os:'win', method:'pypi', fw:'flm', dev:'npu'},
-  {os:'win', method:'src', fw:'flm', dev:'npu'},
-  // macOS: llama.cpp only (Apple Silicon, macOS 14+)
-  {os:'macos', method:'pypi', fw:'llama', dev:'cpu'},
-  {os:'macos', method:'pypi', fw:'llama', dev:'gpu'},
-  {os:'macos', method:'src', fw:'llama', dev:'cpu'},
-  {os:'macos', method:'src', fw:'llama', dev:'gpu'},
+// Lemonade Install Selector - Clean Rewrite
+// Supports: Windows/Linux, App+Server/ServerOnly, OGA/llama.cpp/FastFlowLM, NPU/GPU/CPU
+
+const ALLOWLIST = [
+  // Windows: OGA (NPU, CPU), llama.cpp (CPU, GPU), FastFlowLM (NPU)
+  { os: 'win', fw: 'oga', dev: 'npu' },
+  { os: 'win', fw: 'oga', dev: 'cpu' },
+  { os: 'win', fw: 'llama', dev: 'cpu' },
+  { os: 'win', fw: 'llama', dev: 'gpu' },
+  { os: 'win', fw: 'flm', dev: 'npu' },
+  // Linux: llama.cpp only (CPU, GPU)
+  { os: 'linux', fw: 'llama', dev: 'cpu' },
+  { os: 'linux', fw: 'llama', dev: 'gpu' },
 ];
 
-const lmnAlwaysEnabledMethod = ['pypi', 'src'];
+const NPU_DRIVER_URL = 'https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip';
+const GITHUB_RELEASES_API = 'https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest';
 
-window.lmnState = { os: 'win', type: 'server', method: 'gui', fw: 'oga', dev: 'npu' };
+// State: os, type, fw, dev, latestVersion
+window.lmnState = { os: 'win', type: 'app', fw: 'oga', dev: 'npu' };
+window.lmnLatestVersion = null;
 
-function lmnIsAllowed(os, method, fw, dev, type) {
-  // PyTorch not allowed for Server (C++)
-  if (type === 'server' && fw === 'torch') return false;
-  // PyPI not allowed for Server (C++) - only for Python SDK
-  if (type === 'server' && method === 'pypi') return false;
-  // Installer not allowed for Python SDK
-  if (type === 'full' && method === 'gui') return false;
-  // Installer only for Windows and Linux when Server (C++)
-  if (method === 'gui' && os !== 'win' && os !== 'linux') return false;
-  // Otherwise use allowlist
-  return lmnAllowlist.some(c => c.os === os && c.method === method && c.fw === fw && c.dev === dev);
+// Fetch latest version from GitHub
+async function fetchLatestVersion() {
+  try {
+    const response = await fetch(GITHUB_RELEASES_API);
+    const data = await response.json();
+    // tag_name is like "v1.2.3" or "1.2.3"
+    window.lmnLatestVersion = data.tag_name.replace(/^v/, '');
+    lmnRender(); // Re-render with version
+  } catch (e) {
+    console.warn('Failed to fetch latest version:', e);
+    window.lmnLatestVersion = 'VERSION'; // Fallback placeholder
+  }
 }
 
-function lmnFindClosestValid(newState) {
-  // Try to find a valid combination with the changed field, prefer keeping other fields the same
-  let candidates = lmnAllowlist.filter(c => {
-    for (let k in newState) {
-      if (newState[k] !== undefined && c[k] !== newState[k]) return false;
-    }
-    return true;
-  });
-  if (candidates.length > 0) return candidates[0];
-  // If not found, relax one field at a time (priority: method, fw, dev, os)
-  const keys = ['method','fw','dev','os'];
-  for (let i=0; i<keys.length; ++i) {
-    let relaxed = {...newState};
-    delete relaxed[keys[i]];
-    candidates = lmnAllowlist.filter(c => {
-      for (let k in relaxed) {
-        if (relaxed[k] !== undefined && c[k] !== relaxed[k]) return false;
-      }
-      return true;
-    });
-    if (candidates.length > 0) return candidates[0];
-  }
-  // Fallback: first allowlist entry for the current type/os
-  if (newState.type) {
-    let fallback = lmnAllowlist.find(c => c.os === newState.os);
-    if (fallback) return fallback;
-  }
-  return lmnAllowlist[0];
+function isAllowed(os, fw, dev) {
+  return ALLOWLIST.some(c => c.os === os && c.fw === fw && c.dev === dev);
 }
 
-window.lmnSet = function(type, val) {
-  let newState = {...lmnState, [type]: val};
+function findValidCombo(os, fw, dev) {
+  // Try exact match first
+  if (isAllowed(os, fw, dev)) return { os, fw, dev };
   
-  // Handle special cases first
-  if (type === 'fw' && val === 'torch') {
-    // PyTorch only works with Python SDK, so force that
-    newState.type = 'full';
-  } else if (type === 'method' && val === 'gui') {
-    // Installer only works with Server (C++), so force that
-    newState.type = 'server';
-  } else if (type === 'type' && val === 'server' && newState.fw === 'torch') {
-    // If switching to Server (C++) but PyTorch is selected, switch to OGA
-    newState.fw = 'oga';
-  } else if (type === 'type' && val === 'full' && newState.method === 'gui') {
-    // If switching to Python SDK but Installer is selected, switch to From Source
-    newState.method = 'src';
-  } else if (type === 'method' && val === 'pypi') {
-    // PyPI only works with Python SDK, so force that
-    newState.type = 'full';
-  } else if (type === 'os' && val === 'macos' && newState.type === 'server') {
-    // Server (C++) not available on macOS, switch to Python SDK
-    newState.type = 'full';
-  } else if (type === 'type' && val === 'server' && newState.os === 'macos') {
-    // If trying to select Server (C++) on macOS, switch to Windows
-    newState.os = 'win';
+  // Try keeping fw, find valid dev
+  for (const d of ['npu', 'gpu', 'cpu']) {
+    if (isAllowed(os, fw, d)) return { os, fw, dev: d };
   }
   
-  // Always ensure the clicked option is selected in the resulting state
-  if (!lmnIsAllowed(newState.os, newState.method, newState.fw, newState.dev, newState.type)) {
-    // Find the first valid combination that includes the user's chosen value for the changed type
-    let candidates = lmnAllowlist.filter(c => {
-      if (type === 'os' && c.os !== val) return false;
-      if (type === 'method' && c.method !== val) return false;
-      if (type === 'fw' && c.fw !== val) return false;
-      if (type === 'dev' && c.dev !== val) return false;
-      // Respect type restrictions (use the potentially updated type)
-      if (!lmnIsAllowed(c.os, c.method, c.fw, c.dev, newState.type)) return false;
-      return true;
-    });
-    
-    if (candidates.length > 0) {
-      // When switching OS and NPU was selected, prefer GPU over CPU
-      let fallback = candidates[0];
-      if (type === 'os' && lmnState.dev === 'npu') {
-        let gpuCandidate = candidates.find(c => c.dev === 'gpu');
-        if (gpuCandidate) fallback = gpuCandidate;
-      }
-      // When switching inference engine from NPU, prefer GPU over CPU
-      if (type === 'fw' && lmnState.dev === 'npu') {
-        let gpuCandidate = candidates.find(c => c.dev === 'gpu');
-        if (gpuCandidate) fallback = gpuCandidate;
-      }
-      // Compose new state with the user's intent, keeping the clicked value
-      newState = {
-        os: (type === 'os' ? val : fallback.os),
-        type: newState.type, // Keep the potentially updated type
-        method: (type === 'method' ? val : fallback.method),
-        fw: (type === 'fw' ? val : fallback.fw),
-        dev: (type === 'dev' ? val : fallback.dev)
-      };
-    } else {
-      // Fallback: find any valid combination for the current OS and updated type
-      let osFallback = lmnAllowlist.find(c => c.os === newState.os && lmnIsAllowed(c.os, c.method, c.fw, c.dev, newState.type));
-      if (osFallback) {
-        newState = {
-          os: newState.os,
-          type: newState.type,
-          method: (type === 'method' ? val : osFallback.method),
-          fw: (type === 'fw' ? val : osFallback.fw),
-          dev: (type === 'dev' ? val : osFallback.dev)
-        };
-      } else {
-        // Last resort: use first allowlist entry but keep user's choice
-        let lastResort = lmnAllowlist[0];
-        newState = {
-          os: (type === 'os' ? val : lastResort.os),
-          type: newState.type,
-          method: (type === 'method' ? val : lastResort.method),
-          fw: (type === 'fw' ? val : lastResort.fw),
-          dev: (type === 'dev' ? val : lastResort.dev)
-        };
-      }
-    }
+  // Try keeping dev, find valid fw
+  for (const f of ['oga', 'llama', 'flm']) {
+    if (isAllowed(os, f, dev)) return { os, fw: f, dev };
   }
   
-  window.lmnState = {...newState};
+  // Fall back to first valid combo for this OS
+  const fallback = ALLOWLIST.find(c => c.os === os);
+  return fallback || ALLOWLIST[0];
+}
+
+window.lmnSet = function(field, value) {
+  const newState = { ...lmnState, [field]: value };
+  
+  // OS change may invalidate fw/dev combo
+  if (field === 'os') {
+    const valid = findValidCombo(value, newState.fw, newState.dev);
+    newState.fw = valid.fw;
+    newState.dev = valid.dev;
+  }
+  // fw/dev change - validate
+  else if (field === 'fw' || field === 'dev') {
+    const valid = findValidCombo(newState.os, newState.fw, newState.dev);
+    newState.fw = valid.fw;
+    newState.dev = valid.dev;
+  }
+  
+  window.lmnState = newState;
   lmnRender();
 };
 
 window.lmnRender = function() {
-  // Reset all
-  ['os-win','os-linux','os-macos','type-server','type-full','method-gui','method-pypi','method-src','fw-oga','fw-torch','fw-llama','fw-flm','dev-npu','dev-cpu','dev-gpu'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) {
-      el.className = '';
-      el.onclick = null;
-    }
-  });
-  // Set click handlers for all options
-  var osWin = document.getElementById('os-win');
-  if (osWin) osWin.onclick = function() { lmnSet('os','win'); };
-  var osLinux = document.getElementById('os-linux');
-  if (osLinux) osLinux.onclick = function() { lmnSet('os','linux'); };
-  var osMacOS = document.getElementById('os-macos');
-  if (osMacOS) osMacOS.onclick = function() { lmnSet('os','macos'); };
-  var typeServer = document.getElementById('type-server');
-  if (typeServer) typeServer.onclick = function() { lmnSet('type','server'); };
-  var typeFull = document.getElementById('type-full');
-  if (typeFull) typeFull.onclick = function() { lmnSet('type','full'); };
-  var methodGui = document.getElementById('method-gui');
-  if (methodGui) methodGui.onclick = function() { lmnSet('method','gui'); };
-  var methodPypi = document.getElementById('method-pypi');
-  if (methodPypi) methodPypi.onclick = function() { lmnSet('method','pypi'); };
-  var methodSrc = document.getElementById('method-src');
-  if (methodSrc) methodSrc.onclick = function() { lmnSet('method','src'); };
-  var fwOga = document.getElementById('fw-oga');
-  if (fwOga) fwOga.onclick = function() { lmnSet('fw','oga'); };
-  var fwTorch = document.getElementById('fw-torch');
-  if (fwTorch) fwTorch.onclick = function() { lmnSet('fw','torch'); };
-  var fwLlama = document.getElementById('fw-llama');
-  if (fwLlama) fwLlama.onclick = function() { lmnSet('fw','llama'); };
-  var fwFlm = document.getElementById('fw-flm');
-  if (fwFlm) fwFlm.onclick = function() { lmnSet('fw','flm'); };
-  var devNpu = document.getElementById('dev-npu');
-  if (devNpu) devNpu.onclick = function() { lmnSet('dev','npu'); };
-  var devCpu = document.getElementById('dev-cpu');
-  if (devCpu) devCpu.onclick = function() { lmnSet('dev','cpu'); };
-  var devGpu = document.getElementById('dev-gpu');
-  if (devGpu) devGpu.onclick = function() { lmnSet('dev','gpu'); };
-
-  // Highlight active
-  var osElement = document.getElementById('os-'+lmnState.os);
-  if (osElement) osElement.classList.add('lmn-active');
-  var typeElement = document.getElementById('type-'+lmnState.type);
-  if (typeElement) typeElement.classList.add('lmn-active');
-  var methodElement = document.getElementById('method-'+lmnState.method);
-  if (methodElement) methodElement.classList.add('lmn-active');
-  var fwElement = document.getElementById('fw-'+lmnState.fw);
-  if (fwElement) fwElement.classList.add('lmn-active');
-  var devElement = document.getElementById('dev-'+lmnState.dev);
-  if (devElement) devElement.classList.add('lmn-active');
-
-  // Gray out incompatible options (but keep them clickable)
-  const opts = {
-    os: ['win','linux','macos'],
-    type: ['server','full'],
-    method: ['gui','pypi','src'],
-    fw: ['oga','torch','llama','flm'],
-    dev: ['npu','cpu','gpu']
+  const { os, type, fw, dev } = lmnState;
+  
+  // Update active states and disabled states
+  const cells = {
+    os: ['win', 'linux', 'macos'],
+    type: ['app', 'server'],
+    fw: ['oga', 'llama', 'flm'],
+    dev: ['npu', 'gpu', 'cpu']
   };
-  opts.os.forEach(os => {
-    if (!lmnIsAllowed(os, lmnState.method, lmnState.fw, lmnState.dev, lmnState.type)) {
-      var osEl = document.getElementById('os-'+os);
-      if (osEl) osEl.classList.add('lmn-disabled');
-    }
-  });
-  opts.type.forEach(type => {
-    // Server (C++) not available on macOS
-    if (type === 'server' && lmnState.os === 'macos') {
-      var typeEl = document.getElementById('type-'+type);
-      if (typeEl) typeEl.classList.add('lmn-disabled');
-    }
-  });
-  opts.method.forEach(method => {
-    // PyPI should be disabled for Server (C++)
-    if (method === 'pypi' && lmnState.type === 'server') {
-      var methodEl = document.getElementById('method-'+method);
-      if (methodEl) methodEl.classList.add('lmn-disabled');
-    } else if (!lmnIsAllowed(lmnState.os, method, lmnState.fw, lmnState.dev, lmnState.type) && !lmnAlwaysEnabledMethod.includes(method)) {
-      var methodEl = document.getElementById('method-'+method);
-      if (methodEl) methodEl.classList.add('lmn-disabled');
-    }
-  });
-  opts.fw.forEach(fw => {
-    if (!lmnIsAllowed(lmnState.os, lmnState.method, fw, lmnState.dev, lmnState.type)) {
-      var fwEl = document.getElementById('fw-'+fw);
-      if (fwEl) fwEl.classList.add('lmn-disabled');
-    }
-    // PyTorch is always disabled for server-only
-    if (lmnState.type === 'server' && fw === 'torch') {
-      var fwTorchEl = document.getElementById('fw-torch');
-      if (fwTorchEl) fwTorchEl.classList.add('lmn-disabled');
-    }
-  });
-  opts.dev.forEach(dev => {
-    if (!lmnIsAllowed(lmnState.os, lmnState.method, lmnState.fw, dev, lmnState.type)) {
-      var devEl = document.getElementById('dev-'+dev);
-      if (devEl) devEl.classList.add('lmn-disabled');
-    }
-  });
-
-  // Command rendering
   
-  // Generate FastFlowLM notice
-  function generateFlmNotice() {
-    return '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank" style="color:#666; text-decoration:underline;">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com" style="color:#666; text-decoration:underline;">lemonade@amd.com</a> for inquiries.</div>';
+  // Reset and set active
+  Object.entries(cells).forEach(([category, options]) => {
+    options.forEach(opt => {
+      const el = document.getElementById(`${category}-${opt}`);
+      if (!el) return;
+      el.className = '';
+      el.onclick = () => lmnSet(category, opt);
+      if (lmnState[category] === opt) el.classList.add('lmn-active');
+    });
+  });
+  
+  // Gray out invalid combinations
+  cells.fw.forEach(f => {
+    const el = document.getElementById(`fw-${f}`);
+    if (el && !isAllowed(os, f, dev) && !ALLOWLIST.some(c => c.os === os && c.fw === f)) {
+      el.classList.add('lmn-disabled');
+    }
+  });
+  
+  cells.dev.forEach(d => {
+    const el = document.getElementById(`dev-${d}`);
+    if (el && !isAllowed(os, fw, d)) {
+      el.classList.add('lmn-disabled');
+    }
+  });
+  
+  // Render download section
+  renderDownload();
+  
+  // Render quick start commands
+  renderQuickStart();
+};
+
+function renderDownload() {
+  const { os, type } = lmnState;
+  const downloadArea = document.getElementById('lmn-download-area');
+  const cmdDiv = document.getElementById('lmn-command');
+  const installCmdDiv = document.getElementById('lmn-install-commands');
+  const version = window.lmnLatestVersion || 'VERSION';
+  
+  // Handle macOS "Coming soon"
+  if (os === 'macos') {
+    if (downloadArea) downloadArea.style.display = 'none';
+    if (installCmdDiv) installCmdDiv.style.display = 'none';
+    if (cmdDiv) {
+      cmdDiv.innerHTML = `<div class="lmn-coming-soon">Coming soon!</div>`;
+    }
+    return;
   }
   
-  // Generate badges
-  function generateBadges() {
-    var badges = '';
-    
-    // Python version badge (only for Python SDK, not Server C++)
-    if (lmnState.type === 'full') {
-      var pythonVersions = '';
-      if (lmnState.fw === 'oga' && lmnState.dev === 'npu') {
-        pythonVersions = '3.12';
-      } else {
-        pythonVersions = '3.10--3.13';
-      }
-      badges += '<img src="https://img.shields.io/badge/Python-' + pythonVersions + '-blue" alt="Python versions" style="margin-right: 0.5em;">';
-    }
-    
-    // OS version badge
-    var osVersions = '';
-    if (lmnState.os === 'linux') {
-      osVersions = 'Ubuntu%2024.04%20%7C%2025.04';
-    } else if (lmnState.os === 'macos') {
-      osVersions = 'macOS%2014%2B';
-    } else { // windows
-      osVersions = 'Windows%2011';
-    }
-    badges += '<img src="https://img.shields.io/badge/OS-' + osVersions + '-green" alt="OS versions">';
-    
-    return badges;
-  }
-  
-  // Generate explore commands
-  function generateExploreCommands() {
-    var commands = [];
-    // Server (C++) uses 'lemonade-server', Python SDK uses 'lemonade-server-dev'
-    var prefix = (lmnState.type === 'server')
-      ? 'lemonade-server'
-      : 'lemonade-server-dev';
-
-    // For Server (C++) From Source, add cd command and adjust path
-    if (lmnState.type === 'server' && lmnState.method === 'src') {
-      if (lmnState.os === 'win') {
-        commands.push('cd Release');
-        prefix = '.\\lemonade-server.exe';
-      } else {
-        prefix = './lemonade-server';
-      }
-    }
-
-    if (lmnState.type === 'full') {
-      commands.push('lemonade -h');
-      commands.push('lemonade-server-dev -h');
+  if (os === 'win') {
+    // Windows: Show download button
+    let link, buttonText;
+    if (type === 'app') {
+      link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi';
+      buttonText = 'Download Lemonade Installer (.msi)';
     } else {
-      commands.push(prefix + ' -h');
+      link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
+      buttonText = 'Download Lemonade Minimal Installer (.msi)';
     }
-
-    if (lmnState.fw === 'oga') {
-      if (lmnState.dev === 'npu') {
-        commands.push(prefix + ' run Llama-3.2-1B-Instruct-NPU');
-        commands.push(prefix + ' run Llama-3.2-1B-Instruct-Hybrid');
-      } else {
-        commands.push(prefix + ' run Llama-3.2-1B-Instruct-CPU');
-      }
-    } else if (lmnState.fw === 'llama') {
-      commands.push(prefix + ' run Gemma-3-4b-it-GGUF');
-    } else if (lmnState.fw === 'flm') {
-      commands.push(prefix + ' run Gemma-3-4b-it-FLM');
-    } else if (lmnState.fw === 'torch') {
-      // No command for PyTorch, refer user to dev_cli documentation; leave blank
-    } else {
-      commands.push(prefix + ' run Gemma-3-4b-it-GGUF');
-    }
-
-    return commands;
-  }
-  
-  var cmd = '';
-  var link = '';
-  var pythonSetupNote = '';
-  // Python setup note is only needed for Python SDK, not for Server (C++)
-  if ((lmnState.method === 'pypi' || lmnState.method === 'src') && lmnState.type === 'full') {
-    pythonSetupNote = '<div style="margin-bottom:0.7em; color:#666; font-size:1.02rem;">Requires Python 3.10-3.13. Create a virtual environment if desired.</div>';
-  }
-  // Set command and link
-  if (lmnState.method === 'gui') {
-    if (lmnState.os === 'win') {
-      // Windows .msi installer
-      if (lmnState.fw === 'oga') {
-        if (lmnState.dev === 'npu' || lmnState.dev === 'cpu') {
-          cmd = 'Download Lemonade Server Installer (.msi)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
-        }
-      } else if (lmnState.fw === 'llama') {
-        if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          cmd = 'Download Lemonade Server Installer (.msi)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
-        }
-      } else if (lmnState.fw === 'flm') {
-        if (lmnState.dev === 'npu') {
-          cmd = 'Download Lemonade Server Installer (.msi)';
-          link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
-        }
-      }
-    } else if (lmnState.os === 'linux') {
-      // Linux .deb installer
-      if (lmnState.fw === 'llama') {
-        if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          cmd = 'sudo update-pciids\nwget https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal_<VERSION>_amd64.deb\nsudo dpkg -i lemonade-server-minimal_<VERSION>_amd64.deb';
-          link = '';
-        }
-      }
-    }
-  } else if (lmnState.method === 'pypi' || lmnState.method === 'src') {
-    // Server (C++) vs Python SDK have different install methods
-    if (lmnState.type === 'server' && lmnState.method === 'src') {
-      // C++ build instructions for Server (C++)
-      const sep = lmnState.os === 'win' ? '\\' : '/';
-      const cdSep = lmnState.os === 'win' ? 'cd' : 'cd';
-      
-      if (lmnState.fw === 'oga' && lmnState.dev === 'npu') {
-        // NPU/Hybrid: need to build ryzenai-server first
-        if (lmnState.os === 'win') {
-          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\n' +
-                'cd lemonade\\src\\ryzenai-server\n' +
-                'mkdir build\n' +
-                'cd build\n' +
-                'cmake .. -G "Visual Studio 17 2022"\n' +
-                'cmake --build . --config Release\n' +
-                'cd ..\\..\\cpp\n' +
-                'mkdir build\n' +
-                'cd build\n' +
-                'cmake ..\n' +
-                'cmake --build . --config Release';
-        } else {
-          // Linux doesn't support NPU builds
-          cmd = '';
-        }
-      } else {
-        // CPU, GPU builds (llama.cpp, FLM)
-        if (lmnState.os === 'win') {
-          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\n' +
-                'cd lemonade\\src\\cpp\n' +
-                'mkdir build\n' +
-                'cd build\n' +
-                'cmake ..\n' +
-                'cmake --build . --config Release';
-        } else {
-          cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\n' +
-                'cd lemonade/src/cpp\n' +
-                'mkdir build\n' +
-                'cd build\n' +
-                'cmake ..\n' +
-                'cmake --build . --config Release';
-          // Add ROCm requirement for GPU builds on Linux
-          if (lmnState.dev === 'gpu') {
-            cmd = 'sudo update-pciids\n' + cmd;
-          }
-        }
-      }
-    } else if (lmnState.type === 'full') {
-      // Python SDK install commands (existing logic)
-      // Use quotes for package specs with brackets on macOS/Linux
-      const needsQuotes = (lmnState.os === 'macos' || lmnState.os === 'linux');
-      const q = needsQuotes ? '"' : '';
-      
-      if (lmnState.fw === 'oga') {
-        if (lmnState.dev === 'cpu') {
-          if (lmnState.method === 'pypi') {
-            cmd = 'pip install ' + q + 'lemonade-sdk[dev,oga-cpu]' + q;
-          } else {
-            cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev,oga-cpu]' + q;
-          }
-        } else if (lmnState.dev === 'npu') {
-          if (lmnState.method === 'pypi') {
-            cmd = 'pip install ' + q + 'lemonade-sdk[dev,oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple';
-          } else {
-            cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev,oga-ryzenai]' + q + ' --extra-index-url=https://pypi.amd.com/simple';
-          }
-        }
-      } else if (lmnState.fw === 'torch') {
-        // PyTorch only available for Python SDK
-        if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          if (lmnState.method === 'pypi') {
-            cmd = 'pip install ' + q + 'lemonade-sdk[dev]' + q;
-          } else {
-            cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
-          }
-        }
-      } else if (lmnState.fw === 'llama') {
-        if (lmnState.dev === 'cpu' || lmnState.dev === 'gpu') {
-          if (lmnState.method === 'pypi') {
-            cmd = 'pip install ' + q + 'lemonade-sdk[dev]' + q;
-          } else {
-            cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
-          }
-          // Add ROCm requirement for llama.cpp GPU Linux installations
-          if (lmnState.os === 'linux' && lmnState.dev === 'gpu') {
-            cmd = 'sudo update-pciids\n' + cmd;
-          }
-        }
-      } else if (lmnState.fw === 'flm') {
-        // FastFlowLM: same install commands as llama.cpp CPU
-        if (lmnState.dev === 'npu') {
-          if (lmnState.method === 'pypi') {
-            cmd = 'pip install ' + q + 'lemonade-sdk[dev]' + q;
-          } else {
-            cmd = 'git clone https://github.com/lemonade-sdk/lemonade.git\ncd lemonade\npip install -e ' + q + '.[dev]' + q;
-          }
-        }
-      }
-    }
-  }
-  // Now set the label based on what will be rendered
-  var label = '';
-  if (link && cmd !== '' && lmnState.method === 'gui') {
-    label = 'Install this tool:';
-  } else if (cmd) {
-    var gitCloneLines = (lmnState.method === 'src') ? 2 : 0; // git clone + cd
-    var cmdLines = gitCloneLines + (cmd ? cmd.split('\n').length : 0);
-    label = cmdLines > 1 ? 'Run these Commands to Install:' : 'Run this Command to Install:';
-  } else {
-    label = '';
-  }
-  var cmdDiv = document.getElementById('lmn-command');
-  var downloadArea = document.getElementById('lmn-download-area');
-  var badgesDiv = document.getElementById('lmn-badges');
-  var exploreDiv = document.getElementById('lmn-explore-command');
-  var exploreSection = document.getElementById('lmn-explore-section');
-  
-  // Render badges
-  if (badgesDiv) {
-    badgesDiv.innerHTML = generateBadges();
-  }
-  
-  // Handle GUI downloads vs commands
-  if (link && cmd !== '' && lmnState.method === 'gui') {
-    // Show download area, hide command area
+    
     if (downloadArea) {
       downloadArea.style.display = 'block';
-      var linkElement = document.getElementById('lmn-link');
-      if (linkElement) {
-        linkElement.href = link;
-        linkElement.textContent = cmd;
+      const linkEl = document.getElementById('lmn-link');
+      if (linkEl) {
+        linkEl.href = link;
+        linkEl.textContent = buttonText;
       }
     }
-    if (cmdDiv) {
-      cmdDiv.innerHTML = '';
-      // Add NPU driver requirement for GUI installations
-      if (lmnState.dev === 'npu') {
-        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
-      }
-      
-      // Add FastFlowLM Early Access notice
-      if (lmnState.fw === 'flm') {
-        cmdDiv.innerHTML += generateFlmNotice();
-      }
+    if (installCmdDiv) {
+      installCmdDiv.style.display = 'none';
     }
-  } else if (cmd) {
-    // Show command area, hide download area
+  } else {
+    // Ubuntu: Show wget + dpkg commands
+    let debFile;
+    if (type === 'app') {
+      debFile = `lemonade_${version}_amd64.deb`;
+    } else {
+      debFile = `lemonade-server-minimal_${version}_amd64.deb`;
+    }
+    const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
+    
     if (downloadArea) {
       downloadArea.style.display = 'none';
     }
-    if (cmdDiv) {
-      var fullBlock = (pythonSetupNote ? pythonSetupNote : '') + '<pre><code class="language-bash" id="lmn-pre-block"></code></pre>';
-      cmdDiv.innerHTML = '<div class="lmn-command">'+fullBlock+'</div>';
+    if (installCmdDiv) {
+      installCmdDiv.style.display = 'block';
+      const commands = [
+        `wget ${downloadUrl}`,
+        `sudo dpkg -i ${debFile}`
+      ];
       
-      // Add a note if NPU is selected
-      if (lmnState.dev === 'npu') {
-        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="' + NPU_DRIVER_URL + '" target="_blank" style="color:#666; text-decoration:underline;">NPU Driver</a> before proceeding.</div>';
-      }
+      installCmdDiv.innerHTML = `<pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>`;
       
-      // Add Linux .deb version note
-      if (lmnState.os === 'linux' && lmnState.method === 'gui') {
-        cmdDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Note:</strong> Replace <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">&lt;VERSION&gt;</span> with the latest version number from the <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" target="_blank" style="color:#666; text-decoration:underline;">releases page</a> (e.g., <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">9.0.2</span>).</div>';
-      }
-      
-      // Add FastFlowLM Early Access notice
-      if (lmnState.fw === 'flm') {
-        cmdDiv.innerHTML += generateFlmNotice();
-      }
-      
-      // Render command lines with copy buttons
-      setTimeout(function() {
-        var pre = document.getElementById('lmn-pre-block');
+      setTimeout(() => {
+        const pre = document.getElementById('lmn-install-pre-block');
         if (pre) {
-          var lines = [];
-          cmd.split('\n').forEach(function(line) { lines.push(line); });
-          pre.innerHTML = lines.map(function(line, idx) {
-            var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            return '<div class="lmn-command-line"><span>'+safeLine+'</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, '+idx+')">📋</button></div>';
+          pre.innerHTML = commands.map((line, idx) => {
+            const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
           }).join('');
         }
       }, 0);
     }
-  } else {
-    if (cmdDiv) cmdDiv.innerHTML = '';
-    if (downloadArea) downloadArea.style.display = 'none';
   }
   
-  // Render explore commands
-  if (exploreDiv && exploreSection) {
-    var exploreCommands = generateExploreCommands();
-    if (exploreCommands.length > 0) {
-      exploreSection.style.display = 'block';
-      exploreDiv.innerHTML = '<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>';
-      
-      // Add llama.cpp tip below Quick Start commands
-      if (lmnState.fw === 'llama' && lmnState.dev === 'gpu' && lmnState.os !== 'macos') {
-        exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> Use <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp rocm</span> or <span style="font-family:monospace; background:#f5f5f5; padding:2px 4px; border-radius:3px;">--llamacpp vulkan</span> to select backends.</div>';
-      }
+  // Build from source note (only depends on os and type)
+  let notes = `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
+  if (type === 'app') {
+    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App</a> dev READMEs`;
+  } else {
+    notes += ` dev README`;
+  }
+  notes += `.</div>`;
+  
+  if (cmdDiv) {
+    cmdDiv.innerHTML = notes;
+  }
+}
 
-      // Add Pytorch and CPU tip to point to guide
-      if (lmnState.fw === 'torch' && lmnState.dev === 'cpu') {
-        exploreDiv.innerHTML += '<div style="margin-top:0.7em; color:#666; font-size:1.04rem;"><strong>Tip:</strong> For CPU usage, refer to the <a href="https://github.com/lemonade-sdk/lemonade/tree/main/docs/dev_cli" target="_blank" style="color:#666; text-decoration:underline;">Developer CLI Guide</a>.</div>';
-      }
-
-      setTimeout(function() {
-        var explorePre = document.getElementById('lmn-explore-pre-block');
-        if (explorePre) {
-          explorePre.innerHTML = exploreCommands.map(function(line, idx) {
-            var safeLine = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            return '<div class="lmn-command-line"><span>'+safeLine+'</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyExploreLine(event, '+idx+')">📋</button></div>';
-          }).join('');
-        }
-      }, 0);
-    } else {
-      exploreSection.style.display = 'none';
-    }
+window.lmnCopyInstallLine = function(e, idx) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-install-pre-block');
+  if (!pre) return;
+  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
+  if (lines[idx] !== undefined) {
+    navigator.clipboard.writeText(lines[idx]);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
   }
 };
+
+function renderQuickStart() {
+  const { os, fw, dev } = lmnState;
+  const exploreDiv = document.getElementById('lmn-explore-command');
+  const exploreSection = document.getElementById('lmn-explore-section');
+  
+  if (!exploreDiv || !exploreSection) return;
+  
+  // Hide quick start for macOS
+  if (os === 'macos') {
+    exploreSection.style.display = 'none';
+    return;
+  }
+  
+  const commands = ['lemonade-server -h'];
+  
+  if (fw === 'oga') {
+    if (dev === 'npu') {
+      commands.push('lemonade-server run Llama-3.2-1B-Instruct-NPU');
+      commands.push('lemonade-server run Llama-3.2-1B-Instruct-Hybrid');
+    } else {
+      commands.push('lemonade-server run Llama-3.2-1B-Instruct-CPU');
+    }
+  } else if (fw === 'llama') {
+    if (dev === 'cpu') {
+      commands.push('lemonade-server run Gemma-3-4b-it-GGUF --llamacpp cpu');
+    } else {
+      commands.push('lemonade-server run Gemma-3-4b-it-GGUF');
+    }
+  } else if (fw === 'flm') {
+    commands.push('lemonade-server run Gemma-3-4b-it-FLM');
+  }
+  
+  exploreSection.style.display = 'block';
+  exploreDiv.innerHTML = `<pre><code class="language-bash" id="lmn-explore-pre-block"></code></pre>`;
+  
+  // Add contextual notes based on inference engine and device
+  let notes = '';
+  
+  // NPU driver note
+  if (dev === 'npu') {
+    notes += `<div class="lmn-note"><strong>Note:</strong> NPU requires an AMD Ryzen AI 300-series PC with Windows 11 and driver installation. Download and install the <a href="${NPU_DRIVER_URL}" target="_blank">NPU Driver</a> before proceeding.</div>`;
+  }
+  
+  // FastFlowLM Early Access note
+  if (fw === 'flm') {
+    notes += `<div class="lmn-note"><strong><a href="https://github.com/FastFlowLM/FastFlowLM" target="_blank">FastFlowLM (FLM)</a> support in Lemonade is in Early Access.</strong> FLM is free for non-commercial use, however note that commercial licensing terms apply. Installing an FLM model will automatically launch the FLM installer, which will require you to accept the FLM license terms to continue. Contact <a href="mailto:lemonade@amd.com">lemonade@amd.com</a> for inquiries.</div>`;
+  }
+  
+  // llama.cpp backend tip for GPU
+  if (fw === 'llama' && dev === 'gpu') {
+    notes += `<div class="lmn-note"><strong>Tip:</strong> To select a backend, use <code>--llamacpp rocm</code> or <code>--llamacpp vulkan</code></div>`;
+    if (os === 'linux') {
+      notes += `<div class="lmn-note"><strong>Note:</strong> You may need to run <code>sudo update-pciids</code> for GPU detection on Linux.</div>`;
+    }
+  }
+  
+  if (notes) {
+    exploreDiv.innerHTML += notes;
+  }
+  
+  setTimeout(() => {
+    const pre = document.getElementById('lmn-explore-pre-block');
+    if (pre) {
+      pre.innerHTML = commands.map((line, idx) => {
+        const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, ${idx})">📋</button></div>`;
+      }).join('');
+    }
+  }, 0);
+}
 
 window.lmnCopyLine = function(e, idx) {
   e.stopPropagation();
-  var pre = document.getElementById('lmn-pre-block');
+  const pre = document.getElementById('lmn-explore-pre-block');
   if (!pre) return;
-  var lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(function(span) { return span.textContent; });
+  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
   if (lines[idx] !== undefined) {
     navigator.clipboard.writeText(lines[idx]);
-    var btn = e.currentTarget;
-    var old = btn.textContent;
+    const btn = e.currentTarget;
+    const old = btn.textContent;
     btn.textContent = '✔';
-    setTimeout(function() { btn.textContent = old; }, 900);
+    setTimeout(() => { btn.textContent = old; }, 900);
   }
 };
 
-window.lmnCopyExploreLine = function(e, idx) {
-  e.stopPropagation();
-  var pre = document.getElementById('lmn-explore-pre-block');
-  if (!pre) return;
-  var lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(function(span) { return span.textContent; });
-  if (lines[idx] !== undefined) {
-    navigator.clipboard.writeText(lines[idx]);
-    var btn = e.currentTarget;
-    var old = btn.textContent;
-    btn.textContent = '✔';
-    setTimeout(function() { btn.textContent = old; }, 900);
-  }
-};
-
-// NPU Driver download URL - keep in sync with src/lemonade_install/install.py
-const NPU_DRIVER_URL = "https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip";
-
-// Initialize when DOM is ready
 window.lmnInit = function() {
-  // Check if we need to create the table (for standalone page)
   const installer = document.getElementById('lmn-installer');
   if (installer && !document.getElementById('os-win')) {
-    // Create the table HTML
     installer.innerHTML = `
-      <table class="lmn-installer-table">
-        <tr>
-          <td class="lmn-label">Operating System</td>
-          <td id="os-win" class="lmn-active" onclick="lmnSet('os','win')">Windows</td>
-          <td id="os-linux" onclick="lmnSet('os','linux')">Linux</td>
-          <td id="os-macos" onclick="lmnSet('os','macos')">macOS</td>
-        </tr>
-        <tr>
-          <td class="lmn-label">Installation Type</td>
-          <td id="type-server" class="lmn-active" onclick="lmnSet('type','server')">Server (C++)</td>
-          <td id="type-full" onclick="lmnSet('type','full')">Python SDK</td>
-        </tr>
-        <tr>
-          <td class="lmn-label">Installation Method</td>
-          <td id="method-gui" class="lmn-active" onclick="lmnSet('method','gui')">Installer</td>
-          <td id="method-src" onclick="lmnSet('method','src')">From Source</td>
-          <td id="method-pypi" onclick="lmnSet('method','pypi')">PyPI</td>
-        </tr>
-        <tr>
-          <td class="lmn-label">Inference Engine</td>
-          <td id="fw-oga" class="lmn-active" onclick="lmnSet('fw','oga')">OGA</td>
-          <td id="fw-llama" onclick="lmnSet('fw','llama')">llama.cpp</td>
-          <td id="fw-flm" onclick="lmnSet('fw','flm')">FastFlowLM</td>
-          <td id="fw-torch" onclick="lmnSet('fw','torch')">PyTorch</td>
-        </tr>
-        <tr>
-          <td class="lmn-label">Device Support</td>
-          <td id="dev-npu" class="lmn-active" onclick="lmnSet('dev','npu')">NPU, Hybrid</td>
-          <td id="dev-gpu" onclick="lmnSet('dev','gpu')">GPU</td>
-          <td id="dev-cpu" onclick="lmnSet('dev','cpu')">CPU</td>
-        </tr>
-      </table>
       <div class="lmn-content-section">
-        <div class="lmn-section-header">
-          Installation Instructions
+        <div class="lmn-section-header">Download & Install</div>
+        <table class="lmn-installer-table lmn-embedded-table">
+          <tr>
+            <td class="lmn-label">Operating System</td>
+            <td id="os-win" class="lmn-active">Windows 11</td>
+            <td id="os-linux">Ubuntu 24.04+</td>
+            <td id="os-macos">macOS</td>
+          </tr>
+          <tr>
+            <td class="lmn-label">Installation Type</td>
+            <td id="type-app" class="lmn-active">App + Server</td>
+            <td id="type-server">Server Only</td>
+          </tr>
+        </table>
+        <div id="lmn-download-area" class="lmn-download-section">
+          <a id="lmn-link" href="#">Download</a>
         </div>
-        <div id="lmn-badges" class="lmn-badges"></div>
-        <div id="lmn-install-content">
-          <div id="lmn-download-area" class="lmn-download-section" style="display: none;">
-            <a id="lmn-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi">Download Lemonade Server Installer (.exe)</a>
-          </div>
-          <div id="lmn-command" class="lmn-command"></div>
-        </div>
+        <div id="lmn-install-commands" class="lmn-command" style="display: none;"></div>
+        <div id="lmn-command" class="lmn-command"></div>
       </div>
-      <div id="lmn-explore-section" class="lmn-content-section" style="margin-top: 1.5em;">
-        <div class="lmn-section-header lmn-explore-header">
-          Quick Start
-        </div>
+      <div id="lmn-explore-section" class="lmn-content-section">
+        <div class="lmn-section-header lmn-explore-header">Quick Start</div>
+        <table class="lmn-installer-table lmn-embedded-table">
+          <tr>
+            <td class="lmn-label">Inference Engine</td>
+            <td id="fw-oga" class="lmn-active">OGA</td>
+            <td id="fw-llama">llama.cpp</td>
+            <td id="fw-flm">FastFlowLM</td>
+          </tr>
+          <tr>
+            <td class="lmn-label">Device Support</td>
+            <td id="dev-npu" class="lmn-active">NPU, Hybrid</td>
+            <td id="dev-gpu">GPU</td>
+            <td id="dev-cpu">CPU</td>
+          </tr>
+        </table>
         <div id="lmn-explore-command" class="lmn-command"></div>
       </div>
     `;
   }
+  fetchLatestVersion();
   lmnRender();
 };
