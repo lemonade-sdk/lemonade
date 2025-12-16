@@ -743,14 +743,45 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     
     auto it = models_cache_.find(model_name);
     if (it != models_cache_.end()) {
-        if (it->second.source == "local_upload") {
-            // Local upload - remove entirely from cache
+        // User models and local uploads should be removed entirely from cache
+        // (they're not in server_models.json, so keeping them makes no sense)
+        bool is_user_model = model_name.substr(0, 5) == "user.";
+        if (is_user_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
             std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
             std::cout << "[ModelManager] Marked '" << model_name << "' as not downloaded" << std::endl;
+        }
+    }
+}
+
+void ModelManager::refresh_flm_download_status() {
+    // Get fresh list of installed FLM models
+    // This is called on every get_supported_models() to ensure FLM status is up-to-date
+    // since users can install/uninstall FLM models outside of lemonade
+    auto flm_models = get_flm_installed_models();
+    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
+    
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return;  // Cache will be built fresh on next access
+    }
+    
+    // Update download status for all FLM models in cache
+    for (auto& [name, info] : models_cache_) {
+        if (info.recipe == "flm") {
+            bool was_downloaded = info.downloaded;
+            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            
+            // Log changes for debugging
+            if (was_downloaded != info.downloaded) {
+                std::cout << "[ModelManager] FLM status changed: " << name 
+                          << " (checkpoint: " << info.checkpoint << ") -> " 
+                          << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
+            }
         }
     }
 }
@@ -1128,6 +1159,18 @@ void ModelManager::download_model(const std::string& model_name,
     std::string actual_recipe = recipe;
     std::string actual_mmproj = mmproj;
     
+    // If checkpoint or recipe are provided, this is a model registration
+    // and the model name must have the "user." prefix
+    if (!actual_checkpoint.empty() || !actual_recipe.empty()) {
+        if (model_name.substr(0, 5) != "user.") {
+            throw std::runtime_error(
+                "When providing 'checkpoint' or 'recipe', the model name must include the "
+                "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + 
+                model_name
+            );
+        }
+    }
+    
     // Check if model exists in registry
     bool model_registered = model_exists(model_name);
     
@@ -1231,8 +1274,8 @@ void ModelManager::download_model(const std::string& model_name,
         download_from_huggingface(repo_id, "", "", progress_callback);
     }
     
-    // Register if needed
-    if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
+    // Register user models to user_models.json
+    if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
                           reasoning, vision, embedding, reranking, actual_mmproj);
     }

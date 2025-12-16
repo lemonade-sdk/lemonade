@@ -15,7 +15,7 @@
     <div class="navbar-links">
       <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
       <a href="docs/">Docs</a>
-      <a href="docs/server/server_models/">Models</a>
+    <a href="docs/server/server_models/">Models</a>
       <a href="docs/server/apps/">Featured Apps</a>
       <a href="news/">News</a>
     </div>
@@ -36,43 +36,68 @@
       <div class="install-section">
         <h2>Why do I need the NPU driver?</h2>
         <p>
-          Lemonade uses Ryzen AI Software to access the NPU (Neural Processing Unit) on AMD Ryzen AI processors. 
-          New releases of Ryzen AI Software often require an updated NPU driver. 
+          Lemonade uses Ryzen AI Software and FastFlowLM software to access the NPU (Neural Processing Unit) on AMD Ryzen AI processors. 
+          New releases of these engines often require an updated NPU driver. 
           The NPU driver is required for AI acceleration and enables hardware-accelerated inference for machine learning models on compatible systems.
           <br><br>
-          <strong>Note:</strong> The minimum required NPU driver version for RyzenAI 1.6.0 is <code>32.0.203.280</code>.
+          <strong>Note:</strong> The minimum required NPU driver version for RyzenAI 1.6.0 is <code>32.0.203.280</code> and the FastFlowLM recommended driver version is provided <a href="https://fastflowlm.com/docs/install/#-critical-npu-driver-requirement">here</a>.
         </p>
       </div>
 
       <div class="install-section">
-        <h2>Installation Steps</h2>
-        <div class="step-container">
-          <div class="step">
-            <div class="step-number">1</div>
-            <div class="step-content">
-              <h3>Download the NPU Driver</h3>
-              <p>Click the button below to download the latest NPU driver from AMD's official website:</p>
-              <a class="download-btn" href="https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.5_280_WHQL.zip" target="_blank">
-                Download NPU Driver
-              </a>
-            </div>
+        <h2>Installation Options</h2>
+        
+        <!-- Option A -->
+        <div class="option-box option-primary">
+          <div class="option-header">
+            <span class="option-label">Option A</span>
+            <span class="option-tag recommended">Recommended</span>
           </div>
+          <h3>Use AMD's Driver Download Tool</h3>
+          <p>Visit AMD's official driver download page to automatically detect and install the correct NPU driver for your system:</p>
+          <a class="download-btn" href="https://www.amd.com/en/support/download/drivers.html" target="_blank">
+            Go to AMD Driver Downloads
+          </a>
+          <p class="option-note">Follow the on-screen instructions to detect your hardware and download the appropriate driver.</p>
+        </div>
 
-          <div class="step">
-            <div class="step-number">2</div>
-            <div class="step-content">
-              <h3>Install the Driver</h3>
-              <p>
-                Unzip the downloaded folder. Then, open an Administrator Command Prompt, navigate to the unzipped folder, and run <code>npu_sw_installer.exe</code>. Follow the installation wizard to complete the process.
-              </p>
-            </div>
+        <!-- Option B -->
+        <div class="option-box option-secondary">
+          <div class="option-header">
+            <span class="option-label">Option B</span>
+            <span class="option-tag fallback">If Option A doesn't work</span>
           </div>
+          <h3>Manual Driver Installation</h3>
+          <p>If Option A doesn't work or you need a specific driver version, follow these manual steps:</p>
+          
+          <div class="step-container">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h3>Download the NPU Driver</h3>
+                <p>Click the button below to download the NPU driver directly:</p>
+                <a class="download-btn" href="https://account.amd.com/en/forms/downloads/ryzenai-eula-public-xef.html?filename=NPU_RAI1.6_304_WHQL.zip" target="_blank">
+                  Download NPU Driver
+                </a>
+              </div>
+            </div>
 
-          <div class="step">
-            <div class="step-number">3</div>
-            <div class="step-content">
-              <h3>Verify Installation</h3>
-              <p>Try Lemonade Server again to verify the NPU driver is working correctly.</p>
+            <div class="step">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h3>Install the Driver</h3>
+                <p>
+                  Unzip the downloaded folder. Then, open an Administrator Command Prompt, navigate to the unzipped folder, and run <code>npu_sw_installer.exe</code>. Follow the installation wizard to complete the process.
+                </p>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h3>Verify Installation</h3>
+                <p>Try Lemonade Server again to verify the NPU driver is working correctly.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -131,6 +156,76 @@
       line-height: 1.6;
       color: #555;
       margin-bottom: 1rem;
+    }
+
+    .option-box {
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+
+    .option-primary {
+      background: linear-gradient(135deg, #e8f4fd, #d4edfc);
+      border: 2px solid #3498db;
+    }
+
+    .option-secondary {
+      background: #f8f9fa;
+      border: 2px solid #bdc3c7;
+    }
+
+    .option-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .option-label {
+      font-weight: bold;
+      font-size: 1.1rem;
+      color: #2c3e50;
+    }
+
+    .option-tag {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .option-tag.recommended {
+      background: #27ae60;
+      color: white;
+    }
+
+    .option-tag.fallback {
+      background: #95a5a6;
+      color: white;
+    }
+
+    .option-box h3 {
+      margin: 0 0 0.75rem 0;
+      color: #2c3e50;
+    }
+
+    .option-box > p {
+      margin-bottom: 1rem;
+    }
+
+    .option-note {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    .option-secondary .step-container {
+      margin-top: 1.5rem;
+    }
+
+    .option-secondary .step {
+      background: white;
     }
 
     .step-container {

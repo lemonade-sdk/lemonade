@@ -13,26 +13,6 @@ contextBridge.exposeInMainWorld('api', {
   updateMinWidth: (width) => ipcRenderer.send('update-min-width', width),
   zoomIn: () => ipcRenderer.send('zoom-in'),
   zoomOut: () => ipcRenderer.send('zoom-out'),
-  readUserModels: () => ipcRenderer.invoke('read-user-models'),
-  addUserModel: (payload) => ipcRenderer.invoke('add-user-model', payload),
-  watchUserModels: (callback) => {
-    if (typeof callback !== 'function') {
-      return undefined;
-    }
-
-    const channel = 'user-models-updated';
-    const handler = () => {
-      callback();
-    };
-
-    ipcRenderer.on(channel, handler);
-    ipcRenderer.send('start-watch-user-models');
-
-    return () => {
-      ipcRenderer.removeListener(channel, handler);
-      ipcRenderer.send('stop-watch-user-models');
-    };
-  },
   getSettings: () => ipcRenderer.invoke('get-app-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
   onSettingsUpdated: (callback) => {
