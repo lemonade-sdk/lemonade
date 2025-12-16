@@ -180,8 +180,8 @@ static std::string identify_rocm_arch_from_name(const std::string& device_name) 
     }
     
     // STX iGPUs (gfx1150 architecture)
-    // Radeon 8090M Graphics
-    if (device_lower.find("8090m") != std::string::npos) {
+    // Radeon 890m Graphics
+    if (device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
     
