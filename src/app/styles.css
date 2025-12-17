@@ -3717,3 +3717,417 @@ footer {
     background: rgba(76, 175, 80, 0.25);
 }
 
+/* Embedding Model Styles  */
+.embedding-history-item {
+    margin-bottom: 16px;
+}
+
+.embedding-user-input {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.embedding-input-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.embedding-input-text {
+    color: #fff;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.embedding-empty-state,
+.reranking-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+}
+
+.embedding-description,
+.reranking-description {
+    color: #888;
+    font-size: 0.75rem;
+    margin-top: 8px;
+}
+
+.embedding-result {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.embedding-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.embedding-result-header h4 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.embedding-dimensions-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #888;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.embedding-vector {
+    background: #0a0a0a;
+    border: 1px solid #1a1a1a;
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+}
+
+.embedding-vector pre {
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.65rem;
+    color: #aaa;
+    line-height: 1.3;
+}
+
+.embedding-preview pre {
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.65rem;
+    color: #aaa;
+    line-height: 1.3;
+}
+
+.embedding-toggle-button {
+    background: transparent;
+    border: 1px solid #2a2a2a;
+    color: #888;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: 8px;
+    width: 100%;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.embedding-toggle-button:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: #333;
+    color: #ccc;
+}
+
+.embedding-stats {
+    display: flex;
+    gap: 12px;
+    justify-content: space-around;
+    padding-top: 8px;
+    border-top: 1px solid #1a1a1a;
+}
+
+.embedding-stats span {
+    font-size: 0.65rem;
+    color: #888;
+    font-family: 'Courier New', monospace;
+}
+
+/* Reranking Model Styles */
+.reranking-history-item {
+    margin-bottom: 16px;
+}
+
+.reranking-user-input {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.reranking-input-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.reranking-input-text {
+    color: #fff;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.reranking-result-container {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.reranking-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.reranking-result-header h4 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.reranking-count-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #888;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.reranking-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.reranking-query-section,
+.reranking-documents-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.reranking-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.reranking-query {
+    resize: vertical;
+}
+
+.reranking-documents {
+    resize: vertical;
+}
+
+.reranking-result {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.reranked-document {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 6px 8px;
+    transition: all 0.15s ease;
+}
+
+.reranked-document:hover {
+    border-color: #333;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.reranked-rank {
+    font-weight: 600;
+    font-size: 0.65rem;
+    color: #888;
+    min-width: 18px;
+    flex-shrink: 0;
+    font-family: 'Courier New', monospace;
+}
+
+.reranked-score {
+    font-size: 0.65rem;
+    color: #4ade80;
+    font-weight: 600;
+    min-width: 40px;
+    flex-shrink: 0;
+    font-family: 'Courier New', monospace;
+}
+
+.reranked-document-text {
+    font-size: 0.75rem;
+    color: #ccc;
+    line-height: 1.3;
+    flex: 1;
+}
+
+/* Small typing indicator for buttons */
+.typing-indicator.small {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+}
+
+.typing-indicator.small span {
+    width: 4px;
+    height: 4px;
+    background: currentColor;
+    border-radius: 50%;
+    animation: typing 1s infinite;
+}
+
+.typing-indicator.small span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-indicator.small span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-indicator.small span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* Transcription Model Styles */
+.transcription-history-item {
+    margin-bottom: 16px;
+}
+
+.transcription-file-info {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.transcription-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #aaa;
+}
+
+.transcription-result-container {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.transcription-result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.transcription-result-header h4 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ccc;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.transcription-result {
+    color: #fff;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.transcription-file-display {
+    flex: 1;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+}
+
+.transcription-file-info-display {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.transcription-file-info-display .file-name {
+    color: #fff;
+    font-size: 0.85rem;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.transcription-placeholder {
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.file-size-indicator {
+    font-size: 0.75rem;
+    color: #888;
+    font-family: 'Courier New', monospace;
+    flex-shrink: 0;
+}
+
+.audio-file-button {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    border-radius: 4px;
+}
+
+.audio-file-button:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.audio-file-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

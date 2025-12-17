@@ -85,7 +85,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       setSupportedModelsData(data);
       const suggestedModels = Object.entries(data)
         .filter(([name, info]) => info.suggested || name.startsWith(USER_MODEL_PREFIX))
-        .filter(([name, info]) => info.recipe !== 'whispercpp')
         .map(([name, info]) => ({ name, info }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setModels(suggestedModels);
@@ -263,7 +262,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       'oga-npu': 'NPU',
       'oga-igpu': 'iGPU',
       'llamacpp': 'GGUF',
-      'flm': 'FLM'
+      'flm': 'FLM',
+      'whispercpp': 'Whisper.cpp'
     };
     return labels[recipe] || recipe.toUpperCase();
   };
@@ -304,7 +304,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         'llamacpp': 'Llama.cpp GPU',
         'oga-cpu': 'ONNX Runtime CPU',
         'oga-hybrid': 'ONNX Runtime Hybrid',
-        'oga-npu': 'ONNX Runtime NPU'
+        'oga-npu': 'ONNX Runtime NPU',
+        'whispercpp': 'Whisper.cpp'
       };
       return recipeLabels[key] || key;
     } else {
