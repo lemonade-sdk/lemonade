@@ -1690,10 +1690,20 @@
    - To remove downloaded models, delete the <code>huggingface</code> folder</p>
 <h2 id="models-performance">Models &amp; Performance</h2>
 <h3 id="1-where-are-models-stored-and-how-do-i-change-that">1. <strong>Where are models stored and how do I change that?</strong></h3>
-<p>Lemonade adheres to the Hugging Face Hub specification for storing models on your hard drive. By default, models are located at <code>~/.cache/huggingface/hub/</code>, where <code>~</code> is your home directory.</p>
+<p>Lemonade uses two model locations:</p>
+<p><strong>Primary: Hugging Face Cache</strong></p>
+<p>Models downloaded through Lemonade are stored using the Hugging Face Hub specification. By default, models are located at <code>~/.cache/huggingface/hub/</code>, where <code>~</code> is your home directory.</p>
 <p>For example, <code>Qwen/Qwen2.5-0.5B</code> is stored at <code>~/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B</code>.</p>
 <p>You can change this location by setting the <code>HF_HOME</code> env var, which will store your models in <code>$HF_HOME/hub</code> (e.g., <code>$HF_HOME/hub/models--Qwen--Qwen2.5-0.5B</code>). Alternatively, you can set <code>HF_HUB_CACHE</code> and your models will be in <code>$HF_HUB_CACHE</code> (e.g., <code>$HF_HUB_CACHE/models--Qwen--Qwen2.5-0.5B</code>).</p>
 <p>You can use the official Hugging Face Hub utility (<code>pip install huggingface-hub</code>) to manage models outside of Lemonade, e.g., <code>hf cache ls</code> will print all models and their sizes.</p>
+<p><strong>Secondary: Extra Models Directory (GGUF)</strong></p>
+<p>Lemonade Server can discover GGUF models from a secondary directory using the <code>--extra-models-dir</code> option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:</p>
+<ul>
+<li><strong>Windows:</strong> <code>%LOCALAPPDATA%\llama.cpp</code> (e.g., <code>C:\Users\You\AppData\Local\llama.cpp</code>)</li>
+<li><strong>Linux/macOS:</strong> <code>~/.cache/llama.cpp</code></li>
+</ul>
+<p>Example: <code>lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"</code></p>
+<p>Any <code>.gguf</code> files found in this directory (including subdirectories) will automatically appear in Lemonade's model list using their exact filename (e.g., <code>Qwen3-8B-Q4_K_M.gguf</code>).</p>
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>
 <p>Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.</p>
 <p>👉 <a href="https://lemonade-server.ai/docs/server/server_models/">Supported Models List</a></p>
