@@ -1,6 +1,7 @@
 #include <lemon/cli_parser.h>
 #include <iostream>
 #include <cctype>
+#include <cstdlib>
 
 namespace lemon {
 
@@ -30,6 +31,10 @@ CLIParser::CLIParser()
 
     app_.add_option("--llamacpp-args", config_.llamacpp_args,
                    "Custom arguments to pass to llama-server (must not conflict with managed args)")
+        ->default_val("");
+
+    app_.add_option("--extra-models-dir", config_.extra_models_dir,
+                   "Experimental feature: secondary directory to scan for LLM GGUF model files")
         ->default_val("");
 
     // Multi-model support: Max loaded models

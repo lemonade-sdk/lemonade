@@ -37,7 +37,8 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                int ctx_size, bool tray, const std::string& llamacpp_backend,
                const std::string& llamacpp_args, int max_llm_models,
-               int max_embedding_models, int max_reranking_models, int max_audio_models)
+               int max_embedding_models, int max_reranking_models, int max_audio_models,
+               const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
       running_(false) {
@@ -70,6 +71,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
+    
+    // Set extra models directory for GGUF discovery
+    model_manager_->set_extra_models_dir(extra_models_dir);
+    
     router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
                                        model_manager_.get(), max_llm_models,
                                        max_embedding_models, max_reranking_models, max_audio_models);

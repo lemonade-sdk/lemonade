@@ -83,7 +83,8 @@ bool ServerManager::start_server(
     int max_llm_models,
     int max_embedding_models,
     int max_reranking_models,
-    int max_audio_models)
+    int max_audio_models,
+    const std::string& extra_models_dir)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -103,6 +104,7 @@ bool ServerManager::start_server(
     show_console_ = show_console;
     is_ephemeral_ = is_ephemeral;
     llamacpp_args_ = llamacpp_args;
+    extra_models_dir_ = extra_models_dir;
     host_ = host;
     
     if (!spawn_process()) {
@@ -393,6 +395,10 @@ bool ServerManager::spawn_process() {
     cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
                std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
                std::to_string(max_audio_models_);
+    // Extra models directory
+    if (!extra_models_dir_.empty()) {
+        cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
+    }
     
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
@@ -609,6 +615,12 @@ bool ServerManager::spawn_process() {
         args.push_back(max_emb_str.c_str());
         args.push_back(max_rer_str.c_str());
         args.push_back(max_aud_str.c_str());
+
+        // Extra models directory
+        if (!extra_models_dir_.empty()) {
+            args.push_back("--extra-models-dir");
+            args.push_back(extra_models_dir_.c_str());
+        }
 
         args.push_back(nullptr);
         

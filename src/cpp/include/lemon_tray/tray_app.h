@@ -29,6 +29,7 @@ struct AppConfig {
     std::string host = "localhost";
     std::string llamacpp_backend = "vulkan";  // Default to vulkan
     std::string llamacpp_args = "";  // Custom arguments for llama-server
+    std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     
     // Multi-model support
     int max_llm_models = 1;

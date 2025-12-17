@@ -43,9 +43,10 @@ lemonade-server run MODEL_NAME [options]
 | `--llamacpp [vulkan\|rocm\cpu]`    | Default LlamaCpp backend to use when loading models. Can be overridden per-model via the `/api/v1/load` endpoint. | vulkan |
 | `--ctx-size [size]`            | Default context size for models. For llamacpp recipes, this sets the `--ctx-size` parameter for the llama server. For other recipes, prompts exceeding this size will be truncated. Can be overridden per-model via the `/api/v1/load` endpoint. | 4096 |
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
+| `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
 | `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
 
-These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, and `LEMONADE_LLAMACPP_ARGS`.
+These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, `LEMONADE_LLAMACPP_ARGS`, and `LEMONADE_EXTRA_MODELS_DIR`.
 
 Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`, `LEMONADE_LLAMACPP_CPU_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
 

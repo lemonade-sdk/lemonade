@@ -61,12 +61,15 @@ int main(int argc, char** argv) {
         std::cout << "  Host: " << config.host << std::endl;
         std::cout << "  Log level: " << config.log_level << std::endl;
         std::cout << "  Context size: " << config.ctx_size << std::endl;
+        if (!config.extra_models_dir.empty()) {
+            std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
+        }
         
         Server server(config.port, config.host, config.log_level,
                     config.ctx_size, config.tray, config.llamacpp_backend,
                     config.llamacpp_args, config.max_llm_models,
                     config.max_embedding_models, config.max_reranking_models,
-                    config.max_audio_models);
+                    config.max_audio_models, config.extra_models_dir);
         
         // Register signal handler for Ctrl+C
         g_server_instance = &server;
