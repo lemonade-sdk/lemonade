@@ -33,26 +33,9 @@ CLIParser::CLIParser()
                    "Custom arguments to pass to llama-server (must not conflict with managed args)")
         ->default_val("");
 
-    {
-        std::string extra_models_help = "Secondary directory to scan for GGUF models (e.g., ";
-#ifdef _WIN32
-        const char* localappdata = std::getenv("LOCALAPPDATA");
-        if (localappdata) {
-            extra_models_help += std::string(localappdata) + "\\llama.cpp)";
-        } else {
-            extra_models_help += "%LOCALAPPDATA%\\llama.cpp)";
-        }
-#else
-        const char* home = std::getenv("HOME");
-        if (home) {
-            extra_models_help += std::string(home) + "/.cache/llama.cpp)";
-        } else {
-            extra_models_help += "~/.cache/llama.cpp)";
-        }
-#endif
-        app_.add_option("--extra-models-dir", config_.extra_models_dir, extra_models_help)
-            ->default_val("");
-    }
+    app_.add_option("--extra-models-dir", config_.extra_models_dir,
+                   "Experimental feature: secondary directory to scan for LLM GGUF model files")
+        ->default_val("");
 
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)

@@ -680,29 +680,7 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
-#ifdef _WIN32
-        {
-            std::string suggested_path;
-            const char* localappdata = std::getenv("LOCALAPPDATA");
-            if (localappdata) {
-                suggested_path = std::string(localappdata) + "\\llama.cpp";
-            } else {
-                suggested_path = "%LOCALAPPDATA%\\llama.cpp";
-            }
-            std::cout << "  --extra-models-dir PATH  Secondary directory for GGUF models (e.g., " << suggested_path << ")\n";
-        }
-#else
-        {
-            std::string suggested_path;
-            const char* home = std::getenv("HOME");
-            if (home) {
-                suggested_path = std::string(home) + "/.cache/llama.cpp";
-            } else {
-                suggested_path = "~/.cache/llama.cpp";
-            }
-            std::cout << "  --extra-models-dir PATH  Secondary directory for GGUF models (e.g., " << suggested_path << ")\n";
-        }
-#endif
+        std::cout << "  --extra-models-dir PATH  Experimental feature: secondary directory to scan for LLM GGUF model files\n";
         std::cout << "  --max-loaded-models N [E] [R] [A]\n";
         std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] (default: 1 1 1 1)\n";
         std::cout << "  --log-file PATH          Log file path\n";
