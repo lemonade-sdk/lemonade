@@ -119,6 +119,9 @@ public:
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
     
+    // Set extra models directory for GGUF discovery
+    void set_extra_models_dir(const std::string& dir);
+    
 private:
     json load_server_models();
     json load_user_models();
@@ -147,8 +150,12 @@ private:
                           bool do_not_upgrade = true,
                           DownloadProgressCallback progress_callback = nullptr);
     
+    // Discover GGUF models from extra_models_dir
+    std::map<std::string, ModelInfo> discover_extra_models() const;
+    
     json server_models_;
     json user_models_;
+    std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

@@ -28,7 +28,8 @@ public:
            int max_llm_models = 1,
            int max_embedding_models = 1,
            int max_reranking_models = 1,
-           int max_audio_models = 1);
+           int max_audio_models = 1,
+           const std::string& extra_models_dir = "");
     
     ~Server();
     

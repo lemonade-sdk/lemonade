@@ -537,32 +537,44 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get mmproj path for vision models
     std::string mmproj_path;
     if (!model_info.mmproj.empty()) {
-        // Parse checkpoint to get repo_id (without variant)
-        std::string repo_id = model_info.checkpoint;
-        size_t colon_pos = model_info.checkpoint.find(':');
-        if (colon_pos != std::string::npos) {
-            repo_id = model_info.checkpoint.substr(0, colon_pos);
+        fs::path search_path;
+        
+        // For discovered models (from extra_models_dir), search in the model's directory
+        if (model_info.source == "extra_models_dir") {
+            // checkpoint is the directory path for discovered models
+            search_path = fs::path(model_info.checkpoint);
+            // If checkpoint is the GGUF file itself (standalone file), use its parent directory
+            if (!fs::is_directory(search_path)) {
+                search_path = search_path.parent_path();
+            }
+        } else {
+            // For HuggingFace models, use the HF cache directory
+            std::string repo_id = model_info.checkpoint;
+            size_t colon_pos = model_info.checkpoint.find(':');
+            if (colon_pos != std::string::npos) {
+                repo_id = model_info.checkpoint.substr(0, colon_pos);
+            }
+            
+            // Convert org/model to models--org--model
+            std::string cache_dir_name = "models--";
+            for (char c : repo_id) {
+                cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+            }
+            
+            std::string hf_cache = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
+            if (hf_cache.empty()) {
+                throw std::runtime_error("ModelManager not available for cache directory lookup");
+            }
+            search_path = fs::path(hf_cache) / cache_dir_name;
         }
         
-        // Convert org/model to models--org--model
-        std::string cache_dir_name = "models--";
-        for (char c : repo_id) {
-            cache_dir_name += (c == '/') ? "--" : std::string(1, c);
-        }
-        
-        std::string hf_cache = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
-        if (hf_cache.empty()) {
-            throw std::runtime_error("ModelManager not available for cache directory lookup");
-        }
-        fs::path model_cache_path = fs::path(hf_cache) / cache_dir_name;
-        
-        // Search for mmproj file in the model cache
+        // Search for mmproj file
         std::cout << "[LlamaCpp] Searching for mmproj '" << model_info.mmproj 
-                  << "' in: " << model_cache_path << std::endl;
+                  << "' in: " << search_path << std::endl;
         
-        if (fs::exists(model_cache_path)) {
+        if (fs::exists(search_path)) {
             try {
-                for (const auto& entry : fs::recursive_directory_iterator(model_cache_path)) {
+                for (const auto& entry : fs::recursive_directory_iterator(search_path)) {
                     if (entry.is_regular_file()) {
                         std::string filename = entry.path().filename().string();
                         if (filename == model_info.mmproj) {
@@ -576,7 +588,7 @@ void LlamaCppServer::load(const std::string& model_name,
                 std::cerr << "[LlamaCpp] Error during mmproj search: " << e.what() << std::endl;
             }
         } else {
-            std::cout << "[LlamaCpp] Model cache path does not exist: " << model_cache_path << std::endl;
+            std::cout << "[LlamaCpp] Search path does not exist: " << search_path << std::endl;
         }
         
         if (mmproj_path.empty()) {

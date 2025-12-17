@@ -14,6 +14,7 @@ struct ServerConfig {
     std::string llamacpp_backend = "vulkan";
     int ctx_size = 4096;
     std::string llamacpp_args = "";
+    std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     
     // Multi-model support: Max loaded models by type
     int max_llm_models = 1;
