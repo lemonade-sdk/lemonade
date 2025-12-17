@@ -138,6 +138,10 @@ public:
 // Factory function
 std::unique_ptr<SystemInfo> create_system_info();
 
+// Helper to identify ROCm architecture from GPU name
+// Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
+std::string identify_rocm_arch_from_name(const std::string& device_name);
+
 // Cache management
 class SystemInfoCache {
 public:

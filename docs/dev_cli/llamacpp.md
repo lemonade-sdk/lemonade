@@ -22,6 +22,14 @@ lemonade-install --llamacpp rocm
 lemonade-install --llamacpp vulkan
 ```
 
+### Supported GPU Architectures
+
+The ROCm backend supports various AMD GPU architectures including:
+- **gfx1151 (STX Halo APU)** - Ryzen AI MAX 385-395
+- **gfx1150 (STX Point APU)** - Ryzen AI 360-375
+- **gfx120X (RDNA4 GPUs)** - includes AMD Radeon RX 9070 XT/GRE/9070, RX 9060 XT/9060
+- **gfx110X (RDNA3 GPUs)** - includes AMD Radeon PRO W7900/W7800/W7700/W7600, RX 7900 XTX/XT/GRE, RX 7800 XT, RX 7700 XT/7700, RX 7600 XT/7600
+
 ## Get Models
 
 The `llamacpp-load` tool can download GGUF model checkpoints from Hugging Face.  Use
