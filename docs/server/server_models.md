@@ -56,6 +56,24 @@ lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
 </details>
 
 <details>
+<summary>Nemotron-3-Nano-30B-A3B-GGUF</summary>
+
+```bash
+lemonade-server pull Nemotron-3-Nano-30B-A3B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Nemotron-3-Nano-30B-A3B-GGUF">unsloth/Nemotron-3-Nano-30B-A3B-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>22.8</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>Gemma-3-4b-it-GGUF</summary>
 
 ```bash
@@ -157,6 +175,24 @@ lemonade-server pull Qwen3-4B-VL-FLM
 <tr><td>Recipe</td><td>flm</td></tr>
 <tr><td>Labels</td><td>hot, vision</td></tr>
 <tr><td>Size (GB)</td><td>3.85</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Whisper-Large-v3-Turbo</summary>
+
+```bash
+lemonade-server pull Whisper-Large-v3-Turbo
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/ggerganov/whisper.cpp">ggerganov/whisper.cpp</a></td></tr>
+<tr><td>GGUF Variant</td><td>ggml-large-v3-turbo.bin</td></tr>
+<tr><td>Recipe</td><td>whispercpp</td></tr>
+<tr><td>Labels</td><td>audio, transcription, hot</td></tr>
+<tr><td>Size (GB)</td><td>1.55</td></tr>
 </table>
 
 </details>
@@ -339,6 +375,24 @@ lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
 <tr><td>Recipe</td><td>llamacpp</td></tr>
 <tr><td>Labels</td><td>coding, tool-calling, hot</td></tr>
 <tr><td>Size (GB)</td><td>18.6</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Nemotron-3-Nano-30B-A3B-GGUF</summary>
+
+```bash
+lemonade-server pull Nemotron-3-Nano-30B-A3B-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/Nemotron-3-Nano-30B-A3B-GGUF">unsloth/Nemotron-3-Nano-30B-A3B-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>22.8</td></tr>
 </table>
 
 </details>
@@ -1303,6 +1357,22 @@ lemonade-server pull Llama-3.2-3B-FLM
 <tr><td>Checkpoint</td><td>llama3.2:3b</td></tr>
 <tr><td>Recipe</td><td>flm</td></tr>
 <tr><td>Size (GB)</td><td>2.62</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>LFM2-1.2B-FLM</summary>
+
+```bash
+lemonade-server pull LFM2-1.2B-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>lfm2:1.2b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size (GB)</td><td>0.96</td></tr>
 </table>
 
 </details>
