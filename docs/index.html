@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lemonade Server</title>
+  <title>Lemonade: Run Local AI Apps in Minutes</title>
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="assets/website-styles.css">
 </head>
 <body>
   <nav class="navbar" id="navbar">
     <div class="navbar-brand">
-      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade Server</a></span>
+      <span class="brand-title"><a href="https://lemonade-server.ai">🍋 Lemonade</a></span>
     </div>
     <div class="navbar-links">
       <a href="https://github.com/lemonade-sdk/lemonade">GitHub</a>
@@ -27,7 +27,7 @@
         GPUs and NPUs
       </div>
       <div class="subtitle">
-        Install, run LLMs locally, and integrate with apps in minutes
+        Install, run LLMs locally, and discover apps in minutes
       </div>
       <div class="button-row">
         <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">
@@ -40,10 +40,36 @@
         </a>
       </div>
     </div>
+
     <!-- Community Section -->
     <div class="community-section">
       <div class="subtitle">
-        Join the community building the future of local AI
+        Built by the local AI community for every PC, with optimizations by AMD
+      </div>
+      <div class="logo-ticker-outer">
+        <div class="logo-ticker-track" id="logoTickerTrack">
+          <a href="https://github.com/FastFlowLM/FastFlowLM" title="FastFlowLM" target="_blank">
+            <img src="https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/main/assets/logo_next_to_flm.png" alt="FastFlowLM" style="height: 60px;" />
+          </a>
+          <a href="https://github.com/microsoft/onnxruntime" title="ONNX Runtime" target="_blank">
+            <img src="https://raw.githubusercontent.com/microsoft/onnxruntime/main/docs/images/ONNX_Runtime_logo.png" alt="ONNX Runtime" style="height: 120px;" />
+          </a>
+          <a href="https://github.com/amd/RyzenAI-SW" title="Ryzen AI SW" target="_blank">
+            <img src="https://www.phoronix.net/image.php?id=2025&image=ryzen_ai_sw_1" alt="Ryzen AI SW" style="height: 70px;" />
+          </a>
+          <a href="https://rocm.docs.amd.com/" title="ROCm" target="_blank">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/20467978-A_AMD_ROCm_Lockup_85tall.png" alt="ROCm" />
+          </a>
+          <a href="https://github.com/ggml-org/llama.cpp" title="llama.cpp" target="_blank">
+            <img src="https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png" alt="llama.cpp" />
+          </a>
+          <a href="https://huggingface.co/" title="Hugging Face" target="_blank">
+            <img src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.png" alt="Hugging Face" style="height: 85px;" />
+          </a>
+          <a href="https://www.vulkan.org/" title="Vulkan" target="_blank">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Vulkan_API_logo.svg/330px-Vulkan_API_logo.svg.png" alt="Vulkan" />
+          </a>
+        </div>
       </div>
       <div class="community-buttons">
         <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
@@ -54,6 +80,8 @@
         </a>
       </div>
     </div>
+
+
     
     <!-- Features Section -->
     <div class="features-section">
@@ -123,11 +151,11 @@
         </div>
       </div>
     </div>
-    
+
     <!-- Partner Apps Section -->
     <div class="partner-apps">
       <div class="subtitle">
-        Lemonade is compatible with the top open-source apps!
+        Lemonade is compatible with great local AI apps!
       </div>
       <div class="partner-apps-images">
         <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank">
@@ -162,6 +190,8 @@
         </a>
       </div>
     </div>
+    
+    
     
     <!-- News Banner Section -->
     <div class="news-banner" id="newsBanner">
@@ -359,10 +389,74 @@
       // No longer needed for shields.io badges
     }
     
+    // Logo ticker animation
+    function initLogoTicker() {
+      const track = document.getElementById('logoTickerTrack');
+      if (!track) return;
+      
+      const logos = Array.from(track.children);
+      if (logos.length === 0) return;
+      
+      // Clone logos enough times to ensure seamless looping
+      const clonesNeeded = 3;
+      for (let i = 0; i < clonesNeeded; i++) {
+        logos.forEach(logo => {
+          track.appendChild(logo.cloneNode(true));
+        });
+      }
+      
+      // Calculate the width of one set of logos (including gaps)
+      const gap = parseFloat(getComputedStyle(track).gap) || 40;
+      let setWidth = 0;
+      logos.forEach(logo => {
+        setWidth += logo.offsetWidth + gap;
+      });
+      
+      // Animation state
+      let position = 0;
+      const speed = 0.2; // pixels per frame
+      let isPaused = false;
+      
+      // Pause on hover
+      track.addEventListener('mouseenter', () => isPaused = true);
+      track.addEventListener('mouseleave', () => isPaused = false);
+      
+      function animate() {
+        if (!isPaused) {
+          position -= speed;
+          // Reset position when first set scrolls out
+          if (Math.abs(position) >= setWidth) {
+            position += setWidth;
+          }
+          track.style.transform = `translateX(${position}px)`;
+        }
+        requestAnimationFrame(animate);
+      }
+      
+      // Start animation after images load
+      Promise.all(
+        Array.from(track.querySelectorAll('img')).map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          });
+        })
+      ).then(() => {
+        // Recalculate width after images load
+        setWidth = 0;
+        logos.forEach(logo => {
+          setWidth += logo.offsetWidth + gap;
+        });
+        animate();
+      });
+    }
+    
     // Load release info when page loads
     document.addEventListener('DOMContentLoaded', function() {
       loadLatestNews();
       fetchLatestRelease();
+      initLogoTicker();
       
       // Initialize footer with star count - add debug logging
       console.log('Initializing footer...');
