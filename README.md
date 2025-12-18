@@ -1,4 +1,4 @@
-## 🍋 Lemonade by AMD: Local LLMs with GPU and NPU acceleration
+## 🍋 Lemonade: Local LLMs with GPU and NPU acceleration
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
