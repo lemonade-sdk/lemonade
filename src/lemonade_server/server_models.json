@@ -304,6 +304,13 @@
         "labels": ["coding","tool-calling","hot"],
         "size": 18.6
     },
+    "Nemotron-3-Nano-30B-A3B-GGUF": {
+        "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot"],
+        "size": 22.8
+    },
     "Gemma-3-4b-it-GGUF": {
         "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-model-f16.gguf",
