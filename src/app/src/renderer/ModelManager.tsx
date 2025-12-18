@@ -15,6 +15,17 @@ interface ModelManagerProps {
   width?: number;
 }
 
+// Registration data for new custom models
+interface ModelRegistrationData {
+  checkpoint: string;
+  recipe: string;
+  mmproj?: string;
+  reasoning?: boolean;
+  vision?: boolean;
+  embedding?: boolean;
+  reranking?: boolean;
+}
+
 const createEmptyModelForm = () => ({
   name: '',
   checkpoint: '',
@@ -28,7 +39,6 @@ const createEmptyModelForm = () => ({
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
   const [models, setModels] = useState<Array<{ name: string; info: ModelInfo }>>([]);
-  const [downloadedModels, setDownloadedModels] = useState<Set<string>>(new Set());
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
@@ -38,25 +48,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
-  const [isAddingModel, setIsAddingModel] = useState(false);
   const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
   
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-
-  const fetchDownloadedModels = useCallback(async () => {
-    try {
-      const response = await serverFetch('/models');
-      const data = await response.json();
-      
-      // Handle both array format and object with data array
-      const modelList = Array.isArray(data) ? data : data.data || [];
-      const downloadedModelIds = new Set<string>(modelList.map((m: any) => m.id as string));
-      setDownloadedModels(downloadedModelIds);
-    } catch (error) {
-      console.error('Failed to fetch downloaded models:', error);
-    }
-  }, []);
 
   const fetchCurrentLoadedModel = useCallback(async () => {
     try {
@@ -90,7 +85,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       setSupportedModelsData(data);
       const suggestedModels = Object.entries(data)
         .filter(([name, info]) => info.suggested || name.startsWith(USER_MODEL_PREFIX))
-        .filter(([name, info]) => info.recipe !== 'whispercpp')
         .map(([name, info]) => ({ name, info }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setModels(suggestedModels);
@@ -101,7 +95,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
   useEffect(() => {
     loadModels();
-    fetchDownloadedModels();
     fetchCurrentLoadedModel();
     
     // Poll for model status every 5 seconds to detect loaded models
@@ -113,7 +106,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     const unsubscribePortChange = onServerPortChange(() => {
       console.log('Server port changed, refetching model data...');
       loadModels();
-      fetchDownloadedModels();
       fetchCurrentLoadedModel();
     });
     
@@ -161,10 +153,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
 
     window.addEventListener('modelLoadStart' as any, handleModelLoadStart);
     window.addEventListener('modelLoadEnd' as any, handleModelLoadEnd);
-
-    const stopWatchingUserModels = window.api?.watchUserModels?.(() => {
-      loadModels();
-    });
     
     return () => {
       clearInterval(interval);
@@ -172,11 +160,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
       window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
       delete (window as any).setModelLoading;
-      if (typeof stopWatchingUserModels === 'function') {
-        stopWatchingUserModels();
-      }
     };
-  }, [fetchDownloadedModels, fetchCurrentLoadedModel, loadModels]);
+  }, [fetchCurrentLoadedModel, loadModels]);
 
   // Auto-expand the single category if only one is available
   useEffect(() => {
@@ -194,7 +179,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     
     // Filter by downloaded status
     if (showDownloadedOnly) {
-      filtered = filtered.filter(model => downloadedModels.has(model.name));
+      filtered = filtered.filter(model => supportedModelsData[model.name]?.downloaded);
     }
     
     // Filter by search query
@@ -277,7 +262,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       'oga-npu': 'NPU',
       'oga-igpu': 'iGPU',
       'llamacpp': 'GGUF',
-      'flm': 'FLM'
+      'flm': 'FLM',
+      'whispercpp': 'Whisper.cpp'
     };
     return labels[recipe] || recipe.toUpperCase();
   };
@@ -318,7 +304,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         'llamacpp': 'Llama.cpp GPU',
         'oga-cpu': 'ONNX Runtime CPU',
         'oga-hybrid': 'ONNX Runtime Hybrid',
-        'oga-npu': 'ONNX Runtime NPU'
+        'oga-npu': 'ONNX Runtime NPU',
+        'whispercpp': 'Whisper.cpp'
       };
       return recipeLabels[key] || key;
     } else {
@@ -332,16 +319,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     setShowAddModelForm(false);
   };
 
-  const handleInstallModel = async () => {
-    if (isAddingModel) {
-      return;
-    }
-
-    if (!window.api?.addUserModel) {
-      showError('Adding custom models is not supported in this build.');
-      return;
-    }
-
+  const handleInstallModel = () => {
     const trimmedName = newModel.name.trim();
     const trimmedCheckpoint = newModel.checkpoint.trim();
     const trimmedRecipe = newModel.recipe.trim();
@@ -362,32 +340,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       return;
     }
 
-    setIsAddingModel(true);
-    try {
-      await window.api.addUserModel({
-        name: trimmedName,
-        checkpoint: trimmedCheckpoint,
-        recipe: trimmedRecipe,
-        mmproj: trimmedMmproj,
-        reasoning: newModel.reasoning,
-        vision: newModel.vision,
-        embedding: newModel.embedding,
-        reranking: newModel.reranking,
-      });
-
-      await loadModels();
-      resetNewModelForm();
-      showSuccess('Model added to your catalog.');
-    } catch (error) {
-      console.error('Failed to add model:', error);
-      showError(
-        `Failed to add model: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`
-      );
-    } finally {
-      setIsAddingModel(false);
+    // Validate GGUF checkpoint format
+    if (trimmedCheckpoint.toLowerCase().includes('gguf') && !trimmedCheckpoint.includes(':')) {
+      showWarning('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax');
+      return;
     }
+
+    // Close the form and start the download
+    const modelName = `user.${trimmedName}`;
+    resetNewModelForm();
+    
+    // Use the same download flow as registered models, but include registration data
+    handleDownloadModel(modelName, {
+      checkpoint: trimmedCheckpoint,
+      recipe: trimmedRecipe,
+      mmproj: trimmedMmproj || undefined,
+      reasoning: newModel.reasoning,
+      vision: newModel.vision,
+      embedding: newModel.embedding,
+      reranking: newModel.reranking,
+    });
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -397,10 +369,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }));
   };
 
-  const handleDownloadModel = useCallback(async (modelName: string) => {
+  const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     try {
-      const modelData = supportedModelsData[modelName];
-      if (!modelData) {
+      // For registered models, verify metadata exists; for new models, we're registering now
+      if (!registrationData && !supportedModelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
@@ -436,14 +408,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       window.addEventListener('download:paused' as any, handlePause);
       
       try {
+        // Build request body - include registration data for new custom models
+        const requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
+        if (registrationData) {
+          requestBody.checkpoint = registrationData.checkpoint;
+          requestBody.recipe = registrationData.recipe;
+          if (registrationData.mmproj) requestBody.mmproj = registrationData.mmproj;
+          if (registrationData.reasoning) requestBody.reasoning = registrationData.reasoning;
+          if (registrationData.vision) requestBody.vision = registrationData.vision;
+          if (registrationData.embedding) requestBody.embedding = registrationData.embedding;
+          if (registrationData.reranking) requestBody.reranking = registrationData.reranking;
+        }
+        
         const response = await serverFetch('/pull', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            model_name: modelName, 
-            ...modelData,
-            stream: true  // Enable SSE streaming for progress updates
-          }),
+          body: JSON.stringify(requestBody),
           signal: abortController.signal,
         });
         
@@ -471,39 +451,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              
+            for (const line of lines) {
               if (line.startsWith('event:')) {
                 currentEventType = line.substring(6).trim();
               } else if (line.startsWith('data:')) {
+                // Parse JSON separately so server errors aren't swallowed
+                let data;
                 try {
-                  const data = JSON.parse(line.substring(5).trim());
-                  
-                  if (currentEventType === 'progress') {
-                    downloadTracker.updateProgress(downloadId, data);
-                  } else if (currentEventType === 'complete') {
-                    downloadTracker.completeDownload(downloadId);
-                    downloadCompleted = true;
-                  } else if (currentEventType === 'error') {
-                    downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
-                    throw new Error(data.error || 'Download failed');
-                  }
+                  data = JSON.parse(line.substring(5).trim());
                 } catch (parseError) {
                   console.error('Failed to parse SSE data:', line, parseError);
+                  continue;
+                }
+                
+                if (currentEventType === 'progress') {
+                  downloadTracker.updateProgress(downloadId, data);
+                } else if (currentEventType === 'complete') {
+                  downloadTracker.completeDownload(downloadId);
+                  downloadCompleted = true;
+                } else if (currentEventType === 'error') {
+                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                  throw new Error(data.error || 'Download failed');
                 }
               } else if (line.trim() === '') {
-                // Empty line resets event type to default
                 currentEventType = 'progress';
               }
             }
           }
         } catch (streamError: any) {
-          // If we already got the complete event, ignore stream errors (connection closing is expected)
+          // If we already got the complete event, ignore stream errors
           if (!downloadCompleted) {
             throw streamError;
           }
-          // Otherwise, it's a normal completion after the server closed the connection
         }
         
         // Mark as complete if not already done
@@ -512,8 +491,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           downloadCompleted = true;
         }
         
-        // Refresh downloaded models and current loaded model status
-        await fetchDownloadedModels();
+        // Refresh models and current loaded model status
+        await loadModels();
         await fetchCurrentLoadedModel();
         
         // Show success notification
@@ -563,7 +542,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     }
-  }, [supportedModelsData, showError, showSuccess, showWarning, fetchDownloadedModels, fetchCurrentLoadedModel]);
+  }, [supportedModelsData, showError, showSuccess, showWarning, loadModels, fetchCurrentLoadedModel]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
@@ -681,11 +660,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         throw new Error(`Failed to delete model: ${response.statusText}`);
       }
       
-      // Refresh downloaded models and current loaded model status
-      await fetchDownloadedModels();
-      await fetchCurrentLoadedModel();
+      // Refresh models and current loaded model status
       await loadModels();
+      await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" deleted successfully.`);
+      
+      // Notify other components (e.g., ChatWindow) that models have been updated
+      window.dispatchEvent(new CustomEvent('modelsUpdated'));
     } catch (error) {
       console.error('Error deleting model:', error);
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -766,7 +747,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             {shouldShowCategory(category) && (
               <div className="model-list">
                 {groupedModels[category].map(model => {
-                  const isDownloaded = downloadedModels.has(model.name);
+                  const isDownloaded = supportedModelsData[model.name]?.downloaded ?? false;
                   const isLoaded = loadedModels.has(model.name);
                   const isLoading = loadingModels.has(model.name);
                   

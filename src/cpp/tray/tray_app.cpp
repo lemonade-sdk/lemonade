@@ -554,6 +554,7 @@ void TrayApp::load_env_defaults() {
     config_.llamacpp_backend = getenv_or_default("LEMONADE_LLAMACPP", config_.llamacpp_backend);
     config_.ctx_size = getenv_int_or_default("LEMONADE_CTX_SIZE", config_.ctx_size);
     config_.llamacpp_args = getenv_or_default("LEMONADE_LLAMACPP_ARGS", config_.llamacpp_args);
+    config_.extra_models_dir = getenv_or_default("LEMONADE_EXTRA_MODELS_DIR", config_.extra_models_dir);
 }
 
 void TrayApp::parse_arguments(int argc, char* argv[]) {
@@ -582,6 +583,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.llamacpp_backend = argv[++i];
             } else if (arg == "--llamacpp-args" && i + 1 < argc) {
                 config_.llamacpp_args = argv[++i];
+            } else if (arg == "--extra-models-dir" && i + 1 < argc) {
+                config_.extra_models_dir = argv[++i];
             } else if (arg == "--max-loaded-models" && i + 1 < argc) {
                 // Parse 1 or 3 values for max loaded models (2 or 4+ is not allowed)
                 // All values must be positive integers (no floats, no negatives, no zero)
@@ -677,6 +680,7 @@ void TrayApp::print_usage(bool show_serve_options) {
         std::cout << "  --ctx-size SIZE          Context size (default: 4096)\n";
         std::cout << "  --llamacpp BACKEND       LlamaCpp backend: vulkan, rocm, metal, cpu (default: vulkan)\n";
         std::cout << "  --llamacpp-args ARGS     Custom arguments for llama-server\n";
+        std::cout << "  --extra-models-dir PATH  Experimental feature: secondary directory to scan for LLM GGUF model files\n";
         std::cout << "  --max-loaded-models N [E] [R] [A]\n";
         std::cout << "                           Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] (default: 1 1 1 1)\n";
         std::cout << "  --log-file PATH          Log file path\n";
@@ -894,7 +898,8 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.max_llm_models,
         config_.max_embedding_models,
         config_.max_reranking_models,
-        config_.max_audio_models
+        config_.max_audio_models,
+        config_.extra_models_dir  // Pass extra models directory
     );
 
     if (!success) {
@@ -1637,7 +1642,8 @@ bool TrayApp::start_server() {
         config_.max_llm_models,
         config_.max_embedding_models,
         config_.max_reranking_models,
-        config_.max_audio_models
+        config_.max_audio_models,
+        config_.extra_models_dir  // Pass extra models directory
     );
 
     // Start log tail thread to show logs in console

@@ -263,6 +263,169 @@ std::string ModelManager::get_hf_cache_dir() const {
 #endif
 }
 
+void ModelManager::set_extra_models_dir(const std::string& dir) {
+    extra_models_dir_ = dir;
+    
+    // Invalidate cache so discovered models are included on next access
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
+    
+    if (!extra_models_dir_.empty()) {
+        std::cout << "[ModelManager] Extra models directory set to: " << extra_models_dir_ << std::endl;
+    }
+}
+
+std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
+    std::map<std::string, ModelInfo> discovered;
+    
+    // If no extra models directory configured, return empty
+    if (extra_models_dir_.empty()) {
+        return discovered;
+    }
+    
+    if (!fs::exists(extra_models_dir_)) {
+        // Directory doesn't exist, return empty
+        return discovered;
+    }
+    
+    std::string search_dir = extra_models_dir_;
+    
+    std::cout << "[ModelManager] Scanning for GGUF models in: " << search_dir << std::endl;
+    
+    // Track which directories we've processed (for multimodal/multi-shard detection)
+    std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
+    std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
+    
+    // Recursively find all .gguf files
+    try {
+        for (const auto& entry : fs::recursive_directory_iterator(search_dir)) {
+            if (!entry.is_regular_file()) continue;
+            
+            std::string filename = entry.path().filename().string();
+            std::string filename_lower = to_lower(filename);
+            
+            if (!ends_with_ignore_case(filename, ".gguf")) continue;
+            
+            fs::path parent_dir = entry.path().parent_path();
+            
+            // Check if this file is directly in the search directory or in a subdirectory
+            if (parent_dir == fs::path(search_dir)) {
+                // Standalone file in the root of search directory
+                standalone_files.push_back(entry.path());
+            } else {
+                // File in a subdirectory - group by parent directory
+                dirs_with_gguf[parent_dir.string()].push_back(entry.path());
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ModelManager] Error scanning directory " << search_dir << ": " << e.what() << std::endl;
+        return discovered;
+    }
+    
+    // Process standalone files (single-file models)
+    for (const auto& gguf_path : standalone_files) {
+        std::string filename = gguf_path.filename().string();
+        
+        // Skip mmproj files - they're part of multimodal models
+        if (contains_ignore_case(filename, "mmproj")) continue;
+        
+        // Use exact filename as model name
+        std::string model_name = filename;
+        
+        ModelInfo info;
+        info.model_name = model_name;
+        info.checkpoint = gguf_path.string();  // Use full path as checkpoint
+        info.resolved_path = gguf_path.string();
+        info.recipe = "llamacpp";
+        info.suggested = true;
+        info.downloaded = true;
+        info.source = "extra_models_dir";
+        info.labels.push_back("custom");
+        
+        // Calculate size in GB
+        try {
+            uintmax_t file_size = fs::file_size(gguf_path);
+            info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+        } catch (...) {
+            info.size = 0.0;
+        }
+        
+        // Set type and device
+        info.type = ModelType::LLM;
+        info.device = get_device_type_from_recipe("llamacpp");
+        
+        discovered[model_name] = info;
+    }
+    
+    // Process directories (multimodal and multi-shard models)
+    for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
+        if (gguf_files.empty()) continue;
+        
+        fs::path dir = fs::path(dir_path);
+        std::string dir_name = dir.filename().string();
+        std::string model_name = dir_name;  // Use exact directory name
+        
+        // Find the main model file and mmproj file
+        fs::path main_model_path;
+        std::string mmproj_file;
+        double total_size = 0.0;
+        
+        for (const auto& gguf_path : gguf_files) {
+            std::string filename = gguf_path.filename().string();
+            
+            // Calculate total size
+            try {
+                uintmax_t file_size = fs::file_size(gguf_path);
+                total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+            } catch (...) {}
+            
+            // Check if this is an mmproj file (can be anywhere in filename)
+            if (contains_ignore_case(filename, "mmproj")) {
+                mmproj_file = filename;
+                continue;
+            }
+            
+            // This is a model file - for sharded models, we want the first shard
+            // For non-sharded, this is the only model file
+            if (main_model_path.empty() || gguf_path < main_model_path) {
+                main_model_path = gguf_path;
+            }
+        }
+        
+        if (main_model_path.empty()) {
+            // No main model file found (only mmproj?), skip
+            continue;
+        }
+        
+        ModelInfo info;
+        info.model_name = model_name;
+        info.checkpoint = dir_path;  // Use directory as checkpoint
+        info.resolved_path = main_model_path.string();  // First GGUF file as resolved path
+        info.recipe = "llamacpp";
+        info.suggested = true;
+        info.downloaded = true;
+        info.source = "extra_models_dir";
+        info.labels.push_back("custom");
+        info.size = total_size;
+        
+        // If mmproj found, set it and add vision label
+        if (!mmproj_file.empty()) {
+            info.mmproj = mmproj_file;
+            info.labels.push_back("vision");
+        }
+        
+        // Set type and device
+        info.type = get_model_type_from_labels(info.labels);
+        info.device = get_device_type_from_recipe("llamacpp");
+        
+        discovered[model_name] = info;
+    }
+    
+    std::cout << "[ModelManager] Discovered " << discovered.size() << " models from extra directory" << std::endl;
+    
+    return discovered;
+}
+
 std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
@@ -551,6 +714,18 @@ void ModelManager::build_cache() {
         all_models[info.model_name] = info;
     }
     
+    // Step 1.5: Discover models from extra_models_dir
+    auto discovered_models = discover_extra_models();
+    for (const auto& [name, info] : discovered_models) {
+        // Check for conflicts with registered models
+        if (all_models.find(name) != all_models.end()) {
+            std::cout << "[ModelManager] Warning: Discovered model '" << name 
+                      << "' conflicts with registered model, skipping." << std::endl;
+            continue;
+        }
+        all_models[name] = info;
+    }
+    
     // Step 2: Filter by backend availability
     all_models = filter_models_by_backend(all_models);
     
@@ -743,14 +918,45 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     
     auto it = models_cache_.find(model_name);
     if (it != models_cache_.end()) {
-        if (it->second.source == "local_upload") {
-            // Local upload - remove entirely from cache
+        // User models and local uploads should be removed entirely from cache
+        // (they're not in server_models.json, so keeping them makes no sense)
+        bool is_user_model = model_name.substr(0, 5) == "user.";
+        if (is_user_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
             std::cout << "[ModelManager] Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
             it->second.downloaded = false;
             std::cout << "[ModelManager] Marked '" << model_name << "' as not downloaded" << std::endl;
+        }
+    }
+}
+
+void ModelManager::refresh_flm_download_status() {
+    // Get fresh list of installed FLM models
+    // This is called on every get_supported_models() to ensure FLM status is up-to-date
+    // since users can install/uninstall FLM models outside of lemonade
+    auto flm_models = get_flm_installed_models();
+    std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
+    
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return;  // Cache will be built fresh on next access
+    }
+    
+    // Update download status for all FLM models in cache
+    for (auto& [name, info] : models_cache_) {
+        if (info.recipe == "flm") {
+            bool was_downloaded = info.downloaded;
+            info.downloaded = flm_set.count(info.checkpoint) > 0;
+            
+            // Log changes for debugging
+            if (was_downloaded != info.downloaded) {
+                std::cout << "[ModelManager] FLM status changed: " << name 
+                          << " (checkpoint: " << info.checkpoint << ") -> " 
+                          << (info.downloaded ? "downloaded" : "not downloaded") << std::endl;
+            }
         }
     }
 }
@@ -834,6 +1040,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     
     std::map<std::string, ModelInfo> filtered;
     
+    // Clear the filtered-out models cache (will be repopulated below)
+    filtered_out_models_.clear();
+    
     // Detect platform
 #ifdef __APPLE__
     bool is_macos = true;
@@ -856,6 +1065,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
     double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
+    
+    // Get processor and OS for user-friendly error messages
+    std::string processor = "Unknown";
+    std::string os_version = "Unknown";
+    if (system_info.contains("Processor") && system_info["Processor"].is_string()) {
+        processor = system_info["Processor"].get<std::string>();
+    }
+    if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
+        os_version = system_info["OS Version"].get<std::string>();
+    }
     
     // Debug output (only shown once during startup)
     static bool debug_printed = false;
@@ -881,28 +1100,41 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (recipe == "flm") {
             if (!flm_available) {
                 filter_out = true;
-                filter_reason = "FLM not available";
+                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
+                               "Detected processor: " + processor + ". "
+                               "Detected operating system: " + os_version + ".";
             }
         }
         
         // Filter OGA models based on NPU availability
-        if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu") {
+        if (recipe == "oga-npu" || recipe == "oga-hybrid") {
             if (!oga_available) {
                 filter_out = true;
-                filter_reason = "OGA not available";
+                filter_reason = "NPU models require AMD Ryzen AI 300- and 400-series processors with XDNA2 NPUs running Windows 11. "
+                               "Detected processor: " + processor + ". "
+                               "Detected operating system: " + os_version + ".";
             }
+        }
+        
+        // OGA-CPU models
+        if (recipe == "oga-cpu" && !oga_available) {
+            filter_out = true;
+            filter_reason = "OGA-CPU models require AMD Ryzen AI 300- and 400-series processors running Windows 11. "
+                           "Detected processor: " + processor + ". "
+                           "Detected operating system: " + os_version + ".";
         }
         
         // Filter out other OGA models (not yet implemented)
         if (recipe == "oga-igpu") {
             filter_out = true;
-            filter_reason = "oga-igpu not implemented";
+            filter_reason = "The oga-igpu recipe is not yet implemented in this version of Lemonade Server.";
         }
         
         // On macOS, only show llamacpp models
         if (is_macos && recipe != "llamacpp") {
             filter_out = true;
-            filter_reason = "macOS only supports llamacpp";
+            filter_reason = "This model uses the '" + recipe + "' recipe which is not supported on macOS. "
+                           "Only llamacpp models are supported on macOS.";
         }
         
         // Filter out models that are too large for system RAM
@@ -910,18 +1142,29 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
-                filter_reason = "Model too large for system RAM";
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(1);
+                oss << "This model requires approximately " << info.size << " GB of memory, "
+                    << "but your system only has " << system_ram_gb << " GB of RAM. "
+                    << "Models larger than " << max_model_size_gb << " GB (80% of system RAM) are filtered out.";
+                filter_reason = oss.str();
             }
         }
         
         // Special rule: filter out gpt-oss-20b-FLM on systems with less than 64 GB RAM
         if (!filter_out && name == "gpt-oss-20b-FLM" && system_ram_gb > 0.0 && system_ram_gb < 64.0) {
             filter_out = true;
-            filter_reason = "gpt-oss-20b-FLM requires 64 GB RAM";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1);
+            oss << "The gpt-oss-20b-FLM model requires at least 64 GB of RAM. "
+                << "Your system has " << system_ram_gb << " GB.";
+            filter_reason = oss.str();
         }
         
         if (filter_out) {
             filtered_count++;
+            // Store the filter reason for later lookup
+            filtered_out_models_[name] = filter_reason;
             continue;
         }
         
@@ -1091,6 +1334,18 @@ void ModelManager::download_model(const std::string& model_name,
     std::string actual_recipe = recipe;
     std::string actual_mmproj = mmproj;
     
+    // If checkpoint or recipe are provided, this is a model registration
+    // and the model name must have the "user." prefix
+    if (!actual_checkpoint.empty() || !actual_recipe.empty()) {
+        if (model_name.substr(0, 5) != "user.") {
+            throw std::runtime_error(
+                "When providing 'checkpoint' or 'recipe', the model name must include the "
+                "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + 
+                model_name
+            );
+        }
+    }
+    
     // Check if model exists in registry
     bool model_registered = model_exists(model_name);
     
@@ -1194,8 +1449,8 @@ void ModelManager::download_model(const std::string& model_name,
         download_from_huggingface(repo_id, "", "", progress_callback);
     }
     
-    // Register if needed
-    if (model_name.substr(0, 5) == "user." || !checkpoint.empty()) {
+    // Register user models to user_models.json
+    if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe, 
                           reasoning, vision, embedding, reranking, actual_mmproj);
     }
@@ -1911,6 +2166,77 @@ bool ModelManager::model_exists(const std::string& model_name) {
     // O(1) lookup in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     return models_cache_.find(model_name) != models_cache_.end();
+}
+
+bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
+    // Check raw server_models_ JSON (before filtering)
+    if (server_models_.contains(model_name)) {
+        return true;
+    }
+    // Also check user models
+    if (user_models_.contains(model_name)) {
+        return true;
+    }
+    return false;
+}
+
+ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
+    ModelInfo info;
+    
+    // Check server models first
+    json* model_json = nullptr;
+    if (server_models_.contains(model_name)) {
+        model_json = &server_models_[model_name];
+    } else if (user_models_.contains(model_name)) {
+        model_json = &user_models_[model_name];
+    }
+    
+    if (!model_json) {
+        throw std::runtime_error("Model not found in registry: " + model_name);
+    }
+    
+    // Parse model info from JSON
+    info.model_name = model_name;
+    info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
+    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
+    info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
+    info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
+    
+    // Parse labels array
+    if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
+        for (const auto& label : (*model_json)["labels"]) {
+            if (label.is_string()) {
+                info.labels.push_back(label.get<std::string>());
+            }
+        }
+    }
+    
+    // Parse size
+    if (model_json->contains("size")) {
+        if ((*model_json)["size"].is_number()) {
+            info.size = (*model_json)["size"].get<double>();
+        }
+    }
+    
+    return info;
+}
+
+std::string ModelManager::get_model_filter_reason(const std::string& model_name) {
+    // Ensure cache is built (this populates filtered_out_models_)
+    build_cache();
+    
+    // Look up in the filtered-out models cache
+    // This is populated by filter_models_by_backend() during cache building
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    auto it = filtered_out_models_.find(model_name);
+    if (it != filtered_out_models_.end()) {
+        return it->second;
+    }
+    
+    // Model wasn't filtered out (either it's available or doesn't exist)
+    return "";
 }
 
 } // namespace lemon

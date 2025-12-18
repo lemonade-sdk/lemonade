@@ -37,7 +37,8 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                int ctx_size, bool tray, const std::string& llamacpp_backend,
                const std::string& llamacpp_args, int max_llm_models,
-               int max_embedding_models, int max_reranking_models, int max_audio_models)
+               int max_embedding_models, int max_reranking_models, int max_audio_models,
+               const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
       running_(false) {
@@ -70,6 +71,10 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     std::cout << "[Server] HTTP server initialized with thread pool (8 threads)" << std::endl;
     
     model_manager_ = std::make_unique<ModelManager>();
+    
+    // Set extra models directory for GGUF discovery
+    model_manager_->set_extra_models_dir(extra_models_dir);
+    
     router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
                                        model_manager_.get(), max_llm_models,
                                        max_embedding_models, max_reranking_models, max_audio_models);
@@ -87,10 +92,13 @@ Server::~Server() {
 }
 
 void Server::setup_routes(httplib::Server &web_server) {
-    // Add pre-routing handler to log ALL incoming requests
+    // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
-        std::cout.flush();
+        // Skip logging health checks to reduce log noise
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+            std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
+            std::cout.flush();
+        }
         return httplib::Server::HandlerResponse::Unhandled;
     });
     
@@ -369,14 +377,18 @@ void Server::setup_cors(httplib::Server &web_server) {
         std::cerr << "[Server] Error " << res.status << ": " << req.method << " " << req.path << std::endl;
         
         if (res.status == 404) {
-            nlohmann::json error = {
-                {"error", {
-                    {"message", "The requested endpoint does not exist"},
-                    {"type", "not_found"},
-                    {"path", req.path}
-                }}
-            };
-            res.set_content(error.dump(), "application/json");
+            // Only set generic "endpoint not found" if no content was already set
+            // This preserves specific error messages (e.g., "model not found")
+            if (res.body.empty()) {
+                nlohmann::json error = {
+                    {"error", {
+                        {"message", "The requested endpoint does not exist"},
+                        {"type", "not_found"},
+                        {"path", req.path}
+                    }}
+                };
+                res.set_content(error.dump(), "application/json");
+            }
         } else if (res.status == 400) {
             // Log more details about 400 errors
             std::cerr << "[Server] 400 Bad Request details - Body length: " << req.body.length() 
@@ -439,9 +451,12 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 }
 
 void Server::setup_http_logger(httplib::Server &web_server) {
-    // Add request logging for ALL requests
+    // Add request logging for ALL requests (except health checks)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
-        std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+        // Skip logging health checks to reduce log noise
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+            std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
+        }
     });
 }
 
@@ -496,6 +511,96 @@ void Server::stop() {
 
 bool Server::is_running() const {
     return running_;
+}
+
+// Helper function to generate detailed model-not-found error responses
+// ====================================================================
+// Generates an actionable error message for model loading failures.
+// Handles three cases:
+//   1. Model exists but was filtered out (e.g., NPU model on non-NPU system)
+//   2. Model doesn't exist in the registry at all
+//   3. Model exists but failed to load (engine error)
+nlohmann::json Server::create_model_error(const std::string& requested_model, const std::string& exception_msg) {
+    nlohmann::json error_response;
+    
+    // Case 1: Check if this model exists but was filtered out due to system requirements
+    std::string filter_reason = model_manager_->get_model_filter_reason(requested_model);
+    
+    if (!filter_reason.empty()) {
+        // Model exists but is not available on this system
+        std::string message = "Model '" + requested_model + "' is not available on this system. " + filter_reason;
+        
+        error_response["error"] = {
+            {"message", message},
+            {"type", "model_not_supported"},
+            {"param", "model"},
+            {"code", "model_not_supported"},
+            {"requested_model", requested_model}
+        };
+        
+        return error_response;
+    }
+    
+    // Case 2: Check if model doesn't exist in the registry at all
+    if (!model_manager_->model_exists(requested_model)) {
+        std::string message = "Model '" + requested_model + "' was not found. ";
+        
+        // Get available models and suggest some
+        auto available_models = model_manager_->get_supported_models();
+        
+        if (!available_models.empty()) {
+            // Collect model names
+            std::vector<std::string> model_names;
+            model_names.reserve(available_models.size());
+            for (const auto& [name, info] : available_models) {
+                model_names.push_back(name);
+            }
+            
+            // Sort alphabetically for consistent output
+            std::sort(model_names.begin(), model_names.end());
+            
+            // Show up to 3 available models
+            const size_t max_suggestions = 3;
+            size_t count = std::min(model_names.size(), max_suggestions);
+            
+            message += "Available models include: ";
+            for (size_t i = 0; i < count; ++i) {
+                if (i > 0) message += ", ";
+                message += "'" + model_names[i] + "'";
+            }
+            
+            if (model_names.size() > max_suggestions) {
+                message += ", and " + std::to_string(model_names.size() - max_suggestions) + " more";
+            }
+            message += ". ";
+        }
+        
+        message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
+        
+        error_response["error"] = {
+            {"message", message},
+            {"type", "model_not_found"},
+            {"param", "model"},
+            {"code", "model_not_found"},
+            {"requested_model", requested_model}
+        };
+        
+        return error_response;
+    }
+    
+    // Case 3: Model exists and is available, but failed to load (engine error)
+    // Return the actual exception message so the user knows what went wrong
+    std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
+    
+    error_response["error"] = {
+        {"message", message},
+        {"type", "model_load_error"},
+        {"param", "model"},
+        {"code", "model_load_error"},
+        {"requested_model", requested_model}
+    };
+    
+    return error_response;
 }
 
 // Helper function for auto-loading models on inference and load endpoints
@@ -648,7 +753,8 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
     } else {
         res.status = 404;
-        res.set_content("{\"error\": \"Model not found\"}", "application/json");
+        auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 
@@ -671,8 +777,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
                 std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
-                res.status = 404;
-                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                auto error_response = create_model_error(requested_model, e.what());
+                // Set appropriate status code based on error type
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                if (error_code == "model_load_error") {
+                    res.status = 500;  // Internal server error - model exists but failed to load
+                } else {
+                    res.status = 404;  // Not found - model doesn't exist or is filtered out
+                }
+                res.set_content(error_response.dump(), "application/json");
                 return;
             }
         } else if (!router_->is_model_loaded()) {
@@ -751,7 +864,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         // Use unified Router path for streaming
                         router_->chat_completion_stream(request_body, sink);
                         
-                        // Return false to indicate we're done streaming
+                        // Explicitly signal we're done - this ensures proper chunked encoding termination
+                        sink.done();
                         return false;
                     }
                 );
@@ -883,8 +997,15 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
                 std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
-                res.status = 404;
-                res.set_content("{\"error\": \"" + std::string(e.what()) + "\"}", "application/json");
+                auto error_response = create_model_error(requested_model, e.what());
+                // Set appropriate status code based on error type
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                if (error_code == "model_load_error") {
+                    res.status = 500;  // Internal server error - model exists but failed to load
+                } else {
+                    res.status = 404;  // Not found - model doesn't exist or is filtered out
+                }
+                res.set_content(error_response.dump(), "application/json");
                 return;
             }
         } else if (!router_->is_model_loaded()) {
@@ -930,7 +1051,9 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                         // Use unified Router path for streaming
                         router_->completion_stream(request_body, sink);
                         
-                        return false; // Signal completion
+                        // Explicitly signal we're done - this ensures proper chunked encoding termination
+                        sink.done();
+                        return false;
                     }
                 );
                 
@@ -1056,7 +1179,16 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            auto_load_model_if_needed(requested_model);
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -1083,7 +1215,16 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            auto_load_model_if_needed(requested_model);
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -1170,12 +1311,10 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 auto_load_model_if_needed(requested_model);
             } catch (const std::exception& e) {
                 std::cerr << "[Server ERROR] Failed to load audio model: " << e.what() << std::endl;
-                res.status = 404;
-                nlohmann::json error = {{"error", {
-                    {"message", e.what()},
-                    {"type", "model_not_found"}
-                }}};
-                res.set_content(error.dump(), "application/json");
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
                 return;
             }
         } else {
@@ -1216,7 +1355,16 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
-            auto_load_model_if_needed(requested_model);
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
         } else if (!router_->is_model_loaded()) {
             std::cerr << "[Server ERROR] No model loaded and no model specified in request" << std::endl;
             res.status = 400;
@@ -1264,6 +1412,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                         // Use unified Router path for streaming
                         router_->responses_stream(request_body, sink);
                         
+                        // Explicitly signal we're done - this ensures proper chunked encoding termination
+                        sink.done();
                         return false;
                     }
                 );
@@ -1314,6 +1464,18 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
         if (!recipe.empty()) {
             std::cout << "[Server]   recipe: " << recipe << std::endl;
+        }
+        
+        // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
+        if (!checkpoint.empty() || !recipe.empty()) {
+            if (model_name.substr(0, 5) != "user.") {
+                res.status = 400;
+                nlohmann::json error = {{"error", 
+                    "When providing 'checkpoint' or 'recipe', the model name must include the "
+                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
         }
         
         if (stream) {
@@ -1374,6 +1536,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                         }
                     }
                     
+                    // Explicitly signal we're done - this ensures proper chunked encoding termination
+                    sink.done();
                     return false; // Signal completion
                 });
         } else {
@@ -1397,9 +1561,13 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     auto thread_id = std::this_thread::get_id();
     std::cout << "[Server DEBUG] ===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
     std::cout.flush();
+    
+    // Declare model_name outside try block so it's available in catch block
+    std::string model_name;
+    
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        std::string model_name = request_json["model_name"];
+        model_name = request_json["model_name"];
         
         // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
         int ctx_size = request_json.value("ctx_size", -1);
@@ -1430,7 +1598,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
-            throw std::runtime_error("Model not found: " + model_name);
+            std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
+            res.status = 404;
+            auto error_response = create_model_error(model_name, "Model not found");
+            res.set_content(error_response.dump(), "application/json");
+            return;
         }
         
         auto info = model_manager_->get_model_info(model_name);
@@ -1456,9 +1628,23 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         
     } catch (const std::exception& e) {
         std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
+        
+        // Use consistent error format
+        if (!model_name.empty()) {
+            auto error_response = create_model_error(model_name, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.set_content(error_response.dump(), "application/json");
+        } else {
+            // JSON parsing failed before we got model_name - return generic error
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", std::string("Invalid request: ") + e.what()},
+                {"type", "invalid_request_error"},
+                {"code", "invalid_request"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-## 🍋 Lemonade: Local LLM Serving with GPU and NPU acceleration
+## 🍋 Lemonade: Local LLMs with GPU and NPU acceleration
 
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
@@ -35,9 +35,9 @@
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 
-Lemonade helps users run local LLMs with the highest performance by configuring state-of-the-art inference engines for their NPUs and GPUs.
+Lemonade helps users discover and run local AI apps by serving optimized LLMs right from their own GPUs and NPUs.
 
-Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-your-on-device-ai-revolution/), research teams like [Hazy Research at Stanford](https://www.amd.com/en/developer/resources/technical-articles/2025/minions--on-device-and-cloud-language-model-collaboration-on-ryz.html), and large companies like [AMD](https://www.amd.com/en/developer/resources/technical-articles/unlocking-a-wave-of-llm-apps-on-ryzen-ai-through-lemonade-server.html) use Lemonade to run LLMs.
+Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk), [Morphik](https://www.morphik.ai/docs/local-inference#lemonade), and many more use Lemonade to seamlessly run LLMs on any PC.
 
 ## Getting Started
 
@@ -47,7 +47,7 @@ Startups such as [Styrk AI](https://styrk.ai/styrk-ai-and-amd-guardrails-for-you
 4. **Connect**: Use Lemonade with your favorite apps:
 
 <p align="center">
-  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=GitHub.copilot" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
+  <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia" title="Gaia"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://openhands.dev/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://deeptutor.knowhiz.us/" title="Deep Tutor"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" width="60" /></a>&nbsp;&nbsp;<a href="https://www.iterate.ai/" title="Iterate.ai"><img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" width="60" /></a>
 </p>
 
 <p align="center"><em>Want your app featured here? <a href="https://discord.gg/5xXzkMu8Zk">Discord</a> · <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub Issue</a> · <a href="mailto:lemonade@amd.com">Email</a></em></p>
@@ -135,8 +135,8 @@ Lemonade supports the following configurations, while also making it easy to swi
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
 | Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Add imagegen and transcription to app    | Handheld devices: Ryzen AI Z2 Extreme APUs     | Multiple models loaded at the same time  |
-| ROCm support for Ryzen AI 360-375 (Strix) APUs    | Text to speech                               | Lemonade desktop app                     |
+| Check back in 2026 :)    | Handheld devices: Ryzen AI Z2 Extreme APUs     | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
+|     | Text to speech                               | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application
 

@@ -88,8 +88,20 @@ public:
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
     
-    // Check if model exists
+    // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
+    
+    // Check if model exists in the raw registry (before filtering)
+    // Returns true even for NPU models on systems without NPU
+    bool model_exists_unfiltered(const std::string& model_name);
+    
+    // Get model info from raw registry (without filtering)
+    // Useful for generating helpful error messages about unsupported models
+    ModelInfo get_model_info_unfiltered(const std::string& model_name);
+    
+    // Get the reason why a model was filtered out (empty string if not filtered)
+    // Returns a user-friendly message explaining why the model is not available
+    std::string get_model_filter_reason(const std::string& model_name);
     
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
@@ -101,8 +113,14 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
     
+    // Refresh FLM model download status from 'flm list' (call after FLM install/upgrade)
+    void refresh_flm_download_status();
+    
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
+    
+    // Set extra models directory for GGUF discovery
+    void set_extra_models_dir(const std::string& dir);
     
 private:
     json load_server_models();
@@ -132,12 +150,17 @@ private:
                           bool do_not_upgrade = true,
                           DownloadProgressCallback progress_callback = nullptr);
     
+    // Discover GGUF models from extra_models_dir
+    std::map<std::string, ModelInfo> discover_extra_models() const;
+    
     json server_models_;
     json user_models_;
+    std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
     mutable std::map<std::string, ModelInfo> models_cache_;
+    mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
 };
 

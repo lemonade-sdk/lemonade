@@ -28,7 +28,8 @@ public:
            int max_llm_models = 1,
            int max_embedding_models = 1,
            int max_reranking_models = 1,
-           int max_audio_models = 1);
+           int max_audio_models = 1,
+           const std::string& extra_models_dir = "");
     
     ~Server();
     
@@ -77,6 +78,9 @@ private:
     
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
+    
+    // Helper function to generate detailed model error responses (not found, not supported, load failure)
+    nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
     
     int port_;
     std::string host_;
