@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Ryzen AI and Radeon are ready to run LLMs Locally",
+        url: "https://www.amd.com/en/developer/resources/technical-articles/2025/ryzen-ai-radeon-llms-with-lemonade.html",
+        date: "November 13, 2025",
+        description: "Learn about LLM use cases that run on a variety of AMD PCs.",
+        image: "https://www.amd.com/content/dam/amd/en/images/blogs/designs/generic-thumbnails/9851-industry-applications-use-cases-02.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
     title: "Lemonade for GitHub Copilot",
     url: "https://youtu.be/HUwGxlH3yAg?si=0P-S48_PgrWy9WwI",
     date: "October 14, 2025",
