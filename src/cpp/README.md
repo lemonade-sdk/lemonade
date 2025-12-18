@@ -226,7 +226,7 @@ lemonade-server serve
 #### Visual Studio Code Setup Guide
 1. Clone the repository into a blank folder locally on your computer.
 2. Open the folder in visual studio code.
-3. Install Dev Containers extension in visual studio code by using
+3. Install Dev Containers extension in Visual Studio Code by using
   control + p to open the command bar at the top of the IDE or if on mac with Cmd + p.
 4. Type "> Extensions: Install Extensions" which will open the Extensions side panel.
 5. in the extensions search type ```Dev Containers``` and install it.
