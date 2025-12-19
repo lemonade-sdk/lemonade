@@ -66,6 +66,11 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   margin: 0;
   font-family: var(--font-family);
@@ -212,8 +217,10 @@ body.install-options {
   min-height: 60vh;
   padding: var(--spacing-xl) var(--spacing-md) 4rem var(--spacing-md);
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   position: relative;
+  overflow-x: hidden;
 }
 
 .main > * {
@@ -233,8 +240,10 @@ body.install-options {
 .hero-section {
   text-align: center;
   max-width: 1000px;
+  width: 100%;
   margin: 0 auto;
   padding: var(--spacing-xxl) var(--spacing-md) var(--spacing-xl) var(--spacing-md);
+  overflow: hidden;
 }
 
 .lmn-center {
@@ -249,16 +258,18 @@ body.install-options {
 
 /* Typography */
 .main-heading {
-  font-size: 4rem;
+  font-size: clamp(1.75rem, 6vw, 4rem);
   font-weight: 400;
   color: #1a1a1a;
-  line-height: 1.05;
+  line-height: 1.1;
   margin: var(--spacing-sm) 0 var(--spacing-xxl) 0;
   letter-spacing: -0.03em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: fadeInUp 0.8s ease-out;
   max-width: 1000px;
   width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .title {
@@ -271,16 +282,19 @@ body.install-options {
 }
 
 .subtitle {
-  font-size: var(--font-size-lg);
+  font-size: clamp(0.95rem, 2.5vw, var(--font-size-lg));
   font-weight: 500;
   font-family: var(--font-family);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xl);
   text-align: center;
   max-width: 700px;
+  width: 100%;
   line-height: 1.6;
   animation: fadeInUp 0.8s ease-out 0.2s both;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .lmn-install-title {
@@ -380,8 +394,8 @@ body.install-options {
   flex-direction: column;
   align-items: center;
   line-height: 1.2;
-  min-width: 250px;
-  max-width: 250px;
+  min-width: min(250px, 80vw);
+  max-width: min(250px, 80vw);
   height: 70px;
   justify-content: center;
 }
@@ -487,9 +501,10 @@ body.install-options {
   margin: 0 auto;
   max-width: 1000px;
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-lg) 2rem var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md) 2rem var(--spacing-md);
   animation: fadeInUp 0.8s ease-out 0.5s both;
   position: relative;
+  overflow: hidden;
 }
 
 .community-section .subtitle {
@@ -548,8 +563,10 @@ body.install-options {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 2.5rem;
+  gap: clamp(1rem, 4vw, 2.5rem);
   flex-wrap: wrap;
+  max-width: 100%;
+  padding: 0 var(--spacing-sm);
 }
 
 .partner-apps a {
@@ -636,6 +653,7 @@ body.install-options {
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: var(--shadow-heavy);
   backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
 .features-grid {
@@ -974,6 +992,7 @@ body.install-options {
 /* Logo Ticker */
 .logo-ticker-outer {
   width: 100%;
+  max-width: 100vw;
   overflow: hidden;
   margin: var(--spacing-sm) 0;
 }
@@ -991,11 +1010,11 @@ body.install-options {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 60px;
+  height: clamp(40px, 10vw, 60px);
 }
 
 .logo-ticker-track img {
-  height: 60px;
+  height: clamp(40px, 10vw, 60px);
   width: auto;
   object-fit: contain;
 }
@@ -2470,7 +2489,7 @@ body.install-options {
   .navbar {
     flex-direction: column;
     gap: var(--spacing-md);
-    padding: 1.2rem;
+    padding: 1rem;
   }
   
   .navbar-links {
@@ -2486,6 +2505,11 @@ body.install-options {
   
   .main {
     margin-top: var(--spacing-xxl);
+    padding: var(--spacing-lg) var(--spacing-sm) 3rem var(--spacing-sm);
+  }
+  
+  .hero-section {
+    padding: var(--spacing-lg) var(--spacing-sm);
   }
   
   .title {
@@ -2494,16 +2518,22 @@ body.install-options {
   
   .subtitle {
     font-size: var(--font-size-base);
+    padding: 0 var(--spacing-sm);
   }
   
   .button-row {
     flex-direction: column;
-    gap: 1.2rem;
+    gap: 1rem;
+    width: 100%;
+    padding: 0 var(--spacing-sm);
   }
   
   .download-btn, .dev-btn {
     font-size: var(--font-size-base);
     padding: 0.8rem var(--spacing-lg);
+    min-width: auto;
+    max-width: 100%;
+    width: 100%;
   }
   
   .download-btn .download-sub, .dev-btn .dev-sub {
@@ -2751,10 +2781,23 @@ body.install-options {
 
 @media (max-width: 600px) {
   .navbar-links {
-    gap: 1.2rem;
-    font-size: var(--font-size-base);
+    gap: 0.8rem;
+    font-size: var(--font-size-sm);
     flex-wrap: wrap;
     justify-content: center;
+  }
+  
+  .hero-section {
+    padding: var(--spacing-md) var(--spacing-xs);
+  }
+  
+  .main-heading {
+    line-height: 1.15;
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .button-row {
+    padding: 0;
   }
   
   .release-announcement {
@@ -2922,6 +2965,14 @@ body.install-options {
 }
 
 @media (max-width: 480px) {
+  .navbar {
+    padding: 0.75rem;
+  }
+  
+  .navbar-brand .brand-title {
+    font-size: 1.1rem;
+  }
+  
   .breadcrumb {
     padding: var(--spacing-sm) 0.8rem;
     font-size: 0.8rem;
@@ -2942,18 +2993,37 @@ body.install-options {
     margin: 0.6em 0 0.3em 0;
   }
   
+  .main {
+    padding: var(--spacing-md) var(--spacing-xs) 2rem var(--spacing-xs);
+  }
+  
+  .hero-section {
+    padding: var(--spacing-sm) var(--spacing-xs);
+  }
+  
   .main-heading {
-    font-size: var(--font-size-xxl);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .download-btn, .dev-btn {
+    font-size: 0.95rem;
+    padding: 0.7rem var(--spacing-md);
+    height: auto;
+    min-height: 60px;
   }
   
   .partner-apps {
     gap: var(--spacing-md);
-    padding: var(--spacing-lg) var(--spacing-sm);
+    padding: var(--spacing-lg) var(--spacing-xs);
   }
 
   .partner-apps img {
     width: 40px;
     height: 40px;
+  }
+  
+  .community-section {
+    padding: var(--spacing-md) var(--spacing-xs);
   }
   
   .news-view {
