@@ -275,6 +275,10 @@ lemonade-server serve
 
 2. Custom configurations for cmake are in the root directory under ```.vscode/settings.json``` in which you may set custom args for launching the debug in the json key ```cmake.debugConfig```
 
+> **Note**
+>
+>  For running Lemonade as a containerized application (as an alternative to the MSI-based distribution), see `DOCKER_GUIDE.md`.
+
 ## Code Structure
 
 ```
