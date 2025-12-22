@@ -287,6 +287,8 @@ body.install-options {
   font-family: var(--font-family);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xl);
+  margin-left: auto;
+  margin-right: auto;
   text-align: center;
   max-width: 700px;
   width: 100%;
