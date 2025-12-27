@@ -671,9 +671,10 @@ bool WindowsSystemInfo::is_supported_ryzen_ai_processor() {
     std::string processor_lower = processor_name;
     std::transform(processor_lower.begin(), processor_lower.end(), processor_lower.begin(), ::tolower);
     
-    // Check for Ryzen AI 300-series pattern: "ryzen ai" followed by a 3-digit number starting with 3
-    // Pattern: ryzen ai.*\b3\d{2}\b
-    std::regex pattern(R"(ryzen ai.*\b[34]\d{2}\b)", std::regex::icase);
+    // Check for Ryzen AI 300/400-series pattern: "ryzen ai" followed by a 3-digit number starting with 3 or 4
+    // Also matches Ryzen AI Z2 series (e.g., "Ryzen AI Z2 Extreme")
+    // Pattern: ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
+    std::regex pattern(R"(ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b)))", std::regex::icase);
     
     return std::regex_search(processor_lower, pattern);
 }
