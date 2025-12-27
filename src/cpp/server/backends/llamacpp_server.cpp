@@ -595,18 +595,6 @@ void LlamaCppServer::load(const std::string& model_name,
         }
     }
     
-    // Enable context shift for vulkan/rocm (not supported on Metal)
-    if (backend_ == "vulkan" || backend_ == "rocm") {
-        push_arg(args, reserved_flags, "--context-shift");
-        push_arg(args, reserved_flags, "--keep", "16");
-    } else {
-        // For Metal, just use keep without context-shift
-        push_arg(args, reserved_flags, "--keep", "16");
-    }
-    
-    // Use legacy reasoning formatting
-    push_arg(args, reserved_flags, "--reasoning-format", "auto");
-    
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
         std::cout << "[LlamaCpp] Model supports embeddings, adding --embeddings flag" << std::endl;
@@ -639,6 +627,18 @@ void LlamaCppServer::load(const std::string& model_name,
         std::cout << "[LlamaCpp] Adding custom arguments: " << custom_args_ << std::endl;
         std::vector<std::string> custom_args_vec = parse_custom_args(custom_args_);
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+    } else {
+        // Enable context shift for vulkan/rocm (not supported on Metal)
+        if (backend_ == "vulkan" || backend_ == "rocm") {
+            push_arg(args, reserved_flags, "--context-shift");
+            push_arg(args, reserved_flags, "--keep", "16");
+        } else {
+            // For Metal, just use keep without context-shift
+            push_arg(args, reserved_flags, "--keep", "16");
+        }
+    
+        // Use legacy reasoning formatting
+        push_arg(args, reserved_flags, "--reasoning-format", "auto");
     }
     
     std::cout << "[LlamaCpp] Starting llama-server..." << std::endl;
