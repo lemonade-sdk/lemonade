@@ -1038,6 +1038,15 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
+    // Check if model filtering is disabled via environment variable
+    const char* disable_filtering = std::getenv("LEMONADE_DISABLE_MODEL_FILTERING");
+    if (disable_filtering && (std::string(disable_filtering) == "1" || 
+                              std::string(disable_filtering) == "true" || 
+                              std::string(disable_filtering) == "yes")) {
+        filtered_out_models_.clear();
+        return models;
+    }
+    
     std::map<std::string, ModelInfo> filtered;
     
     // Clear the filtered-out models cache (will be repopulated below)
