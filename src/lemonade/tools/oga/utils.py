@@ -273,44 +273,44 @@ class OrtGenaiModel(ModelAdapter):
         """
         Run the model on input_ids and get logits.
 
-        This method directly accesses model logits rather than using the full generate pipeline for
-        several important reasons:
-        1. Purpose: We need raw logits from a single forward pass, while generate() is optimized for
-           producing multiple tokens through iterative inference
-        2. Efficiency: Direct access is more efficient for logprob calculations with no
-           sampling overhead
-        3. Precision: Logprob calculations require exact control over input-to-output mapping
-        4. Consistency: Similar approach used in both HF and OGA implementations
+        This method uses an incremental approach to collect logits, which is necessary
+        for hybrid/NPU models that only return next-token logits. The approach works
+        correctly for both CPU and hybrid models:
+        - Append tokens one at a time
+        - After each append, get_output("logits") returns logits for the next position
+        - Stack all logits to get the full sequence
 
         Args:
             input_ids: Input token IDs
 
         Returns:
-            Logits for each token in the sequence
+            Logits for each token position in the sequence, shape [seq_len, vocab_size]
         """
         import torch
 
         # Setup generator params
         params = og.GeneratorParams(self.model)
 
-        # Configure for a simple forward pass
+        # Configure for logits extraction (no sampling needed)
         params.set_search_options(
             do_sample=False,
-            temperature=0.0,
-            max_length=len(input_ids),
+            max_length=len(input_ids) + 1,
         )
 
         # Initialize generator
         generator = og.Generator(self.model, params)
 
-        # Feed tokens to model based on API version
-        generator.append_tokens(input_ids)
+        # Collect logits incrementally - this works for both CPU and hybrid models
+        # After appending token[i], get_output returns logits for predicting token[i+1]
+        all_logits = []
+        for token in input_ids:
+            generator.append_tokens([token])
+            logits = generator.get_output("logits")
+            # logits shape is (1, 1, vocab_size), squeeze to (vocab_size,)
+            all_logits.append(torch.tensor(logits.squeeze()))
 
-        # Extract logits - this returns a list of logits tensors
-        logits = generator.get_output("logits")
-
-        # Convert to torch tensor for easier processing
-        return torch.tensor(logits[0])
+        # Stack into shape [seq_len, vocab_size]
+        return torch.stack(all_logits)
 
     def _select_cont_toks(self, logits, context_len, continuation_tokens):
         """
