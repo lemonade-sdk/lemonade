@@ -188,6 +188,30 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     return new_server;
 }
 
+std::string Router::prioritized_option(const std::string& load_option, const std::string& model_option, const std::string& fallback) {
+    if (!load_option.empty()) {
+        return load_option;
+    }
+
+    if (!model_option.empty()) {
+        return model_option;
+    }
+
+    return fallback;
+}
+
+int Router::prioritized_option(int load_option, int model_option, int fallback) {
+    if (load_option >= 0) {
+        return load_option;
+    }
+
+    if (model_option >= 0) {
+        return model_option;
+    }
+
+    return fallback;
+}
+
 void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        bool do_not_upgrade,
@@ -195,10 +219,10 @@ void Router::load_model(const std::string& model_name,
                        const std::string& llamacpp_backend_override,
                        const std::string& llamacpp_args_override) {
     
-    // Resolve settings: per-model overrides take precedence over defaults
-    int effective_ctx_size = (ctx_size_override > 0) ? ctx_size_override : ctx_size_;
-    std::string effective_backend = llamacpp_backend_override.empty() ? llamacpp_backend_ : llamacpp_backend_override;
-    std::string effective_args = llamacpp_args_override.empty() ? llamacpp_args_ : llamacpp_args_override;
+    // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
+    int effective_ctx_size = prioritized_option(ctx_size_override, model_info.ctx_size, ctx_size_);
+    std::string effective_backend = prioritized_option(llamacpp_backend_override, model_info.llamacpp_backend, llamacpp_backend_);
+    std::string effective_args = prioritized_option(llamacpp_args_override, model_info.llamacpp_args, llamacpp_args_);
     
     std::cout << "[Router] Effective settings: ctx_size=" << effective_ctx_size 
               << ", backend=" << effective_backend 

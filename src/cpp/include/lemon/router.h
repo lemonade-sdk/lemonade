@@ -131,6 +131,10 @@ private:
     // Generic streaming wrapper
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
+
+    // Option utilities
+    std::string prioritized_option(const std::string& load_option, const std::string& model_option, const std::string& fallback);
+    int prioritized_option(int load_option, int model_option, int fallback);
 };
 
 } // namespace lemon
