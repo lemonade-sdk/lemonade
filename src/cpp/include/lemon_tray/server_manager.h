@@ -110,6 +110,7 @@ private:
     std::string llamacpp_args_;
     std::string extra_models_dir_;
     std::string host_;
+    std::string api_key_;
     int port_;
     int ctx_size_;
     int max_llm_models_;
