@@ -3,6 +3,7 @@ FLM (FastFlowLM) utilities for installation, version checking, and model managem
 """
 
 import os
+import importlib.resources
 import logging
 import subprocess
 import tempfile
@@ -47,15 +48,49 @@ def get_flm_latest_version() -> Optional[str]:
                 continue
         return None
     except requests.exceptions.RequestException as e:
-        logging.debug("Error retrieving latest FLM version: %s", e)
+        printing.log_warning("Error retrieving latest FLM version: %s", e)
         return None
+
+
+def get_flm_required_version() -> str:
+    """
+    Return the required FLM version from the backend_versions.json file.
+    """
+    with importlib.resources.open_text("lemonade", "backend_versions.json") as f:
+        import json
+
+        versions_data = json.load(f)
+        flm = versions_data.get("flm", None)
+        if flm:
+            flm_version = flm.get("version", None)
+            if flm_version:
+                return flm_version[1:]  # strip leading 'v'
+    raise RuntimeError("Required FLM version not specified in backend_versions.json")
+
+
+def get_flm_minimum_npu_driver() -> str:
+    """
+    Return the minimum NPU driver required by the FLM backend from the backend_versions.json file.
+    """
+    with importlib.resources.open_text("lemonade", "backend_versions.json") as f:
+        import json
+
+        versions_data = json.load(f)
+        flm = versions_data.get("flm", None)
+        if flm:
+            min_npu_driver = flm.get("min_npu_driver", None)
+            if min_npu_driver:
+                return min_npu_driver
+    raise RuntimeError(
+        "Minimum NPU driver for FLM server not specified in backend_versions.json"
+    )
 
 
 def check_flm_version() -> Optional[str]:
     """
     Check if FLM is installed and return version, or None if not available.
     """
-    latest_version_str = get_flm_latest_version()
+    required_version_str = get_flm_required_version()
     try:
         result = subprocess.run(
             ["flm", "version"],
@@ -70,11 +105,52 @@ def check_flm_version() -> Optional[str]:
         output = result.stdout.strip()
         if output.startswith("FLM v"):
             version_str = output[5:]  # Remove "FLM v" prefix
-            return version_str, latest_version_str
-        return None, latest_version_str
+            return version_str, required_version_str
+        return None, required_version_str
 
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return None, latest_version_str
+        return None, required_version_str
+
+
+def get_npu_driver_version() -> Optional[str]:
+    """
+    Get the installed NPU driver version.
+    Returns the version string or None if not available.
+    """
+    # Check if Windows OS
+    if os.name != "nt":
+        return "0.0.0.0"  # NPU driver check is only for Windows
+
+    # Use WMI to query NPU driver version
+    from lemonade.common.system_info import WindowsSystemInfo
+
+    system_info = WindowsSystemInfo()
+    npu_driver_version = system_info.get_driver_version(
+        "NPU Compute Accelerator Device"
+    )
+    return npu_driver_version
+
+
+def check_npu_driver_version():
+    """
+    Check the installed NPU driver version using 'npu-smi info' command.
+    Returns the version string or None if not available.
+    """
+    npu_driver_version = get_npu_driver_version()
+    minimum_npu_driver_version = get_flm_minimum_npu_driver()
+    if npu_driver_version == "0.0.0.0":
+        printing.log_warning("NPU driver check not available.")
+    printing.log_info(f"Current NPU driver version: {npu_driver_version}")
+    printing.log_info(
+        f"Minimum required NPU driver version for FLM: {minimum_npu_driver_version}"
+    )
+    if Version(npu_driver_version) < Version(minimum_npu_driver_version):
+        printing.log_warning(
+            f"NPU driver version {npu_driver_version} is below the minimum required "
+            f"version {minimum_npu_driver_version} for FLM.  Please upgrade your NPU driver"
+        )
+    else:
+        printing.log_info("NPU driver version meets the minimum requirement for FLM.")
 
 
 def refresh_environment():
@@ -93,7 +169,7 @@ def refresh_environment():
                 path_value, _ = winreg.QueryValueEx(key, "PATH")
                 os.environ["PATH"] = path_value + ";" + os.environ.get("PATH", "")
         except Exception as e:  # pylint: disable=broad-except
-            logging.debug("Could not refresh PATH from registry: %s", e)
+            printing.log_warning("Could not refresh PATH from registry: %s", e)
 
         # Also try to add common installation paths
         common_paths = [
@@ -111,41 +187,34 @@ def install_flm():
     Check if FLM is installed and at minimum version.
     If not, download and run the GUI installer, then wait for completion.
     """
-    # Check current FLM installation
-    current_version, latest_version = check_flm_version()
+    # Check NPU driver version
+    check_npu_driver_version()
 
-    if (
-        current_version
-        and latest_version
-        and Version(current_version) == Version(latest_version)
-    ):
-        logging.info(
-            "FLM v%s is already installed and is up to date (latest version: v%s).",
-            current_version,
-            latest_version,
+    # Check current FLM installation
+    current_version, required_version = check_flm_version()
+
+    if current_version and Version(current_version) == Version(required_version):
+        printing.log_info(
+            f"FLM v{current_version} is already installed and is the required version."
         )
         return
 
     if current_version:
-        if not latest_version:
-            logging.info(
-                "Unable to detect the latest FLM version; continuing with installed FLM v%s.",
-                current_version,
-            )
-            return
-        logging.info(
-            "FLM v%s is installed but below latest version v%s. Upgrading...",
-            current_version,
-            latest_version,
+        printing.log_info(
+            f"FLM v{current_version} is installed but is not the required version.  Installing v{required_version}...",
         )
         verysilent = True
     else:
-        logging.info("FLM not found. Installing FLM v%s or later...", latest_version)
+        printing.log_info(f"FLM not found. Installing FLM v{required_version}...")
         verysilent = False
 
     # Download the installer
     # pylint: disable=line-too-long
-    installer_url = "https://github.com/FastFlowLM/FastFlowLM/releases/latest/download/flm-setup.exe"
+    installer_url = (
+        "https://github.com/FastFlowLM/FastFlowLM/releases/download/v"
+        + required_version
+        + "/flm-setup.exe"
+    )
     installer_path = os.path.join(tempfile.gettempdir(), "flm-setup.exe")
     installer_args = [installer_path, "/VERYSILENT"] if verysilent else [installer_path]
 
@@ -154,7 +223,7 @@ def install_flm():
         if os.path.exists(installer_path):
             os.remove(installer_path)
 
-        logging.info("Downloading FLM installer...")
+        printing.log_info("Downloading FLM installer...")
         response = requests.get(installer_url, stream=True, timeout=30)
         response.raise_for_status()
 
@@ -165,10 +234,10 @@ def install_flm():
             f.flush()
             os.fsync(f.fileno())
 
-        logging.info("Downloaded FLM installer to %s", installer_path)
+        printing.log_info(f"Downloaded FLM installer to {installer_path}")
 
         # Launch the installer GUI
-        logging.warning(
+        printing.log_warning(
             "Launching FLM installer GUI. Please complete the installation..."
             if not verysilent
             else "Installing FLM..."
@@ -188,7 +257,7 @@ def install_flm():
                 f"FLM installer failed with exit code {process.returncode}"
             )
 
-        logging.info("FLM installer completed successfully")
+        printing.log_info("FLM installer completed successfully")
 
         # Refresh environment to pick up new PATH entries
         refresh_environment()
@@ -199,16 +268,16 @@ def install_flm():
         # Verify installation
         max_retries = 10
         for attempt in range(max_retries):
-            new_version, latest_version = check_flm_version()
-            if new_version and Version(new_version) == Version(latest_version):
-                logging.info("FLM v%s successfully installed and verified", new_version)
+            new_version, required_version = check_flm_version()
+            if new_version and Version(new_version) == Version(required_version):
+                printing.log_info(
+                    f"FLM v{new_version} successfully installed and verified"
+                )
                 return
 
             if attempt < max_retries - 1:
-                logging.debug(
-                    "FLM not yet available in PATH, retrying... (attempt %d/%d)",
-                    attempt + 1,
-                    max_retries,
+                printing.log_warning(
+                    f"FLM not yet available in PATH, retrying... (attempt {attempt+1}/{max_retries})",
                 )
                 time.sleep(3)
                 refresh_environment()
