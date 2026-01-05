@@ -870,10 +870,10 @@ You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` o
 {
   "user.Qwen2.5-Coder-1.5B-Instruct": {
     "ctx_size": 16384,
-    "llama_backend": "vulkan",
+    "llamacpp_backend": "vulkan",
     "llamacpp_args": "-np 2 -kvu"
   },
-  "user.Qwen3-0.6-GGUF" : {
+  "Qwen3-Coder-30B-A3B-Instruct-GGUF" : {
     "llamacpp_backend": "rocm"
   }
 }
