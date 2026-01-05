@@ -36,17 +36,17 @@ This command will return either `Server is not running` or `Server is running on
 
 ### Identifying Compatible Devices
 
-AMD Ryzen™ AI `Hybrid` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and a 3-digit number starting with 3 as shown below.
+AMD Ryzen™ AI `Hybrid` and `NPU` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series, 400 Series, and Z2 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and either a 3-digit number starting with 3 or 4, or "z2" as shown below.
 
 ```
-ryzen ai.*\b3\d{2}\b
+ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
 ```
 
 Explanation:
 
 - `ryzen ai`: Matches the literal phrase "Ryzen AI".
 - `.*`: Allows any characters (including spaces) to appear after "Ryzen AI".
-- `\b3\d{2}\b`: Matches a three-digit number starting with 3, ensuring it's a standalone number.
+- `((\b[34]\d{2}\b)|(\bz2\b))`: Matches either a three-digit number starting with 3 or 4 (for 300/400 series), or "z2" (for Z2 series like Z2 Extreme), ensuring it's a standalone word.
 
 There are several ways to check the CPU name on a Windows computer. A reliable way of doing so is through cmd's `reg query` command as shown below.
 
