@@ -9,6 +9,10 @@ import {
   mergeWithDefaultSettings,
 } from './utils/appSettings';
 import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { downloadTracker } from './utils/downloadTracker';
+
+// Default model to use when no models are downloaded (first-time user experience)
+const DEFAULT_MODEL_ID = 'Qwen3-0.6B-GGUF';
 
 interface ImageContent {
   type: 'image_url';
@@ -53,6 +57,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isModelLoading, setIsModelLoading] = useState(false);
   // Track if user has manually selected a model (to avoid overriding their choice)
   const userHasSelectedModelRef = useRef(false);
+  // Track if we're downloading a model for a pending message (first-time user experience)
+  const [isDownloadingForChat, setIsDownloadingForChat] = useState(false);
+  // Track if the selected model is not yet downloaded (first-time user experience)
+  const [isDefaultModelPending, setIsDefaultModelPending] = useState(false);
+  // Store pending message content to send after download completes
+  const pendingMessageRef = useRef<{ content: MessageContent; images: string[] } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
@@ -238,6 +248,22 @@ const fetchModels = async () => {
     
     // Handle both array format and object with data array
     const modelList = Array.isArray(data) ? data : data.data || [];
+    
+    // If no models are downloaded, add the default model as an option
+    // This provides a first-time user experience where they can start chatting
+    if (modelList.length === 0) {
+      const defaultModel: Model = {
+        id: DEFAULT_MODEL_ID,
+        object: 'model'
+      };
+      setModels([defaultModel]);
+      setSelectedModel(DEFAULT_MODEL_ID);
+      setIsDefaultModelPending(true);
+      return;
+    }
+    
+    // Models are available - no longer pending
+    setIsDefaultModelPending(false);
     
     // Only update models if the list has changed to avoid re-rendering
     // while the user is interacting with the dropdown
@@ -528,8 +554,105 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   }
 };
 
+/**
+ * Download a model with SSE progress tracking.
+ * Used for first-time user experience when no models are downloaded.
+ */
+const downloadModelForChat = async (modelName: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const abortController = new AbortController();
+    const downloadId = downloadTracker.startDownload(modelName, abortController);
+    
+    // Dispatch event to open download manager
+    window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
+    
+    let downloadCompleted = false;
+    
+    const performDownload = async () => {
+      try {
+        const response = await serverFetch('/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: modelName, stream: true }),
+          signal: abortController.signal,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download model: ${response.statusText}`);
+        }
+        
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+        
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEventType = 'progress';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEventType = line.substring(6).trim();
+            } else if (line.startsWith('data:')) {
+              try {
+                const data = JSON.parse(line.substring(5).trim());
+                
+                if (currentEventType === 'progress') {
+                  downloadTracker.updateProgress(downloadId, data);
+                } else if (currentEventType === 'complete') {
+                  downloadTracker.completeDownload(downloadId);
+                  downloadCompleted = true;
+                } else if (currentEventType === 'error') {
+                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                  throw new Error(data.error || 'Download failed');
+                }
+              } catch (parseError) {
+                console.error('Failed to parse SSE data:', line, parseError);
+              }
+            } else if (line.trim() === '') {
+              currentEventType = 'progress';
+            }
+          }
+        }
+        
+        if (!downloadCompleted) {
+          downloadTracker.completeDownload(downloadId);
+          downloadCompleted = true;
+        }
+        
+        // Refresh models list after download
+        await fetchModels();
+        
+        // Notify other components (e.g., ModelManager) that models have been updated
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        
+        resolve(true);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          downloadTracker.cancelDownload(downloadId);
+        } else {
+          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+          console.error('Error downloading model:', error);
+        }
+        resolve(false);
+      }
+    };
+    
+    performDownload();
+  });
+};
+
 const sendMessage = async () => {
-    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading) return;
+    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
 
     // Cancel any existing request
     if (abortControllerRef.current) {
@@ -542,13 +665,6 @@ const sendMessage = async () => {
     // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-
-    // Check if the selected model is different from the currently loaded model
-    // If so, show the model loading indicator
-    const needsModelLoad = currentLoadedModel !== selectedModel;
-    if (needsModelLoad) {
-      setIsModelLoading(true);
-    }
 
     // Build message content with images if present
     let messageContent: MessageContent;
@@ -576,6 +692,83 @@ const sendMessage = async () => {
       messageContent = inputValue;
     }
 
+    // If the default model is pending (not yet downloaded), we need to download it first
+    if (isDefaultModelPending && selectedModel === DEFAULT_MODEL_ID) {
+      // Store the pending message
+      pendingMessageRef.current = { content: messageContent, images: [...uploadedImages] };
+      setInputValue('');
+      setUploadedImages([]);
+      setIsDownloadingForChat(true);
+      
+      // Show the user message immediately
+      const userMessage: Message = { role: 'user', content: messageContent };
+      setMessages(prev => [...prev, userMessage]);
+      
+      // Download the model
+      const downloadSuccess = await downloadModelForChat(selectedModel);
+      
+      if (downloadSuccess) {
+        // Model downloaded successfully - close download manager
+        window.dispatchEvent(new CustomEvent('download:chatComplete'));
+        
+        // Now send the message
+        setIsDefaultModelPending(false);
+        const pendingMessage = pendingMessageRef.current;
+        pendingMessageRef.current = null;
+        
+        if (pendingMessage) {
+          // Continue with the chat request
+          setIsLoading(true);
+          setIsModelLoading(true);
+          
+          // Add placeholder for assistant message
+          setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
+          
+          try {
+            const messageHistory = messages.concat([{ role: 'user' as const, content: pendingMessage.content }]);
+            await handleStreamingResponse(messageHistory);
+          } catch (error: any) {
+            if (error.name === 'AbortError') {
+              console.log('Request aborted - keeping partial response');
+              setMessages(prev => {
+                const lastMessage = prev[prev.length - 1];
+                if (!lastMessage || (!lastMessage.content && !lastMessage.thinking)) {
+                  return prev.slice(0, -1);
+                }
+                return prev;
+              });
+            } else {
+              console.error('Failed to send message:', error);
+              setMessages(prev => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = {
+                  role: 'assistant',
+                  content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+                };
+                return newMessages;
+              });
+            }
+          } finally {
+            setIsLoading(false);
+            setIsModelLoading(false);
+            abortControllerRef.current = null;
+            userScrolledAwayRef.current = false;
+          }
+        }
+      } else {
+        // Download failed - show error
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Failed to download the model. Please try again or download a model from the Model Manager.' 
+        }]);
+        pendingMessageRef.current = null;
+      }
+      
+      setIsDownloadingForChat(false);
+      return;
+    }
+
+    // Normal flow - model is already downloaded
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
     
@@ -583,6 +776,13 @@ const sendMessage = async () => {
     setInputValue('');
     setUploadedImages([]);
     setIsLoading(true);
+
+    // Check if the selected model is different from the currently loaded model
+    // If so, show the model loading indicator
+    const needsModelLoad = currentLoadedModel !== selectedModel;
+    if (needsModelLoad) {
+      setIsModelLoading(true);
+    }
 
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
@@ -1192,7 +1392,7 @@ const sendMessage = async () => {
         <button 
           className="new-chat-button"
           onClick={handleNewChat}
-          disabled={isLoading || isProcessingEmbedding || isProcessingRerank}
+          disabled={isLoading || isProcessingEmbedding || isProcessingRerank || isDownloadingForChat}
           title={modelType === 'llm' ? 'Start a new chat' : 'Clear'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1597,12 +1797,17 @@ const sendMessage = async () => {
                 </div>
               );
             })}
-            {isLoading && isModelLoading && (
+            {isDownloadingForChat && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Downloading model...</span>
+              </div>
+            )}
+            {isLoading && isModelLoading && !isDownloadingForChat && (
               <div className="model-loading-indicator">
                 <span className="model-loading-text">Loading model</span>
               </div>
             )}
-            {isLoading && !isModelLoading && (
+            {isLoading && !isModelLoading && !isDownloadingForChat && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
               </div>
@@ -1635,9 +1840,9 @@ const sendMessage = async () => {
                 onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
                 onPaste={handleImagePaste}
-                placeholder="Type your message..."
+                placeholder={isDownloadingForChat ? "Downloading model..." : "Type your message..."}
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading || isDownloadingForChat}
               />
               <div className="chat-controls">
                 <div className="chat-controls-left">
@@ -1653,7 +1858,7 @@ const sendMessage = async () => {
                       <button
                         className="image-upload-button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={isLoading}
+                        disabled={isLoading || isDownloadingForChat}
                         title="Upload image"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1665,13 +1870,14 @@ const sendMessage = async () => {
                       </button>
                     </>
                   )}
-                  <ModelSelector disabled={isLoading} />
+                  <ModelSelector disabled={isLoading || isDownloadingForChat} />
                 </div>
-                {isLoading ? (
+                {isLoading || isDownloadingForChat ? (
                   <button
                     className="chat-stop-button"
                     onClick={handleStopGeneration}
                     title="Stop generation"
+                    disabled={isDownloadingForChat}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <rect

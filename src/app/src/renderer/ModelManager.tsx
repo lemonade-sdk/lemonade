@@ -108,6 +108,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       loadModels();
       fetchCurrentLoadedModel();
     });
+
+    // Listen for modelsUpdated events (e.g., from ChatWindow after downloading a model)
+    const handleModelsUpdated = () => {
+      console.log('Models updated externally, refreshing model data...');
+      loadModels();
+    };
+    window.addEventListener('modelsUpdated', handleModelsUpdated);
     
     // === Integration API for other parts of the app ===
     // To indicate a model is loading, use either:
@@ -159,6 +166,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       unsubscribePortChange();
       window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
       window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
+      window.removeEventListener('modelsUpdated', handleModelsUpdated);
       delete (window as any).setModelLoading;
     };
   }, [fetchCurrentLoadedModel, loadModels]);
