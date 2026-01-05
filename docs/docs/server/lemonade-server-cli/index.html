@@ -1105,6 +1105,7 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 </tbody>
 </table>
 <p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: <code>LEMONADE_HOST</code>, <code>LEMONADE_PORT</code>, <code>LEMONADE_LOG_LEVEL</code>, <code>LEMONADE_LLAMACPP</code>, <code>LEMONADE_CTX_SIZE</code>, <code>LEMONADE_LLAMACPP_ARGS</code>, and <code>LEMONADE_EXTRA_MODELS_DIR</code>.</p>
+<p>Set <code>LEMONADE_DISABLE_MODEL_FILTERING=1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities.</p>
 <p>Additionally, you can provide your own <code>llama-server</code> binary by giving the full path to it via the following environment variables: <code>LEMONADE_LLAMACPP_ROCM_BIN</code>, <code>LEMONADE_LLAMACPP_VULKAN_BIN</code>, <code>LEMONADE_LLAMACPP_CPU_BIN</code>. Note that this does not override the <code>--llamacpp</code> option, rather it allows to provide an alternative binary for specific backends.</p>
 <p>The same can also be done for the <code>whisper-server</code> binary. The environment variable to set in this case is <code>LEMONADE_WHISPERCPP_BIN</code>.</p>
 <h2 id="pull-command-options"><code>pull</code> Command Options</h2>

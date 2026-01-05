@@ -1173,14 +1173,14 @@
 </code></pre></div>
 <p>This command will return either <code>Server is not running</code> or <code>Server is running on port &lt;PORT&gt;</code>.</p>
 <h3 id="identifying-compatible-devices">Identifying Compatible Devices</h3>
-<p>AMD Ryzen™ AI <code>Hybrid</code> models are available on Windows 11 on all AMD Ryzen™ AI 300 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and a 3-digit number starting with 3 as shown below.</p>
-<div class="highlight"><pre><span></span><code>ryzen ai.*\b3\d{2}\b
+<p>AMD Ryzen™ AI <code>Hybrid</code> and <code>NPU</code> models are available on Windows 11 on all AMD Ryzen™ AI 300 Series, 400 Series, and Z2 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and either a 3-digit number starting with 3 or 4, or "z2" as shown below.</p>
+<div class="highlight"><pre><span></span><code>ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
 </code></pre></div>
 <p>Explanation:</p>
 <ul>
 <li><code>ryzen ai</code>: Matches the literal phrase "Ryzen AI".</li>
 <li><code>.*</code>: Allows any characters (including spaces) to appear after "Ryzen AI".</li>
-<li><code>\b3\d{2}\b</code>: Matches a three-digit number starting with 3, ensuring it's a standalone number.</li>
+<li><code>((\b[34]\d{2}\b)|(\bz2\b))</code>: Matches either a three-digit number starting with 3 or 4 (for 300/400 series), or "z2" (for Z2 series like Z2 Extreme), ensuring it's a standalone word.</li>
 </ul>
 <p>There are several ways to check the CPU name on a Windows computer. A reliable way of doing so is through cmd's <code>reg query</code> command as shown below.</p>
 <div class="highlight"><pre><span></span><code>reg query &quot;HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0&quot; /v ProcessorNameString
