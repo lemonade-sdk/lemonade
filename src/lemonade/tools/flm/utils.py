@@ -4,7 +4,6 @@ FLM (FastFlowLM) utilities for installation, version checking, and model managem
 
 import os
 import importlib.resources
-import logging
 import subprocess
 import tempfile
 import threading
@@ -48,7 +47,7 @@ def get_flm_latest_version() -> Optional[str]:
                 continue
         return None
     except requests.exceptions.RequestException as e:
-        printing.log_warning("Error retrieving latest FLM version: %s", e)
+        printing.log_warning(f"Error retrieving latest FLM version: {e}")
         return None
 
 
@@ -169,7 +168,7 @@ def refresh_environment():
                 path_value, _ = winreg.QueryValueEx(key, "PATH")
                 os.environ["PATH"] = path_value + ";" + os.environ.get("PATH", "")
         except Exception as e:  # pylint: disable=broad-except
-            printing.log_warning("Could not refresh PATH from registry: %s", e)
+            printing.log_warning(f"Could not refresh PATH from registry: {e}")
 
         # Also try to add common installation paths
         common_paths = [
@@ -201,7 +200,8 @@ def install_flm():
 
     if current_version:
         printing.log_info(
-            f"FLM v{current_version} is installed but is not the required version.  Installing v{required_version}...",
+            f"FLM v{current_version} is installed but is not the required version.  "
+            f"Installing v{required_version}..."
         )
         verysilent = True
     else:
