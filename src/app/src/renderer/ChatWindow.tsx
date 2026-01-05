@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MarkdownMessage from './MarkdownMessage';
-import { fetchSupportedModelsData, ModelsData } from './utils/modelData';
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -8,11 +7,9 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
-
-// Default model to use when no models are downloaded (first-time user experience)
-const DEFAULT_MODEL_ID = 'Qwen3-0.6B-GGUF';
+import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 
 interface ImageContent {
   type: 'image_url';
@@ -34,33 +31,31 @@ interface Message {
   thinking?: string;
 }
 
-interface Model {
-  id: string;
-  object: string;
-  created?: number;
-  owned_by?: string;
-}
-
 interface ChatWindowProps {
   isVisible: boolean;
   width?: number;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
+  // Get shared model data from context
+  const {
+    modelsData,
+    downloadedModels,
+    selectedModel,
+    setSelectedModel,
+    isDefaultModelPending,
+    refresh: refreshModels,
+    userHasSelectedModel,
+    setUserHasSelectedModel,
+  } = useModels();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [models, setModels] = useState<Model[]>([]);
-  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
-  const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(false);
-  // Track if user has manually selected a model (to avoid overriding their choice)
-  const userHasSelectedModelRef = useRef(false);
   // Track if we're downloading a model for a pending message (first-time user experience)
   const [isDownloadingForChat, setIsDownloadingForChat] = useState(false);
-  // Track if the selected model is not yet downloaded (first-time user experience)
-  const [isDefaultModelPending, setIsDefaultModelPending] = useState(false);
   // Store pending message content to send after download completes
   const pendingMessageRef = useRef<{ content: MessageContent; images: string[] } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -106,9 +101,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
 
 useEffect(() => {
-  fetchModels();
   fetchLoadedModel();
-  fetchSupportedModels();
   const loadSettings = async () => {
     if (!window.api?.getSettings) {
       return;
@@ -143,14 +136,11 @@ useEffect(() => {
     if (loadedModelId) {
       setSelectedModel(loadedModelId);
       // Reset the manual selection flag since the user loaded a new model
-      userHasSelectedModelRef.current = false;
+      setUserHasSelectedModel(false);
     } else {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
-
-    // Refresh the models list so newly loaded models appear in the dropdown
-    fetchModels();
   };
 
   const handleModelUnload = () => {
@@ -166,23 +156,15 @@ useEffect(() => {
     fetchLoadedModel();
   }, 5000);
 
-  // Listen for port changes and refetch data
-  const unsubscribePortChange = onServerPortChange(() => {
-    console.log('Server port changed, refetching chat data...');
-    fetchModels();
-    fetchLoadedModel();
-  });
-
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
     clearInterval(healthCheckInterval);
-    unsubscribePortChange();
     if (typeof unsubscribeSettings === 'function') {
       unsubscribeSettings();
     }
   };
-}, []);
+}, [setSelectedModel, setUserHasSelectedModel]);
 
   useEffect(() => {
     // Only auto-scroll if user hasn't scrolled away during streaming
@@ -241,49 +223,6 @@ useEffect(() => {
     setIsUserAtBottom(true);
   };
 
-const fetchModels = async () => {
-  try {
-    const response = await serverFetch('/models');
-    const data = await response.json();
-    
-    // Handle both array format and object with data array
-    const modelList = Array.isArray(data) ? data : data.data || [];
-    
-    // If no models are downloaded, add the default model as an option
-    // This provides a first-time user experience where they can start chatting
-    if (modelList.length === 0) {
-      const defaultModel: Model = {
-        id: DEFAULT_MODEL_ID,
-        object: 'model'
-      };
-      setModels([defaultModel]);
-      setSelectedModel(DEFAULT_MODEL_ID);
-      setIsDefaultModelPending(true);
-      return;
-    }
-    
-    // Models are available - no longer pending
-    setIsDefaultModelPending(false);
-    
-    // Only update models if the list has changed to avoid re-rendering
-    // while the user is interacting with the dropdown
-    setModels(prevModels => {
-      const prevIds = prevModels.map(m => m.id).sort().join(',');
-      const newIds = modelList.map((m: Model) => m.id).sort().join(',');
-      if (prevIds === newIds) {
-        return prevModels; // No change, don't trigger re-render
-      }
-      return modelList;
-    });
-    
-    if (modelList.length > 0) {
-      setSelectedModel(prev => prev || modelList[0].id);
-    }
-  } catch (error) {
-    console.error('Failed to fetch models:', error);
-  }
-};
-
 const fetchLoadedModel = async () => {
   try {
     const response = await serverFetch('/health');
@@ -292,7 +231,7 @@ const fetchLoadedModel = async () => {
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
       // Only auto-select if user hasn't manually chosen a model
-      if (!userHasSelectedModelRef.current) {
+      if (!userHasSelectedModel) {
         setSelectedModel(data.model_loaded);
       }
       // If the model we were waiting for is now loaded, clear the loading state
@@ -305,32 +244,10 @@ const fetchLoadedModel = async () => {
   }
 };
 
-const fetchSupportedModels = useCallback(async () => {
-  try {
-    const data = await fetchSupportedModelsData();
-    setSupportedModelsData(data);
-  } catch (error) {
-    console.error('Failed to load supported models:', error);
-  }
-}, []);
-
-// Listen for modelsUpdated events from ModelManager
-useEffect(() => {
-  const handleModelsUpdated = () => {
-    fetchSupportedModels();
-  };
-
-  window.addEventListener('modelsUpdated', handleModelsUpdated);
-
-  return () => {
-    window.removeEventListener('modelsUpdated', handleModelsUpdated);
-  };
-}, [fetchSupportedModels]);
-
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return modelInfo?.labels?.includes('vision') || false;
   };
@@ -338,7 +255,7 @@ useEffect(() => {
   const isEmbeddingModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return !!(modelInfo?.labels?.includes('embeddings') || (modelInfo as any)?.embedding);
   };
@@ -346,7 +263,7 @@ useEffect(() => {
   const isRerankingModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
   };
@@ -354,7 +271,7 @@ useEffect(() => {
   const isTranscriptionModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return modelInfo?.recipe === 'whispercpp';
   };
@@ -629,10 +546,8 @@ const downloadModelForChat = async (modelName: string): Promise<boolean> => {
           downloadCompleted = true;
         }
         
-        // Refresh models list after download
-        await fetchModels();
-        
-        // Notify other components (e.g., ModelManager) that models have been updated
+        // Notify all components that models have been updated
+        // (The ModelsProvider listens for this and refreshes automatically)
         window.dispatchEvent(new CustomEvent('modelsUpdated'));
         
         resolve(true);
@@ -711,8 +626,7 @@ const sendMessage = async () => {
         // Model downloaded successfully - close download manager
         window.dispatchEvent(new CustomEvent('download:chatComplete'));
         
-        // Now send the message
-        setIsDefaultModelPending(false);
+        // Now send the message (isDefaultModelPending will be updated by the hook)
         const pendingMessage = pendingMessageRef.current;
         pendingMessageRef.current = null;
         
@@ -1346,18 +1260,22 @@ const sendMessage = async () => {
     </div>
   );
 
+  // Build the list of models for the dropdown
+  const dropdownModels = isDefaultModelPending 
+    ? [{ id: DEFAULT_MODEL_ID }] 
+    : downloadedModels;
+
   const ModelSelector = ({ disabled }: { disabled: boolean }) => (
     <select
       className="model-selector"
       value={selectedModel}
       onChange={(e) => {
-        userHasSelectedModelRef.current = true;
+        setUserHasSelectedModel(true);
         setSelectedModel(e.target.value);
       }}
-      onFocus={() => fetchModels()}
       disabled={disabled}
     >
-      {models.map((model) => (
+      {dropdownModels.map((model) => (
         <option key={model.id} value={model.id}>
           {model.id}
         </option>

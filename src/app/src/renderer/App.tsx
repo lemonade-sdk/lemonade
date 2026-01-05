@@ -6,6 +6,7 @@ import LogsWindow from './LogsWindow';
 import CenterPanel from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
+import { ModelsProvider } from './hooks/useModels';
 import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
@@ -240,7 +241,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <>
+    <ModelsProvider>
       <TitleBar 
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
@@ -297,7 +298,7 @@ const App: React.FC = () => {
           </>
         )}
       </div>
-    </>
+    </ModelsProvider>
   );
 };
 
