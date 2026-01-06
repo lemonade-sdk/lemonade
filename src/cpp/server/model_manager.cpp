@@ -204,7 +204,8 @@ static GGUFFiles identify_gguf_models(
 
 ModelManager::ModelManager() {
     server_models_ = load_server_models();
-    user_models_ = load_user_models();
+    user_models_ = load_optional_json(get_user_models_file());
+    recipe_options_ = load_optional_json(get_recipe_options_file());
 }
 
 std::string ModelManager::get_cache_dir() {
@@ -232,6 +233,10 @@ std::string ModelManager::get_cache_dir() {
 
 std::string ModelManager::get_user_models_file() {
     return get_cache_dir() + "/user_models.json";
+}
+
+std::string ModelManager::get_recipe_options_file() {
+    return get_cache_dir() + "/recipe_options.json";
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
@@ -619,17 +624,16 @@ json ModelManager::load_server_models() {
     }
 }
 
-json ModelManager::load_user_models() {
-    std::string user_models_path = get_user_models_file();
-    
-    if (!fs::exists(user_models_path)) {
+json ModelManager::load_optional_json(const std::string& path) {    
+    if (!fs::exists(path)) {
         return json::object();
     }
     
     try {
-        return JsonUtils::load_from_file(user_models_path);
+        std::cout << "[ModelManager] Loading " << fs::path(path).filename() << std::endl;
+        return JsonUtils::load_from_file(path);
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Could not load user_models.json: " << e.what() << std::endl;
+        std::cerr << "Warning: Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
         return json::object();
     }
 }
@@ -713,7 +717,7 @@ void ModelManager::build_cache() {
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
     }
-    
+
     // Step 1.5: Discover models from extra_models_dir
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
@@ -724,6 +728,18 @@ void ModelManager::build_cache() {
             continue;
         }
         all_models[name] = info;
+    }
+
+    // Populate recipe options
+    for (auto& [name, info] : all_models) {
+        if (JsonUtils::has_key(recipe_options_, name)) {
+            std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
+
+            auto options = recipe_options_[name];
+            info.llamacpp_args = JsonUtils::get_or_default<std::string>(options, "llamacpp_args", "");
+            info.llamacpp_backend = JsonUtils::get_or_default<std::string>(options, "llamacpp_backend", "");
+            info.ctx_size = JsonUtils::get_or_default<int>(options, "ctx_size", -1);
+        }
     }
     
     // Step 2: Filter by backend availability
