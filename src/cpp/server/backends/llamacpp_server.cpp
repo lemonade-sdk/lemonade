@@ -433,6 +433,13 @@ void LlamaCppServer::install(const std::string& backend) {
 #ifndef _WIN32
         // Make executable on Linux/macOS
         chmod(exe_path.c_str(), 0755);
+        
+        // Make entire install directory world-writable for multi-user access
+        // The /usr/local/share/lemonade-server/llama/ directory is shared between users
+        chmod(install_dir.c_str(), 0777);
+        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+            chmod(entry.path().c_str(), 0777);
+        }
 #endif
         
         // Delete ZIP file

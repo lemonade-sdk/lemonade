@@ -569,7 +569,8 @@ bool ServerManager::spawn_process() {
     if (pid == 0) {
         // Child process - redirect stdout/stderr to log file if specified, or /dev/null if not
         if (!log_file_.empty()) {
-            int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            // Use 0666 permissions for multi-user access (umask will restrict as needed)
+            int log_fd = open(log_file_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
             if (log_fd >= 0) {
                 dup2(log_fd, STDOUT_FILENO);
                 dup2(log_fd, STDERR_FILENO);
