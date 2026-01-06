@@ -345,12 +345,21 @@ void Router::load_model(const std::string& model_name,
                                      error_message.find("does not exist") != std::string::npos ||
                                      error_message.find("No such file") != std::string::npos);
             
+            // Check if error is "model invalidated" (e.g., FLM upgrade invalidated model files)
+            // This should NOT trigger retry - user must manually re-download the model
+            bool is_model_invalidated = (error_message.find("was invalidated") != std::string::npos);
+            
             is_loading_ = false;
             load_cv_.notify_all();
             
             if (is_file_not_found) {
                 std::cout << "[Router] File not found error, NOT evicting other models" << std::endl;
-                throw;
+                throw std::runtime_error(error_message);
+            }
+            
+            if (is_model_invalidated) {
+                std::cout << "[Router] Model invalidated error, NOT retrying (user must re-download)" << std::endl;
+                throw std::runtime_error(error_message);
             }
             
             // Nuclear option: evict all models and retry

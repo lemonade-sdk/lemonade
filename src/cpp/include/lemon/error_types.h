@@ -11,6 +11,7 @@ using json = nlohmann::json;
 // Error types as constants
 namespace ErrorType {
     constexpr const char* MODEL_NOT_LOADED = "model_not_loaded";
+    constexpr const char* MODEL_INVALIDATED = "model_invalidated";
     constexpr const char* BACKEND_ERROR = "backend_error";
     constexpr const char* NETWORK_ERROR = "network_error";
     constexpr const char* INVALID_REQUEST = "invalid_request";
@@ -93,6 +94,15 @@ public:
     UnsupportedOperationException(const std::string& operation, const std::string& backend = "")
         : LemonException(operation + " not supported" + (backend.empty() ? "" : " by " + backend), 
                         ErrorType::UNSUPPORTED_OPERATION) {}
+};
+
+class ModelInvalidatedException : public LemonException {
+public:
+    ModelInvalidatedException(const std::string& model_name, const std::string& reason = "")
+        : LemonException("Model '" + model_name + "' was invalidated" + 
+                        (reason.empty() ? "" : ": " + reason) +
+                        ". Please download the model again.", 
+                        ErrorType::MODEL_INVALIDATED) {}
 };
 
 // Helper class for consistent error responses

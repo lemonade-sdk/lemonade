@@ -61,8 +61,8 @@ private:
     std::string get_npu_driver_version();      // Get current NPU driver version via WMI
     bool check_npu_driver_version();           // Check if NPU driver meets minimum requirements
     
-    // Installation
-    void install_flm_if_needed();  // Install FLM if not present or version is too old
+    // Installation - returns true if FLM was upgraded (may invalidate existing models)
+    bool install_flm_if_needed();
     bool download_flm_installer(const std::string& output_path);
     void run_flm_installer(const std::string& installer_path, bool silent);
     
@@ -73,6 +73,9 @@ private:
     // Cache for installed version (to avoid repeated calls to flm --version)
     mutable std::string cached_installed_version_;
     void invalidate_version_cache();  // Call after installation to force re-check
+    
+    // Track whether FLM was upgraded during install() - used to detect model invalidation
+    bool flm_was_upgraded_ = false;
     
     bool is_loaded_ = false;
 };
