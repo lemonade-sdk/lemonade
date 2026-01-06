@@ -436,7 +436,9 @@ int TrayApp::run() {
     DEBUG_LOG(this, "Setting ready callback...");
     tray_->set_ready_callback([this]() {
         DEBUG_LOG(this, "Ready callback triggered!");
-        show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        if (!config_.quiet) {
+            show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        }
     });
     
     // Set menu update callback to refresh state before showing menu (Windows only)
@@ -630,6 +632,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
+            } else if (arg == "--quiet") {
+                config_.quiet = true;
             } else {
                 // It's a command argument (like model name)
                 config_.command_args.push_back(arg);
@@ -690,6 +694,7 @@ void TrayApp::print_usage(bool show_serve_options) {
 #else
         std::cout << "  --no-tray                Start server without tray (headless mode)\n";
 #endif
+        std::cout << "  --quiet                  Suppress startup balloon notification\n";
         std::cout << "\n";
     }
     

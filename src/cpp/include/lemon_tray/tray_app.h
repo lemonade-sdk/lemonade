@@ -26,6 +26,7 @@ struct AppConfig {
 #endif
     bool show_help = false;
     bool show_version = false;
+    bool quiet = false;  // Suppress startup balloon notification
     std::string host = "localhost";
     std::string llamacpp_backend = "vulkan";  // Default to vulkan
     std::string llamacpp_args = "";  // Custom arguments for llama-server
