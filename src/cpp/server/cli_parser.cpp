@@ -41,6 +41,10 @@ CLIParser::CLIParser()
                    "Maximum audio file size for transcription (e.g., 50M, 100MB, 1G). Default: 25MB")
         ->default_val("");
 
+    app_.add_option("--whisper-timeout", config_.whisper_timeout,
+                   "Read timeout in seconds for Whisper transcription requests. Default: 300 (5 minutes)")
+        ->default_val(0);
+
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)
     app_.add_option("--max-loaded-models", max_models_vec_,

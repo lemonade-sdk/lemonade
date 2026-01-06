@@ -63,6 +63,15 @@ int main(int argc, char** argv) {
 #endif
         }
 
+        // Set environment variable for whisper timeout if provided via CLI
+        if (config.whisper_timeout > 0) {
+#ifdef _WIN32
+            _putenv_s("LEMONADE_WHISPER_TIMEOUT", std::to_string(config.whisper_timeout).c_str());
+#else
+            setenv("LEMONADE_WHISPER_TIMEOUT", std::to_string(config.whisper_timeout).c_str(), 1);
+#endif
+        }
+
         // Start the server
         std::cout << "Starting Lemonade Server..." << std::endl;
         std::cout << "  Version: " << LEMON_VERSION_STRING << std::endl;
@@ -86,6 +95,20 @@ int main(int argc, char** argv) {
             std::cout << std::endl;
         } else {
             std::cout << "  Max audio file size: 25MB (default)" << std::endl;
+        }
+
+        // Display whisper timeout setting
+        const char* whisper_timeout_env = std::getenv("LEMONADE_WHISPER_TIMEOUT");
+        if (whisper_timeout_env && strlen(whisper_timeout_env) > 0) {
+            std::cout << "  Whisper timeout: " << whisper_timeout_env << " seconds";
+            if (config.whisper_timeout > 0) {
+                std::cout << " (from CLI parameter)";
+            } else {
+                std::cout << " (from environment variable)";
+            }
+            std::cout << std::endl;
+        } else {
+            std::cout << "  Whisper timeout: 300 seconds / 5 minutes (default)" << std::endl;
         }
 
         Server server(config.port, config.host, config.log_level,

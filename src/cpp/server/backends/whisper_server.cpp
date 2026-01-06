@@ -239,6 +239,36 @@ static size_t get_max_audio_file_size() {
     }
 }
 
+// Helper to get the whisper read timeout from environment or use default
+static long get_whisper_read_timeout() {
+    const long DEFAULT_TIMEOUT = 300;  // 5 minutes default
+    const char* timeout_env = std::getenv("LEMONADE_WHISPER_TIMEOUT");
+
+    if (!timeout_env) {
+        // Return default value (5 minutes)
+        return DEFAULT_TIMEOUT;
+    }
+
+    try {
+        long timeout = std::stol(std::string(timeout_env));
+        if (timeout <= 0) {
+            std::cerr << "[WhisperServer] Warning: LEMONADE_WHISPER_TIMEOUT must be positive, got '"
+                      << timeout_env << "'" << std::endl;
+            std::cerr << "[WhisperServer] Using default: " << DEFAULT_TIMEOUT << " seconds" << std::endl;
+            return DEFAULT_TIMEOUT;
+        }
+        std::cout << "[WhisperServer] Using custom read timeout: "
+                  << timeout << " seconds (from LEMONADE_WHISPER_TIMEOUT="
+                  << timeout_env << ")" << std::endl;
+        return timeout;
+    } catch (const std::exception& e) {
+        std::cerr << "[WhisperServer] Warning: Invalid LEMONADE_WHISPER_TIMEOUT value '"
+                  << timeout_env << "': " << e.what() << std::endl;
+        std::cerr << "[WhisperServer] Using default: " << DEFAULT_TIMEOUT << " seconds" << std::endl;
+        return DEFAULT_TIMEOUT;
+    }
+}
+
 std::string WhisperServer::find_external_whisper_server() {
     const char* whisper_bin_env = std::getenv("LEMONADE_WHISPERCPP_BIN");
     if (!whisper_bin_env) {
@@ -754,7 +784,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     // Create httplib client
     httplib::Client cli("127.0.0.1", port_);
     cli.set_connection_timeout(30);  // 30 second connection timeout
-    cli.set_read_timeout(300);       // 5 minute read timeout for transcription
+    cli.set_read_timeout(get_whisper_read_timeout());  // Configurable read timeout for transcription
 
     if (is_debug()) {
         std::cout << "[WhisperServer] Sending multipart request to http://127.0.0.1:"
