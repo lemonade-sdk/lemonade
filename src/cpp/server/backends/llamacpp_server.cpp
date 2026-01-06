@@ -98,7 +98,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
-// Helper to add a flag-value overridable pair (e.g., --port 8000, -m model.gguf)
+// Helper to add a flag-value overridable pair (e.g., --keep 16)
 static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& custom_args,
                     const std::string& key,
