@@ -630,6 +630,7 @@ json ModelManager::load_optional_json(const std::string& path) {
     }
     
     try {
+        std::cout << "[ModelManager] Loading " << fs::path(path).filename() << std::endl;
         return JsonUtils::load_from_file(path);
     } catch (const std::exception& e) {
         std::cerr << "Warning: Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
@@ -732,6 +733,8 @@ void ModelManager::build_cache() {
     // Populate recipe options
     for (auto& [name, info] : all_models) {
         if (JsonUtils::has_key(recipe_options_, name)) {
+            std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
+
             auto options = recipe_options_[name];
             info.llamacpp_args = JsonUtils::get_or_default<std::string>(options, "llamacpp_args", "");
             info.llamacpp_backend = JsonUtils::get_or_default<std::string>(options, "llamacpp_backend", "");
