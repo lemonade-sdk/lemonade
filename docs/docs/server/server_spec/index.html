@@ -1465,6 +1465,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#per-model-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-model options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#example-requests" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2479,6 +2490,17 @@
     <span class="md-ellipsis">
       
         Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-model-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-model options
       
     </span>
   </a>
@@ -3872,8 +3894,23 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <p><strong>Setting Priority:</strong></p>
 <p>When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the <code>load</code> request (highest priority)
-2. Values set via <code>lemonade-server</code> CLI arguments or environment variables
-3. Default hardcoded values in <code>lemonade-router</code> (lowest priority)</p>
+2. Per-model values configurable in <code>recipe_options.json</code> (see below for details)
+3. Values set via <code>lemonade-server</code> CLI arguments or environment variables
+4. Default hardcoded values in <code>lemonade-router</code> (lowest priority)</p>
+<h4 id="per-model-options">Per-model options</h4>
+<p>You can configure a default <code>ctx_size</code>, <code>llamacpp_backend</code> and <code>llamacpp_args</code> on a per-model basis. To do this you need to create a file called <code>recipe_options.json</code> in the user's Lemonade cache (default: <code>~/.cache/lemonade</code>). An example <code>recipe_options.json</code> file follows:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;user.Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vulkan&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;-np 2 -kvu&quot;</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;Qwen3-Coder-30B-A3B-Instruct-GGUF&quot;</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Note that user models (i.e. those defined in <code>user_models.json</code>) must include the "user." prefix in their name when referencing them in <code>recipe_options.json</code>.</p>
 <h4 id="example-requests">Example requests</h4>
 <p>Basic load:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/load<span class="w"> </span><span class="se">\</span>
