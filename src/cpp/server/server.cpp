@@ -607,7 +607,25 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
     
-    // Case 3: Model exists and is available, but failed to load (engine error)
+    // Case 3: Model was invalidated by a backend upgrade (e.g., FLM version change)
+    // This happens when FLM is upgraded and old model files are no longer compatible
+    if (exception_msg.find("was invalidated") != std::string::npos) {
+        std::string message = "Model '" + requested_model + "' needs to be re-downloaded. " +
+            "The FLM backend was upgraded and the previously downloaded model files are no longer compatible. " +
+            "Please use 'lemonade-server pull " + requested_model + "' or click Download in the UI to re-download this model.";
+        
+        error_response["error"] = {
+            {"message", message},
+            {"type", "model_invalidated"},
+            {"param", "model"},
+            {"code", "model_invalidated"},
+            {"requested_model", requested_model}
+        };
+        
+        return error_response;
+    }
+    
+    // Case 4: Model exists and is available, but failed to load (engine error)
     // Return the actual exception message so the user knows what went wrong
     std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
     
@@ -799,7 +817,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
+                if (error_code == "model_load_error" || error_code == "model_invalidated") {
                     res.status = 500;  // Internal server error - model exists but failed to load
                 } else {
                     res.status = 404;  // Not found - model doesn't exist or is filtered out
@@ -1019,7 +1037,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
+                if (error_code == "model_load_error" || error_code == "model_invalidated") {
                     res.status = 500;  // Internal server error - model exists but failed to load
                 } else {
                     res.status = 404;  // Not found - model doesn't exist or is filtered out
@@ -1204,7 +1222,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1240,7 +1258,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1332,7 +1350,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 std::cerr << "[Server ERROR] Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1380,7 +1398,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 std::cerr << "[Server ERROR] Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1652,7 +1670,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (!model_name.empty()) {
             auto error_response = create_model_error(model_name, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
             res.set_content(error_response.dump(), "application/json");
         } else {
             // JSON parsing failed before we got model_name - return generic error

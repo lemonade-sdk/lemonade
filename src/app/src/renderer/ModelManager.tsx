@@ -541,7 +541,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     };
   }, [handleDownloadModel]);
 
-  const handleLoadModel = async (modelName: string) => {
+  const handleLoadModel = async (modelName: string, autoLoadAfterDownload: boolean = false) => {
     try {
       const modelData = modelsData[modelName];
       if (!modelData) {
@@ -562,6 +562,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       });
       
       if (!response.ok) {
+        // Try to parse error response to check for model_invalidated
+        try {
+          const errorData = await response.json();
+          if (errorData?.error?.code === 'model_invalidated') {
+            console.log('[ModelManager] Model was invalidated, triggering re-download:', modelName);
+            
+            // Remove from loading state before starting download
+            setLoadingModels(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(modelName);
+              return newSet;
+            });
+            window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+            
+            // Show info message
+            showWarning(`Model "${modelName}" needs to be re-downloaded due to a backend upgrade. Starting download...`);
+            
+            // Start download, then auto-load when complete
+            await handleDownloadModel(modelName);
+            
+            // After download completes, load the model
+            console.log('[ModelManager] Re-download complete, loading model:', modelName);
+            await handleLoadModel(modelName, true);
+            return;
+          }
+        } catch (parseError) {
+          // Couldn't parse error response, fall through to generic error
+        }
         throw new Error(`Failed to load model: ${response.statusText}`);
       }
       
@@ -569,6 +597,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       setTimeout(async () => {
         await fetchCurrentLoadedModel();
         window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+        
+        // Refresh the models list in case FLM upgrade invalidated other models
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
       }, 1000);
     } catch (error) {
       console.error('Error loading model:', error);
