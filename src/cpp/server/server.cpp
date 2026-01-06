@@ -82,6 +82,9 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
     }
+
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
     
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
@@ -91,15 +94,31 @@ Server::~Server() {
     stop();
 }
 
+void Server::log_request(const httplib::Request& req) {
+    if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+        std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
+        std::cout.flush();
+    }
+}
+
+httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
+    if ((api_key_ != "") && (req.method != "OPTIONS")) {
+        if (api_key_ != httplib::get_bearer_token_auth(req)) {
+            res.status = 401;
+            res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
+    return httplib::Server::HandlerResponse::Unhandled;
+}
+
+
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        // Skip logging health checks to reduce log noise
-        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
-            std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
-            std::cout.flush();
-        }
-        return httplib::Server::HandlerResponse::Unhandled;
+        this->log_request(req);
+        return authenticate_request(req, res);
     });
     
     // Setup CORS for all routes

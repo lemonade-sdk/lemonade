@@ -47,8 +47,10 @@ private:
     void setup_routes(httplib::Server &web_server);
     void setup_static_files(httplib::Server &web_server);
     void setup_cors(httplib::Server &web_server);
-    void setup_http_logger(httplib::Server &web_server) ;
-    
+    void setup_http_logger(httplib::Server &web_server);
+    void log_request(const httplib::Request& req);
+    httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
+
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
@@ -102,6 +104,8 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     
     bool running_;
+
+    std::string api_key_;
 };
 
 } // namespace lemon

@@ -106,6 +106,9 @@ bool ServerManager::start_server(
     llamacpp_args_ = llamacpp_args;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
+
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -821,6 +824,10 @@ std::string ServerManager::make_http_request(
     httplib::Client cli(connect_host, port_);
     cli.set_connection_timeout(10, 0);  // 10 second connection timeout
     cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
+
+    if (api_key_ != "") {
+        cli.set_bearer_token_auth(api_key_);
+    }
     
     httplib::Result res;
     
