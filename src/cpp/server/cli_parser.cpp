@@ -37,6 +37,10 @@ CLIParser::CLIParser()
                    "Experimental feature: secondary directory to scan for LLM GGUF model files")
         ->default_val("");
 
+    app_.add_option("--max-audio-file-size", config_.max_audio_file_size,
+                   "Maximum audio file size for transcription (e.g., 50M, 100MB, 1G). Default: 25MB")
+        ->default_val("");
+
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)
     app_.add_option("--max-loaded-models", max_models_vec_,

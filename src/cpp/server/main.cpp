@@ -53,7 +53,16 @@ int main(int argc, char** argv) {
         
         // Get server configuration
         auto config = parser.get_config();
-        
+
+        // Set environment variable for max audio file size if provided via CLI
+        if (!config.max_audio_file_size.empty()) {
+#ifdef _WIN32
+            _putenv_s("LEMONADE_MAX_AUDIO_FILE_SIZE", config.max_audio_file_size.c_str());
+#else
+            setenv("LEMONADE_MAX_AUDIO_FILE_SIZE", config.max_audio_file_size.c_str(), 1);
+#endif
+        }
+
         // Start the server
         std::cout << "Starting Lemonade Server..." << std::endl;
         std::cout << "  Version: " << LEMON_VERSION_STRING << std::endl;
@@ -64,7 +73,21 @@ int main(int argc, char** argv) {
         if (!config.extra_models_dir.empty()) {
             std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
         }
-        
+
+        // Display max audio file size setting
+        const char* audio_size_env = std::getenv("LEMONADE_MAX_AUDIO_FILE_SIZE");
+        if (audio_size_env && strlen(audio_size_env) > 0) {
+            std::cout << "  Max audio file size: " << audio_size_env;
+            if (!config.max_audio_file_size.empty()) {
+                std::cout << " (from CLI parameter)";
+            } else {
+                std::cout << " (from environment variable)";
+            }
+            std::cout << std::endl;
+        } else {
+            std::cout << "  Max audio file size: 25MB (default)" << std::endl;
+        }
+
         Server server(config.port, config.host, config.log_level,
                     config.ctx_size, config.tray, config.llamacpp_backend,
                     config.llamacpp_args, config.max_llm_models,
