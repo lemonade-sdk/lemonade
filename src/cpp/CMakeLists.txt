@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.10...3.28)
 
 # Use static runtime library on Windows to avoid DLL dependencies
 if(MSVC)
@@ -16,7 +16,7 @@ if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
     set(ELECTRON_EXE_NAME "Lemonade.exe")
 elseif(APPLE)
-    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac")
+    set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}")
     set(ELECTRON_EXE_NAME "Lemonade.app")
 else()
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/linux-unpacked")
@@ -511,4 +511,115 @@ if(UNIX AND NOT APPLE)
     endif()
     
     include(CPack)
+endif()
+
+# ============================================================
+# CPack Configuration for macOS (.app bundle in .dmg)
+# ============================================================
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+
+    set(CPACK_PACKAGE_NAME "Lemonade")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_VENDOR "Lemonade")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
+    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends.")
+
+    set(CPACK_DMG_VOLUME_NAME "Lemonade ${PROJECT_VERSION}")
+    set(CPACK_DMG_FORMAT "UDBZ")
+
+    if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+        set(CPACK_SYSTEM_NAME "macos-x64")
+    elseif(CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        set(CPACK_SYSTEM_NAME "macos-arm64")
+    else()
+        set(CPACK_SYSTEM_NAME "macos-universal")
+    endif()
+
+    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME}")
+
+    option(INSTALL_AS_SYSTEM_SERVICE "Include scripts to install as system-wide LaunchDaemon" ON)
+
+    # === Ensure Electron app exists before packaging ===
+    if(NOT EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
+        message(STATUS "Electron app not found — will build it automatically before packaging")
+    endif()
+
+    message(STATUS "Using Electron app from: ${ELECTRON_APP_UNPACKED_DIR}")
+
+    # Find the actual .app bundle (in case of arm64/x64 subfolders)
+    file(GLOB ELECTRON_BUNDLE_PATH
+        "${ELECTRON_APP_UNPACKED_DIR}/*/Lemonade.app"
+        "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app"
+    )
+
+    if(NOT ELECTRON_BUNDLE_PATH)
+        message(FATAL_ERROR "Electron app bundle not found in ${ELECTRON_APP_UNPACKED_DIR}")
+    endif()
+
+    list(GET ELECTRON_BUNDLE_PATH 0 ELECTRON_BUNDLE_PATH)  # Take first match
+
+    message(STATUS "Using Electron bundle: ${ELECTRON_BUNDLE_PATH}")
+
+    install(DIRECTORY "${ELECTRON_BUNDLE_PATH}"
+        DESTINATION "."
+        USE_SOURCE_PERMISSIONS
+    )
+
+    # Embed C++ router binary
+    install(TARGETS ${EXECUTABLE_NAME}
+        RUNTIME DESTINATION "Lemonade.app/Contents/Resources/bin"
+    )
+
+    # Install resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
+        DESTINATION "Lemonade.app/Contents/Resources/resources"
+    )
+
+    # Optional: tray app
+    if(TARGET lemonade-tray)
+        install(TARGETS lemonade-tray
+            RUNTIME DESTINATION "Lemonade.app/Contents/Resources/bin"
+        )
+    endif()
+
+    # === System Service Support ===
+    if(INSTALL_AS_SYSTEM_SERVICE)
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
+            @ONLY
+        )
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
+            DESTINATION "Lemonade.app/Contents/Resources"
+        )
+
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/install-daemon.sh.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
+            @ONLY
+        )
+        install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
+            DESTINATION "Lemonade.app/Contents/Resources"
+        )
+
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
+            DESTINATION "Lemonade.app/Contents/Resources"
+            RENAME config.default.json
+        )
+    endif()
+
+    include(CPack)
+
+    # === NEW: Custom target that auto-builds Electron + packages ===
+    add_custom_target(package-macos
+        DEPENDS electron-app ${EXECUTABLE_NAME}
+        COMMAND ${CMAKE_COMMAND} --build . --target package
+        COMMENT "Building Electron app + C++ server + creating macOS .dmg"
+    )
+
+    # Optional: Make 'package' target (default for cpack) depend on electron-app
+    if(TARGET package)
+        add_dependencies(package electron-app)
+    endif()
 endif()

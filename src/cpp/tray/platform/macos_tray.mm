@@ -81,6 +81,10 @@ void MacOSTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
 }
 
+void MacOSTray::set_log_level(const std::string& log_level) {
+    log_level_ = log_level;
+}
+
 } // namespace lemon_tray
 
 #endif // __APPLE__

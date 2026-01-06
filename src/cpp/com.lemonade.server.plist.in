@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lemonade.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@APP_PATH@/Contents/MacOS/@EXECUTABLE_NAME@</string>
+        <string>--config</string>
+        <string>/etc/lemonade/config.json</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/lemonade-server.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/lemonade-server.err.log</string>
+
+    <!-- Optional: run as a dedicated user instead of root -->
+    <!-- <key>UserName</key><string>lemonade</string> -->
+</dict>
+</plist>
