@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MarkdownMessage from './MarkdownMessage';
-import { fetchSupportedModelsData, ModelsData } from './utils/modelData';
 // @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
 import logoSvg from '../../assets/logo.svg';
 import {
@@ -8,7 +7,9 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { serverFetch } from './utils/serverConfig';
+import { downloadTracker } from './utils/downloadTracker';
+import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 
 interface ImageContent {
   type: 'image_url';
@@ -30,29 +31,33 @@ interface Message {
   thinking?: string;
 }
 
-interface Model {
-  id: string;
-  object: string;
-  created?: number;
-  owned_by?: string;
-}
-
 interface ChatWindowProps {
   isVisible: boolean;
   width?: number;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
+  // Get shared model data from context
+  const {
+    modelsData,
+    downloadedModels,
+    selectedModel,
+    setSelectedModel,
+    isDefaultModelPending,
+    refresh: refreshModels,
+    userHasSelectedModel,
+    setUserHasSelectedModel,
+  } = useModels();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [models, setModels] = useState<Model[]>([]);
-  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
-  const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(false);
-  // Track if user has manually selected a model (to avoid overriding their choice)
-  const userHasSelectedModelRef = useRef(false);
+  // Track if we're downloading a model for a pending message (first-time user experience)
+  const [isDownloadingForChat, setIsDownloadingForChat] = useState(false);
+  // Store pending message content to send after download completes
+  const pendingMessageRef = useRef<{ content: MessageContent; images: string[] } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
@@ -96,9 +101,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
 
 useEffect(() => {
-  fetchModels();
   fetchLoadedModel();
-  fetchSupportedModels();
   const loadSettings = async () => {
     if (!window.api?.getSettings) {
       return;
@@ -133,14 +136,11 @@ useEffect(() => {
     if (loadedModelId) {
       setSelectedModel(loadedModelId);
       // Reset the manual selection flag since the user loaded a new model
-      userHasSelectedModelRef.current = false;
+      setUserHasSelectedModel(false);
     } else {
       // Fallback: fetch the loaded model from the health endpoint
       fetchLoadedModel();
     }
-
-    // Refresh the models list so newly loaded models appear in the dropdown
-    fetchModels();
   };
 
   const handleModelUnload = () => {
@@ -156,23 +156,15 @@ useEffect(() => {
     fetchLoadedModel();
   }, 5000);
 
-  // Listen for port changes and refetch data
-  const unsubscribePortChange = onServerPortChange(() => {
-    console.log('Server port changed, refetching chat data...');
-    fetchModels();
-    fetchLoadedModel();
-  });
-
   return () => {
     window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
     window.removeEventListener('modelUnload' as any, handleModelUnload);
     clearInterval(healthCheckInterval);
-    unsubscribePortChange();
     if (typeof unsubscribeSettings === 'function') {
       unsubscribeSettings();
     }
   };
-}, []);
+}, [setSelectedModel, setUserHasSelectedModel]);
 
   useEffect(() => {
     // Only auto-scroll if user hasn't scrolled away during streaming
@@ -231,33 +223,6 @@ useEffect(() => {
     setIsUserAtBottom(true);
   };
 
-const fetchModels = async () => {
-  try {
-    const response = await serverFetch('/models');
-    const data = await response.json();
-    
-    // Handle both array format and object with data array
-    const modelList = Array.isArray(data) ? data : data.data || [];
-    
-    // Only update models if the list has changed to avoid re-rendering
-    // while the user is interacting with the dropdown
-    setModels(prevModels => {
-      const prevIds = prevModels.map(m => m.id).sort().join(',');
-      const newIds = modelList.map((m: Model) => m.id).sort().join(',');
-      if (prevIds === newIds) {
-        return prevModels; // No change, don't trigger re-render
-      }
-      return modelList;
-    });
-    
-    if (modelList.length > 0) {
-      setSelectedModel(prev => prev || modelList[0].id);
-    }
-  } catch (error) {
-    console.error('Failed to fetch models:', error);
-  }
-};
-
 const fetchLoadedModel = async () => {
   try {
     const response = await serverFetch('/health');
@@ -266,7 +231,7 @@ const fetchLoadedModel = async () => {
     if (data?.model_loaded) {
       setCurrentLoadedModel(data.model_loaded);
       // Only auto-select if user hasn't manually chosen a model
-      if (!userHasSelectedModelRef.current) {
+      if (!userHasSelectedModel) {
         setSelectedModel(data.model_loaded);
       }
       // If the model we were waiting for is now loaded, clear the loading state
@@ -279,32 +244,10 @@ const fetchLoadedModel = async () => {
   }
 };
 
-const fetchSupportedModels = useCallback(async () => {
-  try {
-    const data = await fetchSupportedModelsData();
-    setSupportedModelsData(data);
-  } catch (error) {
-    console.error('Failed to load supported models:', error);
-  }
-}, []);
-
-// Listen for modelsUpdated events from ModelManager
-useEffect(() => {
-  const handleModelsUpdated = () => {
-    fetchSupportedModels();
-  };
-
-  window.addEventListener('modelsUpdated', handleModelsUpdated);
-
-  return () => {
-    window.removeEventListener('modelsUpdated', handleModelsUpdated);
-  };
-}, [fetchSupportedModels]);
-
   const isVisionModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return modelInfo?.labels?.includes('vision') || false;
   };
@@ -312,7 +255,7 @@ useEffect(() => {
   const isEmbeddingModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return !!(modelInfo?.labels?.includes('embeddings') || (modelInfo as any)?.embedding);
   };
@@ -320,7 +263,7 @@ useEffect(() => {
   const isRerankingModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return !!(modelInfo?.labels?.includes('reranking') || (modelInfo as any)?.reranking);
   };
@@ -328,7 +271,7 @@ useEffect(() => {
   const isTranscriptionModel = (): boolean => {
     if (!selectedModel) return false;
     
-    const modelInfo = supportedModelsData[selectedModel];
+    const modelInfo = modelsData[selectedModel];
     
     return modelInfo?.recipe === 'whispercpp';
   };
@@ -528,8 +471,103 @@ const handleStreamingResponse = async (messageHistory: Message[]): Promise<void>
   }
 };
 
+/**
+ * Download a model with SSE progress tracking.
+ * Used for first-time user experience when no models are downloaded.
+ */
+const downloadModelForChat = async (modelName: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const abortController = new AbortController();
+    const downloadId = downloadTracker.startDownload(modelName, abortController);
+    
+    // Dispatch event to open download manager
+    window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
+    
+    let downloadCompleted = false;
+    
+    const performDownload = async () => {
+      try {
+        const response = await serverFetch('/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model_name: modelName, stream: true }),
+          signal: abortController.signal,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download model: ${response.statusText}`);
+        }
+        
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+        
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEventType = 'progress';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEventType = line.substring(6).trim();
+            } else if (line.startsWith('data:')) {
+              try {
+                const data = JSON.parse(line.substring(5).trim());
+                
+                if (currentEventType === 'progress') {
+                  downloadTracker.updateProgress(downloadId, data);
+                } else if (currentEventType === 'complete') {
+                  downloadTracker.completeDownload(downloadId);
+                  downloadCompleted = true;
+                } else if (currentEventType === 'error') {
+                  downloadTracker.failDownload(downloadId, data.error || 'Unknown error');
+                  throw new Error(data.error || 'Download failed');
+                }
+              } catch (parseError) {
+                console.error('Failed to parse SSE data:', line, parseError);
+              }
+            } else if (line.trim() === '') {
+              currentEventType = 'progress';
+            }
+          }
+        }
+        
+        if (!downloadCompleted) {
+          downloadTracker.completeDownload(downloadId);
+          downloadCompleted = true;
+        }
+        
+        // Notify all components that models have been updated
+        // (The ModelsProvider listens for this and refreshes automatically)
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
+        
+        resolve(true);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          downloadTracker.cancelDownload(downloadId);
+        } else {
+          downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+          console.error('Error downloading model:', error);
+        }
+        resolve(false);
+      }
+    };
+    
+    performDownload();
+  });
+};
+
 const sendMessage = async () => {
-    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading) return;
+    if ((!inputValue.trim() && uploadedImages.length === 0) || isLoading || isDownloadingForChat) return;
 
     // Cancel any existing request
     if (abortControllerRef.current) {
@@ -542,13 +580,6 @@ const sendMessage = async () => {
     // When sending a new message, ensure we're at the bottom and reset scroll tracking
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-
-    // Check if the selected model is different from the currently loaded model
-    // If so, show the model loading indicator
-    const needsModelLoad = currentLoadedModel !== selectedModel;
-    if (needsModelLoad) {
-      setIsModelLoading(true);
-    }
 
     // Build message content with images if present
     let messageContent: MessageContent;
@@ -576,6 +607,82 @@ const sendMessage = async () => {
       messageContent = inputValue;
     }
 
+    // If the default model is pending (not yet downloaded), we need to download it first
+    if (isDefaultModelPending && selectedModel === DEFAULT_MODEL_ID) {
+      // Store the pending message
+      pendingMessageRef.current = { content: messageContent, images: [...uploadedImages] };
+      setInputValue('');
+      setUploadedImages([]);
+      setIsDownloadingForChat(true);
+      
+      // Show the user message immediately
+      const userMessage: Message = { role: 'user', content: messageContent };
+      setMessages(prev => [...prev, userMessage]);
+      
+      // Download the model
+      const downloadSuccess = await downloadModelForChat(selectedModel);
+      
+      if (downloadSuccess) {
+        // Model downloaded successfully - close download manager
+        window.dispatchEvent(new CustomEvent('download:chatComplete'));
+        
+        // Now send the message (isDefaultModelPending will be updated by the hook)
+        const pendingMessage = pendingMessageRef.current;
+        pendingMessageRef.current = null;
+        
+        if (pendingMessage) {
+          // Continue with the chat request
+          setIsLoading(true);
+          setIsModelLoading(true);
+          
+          // Add placeholder for assistant message
+          setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
+          
+          try {
+            const messageHistory = messages.concat([{ role: 'user' as const, content: pendingMessage.content }]);
+            await handleStreamingResponse(messageHistory);
+          } catch (error: any) {
+            if (error.name === 'AbortError') {
+              console.log('Request aborted - keeping partial response');
+              setMessages(prev => {
+                const lastMessage = prev[prev.length - 1];
+                if (!lastMessage || (!lastMessage.content && !lastMessage.thinking)) {
+                  return prev.slice(0, -1);
+                }
+                return prev;
+              });
+            } else {
+              console.error('Failed to send message:', error);
+              setMessages(prev => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = {
+                  role: 'assistant',
+                  content: `Error: ${error.message || 'Failed to get response from the model.'}`,
+                };
+                return newMessages;
+              });
+            }
+          } finally {
+            setIsLoading(false);
+            setIsModelLoading(false);
+            abortControllerRef.current = null;
+            userScrolledAwayRef.current = false;
+          }
+        }
+      } else {
+        // Download failed - show error
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Failed to download the model. Please try again or download a model from the Model Manager.' 
+        }]);
+        pendingMessageRef.current = null;
+      }
+      
+      setIsDownloadingForChat(false);
+      return;
+    }
+
+    // Normal flow - model is already downloaded
     const userMessage: Message = { role: 'user', content: messageContent };
     const messageHistory = [...messages, userMessage];
     
@@ -583,6 +690,13 @@ const sendMessage = async () => {
     setInputValue('');
     setUploadedImages([]);
     setIsLoading(true);
+
+    // Check if the selected model is different from the currently loaded model
+    // If so, show the model loading indicator
+    const needsModelLoad = currentLoadedModel !== selectedModel;
+    if (needsModelLoad) {
+      setIsModelLoading(true);
+    }
 
     // Add placeholder for assistant message
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
@@ -1146,18 +1260,22 @@ const sendMessage = async () => {
     </div>
   );
 
+  // Build the list of models for the dropdown
+  const dropdownModels = isDefaultModelPending 
+    ? [{ id: DEFAULT_MODEL_ID }] 
+    : downloadedModels;
+
   const ModelSelector = ({ disabled }: { disabled: boolean }) => (
     <select
       className="model-selector"
       value={selectedModel}
       onChange={(e) => {
-        userHasSelectedModelRef.current = true;
+        setUserHasSelectedModel(true);
         setSelectedModel(e.target.value);
       }}
-      onFocus={() => fetchModels()}
       disabled={disabled}
     >
-      {models.map((model) => (
+      {dropdownModels.map((model) => (
         <option key={model.id} value={model.id}>
           {model.id}
         </option>
@@ -1192,7 +1310,7 @@ const sendMessage = async () => {
         <button 
           className="new-chat-button"
           onClick={handleNewChat}
-          disabled={isLoading || isProcessingEmbedding || isProcessingRerank}
+          disabled={isLoading || isProcessingEmbedding || isProcessingRerank || isDownloadingForChat}
           title={modelType === 'llm' ? 'Start a new chat' : 'Clear'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1597,12 +1715,17 @@ const sendMessage = async () => {
                 </div>
               );
             })}
-            {isLoading && isModelLoading && (
+            {isDownloadingForChat && (
+              <div className="model-loading-indicator">
+                <span className="model-loading-text">Downloading model...</span>
+              </div>
+            )}
+            {isLoading && isModelLoading && !isDownloadingForChat && (
               <div className="model-loading-indicator">
                 <span className="model-loading-text">Loading model</span>
               </div>
             )}
-            {isLoading && !isModelLoading && (
+            {isLoading && !isModelLoading && !isDownloadingForChat && (
               <div className="chat-message assistant-message">
                 <TypingIndicator />
               </div>
@@ -1635,9 +1758,9 @@ const sendMessage = async () => {
                 onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
                 onPaste={handleImagePaste}
-                placeholder="Type your message..."
+                placeholder={isDownloadingForChat ? "Downloading model..." : "Type your message..."}
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading || isDownloadingForChat}
               />
               <div className="chat-controls">
                 <div className="chat-controls-left">
@@ -1653,7 +1776,7 @@ const sendMessage = async () => {
                       <button
                         className="image-upload-button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={isLoading}
+                        disabled={isLoading || isDownloadingForChat}
                         title="Upload image"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1665,13 +1788,14 @@ const sendMessage = async () => {
                       </button>
                     </>
                   )}
-                  <ModelSelector disabled={isLoading} />
+                  <ModelSelector disabled={isLoading || isDownloadingForChat} />
                 </div>
-                {isLoading ? (
+                {isLoading || isDownloadingForChat ? (
                   <button
                     className="chat-stop-button"
                     onClick={handleStopGeneration}
                     title="Stop generation"
+                    disabled={isDownloadingForChat}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <rect
