@@ -899,7 +899,7 @@ Load with custom settings:
 curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "llama-3.2-3b-instruct-GGUF",
+    "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
     "llamacpp_args": "--flash-attn on --no-mmap"
