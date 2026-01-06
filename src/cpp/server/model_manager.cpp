@@ -714,8 +714,15 @@ void ModelManager::build_cache() {
     
     // Step 1.5: Discover models from extra_models_dir
     // All discovered models are prefixed with "extra." to avoid conflicts
+    // We still gracefully handle conflicts just in case, though
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
+        // Check for conflicts with registered models
+        if (all_models.find(name) != all_models.end()) {
+            std::cout << "[ModelManager] Warning: Discovered model '" << name 
+                      << "' conflicts with registered model, skipping." << std::endl;
+            continue;
+        }
         all_models[name] = info;
     }
     
