@@ -102,7 +102,7 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    if (api_key_ != "") {
+    if ((api_key_ != "") && (req.method != "OPTIONS")) {
         if (api_key_ != httplib::get_bearer_token_auth(req)) {
             res.status = 401;
             res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
