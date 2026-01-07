@@ -31,7 +31,6 @@
 #endif
 
 namespace fs = std::filesystem;
-using namespace lemon::utils;
 
 namespace lemon {
 
@@ -1648,19 +1647,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         // Persist request options to model info if requested
         if (save_options) {
-            // We only want to override settings that were explicitly present in the request
-            if (JsonUtils::has_key(request_json, "ctx_size")) {
-                info.ctx_size = ctx_size;
-            }
-
-            if (JsonUtils::has_key(request_json, "llamacpp_backend")) {
-                info.llamacpp_backend = llamacpp_backend;
-            }
-
-            if (JsonUtils::has_key(request_json, "llamacpp_args")) {
-                info.llamacpp_args = llamacpp_args;
-            }
-
+            info.ctx_size = ctx_size;
+            info.llamacpp_backend = llamacpp_backend;
+            info.llamacpp_args = llamacpp_args;
             model_manager_->save_model_options(info);
         }
         

@@ -652,25 +652,18 @@ void ModelManager::save_user_models(const json& user_models) {
 void ModelManager::save_model_options(const ModelInfo& info) {
     std::cout << "[ModelManager] Saving options for model: " << info.model_name << std::endl;
 
-    json model_options = JsonUtils::get_or_default<json>(recipe_options_, info.model_name, json::object());
+    json model_options = json::object();
 
-    // Remove values set to their default to keep the file tidy
     if (info.ctx_size >= 0) {
         model_options["ctx_size"] = info.ctx_size;
-    } else {
-        model_options.erase("ctx_size");
     }
 
     if (!info.llamacpp_backend.empty()) {
         model_options["llamacpp_backend"] = info.llamacpp_backend;
-    } else {
-        model_options.erase("llamacpp_backend");
     }
 
     if (!info.llamacpp_args.empty()) {
         model_options["llamacpp_args"] = info.llamacpp_args;
-    } else {
-        model_options.erase("llamacpp_args");
     }
 
     // Persist changes
