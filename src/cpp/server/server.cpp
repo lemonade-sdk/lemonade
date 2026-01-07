@@ -31,6 +31,7 @@
 #endif
 
 namespace fs = std::filesystem;
+using namespace lemon::utils;
 
 namespace lemon {
 
@@ -1610,6 +1611,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         int ctx_size = request_json.value("ctx_size", -1);
         std::string llamacpp_backend = request_json.value("llamacpp_backend", "");
         std::string llamacpp_args = request_json.value("llamacpp_args", "");
+        bool save_options = request_json.value("save_options", false);
         
         std::cout << "[Server] Loading model: " << model_name;
         if (ctx_size > 0) std::cout << " (ctx_size=" << ctx_size << ")";
@@ -1643,6 +1645,24 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         auto info = model_manager_->get_model_info(model_name);
+
+        // Persist request options to model info if requested
+        if (save_options) {
+            // We only want to override settings that were explicitly present in the request
+            if (JsonUtils::has_key(request_json, "ctx_size")) {
+                info.ctx_size = ctx_size;
+            }
+
+            if (JsonUtils::has_key(request_json, "llamacpp_backend")) {
+                info.llamacpp_backend = llamacpp_backend;
+            }
+
+            if (JsonUtils::has_key(request_json, "llamacpp_args")) {
+                info.llamacpp_args = llamacpp_args;
+            }
+
+            model_manager_->save_model_options(info);
+        }
         
         // Download model if needed (first-time use)
         if (!info.downloaded) {
