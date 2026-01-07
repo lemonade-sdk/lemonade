@@ -181,8 +181,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         new_server.reset(ryzenai_server);
     } else {
         std::cout << "[Router] Creating LlamaCpp backend: " << llamacpp_backend_ << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_, 
-                                                                 llamacpp_args_, model_manager_);
+        new_server = std::make_unique<backends::LlamaCppServer>(log_level_, model_manager_);
     }
     
     return new_server;
