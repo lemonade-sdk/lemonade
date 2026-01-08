@@ -2,20 +2,20 @@
 
 ## Overview
 
-### 1. **What is Lemonade SDK and what does it include?**
+### 1. **What is Lemonade and what does it include?**
 
-   Lemonade is an open-source SDK that provides high-level APIs, CLI tools, and a server interface to deploy and benchmark LLMs using ONNX Runtime GenAI (OGA), Hugging Face Transformers, and llama.cpp backends.
+   Lemonade is an open-source local LLM solution that:
+      - Gets you started in minutes with one-click installers.
+      - Auto-configures optimized inference engines for your PC.
+      - Provides a convenient app to get set up and test out LLMs.
+      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
-### 2. **What is Lemonade Server and how is it different from the SDK?**
+### 2. **What are the use cases for different audiences?**
 
-   Lemonade Server is a component of the SDK that enables local LLM deployment via an OpenAI-compatible API. It allows integration with apps like chatbots and coding assistants without requiring code changes. It's available as a standalone Windows GUI installer or via command line for Linux and macOS.
-
-### 3. **What are the use cases for different audiences?**
-
-   - **End Users**: Use [GAIA](https://github.com/amd/gaia) for a Chatbot experience locally.
    - **LLM Enthusiasts**: LLMs on your GPU or NPU with minimal setup, and connect to great apps listed [here](https://lemonade-server.ai/docs/server/apps/).
    - **Developers**: Integrate LLMs into apps using standard APIs with no device-specific code. See the [Server Integration Guide](https://lemonade-server.ai/docs/server/server_integration/
    ).
+   - **Agent Developers**: Use [GAIA](https://github.com/amd/gaia) to quickly develop local-first agents.
 
 ## Installation & Compatibility
 
@@ -27,14 +27,14 @@
 
    👉 [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations)
 
-   For more information on Hybrid/NPU Support, see the section [Hybrid/NPU](#hybrid-and-npu-questions).
+   For more information on AMD Ryzen AI NPU Support, see the section [Hybrid/NPU](#hybrid-and-npu-questions).
 
 ### 3. **Is Linux supported? What about macOS?**
 
-   Yes! Both Linux and macOS are supported:
+   Yes, Linux is supported!
    
    - **Linux**: Visit https://lemonade-server.ai/ and check the "Developer Setup" section for installation instructions.
-   - **macOS**: Requires macOS 14+ with Apple Silicon (arm64/aarch64). Intel Macs are not supported.
+   - **macOS**: Not supported right now, but it is on the roadmap.
    
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
@@ -47,11 +47,11 @@
    - Delete the `lemonade` folder if it exists
    - To remove downloaded models, delete the `huggingface` folder
 
-## Models & Performance
+## Models
 
 ### 1. **Where are models stored and how do I change that?**
 
-   Lemonade uses two model locations:
+   Lemonade uses three model locations:
 
    **Primary: Hugging Face Cache**
    
@@ -67,18 +67,25 @@
 
    Lemonade Server can discover GGUF models from a secondary directory using the `--extra-models-dir` option, enabling compatibility with llama.cpp and LM Studio model caches. Suggested paths:
    
-   - **Windows:** `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
-   - **Linux/macOS:** `~/.cache/llama.cpp`
+   - **Windows:** 
+       - LM Studio: `C:\Users\You\.lmstudio\models`
+       - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
+   - **Linux:** `~/.cache/llama.cpp`
 
    Example: `lemonade-server serve --extra-models-dir "%LOCALAPPDATA%\llama.cpp"`
 
-   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list using their exact filename (e.g., `Qwen3-8B-Q4_K_M.gguf`).
+   Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
+
+   **FastFlowLM**
+
+   FastFlowLM (FLM) has its own model management system. When you first install FLM the install wizard asks for a model directory, which is then saved to the `FLM_MODEL_PATH` environment variable on your system PATH. Models are stored in that directory. If you change the variable's value, newly downloaded models will be stored on the new path, but your prior models will still be at the prior path.  
 
 ### 2. **What models are supported?**
 
-   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, and gpt-oss. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface.
+   Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
    
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
+   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -92,12 +99,17 @@
 
 ### 4. **I'm looking for a model, but it's not listed in the Model Manager.**
 
-   If a model isn't listed, it may not yet be validated or compatible with your selected backend (for example, Hybrid models will not show if Ryzen AI Hybrid software is not installed). You can:
+   If a model isn't listed, it may not be compatible with your PC due to device or RAM limitations, or we just haven't added it to the `server_models.json` file yet.
+   
+   You can:
 
-   - Add a custom model manually via the Lemonade Server Model Manager's "Add a Model" interface.
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options).
+   - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
-### 5. **Is there a script or tool to convert models to hybrid format?**
+   If you are sure that a model should be listed, but you aren't seeing it, you can set the `LEMONADE_DISABLE_MODEL_FILTERING` environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+
+### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 
    Yes, there's a guide on preparing your models for Ryzen AI NPU:
 
@@ -110,16 +122,7 @@
 
 ## Inference Behavior & Performance
 
-### 1. **What are the performance benchmarks that can be collected using Lemonade SDK?**
-
-   You can measure:
-   
-   - Inference speed
-   - Time to first token
-   - Tokens per second
-   - Accuracy via MMLU and other benchmarks
-
-### 2. **Can Lemonade print out stats like tokens per second?**
+### 1. **Can Lemonade print out stats like tokens per second?**
 
    Yes! Lemonade Server exposes a `/stats` endpoint that returns performance metrics from the most recent completion request:
 
@@ -129,15 +132,23 @@
 
    Or, you can launch `lemonade-server` with the option `--log-level debug` and that will also print out stats.
 
-### 3. **How does Lemonade's performance compare to llama.cpp?**
+### 2. **How does Lemonade's performance compare to llama.cpp?**
 
    Lemonade supports llama.cpp as a backend, so performance is similar when using the same model and quantization.
 
+### 3. **How can ROCm performance be improved for my use case?**
+
+   File a detailed issue on TheRock repo for support: https://github.com/ROCm/TheRock
+
 ## Hybrid and NPU Questions
 
-### 1. **Does hybrid inference with the NPU only work on Windows?**
+### 1. **Does LLM inference with the NPU only work on Windows?**
 
-   Yes, hybrid inference is currently supported only on Windows. NPU-only inference is coming to Linux soon, followed by hybrid (NPU+iGPU) support via ROCm.
+   Yes, today, NPU and hybrid inference is currently supported only on Windows.
+
+   To request NPU support on Linux, file an issue with either:
+     - Ryzen AI SW: https://github.com/amd/ryzenai-sw
+     - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
 
 ### 2. **I loaded a hybrid model, but the NPU is barely active. Is that expected?**
 
@@ -154,11 +165,17 @@
    - **AMD Ryzen 7000/8000/200 series**: GPU acceleration via llama.cpp + Vulkan backend
    - **Systems with Radeon GPUs**: Yes
    - **Any x86 CPU**: Yes
-   - **Intel/NVIDIA systems**: CPU inference, with GPU support if compatible drivers are available
-   
-   While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
+   - **Intel/NVIDIA systems**: CPU inference, with GPU support via the llama.cpp + Vulkan backend
 
-### 4. **How do I know what model architectures are supported by the NPU?**
+   While you won't get NPU acceleration on non-Ryzen AI 300 systems, you can still benefit from GPU acceleration and the OpenAI-compatible API.
+   
+### 4. **Is the NPU on the AMD Ryzen AI 7000/8000/200 series going to be supported for LLM inference?**
+
+   No inference engine providers have plans to support NPUs prior to Ryzen AI 300-series, but you can still request this by filing an issue on their respective GitHubs:
+      - Ryzen AI SW: https://github.com/amd/ryzenai-sw
+      - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
+
+### 5. **How do I know what model architectures are supported by the NPU?**
 
    AMD publishes pre-quantized and optimized models in their Hugging Face collections:
 
@@ -167,7 +184,7 @@
 
    To find the architecture of a specific model, click on any model in these collections and look for the "Base model" field, which will show you the underlying architecture (e.g., Llama, Qwen, Phi).
 
-### 5. **How can I get better performance from the NPU?**
+### 6. **How can I get better performance from the NPU?**
 
    Make sure that you've put the NPU in "Turbo" mode to get the best results. This is done by opening a terminal window and running the following commands:
 
@@ -180,7 +197,7 @@
 
 ### 1. **What if I encounter installation or runtime errors?**
 
-   Check the Lemonade Server logs via the tray icon (Windows and macOS). Common issues include model compatibility or outdated versions.
+   Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.
    
    👉 [Open an Issue on GitHub](https://github.com/lemonade-sdk/lemonade/issues)
 
@@ -190,6 +207,6 @@
 
 ### 3. **Do you plan to share a roadmap?**
 
-   Yes! We tag roadmap items on GitHub with the "on roadmap" label.
+   Yes! Check out the project README:
    
-   👉 [Lemonade SDK Roadmap Issues](https://github.com/lemonade-sdk/lemonade/issues?q=is%3Aissue%20state%3Aopen%20label%3A"on%20roadmap")
+   👉 [Lemonade Roadmap](https://github.com/lemonade-sdk/lemonade#project-roadmap)
