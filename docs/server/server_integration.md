@@ -58,24 +58,7 @@ Once you capture the CPU name, make sure to convert it to lowercase before using
 
 ### Downloading Server Installer
 
-The recommended way of directing users to the server installer is pointing users to our releases page at [`https://github.com/lemonade-sdk/lemonade/releases`](https://github.com/lemonade-sdk/lemonade/releases). Alternatively, you may also provide the direct path to the installer itself or download the installer programmatically as shown below:
-
-
-Latest version:
-
-```bash
-https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi
-```
-
-Specific version:
-
-```bash
-https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade-server-minimal.msi
-```
-
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
-
-**macOS Requirements:** macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.
+The recommended way of directing users to the installer is pointing users to https://lemonade-server.ai/install_options.html
 
 ### Installing Additional Models
 
@@ -111,7 +94,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS only):
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows only):
 
 ```bash
 lemonade-server serve --no-tray

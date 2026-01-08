@@ -559,7 +559,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
       -F "model=Whisper-Tiny"
     ```
 
-=== "Linux/macOS"
+=== "Linux"
 
     ```bash
     curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
@@ -1141,7 +1141,7 @@ Where `[level]` can be one of:
 
 # GGUF Support
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
@@ -1161,7 +1161,6 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 |----------|------------------|------------------|
 | Windows  | ✅ Vulkan, ROCm        | ✅ x64           |
 | Ubuntu   | ✅ Vulkan, ROCm        | ✅ x64           |
-| macOS    | ✅ Metal         | ✅ Apple Silicon |
 | Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.
