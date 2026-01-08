@@ -510,5 +510,7 @@ if(UNIX AND NOT APPLE)
         endif()
     endif()
     
+    # RPM specific variables defined within
+    include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
     include(CPack)
 endif()
