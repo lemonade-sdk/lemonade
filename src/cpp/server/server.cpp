@@ -771,7 +771,10 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
-        {"labels", info.labels}
+        {"labels", info.labels},
+        {"ctx_size", info.ctx_size},
+        {"llamacpp_backend", info.llamacpp_backend},
+        {"llamacpp_args", info.llamacpp_args},
     };
     
     // Add size if available
