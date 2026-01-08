@@ -204,7 +204,8 @@ static GGUFFiles identify_gguf_models(
 
 ModelManager::ModelManager() {
     server_models_ = load_server_models();
-    user_models_ = load_user_models();
+    user_models_ = load_optional_json(get_user_models_file());
+    recipe_options_ = load_optional_json(get_recipe_options_file());
 }
 
 std::string ModelManager::get_cache_dir() {
@@ -232,6 +233,10 @@ std::string ModelManager::get_cache_dir() {
 
 std::string ModelManager::get_user_models_file() {
     return get_cache_dir() + "/user_models.json";
+}
+
+std::string ModelManager::get_recipe_options_file() {
+    return get_cache_dir() + "/recipe_options.json";
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
@@ -292,6 +297,24 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     
     std::cout << "[ModelManager] Scanning for GGUF models in: " << search_dir << std::endl;
     
+    // Configuration for discovered models (single source of truth)
+    static constexpr const char* EXTRA_MODEL_PREFIX = "extra.";
+    static constexpr const char* EXTRA_MODEL_RECIPE = "llamacpp";
+    static constexpr const char* EXTRA_MODEL_SOURCE = "extra_models_dir";
+    
+    // Helper to initialize common ModelInfo fields for discovered models
+    auto init_extra_model_info = [this](const std::string& name) -> ModelInfo {
+        ModelInfo info;
+        info.model_name = name;
+        info.recipe = EXTRA_MODEL_RECIPE;
+        info.suggested = true;
+        info.downloaded = true;
+        info.source = EXTRA_MODEL_SOURCE;
+        info.labels.push_back("custom");
+        info.device = get_device_type_from_recipe(EXTRA_MODEL_RECIPE);
+        return info;
+    };
+    
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
@@ -302,7 +325,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             if (!entry.is_regular_file()) continue;
             
             std::string filename = entry.path().filename().string();
-            std::string filename_lower = to_lower(filename);
             
             if (!ends_with_ignore_case(filename, ".gguf")) continue;
             
@@ -329,18 +351,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         // Skip mmproj files - they're part of multimodal models
         if (contains_ignore_case(filename, "mmproj")) continue;
         
-        // Use exact filename as model name
-        std::string model_name = filename;
-        
-        ModelInfo info;
-        info.model_name = model_name;
-        info.checkpoint = gguf_path.string();  // Use full path as checkpoint
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
+        ModelInfo info = init_extra_model_info(model_name);
+        info.checkpoint = gguf_path.string();
         info.resolved_path = gguf_path.string();
-        info.recipe = "llamacpp";
-        info.suggested = true;
-        info.downloaded = true;
-        info.source = "extra_models_dir";
-        info.labels.push_back("custom");
+        info.type = ModelType::LLM;
         
         // Calculate size in GB
         try {
@@ -349,10 +364,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         } catch (...) {
             info.size = 0.0;
         }
-        
-        // Set type and device
-        info.type = ModelType::LLM;
-        info.device = get_device_type_from_recipe("llamacpp");
         
         discovered[model_name] = info;
     }
@@ -363,7 +374,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         
         fs::path dir = fs::path(dir_path);
         std::string dir_name = dir.filename().string();
-        std::string model_name = dir_name;  // Use exact directory name
         
         // Find the main model file and mmproj file
         fs::path main_model_path;
@@ -397,15 +407,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             continue;
         }
         
-        ModelInfo info;
-        info.model_name = model_name;
-        info.checkpoint = dir_path;  // Use directory as checkpoint
-        info.resolved_path = main_model_path.string();  // First GGUF file as resolved path
-        info.recipe = "llamacpp";
-        info.suggested = true;
-        info.downloaded = true;
-        info.source = "extra_models_dir";
-        info.labels.push_back("custom");
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
+        ModelInfo info = init_extra_model_info(model_name);
+        info.checkpoint = dir_path;
+        info.resolved_path = main_model_path.string();
         info.size = total_size;
         
         // If mmproj found, set it and add vision label
@@ -414,9 +419,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.labels.push_back("vision");
         }
         
-        // Set type and device
         info.type = get_model_type_from_labels(info.labels);
-        info.device = get_device_type_from_recipe("llamacpp");
         
         discovered[model_name] = info;
     }
@@ -619,17 +622,16 @@ json ModelManager::load_server_models() {
     }
 }
 
-json ModelManager::load_user_models() {
-    std::string user_models_path = get_user_models_file();
-    
-    if (!fs::exists(user_models_path)) {
+json ModelManager::load_optional_json(const std::string& path) {    
+    if (!fs::exists(path)) {
         return json::object();
     }
     
     try {
-        return JsonUtils::load_from_file(user_models_path);
+        std::cout << "[ModelManager] Loading " << fs::path(path).filename() << std::endl;
+        return JsonUtils::load_from_file(path);
     } catch (const std::exception& e) {
-        std::cerr << "Warning: Could not load user_models.json: " << e.what() << std::endl;
+        std::cerr << "Warning: Could not load " << fs::path(path).filename() << ": " << e.what() << std::endl;
         return json::object();
     }
 }
@@ -713,8 +715,10 @@ void ModelManager::build_cache() {
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
     }
-    
+
     // Step 1.5: Discover models from extra_models_dir
+    // All discovered models are prefixed with "extra." to avoid conflicts
+    // We still gracefully handle conflicts just in case, though
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
         // Check for conflicts with registered models
@@ -724,6 +728,18 @@ void ModelManager::build_cache() {
             continue;
         }
         all_models[name] = info;
+    }
+
+    // Populate recipe options
+    for (auto& [name, info] : all_models) {
+        if (JsonUtils::has_key(recipe_options_, name)) {
+            std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
+
+            auto options = recipe_options_[name];
+            info.llamacpp_args = JsonUtils::get_or_default<std::string>(options, "llamacpp_args", "");
+            info.llamacpp_backend = JsonUtils::get_or_default<std::string>(options, "llamacpp_backend", "");
+            info.ctx_size = JsonUtils::get_or_default<int>(options, "ctx_size", -1);
+        }
     }
     
     // Step 2: Filter by backend availability
@@ -2038,6 +2054,12 @@ void ModelManager::delete_model(const std::string& model_name) {
     std::cout << "[ModelManager] Deleting model: " << model_name << std::endl;
     std::cout << "[ModelManager] Checkpoint: " << info.checkpoint << std::endl;
     std::cout << "[ModelManager] Recipe: " << info.recipe << std::endl;
+    
+    // Handle extra models (from --extra-models-dir) - these are user-managed external files
+    if (model_name.substr(0, 6) == "extra.") {
+        throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
+                                 "Delete the file directly from: " + info.checkpoint);
+    }
     
     // Handle FLM models separately
     if (info.recipe == "flm") {

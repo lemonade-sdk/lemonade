@@ -559,7 +559,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
       -F "model=Whisper-Tiny"
     ```
 
-=== "Linux/macOS"
+=== "Linux"
 
     ```bash
     curl -X POST http://localhost:8000/api/v1/audio/transcriptions \
@@ -858,8 +858,28 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
-2. Values set via `lemonade-server` CLI arguments or environment variables
-3. Default hardcoded values in `lemonade-router` (lowest priority)
+2. Per-model values configurable in `recipe_options.json` (see below for details)
+3. Values set via `lemonade-server` CLI arguments or environment variables
+4. Default hardcoded values in `lemonade-router` (lowest priority)
+
+#### Per-model options
+
+You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To do this you need to create a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
+
+```json
+{
+  "user.Qwen2.5-Coder-1.5B-Instruct": {
+    "ctx_size": 16384,
+    "llamacpp_backend": "vulkan",
+    "llamacpp_args": "-np 2 -kvu"
+  },
+  "Qwen3-Coder-30B-A3B-Instruct-GGUF" : {
+    "llamacpp_backend": "rocm"
+  }
+}
+```
+
+Note that user models (i.e. those defined in `user_models.json`) must include the "user." prefix in their name when referencing them in `recipe_options.json`.
 
 #### Example requests
 
@@ -879,7 +899,7 @@ Load with custom settings:
 curl -X POST http://localhost:8000/api/v1/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "llama-3.2-3b-instruct-GGUF",
+    "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
     "llamacpp_args": "--flash-attn on --no-mmap"
@@ -1121,7 +1141,7 @@ Where `[level]` can be one of:
 
 # GGUF Support
 
-The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
+The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
 - Lemonade Server wraps `llama-server` with support for the `lemonade-server` CLI, client web app, and endpoints (e.g., `models`, `pull`, `load`, etc.).
   - The `chat/completions`, `completions`, `embeddings`, and `reranking` endpoints are supported.
   - The `embeddings` endpoint requires embedding-specific models (e.g., nomic-embed-text models).
@@ -1141,7 +1161,6 @@ To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by nav
 |----------|------------------|------------------|
 | Windows  | ✅ Vulkan, ROCm        | ✅ x64           |
 | Ubuntu   | ✅ Vulkan, ROCm        | ✅ x64           |
-| macOS    | ✅ Metal         | ✅ Apple Silicon |
 | Other Linux | ⚠️* Vulkan    | ⚠️* x64          |
 
 *Other Linux distributions may work but are not officially supported.

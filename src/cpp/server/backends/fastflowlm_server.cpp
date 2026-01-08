@@ -40,6 +40,9 @@ FastFlowLMServer::~FastFlowLMServer() {
 void FastFlowLMServer::install(const std::string& backend) {
     std::cout << "[FastFlowLM] Checking FLM installation..." << std::endl;
     
+    // Reset upgrade tracking
+    flm_was_upgraded_ = false;
+    
     // Check NPU driver version first
     if (!check_npu_driver_version()) {
         throw std::runtime_error("NPU driver version check failed - please update your driver");
@@ -47,7 +50,8 @@ void FastFlowLMServer::install(const std::string& backend) {
     
     try {
         // Install FLM if needed (uses version from backend_versions.json)
-        install_flm_if_needed();
+        // Returns true if FLM was installed or upgraded
+        flm_was_upgraded_ = install_flm_if_needed();
         
         // Verify flm is now available
         std::string flm_path = get_flm_path();
@@ -150,8 +154,25 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
     
+    // Check if model was downloaded before FLM upgrade (for invalidation detection)
+    bool model_was_downloaded = model_manager_ && model_manager_->is_model_downloaded(model_name);
+    
     // Install/check FLM
     install();
+    
+    // Check if FLM upgrade invalidated the model
+    // This happens when a new FLM version requires models to be re-downloaded
+    if (flm_was_upgraded_ && model_was_downloaded && model_manager_) {
+        // Refresh and check if model is now marked as not downloaded
+        model_manager_->refresh_flm_download_status();
+        
+        if (!model_manager_->is_model_downloaded(model_name)) {
+            std::cout << "[FastFlowLM] Model '" << model_name 
+                      << "' was invalidated by FLM upgrade" << std::endl;
+            throw ModelInvalidatedException(model_name, 
+                "FLM was upgraded and the model format has changed");
+        }
+    }
     
     // Download model if needed
     download_model(model_info.checkpoint, model_info.mmproj, do_not_upgrade);
@@ -543,7 +564,7 @@ bool FastFlowLMServer::compare_versions(const std::string& v1, const std::string
     return true; // Equal versions
 }
 
-void FastFlowLMServer::install_flm_if_needed() {
+bool FastFlowLMServer::install_flm_if_needed() {
     std::string required_version = get_flm_required_version();
     std::string current_version = get_flm_installed_version();
     
@@ -562,7 +583,7 @@ void FastFlowLMServer::install_flm_if_needed() {
     if (!current_normalized.empty() && compare_versions(current_normalized, required_normalized)) {
         std::cout << "[FastFlowLM] FLM " << current_version 
                   << " is installed (required: " << required_version << ")" << std::endl;
-        return;
+        return false;  // No upgrade performed
     }
     
     // Case 2: Need to install or upgrade
@@ -631,10 +652,13 @@ void FastFlowLMServer::install_flm_if_needed() {
     
     // Refresh FLM model download status in the model cache
     // This ensures any pre-existing FLM models are now detected
+    // (FLM upgrade may invalidate previously downloaded models)
     if (model_manager_) {
         std::cout << "[FastFlowLM] Refreshing FLM model download status..." << std::endl;
         model_manager_->refresh_flm_download_status();
     }
+    
+    return true;  // FLM was installed or upgraded
 }
 
 bool FastFlowLMServer::download_flm_installer(const std::string& output_path) {

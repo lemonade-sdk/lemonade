@@ -55,6 +55,10 @@ Additionally, you can provide your own `llama-server` binary by giving the full 
 
 The same can also be done for the `whisper-server` binary. The environment variable to set in this case is `LEMONADE_WHISPERCPP_BIN`.
 
+If you expose your server over a network you can use the `LEMONADE_API_KEY` to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
+
+**IMPORTANT**: If you need to access `lemonade-server` over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
+
 ## `pull` Command Options
 
 The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
