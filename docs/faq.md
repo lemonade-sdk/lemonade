@@ -8,7 +8,7 @@
       - Gets you started in minutes with one-click installers.
       - Auto-configures optimized inference engines for your PC.
       - Provides a convenient app to get set up and test out LLMs.
-      - Makes LLMs available using the OpenAI API standard to make them available to apps on your PC.  
+      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
 ### 2. **What are the use cases for different audiences?**
 
