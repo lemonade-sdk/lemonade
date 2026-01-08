@@ -1187,15 +1187,7 @@
 </code></pre></div>
 <p>Once you capture the CPU name, make sure to convert it to lowercase before using the regular expression.</p>
 <h3 id="downloading-server-installer">Downloading Server Installer</h3>
-<p>The recommended way of directing users to the server installer is pointing users to our releases page at <a href="https://github.com/lemonade-sdk/lemonade/releases"><code>https://github.com/lemonade-sdk/lemonade/releases</code></a>. Alternatively, you may also provide the direct path to the installer itself or download the installer programmatically as shown below:</p>
-<p>Latest version:</p>
-<div class="highlight"><pre><span></span><code>https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi
-</code></pre></div>
-<p>Specific version:</p>
-<div class="highlight"><pre><span></span><code>https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade-server-minimal.msi
-</code></pre></div>
-<p>Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described <a href="https://lemonade-server.ai/install_options.html">here</a>.</p>
-<p><strong>macOS Requirements:</strong> macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.</p>
+<p>The recommended way of directing users to the installer is pointing users to https://lemonade-server.ai/install_options.html</p>
 <h3 id="installing-additional-models">Installing Additional Models</h3>
 <p>Lemonade Server installations always come with at least one LLM installed. If you want to install additional models on behalf of your users, the following tools are available:</p>
 <ul>
@@ -1220,7 +1212,7 @@
 <p>By default, the server runs on port 8000. Optionally, you can specify a custom port using the --port argument:</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8123</span>
 </code></pre></div>
-<p>You can also prevent the server from showing a system tray icon by using the <code>--no-tray</code> flag (Windows and macOS only):</p>
+<p>You can also prevent the server from showing a system tray icon by using the <code>--no-tray</code> flag (Windows only):</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--no-tray
 </code></pre></div>
 <p>You can also run the server as a background process using a subprocess or any preferred method.</p>

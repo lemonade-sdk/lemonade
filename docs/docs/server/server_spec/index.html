@@ -3519,7 +3519,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 </tbody>
 </table>
 <h4 id="example-request_5">Example request</h4>
-<div class="tabbed-set tabbed-alternate" data-tabs="8:2"><input checked="checked" id="__tabbed_8_1" name="__tabbed_8" type="radio" /><input id="__tabbed_8_2" name="__tabbed_8" type="radio" /><div class="tabbed-labels"><label for="__tabbed_8_1">Windows</label><label for="__tabbed_8_2">Linux/macOS</label></div>
+<div class="tabbed-set tabbed-alternate" data-tabs="8:2"><input checked="checked" id="__tabbed_8_1" name="__tabbed_8" type="radio" /><input id="__tabbed_8_2" name="__tabbed_8" type="radio" /><div class="tabbed-labels"><label for="__tabbed_8_1">Windows</label><label for="__tabbed_8_2">Linux</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/audio/transcriptions<span class="w"> </span>^
@@ -4140,7 +4140,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><strong>trace</strong>: Very detailed tracing information, including everything from debug level plus all input prompts.</li>
 </ul>
 <h1 id="gguf-support">GGUF Support</h1>
-<p>The <code>llama-server</code> backend works with Lemonade's suggested <code>*-GGUF</code> models, as well as any .gguf model from Hugging Face. Windows, Ubuntu Linux, and macOS are supported. Details:
+<p>The <code>llama-server</code> backend works with Lemonade's suggested <code>*-GGUF</code> models, as well as any .gguf model from Hugging Face. Windows and Ubuntu Linux are supported. Details:
 - Lemonade Server wraps <code>llama-server</code> with support for the <code>lemonade-server</code> CLI, client web app, and endpoints (e.g., <code>models</code>, <code>pull</code>, <code>load</code>, etc.).
   - The <code>chat/completions</code>, <code>completions</code>, <code>embeddings</code>, and <code>reranking</code> endpoints are supported.
   - The <code>embeddings</code> endpoint requires embedding-specific models (e.g., nomic-embed-text models).
@@ -4170,11 +4170,6 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <td>Ubuntu</td>
 <td>✅ Vulkan, ROCm</td>
 <td>✅ x64</td>
-</tr>
-<tr>
-<td>macOS</td>
-<td>✅ Metal</td>
-<td>✅ Apple Silicon</td>
 </tr>
 <tr>
 <td>Other Linux</td>
