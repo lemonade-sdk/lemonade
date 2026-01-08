@@ -111,7 +111,19 @@ For more information about model formats and recipes, see the [API documentation
 
 ## Lemonade Desktop App
 
-The Lemonade Desktop App (`Lemonade.exe` on Windows) provides a graphical interface for chatting with models and managing the server. By default, the app connects to a server running on `localhost`, but it can also connect to a remote server on the same network.
+The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, `lemonade-app` is added to your PATH for easy command-line access.
+
+### Launching the App
+
+```bash
+# Launch the app (connects to local server automatically)
+lemonade-app
+
+# Launch with a specific server URL
+lemonade-app --base-url http://192.168.0.100:8000
+```
+
+By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, use the `--base-url` option.
 
 ### Remote Server Connection
 
@@ -124,17 +136,9 @@ To connect the app to a server running on a different machine:
    > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks.
 
 2. **Launch the app** on the client machine with the `--base-url` flag:
-
-   **Windows:**
-   ```cmd
-   Lemonade.exe --base-url http://192.168.0.100:8000
-   ```
-
-   **Linux/macOS:**
    ```bash
-   ./lemonade --base-url http://192.168.0.100:8000
+   lemonade-app --base-url http://192.168.0.100:8000
    ```
-
    Replace `192.168.0.100` with the IP address of the machine running the server.
 
 Alternatively, you can set the `LEMONADE_APP_BASE_URL` environment variable.

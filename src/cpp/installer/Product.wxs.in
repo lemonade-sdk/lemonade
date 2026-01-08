@@ -129,6 +129,13 @@
       <Component Id="LemonadeLogViewer" Guid="f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c">
         <File Id="lemonade_log_viewer.exe" Source="$(var.SourceDir)\build\Release\lemonade-log-viewer.exe" KeyPath="yes" />
       </Component>
+      
+<?if $(var.IncludeElectron) = 1 ?>
+      <!-- Launcher script for Lemonade Desktop App (adds lemonade-app to PATH) -->
+      <Component Id="LemonadeAppLauncher" Guid="a9b0c1d2-e3f4-5a6b-7c8d-9e0f1a2b3c4d">
+        <File Id="lemonade_app.cmd" Source="$(var.SourceDir)\installer\lemonade-app.cmd" KeyPath="yes" />
+      </Component>
+<?endif?>
     </ComponentGroup>
     
     <!-- Resource files -->
