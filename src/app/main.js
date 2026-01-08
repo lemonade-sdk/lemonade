@@ -17,6 +17,96 @@ const SETTINGS_FILE_NAME = 'app_settings.json';
 const SETTINGS_UPDATED_CHANNEL = 'settings-updated';
 const SERVER_PORT_UPDATED_CHANNEL = 'server-port-updated';
 let cachedServerPort = 8000; // Default port
+
+// Remote server support: explicit base URL from --base-url arg or LEMONADE_APP_BASE_URL env var
+// When set, this takes precedence over localhost + port discovery
+let configuredServerBaseUrl = null;
+
+/**
+ * Parse and normalize a server base URL.
+ * - Adds http:// if no protocol specified
+ * - Strips trailing slashes
+ * - Returns null if URL is invalid
+ */
+const normalizeServerUrl = (url) => {
+  if (!url || typeof url !== 'string') {
+    return null;
+  }
+  
+  let normalized = url.trim();
+  if (!normalized) {
+    return null;
+  }
+  
+  // Add http:// if no protocol specified
+  if (!normalized.match(/^https?:\/\//i)) {
+    normalized = 'http://' + normalized;
+  }
+  
+  // Strip trailing slashes
+  normalized = normalized.replace(/\/+$/, '');
+  
+  // Validate URL format
+  try {
+    new URL(normalized);
+    return normalized;
+  } catch (e) {
+    console.error('Invalid server URL:', url, e.message);
+    return null;
+  }
+};
+
+/**
+ * Parse command line arguments for --base-url
+ */
+const parseBaseUrlArg = () => {
+  const args = process.argv.slice(1); // Skip the electron executable
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--base-url' && args[i + 1]) {
+      return args[i + 1];
+    }
+    // Also support --base-url=value format
+    if (args[i].startsWith('--base-url=')) {
+      return args[i].substring('--base-url='.length);
+    }
+  }
+  return null;
+};
+
+/**
+ * Initialize server base URL from command line or environment variable.
+ * Precedence: --base-url > LEMONADE_APP_BASE_URL > null (fallback to localhost discovery)
+ */
+const initializeServerBaseUrl = () => {
+  // Check command line argument first (highest priority)
+  const argUrl = parseBaseUrlArg();
+  if (argUrl) {
+    const normalized = normalizeServerUrl(argUrl);
+    if (normalized) {
+      console.log('Using server base URL from --base-url:', normalized);
+      configuredServerBaseUrl = normalized;
+      return;
+    }
+  }
+  
+  // Check environment variable (second priority)
+  const envUrl = process.env.LEMONADE_APP_BASE_URL;
+  if (envUrl) {
+    const normalized = normalizeServerUrl(envUrl);
+    if (normalized) {
+      console.log('Using server base URL from LEMONADE_APP_BASE_URL:', normalized);
+      configuredServerBaseUrl = normalized;
+      return;
+    }
+  }
+  
+  // No explicit URL configured - will use localhost + port discovery
+  console.log('No explicit server URL configured, will use localhost with port discovery');
+  configuredServerBaseUrl = null;
+};
+
+// Initialize on startup
+initializeServerBaseUrl();
 const BASE_APP_SETTING_VALUES = Object.freeze({
   temperature: 0.7,
   topK: 40,
@@ -270,6 +360,11 @@ ipcMain.handle('get-app-settings', async () => {
   return readAppSettingsFile();
 });
 
+// Returns the configured server base URL, or null if using localhost discovery
+ipcMain.handle('get-server-base-url', async () => {
+  return configuredServerBaseUrl;
+});
+
 ipcMain.handle('save-app-settings', async (_event, payload) => {
   const sanitized = await writeAppSettingsFile(payload);
   broadcastSettingsUpdated(sanitized);
@@ -279,8 +374,16 @@ ipcMain.handle('save-app-settings', async (_event, payload) => {
 ipcMain.handle('get-version', async () => {
   try {
     const http = require('http');
+    const https = require('https');
+    
+    // Use configured base URL or fall back to localhost with cached port
+    const baseUrl = configuredServerBaseUrl || `http://localhost:${cachedServerPort}`;
+    const healthUrl = `${baseUrl}/api/v1/health`;
+    const isHttps = healthUrl.startsWith('https://');
+    const httpModule = isHttps ? https : http;
+    
     return new Promise((resolve, reject) => {
-      const req = http.get(`http://localhost:${cachedServerPort}/api/v1/health`, (res) => {
+      const req = httpModule.get(healthUrl, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -304,6 +407,13 @@ ipcMain.handle('get-version', async () => {
 });
 
 ipcMain.handle('discover-server-port', async () => {
+  // Skip port discovery if an explicit server URL is configured
+  // (port discovery only works for local servers)
+  if (configuredServerBaseUrl) {
+    console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
+    return null;
+  }
+  
   const port = await discoverServerPort();
   cachedServerPort = port;
   broadcastServerPortUpdated(port);

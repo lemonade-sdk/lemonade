@@ -109,6 +109,43 @@ lemonade-server pull user.nomic-embed \
 
 For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](./server_models.md).
 
+## Lemonade Desktop App
+
+The Lemonade Desktop App (`Lemonade.exe` on Windows) provides a graphical interface for chatting with models and managing the server. By default, the app connects to a server running on `localhost`, but it can also connect to a remote server on the same network.
+
+### Remote Server Connection
+
+To connect the app to a server running on a different machine:
+
+1. **Start the server with network access** on the host machine:
+   ```bash
+   lemonade-server serve --host 0.0.0.0 --port 8000
+   ```
+   > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks.
+
+2. **Launch the app** on the client machine with the `--base-url` flag:
+
+   **Windows:**
+   ```cmd
+   Lemonade.exe --base-url http://192.168.0.100:8000
+   ```
+
+   **Linux/macOS:**
+   ```bash
+   ./lemonade --base-url http://192.168.0.100:8000
+   ```
+
+   Replace `192.168.0.100` with the IP address of the machine running the server.
+
+Alternatively, you can set the `LEMONADE_APP_BASE_URL` environment variable.
+
+| Option / Environment Variable | Description |
+|-------------------------------|-------------|
+| `--base-url URL` | Connect the app to a server at the specified URL (e.g., `http://192.168.0.100:8000`) |
+| `LEMONADE_APP_BASE_URL` | Environment variable alternative to `--base-url`. The command-line flag takes precedence if both are set. |
+
+When no `--base-url` is provided, the app automatically discovers and connects to a local server.
+
 ## Next Steps
 
 The [Lemonade Server integration guide](./server_integration.md) provides more information about how these commands can be used to integrate Lemonade Server into an application.
