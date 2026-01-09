@@ -135,6 +135,7 @@ private:
     std::string loaded_model_;
     std::vector<ModelInfo> downloaded_models_;
     bool should_exit_;
+    bool process_owns_server_ = false;
     
     // Model loading state
     std::atomic<bool> is_loading_model_{false};

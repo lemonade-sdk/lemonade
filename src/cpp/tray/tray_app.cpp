@@ -339,7 +339,7 @@ int TrayApp::run() {
                     config_.host = "localhost";
                 }
                 
-                // Execute the run command (load model and open browser)
+                // Execute the run command (load model)
                 return execute_run_command();
             }
             
@@ -377,7 +377,9 @@ int TrayApp::run() {
         std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
     }
     
-    // If this is the 'run' command, load the model and open browser
+    process_owns_server_ = true;
+
+    // If this is the 'run' command, load the model and run electron app
     if (config_.command == "run") {
         int result = execute_run_command();
         if (result != 0) {
@@ -872,7 +874,7 @@ std::pair<int, int> TrayApp::get_server_info() {
         pid_file.close();
         
         // Verify the PID is still alive
-        if (kill(pid, 0) == 0) {
+        if (getpgid(pid) != -1) {
             return {pid, port};
         }
         
@@ -1252,9 +1254,11 @@ int TrayApp::execute_run_command() {
     if (server_manager_->load_model(model_name, config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Launch the Electron app
-        std::cout << "Launching Lemonade app..." << std::endl;
-        launch_electron_app();
+        // Launch the Electron app only if we are not terminating immediately
+        if (process_owns_server_) {
+            std::cout << "Launching Lemonade app..." << std::endl;
+            launch_electron_app();
+        }
     } else {
         std::cerr << "Failed to load model" << std::endl;
         return 1;
@@ -2037,9 +2041,8 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    // Only print shutdown message for persistent server commands (serve/run)
-    // Don't print for ephemeral commands (list/pull/delete/status/stop)
-    if (config_.command == "serve" || config_.command == "run") {
+    // Only print shutdown message if we started the server
+    if (process_owns_server_) {
         std::cout << "Shutting down server..." << std::endl;
     }
     
@@ -2101,7 +2104,7 @@ void TrayApp::shutdown() {
 #endif
     
     // Stop the server
-    if (server_manager_) {
+    if (server_manager_ && process_owns_server_) {
         stop_server();
     }
     
