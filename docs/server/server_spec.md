@@ -684,7 +684,12 @@ Returns a single model object with the same fields as described in the [models l
   "size": 0.38,
   "downloaded": true,
   "suggested": true,
-  "labels": ["reasoning"]
+  "labels": ["reasoning"],
+  "recipe_options" {
+    "ctx_size": 8192,
+    "llamacpp_args": "--no-mmap",
+    "llamacpp_backend": "rocm"
+  }
 }
 ```
 
@@ -853,6 +858,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
 | `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. |
 | `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `save_options` | No | Boolean. If true, saves `ctx_size`, `llamacpp_backend` and `llamacpp_args` to the `recipe_options.json` file. Any previously stored value for `model_name` is replaced with the parameters of this request. |
 
 **Setting Priority:**
 
@@ -864,7 +870,7 @@ When loading a model, settings are applied in this priority order:
 
 #### Per-model options
 
-You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To do this you need to create a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
+You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To achieve this, Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
 
 ```json
 {
@@ -879,7 +885,7 @@ You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` o
 }
 ```
 
-Note that user models (i.e. those defined in `user_models.json`) must include the "user." prefix in their name when referencing them in `recipe_options.json`.
+Note that model names include any applicable prefix, such as `user.` and `extra.`.
 
 #### Example requests
 
@@ -903,6 +909,20 @@ curl -X POST http://localhost:8000/api/v1/load \
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
     "llamacpp_args": "--flash-attn on --no-mmap"
+  }'
+```
+
+Load and save settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen3-0.6B-GGUF",
+    "ctx_size": 8192,
+    "llamacpp_backend": "vulkan",
+    "llamacpp_args": "--no-context-shift --no-mmap",
+    "save_options": true
   }'
 ```
 

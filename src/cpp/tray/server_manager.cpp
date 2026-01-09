@@ -333,9 +333,19 @@ nlohmann::json ServerManager::get_models() {
     return nlohmann::json::parse(response);
 }
 
-bool ServerManager::load_model(const std::string& model_name) {
+bool ServerManager::load_model(const std::string& model_name, bool save_options) {
     try {
-        std::string body = "{\"model_name\": \"" + model_name + "\"}";
+        nlohmann::json load_req = nlohmann::json::object();
+        load_req["model_name"] = model_name;
+
+        if (save_options) {
+            load_req["save_options"] = true;
+            load_req["ctx_size"] = ctx_size_;  
+            load_req["llamacpp_backend"] = llamacpp_backend_;  
+            load_req["llamacpp_args"] = llamacpp_args_;  
+        } 
+
+        std::string body = load_req.dump();
         
         // 24 hour timeout - models can be 100GB+ and downloads may need many retries
         DEBUG_LOG(this, "Loading model...");

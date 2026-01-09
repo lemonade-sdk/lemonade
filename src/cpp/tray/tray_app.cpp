@@ -207,9 +207,8 @@ TrayApp::TrayApp(int argc, char* argv[])
         if (config_.command == "pull") {
             print_pull_help();
         } else {
-            // Show serve options only if command is "serve" or "run"
-            bool show_serve_options = (config_.command == "serve" || config_.command == "run");
-            print_usage(show_serve_options);
+            // Show serve / run options only if command is "serve" or "run"
+            print_usage(config_.command == "serve", config_.command == "run");
         }
         exit(0);
     }
@@ -373,6 +372,10 @@ int TrayApp::run() {
     }
     
     DEBUG_LOG(this, "Server started successfully!");
+    if (config_.command == "serve" && config_.save_options) {
+        config_.save_options = false;
+        std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
+    }
     
     // If this is the 'run' command, load the model and open browser
     if (config_.command == "run") {
@@ -381,7 +384,7 @@ int TrayApp::run() {
             return result;
         }
     }
-    
+
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
         std::cout << "Press Ctrl+C to stop" << std::endl;
@@ -630,6 +633,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
+            } else if (arg == "--save-options") {
+                config_.save_options = true;
             } else {
                 // It's a command argument (like model name)
                 config_.command_args.push_back(arg);
@@ -660,7 +665,7 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
     config_.command = "";
 }
 
-void TrayApp::print_usage(bool show_serve_options) {
+void TrayApp::print_usage(bool show_serve_options, bool show_run_options) {
     std::cout << "lemonade-server - Lemonade Server\n\n";
     std::cout << "Usage: lemonade-server <command> [options]\n\n";
     std::cout << "Commands:\n";
@@ -672,8 +677,8 @@ void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "  status                   Check server status\n";
     std::cout << "  stop                     Stop the server\n\n";
     
-    // Only show serve options if requested (for serve/run --help)
-    if (show_serve_options) {
+    // Only show serve/run options if requested (for serve/run --help)
+    if (show_serve_options || show_run_options) {
         std::cout << "Serve/Run Options:\n";
         std::cout << "  --port PORT              Server port (default: 8000)\n";
         std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
@@ -690,6 +695,9 @@ void TrayApp::print_usage(bool show_serve_options) {
 #else
         std::cout << "  --no-tray                Start server without tray (headless mode)\n";
 #endif
+        if (show_run_options) {
+            std::cout << "  --save-options           Save model load options as default for this model (run only)\n";
+        }
         std::cout << "\n";
     }
     
@@ -1241,7 +1249,7 @@ int TrayApp::execute_run_command() {
     
     // Load the model
     std::cout << "Loading model " << model_name << "..." << std::endl;
-    if (server_manager_->load_model(model_name)) {
+    if (server_manager_->load_model(model_name, config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
         // Launch the Electron app
