@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.2)
+project(lemon_cpp VERSION 9.1.3)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -510,5 +510,7 @@ if(UNIX AND NOT APPLE)
         endif()
     endif()
     
+    # RPM specific variables defined within
+    include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
     include(CPack)
 endif()
