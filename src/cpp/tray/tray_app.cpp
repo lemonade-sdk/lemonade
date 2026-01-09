@@ -377,7 +377,7 @@ int TrayApp::run() {
         std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
     }
     
-    owns_server_ = true;
+    process_owns_server_ = true;
 
     // If this is the 'run' command, load the model and run electron app
     if (config_.command == "run") {
@@ -1255,7 +1255,7 @@ int TrayApp::execute_run_command() {
         std::cout << "Model loaded successfully!" << std::endl;
         
         // Launch the Electron app only if we are not terminating immediately
-        if (owns_server_) {
+        if (process_owns_server_) {
             std::cout << "Launching Lemonade app..." << std::endl;
             launch_electron_app();
         }
@@ -2042,7 +2042,7 @@ void TrayApp::shutdown() {
     should_exit_ = true;
     
     // Only print shutdown message if we started the server
-    if (owns_server_) {
+    if (process_owns_server_) {
         std::cout << "Shutting down server..." << std::endl;
     }
     
@@ -2104,7 +2104,7 @@ void TrayApp::shutdown() {
 #endif
     
     // Stop the server
-    if (server_manager_ && owns_server_) {
+    if (server_manager_ && process_owns_server_) {
         stop_server();
     }
     
