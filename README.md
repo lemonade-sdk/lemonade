@@ -206,7 +206,7 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -e LEMONADE_LLAMACPP_BACKEND=cpu \
-  ghcr.io/lemonade-sdk/lemonade-server:v9.1.1 \
+  ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
   ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
 ```
 
