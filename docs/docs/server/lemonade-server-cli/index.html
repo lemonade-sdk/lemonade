@@ -1102,6 +1102,11 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td>Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: <code>--max-loaded-models 3 2 1 1</code> loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model.</td>
 <td><code>1 1 1 1</code></td>
 </tr>
+<tr>
+<td><code>--save-options</code></td>
+<td>Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value.</td>
+<td>False</td>
+</tr>
 </tbody>
 </table>
 <p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: <code>LEMONADE_HOST</code>, <code>LEMONADE_PORT</code>, <code>LEMONADE_LOG_LEVEL</code>, <code>LEMONADE_LLAMACPP</code>, <code>LEMONADE_CTX_SIZE</code>, <code>LEMONADE_LLAMACPP_ARGS</code>, and <code>LEMONADE_EXTRA_MODELS_DIR</code>.</p>
