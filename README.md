@@ -181,6 +181,86 @@ The [Lemonade Python SDK](./docs/README.md) is also available, which includes th
 - 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
 - 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
 
+## Quick Start with Docker
+
+> You may need additional configuration depending on your environment.
+
+### Docker Run with Default Configuration
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 8000:8000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -e LEMONADE_LLAMACPP_BACKEND=cpu \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+### Docker Run with a Specific Port and Version
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 4000:5000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -e LEMONADE_LLAMACPP_BACKEND=cpu \
+  ghcr.io/lemonade-sdk/lemonade-server:v9.1.1 \
+  ./lemonade-server serve --no-tray --host 0.0.0.0 --port 5000
+```
+
+> This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
+
+### Other Docker Methods
+
+#### Docker Compose Setup
+Docker Compose makes it easier to manage multi-container applications.
+1. Make sure you have Docker Compose installed.
+2. Create a `docker-compose.yml` file like this:
+
+```yml
+services:
+  lemonade:
+    image: ghcr.io/lemonade-sdk/lemonade-server:latest
+    container_name: lemonade-server
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist downloaded models
+      - lemonade-cache:/root/.cache/huggingface
+      # # Persist llama binaries
+      - lemonade-llama:/opt/lemonade/llama
+    environment:
+      - LEMONADE_LLAMACPP_BACKEND=cpu
+    restart: unless-stopped
+
+volumes:
+  lemonade-cache:
+  lemonade-llama:
+```
+
+> You can add more services as needed.
+
+3. Run the following command in the directory containing your docker-compose.yml:
+
+```bash
+docker-compose up -d
+```
+
+This will pull the latest image (or the version you specified) from the Lemonade container registry and start the server with your mapped ports.
+
+Once the container is running, verify it’s working:
+
+```bash
+curl http://localhost:8000/api/v1/models
+```
+
+You should receive a response listing available models.
+
+#### Build Your Own Docker Image
+If you want to build a custom image, check out the `DOCKER_GUIDE` for detailed instructions.
+
 ## FAQ
 
 To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
