@@ -74,7 +74,7 @@ public:
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();
-    bool load_model(const std::string& model_name);
+    bool load_model(const std::string& model_name, bool save_options=false);
     bool unload_model();  // Unload all models
     bool unload_model(const std::string& model_name);  // Unload specific model
     
@@ -111,6 +111,7 @@ private:
     std::string llamacpp_args_;
     std::string extra_models_dir_;
     std::string host_;
+    std::string api_key_;
     int port_;
     int ctx_size_;
     int max_llm_models_;

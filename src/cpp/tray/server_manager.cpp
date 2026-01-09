@@ -108,6 +108,9 @@ bool ServerManager::start_server(
     llamacpp_args_ = llamacpp_args;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
+
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
     
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
@@ -332,9 +335,19 @@ nlohmann::json ServerManager::get_models() {
     return nlohmann::json::parse(response);
 }
 
-bool ServerManager::load_model(const std::string& model_name) {
+bool ServerManager::load_model(const std::string& model_name, bool save_options) {
     try {
-        std::string body = "{\"model_name\": \"" + model_name + "\"}";
+        nlohmann::json load_req = nlohmann::json::object();
+        load_req["model_name"] = model_name;
+
+        if (save_options) {
+            load_req["save_options"] = true;
+            load_req["ctx_size"] = ctx_size_;  
+            load_req["llamacpp_backend"] = llamacpp_backend_;  
+            load_req["llamacpp_args"] = llamacpp_args_;  
+        } 
+
+        std::string body = load_req.dump();
         
         // 24 hour timeout - models can be 100GB+ and downloads may need many retries
         DEBUG_LOG(this, "Loading model...");
@@ -825,6 +838,10 @@ std::string ServerManager::make_http_request(
     httplib::Client cli(connect_host, port_);
     cli.set_connection_timeout(10, 0);  // 10 second connection timeout
     cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
+
+    if (api_key_ != "") {
+        cli.set_bearer_token_auth(api_key_);
+    }
     
     httplib::Result res;
     

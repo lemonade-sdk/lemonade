@@ -36,17 +36,17 @@ This command will return either `Server is not running` or `Server is running on
 
 ### Identifying Compatible Devices
 
-AMD Ryzen™ AI `Hybrid` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and a 3-digit number starting with 3 as shown below.
+AMD Ryzen™ AI `Hybrid` and `NPU` models are available on Windows 11 on all AMD Ryzen™ AI 300 Series, 400 Series, and Z2 Series Processors. To programmatically identify supported devices, we recommend using a regular expression that checks if the CPU name converted to lowercase contains "ryzen ai" and either a 3-digit number starting with 3 or 4, or "z2" as shown below.
 
 ```
-ryzen ai.*\b3\d{2}\b
+ryzen ai.*((\b[34]\d{2}\b)|(\bz2\b))
 ```
 
 Explanation:
 
 - `ryzen ai`: Matches the literal phrase "Ryzen AI".
 - `.*`: Allows any characters (including spaces) to appear after "Ryzen AI".
-- `\b3\d{2}\b`: Matches a three-digit number starting with 3, ensuring it's a standalone number.
+- `((\b[34]\d{2}\b)|(\bz2\b))`: Matches either a three-digit number starting with 3 or 4 (for 300/400 series), or "z2" (for Z2 series like Z2 Extreme), ensuring it's a standalone word.
 
 There are several ways to check the CPU name on a Windows computer. A reliable way of doing so is through cmd's `reg query` command as shown below.
 
@@ -58,24 +58,7 @@ Once you capture the CPU name, make sure to convert it to lowercase before using
 
 ### Downloading Server Installer
 
-The recommended way of directing users to the server installer is pointing users to our releases page at [`https://github.com/lemonade-sdk/lemonade/releases`](https://github.com/lemonade-sdk/lemonade/releases). Alternatively, you may also provide the direct path to the installer itself or download the installer programmatically as shown below:
-
-
-Latest version:
-
-```bash
-https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi
-```
-
-Specific version:
-
-```bash
-https://github.com/lemonade-sdk/lemonade/releases/download/v9.0.0/lemonade-server-minimal.msi
-```
-
-Please note that the Server Installer is only available on Windows. Apps that integrate with our server on macOS must install Lemonade from source as described [here](https://lemonade-server.ai/install_options.html).
-
-**macOS Requirements:** macOS 14 or later with Apple Silicon (arm64/aarch64) processors. Intel Macs are not supported.
+The recommended way of directing users to the installer is pointing users to https://lemonade-server.ai/install_options.html
 
 ### Installing Additional Models
 
@@ -111,7 +94,7 @@ By default, the server runs on port 8000. Optionally, you can specify a custom p
 lemonade-server serve --port 8123
 ```
 
-You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows and macOS only):
+You can also prevent the server from showing a system tray icon by using the `--no-tray` flag (Windows only):
 
 ```bash
 lemonade-server serve --no-tray

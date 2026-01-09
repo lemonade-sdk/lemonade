@@ -207,9 +207,8 @@ TrayApp::TrayApp(int argc, char* argv[])
         if (config_.command == "pull") {
             print_pull_help();
         } else {
-            // Show serve options only if command is "serve" or "run"
-            bool show_serve_options = (config_.command == "serve" || config_.command == "run");
-            print_usage(show_serve_options);
+            // Show serve / run options only if command is "serve" or "run"
+            print_usage(config_.command == "serve", config_.command == "run");
         }
         exit(0);
     }
@@ -340,7 +339,7 @@ int TrayApp::run() {
                     config_.host = "localhost";
                 }
                 
-                // Execute the run command (load model and open browser)
+                // Execute the run command (load model)
                 return execute_run_command();
             }
             
@@ -373,15 +372,21 @@ int TrayApp::run() {
     }
     
     DEBUG_LOG(this, "Server started successfully!");
+    if (config_.command == "serve" && config_.save_options) {
+        config_.save_options = false;
+        std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
+    }
     
-    // If this is the 'run' command, load the model and open browser
+    process_owns_server_ = true;
+
+    // If this is the 'run' command, load the model and run electron app
     if (config_.command == "run") {
         int result = execute_run_command();
         if (result != 0) {
             return result;
         }
     }
-    
+
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
         std::cout << "Press Ctrl+C to stop" << std::endl;
@@ -630,6 +635,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
+            } else if (arg == "--save-options") {
+                config_.save_options = true;
             } else {
                 // It's a command argument (like model name)
                 config_.command_args.push_back(arg);
@@ -660,7 +667,7 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
     config_.command = "";
 }
 
-void TrayApp::print_usage(bool show_serve_options) {
+void TrayApp::print_usage(bool show_serve_options, bool show_run_options) {
     std::cout << "lemonade-server - Lemonade Server\n\n";
     std::cout << "Usage: lemonade-server <command> [options]\n\n";
     std::cout << "Commands:\n";
@@ -672,8 +679,8 @@ void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "  status                   Check server status\n";
     std::cout << "  stop                     Stop the server\n\n";
     
-    // Only show serve options if requested (for serve/run --help)
-    if (show_serve_options) {
+    // Only show serve/run options if requested (for serve/run --help)
+    if (show_serve_options || show_run_options) {
         std::cout << "Serve/Run Options:\n";
         std::cout << "  --port PORT              Server port (default: 8000)\n";
         std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
@@ -690,6 +697,9 @@ void TrayApp::print_usage(bool show_serve_options) {
 #else
         std::cout << "  --no-tray                Start server without tray (headless mode)\n";
 #endif
+        if (show_run_options) {
+            std::cout << "  --save-options           Save model load options as default for this model (run only)\n";
+        }
         std::cout << "\n";
     }
     
@@ -867,7 +877,7 @@ std::pair<int, int> TrayApp::get_server_info() {
         pid_file.close();
         
         // Verify the PID is still alive
-        if (kill(pid, 0) == 0) {
+        if (getpgid(pid) != -1) {
             return {pid, port};
         }
         
@@ -1247,12 +1257,14 @@ int TrayApp::execute_run_command() {
     
     // Load the model
     std::cout << "Loading model " << model_name << "..." << std::endl;
-    if (server_manager_->load_model(model_name)) {
+    if (server_manager_->load_model(model_name, config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Launch the Electron app
-        std::cout << "Launching Lemonade app..." << std::endl;
-        launch_electron_app();
+        // Launch the Electron app only if we are not terminating immediately
+        if (process_owns_server_) {
+            std::cout << "Launching Lemonade app..." << std::endl;
+            launch_electron_app();
+        }
     } else {
         std::cerr << "Failed to load model" << std::endl;
         return 1;
@@ -2036,9 +2048,8 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    // Only print shutdown message for persistent server commands (serve/run)
-    // Don't print for ephemeral commands (list/pull/delete/status/stop)
-    if (config_.command == "serve" || config_.command == "run") {
+    // Only print shutdown message if we started the server
+    if (process_owns_server_) {
         std::cout << "Shutting down server..." << std::endl;
     }
     
@@ -2100,7 +2111,7 @@ void TrayApp::shutdown() {
 #endif
     
     // Stop the server
-    if (server_manager_) {
+    if (server_manager_ && process_owns_server_) {
         stop_server();
     }
     
@@ -2198,6 +2209,15 @@ void TrayApp::launch_electron_app() {
         }
     }
     
+    // Compose the server base URL for the Electron app
+    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
+    std::string connect_host = config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string base_url = "http://" + connect_host + ":" + std::to_string(config_.port);
+    std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
+    
 #ifdef _WIN32
     // Single-instance enforcement: Only allow one Electron app to be open at a time
     // Reuse child process tracking to determine if the app is already running
@@ -2242,15 +2262,21 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // Launch the .exe
+    // Launch the .exe with --base-url argument
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     
+    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
+    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
+    cmd_line_buf.push_back('\0');
+    
     // Create the process
     if (CreateProcessA(
-        electron_app_path_.c_str(),  // Application name
-        NULL,                         // Command line
+        NULL,                         // Application name (NULL = use command line)
+        cmd_line_buf.data(),          // Command line with arguments
         NULL,                         // Process security attributes
         NULL,                         // Thread security attributes
         FALSE,                        // Don't inherit handles
@@ -2294,9 +2320,9 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // macOS: Use 'open' command to launch the .app
+    // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\"";
+    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2333,8 +2359,9 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        // Child process: execute the Electron app with --base-url argument
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), 
+              "--base-url", base_url.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);

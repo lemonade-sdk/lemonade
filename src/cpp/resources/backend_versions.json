@@ -9,7 +9,7 @@
   "whispercpp": "v1.8.2",
   "sd-cpp": "master-453-4ff2c8c",
   "flm": {
-    "version": "v0.9.23",
+    "version": "v0.9.25",
     "min_npu_driver": "32.0.203.304"
   }
 }

@@ -162,6 +162,7 @@ class OgaLoad(FirstTool):
         self.status_stats = [
             Keys.DTYPE,
             Keys.DEVICE,
+            Keys.BACKEND,
             Keys.LOCAL_MODEL_FOLDER,
         ]
 
@@ -623,6 +624,7 @@ class OgaLoad(FirstTool):
         # Log initial stats
         state.save_stat(Keys.DTYPE, dtype)
         state.save_stat(Keys.DEVICE, device)
+        state.save_stat(Keys.BACKEND, "ONNX GenAI")
         if device in ["hybrid", "npu"]:
             ryzenai_version, _ = _get_ryzenai_version_info(device)
             ryzen_ai_version_info = {"version": ryzenai_version}

@@ -6,6 +6,7 @@ import LogsWindow from './LogsWindow';
 import CenterPanel from './CenterPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
+import { ModelsProvider } from './hooks/useModels';
 import '../../styles.css';
 
 const LAYOUT_CONSTANTS = {
@@ -90,15 +91,23 @@ const App: React.FC = () => {
   }, [saveLayoutSettings, layoutLoaded]);
 
   // Listen for download start events to automatically open download manager
+  // and download completion events from chat to close it
   useEffect(() => {
     const handleDownloadStart = () => {
       setIsDownloadManagerVisible(true);
     };
 
+    // When a chat-initiated download completes, minimize the download manager
+    const handleChatDownloadComplete = () => {
+      setIsDownloadManagerVisible(false);
+    };
+
     window.addEventListener('download:started' as any, handleDownloadStart);
+    window.addEventListener('download:chatComplete' as any, handleChatDownloadComplete);
 
     return () => {
       window.removeEventListener('download:started' as any, handleDownloadStart);
+      window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
     };
   }, []);
 
@@ -232,7 +241,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <>
+    <ModelsProvider>
       <TitleBar 
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
@@ -289,7 +298,7 @@ const App: React.FC = () => {
           </>
         )}
       </div>
-    </>
+    </ModelsProvider>
   );
 };
 
