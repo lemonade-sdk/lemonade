@@ -403,7 +403,8 @@ void WhisperServer::load(const std::string& model_name,
     // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path_,
-        "--port", std::to_string(port_)
+        "--port", std::to_string(port_),
+        "--convert"
     };
 
     // Note: whisper-server doesn't support --debug flag
