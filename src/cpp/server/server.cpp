@@ -762,6 +762,20 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
 }
 
 nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+    nlohmann::json recipe_options = nlohmann::json::object();
+
+    if (info.ctx_size >= 0) {
+        recipe_options["ctx_size"] = info.ctx_size;
+    }
+
+    if (!info.llamacpp_backend.empty()) {
+        recipe_options["llamacpp_backend"] = info.llamacpp_backend;
+    }
+
+    if (!info.llamacpp_args.empty()) {
+        recipe_options["llamacpp_args"] = info.llamacpp_args;
+    }
+
     nlohmann::json model_json = {
         {"id", model_id},
         {"object", "model"},
@@ -772,9 +786,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
-        {"ctx_size", info.ctx_size},
-        {"llamacpp_backend", info.llamacpp_backend},
-        {"llamacpp_args", info.llamacpp_args},
+        {"recipe_options", recipe_options},
     };
     
     // Add size if available

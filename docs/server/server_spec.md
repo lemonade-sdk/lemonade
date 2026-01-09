@@ -685,9 +685,11 @@ Returns a single model object with the same fields as described in the [models l
   "downloaded": true,
   "suggested": true,
   "labels": ["reasoning"],
-  "ctx_size": 8192,
-  "llamacpp_args": "--no-mmap",
-  "llamacpp_backend": "rocm"
+  "recipe_options" {
+    "ctx_size": 8192,
+    "llamacpp_args": "--no-mmap",
+    "llamacpp_backend": "rocm"
+  }
 }
 ```
 
