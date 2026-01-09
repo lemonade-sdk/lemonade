@@ -36,7 +36,8 @@ struct AppConfig {
     int max_embedding_models = 1;
     int max_reranking_models = 1;
     int max_audio_models = 1;
-    
+    int max_image_models = 1;
+
     // For commands that take arguments
     std::vector<std::string> command_args;
 };

@@ -3,6 +3,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sd_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include <iostream>
@@ -14,16 +15,19 @@ namespace lemon {
 Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level,
                const std::string& llamacpp_args, ModelManager* model_manager,
                int max_llm_models, int max_embedding_models, int max_reranking_models,
-               int max_audio_models)
+               int max_audio_models, int max_image_models,
+               bool save_images, const std::string& images_dir)
     : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level),
       llamacpp_args_(llamacpp_args), model_manager_(model_manager),
       max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
-      max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models) {
+      max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models),
+      max_image_models_(max_image_models), save_images_(save_images), images_dir_(images_dir) {
 
     std::cout << "[Router] Multi-model limits: LLM=" << max_llm_models_
               << ", Embedding=" << max_embedding_models_
               << ", Reranking=" << max_reranking_models_
-              << ", Audio=" << max_audio_models_ << std::endl;
+              << ", Audio=" << max_audio_models_
+              << ", Image=" << max_image_models_ << std::endl;
 }
 
 Router::~Router() {
@@ -153,6 +157,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     if (model_info.recipe == "whispercpp") {
         std::cout << "[Router] Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
+    } else if (model_info.recipe == "sd-cpp") {
+        std::cout << "[Router] Creating SDServer backend" << std::endl;
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, save_images_, images_dir_);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
@@ -251,6 +258,9 @@ void Router::load_model(const std::string& model_name,
                 break;
             case ModelType::AUDIO:
                 max_models = max_audio_models_;
+                break;
+            case ModelType::IMAGE:
+                max_models = max_image_models_;
                 break;
         }
         
@@ -622,6 +632,18 @@ json Router::audio_transcriptions(const json& request) {
             );
         }
         return audio_server->audio_transcriptions(request);
+    });
+}
+
+json Router::image_generations(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto image_server = dynamic_cast<IImageServer*>(server);
+        if (!image_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Image generation", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return image_server->image_generations(request);
     });
 }
 

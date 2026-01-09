@@ -29,7 +29,10 @@ public:
            int max_embedding_models = 1,
            int max_reranking_models = 1,
            int max_audio_models = 1,
-           const std::string& extra_models_dir = "");
+           int max_image_models = 1,
+           const std::string& extra_models_dir = "",
+           bool save_images = false,
+           const std::string& images_dir = "");
     
     ~Server();
     
@@ -72,6 +75,9 @@ private:
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
+
+    // Image endpoint handlers (OpenAI /v1/images/* compatible)
+    void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
@@ -90,6 +96,8 @@ private:
     std::string llamacpp_backend_;
     std::string llamacpp_args_;
     std::string log_file_path_;
+    bool save_images_;
+    std::string images_dir_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;

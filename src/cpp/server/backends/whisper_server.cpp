@@ -345,6 +345,7 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
         false,  // vision
         false,  // embedding
         false,  // reranking
+        false,  // image
         "",     // mmproj
         do_not_upgrade
     );

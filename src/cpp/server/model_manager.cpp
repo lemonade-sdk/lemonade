@@ -1182,20 +1182,21 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       bool vision,
                                       bool embedding,
                                       bool reranking,
+                                      bool image,
                                       const std::string& mmproj,
                                       const std::string& source) {
-    
+
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (clean_name.substr(0, 5) == "user.") {
         clean_name = clean_name.substr(5);
     }
-    
+
     json model_entry;
     model_entry["checkpoint"] = checkpoint;
     model_entry["recipe"] = recipe;
     model_entry["suggested"] = true;  // Always set suggested=true for user models
-    
+
     // Always start with "custom" label (matching Python implementation)
     std::vector<std::string> labels = {"custom"};
     if (reasoning) {
@@ -1209,6 +1210,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     if (reranking) {
         labels.push_back("reranking");
+    }
+    if (image) {
+        labels.push_back("image");
     }
     model_entry["labels"] = labels;
     
@@ -1326,10 +1330,11 @@ void ModelManager::download_model(const std::string& model_name,
                                  bool vision,
                                  bool embedding,
                                  bool reranking,
+                                 bool image,
                                  const std::string& mmproj,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
-    
+
     std::string actual_checkpoint = checkpoint;
     std::string actual_recipe = recipe;
     std::string actual_mmproj = mmproj;
@@ -1451,8 +1456,8 @@ void ModelManager::download_model(const std::string& model_name,
     
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
-        register_user_model(model_name, actual_checkpoint, actual_recipe, 
-                          reasoning, vision, embedding, reranking, actual_mmproj);
+        register_user_model(model_name, actual_checkpoint, actual_recipe,
+                          reasoning, vision, embedding, reranking, image, actual_mmproj);
     }
     
     // Update cache after successful download

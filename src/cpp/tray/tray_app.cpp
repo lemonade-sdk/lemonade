@@ -723,6 +723,9 @@ void TrayApp::print_pull_help() {
     std::cout << "  --reranking              Mark model as a reranking model\n";
     std::cout << "                           Adds 'reranking' label to model metadata.\n";
     std::cout << "                           For use with /api/v1/reranking endpoint.\n\n";
+    std::cout << "  --image                  Mark model as an image generation model\n";
+    std::cout << "                           Adds 'image' label to model metadata.\n";
+    std::cout << "                           For use with /api/v1/images/generations endpoint.\n\n";
     std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
     std::cout << "                           Required for GGUF vision models.\n";
     std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
@@ -899,6 +902,7 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.max_embedding_models,
         config_.max_reranking_models,
         config_.max_audio_models,
+        config_.max_image_models,
         config_.extra_models_dir  // Pass extra models directory
     );
 
@@ -981,7 +985,7 @@ int TrayApp::execute_list_command() {
 int TrayApp::execute_pull_command() {
     if (config_.command_args.empty()) {
         std::cerr << "Error: model name required" << std::endl;
-        std::cerr << "Usage: lemonade-server pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--embedding] [--reranking] [--mmproj MMPROJ]" << std::endl;
+        std::cerr << "Usage: lemonade-server pull <model_name> [--checkpoint CHECKPOINT] [--recipe RECIPE] [--reasoning] [--vision] [--embedding] [--reranking] [--image] [--mmproj MMPROJ]" << std::endl;
         return 1;
     }
     
@@ -1021,6 +1025,8 @@ int TrayApp::execute_pull_command() {
                 request_body["embedding"] = true;
             } else if (arg == "--reranking") {
                 request_body["reranking"] = true;
+            } else if (arg == "--image") {
+                request_body["image"] = true;
             } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
                 request_body["mmproj"] = config_.command_args[++i];
             }
@@ -1643,6 +1649,7 @@ bool TrayApp::start_server() {
         config_.max_embedding_models,
         config_.max_reranking_models,
         config_.max_audio_models,
+        config_.max_image_models,
         config_.extra_models_dir  // Pass extra models directory
     );
 

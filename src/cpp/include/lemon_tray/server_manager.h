@@ -55,6 +55,7 @@ public:
         int max_embedding_models = 1,
         int max_reranking_models = 1,
         int max_audio_models = 1,
+        int max_image_models = 1,
         const std::string& extra_models_dir = ""
     );
     
@@ -116,6 +117,7 @@ private:
     int max_embedding_models_;
     int max_reranking_models_;
     int max_audio_models_;
+    int max_image_models_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;

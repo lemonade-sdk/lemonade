@@ -87,6 +87,37 @@ Use `lemonade-server pull` or the built-in **Model Manager** to download models.
 
 <br clear="right"/>
 
+## Image Generation
+
+Lemonade supports image generation using Stable Diffusion models via [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp).
+
+```bash
+# Pull an image generation model
+lemonade-server pull SD-Turbo
+
+# Start the server (optionally save generated images)
+lemonade-server --save-images
+```
+
+Generate images using the OpenAI-compatible API:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="lemonade")
+
+response = client.images.generate(
+    model="SD-Turbo",
+    prompt="A serene mountain landscape at sunset",
+    size="512x512",
+    n=1
+)
+```
+
+Available models: **SD-Turbo** (fast, 4-step), **SDXL-Turbo**, **SD-1.5**, **SDXL-Base-1.0**
+
+> See `examples/api_image_generation.py` for complete examples.
+
 ## Supported Configurations
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
@@ -134,9 +165,10 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Check back in 2026 :)    | Handheld devices: Ryzen AI Z2 Extreme APUs     | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-|     | Text to speech                               | Lemonade desktop app                     |
+| Check back in 2026 :)      | vLLM support                                   | Image generation (stable-diffusion.cpp)                 |
+|     | Handheld devices: Ryzen AI Z2 Extreme APUs     | General speech-to-text support (whisper.cpp)  |
+|     | Text to speech                               | ROCm support for Ryzen AI 360-375 (Strix) APUs                     |
+|     |                                | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application
 

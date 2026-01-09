@@ -38,10 +38,11 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
                int ctx_size, bool tray, const std::string& llamacpp_backend,
                const std::string& llamacpp_args, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir,
+               bool save_images, const std::string& images_dir)
     : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
       tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
-      running_(false) {
+      save_images_(save_images), images_dir_(images_dir), running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -77,7 +78,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
                                        model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models);
+                                       max_embedding_models, max_reranking_models, max_audio_models, max_image_models,
+                                       save_images_, images_dir_);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -169,6 +171,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_transcriptions(req, res);
+    });
+
+    // Image endpoints (OpenAI /v1/images/* compatible)
+    register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_generations(req, res);
     });
 
     // Responses endpoint
@@ -1348,6 +1355,82 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
     }
 }
 
+void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/generations" << std::endl;
+
+        // Parse JSON request body
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const nlohmann::json::parse_error& e) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Invalid JSON in request body"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Validate required fields
+        if (!request_json.contains("model")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        std::string model_name = request_json["model"].get<std::string>();
+
+        // Auto-load model if needed
+        auto_load_model_if_needed(model_name);
+
+        // Check if loaded model is correct type
+        if (router_->get_model_type(model_name) != ModelType::IMAGE) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Model '" + model_name + "' is not an image generation model. Use an image model or the correct endpoint for this model type."},
+                {"type", "invalid_request_error"},
+                {"code", "model_not_applicable"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Forward to router
+        auto response = router_->image_generations(request_json);
+
+        // Check for error in response
+        if (response.contains("error")) {
+            res.status = 400;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_generations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "server_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
@@ -1454,6 +1537,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool vision = request_json.value("vision", false);
         bool embedding = request_json.value("embedding", false);
         bool reranking = request_json.value("reranking", false);
+        bool image = request_json.value("image", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
@@ -1487,8 +1571,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, model_name, checkpoint, recipe, reasoning, vision, 
-                 embedding, reranking, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                [this, model_name, checkpoint, recipe, reasoning, vision,
+                 embedding, reranking, image, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) {
                         return false; // Already sent everything
                     }
@@ -1523,8 +1607,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
-                                                      reasoning, vision, embedding, reranking, 
-                                                      mmproj, do_not_upgrade, progress_cb);
+                                                      reasoning, vision, embedding, reranking,
+                                                      image, mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
                         // Send error event (only if it's not a cancellation)
@@ -1542,8 +1626,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 });
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, checkpoint, recipe, 
-                                          reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
+            model_manager_->download_model(model_name, checkpoint, recipe,
+                                          reasoning, vision, embedding, reranking, image, mmproj, do_not_upgrade);
             
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -1813,7 +1897,8 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         bool vision = false;
         bool embedding = false;
         bool reranking = false;
-        
+        bool image = false;
+
         // Parse form fields
         if (req.form.has_field("model_name")) {
             model_name = req.form.get_field("model_name");
@@ -1843,7 +1928,11 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
             std::string reranking_str = req.form.get_field("reranking");
             reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
         }
-        
+        if (req.form.has_field("image")) {
+            std::string image_str = req.form.get_field("image");
+            image = (image_str == "true" || image_str == "True" || image_str == "1");
+        }
+
         std::cout << "[Server] Model name: " << model_name << std::endl;
         std::cout << "[Server] Recipe: " << recipe << std::endl;
         std::cout << "[Server] Checkpoint: " << checkpoint << std::endl;
@@ -1865,10 +1954,10 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
         }
         
         // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
+        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp", "sd-cpp"};
         if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
             res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
+            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp, sd-cpp"}};
             res.set_content(error.dump(), "application/json");
             return;
         }
@@ -2075,6 +2164,7 @@ void Server::handle_add_local_model(const httplib::Request& req, httplib::Respon
             vision,
             embedding,
             reranking,
+            image,
             resolved_mmproj.empty() ? mmproj : resolved_mmproj,
             source_type
         );

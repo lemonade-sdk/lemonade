@@ -84,6 +84,7 @@ bool ServerManager::start_server(
     int max_embedding_models,
     int max_reranking_models,
     int max_audio_models,
+    int max_image_models,
     const std::string& extra_models_dir)
 {
     if (is_server_running()) {
@@ -98,6 +99,7 @@ bool ServerManager::start_server(
     max_embedding_models_ = max_embedding_models;
     max_reranking_models_ = max_reranking_models;
     max_audio_models_ = max_audio_models;
+    max_image_models_ = max_image_models;
     log_file_ = log_file;
     log_level_ = log_level;
     llamacpp_backend_ = llamacpp_backend;
@@ -394,7 +396,7 @@ bool ServerManager::spawn_process() {
     // Multi-model support
     cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
                std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
-               std::to_string(max_audio_models_);
+               std::to_string(max_audio_models_) + " " + std::to_string(max_image_models_);
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
@@ -611,10 +613,12 @@ bool ServerManager::spawn_process() {
         std::string max_emb_str = std::to_string(max_embedding_models_);
         std::string max_rer_str = std::to_string(max_reranking_models_);
         std::string max_aud_str = std::to_string(max_audio_models_);
+        std::string max_img_str = std::to_string(max_image_models_);
         args.push_back(max_llm_str.c_str());
         args.push_back(max_emb_str.c_str());
         args.push_back(max_rer_str.c_str());
         args.push_back(max_aud_str.c_str());
+        args.push_back(max_img_str.c_str());
 
         // Extra models directory
         if (!extra_models_dir_.empty()) {

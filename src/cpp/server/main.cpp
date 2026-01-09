@@ -69,7 +69,9 @@ int main(int argc, char** argv) {
                     config.ctx_size, config.tray, config.llamacpp_backend,
                     config.llamacpp_args, config.max_llm_models,
                     config.max_embedding_models, config.max_reranking_models,
-                    config.max_audio_models, config.extra_models_dir);
+                    config.max_audio_models, config.max_image_models,
+                    config.extra_models_dir,
+                    config.save_images, config.images_dir);
         
         // Register signal handler for Ctrl+C
         g_server_instance = &server;

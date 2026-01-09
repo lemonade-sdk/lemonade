@@ -646,5 +646,33 @@
         "suggested": true,
         "labels": ["audio", "transcription", "hot"],
         "size": 1.55
+    },
+    "SD-Turbo": {
+        "checkpoint": "stabilityai/sd-turbo",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": ["image"],
+        "size": 2.1
+    },
+    "SDXL-Turbo": {
+        "checkpoint": "stabilityai/sdxl-turbo",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": ["image"],
+        "size": 5.5
+    },
+    "SD-1.5": {
+        "checkpoint": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 4.3
+    },
+    "SDXL-Base-1.0": {
+        "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 6.9
     }
 }
