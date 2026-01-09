@@ -646,5 +646,32 @@
         "suggested": true,
         "labels": ["audio", "transcription", "hot"],
         "size": 1.55
+    },
+    "DeepSeek-R1-Distill-Llama-8B-FLM": {
+        "checkpoint": "deepseek-r1:8b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 5.36
+    },
+    "DeepSeek-R1-0528-Qwen3-8B-FLM": {
+        "checkpoint": "deepseek-r1-0528:8b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 5.57
+    },
+    "LFM2-2.6B-FLM": {
+        "checkpoint": "lfm2:2.6b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 1.75
+    },
+    "Qwen3-1.7b-FLM": {
+        "checkpoint": "qwen3:1.7b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 1.59
     }
 }
