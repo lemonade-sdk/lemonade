@@ -636,14 +636,40 @@ json ModelManager::load_optional_json(const std::string& path) {
     }
 }
 
-void ModelManager::save_user_models(const json& user_models) {
-    std::string user_models_path = get_user_models_file();
-    
+static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
-    fs::path dir = fs::path(user_models_path).parent_path();
+    fs::path dir = fs::path(save_path).parent_path();
     fs::create_directories(dir);
     
-    JsonUtils::save_to_file(user_models, user_models_path);
+    std::cout << "[ModelManager] Saving " << fs::path(save_path).filename() << std::endl;
+    JsonUtils::save_to_file(to_save, save_path);
+}
+
+void ModelManager::save_user_models(const json& user_models) {
+    save_user_json(get_user_models_file(), user_models);
+}
+
+void ModelManager::save_model_options(const ModelInfo& info) {
+    std::cout << "[ModelManager] Saving options for model: " << info.model_name << std::endl;
+
+    json model_options = json::object();
+
+    if (info.ctx_size >= 0) {
+        model_options["ctx_size"] = info.ctx_size;
+    }
+
+    if (!info.llamacpp_backend.empty()) {
+        model_options["llamacpp_backend"] = info.llamacpp_backend;
+    }
+
+    if (!info.llamacpp_args.empty()) {
+        model_options["llamacpp_args"] = info.llamacpp_args;
+    }
+
+    // Persist changes
+    recipe_options_[info.model_name] = model_options;
+    update_model_options_in_cache(info);
+    save_user_json(get_recipe_options_file(), recipe_options_);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -896,6 +922,23 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     
     models_cache_[model_name] = info;
     std::cout << "[ModelManager] Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
+}
+
+void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return; // Will rebuild on next access
+    }
+    
+    auto it = models_cache_.find(info.model_name);
+    if (it != models_cache_.end()) {
+        it->second.ctx_size = info.ctx_size;
+        it->second.llamacpp_backend = info.llamacpp_backend;
+        it->second.llamacpp_args = info.llamacpp_args;
+    } else {
+        std::cerr << "[ModelManager] Warning: '" << info.model_name << "' not found in cache" << std::endl;
+    }    
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
