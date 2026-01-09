@@ -31,6 +31,10 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
+    defaults:
+      run:
+        shell: PowerShell
+
     steps:
       - uses: actions/checkout@v3
       
@@ -44,7 +48,6 @@ jobs:
           python-version: '3.10'
           
       - name: Install dependencies
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           $venvPython = ".\.venv\Scripts\python.exe"
@@ -59,14 +62,13 @@ jobs:
           & $venvPython -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
-          & $venvPip install -e .
+          & $venvPip install -e .[dev]
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $cwd = (Get-Item .\).FullName
           echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
 
       - name: Install FLM
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -79,7 +81,6 @@ jobs:
           echo "C:\Program Files\flm" >> $env:GITHUB_PATH
 
       - name: Download FLM Model
-        shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -88,7 +89,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run FLM NPU tests
-        shell: PowerShell
         env:
           HF_HOME: "${{ env.HF_HOME }}"
           LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -97,5 +97,18 @@ jobs:
           $venvPython = ".\.venv\Scripts\python.exe"
           
           & $venvPython test/server_flm.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run lemonade FLM CLI tests
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+          LEMONADE_CACHE_DIR: ".\\ci-cache"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $venvLemonade = ".\.venv\Scripts\lemonade.exe"
+          
+          & $venvLemonade -i llama3.2:1b flm-load llm-prompt -p "Alice and Bob" --max-new-tokens 10
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $venvLemonade -i llama3.2:1b flm-load flm-bench -w 0 -i 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

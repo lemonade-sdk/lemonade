@@ -15,6 +15,7 @@ class LoadLlamaCpp(FirstTool):
 
         self.status_stats = [
             Keys.DEVICE,
+            Keys.BACKEND,
         ]
 
     @staticmethod
@@ -208,6 +209,7 @@ class LoadLlamaCpp(FirstTool):
 
         # Save initial stats
         state.save_stat(Keys.DEVICE, device)
+        state.save_stat(Keys.BACKEND, f"llama.cpp[{backend}]")
         state.save_stat(
             Keys.LLAMA_CLI_VERSION_INFO, get_llama_installed_version(backend)
         )

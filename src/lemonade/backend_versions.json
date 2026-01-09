@@ -1,0 +1,7 @@
+{
+  "comment": "This configuration file controls which versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.  Currently, only FLM version is implemented",
+  "flm": {
+    "version": "v0.9.25",
+    "min_npu_driver": "32.0.203.304"
+  }
+}

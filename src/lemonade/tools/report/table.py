@@ -12,6 +12,8 @@ from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.oga.bench import OgaBench
+from lemonade.tools.flm.bench import FLMBench
+
 
 # List of python packages for which to log the version
 PYTHON_PACKAGES = ["onnxruntime", "transformers", "lemonade-sdk", "voe"]
@@ -436,16 +438,18 @@ class Table(ABC):
         # Per tool headers
         tool_columns = self.table_descriptor.get("tool_columns", {})
         tools = self.tools or []
+        used_tools = set()
         for tool in tools:
 
-            # Don't duplicate columns if tool has an alternate tool listed
+            # Use the column specification of the referenced tool
             if isinstance(tool_columns[tool], type):
-                referenced_tool = tool_columns[tool]
-                if referenced_tool in tools:
-                    continue
-                # Use the column specification of the referenced tool
-                tool = referenced_tool
+                tool = tool_columns[tool]
 
+            # Don't duplicate columns
+            if tool in used_tools:
+                continue
+
+            used_tools.add(tool)
             for column in tool_columns[tool]:
                 if not (self.lean and column.omit_if_lean):
                     headers.append(column.column_header)
@@ -498,14 +502,16 @@ class Table(ABC):
                     first_columns_count += 1
 
             # Per tool columns
+            used_tools = set()
             for tool in tools:
 
-                if not isinstance(tool_columns[tool], list):
-                    referenced_tool = tool_columns[tool]
-                    if referenced_tool in tools:
-                        continue
-                    tool = referenced_tool
+                if isinstance(tool_columns[tool], type):
+                    tool = tool_columns[tool]
 
+                if tool in used_tools:
+                    continue
+
+                used_tools.add(tool)
                 for entry in tool_columns[tool]:
                     entry_str = entry.get_str(build_stats, self.lean)
                     if entry_str is not None:
@@ -619,13 +625,13 @@ class LemonadePerfTable(Table):
             TimestampStat("Timestamp", fs.Keys.TIMESTAMP, "%Y-%m-%d\n%H:%M:%S"),
             # SimpleStat("Timestamp", fs.Keys.TIMESTAMP, "s"),
             MultiStat(
-                "Model\n\nDevice\nData Type",
+                "Model\nDevice\nBackend\nData Type",
                 [
                     Keys.CHECKPOINT,
                     None,
                     Keys.DEVICE,
+                    Keys.BACKEND,
                     Keys.DTYPE,
-                    None,
                     Keys.LOCAL_MODEL_FOLDER,
                 ],
                 "s",
@@ -667,6 +673,7 @@ class LemonadePerfTable(Table):
             ],
             HuggingfaceBench: OgaBench,
             LlamaCppBench: OgaBench,
+            FLMBench: OgaBench,
             AccuracyMMLU: [
                 AdditionalStat(
                     "MMLU",
@@ -879,12 +886,13 @@ class LemonadePerfTable(Table):
         merge_key_list = [
             Keys.CHECKPOINT,
             Keys.DEVICE,
+            Keys.BACKEND,
             Keys.DTYPE,
             fs.Keys.SYSTEM_INFO,
             SW_VERSIONS,
         ]
-        dict_1 = {key: build_stats_1[key] for key in merge_key_list}
-        dict_2 = {key: build_stats_2[key] for key in merge_key_list}
+        dict_1 = {key: build_stats_1.get(key, None) for key in merge_key_list}
+        dict_2 = {key: build_stats_2.get(key, None) for key in merge_key_list}
 
         return dict_1 == dict_2
 
