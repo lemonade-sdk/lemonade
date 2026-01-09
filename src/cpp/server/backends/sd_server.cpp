@@ -19,6 +19,7 @@
 #include <windows.h>
 #else
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -85,39 +86,100 @@ static std::string get_sd_install_dir() {
     return (fs::path(get_sd_base_dir()) / "sd-cpp").string();
 }
 
+// Helper to run a process safely without shell injection vulnerabilities
+static int run_process_safe(const std::vector<std::string>& args) {
+#ifdef _WIN32
+    if (args.empty()) return -1;
+
+    // Build command line with proper quoting for Windows
+    std::string cmdline;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) cmdline += " ";
+        // Quote arguments that contain spaces or special characters
+        bool needs_quotes = args[i].find_first_of(" \t\"") != std::string::npos;
+        if (needs_quotes) {
+            cmdline += "\"";
+            // Escape embedded quotes
+            for (char c : args[i]) {
+                if (c == '"') cmdline += "\\\"";
+                else cmdline += c;
+            }
+            cmdline += "\"";
+        } else {
+            cmdline += args[i];
+        }
+    }
+
+    STARTUPINFOA si = {};
+    PROCESS_INFORMATION pi = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    // CreateProcess needs a mutable string
+    std::vector<char> cmdline_buf(cmdline.begin(), cmdline.end());
+    cmdline_buf.push_back('\0');
+
+    if (!CreateProcessA(NULL, cmdline_buf.data(), NULL, NULL, FALSE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        return -1;
+    }
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return static_cast<int>(exit_code);
+#else
+    pid_t pid = fork();
+    if (pid == -1) {
+        return -1;
+    } else if (pid == 0) {
+        // Child process
+        std::vector<char*> argv;
+        for (const auto& arg : args) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127); // exec failed
+    } else {
+        // Parent process
+        int status;
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        }
+        return -1;
+    }
+#endif
+}
+
 // Helper to extract ZIP files
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
     std::cout << "[SDServer] Extracting ZIP to " << dest_dir << std::endl;
 
 #ifdef _WIN32
-    // Try unzip first (available in Git Bash, MSYS2, etc.)
-    std::string unzip_command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\" 2>nul";
-    int result = system(unzip_command.c_str());
-    if (result == 0) {
-        return true;
-    }
-
-    // Try PowerShell Expand-Archive
-    std::string ps_command = "powershell.exe -NoProfile -Command \"Expand-Archive -Path '" +
-                         zip_path + "' -DestinationPath '" + dest_dir +
-                         "' -Force\"";
-    result = system(ps_command.c_str());
+    // Try PowerShell Expand-Archive (safest, uses argument array)
+    int result = run_process_safe({
+        "powershell.exe", "-NoProfile", "-Command",
+        "Expand-Archive -Path '" + zip_path + "' -DestinationPath '" + dest_dir + "' -Force"
+    });
     if (result == 0) {
         return true;
     }
     std::cerr << "[SDServer] PowerShell extraction failed with code: " << result << std::endl;
 
     // Try Windows tar (supports zip on Windows 10 1903+)
-    std::string tar_command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
-    result = system(tar_command.c_str());
+    result = run_process_safe({"tar", "-xf", zip_path, "-C", dest_dir});
     if (result == 0) {
         return true;
     }
     std::cerr << "[SDServer] All extraction methods failed" << std::endl;
     return false;
 #else
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
+    int result = run_process_safe({"unzip", "-o", zip_path, "-d", dest_dir});
     return result == 0;
 #endif
 }
