@@ -1161,6 +1161,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remote-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote Access
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Remote Access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-how-do-i-run-lemonade-server-on-one-pc-and-access-it-from-another" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. How do I run Lemonade Server on one PC and access it from another?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1588,6 +1616,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remote-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote Access
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Remote Access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-how-do-i-run-lemonade-server-on-one-pc-and-access-it-from-another" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. How do I run Lemonade Server on one PC and access it from another?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1788,6 +1844,17 @@
 <div class="highlight"><pre><span></span><code>cd C:\Windows\System32\AMD
 .\xrt-smi configure --pmode turbo
 </code></pre></div>
+<h2 id="remote-access">Remote Access</h2>
+<h3 id="1-how-do-i-run-lemonade-server-on-one-pc-and-access-it-from-another">1. <strong>How do I run Lemonade Server on one PC and access it from another?</strong></h3>
+<p>Lemonade supports running the server on one machine while using the app from another machine on the same network.</p>
+<p><strong>Quick setup:</strong>
+   1. On the server machine, start with network access enabled:
+      <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
+</code></pre></div>
+   2. On the client machine, launch the app pointing to the server's IP:
+      <div class="highlight"><pre><span></span><code>lemonade-app<span class="w"> </span>--base-url<span class="w"> </span>http://SERVER_IP:8000
+</code></pre></div></p>
+<p>For detailed instructions and security considerations, see <a href="./lemonade-server-cli.md#remote-server-connection">Remote Server Connection</a>.</p>
 <h2 id="support-roadmap">Support &amp; Roadmap</h2>
 <h3 id="1-what-if-i-encounter-installation-or-runtime-errors">1. <strong>What if I encounter installation or runtime errors?</strong></h3>
 <p>Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.</p>
