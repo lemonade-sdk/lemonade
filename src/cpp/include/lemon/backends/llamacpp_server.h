@@ -8,9 +8,7 @@ namespace backends {
 
 class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
 public:
-    LlamaCppServer(const std::string& backend = "vulkan", 
-                   const std::string& log_level = "info",
-                   const std::string& custom_args = "",
+    LlamaCppServer(const std::string& log_level = "info",
                    ModelManager* model_manager = nullptr);
     
     ~LlamaCppServer() override;
@@ -42,13 +40,9 @@ public:
     json reranking(const json& request) override;
     
 private:
-    std::string get_llama_server_path();
+    std::string get_llama_server_path(const std::string& backend);
     std::string find_executable_in_install_dir(const std::string& install_dir);
     std::string find_external_llama_server(const std::string& backend);
-    
-    std::string backend_;  // vulkan, rocm, metal, cpu
-    std::string model_path_;
-    std::string custom_args_;  // Custom arguments to pass to llama-server
 };
 
 } // namespace backends

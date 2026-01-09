@@ -46,6 +46,7 @@ lemonade-server run MODEL_NAME [options]
 | `--llamacpp-args [args]`       | Default custom arguments to pass to llama-server. Must not conflict with arguments managed by Lemonade (e.g., `-m`, `--port`, `--ctx-size`, `-ngl`). Can be overridden per-model via the `/api/v1/load` endpoint. Example: `--llamacpp-args "--flash-attn on --no-mmap"` | "" |
 | `--extra-models-dir [path]`    | Experimental feature. Secondary directory to scan for LLM GGUF model files. Audio, embedding, reranking, and non-GGUF files are not supported, yet. | None |
 | `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
+| `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
 These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, `LEMONADE_LLAMACPP_ARGS`, and `LEMONADE_EXTRA_MODELS_DIR`.
 
@@ -54,6 +55,10 @@ Set `LEMONADE_DISABLE_MODEL_FILTERING=1` to disable hardware-based model filteri
 Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`, `LEMONADE_LLAMACPP_CPU_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
 
 The same can also be done for the `whisper-server` binary. The environment variable to set in this case is `LEMONADE_WHISPERCPP_BIN`.
+
+If you expose your server over a network you can use the `LEMONADE_API_KEY` to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
+
+**IMPORTANT**: If you need to access `lemonade-server` over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
 
 ## `pull` Command Options
 
@@ -104,6 +109,47 @@ lemonade-server pull user.nomic-embed \
 ```
 
 For more information about model formats and recipes, see the [API documentation](../lemonade_api.md) and the [server models guide](./server_models.md).
+
+## Lemonade Desktop App
+
+The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, `lemonade-app` is added to your PATH for easy command-line access.
+
+### Launching the App
+
+```bash
+# Launch the app (connects to local server automatically)
+lemonade-app
+
+# Launch with a specific server URL
+lemonade-app --base-url http://192.168.0.100:8000
+```
+
+By default, the app connects to a server running on `localhost` and automatically discovers the port. To connect to a remote server, use the `--base-url` option.
+
+### Remote Server Connection
+
+To connect the app to a server running on a different machine:
+
+1. **Start the server with network access** on the host machine:
+   ```bash
+   lemonade-server serve --host 0.0.0.0 --port 8000
+   ```
+   > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. You can use `LEMONADE_API_KEY` (see above) to manage access on your network.
+
+2. **Launch the app** on the client machine with the `--base-url` flag:
+   ```bash
+   lemonade-app --base-url http://192.168.0.100:8000
+   ```
+   Replace `192.168.0.100` with the IP address of the machine running the server.
+
+Alternatively, you can set the `LEMONADE_APP_BASE_URL` environment variable.
+
+| Option / Environment Variable | Description |
+|-------------------------------|-------------|
+| `--base-url URL` | Connect the app to a server at the specified URL (e.g., `http://192.168.0.100:8000`) |
+| `LEMONADE_APP_BASE_URL` | Environment variable alternative to `--base-url`. The command-line flag takes precedence if both are set. |
+
+When no `--base-url` is provided, the app automatically discovers and connects to a local server.
 
 ## Next Steps
 

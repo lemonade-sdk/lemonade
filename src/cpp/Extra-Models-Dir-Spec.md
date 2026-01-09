@@ -22,12 +22,14 @@ The `--extra-models-dir PATH` argument specifies a secondary directory to scan f
 
 ### Naming Convention
 
-Model names use the exact filename or directory name:
+All discovered models are prefixed with `extra.` to prevent naming conflicts with registered models (similar to how user-added models are prefixed with `user.`):
 
 | Directory Structure | Model Name |
 |---------------------|------------|
-| `Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-Q4_K_M.gguf` |
-| `gemma-3-4b-it-Q8_0/*.gguf` | `gemma-3-4b-it-Q8_0` |
+| `Qwen3-8B-Q4_K_M.gguf` | `extra.Qwen3-8B-Q4_K_M.gguf` |
+| `gemma-3-4b-it-Q8_0/*.gguf` | `extra.gemma-3-4b-it-Q8_0` |
+
+This allows users to have both a registered model (e.g., `Qwen3-Coder-30B-A3B-Instruct-GGUF`) and a custom GGUF variant (e.g., `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF`) without conflict.
 
 ### Directory-Based Models
 
@@ -55,12 +57,16 @@ Discovered models receive the following default properties:
 
 ## Conflict Resolution
 
-Registered models take precedence over discovered models:
+The `extra.` prefix ensures discovered models never conflict with registered models. Both can coexist:
 
-1. If a discovered model name matches a registered model, the discovered model is ignored.
-2. A warning is printed when a conflict is detected.
+- Registered: `Qwen3-Coder-30B-A3B-Instruct-GGUF` (from `server_models.json`)
+- Discovered: `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF` (from `--extra-models-dir`)
 
-Example warning:
+## Model Deletion
+
+Models discovered from `--extra-models-dir` cannot be deleted via the API. They are user-managed external files. Attempting to delete an `extra.*` model will return an error with the file path for manual deletion.
+
+Example error:
 ```
-[ModelManager] Warning: Discovered model 'Qwen3-8B-Q4_K_M.gguf' conflicts with registered model, skipping.
+Cannot delete extra models via API. Models in --extra-models-dir are user-managed. Delete the file directly from: C:\Users\Jeremy\.lmstudio\models\Qwen3-8B-Q4_K_M.gguf
 ```
