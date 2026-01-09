@@ -126,6 +126,8 @@ public:
     
     // Set extra models directory for GGUF discovery
     void set_extra_models_dir(const std::string& dir);
+
+    void save_model_options(const ModelInfo& info);
     
 private:
     json load_server_models();
@@ -139,6 +141,7 @@ private:
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
+    void update_model_options_in_cache(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
     

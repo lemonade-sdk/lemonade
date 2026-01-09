@@ -762,6 +762,20 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
 }
 
 nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+    nlohmann::json recipe_options = nlohmann::json::object();
+
+    if (info.ctx_size >= 0) {
+        recipe_options["ctx_size"] = info.ctx_size;
+    }
+
+    if (!info.llamacpp_backend.empty()) {
+        recipe_options["llamacpp_backend"] = info.llamacpp_backend;
+    }
+
+    if (!info.llamacpp_args.empty()) {
+        recipe_options["llamacpp_args"] = info.llamacpp_args;
+    }
+
     nlohmann::json model_json = {
         {"id", model_id},
         {"object", "model"},
@@ -771,7 +785,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
-        {"labels", info.labels}
+        {"labels", info.labels},
+        {"recipe_options", recipe_options},
     };
     
     // Add size if available
@@ -1610,6 +1625,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         int ctx_size = request_json.value("ctx_size", -1);
         std::string llamacpp_backend = request_json.value("llamacpp_backend", "");
         std::string llamacpp_args = request_json.value("llamacpp_args", "");
+        bool save_options = request_json.value("save_options", false);
         
         std::cout << "[Server] Loading model: " << model_name;
         if (ctx_size > 0) std::cout << " (ctx_size=" << ctx_size << ")";
@@ -1643,6 +1659,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         auto info = model_manager_->get_model_info(model_name);
+
+        // Persist request options to model info if requested
+        if (save_options) {
+            info.ctx_size = ctx_size;
+            info.llamacpp_backend = llamacpp_backend;
+            info.llamacpp_args = llamacpp_args;
+            model_manager_->save_model_options(info);
+        }
         
         // Download model if needed (first-time use)
         if (!info.downloaded) {

@@ -39,6 +39,9 @@ struct AppConfig {
     
     // For commands that take arguments
     std::vector<std::string> command_args;
+
+    // run-only options
+    bool save_options = false;
 };
 
 struct ModelInfo {
@@ -75,7 +78,7 @@ private:
     // Initialization
     void load_env_defaults();
     void parse_arguments(int argc, char* argv[]);
-    void print_usage(bool show_serve_options = false);
+    void print_usage(bool show_serve_options = false, bool show_run_options = false);
     void print_version();
     void print_pull_help();
     bool find_server_binary();
