@@ -133,7 +133,7 @@ To connect the app to a server running on a different machine:
    ```bash
    lemonade-server serve --host 0.0.0.0 --port 8000
    ```
-   > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks.
+   > **Note:** Using `--host 0.0.0.0` allows connections from other machines on the network. Only do this on trusted networks. You can use `LEMONADE_API_KEY` (see above) to manage access on your network.
 
 2. **Launch the app** on the client machine with the `--base-url` flag:
    ```bash
