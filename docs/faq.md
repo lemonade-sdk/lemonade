@@ -193,6 +193,24 @@
    .\xrt-smi configure --pmode turbo
    ```
 
+## Remote Access
+
+### 1. **How do I run Lemonade Server on one PC and access it from another?**
+
+   Lemonade supports running the server on one machine while using the app from another machine on the same network.
+
+   **Quick setup:**
+   1. On the server machine, start with network access enabled:
+      ```bash
+      lemonade-server serve --host 0.0.0.0 --port 8000
+      ```
+   2. On the client machine, launch the app pointing to the server's IP:
+      ```bash
+      lemonade-app --base-url http://SERVER_IP:8000
+      ```
+
+   For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
+
 ## Support & Roadmap
 
 ### 1. **What if I encounter installation or runtime errors?**

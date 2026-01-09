@@ -2199,6 +2199,15 @@ void TrayApp::launch_electron_app() {
         }
     }
     
+    // Compose the server base URL for the Electron app
+    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
+    std::string connect_host = config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string base_url = "http://" + connect_host + ":" + std::to_string(config_.port);
+    std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
+    
 #ifdef _WIN32
     // Single-instance enforcement: Only allow one Electron app to be open at a time
     // Reuse child process tracking to determine if the app is already running
@@ -2243,15 +2252,21 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // Launch the .exe
+    // Launch the .exe with --base-url argument
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     
+    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
+    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
+    cmd_line_buf.push_back('\0');
+    
     // Create the process
     if (CreateProcessA(
-        electron_app_path_.c_str(),  // Application name
-        NULL,                         // Command line
+        NULL,                         // Application name (NULL = use command line)
+        cmd_line_buf.data(),          // Command line with arguments
         NULL,                         // Process security attributes
         NULL,                         // Thread security attributes
         FALSE,                        // Don't inherit handles
@@ -2295,9 +2310,9 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // macOS: Use 'open' command to launch the .app
+    // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\"";
+    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2334,8 +2349,9 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        // Child process: execute the Electron app with --base-url argument
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), 
+              "--base-url", base_url.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);
