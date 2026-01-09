@@ -1,14 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  fetchSupportedModelsData,
-  ModelInfo,
-  ModelsData,
-  USER_MODEL_PREFIX
-} from './utils/modelData';
+import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
-import { serverFetch, onServerPortChange } from './utils/serverConfig';
+import { serverFetch } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
+import { useModels } from './hooks/useModels';
 
 interface ModelManagerProps {
   isVisible: boolean;
@@ -38,7 +34,9 @@ const createEmptyModelForm = () => ({
 });
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) => {
-  const [models, setModels] = useState<Array<{ name: string; info: ModelInfo }>>([]);
+  // Get shared model data from context
+  const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
+
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['all']));
   const [organizationMode, setOrganizationMode] = useState<'recipe' | 'category'>('recipe');
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
@@ -48,7 +46,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [newModel, setNewModel] = useState(createEmptyModelForm);
-  const [supportedModelsData, setSupportedModelsData] = useState<ModelsData>({});
   
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
@@ -79,35 +76,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     }
   }, []);
 
-  const loadModels = useCallback(async () => {
-    try {
-      const data = await fetchSupportedModelsData();
-      setSupportedModelsData(data);
-      const suggestedModels = Object.entries(data)
-        .filter(([name, info]) => info.suggested || name.startsWith(USER_MODEL_PREFIX))
-        .map(([name, info]) => ({ name, info }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setModels(suggestedModels);
-    } catch (error) {
-      console.error('Failed to load models:', error);
-    }
-  }, []);
-
   useEffect(() => {
-    loadModels();
     fetchCurrentLoadedModel();
     
     // Poll for model status every 5 seconds to detect loaded models
     const interval = setInterval(() => {
       fetchCurrentLoadedModel();
     }, 5000);
-
-    // Listen for port changes and refetch data
-    const unsubscribePortChange = onServerPortChange(() => {
-      console.log('Server port changed, refetching model data...');
-      loadModels();
-      fetchCurrentLoadedModel();
-    });
     
     // === Integration API for other parts of the app ===
     // To indicate a model is loading, use either:
@@ -146,8 +121,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         });
         // Refresh the loaded model status
         fetchCurrentLoadedModel();
-      } else {
-        loadModels();
       }
     };
 
@@ -156,12 +129,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     
     return () => {
       clearInterval(interval);
-      unsubscribePortChange();
       window.removeEventListener('modelLoadStart' as any, handleModelLoadStart);
       window.removeEventListener('modelLoadEnd' as any, handleModelLoadEnd);
       delete (window as any).setModelLoading;
     };
-  }, [fetchCurrentLoadedModel, loadModels]);
+  }, [fetchCurrentLoadedModel]);
 
   // Auto-expand the single category if only one is available
   useEffect(() => {
@@ -172,14 +144,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     if (categories.length === 1 && !expandedCategories.has(categories[0])) {
       setExpandedCategories(new Set([categories[0]]));
     }
-  }, [models, organizationMode, showDownloadedOnly, searchQuery]);
+  }, [suggestedModels, organizationMode, showDownloadedOnly, searchQuery]);
 
   const getFilteredModels = () => {
-    let filtered = models;
+    let filtered = suggestedModels;
     
     // Filter by downloaded status
     if (showDownloadedOnly) {
-      filtered = filtered.filter(model => supportedModelsData[model.name]?.downloaded);
+      filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
     }
     
     // Filter by search query
@@ -372,7 +344,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
   const handleDownloadModel = useCallback(async (modelName: string, registrationData?: ModelRegistrationData) => {
     try {
       // For registered models, verify metadata exists; for new models, we're registering now
-      if (!registrationData && !supportedModelsData[modelName]) {
+      if (!registrationData && !modelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
       }
@@ -491,8 +463,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
           downloadCompleted = true;
         }
         
-        // Refresh models and current loaded model status
-        await loadModels();
+        // Notify all components that models have been updated
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
         await fetchCurrentLoadedModel();
         
         // Show success notification
@@ -542,7 +514,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         return newSet;
       });
     }
-  }, [supportedModelsData, showError, showSuccess, showWarning, loadModels, fetchCurrentLoadedModel]);
+  }, [modelsData, showError, showSuccess, showWarning, fetchCurrentLoadedModel]);
 
   // Separate useEffect for download resume/retry to avoid stale closure issues
   useEffect(() => {
@@ -569,9 +541,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
     };
   }, [handleDownloadModel]);
 
-  const handleLoadModel = async (modelName: string) => {
+  const handleLoadModel = async (modelName: string, autoLoadAfterDownload: boolean = false) => {
     try {
-      const modelData = supportedModelsData[modelName];
+      const modelData = modelsData[modelName];
       if (!modelData) {
         showError('Model metadata is unavailable. Please refresh and try again.');
         return;
@@ -590,6 +562,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       });
       
       if (!response.ok) {
+        // Try to parse error response to check for model_invalidated
+        try {
+          const errorData = await response.json();
+          if (errorData?.error?.code === 'model_invalidated') {
+            console.log('[ModelManager] Model was invalidated, triggering re-download:', modelName);
+            
+            // Remove from loading state before starting download
+            setLoadingModels(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(modelName);
+              return newSet;
+            });
+            window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+            
+            // Show info message
+            showWarning(`Model "${modelName}" needs to be re-downloaded due to a backend upgrade. Starting download...`);
+            
+            // Start download, then auto-load when complete
+            await handleDownloadModel(modelName);
+            
+            // After download completes, load the model
+            console.log('[ModelManager] Re-download complete, loading model:', modelName);
+            await handleLoadModel(modelName, true);
+            return;
+          }
+        } catch (parseError) {
+          // Couldn't parse error response, fall through to generic error
+        }
         throw new Error(`Failed to load model: ${response.statusText}`);
       }
       
@@ -597,6 +597,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
       setTimeout(async () => {
         await fetchCurrentLoadedModel();
         window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: modelName } }));
+        
+        // Refresh the models list in case FLM upgrade invalidated other models
+        window.dispatchEvent(new CustomEvent('modelsUpdated'));
       }, 1000);
     } catch (error) {
       console.error('Error loading model:', error);
@@ -660,8 +663,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
         throw new Error(`Failed to delete model: ${response.statusText}`);
       }
       
-      // Refresh models and current loaded model status
-      await loadModels();
+      // Notify all components that models have been updated
+      window.dispatchEvent(new CustomEvent('modelsUpdated'));
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" deleted successfully.`);
       
@@ -747,7 +750,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ isVisible, width = 280 }) =
             {shouldShowCategory(category) && (
               <div className="model-list">
                 {groupedModels[category].map(model => {
-                  const isDownloaded = supportedModelsData[model.name]?.downloaded ?? false;
+                  const isDownloaded = modelsData[model.name]?.downloaded ?? false;
                   const isLoaded = loadedModels.has(model.name);
                   const isLoading = loadingModels.has(model.name);
                   

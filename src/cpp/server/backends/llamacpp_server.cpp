@@ -87,6 +87,28 @@ static void push_arg(std::vector<std::string>& args,
     reserved.insert(key);
 }
 
+// Helper to add a flag-only overridable argument (e.g., --context-shift)
+static void push_overridable_arg(std::vector<std::string>& args, 
+                    const std::string& custom_args,
+                    const std::string& key) {
+    // boolean flags in llama-server can be turned off adding the --no- prefix to their name
+    auto anti_key = "--no-" + key.substr(2);
+    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
+        args.push_back(key);
+    }
+}
+
+// Helper to add a flag-value overridable pair (e.g., --keep 16)
+static void push_overridable_arg(std::vector<std::string>& args,
+                    const std::string& custom_args,
+                    const std::string& key,
+                    const std::string& value) {
+    if (custom_args.find(key) == std::string::npos) {
+        args.push_back(key);
+        args.push_back(value);
+    }
+}
+
 // Helper to tokenize custom args string into vector
 static std::vector<std::string> parse_custom_args(const std::string& custom_args_str) {
     std::vector<std::string> result;
@@ -594,18 +616,18 @@ void LlamaCppServer::load(const std::string& model_name,
             push_arg(args, reserved_flags, "--no-mmproj-offload");
         }
     }
-    
+
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (backend_ == "vulkan" || backend_ == "rocm") {
-        push_arg(args, reserved_flags, "--context-shift");
-        push_arg(args, reserved_flags, "--keep", "16");
+        push_overridable_arg(args, custom_args_, "--context-shift");
+        push_overridable_arg(args, custom_args_, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        push_arg(args, reserved_flags, "--keep", "16");
+        push_overridable_arg(args, custom_args_, "--keep", "16");
     }
-    
+
     // Use legacy reasoning formatting
-    push_arg(args, reserved_flags, "--reasoning-format", "auto");
+    push_overridable_arg(args, custom_args_, "--reasoning-format", "auto");
     
     // Add embeddings support if the model supports it
     if (supports_embeddings) {
