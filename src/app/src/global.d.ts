@@ -40,8 +40,10 @@ declare global {
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);
       getVersion?: () => Promise<string>;
-      discoverServerPort?: () => Promise<number>;
+      discoverServerPort?: () => Promise<number | null>;
       getServerPort?: () => Promise<number>;
+      // Returns the configured server base URL (from --base-url or LEMONADE_APP_BASE_URL), or null if using localhost discovery
+      getServerBaseUrl?: () => Promise<string | null>;
       onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
     };
   }
