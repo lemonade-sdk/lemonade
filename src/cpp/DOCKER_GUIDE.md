@@ -20,6 +20,8 @@ These workflows are complementary and serve different use cases.
 ## Lemonade C++ Docker Setup
 This guide explains how to build and run Lemonade C++ in a Docker container using Docker Compose. The setup includes persistent caching for HuggingFace models.
 
+> If you want to pull or use a specific Lemonade Docker image instead of building your own, check out the instructions in `README.md`
+
 ---
 
 ### Prerequisites

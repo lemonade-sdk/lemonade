@@ -1,0 +1,29 @@
+# Git / repo metadata
+.git
+.github
+.gitattributes
+.gitignore
+.vscode
+
+# Dev & CI tooling
+.devcontainer
+.pylintrc
+
+# Docs
+docs
+mkdocs.yml
+README.md
+NOTICE.md
+LICENSE
+
+# Tests and Examples
+test
+examples
+
+# Python packaging (not used in image)
+pyproject.toml
+setup.py
+**/__pycache__
+
+# Misc
+*.md

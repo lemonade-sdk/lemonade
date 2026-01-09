@@ -1,0 +1,68 @@
+name: Docker Build Smoke Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t lemonade:test .
+
+      - name: Run container
+        run: |
+          docker run -d \
+            --name lemonade-test \
+            -p 8000:8000 \
+            lemonade:test
+
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for Lemonade to start..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/ > /dev/null; then
+              echo "Server is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not start in time"
+          docker logs lemonade-test
+          exit 1
+
+      - name: Load model
+        run: |
+          curl -X POST http://localhost:8000/api/v1/load \
+            -H "Content-Type: application/json" \
+            -d '{"model_name": "Qwen3-0.6B-GGUF"}'
+
+      - name: Chat completion smoke test
+        run: |
+          RESPONSE=$(curl -s http://localhost:8000/api/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "Qwen3-0.6B-GGUF",
+              "messages": [
+                { "role": "user", "content": "Hello, Lemonade!" }
+              ]
+            }')
+
+          echo "Response:"
+          echo "$RESPONSE"
+
+          echo "$RESPONSE" | grep -q '"choices"' || exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs lemonade-test || true
+          docker rm -f lemonade-test || true
