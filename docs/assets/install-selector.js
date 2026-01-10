@@ -17,7 +17,7 @@ const NPU_DRIVER_URL = 'https://account.amd.com/en/forms/downloads/ryzenai-eula-
 const GITHUB_RELEASES_API = 'https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest';
 
 // State: os, type, fw, dev, latestVersion
-window.lmnState = { os: 'win', type: 'app', fw: 'oga', dev: 'npu' };
+window.lmnState = { os: 'win', distro: 'win', type: 'app', fw: 'oga', dev: 'npu' };
 window.lmnLatestVersion = null;
 
 // Fetch latest version from GitHub
@@ -65,6 +65,9 @@ window.lmnSet = function(field, value) {
     const valid = findValidCombo(value, newState.fw, newState.dev);
     newState.fw = valid.fw;
     newState.dev = valid.dev;
+    if (value === 'linux') { newState.distro = 'ubuntu'; }
+    else if (value === 'win') { newState.distro = 'win'; }
+    else if (value === 'macos') { newState.distro = 'macos'}
   }
   // fw/dev change - validate
   else if (field === 'fw' || field === 'dev') {
@@ -83,6 +86,7 @@ window.lmnRender = function() {
   // Update active states and disabled states
   const cells = {
     os: ['win', 'linux', 'macos'],
+    distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora'],
     type: ['app', 'server'],
     fw: ['oga', 'llama', 'flm'],
     dev: ['npu', 'gpu', 'cpu']
@@ -122,7 +126,8 @@ window.lmnRender = function() {
 };
 
 function renderDownload() {
-  const { os, type } = lmnState;
+  const { os, distro, type } = lmnState;
+  const osDistro = document.getElementById('lmn-install-distro');
   const downloadArea = document.getElementById('lmn-download-area');
   const cmdDiv = document.getElementById('lmn-command');
   const installCmdDiv = document.getElementById('lmn-install-commands');
@@ -132,6 +137,7 @@ function renderDownload() {
   if (os === 'macos') {
     if (downloadArea) downloadArea.style.display = 'none';
     if (installCmdDiv) installCmdDiv.style.display = 'none';
+    if (osDistro) osDistro.style.display = 'none';
     if (cmdDiv) {
       cmdDiv.innerHTML = `<div class="lmn-coming-soon">Coming soon!</div>`;
     }
@@ -139,6 +145,7 @@ function renderDownload() {
   }
   
   if (os === 'win') {
+    if (osDistro) osDistro.style.display = 'none';
     // Windows: Show download button
     let link, buttonText;
     if (type === 'app') {
@@ -160,37 +167,72 @@ function renderDownload() {
     if (installCmdDiv) {
       installCmdDiv.style.display = 'none';
     }
-  } else {
-    // Ubuntu: Show wget + dpkg commands
-    let debFile;
-    if (type === 'app') {
-      debFile = `lemonade_${version}_amd64.deb`;
-    } else {
-      debFile = `lemonade-server-minimal_${version}_amd64.deb`;
-    }
-    const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
-    
-    if (downloadArea) {
-      downloadArea.style.display = 'none';
-    }
-    if (installCmdDiv) {
-      installCmdDiv.style.display = 'block';
-      const commands = [
-        `wget ${downloadUrl}`,
-        `sudo dpkg -i ${debFile}`
-      ];
+  }
+  
+  if (os === 'linux') {
+    if (osDistro) osDistro.style.display = 'table-row'
+    if (distro === 'ubuntu') {
+      // Ubuntu: Show wget + dpkg commands
+      let debFile;
+      if (type === 'app') {
+        debFile = `lemonade_${version}_amd64.deb`;
+      } else {
+        debFile = `lemonade-server-minimal_${version}_amd64.deb`;
+      }
+      const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
       
-      installCmdDiv.innerHTML = `<pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>`;
+      if (downloadArea) {
+        downloadArea.style.display = 'none';
+      }
+      if (installCmdDiv) {
+        installCmdDiv.style.display = 'block';
+        const commands = [
+          `wget ${downloadUrl}`,
+          `sudo dpkg -i ${debFile}`
+        ];
+        
+        installCmdDiv.innerHTML = `<pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>`;
+        
+        setTimeout(() => {
+          const pre = document.getElementById('lmn-install-pre-block');
+          if (pre) {
+            pre.innerHTML = commands.map((line, idx) => {
+              const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
+            }).join('');
+          }
+        }, 0);
+      }
+    } else if (distro === 'arch') {
+      // Arch Linux: Show download button
+      let link, buttonText;
+      if (type === 'app') {
+        link = 'https://aur.archlinux.org/packages/lemonade-desktop';
+        buttonText = 'Download Lemonade Desktop (AUR)';
+      } else {
+        link = 'https://aur.archlinux.org/packages/lemonade-server';
+        buttonText = 'Download Lemonade Server (AUR)';
+      }
       
-      setTimeout(() => {
-        const pre = document.getElementById('lmn-install-pre-block');
-        if (pre) {
-          pre.innerHTML = commands.map((line, idx) => {
-            const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
-          }).join('');
+      if (downloadArea) {
+        downloadArea.style.display = 'block';
+        const linkEl = document.getElementById('lmn-link');
+        if (linkEl) {
+          linkEl.href = link;
+          linkEl.target = '_blank';
+          linkEl.textContent = buttonText;
         }
-      }, 0);
+      }
+      if (installCmdDiv) {
+        installCmdDiv.style.display = 'none';
+      }
+    } else if (distro === 'fedora') {
+      if (downloadArea) downloadArea.style.display = 'none';
+      if (installCmdDiv) installCmdDiv.style.display = 'none';
+      if (cmdDiv) {
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
+      }
+      return;
     }
   }
   
@@ -317,12 +359,18 @@ window.lmnInit = function() {
           <tr>
             <td class="lmn-label">Operating System</td>
             <td id="os-win" class="lmn-active">Windows 11</td>
-            <td id="os-linux">Ubuntu 24.04+</td>
+            <td id="os-linux">Linux</td>
             <td id="os-macos">macOS</td>
+          </tr>
+          <tr id="lmn-install-distro" style="display: none;">
+            <td class="lmn-label">Linux Distribution</td>
+            <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>          
+            <td id="distro-arch">Arch Linux</td>            
+            <td id="distro-fedora">Fedora</td>
           </tr>
           <tr>
             <td class="lmn-label">Installation Type</td>
-            <td id="type-app" class="lmn-active">App + Server</td>
+            <td id="type-app" colspan="2" class="lmn-active">App + Server</td>
             <td id="type-server">Server Only</td>
           </tr>
         </table>
