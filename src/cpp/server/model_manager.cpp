@@ -15,6 +15,7 @@
 #include <chrono>
 #include <unordered_set>
 #include <iomanip>
+#include <optional>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -1055,6 +1056,22 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
     return 0.0;
 }
 
+
+double get_max_memory_of_device(json device, std::optional<std::reference_wrapper<double>> current_max = std::nullopt) {
+    // Get the maximum POSSIBLE accessible memory of the device in question, then optionally replace an exising max.
+    double curr_device_vram_gb = 0.0;
+    if (device.contains("vram_gb")) {
+        curr_device_vram_gb += device["vram_gb"].get<double>();
+    }
+    if (device.contains("dynamic_mem_gb")) {
+        curr_device_vram_gb += device["dynamic_mem_gb"].get<double>();
+    }
+    if (current_max && (curr_device_vram_gb > current_max->get())) {
+        current_max->get() = curr_device_vram_gb;
+    }
+    return curr_device_vram_gb;
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
@@ -1087,14 +1104,31 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool npu_available = is_npu_available(hardware);
     bool flm_available = is_flm_available(hardware);
     bool oga_available = is_oga_available(hardware);
-    
+
+    // Get largest VRAM object for memory-based filtering
+    double largest_vram_target_gb = 0.0;
+    for (const auto& [dev_type, dev_type_info] : hardware.items()) {
+
+        // Possible multiple entries per type
+        if (dev_type_info.is_array()) {
+            for (const auto& dev : dev_type_info) {
+                get_max_memory_of_device(dev, largest_vram_target_gb);
+            }
+        }
+        else {
+            get_max_memory_of_device(dev_type_info, largest_vram_target_gb);
+        }
+    }
     // Get system RAM for memory-based filtering
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
-    double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
-    
+    system_ram_gb *= 0.8;
+
+    // Use the largest of the two values
+    double max_model_size_gb = largest_vram_target_gb > system_ram_gb ? largest_vram_target_gb : system_ram_gb;
+
     // Get processor and OS for user-friendly error messages
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
@@ -1115,6 +1149,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (system_ram_gb > 0.0) {
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb 
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+        }
+        if (largest_vram_target_gb > 0.0) {
+            std::cout << "  - Largest VRAM target: " << std::fixed << std::setprecision(1) << largest_vram_target_gb << std::endl;
         }
         debug_printed = true;
     }

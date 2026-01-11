@@ -25,6 +25,7 @@ struct CPUInfo : DeviceInfo {
 struct GPUInfo : DeviceInfo {
     std::string driver_version;
     double vram_gb = 0.0;
+    double dynamic_gb = 0.0;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -123,6 +124,11 @@ private:
     double get_nvidia_vram();
     double get_amd_vram_rocm_smi();
     double get_amd_vram_sysfs(const std::string& pci_id);
+    double get_amd_dynamic_vram(const std::string& pci_id);
+    double get_dynamic_vram();
+
+private:
+    double parse_vram_sysfs(const std::string& pci_id, const std::string& deviceFile);
 };
 
 // macOS implementation (basic stub for now)
@@ -174,5 +180,5 @@ private:
     static bool is_version_less_than(const std::string& v1, const std::string& v2);
 };
 
-} // namespace lemon
+}; // namespace lemon
 
