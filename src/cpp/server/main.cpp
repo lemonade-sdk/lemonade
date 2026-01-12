@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
         }
 
         //TODO: move this
-        json default_opts = {{"ctx_size", config.ctx_size}, {"llamacpp_backend", config.ctx_size}, {"llamacpp_args", config.llamacpp_args}};
+        json default_opts = {{"ctx_size", config.ctx_size}, {"llamacpp_backend", config.llamacpp_backend}, {"llamacpp_args", config.llamacpp_args}};
         
         Server server(config.port, config.host, config.log_level,
                     default_opts, config.tray, config.max_llm_models,
