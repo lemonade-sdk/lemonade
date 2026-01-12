@@ -498,26 +498,46 @@ void SDServer::load(const std::string& model_name,
     }
 
     // Check if resolved_path is a directory (HuggingFace cache structure)
-    if (fs::is_directory(model_path) && !target_filename.empty()) {
-        std::cout << "[SDServer] Searching for " << target_filename << " in " << model_path << std::endl;
+    if (fs::is_directory(model_path)) {
+        if (!target_filename.empty()) {
+            std::cout << "[SDServer] Searching for " << target_filename << " in " << model_path << std::endl;
+        } else {
+            std::cout << "[SDServer] Searching for .safetensors file in " << model_path << std::endl;
+        }
 
         // Search in HuggingFace cache structure: models--org--repo/snapshots/*/filename
         fs::path snapshots_dir = fs::path(model_path) / "snapshots";
         if (fs::exists(snapshots_dir) && fs::is_directory(snapshots_dir)) {
             for (const auto& snapshot_entry : fs::directory_iterator(snapshots_dir)) {
                 if (snapshot_entry.is_directory()) {
-                    fs::path candidate = snapshot_entry.path() / target_filename;
-                    if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
-                        model_path = candidate.string();
-                        std::cout << "[SDServer] Found model file: " << model_path << std::endl;
-                        break;
+                    if (!target_filename.empty()) {
+                        // Look for specific file
+                        fs::path candidate = snapshot_entry.path() / target_filename;
+                        if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
+                            model_path = candidate.string();
+                            std::cout << "[SDServer] Found model file: " << model_path << std::endl;
+                            break;
+                        }
+                    } else {
+                        // Search for any .safetensors file
+                        for (const auto& file_entry : fs::directory_iterator(snapshot_entry.path())) {
+                            if (file_entry.is_regular_file()) {
+                                std::string fname = file_entry.path().filename().string();
+                                if (fname.size() > 12 && fname.substr(fname.size() - 12) == ".safetensors") {
+                                    model_path = file_entry.path().string();
+                                    std::cout << "[SDServer] Found model file: " << model_path << std::endl;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!fs::is_directory(model_path)) break;
                     }
                 }
             }
         }
 
-        // If still a directory, try direct search
-        if (fs::is_directory(model_path)) {
+        // If still a directory and have target filename, try direct search
+        if (fs::is_directory(model_path) && !target_filename.empty()) {
             fs::path direct_file = fs::path(model_path) / target_filename;
             if (fs::exists(direct_file) && fs::is_regular_file(direct_file)) {
                 model_path = direct_file.string();
