@@ -64,10 +64,12 @@ int main(int argc, char** argv) {
         if (!config.extra_models_dir.empty()) {
             std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
         }
+
+        //TODO: move this
+        json default_opts = {{"ctx_size", config.ctx_size}, {"llamacpp_backend", config.ctx_size}, {"llamacpp_args", config.llamacpp_args}};
         
         Server server(config.port, config.host, config.log_level,
-                    config.ctx_size, config.tray, config.llamacpp_backend,
-                    config.llamacpp_args, config.max_llm_models,
+                    default_opts, config.tray, config.max_llm_models,
                     config.max_embedding_models, config.max_reranking_models,
                     config.max_audio_models, config.extra_models_dir);
         

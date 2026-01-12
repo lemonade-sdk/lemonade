@@ -24,10 +24,8 @@ public:
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
-             int ctx_size,
-             bool do_not_upgrade = false,
-             const std::string& llamacpp_backend = "",
-             const std::string& llamacpp_args = "") override;
+             const RecipeOptions& options,
+             bool do_not_upgrade = false) override;
 
     void unload() override;
 

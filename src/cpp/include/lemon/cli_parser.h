@@ -11,8 +11,8 @@ struct ServerConfig {
     std::string host = "localhost";
     std::string log_level = "info";
     bool tray = false;  // Tray is handled by lemonade-server, not lemonade-router
-    std::string llamacpp_backend = "vulkan";
-    int ctx_size = 4096;
+    std::string llamacpp_backend = "";
+    int ctx_size = -1;
     std::string llamacpp_args = "";
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     

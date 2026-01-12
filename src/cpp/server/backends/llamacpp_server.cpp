@@ -440,18 +440,17 @@ std::string LlamaCppServer::download_model(const std::string& checkpoint,
 
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
-                         int ctx_size,
-                         bool do_not_upgrade,
-                         const std::string& llamacpp_backend,
-                         const std::string& llamacpp_args) {
-    
+                         const RecipeOptions& options,
+                         bool do_not_upgrade) {
     std::cout << "[LlamaCpp] Loading model: " << model_name << std::endl;
 
     // Llamacpp Backend logging
-    std::cout << "[LlamaCpp] Per-model settings: backend=" << llamacpp_backend 
-              << ", ctx_size=" << ctx_size 
-              << ", args=" << (llamacpp_args.empty() ? "(none)" : llamacpp_args) << std::endl;
-        
+    std::cout << "[LlamaCpp] Per-model settings: " << options.to_log_string() << std::endl;
+
+    int ctx_size = options.get_option("ctx_size");
+    std::string llamacpp_backend = options.get_option("llamacpp_backend");
+    std::string llamacpp_args = options.get_option("llamacpp_args");
+
     bool use_gpu = (llamacpp_backend != "cpu");
     
     // Install llama-server if needed (use per-model backend)
