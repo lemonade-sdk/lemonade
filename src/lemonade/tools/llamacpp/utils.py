@@ -22,13 +22,21 @@ LLAMA_VERSION_METAL = "b6510"
 LLAMA_VERSION_CPU = "b6510"
 
 
-def identify_rocm_arch_from_name(device_name: str) -> str | None:
+def identify_rocm_arch_from_name(device_name: str) -> str:
     """
     Identify the appropriate ROCm target architecture based on the device name
     """
     device_name_lower = device_name.lower()
+
+    if device_name_lower.isdigit():
+        if len(device_name_lower) >= 4:
+            major = device_name_lower[0:2]
+            minor = device_name_lower[2:3]
+            revision = device_name_lower[3:4]
+            return f"gfx{major}{minor}{revision}"
+
     if "radeon" not in device_name_lower:
-        return None
+        return ""
 
     # Check iGPUs
     # STX Halo iGPUs (gfx1151 architecture)
@@ -58,7 +66,7 @@ def identify_rocm_arch_from_name(device_name: str) -> str | None:
     ):
         return "gfx110X"
 
-    return None
+    return ""
 
 
 def identify_rocm_arch() -> str:
@@ -71,14 +79,14 @@ def identify_rocm_arch() -> str:
     system_info = get_system_info()
     amd_igpu = system_info.get_amd_igpu_device()
     amd_dgpu = system_info.get_amd_dgpu_devices()
-    target_arch = None
     for gpu in [amd_igpu] + amd_dgpu:
-        if gpu.get("available") and gpu.get("name"):
-            target_arch = identify_rocm_arch_from_name(gpu["name"].lower())
-            if target_arch:
-                break
+        if gpu.get("available"):
+            if gpu.get("name"):
+                return identify_rocm_arch_from_name(gpu["name"])
+            elif gpu.get("isa"):
+                return identify_rocm_arch_from_name(gpu["isa"])
 
-    return target_arch
+    return ""
 
 
 def identify_hip_id() -> str:
