@@ -1,5 +1,7 @@
 name: Runner Heartbeat
 
+# Change to trigger push.
+
 on:
   schedule:
     - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
@@ -15,7 +17,22 @@ permissions:
 
 jobs:
   heartbeat:
-    runs-on: [self-hosted]
+    strategy:
+      matrix:
+        runner: 
+          - jfowers-stx-01
+          - jfowers-stx-02
+          - sjlab-stx-halo-06
+          - sjlab-stx-halo-07
+          - sjlab-stx-halo-08
+          - sjlab-stx-halo-09
+          - sjlab-stx-halo-10
+          - sjlab-stx-halo-11
+          - sjlab-stx-halo-12
+          - sjlab-stx-halo-13
+          - sjlab-stx-0
+      fail-fast: false  # Continue even if one runner fails
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
     steps:
       - name: Create heartbeat file
         shell: powershell
