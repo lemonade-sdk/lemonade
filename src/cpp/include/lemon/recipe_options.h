@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <CLI/CLI.hpp>
 
 namespace lemon {
 
@@ -14,6 +15,8 @@ public:
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
+
+    static void add_cli_options(CLI::App& app, json& storage);
 private:
     json options_ = json::object();
     std::string recipe_ = "";

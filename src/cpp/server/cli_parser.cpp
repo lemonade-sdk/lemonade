@@ -1,4 +1,5 @@
 #include <lemon/cli_parser.h>
+#include <lemon/recipe_options.h>
 #include <iostream>
 #include <cctype>
 #include <cstdlib>
@@ -21,17 +22,6 @@ CLIParser::CLIParser()
     app_.add_option("--log-level", config_.log_level, "Log level for the server")
         ->check(CLI::IsMember({"critical", "error", "warning", "info", "debug", "trace"}))
         ->default_val("info");
-
-    app_.add_option("--llamacpp", config_.llamacpp_backend, "LlamaCpp backend to use")
-        ->check(CLI::IsMember({"vulkan", "rocm", "metal", "cpu"}))
-        ->default_val("vulkan");
-
-    app_.add_option("--ctx-size", config_.ctx_size, "Context size for the model")
-        ->default_val(4096);
-
-    app_.add_option("--llamacpp-args", config_.llamacpp_args,
-                   "Custom arguments to pass to llama-server (must not conflict with managed args)")
-        ->default_val("");
 
     app_.add_option("--extra-models-dir", config_.extra_models_dir,
                    "Experimental feature: secondary directory to scan for LLM GGUF model files")
@@ -62,6 +52,8 @@ CLIParser::CLIParser()
             }
             return "";  // Valid
         });
+    
+    RecipeOptions::add_cli_options(app_, config_.recipe_options);
 }
 
 int CLIParser::parse(int argc, char** argv) {

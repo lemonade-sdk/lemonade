@@ -1,13 +1,16 @@
 #include <lemon/recipe_options.h>
 #include <nlohmann/json.hpp>
 
-#include <iostream>
-
 namespace lemon {
 
 using json = nlohmann::json;
 
 static const json DEFAULTS = {{"ctx_size", 4096}, {"llamacpp_backend", "vulkan"}, {"llamacpp_args", ""}};
+static const json CLI_OPTIONS = {
+    {"--ctx-size", {{"option_name", "ctx_size"}, {"help", "Context size for the model"}}},
+    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"help", "LlamaCpp backend to use (vulkan, rocm, metal, cpu)"}}},
+    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}}},
+};
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
@@ -23,6 +26,17 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
 static const bool is_empty_option(json option) {
     return (option.is_number() && (option == -1)) || 
            (option.is_string() && (option == ""));
+}
+
+void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
+    for (auto& [key, opt] : CLI_OPTIONS.items()) {
+        const std::string opt_name = opt["option_name"];
+        if (DEFAULTS[opt_name].is_number()) {
+            app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
+        } else {
+            app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+        }
+    }
 }
 
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
