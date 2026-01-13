@@ -649,9 +649,6 @@ By default, generated images are cleaned up after being returned. To save images
 lemonade-server serve --save-images --images-dir ./my_images
 ```
 
-See [CLI options](#command-line-options-for-serve-and-run) for details.
-
-
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
