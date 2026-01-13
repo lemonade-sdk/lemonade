@@ -1,5 +1,9 @@
 name: Monitor Self-Hosted Runners
 
+permissions:
+  contents: read
+  actions: read
+
 on:
   schedule:
     - cron: "0 1 * * 1"   # every Monday at 1AM UTC
