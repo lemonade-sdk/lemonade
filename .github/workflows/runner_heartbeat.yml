@@ -13,9 +13,6 @@ on:
 permissions:
   actions: write  # Required to upload artifacts
 
-permissions:
-  contents: read
-
 jobs:
   heartbeat:
     runs-on: [self-hosted]
