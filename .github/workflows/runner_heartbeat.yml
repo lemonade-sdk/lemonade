@@ -1,0 +1,24 @@
+name: Runner Heartbeat
+
+on:
+  schedule:
+    - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: [self-hosted]
+    steps:
+      - name: Create heartbeat file
+        shell: bash
+        run: |
+          timestamp=$(date -Iseconds)
+          runner="${{ runner.name }}"
+          echo "$timestamp" > "heartbeat-$runner.txt"
+
+      - name: Upload heartbeat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heartbeat-${{ runner.name }}
+          path: heartbeat-${{ runner.name }}.txt
+          retention-days: 14

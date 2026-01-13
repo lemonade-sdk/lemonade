@@ -1,0 +1,71 @@
+name: Monitor Self-Hosted Runners
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"   # every Monday at 1AM UTC
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get list of org runners
+        id: runners
+        run: |
+          curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners \
+            > runners.json
+
+          echo "names=$(jq -r '.runners[].name' runners.json | tr '\n' ',')" >> $GITHUB_OUTPUT
+
+      - name: Get artifacts
+        id: artifacts
+        run: |
+          curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/actions/artifacts \
+            > artifacts.json
+
+      - name: Check each runner heartbeat
+        id: check
+        run: |
+          missing=""
+          now=$(date -u +%s)
+
+          for r in $(echo "${{ steps.runners.outputs.names }}" | tr ',' ' '); do
+            [ -z "$r" ] && continue
+            echo "Checking $r"
+
+            ts=$(jq -r --arg r "$r" '.artifacts[] | select(.name=="heartbeat-"+$r) | .updated_at' artifacts.json)
+
+            if [ -z "$ts" ] || [ "$ts" == "null" ]; then
+              echo "No heartbeat found for $r"
+              missing="$missing $r"
+              continue
+            fi
+
+            hb=$(date -d "$ts" +%s)
+            diff=$((now - hb))
+
+            if [ $diff -gt 691200 ]; then   # 8 days (weekly + 1 day buffer)
+              echo "Heartbeat stale for $r (last seen: $ts)"
+              missing="$missing $r"
+            fi
+          done
+
+          echo "missing=$missing" >> $GITHUB_OUTPUT
+
+      - name: Fail if any runner missing
+        if: steps.check.outputs.missing != ''
+        run: |
+          echo "Missing or stale runners: ${{ steps.check.outputs.missing }}"
+          exit 1
+
+      - name: Send Teams alert
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d "{\"text\": \"⚠️ Self-hosted runner(s) offline: ${{ steps.check.outputs.missing }}\"}" \
+            ${{ secrets.TEAMS_WEBHOOK_URL }}
