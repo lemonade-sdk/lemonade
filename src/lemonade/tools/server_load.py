@@ -3,6 +3,7 @@ Tool for loading a model into Lemonade Server via the /api/v1/load endpoint.
 """
 
 import argparse
+import platform
 from typing import Optional
 
 import requests
@@ -16,6 +17,51 @@ from lemonade.cache import Keys
 
 DEFAULT_SERVER_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 300  # 5 minutes for model loading
+
+# Process names for wrapped servers that lemonade-server may spawn
+WRAPPED_SERVER_PROCESS_NAMES = [
+    "llama-server",
+    "llama-server.exe",
+    "flm",
+    "flm.exe",
+    "ryzenai-server",
+    "ryzenai-server.exe",
+    "lemonade-server",
+    "lemonade-server.exe",
+]
+
+
+def get_wrapped_server_peak_memory() -> Optional[int]:
+    """
+    Get the combined peak working set memory for wrapped server processes
+    (llama-server, flm, ryzenai-server, etc.) spawned by lemonade-server.
+
+    Returns:
+        Peak working set in bytes, or None if unavailable
+    """
+    if platform.system() != "Windows":
+        # peak_wset is Windows-only
+        return None
+
+    try:
+        import psutil
+    except ImportError:
+        return None
+
+    total_peak = 0
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            proc_name = proc.info["name"].lower()
+            for server_name in WRAPPED_SERVER_PROCESS_NAMES:
+                if server_name.lower() == proc_name:
+                    mem_info = proc.memory_info()
+                    if hasattr(mem_info, "peak_wset") and mem_info.peak_wset:
+                        total_peak += mem_info.peak_wset
+                    break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    return total_peak if total_peak > 0 else None
 
 
 class ServerTokenizerAdapter(PassthroughTokenizer):
@@ -52,6 +98,7 @@ class ServerAdapter(ModelAdapter):
         top_p: float = 1.0,
         top_k: int = None,
         repeat_penalty: float = None,
+        save_max_memory_used: bool = False,
         **kwargs,
     ):
         """
@@ -64,6 +111,7 @@ class ServerAdapter(ModelAdapter):
             top_p: Top-p sampling parameter
             top_k: Top-k sampling parameter
             repeat_penalty: Repetition penalty
+            save_max_memory_used: If True, capture wrapped server memory usage
             **kwargs: Additional arguments (ignored)
 
         Returns:
@@ -126,6 +174,12 @@ class ServerAdapter(ModelAdapter):
             self.tokens_per_second = None
             self.prompt_tokens = None
             self.response_tokens = None
+
+        # Get peak memory from wrapped server processes (like oga/huggingface bench do)
+        if save_max_memory_used:
+            self.peak_wset = get_wrapped_server_peak_memory()
+        else:
+            self.peak_wset = None
 
         return generated_text
 

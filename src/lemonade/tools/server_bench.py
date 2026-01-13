@@ -123,6 +123,7 @@ class ServerBench(Bench):
 
         per_iteration_time_to_first_token = []
         per_iteration_tokens_per_second = []
+        per_iteration_peak_wset = []
 
         total_iterations = warmup_iterations + iterations
 
@@ -133,11 +134,13 @@ class ServerBench(Bench):
                 model.tokens_per_second = None
                 model.prompt_tokens = None
                 model.response_tokens = None
+                model.peak_wset = None
 
-                # Run inference
+                # Run inference with memory tracking if enabled
                 _ = model.generate(
                     prompt,
                     max_new_tokens=output_tokens,
+                    save_max_memory_used=self.save_max_memory_used,
                 )
 
                 # Check that we got valid metrics
@@ -162,6 +165,7 @@ class ServerBench(Bench):
                             model.time_to_first_token
                         )
                         per_iteration_tokens_per_second.append(model.tokens_per_second)
+                        per_iteration_peak_wset.append(model.peak_wset)
 
                 # Report progress
                 report_progress_fn((iteration + 1) / total_iterations)
@@ -215,10 +219,16 @@ class ServerBench(Bench):
             # Less than 2 measurements
             self.std_dev_token_generation_tokens_per_second_list.append(None)
 
-        # Note: We don't collect max memory used for server-based models
-        # since the model runs in a separate server process
+        # Calculate max memory used from wrapped server processes
         if self.save_max_memory_used:
-            self.max_memory_used_gb_list.append(None)
+            filtered_list = [
+                item for item in per_iteration_peak_wset if item is not None
+            ]
+            if filtered_list:
+                mean_gb_used = statistics.mean(filtered_list) / 1024**3
+                self.max_memory_used_gb_list.append(mean_gb_used)
+            else:
+                self.max_memory_used_gb_list.append(None)
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.
