@@ -1,16 +1,9 @@
 name: Runner Heartbeat
 
-# Change to trigger push.
-
 on:
   schedule:
     - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
   workflow_dispatch:
-  push:
-    branches: 
-      - vgodsoe/ci-runner-heartbeat  # Temporary: remove before merging
-    paths:
-      - '.github/workflows/runner_heartbeat.yml'
 
 permissions:
   actions: write  # Required to upload artifacts

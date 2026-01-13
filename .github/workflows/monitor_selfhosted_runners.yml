@@ -4,11 +4,6 @@ on:
   schedule:
     - cron: "0 1 * * 1"   # every Monday at 1AM UTC
   workflow_dispatch:
-  push:
-    branches: 
-      - vgodsoe/ci-runner-heartbeat  # Temporary: remove before merging
-    paths:
-      - '.github/workflows/monitor_selfhosted_runners.yml'
 
 permissions:
   actions: read  # Required to read artifacts
