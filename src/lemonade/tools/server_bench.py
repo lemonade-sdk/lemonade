@@ -15,7 +15,7 @@ class ServerBench(Bench):
     """
     Benchmark a model loaded on Lemonade Server.
 
-    This tool uses the /api/v1/completions endpoint for inference and the
+    This tool uses the /api/v1/chat/completions endpoint for inference and the
     /api/v1/stats endpoint to collect performance metrics. It follows the
     same benchmarking methodology as other *-bench tools.
 

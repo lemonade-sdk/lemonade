@@ -55,7 +55,7 @@ class ServerAdapter(ModelAdapter):
         **kwargs,
     ):
         """
-        Generate text using the Lemonade Server /completions endpoint.
+        Generate text using the Lemonade Server /chat/completions endpoint.
 
         Args:
             input_ids: The input text prompt (passed through from tokenizer)
@@ -71,10 +71,10 @@ class ServerAdapter(ModelAdapter):
         """
         prompt = input_ids  # PassthroughTokenizer passes text directly
 
-        # Build request payload
+        # Build request payload using chat/completions format
         payload = {
             "model": self.model_name,
-            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_new_tokens,
             "stream": False,
             "cache_prompt": False,  # Disable prompt caching for accurate benchmarking
@@ -89,18 +89,19 @@ class ServerAdapter(ModelAdapter):
         if repeat_penalty is not None:
             payload["repeat_penalty"] = repeat_penalty
 
-        # Make the completion request
+        # Make the chat completion request
         response = requests.post(
-            f"{self.server_url}/api/v1/completions",
+            f"{self.server_url}/api/v1/chat/completions",
             json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()
         completion_data = response.json()
 
-        # Extract the generated text
+        # Extract the generated text from chat completion response
         if "choices" in completion_data and len(completion_data["choices"]) > 0:
-            generated_text = completion_data["choices"][0].get("text", "")
+            message = completion_data["choices"][0].get("message", {})
+            generated_text = message.get("content", "")
         else:
             generated_text = ""
 
