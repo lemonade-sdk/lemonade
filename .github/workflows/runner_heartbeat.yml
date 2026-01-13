@@ -4,17 +4,25 @@ on:
   schedule:
     - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
   workflow_dispatch:
+  push:
+    branches: 
+      - vgodsoe/monitor-runners  # Temporary: remove before merging
+    paths:
+      - '.github/workflows/runner_heartbeat.yml'
+
+permissions:
+  actions: write  # Required to upload artifacts
 
 jobs:
   heartbeat:
     runs-on: [self-hosted]
     steps:
       - name: Create heartbeat file
-        shell: bash
+        shell: powershell
         run: |
-          timestamp=$(date -Iseconds)
-          runner="${{ runner.name }}"
-          echo "$timestamp" > "heartbeat-$runner.txt"
+          $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
+          $runner = "${{ runner.name }}"
+          "$timestamp" | Out-File -FilePath "heartbeat-$runner.txt" -Encoding utf8
 
       - name: Upload heartbeat artifact
         uses: actions/upload-artifact@v4
