@@ -67,7 +67,7 @@ jobs:
             [ -z "$r" ] && continue
             echo "Checking $r"
 
-            ts=$(jq -r --arg r "$r" '.artifacts[] | select(.name=="heartbeat-"+$r) | .updated_at' artifacts.json)
+            ts=$(jq -r --arg r "$r" '[.artifacts[] | select(.name=="heartbeat-"+$r)] | sort_by(.updated_at) | last | .updated_at // empty' artifacts.json)
 
             if [ -z "$ts" ] || [ "$ts" == "null" ]; then
               echo "No heartbeat found for $r"
@@ -98,7 +98,30 @@ jobs:
           echo "Sending Teams alert via Power Automate..."
           response=$(curl -s -w "%{http_code}" -X POST \
             -H "Content-Type: application/json" \
-            -d '{"message": "⚠️ Self-hosted runner(s) offline: ${{ steps.check.outputs.missing }}"}' \
+            -d '{
+              "type": "AdaptiveCard",
+              "version": "1.3",
+              "body": [
+                {
+                  "type": "TextBlock",
+                  "text": "⚠️ Self-hosted Runner Alert",
+                  "weight": "bolder",
+                  "size": "medium",
+                  "color": "attention"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "The following runners are offline or missing heartbeats:",
+                  "wrap": true
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "${{ steps.check.outputs.missing }}",
+                  "wrap": true,
+                  "fontType": "monospace"
+                }
+              ]
+            }' \
             "${{ secrets.TEAMS_WEBHOOK_URL }}")
           
           http_code="${response: -3}"
@@ -106,6 +129,7 @@ jobs:
           
           echo "HTTP Status: $http_code"
           echo "Response: $response_body"
+          
           
           if [ "$http_code" != "200" ] && [ "$http_code" != "202" ]; then
             echo "Power Automate webhook failed with status $http_code"
