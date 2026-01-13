@@ -92,9 +92,23 @@ jobs:
           echo "Missing or stale runners: ${{ steps.check.outputs.missing }}"
           exit 1
 
-      - name: Send Teams alert
+      - name: Send Teams alert via Power Automate
         if: failure()
         run: |
-          curl -H "Content-Type: application/json" \
-            -d "{\"text\": \"⚠️ Self-hosted runner(s) offline: ${{ steps.check.outputs.missing }}\"}" \
-            ${{ secrets.TEAMS_WEBHOOK_URL }}
+          echo "Sending Teams alert via Power Automate..."
+          response=$(curl -s -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"message": "⚠️ Self-hosted runner(s) offline: ${{ steps.check.outputs.missing }}"}' \
+            "${{ secrets.TEAMS_WEBHOOK_URL }}")
+          
+          http_code="${response: -3}"
+          response_body="${response%???}"
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $response_body"
+          
+          if [ "$http_code" != "200" ] && [ "$http_code" != "202" ]; then
+            echo "Power Automate webhook failed with status $http_code"
+          else
+            echo "Teams alert sent successfully via Power Automate"
+          fi
