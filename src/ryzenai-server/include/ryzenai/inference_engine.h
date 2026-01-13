@@ -21,7 +21,8 @@ public:
     ~InferenceEngine();
     
     // Synchronous completion
-    std::string complete(const std::string& prompt, const GenerationParams& params);
+    // Returns generated text. If out_token_count is provided, stores the actual generated token count.
+    std::string complete(const std::string& prompt, const GenerationParams& params, int* out_token_count = nullptr);
     
     // Streaming completion
     void streamComplete(const std::string& prompt, 

@@ -455,7 +455,8 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             );
             
             auto start_time = std::chrono::high_resolution_clock::now();
-            std::string output = inference_engine_->complete(comp_req.prompt, params);
+            int completion_tokens = 0;
+            std::string output = inference_engine_->complete(comp_req.prompt, params, &completion_tokens);
             auto end_time = std::chrono::high_resolution_clock::now();
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -472,9 +473,8 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             // If echo=True, prepend the prompt to the output (matching Python reference)
             std::string final_text = comp_req.echo ? (comp_req.prompt + content) : content;
             
-            // Count tokens
+            // Count prompt tokens; completion_tokens already set by complete()
             int prompt_tokens = inference_engine_->countTokens(comp_req.prompt);
-            int completion_tokens = inference_engine_->countTokens(output);
             int total_tokens = prompt_tokens + completion_tokens;
             
             // Build choice object
@@ -851,7 +851,8 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
             );
             
             auto start_time = std::chrono::high_resolution_clock::now();
-            std::string output = inference_engine_->complete(prompt, params);
+            int completion_tokens = 0;
+            std::string output = inference_engine_->complete(prompt, params, &completion_tokens);
             auto end_time = std::chrono::high_resolution_clock::now();
             
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -887,9 +888,8 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                 std::cout << "[Server DEBUG] No tools provided in request" << std::endl;
             }
             
-            // Count tokens
+            // Count prompt tokens; completion_tokens already set by complete()
             int prompt_tokens = inference_engine_->countTokens(prompt);
-            int completion_tokens = inference_engine_->countTokens(output);
             int total_tokens = prompt_tokens + completion_tokens;
             
             // Build message object

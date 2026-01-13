@@ -333,7 +333,7 @@ std::vector<int32_t> InferenceEngine::truncatePrompt(const std::vector<int32_t>&
     );
 }
 
-std::string InferenceEngine::complete(const std::string& prompt, const GenerationParams& params) {
+std::string InferenceEngine::complete(const std::string& prompt, const GenerationParams& params, int* out_token_count) {
     std::lock_guard<std::mutex> lock(inference_mutex_);
     
     try {
@@ -376,6 +376,16 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         const int32_t* output_ptr = generator->GetSequenceData(0);
         size_t output_count = generator->GetSequenceCount(0);
         
+        // Calculate actual generated token count
+        int generated_token_count = (output_count > input_ids.size()) 
+            ? static_cast<int>(output_count - input_ids.size()) 
+            : 0;
+        
+        // Return actual token count if requested
+        if (out_token_count != nullptr) {
+            *out_token_count = generated_token_count;
+        }
+        
         // Decode only the newly generated tokens (skip the input prompt)
         std::string result;
         if (output_count > input_ids.size()) {
@@ -395,8 +405,7 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
             }
         }
         
-        std::cout << "[InferenceEngine] Generated " << (output_count > input_ids.size() ? output_count - input_ids.size() : 0)
-                 << " tokens" << std::endl;
+        std::cout << "[InferenceEngine] Generated " << generated_token_count << " tokens" << std::endl;
         
         return result;
         
