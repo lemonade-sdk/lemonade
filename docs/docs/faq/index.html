@@ -1072,6 +1072,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#4-how-should-dedicated-gpu-ram-be-allocated-on-strix-halo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. How should dedicated GPU RAM be allocated on Strix Halo
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1527,6 +1538,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#4-how-should-dedicated-gpu-ram-be-allocated-on-strix-halo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. How should dedicated GPU RAM be allocated on Strix Halo
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1806,6 +1828,12 @@
 <p>Lemonade supports llama.cpp as a backend, so performance is similar when using the same model and quantization.</p>
 <h3 id="3-how-can-rocm-performance-be-improved-for-my-use-case">3. <strong>How can ROCm performance be improved for my use case?</strong></h3>
 <p>File a detailed issue on TheRock repo for support: https://github.com/ROCm/TheRock</p>
+<h3 id="4-how-should-dedicated-gpu-ram-be-allocated-on-strix-halo">4. <strong>How should dedicated GPU RAM be allocated on Strix Halo</strong></h3>
+<p>Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocate a portion of this to dedicated GPU RAM.</p>
+<p>We suggest setting dedicated GPU RAM to <code>64/64 (auto)</code>.</p>
+<blockquote>
+<p>Note: On Windows, the GPU can access both unified RAM and dedicated GPU RAM, but the CPU is blocked from accessing dedicated GPU RAM. For this reason, allocating too much dedicated GPU RAM can interfere with model loading, which requires the CPU to access a substantial amount unified RAM.</p>
+</blockquote>
 <h2 id="hybrid-and-npu-questions">Hybrid and NPU Questions</h2>
 <h3 id="1-does-llm-inference-with-the-npu-only-work-on-windows">1. <strong>Does LLM inference with the NPU only work on Windows?</strong></h3>
 <p>Yes, today, NPU and hybrid inference is currently supported only on Windows.</p>
