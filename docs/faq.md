@@ -142,7 +142,7 @@
 
 ### 4. **How should dedicated GPU RAM be allocated on Strix Halo**
 
-   Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocated a portion of this to dedicated GPU RAM.
+   Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocate a portion of this to dedicated GPU RAM.
 
    We suggest setting dedicated GPU RAM to `64/64 (auto)`.
 
