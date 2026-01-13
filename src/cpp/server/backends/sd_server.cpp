@@ -331,8 +331,8 @@ void SDServer::install(const std::string& backend) {
         }
 
 #ifdef _WIN32
-        // Windows Vulkan build: sd-master-4ff2c8c-bin-win-vulkan-x64.zip
-        filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
+        // Windows CPU build with AVX2: sd-master-4ff2c8c-bin-win-avx2-x64.zip
+        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         // Linux build: sd-master-4ff2c8c-bin-Linux-Ubuntu-24.04-x86_64.zip
         filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";

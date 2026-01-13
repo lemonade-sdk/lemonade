@@ -110,7 +110,8 @@ response = client.images.generate(
     model="SD-Turbo",
     prompt="A serene mountain landscape at sunset",
     size="512x512",
-    n=1
+    n=1,
+    extra_body={"steps": 4}  # SD-Turbo works best with 4 steps
 )
 ```
 

@@ -1514,8 +1514,8 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade, progress_callback);
-    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp") {
-        // For llamacpp (GGUF) and whispercpp (.bin) models, use variant-aware download
+    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp" || actual_recipe == "sd-cpp") {
+        // For llamacpp (GGUF), whispercpp (.bin), and sd-cpp (.safetensors) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
     } else {
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
@@ -1633,20 +1633,34 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
         
         std::vector<std::string> files_to_download;
-        
+
         // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
         if (!variant.empty() || !mmproj.empty()) {
-            // GGUF model: Use identify_gguf_models to determine which files to download
-            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
-            
-            // Combine core files and sharded files into one list
-            for (const auto& [key, filename] : gguf_files.core_files) {
-                files_to_download.push_back(filename);
+            // Check if variant is a safetensors file (for sd-cpp models)
+            bool is_safetensors = variant.size() > 12 &&
+                variant.substr(variant.size() - 12) == ".safetensors";
+
+            if (is_safetensors) {
+                // For safetensors files, just download the specified file directly
+                if (std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end()) {
+                    files_to_download.push_back(variant);
+                    std::cout << "[ModelManager] Found safetensors file: " << variant << std::endl;
+                } else {
+                    throw std::runtime_error("Safetensors file not found in repository: " + variant);
+                }
+            } else {
+                // GGUF model: Use identify_gguf_models to determine which files to download
+                GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
+
+                // Combine core files and sharded files into one list
+                for (const auto& [key, filename] : gguf_files.core_files) {
+                    files_to_download.push_back(filename);
+                }
+                for (const auto& filename : gguf_files.sharded_files) {
+                    files_to_download.push_back(filename);
+                }
             }
-            for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download.push_back(filename);
-            }
-            
+
             // Also download essential config files if they exist
             std::vector<std::string> config_files = {
                 "config.json",
