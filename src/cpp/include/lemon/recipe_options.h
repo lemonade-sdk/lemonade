@@ -11,7 +11,7 @@ public:
     RecipeOptions() {};
     RecipeOptions(const std::string& recipe, const json& options);
     json to_json() const;
-    std::string to_log_string() const;
+    std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
 private:

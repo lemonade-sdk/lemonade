@@ -1638,7 +1638,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         bool save_options = request_json.value("save_options", false);
         
         std::cout << "[Server] Loading model: " << model_name;
-        std::cout << " " << options.to_log_string();
+        std::cout << " " << options.to_log_string(false);
         std::cout << std::endl;
 
         // Persist request options to model info if requested
