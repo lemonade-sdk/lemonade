@@ -622,20 +622,6 @@ Image Generation API. You provide a text prompt and receive a generated image. T
       }'
     ```
 
-=== "Bash"
-
-    ```bash
-    curl -X POST http://localhost:8000/api/v1/images/generations \
-      -H "Content-Type: application/json" \
-      -d '{
-            "model": "SD-Turbo",
-            "prompt": "A serene mountain landscape at sunset",
-            "size": "512x512",
-            "steps": 4,
-            "response_format": "b64_json"
-          }'
-    ```
-
 #### Response format
 
 ```json
