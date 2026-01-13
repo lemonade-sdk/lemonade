@@ -134,7 +134,6 @@ private:
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
     
-    std::string get_cache_dir();
     std::string get_user_models_file();
     std::string get_recipe_options_file();
     

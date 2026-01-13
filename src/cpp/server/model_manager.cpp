@@ -208,29 +208,6 @@ ModelManager::ModelManager() {
     recipe_options_ = load_optional_json(get_recipe_options_file());
 }
 
-std::string ModelManager::get_cache_dir() {
-    // Check environment variable first
-    const char* cache_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_env) {
-        return std::string(cache_env);
-    }
-    
-    // Default to ~/.cache/lemonade (matching Python implementation)
-#ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
-    }
-    return "C:\\.cache\\lemonade";
-#else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
-    }
-    return "/tmp/.cache/lemonade";
-#endif
-}
-
 std::string ModelManager::get_user_models_file() {
     return get_cache_dir() + "/user_models.json";
 }

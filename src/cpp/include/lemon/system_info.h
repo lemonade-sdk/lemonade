@@ -167,7 +167,6 @@ public:
     
 private:
     std::string cache_file_path_;
-    std::string get_cache_dir() const;
     std::string get_lemonade_version() const;
     bool is_ci_mode() const;
     

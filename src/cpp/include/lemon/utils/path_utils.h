@@ -26,6 +26,21 @@ std::string get_resource_path(const std::string& relative_path);
  */
 std::string find_flm_executable();
 
+/**
+ * Get the cache directory
+ */
+std::string get_cache_dir();
+
+/**
+ * Get the directory where backend executables will be downloaded
+ */
+std::string get_downloaded_bin_dir();
+
+#ifndef _WIN32
+/** on Linux we changed the download location, the old location is used for cleanup only */
+std::string get_deprecated_downloaded_bin_dir();
+#endif
+
 } // namespace utils
 } // namespace lemon
 

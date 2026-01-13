@@ -216,45 +216,11 @@ static std::string identify_rocm_arch() {
     return "gfx110X";  // Default architecture
 }
 
-// Helper to get the directory where llama binaries should be installed
-// Policy: Next to the executable for both dev builds and installed binaries
-static std::string get_llama_base_dir() {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-#else
-    // Get the actual executable location
-    char exe_path[1024];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-        
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-        
-        // Otherwise (dev builds), use the exe directory
-        return exe_dir.string();
-    }
-    return ".";
-#endif
-}
-
 // Helper to get the install directory for llama-server binaries
 // Policy: Put in llama/{backend}/ next to the executable
 static std::string get_install_directory(const std::string& backend) {
-    return (fs::path(get_llama_base_dir()) / "llama" / backend).string();
+    return (fs::path(get_downloaded_bin_dir()) / "llama" / backend).string();
 }
-
 
 // Helper to extract ZIP files (Windows/Linux built-in tools)
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
