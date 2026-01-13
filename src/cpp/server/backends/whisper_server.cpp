@@ -50,39 +50,9 @@ static std::string get_whisper_version() {
     }
 }
 
-// Helper to get the base directory for whisper binaries
-static std::string get_whisper_base_dir() {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-#else
-    char exe_path[1024];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-
-        return exe_dir.string();
-    }
-    return ".";
-#endif
-}
-
 // Helper to get the install directory for whisper-server
 static std::string get_whisper_install_dir() {
-    return (fs::path(get_whisper_base_dir()) / "whisper").string();
+    return (fs::path(get_downloaded_bin_dir()) / "whisper").string();
 }
 
 // Helper to extract ZIP files
