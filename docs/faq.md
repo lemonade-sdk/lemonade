@@ -146,7 +146,7 @@
 
    We suggest setting dedicated GPU RAM to `64/64 (auto)`.
 
-   > Note: On Windows, the GPU can access both unified RAM and dedicated GPU RAM, but the CPU is blocked from accessing dedicated GPU RAM. For this reason, allocating too much dedicated GPU RAM can interere with model loading, which requires the CPU to access a substaintial amount unified RAM.
+   > Note: On Windows, the GPU can access both unified RAM and dedicated GPU RAM, but the CPU is blocked from accessing dedicated GPU RAM. For this reason, allocating too much dedicated GPU RAM can interfere with model loading, which requires the CPU to access a substantial amount unified RAM.
 
 
 ## Hybrid and NPU Questions
