@@ -54,8 +54,6 @@ class ServerBench(Bench):
         we use a calibration approach: generate an initial prompt, measure
         actual tokens via the server, then adjust to match the target.
         """
-        from lemonade.tools.server_load import ServerAdapter
-
         model: ServerAdapter = state.model
 
         # Start with the base class estimation (typically 1 token per "word ")
@@ -79,7 +77,7 @@ class ServerBench(Bench):
             adjusted_words = max(1, token_length - 1 - delta)
             return "word " * adjusted_words
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             # If calibration fails, use base estimation
             return test_prompt
 

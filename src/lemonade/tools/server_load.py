@@ -70,8 +70,6 @@ class ServerTokenizerAdapter(PassthroughTokenizer):
     Since the server handles tokenization internally, this just passes through text.
     """
 
-    pass
-
 
 class ServerAdapter(ModelAdapter):
     """
@@ -99,7 +97,7 @@ class ServerAdapter(ModelAdapter):
         top_k: int = None,
         repeat_penalty: float = None,
         save_max_memory_used: bool = False,
-        **kwargs,
+        **kwargs,  # pylint: disable=unused-argument
     ):
         """
         Generate text using the Lemonade Server /chat/completions endpoint.
@@ -168,7 +166,7 @@ class ServerAdapter(ModelAdapter):
                 "prompt_tokens"
             )
             self.response_tokens = stats_data.get("output_tokens")
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             printing.log_warning(f"Failed to get stats from server: {e}")
             self.time_to_first_token = None
             self.tokens_per_second = None
@@ -441,7 +439,7 @@ class Load(FirstTool):
                 # Fallback: return recipe or "Lemonade Server"
                 return recipe if recipe else "Lemonade Server"
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             printing.log_warning(f"Could not determine backend: {e}")
             return "Lemonade Server"
 
