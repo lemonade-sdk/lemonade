@@ -134,6 +134,65 @@ std::string find_flm_executable() {
 #endif
 }
 
+std::string get_cache_dir() {
+    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
+    if (cache_dir_env) {
+        return std::string(cache_dir_env);
+    }
+    
+    #ifdef _WIN32
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile) {
+        return std::string(userprofile) + "\\.cache\\lemonade";
+    }
+    #else
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/lemonade";
+    }
+    #endif
+    
+    return ".cache/lemonade";
+}
+
+std::string get_downloaded_bin_dir() {
+#ifdef _WIN32
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+    return exe_dir.string();
+#else
+    return get_cache_dir() + "/bin";
+#endif
+}
+
+#ifndef _WIN32
+std::string get_deprecated_downloaded_bin_dir() {
+    // Get the actual executable location
+    char exe_path[1024];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len != -1) {
+        exe_path[len] = '\0';
+        fs::path exe_dir = fs::path(exe_path).parent_path();
+        
+        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
+        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
+            if (fs::exists("/usr/local/share/lemonade-server")) {
+                return "/usr/local/share/lemonade-server";
+            }
+            if (fs::exists("/usr/share/lemonade-server")) {
+                return "/usr/share/lemonade-server";
+            }
+        }
+        
+        // Otherwise (dev builds), use the exe directory
+        return exe_dir.string();
+    }
+    return ".";
+}
+#endif
+
+
 } // namespace utils
 } // namespace lemon
 
