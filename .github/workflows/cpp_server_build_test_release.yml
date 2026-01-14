@@ -1150,6 +1150,29 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Install Visual C++ Redistributable (for sd-cpp AVX2 build)
+        shell: PowerShell
+        run: |
+          # Check if VC++ Redistributable is already installed
+          $vcInstalled = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
+
+          if ($vcInstalled) {
+              Write-Host "Visual C++ Redistributable already installed (version $($vcInstalled.Version))" -ForegroundColor Green
+          } else {
+              Write-Host "Installing Visual C++ Redistributable 2015-2022..." -ForegroundColor Cyan
+
+              # Download VC++ Redistributable
+              $vcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+              $vcRedistPath = "$env:TEMP\vc_redist.x64.exe"
+
+              Invoke-WebRequest -Uri $vcRedistUrl -OutFile $vcRedistPath -UseBasicParsing
+
+              # Install silently
+              Start-Process -FilePath $vcRedistPath -ArgumentList "/install", "/quiet", "/norestart" -Wait -NoNewWindow
+
+              Write-Host "Visual C++ Redistributable installed successfully!" -ForegroundColor Green
+          }
+
       - name: Pre-download SD-Turbo model
         shell: PowerShell
         env:
@@ -1254,12 +1277,22 @@ jobs:
           # Create extraction directory
           mkdir -p lemonade-extracted
 
-          # Extract the .deb (it's an ar archive containing data.tar.xz)
+          # Extract the .deb (it's an ar archive containing data.tar.*)
           cd lemonade-extracted
           ar x ../$DEB_FILE
 
-          # Extract the data tarball
-          tar xf data.tar.xz
+          # Extract the data tarball (handle different compression formats)
+          if [ -f data.tar.xz ]; then
+            tar xf data.tar.xz
+          elif [ -f data.tar.zst ]; then
+            tar --zstd -xf data.tar.zst
+          elif [ -f data.tar.gz ]; then
+            tar xzf data.tar.gz
+          else
+            echo "ERROR: No data tarball found. Contents:"
+            ls -la
+            exit 1
+          fi
 
           echo "Extraction complete. Contents:"
           find . -type f -name "lemonade-*" | head -20
