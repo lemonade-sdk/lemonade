@@ -1274,28 +1274,26 @@ jobs:
           DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
           echo "Extracting: $DEB_FILE"
 
-          # Create extraction directory
+          # Extract the .deb package
           mkdir -p lemonade-extracted
+          dpkg-deb -x "$DEB_FILE" ./lemonade-extracted
 
-          # Extract the .deb (it's an ar archive containing data.tar.*)
-          cd lemonade-extracted
-          ar x ../$DEB_FILE
-
-          # Extract the data tarball (handle different compression formats)
-          if [ -f data.tar.xz ]; then
-            tar xf data.tar.xz
-          elif [ -f data.tar.zst ]; then
-            tar --zstd -xf data.tar.zst
-          elif [ -f data.tar.gz ]; then
-            tar xzf data.tar.gz
-          else
-            echo "ERROR: No data tarball found. Contents:"
-            ls -la
-            exit 1
-          fi
+          # Copy resources to user's local share (path_utils.cpp checks here!)
+          mkdir -p ~/.local/share/lemonade-server
+          cp -r ./lemonade-extracted/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
 
           echo "Extraction complete. Contents:"
-          find . -type f -name "lemonade-*" | head -20
+          find ./lemonade-extracted -type f -name "lemonade-*" | head -20
+
+      - name: Verify binaries work
+        run: |
+          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-server
+          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-router
+
+          echo "Verifying binaries..."
+          ./lemonade-extracted/usr/local/bin/lemonade-router --version
+          ./lemonade-extracted/usr/local/bin/lemonade-server --version
+          echo "Binaries verified!"
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1309,8 +1307,6 @@ jobs:
           set -e
 
           SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
-          chmod +x $SERVER_BIN
-          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-router
 
           echo "Pre-downloading SD-Turbo model..."
           echo "HF_HOME: $HF_HOME"
