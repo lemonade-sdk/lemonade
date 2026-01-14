@@ -70,8 +70,6 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
-    void handle_add_local_from_directory(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(

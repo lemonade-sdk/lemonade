@@ -1060,6 +1060,9 @@ int TrayApp::execute_pull_command() {
         }
     }
     
+    // Track if this is a local import (affects how we call the server)
+    bool local_import = false;
+    
     // Check if checkpoint is a local filesystem path
     if (!checkpoint.empty() && is_local_path(checkpoint)) {
         // Validate path exists
@@ -1068,12 +1071,69 @@ int TrayApp::execute_pull_command() {
             return 1;
         }
         
-        // Use the add-local endpoint for local path imports
-        return execute_add_local_from_path(model_name, checkpoint, recipe, 
-                                           reasoning, vision, embedding, reranking, mmproj);
+        // Validate model name has user. prefix for local imports
+        if (model_name.substr(0, 5) != "user.") {
+            std::cerr << "Error: When importing from a local path, model name must start with 'user.'" << std::endl;
+            std::cerr << "Example: lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp" << std::endl;
+            return 1;
+        }
+        
+        // Recipe is required for local imports
+        if (recipe.empty()) {
+            std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
+            std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Importing model from local path: " << checkpoint << std::endl;
+        
+        // Get HF cache directory (same logic as ModelManager)
+        std::string hf_cache;
+        if (const char* env = std::getenv("HF_HUB_CACHE")) {
+            hf_cache = env;
+        } else if (const char* env = std::getenv("HF_HOME")) {
+            hf_cache = std::string(env) + "/hub";
+        } else {
+#ifdef _WIN32
+            if (const char* userprofile = std::getenv("USERPROFILE")) {
+                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+            }
+#else
+            if (const char* home = std::getenv("HOME")) {
+                hf_cache = std::string(home) + "/.cache/huggingface/hub";
+            }
+#endif
+        }
+        
+        // Copy files to HF cache
+        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+        
+        std::cout << "Copying files to: " << dest_path << std::endl;
+        fs::create_directories(dest_path);
+        
+        fs::path src_path(checkpoint);
+        if (fs::is_directory(src_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(src_path)) {
+                fs::path relative = fs::relative(entry.path(), src_path);
+                fs::path dest_file = fs::path(dest_path) / relative;
+                if (entry.is_directory()) {
+                    fs::create_directories(dest_file);
+                } else {
+                    fs::create_directories(dest_file.parent_path());
+                    fs::copy_file(entry.path(), dest_file, fs::copy_options::overwrite_existing);
+                }
+            }
+        } else {
+            fs::copy_file(src_path, fs::path(dest_path) / src_path.filename(), 
+                         fs::copy_options::overwrite_existing);
+        }
+        
+        local_import = true;
     }
     
-    std::cout << "Pulling model: " << model_name << std::endl;
+    std::cout << (local_import ? "Registering model: " : "Pulling model: ") << model_name << std::endl;
     
     // Check if server is running
     auto [pid, running_port] = get_server_info();
@@ -1087,12 +1147,17 @@ int TrayApp::execute_pull_command() {
         }
     }
     
-    // Pull model via API with SSE streaming for progress
+    // Pull model via API (SSE streaming for downloads, simple POST for local imports)
     try {
         // Build request body with all optional parameters
-        nlohmann::json request_body = {{"model", model_name}, {"stream", true}};
+        // Local imports don't need streaming (no download progress)
+        nlohmann::json request_body = {{"model", model_name}, {"stream", !local_import}};
         
-        if (!checkpoint.empty()) {
+        if (local_import) {
+            request_body["local_import"] = true;
+        }
+        if (!checkpoint.empty() && !local_import) {
+            // Only send checkpoint for remote downloads (local files already copied)
             request_body["checkpoint"] = checkpoint;
         }
         if (!recipe.empty()) {
@@ -1114,7 +1179,6 @@ int TrayApp::execute_pull_command() {
             request_body["mmproj"] = mmproj;
         }
         
-        // Use SSE streaming to receive progress events
         // Use the same host the server is bound to (0.0.0.0 is special - use localhost instead)
         std::string connect_host = (config_.host == "0.0.0.0") ? "localhost" : config_.host;
         
@@ -1122,6 +1186,30 @@ int TrayApp::execute_pull_command() {
         cli.set_connection_timeout(30, 0);
         cli.set_read_timeout(86400, 0);  // 24 hour read timeout for large downloads
         
+        // For local imports, use simple POST (no SSE streaming needed)
+        if (local_import) {
+            auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
+            
+            if (!res) {
+                throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+            }
+            
+            if (res->status != 200) {
+                try {
+                    auto error_json = nlohmann::json::parse(res->body);
+                    throw std::runtime_error(error_json.value("error", res->body));
+                } catch (const nlohmann::json::exception&) {
+                    throw std::runtime_error("Server returned status " + std::to_string(res->status));
+                }
+            }
+            
+            std::cout << "Model imported successfully: " << model_name << std::endl;
+            
+            if (!server_was_running) stop_server();
+            return 0;
+        }
+        
+        // Use SSE streaming to receive progress events (for remote downloads)
         std::string last_file;
         int last_percent = -1;
         bool success = false;
@@ -1234,108 +1322,6 @@ int TrayApp::execute_pull_command() {
         
     } catch (const std::exception& e) {
         std::cerr << "Error pulling model: " << e.what() << std::endl;
-        if (!server_was_running) stop_server();
-        return 1;
-    }
-    
-    // Stop ephemeral server
-    if (!server_was_running) {
-        DEBUG_LOG(this, "Stopping ephemeral server...");
-        stop_server();
-    }
-    
-    return 0;
-}
-
-// Command: add local model from directory path
-int TrayApp::execute_add_local_from_path(const std::string& model_name,
-                                          const std::string& local_path,
-                                          const std::string& recipe,
-                                          bool reasoning,
-                                          bool vision,
-                                          bool embedding,
-                                          bool reranking,
-                                          const std::string& mmproj) {
-    // Validate model name has user. prefix
-    if (model_name.substr(0, 5) != "user.") {
-        std::cerr << "Error: When importing from a local path, model name must start with 'user.'" << std::endl;
-        std::cerr << "Example: lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp" << std::endl;
-        return 1;
-    }
-    
-    // Recipe is required for local imports
-    if (recipe.empty()) {
-        std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
-        std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
-        return 1;
-    }
-    
-    // Check if server is running
-    auto [pid, running_port] = get_server_info();
-    bool server_was_running = (running_port != 0);
-    int port = server_was_running ? running_port : config_.port;
-    
-    // Start ephemeral server if needed
-    if (!server_was_running) {
-        if (!start_ephemeral_server(port)) {
-            return 1;
-        }
-    }
-    
-    try {
-        // Build JSON request body for the add-local endpoint
-        nlohmann::json request_body = {
-            {"model_name", model_name},
-            {"local_directory", local_path},
-            {"recipe", recipe}
-        };
-        
-        if (reasoning) {
-            request_body["reasoning"] = true;
-        }
-        if (vision) {
-            request_body["vision"] = true;
-        }
-        if (embedding) {
-            request_body["embedding"] = true;
-        }
-        if (reranking) {
-            request_body["reranking"] = true;
-        }
-        if (!mmproj.empty()) {
-            request_body["mmproj"] = mmproj;
-        }
-        
-        std::cout << "Importing model files from: " << local_path << std::endl;
-        
-        // Use the same host the server is bound to
-        std::string connect_host = (config_.host == "0.0.0.0") ? "localhost" : config_.host;
-        
-        httplib::Client cli(connect_host, port);
-        cli.set_connection_timeout(30, 0);
-        cli.set_read_timeout(3600, 0);  // 1 hour timeout for large file copies
-        
-        auto res = cli.Post("/api/v1/add-local-model", request_body.dump(), "application/json");
-        
-        if (!res) {
-            throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
-        }
-        
-        if (res->status != 200) {
-            // Try to parse error message from response
-            try {
-                auto error_json = nlohmann::json::parse(res->body);
-                std::string error_msg = error_json.value("error", res->body);
-                throw std::runtime_error(error_msg);
-            } catch (const nlohmann::json::exception&) {
-                throw std::runtime_error("Server returned status " + std::to_string(res->status) + ": " + res->body);
-            }
-        }
-        
-        std::cout << "Model imported successfully: " << model_name << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error importing model: " << e.what() << std::endl;
         if (!server_was_running) stop_server();
         return 1;
     }

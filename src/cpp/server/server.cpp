@@ -216,9 +216,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_params(req, res);
     });
     
-    register_post("add-local-model", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_add_local_model(req, res);
-    });
     
     // System endpoints
     register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1522,14 +1519,38 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
                 res.status = 400;
-                nlohmann::json error = {{"error", 
+                nlohmann::json error = {{"error",
                     "When providing 'checkpoint' or 'recipe', the model name must include the "
                     "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
                 res.set_content(error.dump(), "application/json");
                 return;
             }
         }
-        
+
+        // Local import mode: CLI has already copied files to HF cache, just resolve and register
+        bool local_import = request_json.value("local_import", false);
+        if (local_import) {
+            std::string hf_cache = model_manager_->get_hf_cache_dir();
+            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+            std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+            std::string dest_path = hf_cache + "/models--" + model_name_clean;
+            
+            std::cout << "[Server] Local import mode - resolving files in: " << dest_path << std::endl;
+            
+            resolve_and_register_local_model(
+                dest_path, model_name, recipe, "", mmproj,
+                reasoning, vision, embedding, reranking, hf_cache
+            );
+            
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"message", "Model imported and registered successfully"}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         if (stream) {
             // SSE streaming mode - send progress events
             res.set_header("Content-Type", "text/event-stream");
@@ -1854,7 +1875,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 }
 
 // Helper function to resolve model files and register a local model
-// Called by both handle_add_local_model (multipart upload) and handle_add_local_from_directory (local path)
+// Called by handle_pull when local_import=true
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
 //   - model_name: Model name with "user." prefix
@@ -1993,378 +2014,6 @@ void Server::resolve_and_register_local_model(
     );
     
     std::cout << "[Server] Model registered successfully" << std::endl;
-}
-
-void Server::handle_add_local_model(const httplib::Request& req, httplib::Response& res) {
-    try {
-        std::cout << "[Server] Add local model request received" << std::endl;
-        
-        // Check if this is a JSON request (from CLI with local_directory)
-        // vs multipart form (from web UI with file uploads)
-        if (req.has_header("Content-Type")) {
-            std::string content_type = req.get_header_value("Content-Type");
-            if (content_type.find("application/json") != std::string::npos) {
-                // Handle JSON request with local_directory path
-                handle_add_local_from_directory(req, res);
-                return;
-            }
-        }
-        
-        // Validate that this is a multipart form request
-        if (!req.is_multipart_form_data()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Request must be multipart/form-data or application/json"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Extract form fields
-        std::string model_name;
-        std::string checkpoint;
-        std::string recipe;
-        std::string mmproj;
-        bool reasoning = false;
-        bool vision = false;
-        bool embedding = false;
-        bool reranking = false;
-        
-        // Parse form fields
-        if (req.form.has_field("model_name")) {
-            model_name = req.form.get_field("model_name");
-        }
-        if (req.form.has_field("checkpoint")) {
-            checkpoint = req.form.get_field("checkpoint");
-        }
-        if (req.form.has_field("recipe")) {
-            recipe = req.form.get_field("recipe");
-        }
-        if (req.form.has_field("mmproj")) {
-            mmproj = req.form.get_field("mmproj");
-        }
-        if (req.form.has_field("reasoning")) {
-            std::string reasoning_str = req.form.get_field("reasoning");
-            reasoning = (reasoning_str == "true" || reasoning_str == "True" || reasoning_str == "1");
-        }
-        if (req.form.has_field("vision")) {
-            std::string vision_str = req.form.get_field("vision");
-            vision = (vision_str == "true" || vision_str == "True" || vision_str == "1");
-        }
-        if (req.form.has_field("embedding")) {
-            std::string embedding_str = req.form.get_field("embedding");
-            embedding = (embedding_str == "true" || embedding_str == "True" || embedding_str == "1");
-        }
-        if (req.form.has_field("reranking")) {
-            std::string reranking_str = req.form.get_field("reranking");
-            reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
-        }
-        
-        std::cout << "[Server] Model name: " << model_name << std::endl;
-        std::cout << "[Server] Recipe: " << recipe << std::endl;
-        std::cout << "[Server] Checkpoint: " << checkpoint << std::endl;
-        
-        // Validate required fields
-        if (model_name.empty() || recipe.empty()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "model_name and recipe are required"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate model name starts with "user."
-        if (model_name.substr(0, 5) != "user.") {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Model name must start with 'user.'"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
-        if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // Check if model files are provided (or checkpoint path for whisper)
-        const auto& files = req.form.files;
-        bool is_whisper = (recipe == "whispercpp");
-        if (files.empty() && !is_whisper) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "No model files provided for upload"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // For whisper models, checkpoint can be a local path
-        if (is_whisper && !checkpoint.empty() && files.empty()) {
-            // Use checkpoint as local path - validate it exists
-            if (!std::filesystem::exists(checkpoint)) {
-                res.status = 400;
-                nlohmann::json error = {{"error", "Checkpoint file does not exist: " + checkpoint}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        }
-        
-        // For llamacpp, ensure at least one .gguf file is present
-        if (recipe == "llamacpp") {
-            bool has_gguf = false;
-            for (const auto& file_pair : files) {
-                std::string filename = file_pair.second.filename;
-                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-                if (filename.find(".gguf") != std::string::npos) {
-                    has_gguf = true;
-                    break;
-                }
-            }
-            if (!has_gguf) {
-                res.status = 400;
-                nlohmann::json error = {{"error", "At least one .gguf file is required for llamacpp"}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        }
-        
-        // Check if model name already exists
-        if (model_manager_->model_exists(model_name)) {
-            res.status = 409;
-            nlohmann::json error = {{"error", "Model name '" + model_name + "' already exists. Please use a different name."}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Get HF cache directory
-        std::string hf_cache = model_manager_->get_hf_cache_dir();
-        
-        // Create model directory in HF cache
-        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-        std::string repo_cache_name = model_name_clean;
-        // Replace / with --
-        std::replace(repo_cache_name.begin(), repo_cache_name.end(), '/', '-');
-        
-        std::string snapshot_path = hf_cache + "/models--" + repo_cache_name;
-        std::cout << "[Server] Creating directory: " << snapshot_path << std::endl;
-        
-        // Create directories
-        std::filesystem::create_directories(snapshot_path);
-        
-        // Extract variant from checkpoint field if provided
-        std::string variant;
-        if (!checkpoint.empty() && checkpoint.find(':') != std::string::npos) {
-            size_t colon_pos = checkpoint.find(':');
-            variant = checkpoint.substr(colon_pos + 1);
-        }
-        
-        // Save uploaded files
-        std::cout << "[Server] Saving " << files.size() << " uploaded files..." << std::endl;
-        for (const auto& file_pair : files) {
-            // Skip form fields (model_name, recipe, etc.)
-            if (file_pair.first != "model_files") {
-                continue;
-            }
-            
-            const auto& file = file_pair.second;
-            std::string filename = file.filename;
-            std::cout << "[Server]   Processing file: " << filename << std::endl;
-            
-            // Extract relative path from filename (browser sends folder/file.ext)
-            std::string file_path;
-            size_t first_slash = filename.find('/');
-            if (first_slash != std::string::npos) {
-                // Has folder structure - use everything after first slash
-                file_path = snapshot_path + "/" + filename.substr(first_slash + 1);
-            } else {
-                // No folder structure - save directly
-                file_path = snapshot_path + "/" + filename;
-            }
-            
-            // Create parent directories
-            std::filesystem::path parent_dir = std::filesystem::path(file_path).parent_path();
-            std::filesystem::create_directories(parent_dir);
-            
-            // Write file
-            std::ofstream out(file_path, std::ios::binary);
-            if (!out) {
-                throw std::runtime_error("Failed to create file: " + file_path);
-            }
-            out.write(file.content.c_str(), file.content.size());
-            out.close();
-            
-            std::cout << "[Server]     Saved to: " << file_path << std::endl;
-        }
-        
-        // Special case: whisper models with local checkpoint path (no files uploaded)
-        // Use the path directly without copying
-        if (is_whisper && files.empty() && !checkpoint.empty()) {
-            std::cout << "[Server] Using local whisper model path: " << checkpoint << std::endl;
-            model_manager_->register_user_model(
-                model_name,
-                checkpoint,  // Store absolute path
-                recipe,
-                reasoning,
-                vision,
-                embedding,
-                reranking,
-                mmproj,
-                "local_path"  // Special source so it's resolved as-is
-            );
-            std::cout << "[Server] Model registered successfully" << std::endl;
-        } else {
-            // Use shared helper to resolve files and register model
-            resolve_and_register_local_model(
-                snapshot_path, model_name, recipe, variant, mmproj,
-                reasoning, vision, embedding, reranking, hf_cache
-            );
-        }
-        
-        nlohmann::json response = {
-            {"status", "success"},
-            {"message", "Model " + model_name + " uploaded and registered successfully"}
-        };
-        res.set_content(response.dump(), "application/json");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[Server] ERROR in handle_add_local_model: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", "Failed to upload model: " + std::string(e.what())}};
-        res.set_content(error.dump(), "application/json");
-    }
-}
-
-void Server::handle_add_local_from_directory(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto json = nlohmann::json::parse(req.body);
-        
-        std::string model_name = json.value("model_name", "");
-        std::string local_directory = json.value("local_directory", "");
-        std::string recipe = json.value("recipe", "llamacpp");
-        bool reasoning = json.value("reasoning", false);
-        bool vision = json.value("vision", false);
-        bool embedding = json.value("embedding", false);
-        bool reranking = json.value("reranking", false);
-        std::string mmproj = json.value("mmproj", "");
-        
-        std::cout << "[Server] Add local model from directory: " << local_directory << std::endl;
-        std::cout << "[Server] Model name: " << model_name << std::endl;
-        std::cout << "[Server] Recipe: " << recipe << std::endl;
-        
-        // Validate required fields
-        if (model_name.empty()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "model_name is required"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        if (local_directory.empty()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "local_directory is required"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate model name starts with "user."
-        if (model_name.substr(0, 5) != "user.") {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Model name must start with 'user.'"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate local directory exists
-        if (!std::filesystem::exists(local_directory)) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Local directory does not exist: " + local_directory}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
-        if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Check if model name already exists
-        if (model_manager_->model_exists(model_name)) {
-            res.status = 409;
-            nlohmann::json error = {{"error", "Model name '" + model_name + "' already exists. Please use a different name."}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Get HF cache directory
-        std::string hf_cache = model_manager_->get_hf_cache_dir();
-        
-        // Create model directory in HF cache
-        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-        std::string repo_cache_name = model_name_clean;
-        // Replace / with --
-        std::replace(repo_cache_name.begin(), repo_cache_name.end(), '/', '-');
-        
-        std::string dest_path = hf_cache + "/models--" + repo_cache_name;
-        std::cout << "[Server] Copying files to: " << dest_path << std::endl;
-        
-        // Create destination directory
-        std::filesystem::create_directories(dest_path);
-        
-        // Copy files from local_directory to dest_path
-        std::filesystem::path src_path(local_directory);
-        
-        if (std::filesystem::is_directory(src_path)) {
-            // Copy directory contents
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(src_path)) {
-                std::filesystem::path relative = std::filesystem::relative(entry.path(), src_path);
-                std::filesystem::path dest_file = std::filesystem::path(dest_path) / relative;
-                
-                if (entry.is_directory()) {
-                    std::filesystem::create_directories(dest_file);
-                } else {
-                    std::filesystem::create_directories(dest_file.parent_path());
-                    std::cout << "[Server]   Copying: " << relative.string() << std::endl;
-                    std::filesystem::copy_file(entry.path(), dest_file, 
-                                               std::filesystem::copy_options::overwrite_existing);
-                }
-            }
-        } else if (std::filesystem::is_regular_file(src_path)) {
-            // Copy single file
-            std::string filename = src_path.filename().string();
-            std::filesystem::path dest_file = std::filesystem::path(dest_path) / filename;
-            std::cout << "[Server]   Copying: " << filename << std::endl;
-            std::filesystem::copy_file(src_path, dest_file, 
-                                       std::filesystem::copy_options::overwrite_existing);
-        }
-        
-        // Use shared helper to resolve files and register model
-        resolve_and_register_local_model(
-            dest_path, model_name, recipe, "", mmproj,
-            reasoning, vision, embedding, reranking, hf_cache
-        );
-        
-        std::cout << "[Server] Model imported from local directory successfully" << std::endl;
-        
-        nlohmann::json response = {
-            {"status", "success"},
-            {"message", "Model " + model_name + " imported from local directory and registered successfully"}
-        };
-        res.set_content(response.dump(), "application/json");
-        
-    } catch (const nlohmann::json::exception& e) {
-        std::cerr << "[Server] ERROR parsing JSON in handle_add_local_from_directory: " << e.what() << std::endl;
-        res.status = 400;
-        nlohmann::json error = {{"error", "Invalid JSON: " + std::string(e.what())}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::exception& e) {
-        std::cerr << "[Server] ERROR in handle_add_local_from_directory: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", "Failed to import model: " + std::string(e.what())}};
-        res.set_content(error.dump(), "application/json");
-    }
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {

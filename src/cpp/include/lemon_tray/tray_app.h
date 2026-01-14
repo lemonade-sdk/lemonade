@@ -87,14 +87,6 @@ private:
     // Command implementations
     int execute_list_command();
     int execute_pull_command();
-    int execute_add_local_from_path(const std::string& model_name,
-                                     const std::string& local_path,
-                                     const std::string& recipe,
-                                     bool reasoning,
-                                     bool vision,
-                                     bool embedding,
-                                     bool reranking,
-                                     const std::string& mmproj);
     int execute_delete_command();
     int execute_run_command();
     int execute_status_command();
