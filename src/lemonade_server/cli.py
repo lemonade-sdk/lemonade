@@ -62,6 +62,7 @@ def serve(
     use_thread: bool = False,
     llamacpp_backend: str = None,
     ctx_size: int = None,
+    whisper_timeout: int = None,
 ):
     """
     Execute the serve command
@@ -78,6 +79,10 @@ def serve(
         llamacpp_backend if llamacpp_backend is not None else DEFAULT_LLAMACPP_BACKEND
     )
     ctx_size = ctx_size if ctx_size is not None else DEFAULT_CTX_SIZE
+
+    # Set environment variable for whisper timeout if provided
+    if whisper_timeout is not None and whisper_timeout > 0:
+        os.environ["LEMONADE_WHISPER_TIMEOUT"] = str(whisper_timeout)
 
     # Start the server
     server = Server(
@@ -300,6 +305,7 @@ def run(
     tray: bool = False,
     llamacpp_backend: str = None,
     ctx_size: int = None,
+    whisper_timeout: int = None,
 ):
     """
     Start the server if not running and open the chat interface with the specified model
@@ -324,6 +330,7 @@ def run(
             use_thread=True,
             llamacpp_backend=llamacpp_backend,
             ctx_size=ctx_size,
+            whisper_timeout=whisper_timeout,
         )
     else:
         # macOS: Check for port conflicts when server is already running
@@ -618,6 +625,15 @@ def _add_server_arguments(parser):
         ),
         default=DEFAULT_CTX_SIZE,
     )
+    parser.add_argument(
+        "--whisper-timeout",
+        type=int,
+        help=(
+            "Read timeout in seconds for Whisper transcription requests (default: 300 seconds / 5 minutes). "
+            "Increase this for very long audio files."
+        ),
+        default=None,
+    )
 
     if os.name == "nt" or platform.system() == "Darwin":
         parser.add_argument(
@@ -766,6 +782,7 @@ def main():
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
+            whisper_timeout=args.whisper_timeout,
         )
     elif args.command == "status":
         status()
@@ -793,6 +810,7 @@ def main():
             tray=not args.no_tray,
             llamacpp_backend=args.llamacpp,
             ctx_size=args.ctx_size,
+            whisper_timeout=args.whisper_timeout,
         )
     elif args.command == "help" or not args.command:
         parser.print_help()

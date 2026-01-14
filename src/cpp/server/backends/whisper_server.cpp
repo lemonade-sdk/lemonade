@@ -128,6 +128,117 @@ std::string WhisperServer::find_executable_in_install_dir(const std::string& ins
     return "";
 }
 
+// Helper to parse size strings with optional suffixes (e.g., "50M", "100MB", "1G")
+static size_t parse_size_string(const std::string& size_str) {
+    if (size_str.empty()) {
+        throw std::invalid_argument("Size string cannot be empty");
+    }
+
+    // Find where the numeric part ends
+    size_t pos = 0;
+    while (pos < size_str.length() && (std::isdigit(size_str[pos]) || size_str[pos] == '.')) {
+        pos++;
+    }
+
+    if (pos == 0) {
+        throw std::invalid_argument("Size string must start with a number");
+    }
+
+    // Parse the numeric part
+    double value;
+    try {
+        value = std::stod(size_str.substr(0, pos));
+    } catch (const std::exception& e) {
+        throw std::invalid_argument("Invalid numeric value in size string");
+    }
+
+    if (value < 0) {
+        throw std::invalid_argument("Size cannot be negative");
+    }
+
+    // Get the suffix (if any) and convert to uppercase
+    std::string suffix = size_str.substr(pos);
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::toupper);
+
+    // Remove 'B' suffix if present (e.g., "MB" -> "M", "KB" -> "K")
+    if (!suffix.empty() && suffix.back() == 'B') {
+        suffix.pop_back();
+    }
+
+    // Apply multiplier based on suffix
+    size_t multiplier = 1;
+    if (suffix.empty()) {
+        // No suffix means bytes
+        multiplier = 1;
+    } else if (suffix == "K" || suffix == "KI") {
+        multiplier = 1024;
+    } else if (suffix == "M" || suffix == "MI") {
+        multiplier = 1024 * 1024;
+    } else if (suffix == "G" || suffix == "GI") {
+        multiplier = 1024 * 1024 * 1024;
+    } else if (suffix == "T" || suffix == "TI") {
+        multiplier = static_cast<size_t>(1024) * 1024 * 1024 * 1024;
+    } else {
+        throw std::invalid_argument("Unknown size suffix: " + suffix);
+    }
+
+    return static_cast<size_t>(value * multiplier);
+}
+
+// Helper to get the maximum audio file size from environment or use default
+static size_t get_max_audio_file_size() {
+    const char* size_env = std::getenv("LEMONADE_MAX_AUDIO_FILE_SIZE");
+
+    if (!size_env) {
+        // Return default value (25MB)
+        return audio::Limits::MAX_FILE_SIZE_BYTES;
+    }
+
+    try {
+        size_t size = parse_size_string(std::string(size_env));
+        std::cout << "[WhisperServer] Using custom max audio file size: "
+                  << size << " bytes (from LEMONADE_MAX_AUDIO_FILE_SIZE="
+                  << size_env << ")" << std::endl;
+        return size;
+    } catch (const std::exception& e) {
+        std::cerr << "[WhisperServer] Warning: Invalid LEMONADE_MAX_AUDIO_FILE_SIZE value '"
+                  << size_env << "': " << e.what() << std::endl;
+        std::cerr << "[WhisperServer] Using default: "
+                  << audio::Limits::MAX_FILE_SIZE_BYTES << " bytes (25MB)" << std::endl;
+        return audio::Limits::MAX_FILE_SIZE_BYTES;
+    }
+}
+
+// Helper to get the whisper read timeout from environment or use default
+static long get_whisper_read_timeout() {
+    const long DEFAULT_TIMEOUT = 300;  // 5 minutes default
+    const char* timeout_env = std::getenv("LEMONADE_WHISPER_TIMEOUT");
+
+    if (!timeout_env) {
+        // Return default value (5 minutes)
+        return DEFAULT_TIMEOUT;
+    }
+
+    try {
+        long timeout = std::stol(std::string(timeout_env));
+        if (timeout <= 0) {
+            std::cerr << "[WhisperServer] Warning: LEMONADE_WHISPER_TIMEOUT must be positive, got '"
+                      << timeout_env << "'" << std::endl;
+            std::cerr << "[WhisperServer] Using default: " << DEFAULT_TIMEOUT << " seconds" << std::endl;
+            return DEFAULT_TIMEOUT;
+        }
+        std::cout << "[WhisperServer] Using custom read timeout: "
+                  << timeout << " seconds (from LEMONADE_WHISPER_TIMEOUT="
+                  << timeout_env << ")" << std::endl;
+        return timeout;
+    } catch (const std::exception& e) {
+        std::cerr << "[WhisperServer] Warning: Invalid LEMONADE_WHISPER_TIMEOUT value '"
+                  << timeout_env << "': " << e.what() << std::endl;
+        std::cerr << "[WhisperServer] Using default: " << DEFAULT_TIMEOUT << " seconds" << std::endl;
+        return DEFAULT_TIMEOUT;
+    }
+}
+
 std::string WhisperServer::find_external_whisper_server() {
     const char* whisper_bin_env = std::getenv("LEMONADE_WHISPERCPP_BIN");
     if (!whisper_bin_env) {
@@ -496,8 +607,26 @@ void WhisperServer::validate_audio_file(const std::string& path) {
     }
 
     std::uintmax_t file_size = fs::file_size(path);
-    if (file_size > audio::Limits::MAX_FILE_SIZE_BYTES) {
-        throw std::runtime_error("Audio file exceeds maximum size of 25MB");
+    size_t max_file_size = get_max_audio_file_size();
+
+    if (file_size > max_file_size) {
+        // Format the size limits in a human-readable way
+        auto format_size = [](size_t bytes) -> std::string {
+            if (bytes >= 1024 * 1024 * 1024) {
+                return std::to_string(bytes / (1024 * 1024 * 1024)) + "GB";
+            } else if (bytes >= 1024 * 1024) {
+                return std::to_string(bytes / (1024 * 1024)) + "MB";
+            } else if (bytes >= 1024) {
+                return std::to_string(bytes / 1024) + "KB";
+            } else {
+                return std::to_string(bytes) + " bytes";
+            }
+        };
+
+        std::string error_msg = "Audio file exceeds maximum size of " +
+                               format_size(max_file_size) +
+                               " (file size: " + format_size(file_size) + ")";
+        throw std::runtime_error(error_msg);
     }
 
     if (file_size == 0) {
@@ -625,7 +754,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     // Create httplib client
     httplib::Client cli("127.0.0.1", port_);
     cli.set_connection_timeout(30);  // 30 second connection timeout
-    cli.set_read_timeout(300);       // 5 minute read timeout for transcription
+    cli.set_read_timeout(get_whisper_read_timeout());  // Configurable read timeout for transcription
 
     if (is_debug()) {
         std::cout << "[WhisperServer] Sending multipart request to http://127.0.0.1:"

@@ -160,6 +160,24 @@ bool ServerManager::start_server(
         // Success! Server is ready immediately
         if (!is_ephemeral) {
             std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+            std::cout << "Modified version for long audio processing" << std::endl;
+
+            // Display max audio file size setting
+            const char* audio_size_env = std::getenv("LEMONADE_MAX_AUDIO_FILE_SIZE");
+            if (audio_size_env && strlen(audio_size_env) > 0) {
+                std::cout << "Max audio file size: " << audio_size_env << std::endl;
+            } else {
+                std::cout << "Max audio file size: 25MB (default)" << std::endl;
+            }
+
+            // Display whisper timeout setting
+            const char* whisper_timeout_env = std::getenv("LEMONADE_WHISPER_TIMEOUT");
+            if (whisper_timeout_env && strlen(whisper_timeout_env) > 0) {
+                std::cout << "Whisper timeout: " << whisper_timeout_env << " seconds" << std::endl;
+            } else {
+                std::cout << "Whisper timeout: 300 seconds / 5 minutes (default)" << std::endl;
+            }
+
             // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
             std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
             std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
@@ -194,6 +212,24 @@ bool ServerManager::start_server(
             // Success! Server is ready
             if (!is_ephemeral) {
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+                std::cout << "Modified version for long audio processing" << std::endl;
+
+                // Display max audio file size setting
+                const char* audio_size_env = std::getenv("LEMONADE_MAX_AUDIO_FILE_SIZE");
+                if (audio_size_env && strlen(audio_size_env) > 0) {
+                    std::cout << "Max audio file size: " << audio_size_env << std::endl;
+                } else {
+                    std::cout << "Max audio file size: 25MB (default)" << std::endl;
+                }
+
+                // Display whisper timeout setting
+                const char* whisper_timeout_env = std::getenv("LEMONADE_WHISPER_TIMEOUT");
+                if (whisper_timeout_env && strlen(whisper_timeout_env) > 0) {
+                    std::cout << "Whisper timeout: " << whisper_timeout_env << " seconds" << std::endl;
+                } else {
+                    std::cout << "Whisper timeout: 300 seconds / 5 minutes (default)" << std::endl;
+                }
+
                 // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
                 std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
                 std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;

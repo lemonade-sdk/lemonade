@@ -15,7 +15,9 @@ struct ServerConfig {
     int ctx_size = 4096;
     std::string llamacpp_args = "";
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
-    
+    std::string max_audio_file_size = "";  // Max audio file size (e.g., "50M", "100MB", "1G")
+    int whisper_timeout = 0;  // Whisper read timeout in seconds (0 = use default 300)
+
     // Multi-model support: Max loaded models by type
     int max_llm_models = 1;
     int max_embedding_models = 1;
