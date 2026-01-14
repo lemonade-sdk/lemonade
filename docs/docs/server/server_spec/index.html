@@ -2963,7 +2963,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
   <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
   <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
 <span class="s1">    &quot;messages&quot;: [</span>
 <span class="s1">      {</span>
 <span class="s1">        &quot;role&quot;: &quot;user&quot;,</span>
@@ -2978,7 +2978,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/chat/completions<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
 <span class="s1">        &quot;messages&quot;: [</span>
 <span class="s1">          {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the population of Paris?&quot;}</span>
 <span class="s1">        ],</span>
@@ -2996,7 +2996,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
 <span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3014,7 +3014,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion.chunk&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
 <span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;delta&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3116,7 +3116,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
   <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
   <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
 <span class="s1">    &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
 <span class="s1">    &quot;stream&quot;: false</span>
 <span class="s1">  }&#39;</span>
@@ -3126,7 +3126,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/completions<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
 <span class="s1">        &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
 <span class="s1">        &quot;stream&quot;: false</span>
 <span class="s1">      }&#39;</span>
@@ -3140,7 +3140,7 @@ lemonade-server<span class="w"> </span>serve<span class="w"> </span>--max-loaded
 <span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;text_completion&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
 <span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span><span class="p">,</span>
@@ -3664,7 +3664,7 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <p>If the model is not found, the endpoint returns a 404 error:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model Llama-3.2-1B-Instruct-Hybrid has not been found&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model Qwen3-0.6B-GGUF has not been found&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;not_found&quot;</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -3981,7 +3981,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <p>Unload a specific model:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/unload<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model_name&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;}&#39;</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model_name&quot;: &quot;Qwen3-0.6B-GGUF&quot;}&#39;</span>
 </code></pre></div>
 <p>Unload all models:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/api/v1/unload
@@ -3996,7 +3996,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <p>Error response (model not found):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;error&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model not found: Llama-3.2-1B-Instruct-Hybrid&quot;</span>
+<span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model not found: Qwen3-0.6B-GGUF&quot;</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>In case of an error, the status will be <code>error</code> and the message will contain the error message.</p>
