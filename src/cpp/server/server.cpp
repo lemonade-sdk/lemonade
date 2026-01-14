@@ -718,8 +718,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["max_models"] = router_->get_max_model_limits();
     
     // Add context size
-    //TODO: re-add
-    //response["context_size"] = router_->get_ctx_size();
+    response["context_size"] = RecipeOptions::get_ctx_size_from_cli_options(default_options_);
     
     // Add log streaming support information
     response["log_streaming"] = {
