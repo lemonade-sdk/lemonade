@@ -45,13 +45,9 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Lemonade Server is already installed."
                   AllowSameVersionUpgrades="yes" />
     
-    <!-- Per-user vs per-machine installation -->
-    <Property Id="ALLUSERS" Value="2" Secure="yes" />
-    <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
+    <!-- Per-user vs per-machine installation (WixUI_Advanced defaults to per-user) -->
     <Property Id="WixAppFolder" Value="WixPerUserFolder" />
     <Property Id="ApplicationFolderName" Value="lemonade_server" />
-    <WixVariable Id="WixUISupportPerUser" Value="1" />
-    <WixVariable Id="WixUISupportPerMachine" Value="1" />
     
     <!-- Custom properties for command-line installation -->
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
