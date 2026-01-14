@@ -8,6 +8,10 @@
   <!--
     Lemonade Server MSI Installer - WiX 5.0
     Version: @PROJECT_VERSION@ (auto-populated by CMake)
+    
+    Supports per-user (default) and per-machine installation:
+    - Per-user: msiexec /i lemonade.msi (installs to %LOCALAPPDATA%\lemonade_server)
+    - All users: msiexec /i lemonade.msi ALLUSERS=1 (installs to %PROGRAMFILES%\AMD\Lemonade Server)
   -->
   
   <Package Name="Lemonade Server"
@@ -44,10 +48,6 @@
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Lemonade Server is already installed."
                   AllowSameVersionUpgrades="yes" />
-    
-    <!-- Per-user vs per-machine installation (WixUI_Advanced defaults to per-user) -->
-    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
-    <Property Id="ApplicationFolderName" Value="lemonade_server" />
     
     <!-- Custom properties for command-line installation -->
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
@@ -95,9 +95,8 @@
     <!-- Directory Structure -->
     <!-- ============================================ -->
     
-    <!-- APPLICATIONFOLDER is managed by WixUI_Advanced based on per-user/per-machine selection -->
     <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="APPLICATIONFOLDER" Name="lemonade_server">
+      <Directory Id="INSTALLDIR" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
             <Directory Id="StaticDir" Name="static">
@@ -204,18 +203,18 @@
     </Component>
     
     <!-- Registry keys (per-user) -->
-    <Component Id="RegistryEntriesPerUser" Directory="APPLICATIONFOLDER" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" Condition="NOT ALLUSERS">
+    <Component Id="RegistryEntriesPerUser" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" Condition="NOT ALLUSERS">
       <RegistryKey Root="HKCU" Key="Software\AMD\Lemonade Server">
-        <RegistryValue Type="string" Name="InstallLocation" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
         <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
         <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
       </RegistryKey>
     </Component>
     
     <!-- Registry keys (all users) -->
-    <Component Id="RegistryEntriesAllUsers" Directory="APPLICATIONFOLDER" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6f" Condition="ALLUSERS">
+    <Component Id="RegistryEntriesAllUsers" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6f" Condition="ALLUSERS">
       <RegistryKey Root="HKLM" Key="Software\AMD\Lemonade Server">
-        <RegistryValue Type="string" Name="InstallLocation" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
         <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
         <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
       </RegistryKey>
@@ -268,9 +267,18 @@
     <!-- UI -->
     <!-- ============================================ -->
     
-    <!-- WixUI_Advanced: Supports per-user/per-machine selection via InstallScopeDlg -->
+    <!-- Custom UI: Skip license and verification screens -->
     <UI>
-      <ui:WixUI Id="WixUI_Advanced" />
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLDIR" />
+      
+      <!-- Override default: Welcome goes directly to InstallDir (skip license) -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="99" />
+      
+      <!-- Override default: InstallDir Next triggers installation (skip VerifyReady) -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="EndDialog" Value="Return" Order="99" />
+      
+      <!-- Override default: InstallDir Back goes to Welcome (skip license) -->
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
 
       <!-- On ExitDialog, run Lemonade when user clicks Finish with checkbox checked -->
       <Publish Dialog="ExitDialog"
@@ -290,10 +298,6 @@
     <!-- ============================================ -->
     <!-- Custom Actions -->
     <!-- ============================================ -->
-    
-    <!-- Copy INSTALLDIR to APPLICATIONFOLDER if provided via command line (for backward compatibility) -->
-    <SetProperty Id="APPLICATIONFOLDER" Value="[INSTALLDIR]" Before="WixSetDefaultPerUserFolder" Sequence="execute" Condition="INSTALLDIR" />
-    <SetProperty Id="APPLICATIONFOLDER" Value="[INSTALLDIR]" Before="WixSetDefaultPerUserFolder" Sequence="ui" Condition="INSTALLDIR" />
     
     <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
     <CustomAction Id="StopNsisServer"
@@ -321,18 +325,18 @@
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Stop legacy Python-based server from the previous Python NSIS install in APPLICATIONFOLDER -->
+    <!-- Stop legacy Python-based server from the previous Python NSIS install in INSTALLDIR -->
     <CustomAction Id="StopLegacyPythonServer"
                   Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[APPLICATIONFOLDER]bin\lemonade-server.bat" "[APPLICATIONFOLDER]bin\lemonade-server.bat" stop'
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[INSTALLDIR]bin\lemonade-server.bat" "[INSTALLDIR]bin\lemonade-server.bat" stop'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Clean legacy Python-based install directory in APPLICATIONFOLDER before MSI takes over -->
+    <!-- Clean legacy Python-based install directory in INSTALLDIR before MSI takes over -->
     <CustomAction Id="CleanLegacyInstall"
-                  Directory="APPLICATIONFOLDER"
-                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[APPLICATIONFOLDER]"'
+                  Directory="INSTALLDIR"
+                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[INSTALLDIR]"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -379,7 +383,7 @@
               Before="CleanLegacyInstall"
               Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
       
-      <!-- Remove any legacy Python-based install tree in APPLICATIONFOLDER (Python NSIS layout).
+      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout).
            Only runs if we already stopped the Python server (which only runs if .bat exists). -->
       <Custom Action="CleanLegacyInstall"
               Before="InstallValidate"
@@ -404,4 +408,3 @@
   </Package>
 
 </Wix>
-
