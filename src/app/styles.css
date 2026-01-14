@@ -4131,3 +4131,101 @@ footer {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Microphone recording button */
+.mic-button {
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    border-radius: 4px;
+}
+
+.mic-button:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.mic-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.mic-button.recording {
+    color: #ff4444;
+    animation: pulse-recording 1.5s infinite;
+}
+
+@keyframes pulse-recording {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Recording indicator container */
+.recording-indicator-container {
+    padding: 16px;
+    margin: 8px 16px;
+    background: rgba(255, 68, 68, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.recording-dot {
+    width: 10px;
+    height: 10px;
+    background: #ff4444;
+    border-radius: 50%;
+    animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+    }
+}
+
+.recording-text {
+    color: #ff6666;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.partial-transcription {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 68, 68, 0.2);
+}
+
+.partial-label {
+    color: #888;
+    font-size: 0.75rem;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.partial-text {
+    color: #ccc;
+    font-size: 0.9rem;
+    font-style: italic;
+}

@@ -220,6 +220,54 @@
 
    For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
 
+## Audio Transcription
+
+### 1. **What Whisper models are available?**
+
+   Lemonade supports several Whisper model sizes:
+   - **Whisper-Tiny** (~75MB) - Fastest, good for quick transcriptions
+   - **Whisper-Base** (~142MB) - Balanced speed and accuracy
+   - **Whisper-Small** (~466MB) - Better accuracy, slower
+   - **Whisper-Medium** (~1.5GB) - High accuracy
+   - **Whisper-Large** (~3GB) - Best accuracy, requires more resources
+
+   Models are automatically downloaded when first used.
+
+### 2. **Why isn't my microphone working for live transcription?**
+
+   Common issues and solutions:
+
+   - **Browser/App permissions**: Ensure the Lemonade app has microphone access in your system settings.
+   - **Microphone selection**: Check your system's default audio input device.
+   - **WebSocket connection**: The streaming transcription uses WebSocket on port 8001 (HTTP port + 1). Ensure this port is not blocked by a firewall.
+   - **Sample rate mismatch**: The system expects 16kHz mono audio. Some microphones may require resampling.
+
+### 3. **What's the difference between file upload and streaming transcription?**
+
+   | Feature | File Upload | Streaming |
+   |---------|-------------|-----------|
+   | **Endpoint** | `POST /api/v1/audio/transcriptions` | `WS /api/v1/audio/stream` |
+   | **Input** | Complete audio file | Real-time microphone |
+   | **Output** | Single transcription | Partial + final results |
+   | **Latency** | After file uploads | ~3 second chunks |
+   | **Use case** | Pre-recorded audio | Live dictation |
+
+### 4. **How do I reduce transcription latency?**
+
+   - Use a smaller model (Whisper-Tiny or Whisper-Base) for faster processing
+   - Ensure the model is pre-loaded before starting transcription
+   - Use GPU acceleration when available
+   - Keep audio chunks small (~4096 samples) for more frequent updates
+
+### 5. **Why are partial transcription results sometimes inaccurate?**
+
+   Partial results are generated from incomplete audio context. They may change as more audio arrives because:
+   - Whisper uses context to improve accuracy
+   - Word boundaries are clearer with more audio
+   - The final transcription incorporates all audio data
+
+   The `final` result after stopping recording will be more accurate than partial results.
+
 ## Support & Roadmap
 
 ### 1. **What if I encounter installation or runtime errors?**

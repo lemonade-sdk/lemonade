@@ -14,6 +14,11 @@
 #include "router.h"
 #include "model_manager.h"
 
+// Forward declaration for WebSocket handler
+namespace lemon {
+class WebSocketHandler;
+}
+
 namespace lemon {
 
 class Server {
@@ -102,7 +107,8 @@ private:
     
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
-    
+    std::unique_ptr<WebSocketHandler> websocket_handler_;
+
     bool running_;
 
     std::string api_key_;

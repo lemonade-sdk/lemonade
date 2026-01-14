@@ -5,6 +5,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include "websocket_handler.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -481,11 +482,21 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 
 void Server::run() {
     std::cout << "[Server] Starting on " << host_ << ":" << port_ << std::endl;
-    
+
     std::string ipv4 = resolve_host_to_ip(AF_INET, host_);
     std::string ipv6 = resolve_host_to_ip(AF_INET6, host_);
 
     running_ = true;
+
+    // Start WebSocket server for audio streaming on port + 1
+    int ws_port = port_ + 1;
+    websocket_handler_ = std::make_unique<WebSocketHandler>(*router_, ws_port);
+    if (websocket_handler_->start()) {
+        std::cout << "[Server] WebSocket audio streaming available at ws://" << host_ << ":" << ws_port << "/api/v1/audio/stream" << std::endl;
+    } else {
+        std::cerr << "[Server] Warning: Failed to start WebSocket server for audio streaming" << std::endl;
+    }
+
     if (!ipv4.empty()) {
         // setup ipv4 thread
         setup_http_logger(*http_server_);
@@ -513,8 +524,16 @@ void Server::stop() {
         std::cout << "[Server] Stopping HTTP server..." << std::endl;
         http_server_v6_->stop();
         http_server_->stop();
+
+        // Stop WebSocket server
+        if (websocket_handler_) {
+            std::cout << "[Server] Stopping WebSocket server..." << std::endl;
+            websocket_handler_->stop();
+            websocket_handler_.reset();
+        }
+
         running_ = false;
-        
+
         // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
             std::cout << "[Server] Unloading models and stopping backend servers..." << std::endl;

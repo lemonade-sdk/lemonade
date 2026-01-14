@@ -23,6 +23,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- WS `/api/v1/audio/stream` - Real-time Audio Streaming Transcription (WebSocket, port+1)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -579,6 +580,141 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 - `text` - The transcribed text from the audio file
 
+
+### `WS /api/v1/audio/stream` <sub>![Status](https://img.shields.io/badge/status-available-green)</sub>
+
+WebSocket endpoint for real-time audio streaming transcription. This enables live microphone input with partial transcription results as audio is being spoken.
+
+> **Note:** The WebSocket server runs on a separate port (HTTP port + 1). For example, if the HTTP server is on port 8000, the WebSocket server is on port 8001.
+
+#### Connection
+
+Connect to `ws://localhost:8001/api/v1/audio/stream` to establish a streaming transcription session.
+
+#### Protocol
+
+The protocol uses JSON messages for bidirectional communication:
+
+**Client → Server Messages:**
+
+| Message Type | Description |
+|--------------|-------------|
+| `start` | Initialize streaming session with model selection |
+| `audio_chunk` | Send a chunk of audio data |
+| `stop` | End the streaming session and get final transcription |
+
+**Server → Client Messages:**
+
+| Message Type | Description |
+|--------------|-------------|
+| `ready` | Server is ready to receive audio chunks |
+| `partial` | Partial transcription result (may update as more audio is received) |
+| `final` | Final transcription after stop message |
+| `error` | Error message |
+
+#### Message Formats
+
+**Start Message:**
+```json
+{
+  "type": "start",
+  "model": "Whisper-Small",
+  "language": "en"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | Yes | Must be `"start"` |
+| `model` | Yes | Whisper model name (e.g., `Whisper-Tiny`, `Whisper-Small`) |
+| `language` | No | ISO 639-1 language code. Leave empty for auto-detection. |
+
+**Audio Chunk Message:**
+```json
+{
+  "type": "audio_chunk",
+  "data": "<base64-encoded-pcm-data>",
+  "sample_rate": 16000
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `type` | Yes | Must be `"audio_chunk"` |
+| `data` | Yes | Base64-encoded PCM 16-bit audio data |
+| `sample_rate` | No | Sample rate in Hz (default: 16000) |
+
+**Stop Message:**
+```json
+{
+  "type": "stop"
+}
+```
+
+**Response Messages:**
+```json
+// Ready response
+{"type": "ready", "text": "", "is_final": false}
+
+// Partial transcription
+{"type": "partial", "text": "Hello wo...", "is_final": false, "timestamp": 3.5}
+
+// Final transcription
+{"type": "final", "text": "Hello world", "is_final": true, "timestamp": 5.2}
+
+// Error
+{"type": "error", "message": "Model not found", "is_final": false}
+```
+
+#### Example (JavaScript)
+
+```javascript
+const ws = new WebSocket('ws://localhost:8001/api/v1/audio/stream');
+
+ws.onopen = () => {
+  // Start streaming session
+  ws.send(JSON.stringify({
+    type: 'start',
+    model: 'Whisper-Small',
+    language: ''
+  }));
+};
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+
+  if (message.type === 'ready') {
+    // Start sending audio chunks from microphone
+    startMicrophoneCapture(ws);
+  } else if (message.type === 'partial') {
+    console.log('Partial:', message.text);
+  } else if (message.type === 'final') {
+    console.log('Final:', message.text);
+  }
+};
+
+// When done recording
+function stopRecording() {
+  ws.send(JSON.stringify({ type: 'stop' }));
+}
+```
+
+#### Audio Format Requirements
+
+- **Format:** Raw PCM, 16-bit signed integers, little-endian
+- **Sample Rate:** 16000 Hz recommended (matches Whisper's native rate)
+- **Channels:** Mono (single channel)
+- **Chunk Size:** Recommended 4096 samples per chunk
+
+#### Behavior
+
+1. Client connects and sends `start` message with model selection
+2. Server loads model (if not already loaded) and responds with `ready`
+3. Client streams audio chunks as they are captured from microphone
+4. Server buffers audio and sends `partial` transcriptions every ~3 seconds
+5. Client sends `stop` when recording ends
+6. Server processes remaining audio and sends `final` transcription
+7. Connection can be reused for additional recordings
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

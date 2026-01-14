@@ -502,6 +502,30 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     return find_server_by_model_name(model_name) != nullptr;
 }
 
+void Router::auto_load_model_if_needed(const std::string& model_name) {
+    // Check if this specific model is already loaded
+    if (is_model_loaded(model_name)) {
+        std::cout << "[Router] Model already loaded: " << model_name << std::endl;
+        return;
+    }
+
+    // ModelManager required for auto-loading
+    if (!model_manager_) {
+        throw std::runtime_error("ModelManager not available for auto-loading");
+    }
+
+    // Check if model exists
+    if (!model_manager_->model_exists(model_name)) {
+        throw std::runtime_error("Model not found: " + model_name);
+    }
+
+    // Get model info from ModelManager
+    ModelInfo model_info = model_manager_->get_model_info(model_name);
+
+    std::cout << "[Router] Auto-loading model: " << model_name << std::endl;
+    load_model(model_name, model_info, true);
+}
+
 ModelType Router::get_model_type(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = model_name.empty()

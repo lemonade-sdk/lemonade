@@ -112,6 +112,21 @@ class ServerConfig {
   }
 
   /**
+   * Get the WebSocket URL for audio streaming
+   * WebSocket server runs on port + 1
+   */
+  getWebSocketUrl(): string {
+    if (this.explicitBaseUrl) {
+      // Parse the explicit URL and convert to WebSocket
+      const url = new URL(this.explicitBaseUrl);
+      const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsPort = parseInt(url.port || (url.protocol === 'https:' ? '443' : '80')) + 1;
+      return `${wsProtocol}//${url.hostname}:${wsPort}/api/v1/audio/stream`;
+    }
+    return `ws://localhost:${this.port + 1}/api/v1/audio/stream`;
+  }
+
+  /**
    * Set the port and notify all listeners (only for localhost mode)
    */
   private setPort(port: number) {
@@ -261,6 +276,7 @@ export const serverConfig = new ServerConfig();
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
 export const getServerPort = () => serverConfig.getPort();
+export const getWebSocketUrl = () => serverConfig.getWebSocketUrl();
 export const discoverServerPort = () => serverConfig.discoverPort();
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);

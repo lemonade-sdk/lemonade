@@ -136,8 +136,9 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
+| Image Generation      | vLLM support                                   | Real-time streaming transcription (WebSocket) |
+| Text to speech    |      | General speech-to-text support (whisper.cpp)                 |
+|     |                                | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
 |     |                                | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application

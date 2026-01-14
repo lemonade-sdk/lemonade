@@ -7,7 +7,7 @@ import {
   buildChatRequestOverrides,
   mergeWithDefaultSettings,
 } from './utils/appSettings';
-import { serverFetch } from './utils/serverConfig';
+import { serverFetch, getWebSocketUrl } from './utils/serverConfig';
 import { downloadTracker } from './utils/downloadTracker';
 import { useModels, DEFAULT_MODEL_ID } from './hooks/useModels';
 
@@ -99,6 +99,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   }>>([]);
   const [isProcessingTranscription, setIsProcessingTranscription] = useState(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Microphone recording state for streaming transcription
+  const [isRecording, setIsRecording] = useState(false);
+  const [partialTranscription, setPartialTranscription] = useState<string>('');
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const webSocketRef = useRef<WebSocket | null>(null);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
 useEffect(() => {
   fetchLoadedModel();
@@ -1236,6 +1245,165 @@ const sendMessage = async () => {
     }
   };
 
+  // Base64 encoding helper for audio chunks
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+  // Start microphone recording for streaming transcription
+  const startRecording = async () => {
+    try {
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+        }
+      });
+
+      // Connect to WebSocket server
+      const wsUrl = getWebSocketUrl();
+      const ws = new WebSocket(wsUrl);
+      webSocketRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connected for audio streaming');
+        // Send start message
+        ws.send(JSON.stringify({
+          type: 'start',
+          model: selectedModel,
+          language: '', // Auto-detect
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'partial') {
+            setPartialTranscription(message.text || '');
+          } else if (message.type === 'final') {
+            // Add final transcription to history
+            if (message.text) {
+              setTranscriptionHistory(prev => [...prev, {
+                filename: `Recording (${Math.floor(recordingDuration)}s)`,
+                text: message.text
+              }]);
+            }
+            setPartialTranscription('');
+          } else if (message.type === 'error') {
+            console.error('Transcription error:', message.message);
+            alert(`Transcription error: ${message.message}`);
+          }
+        } catch (e) {
+          console.error('Failed to parse WebSocket message:', e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        stopRecording();
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+      };
+
+      // Create AudioContext for processing
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+
+      // Create MediaRecorder to capture audio chunks
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      mediaRecorderRef.current = mediaRecorder;
+
+      // Process audio data as it becomes available
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (webSocketRef.current?.readyState === WebSocket.OPEN) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          // Convert Float32 to Int16 PCM
+          const pcmData = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            pcmData[i] = Math.max(-32768, Math.min(32767, Math.floor(inputData[i] * 32768)));
+          }
+          // Send as base64 encoded chunk
+          const base64Data = arrayBufferToBase64(pcmData.buffer);
+          webSocketRef.current.send(JSON.stringify({
+            type: 'audio_chunk',
+            data: base64Data,
+            sample_rate: 16000
+          }));
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      // Start recording timer
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+      setIsRecording(true);
+    } catch (error: any) {
+      console.error('Failed to start recording:', error);
+      alert(`Failed to access microphone: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  // Stop microphone recording
+  const stopRecording = () => {
+    // Stop the timer
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    // Send stop message to server
+    if (webSocketRef.current?.readyState === WebSocket.OPEN) {
+      webSocketRef.current.send(JSON.stringify({ type: 'stop' }));
+    }
+
+    // Close WebSocket
+    if (webSocketRef.current) {
+      webSocketRef.current.close();
+      webSocketRef.current = null;
+    }
+
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current = null;
+    }
+
+    // Close AudioContext
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    setIsRecording(false);
+    setRecordingDuration(0);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopRecording();
+    };
+  }, []);
+
   if (!isVisible) return null;
 
   const modelType = getModelType();
@@ -1556,6 +1724,22 @@ const sendMessage = async () => {
                 <TypingIndicator />
               </div>
             )}
+
+            {/* Live recording indicator and partial transcription */}
+            {isRecording && (
+              <div className="recording-indicator-container">
+                <div className="recording-indicator">
+                  <span className="recording-dot"></span>
+                  <span className="recording-text">Recording... {recordingDuration}s</span>
+                </div>
+                {partialTranscription && (
+                  <div className="partial-transcription">
+                    <span className="partial-label">Live transcription:</span>
+                    <span className="partial-text">{partialTranscription}</span>
+                  </div>
+                )}
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -1587,7 +1771,7 @@ const sendMessage = async () => {
                   <button
                     className="audio-file-button"
                     onClick={() => audioFileInputRef.current?.click()}
-                    disabled={isProcessingTranscription}
+                    disabled={isProcessingTranscription || isRecording}
                     title="Choose audio file"
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -1600,11 +1784,47 @@ const sendMessage = async () => {
                       />
                     </svg>
                   </button>
-                  <ModelSelector disabled={isProcessingTranscription} />
+                  <button
+                    className={`mic-button ${isRecording ? 'recording' : ''}`}
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isProcessingTranscription}
+                    title={isRecording ? 'Stop recording' : 'Start recording'}
+                  >
+                    {isRecording ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M12 2C10.9 2 10 2.9 10 4V12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12V4C14 2.9 13.1 2 12 2Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M19 10V12C19 15.87 15.87 19 12 19C8.13 19 5 15.87 5 12V10"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M12 19V22M8 22H16"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                  <ModelSelector disabled={isProcessingTranscription || isRecording} />
                 </div>
-                <SendButton 
-                  onClick={handleTranscription} 
-                  disabled={!transcriptionFile || isProcessingTranscription} 
+                <SendButton
+                  onClick={handleTranscription}
+                  disabled={!transcriptionFile || isProcessingTranscription || isRecording}
                 />
               </div>
             </div>

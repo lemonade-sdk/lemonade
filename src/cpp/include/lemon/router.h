@@ -75,6 +75,9 @@ public:
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     json audio_transcriptions(const json& request);
+
+    // Auto-load model if not already loaded (used by WebSocket handler)
+    void auto_load_model_if_needed(const std::string& model_name);
     
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);

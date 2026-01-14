@@ -25,7 +25,7 @@ else()
 endif()
 
 # C++ Standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
@@ -65,6 +65,24 @@ FetchContent_Declare(zstd
 FetchContent_Declare(httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG v0.26.0
+)
+
+# libuv (MIT License) - required by uSockets on Windows
+FetchContent_Declare(libuv
+    GIT_REPOSITORY https://github.com/libuv/libuv.git
+    GIT_TAG v1.48.0
+)
+
+# uSockets (Apache-2.0 License) - required by uWebSockets
+FetchContent_Declare(usockets
+    GIT_REPOSITORY https://github.com/uNetworking/uSockets.git
+    GIT_TAG v0.8.8
+)
+
+# uWebSockets (Apache-2.0 License) - WebSocket support for audio streaming
+FetchContent_Declare(uwebsockets
+    GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
+    GIT_TAG v20.70.0
 )
 
 
@@ -134,6 +152,52 @@ target_include_directories(httplib INTERFACE
     ${zstd_SOURCE_DIR}/lib
     ${zstd_SOURCE_DIR}/lib/common
 )
+
+# === libuv (required by uSockets on Windows) ===
+set(LIBUV_BUILD_SHARED OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(libuv)
+
+# === uSockets (for uWebSockets) ===
+FetchContent_GetProperties(usockets)
+if(NOT usockets_POPULATED)
+    FetchContent_Populate(usockets)
+endif()
+
+# === uWebSockets ===
+FetchContent_GetProperties(uwebsockets)
+if(NOT uwebsockets_POPULATED)
+    FetchContent_Populate(uwebsockets)
+endif()
+
+# Create uSockets static library manually (not a CMake project)
+# Include libuv eventing for Windows support
+set(USOCKETS_SOURCES
+    ${usockets_SOURCE_DIR}/src/bsd.c
+    ${usockets_SOURCE_DIR}/src/context.c
+    ${usockets_SOURCE_DIR}/src/loop.c
+    ${usockets_SOURCE_DIR}/src/socket.c
+    ${usockets_SOURCE_DIR}/src/udp.c
+    ${usockets_SOURCE_DIR}/src/eventing/libuv.c
+)
+# Add crypto sources (without SSL for now)
+file(GLOB USOCKETS_CRYPTO_SOURCES ${usockets_SOURCE_DIR}/src/crypto/*.c)
+list(APPEND USOCKETS_SOURCES ${USOCKETS_CRYPTO_SOURCES})
+
+add_library(usockets STATIC ${USOCKETS_SOURCES})
+target_include_directories(usockets PUBLIC ${usockets_SOURCE_DIR}/src)
+# Use libuv eventing - required for Windows support
+target_compile_definitions(usockets PRIVATE LIBUS_USE_LIBUV=1 LIBUS_NO_SSL=1)
+target_link_libraries(usockets PRIVATE uv_a)
+if(WIN32)
+    target_link_libraries(usockets PRIVATE ws2_32 iphlpapi userenv)
+endif()
+
+# Create uWebSockets interface library (header-only)
+add_library(uwebsockets INTERFACE)
+target_include_directories(uwebsockets INTERFACE ${uwebsockets_SOURCE_DIR}/src)
+target_link_libraries(uwebsockets INTERFACE usockets)
+# Disable zlib-based compression (per-message deflate) - not needed for audio streaming
+target_compile_definitions(uwebsockets INTERFACE UWS_NO_ZLIB=1)
 
 
 # ============================================================
@@ -300,6 +364,7 @@ set(SOURCES
     server/wrapped_server.cpp
     server/streaming_proxy.cpp
     server/system_info.cpp
+    server/websocket_handler.cpp
     server/utils/http_client.cpp
     server/utils/json_utils.cpp
     server/utils/process_manager.cpp
@@ -351,6 +416,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE
     nlohmann_json::nlohmann_json
     CLI11::CLI11
     libcurl
+    uwebsockets
 )
 
 # Platform-specific linking
