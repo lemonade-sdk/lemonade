@@ -112,7 +112,7 @@
     </StandardDirectory>
     
     <!-- INSTALLDIR will be set based on ALLUSERS via custom action -->
-    <Directory Id="TARGETDIR" Name="SourceDir">
+    <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLDIR" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
@@ -125,7 +125,7 @@
         <Directory Id="ElectronAppDir" Name="app" />
 <?endif?>
       </Directory>
-    </Directory>
+    </StandardDirectory>
     
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ProgramMenuDir" Name="Lemonade Server" />
@@ -308,8 +308,8 @@
     <!-- ============================================ -->
     
     <!-- Set INSTALLDIR based on installation scope -->
-    <SetDirectory Id="SetInstallDirPerUser" Directory="INSTALLDIR" Value="[LocalAppDataFolder]lemonade_server" />
-    <SetDirectory Id="SetInstallDirAllUsers" Directory="INSTALLDIR" Value="[ProgramFilesFolder]AMD\Lemonade Server" />
+    <CustomAction Id="SetInstallDirPerUser" Directory="INSTALLDIR" Value="[LocalAppDataFolder]lemonade_server" />
+    <CustomAction Id="SetInstallDirAllUsers" Directory="INSTALLDIR" Value="[ProgramFilesFolder]AMD\Lemonade Server" />
     
     <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
     <CustomAction Id="StopNsisServer"
