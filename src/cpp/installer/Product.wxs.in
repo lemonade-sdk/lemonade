@@ -95,21 +95,9 @@
     <!-- Directory Structure -->
     <!-- ============================================ -->
     
-    <!-- Per-user installation directory (LocalAppData) -->
+    <!-- APPLICATIONFOLDER is managed by WixUI_Advanced based on per-user/per-machine selection -->
     <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="INSTALLDIRPERUSER" Name="lemonade_server" />
-    </StandardDirectory>
-    
-    <!-- Per-machine installation directory (ProgramFiles) -->
-    <StandardDirectory Id="ProgramFilesFolder">
-      <Directory Id="AMDFolder" Name="AMD">
-        <Directory Id="INSTALLDIRPERMACHINE" Name="Lemonade Server" />
-      </Directory>
-    </StandardDirectory>
-    
-    <!-- INSTALLDIR will be set based on ALLUSERS via custom action -->
-    <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLDIR" Name="lemonade_server">
+      <Directory Id="APPLICATIONFOLDER" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
             <Directory Id="StaticDir" Name="static">
@@ -216,18 +204,18 @@
     </Component>
     
     <!-- Registry keys (per-user) -->
-    <Component Id="RegistryEntriesPerUser" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" Condition="NOT ALLUSERS">
+    <Component Id="RegistryEntriesPerUser" Directory="APPLICATIONFOLDER" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" Condition="NOT ALLUSERS">
       <RegistryKey Root="HKCU" Key="Software\AMD\Lemonade Server">
-        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="InstallLocation" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
         <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
         <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
       </RegistryKey>
     </Component>
     
     <!-- Registry keys (all users) -->
-    <Component Id="RegistryEntriesAllUsers" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6f" Condition="ALLUSERS">
+    <Component Id="RegistryEntriesAllUsers" Directory="APPLICATIONFOLDER" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6f" Condition="ALLUSERS">
       <RegistryKey Root="HKLM" Key="Software\AMD\Lemonade Server">
-        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="InstallLocation" Value="[APPLICATIONFOLDER]" KeyPath="yes" />
         <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
         <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
       </RegistryKey>
@@ -303,10 +291,6 @@
     <!-- Custom Actions -->
     <!-- ============================================ -->
     
-    <!-- Set INSTALLDIR based on installation scope -->
-    <CustomAction Id="SetInstallDirPerUser" Directory="INSTALLDIR" Value="[LocalAppDataFolder]lemonade_server" />
-    <CustomAction Id="SetInstallDirAllUsers" Directory="INSTALLDIR" Value="[ProgramFilesFolder]AMD\Lemonade Server" />
-    
     <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
     <CustomAction Id="StopNsisServer"
                   Directory="SystemFolder"
@@ -333,18 +317,18 @@
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Stop legacy Python-based server from the previous Python NSIS install in INSTALLDIR -->
+    <!-- Stop legacy Python-based server from the previous Python NSIS install in APPLICATIONFOLDER -->
     <CustomAction Id="StopLegacyPythonServer"
                   Directory="SystemFolder"
-                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[INSTALLDIR]bin\lemonade-server.bat" "[INSTALLDIR]bin\lemonade-server.bat" stop'
+                  ExeCommand='[SystemFolder]cmd.exe /c if exist "[APPLICATIONFOLDER]bin\lemonade-server.bat" "[APPLICATIONFOLDER]bin\lemonade-server.bat" stop'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
     
-    <!-- Clean legacy Python-based install directory in INSTALLDIR before MSI takes over -->
+    <!-- Clean legacy Python-based install directory in APPLICATIONFOLDER before MSI takes over -->
     <CustomAction Id="CleanLegacyInstall"
-                  Directory="INSTALLDIR"
-                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[INSTALLDIR]"'
+                  Directory="APPLICATIONFOLDER"
+                  ExeCommand='[SystemFolder]cmd.exe /c rmdir /s /q "[APPLICATIONFOLDER]"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -376,10 +360,6 @@
                   Return="ignore" />
     
     <InstallExecuteSequence>
-      <!-- Set INSTALLDIR based on installation scope (runs early, before CostFinalize) -->
-      <Custom Action="SetInstallDirPerUser" Before="CostFinalize" Condition="NOT ALLUSERS" />
-      <Custom Action="SetInstallDirAllUsers" Before="CostFinalize" Condition="ALLUSERS" />
-      
       <!-- If NSIS-based C++ installer is present, stop the server first, then uninstall -->
       <Custom Action="StopNsisServer"
               Before="RunNsisUninstall"
@@ -395,7 +375,7 @@
               Before="CleanLegacyInstall"
               Condition="NOT Installed AND NOT NSISUNINSTALLSTRING" />
       
-      <!-- Remove any legacy Python-based install tree in INSTALLDIR (Python NSIS layout).
+      <!-- Remove any legacy Python-based install tree in APPLICATIONFOLDER (Python NSIS layout).
            Only runs if we already stopped the Python server (which only runs if .bat exists). -->
       <Custom Action="CleanLegacyInstall"
               Before="InstallValidate"
@@ -416,12 +396,6 @@
               Before="RemoveFiles"
               Condition="Installed AND REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
-    
-    <InstallUISequence>
-      <!-- Set INSTALLDIR based on installation scope (runs during UI phase) -->
-      <Custom Action="SetInstallDirPerUser" Before="CostFinalize" Condition="NOT ALLUSERS" />
-      <Custom Action="SetInstallDirAllUsers" Before="CostFinalize" Condition="ALLUSERS" />
-    </InstallUISequence>
     
   </Package>
 
