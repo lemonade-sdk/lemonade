@@ -44,6 +44,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 The additional endpoints are:
 
 - POST `/api/v1/pull` - Install a model
+- POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
 - POST `/api/v1/unload` - Unload a model
 - GET `/api/v1/health` - Check server health
