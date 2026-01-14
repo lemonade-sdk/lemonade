@@ -291,6 +291,10 @@
     <!-- Custom Actions -->
     <!-- ============================================ -->
     
+    <!-- Copy INSTALLDIR to APPLICATIONFOLDER if provided via command line (for backward compatibility) -->
+    <SetProperty Id="APPLICATIONFOLDER" Value="[INSTALLDIR]" Before="WixSetDefaultPerUserFolder" Sequence="execute" Condition="INSTALLDIR" />
+    <SetProperty Id="APPLICATIONFOLDER" Value="[INSTALLDIR]" Before="WixSetDefaultPerUserFolder" Sequence="ui" Condition="INSTALLDIR" />
+    
     <!-- Stop the C++ NSIS server before uninstalling it, wait for processes to fully terminate -->
     <CustomAction Id="StopNsisServer"
                   Directory="SystemFolder"
