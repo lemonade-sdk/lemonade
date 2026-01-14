@@ -51,39 +51,9 @@ static std::string get_sd_version() {
     }
 }
 
-// Helper to get the base directory for sd binaries
-static std::string get_sd_base_dir() {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-#else
-    char exe_path[1024];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-
-        return exe_dir.string();
-    }
-    return ".";
-#endif
-}
-
 // Helper to get the install directory for sd executable
 static std::string get_sd_install_dir() {
-    return (fs::path(get_sd_base_dir()) / "sd-cpp").string();
+    return (fs::path(get_downloaded_bin_dir()) / "sd-cpp").string();
 }
 
 // Helper to run a process safely without shell injection vulnerabilities
@@ -656,12 +626,33 @@ std::string SDServer::run_sd_cli(const std::string& prompt,
         std::cout << std::endl;
     }
 
+    // Set up environment variables
+    std::vector<std::pair<std::string, std::string>> env_vars;
+#ifndef _WIN32
+    // On Linux, set LD_LIBRARY_PATH to include the directory containing libstable-diffusion.so
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+    std::string lib_path = exe_dir.string();
+
+    // Preserve existing LD_LIBRARY_PATH if it exists
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    if (is_debug()) {
+        std::cout << "[SDServer] Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    }
+#endif
+
     // Run the CLI synchronously and wait for completion
     auto process_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug()  // inherit_output
+        is_debug(),  // inherit_output
+        false,  // filter_health_logs
+        env_vars
     );
 
     if (process_handle.pid == 0) {

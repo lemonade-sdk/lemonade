@@ -1192,9 +1192,130 @@ jobs:
 
           Write-Host "Stable Diffusion tests PASSED!" -ForegroundColor Green
 
+      - name: Run Stable Diffusion --save-images tests
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $venvPython = ".\.venv\Scripts\python.exe"
+
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+
+          Write-Host "Running Stable Diffusion --save-images tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
+          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
+
+          & $venvPython test/server_sd.py --server-binary $serverExe --test-save-images
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "ERROR: Stable Diffusion --save-images tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              exit $LASTEXITCODE
+          }
+
+          Write-Host "Stable Diffusion --save-images tests PASSED!" -ForegroundColor Green
+
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
+
+  test-deb-sd:
+    name: Test .deb - Stable Diffusion
+    runs-on: [rai300_400, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: |
+          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          echo "HF_HOME set to: $PWD/hf-cache"
+
+      - name: Download .deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-server-deb
+          path: .
+
+      - name: Extract .deb package (no sudo needed)
+        run: |
+          echo "Extracting .deb package..."
+
+          # Use dynamic version from build job
+          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
+          echo "Extracting: $DEB_FILE"
+
+          # Create extraction directory
+          mkdir -p lemonade-extracted
+
+          # Extract the .deb (it's an ar archive containing data.tar.xz)
+          cd lemonade-extracted
+          ar x ../$DEB_FILE
+
+          # Extract the data tarball
+          tar xf data.tar.xz
+
+          echo "Extraction complete. Contents:"
+          find . -type f -name "lemonade-*" | head -20
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Pre-download SD-Turbo model
+        run: |
+          set -e
+
+          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
+          chmod +x $SERVER_BIN
+          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-router
+
+          echo "Pre-downloading SD-Turbo model..."
+          echo "HF_HOME: $HF_HOME"
+
+          $SERVER_BIN pull SD-Turbo
+
+          echo "SD-Turbo model downloaded successfully!"
+
+      - name: Run Stable Diffusion tests with C++ server
+        run: |
+          set -e
+
+          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
+
+          echo "Running Stable Diffusion tests with C++ server CLI: $SERVER_BIN"
+          echo "HF_HOME is set to: $HF_HOME"
+          echo "Note: Image generation may take 2-3 minutes with CPU backend"
+
+          .venv/bin/python test/server_sd.py --server-binary $SERVER_BIN
+
+          echo "Stable Diffusion tests PASSED!"
+
+      - name: Run Stable Diffusion --save-images tests
+        run: |
+          set -e
+
+          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
+
+          echo "Running Stable Diffusion --save-images tests with C++ server CLI: $SERVER_BIN"
+          echo "HF_HOME is set to: $HF_HOME"
+
+          .venv/bin/python test/server_sd.py --server-binary $SERVER_BIN --test-save-images
+
+          echo "Stable Diffusion --save-images tests PASSED!"
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
 
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
@@ -1707,6 +1828,7 @@ jobs:
       - test-exe-rai-cpu
       - test-exe-whisper
       - test-exe-sd
+      - test-deb-sd
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
       - test-deb-endpoints

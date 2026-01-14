@@ -54,6 +54,7 @@ ServerManager::ServerManager()
     , host_("localhost")
     , show_console_(false)
     , is_ephemeral_(false)
+    , save_images_(false)
     , server_started_(false)
 #ifdef _WIN32
     , process_handle_(nullptr)
@@ -85,7 +86,9 @@ bool ServerManager::start_server(
     int max_reranking_models,
     int max_audio_models,
     int max_image_models,
-    const std::string& extra_models_dir)
+    const std::string& extra_models_dir,
+    bool save_images,
+    const std::string& images_dir)
 {
     if (is_server_running()) {
         DEBUG_LOG(this, "Server is already running");
@@ -108,6 +111,8 @@ bool ServerManager::start_server(
     llamacpp_args_ = llamacpp_args;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
+    save_images_ = save_images;
+    images_dir_ = images_dir;
 
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
     api_key_ = api_key_env ? std::string(api_key_env) : "";
@@ -414,7 +419,14 @@ bool ServerManager::spawn_process() {
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
     }
-    
+    // Image generation options
+    if (save_images_) {
+        cmdline += " --save-images";
+    }
+    if (!images_dir_.empty()) {
+        cmdline += " --images-dir \"" + images_dir_ + "\"";
+    }
+
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
     STARTUPINFOA si = {};
@@ -637,6 +649,15 @@ bool ServerManager::spawn_process() {
         if (!extra_models_dir_.empty()) {
             args.push_back("--extra-models-dir");
             args.push_back(extra_models_dir_.c_str());
+        }
+
+        // Image generation options
+        if (save_images_) {
+            args.push_back("--save-images");
+        }
+        if (!images_dir_.empty()) {
+            args.push_back("--images-dir");
+            args.push_back(images_dir_.c_str());
         }
 
         args.push_back(nullptr);

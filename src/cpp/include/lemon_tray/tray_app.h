@@ -43,6 +43,10 @@ struct AppConfig {
 
     // run-only options
     bool save_options = false;
+
+    // Image generation options
+    bool save_images = false;
+    std::string images_dir = "";
 };
 
 struct ModelInfo {

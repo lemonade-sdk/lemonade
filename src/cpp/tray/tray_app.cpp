@@ -637,6 +637,10 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 config_.no_tray = true;
             } else if (arg == "--save-options") {
                 config_.save_options = true;
+            } else if (arg == "--save-images") {
+                config_.save_images = true;
+            } else if (arg == "--images-dir" && i + 1 < argc) {
+                config_.images_dir = argv[++i];
             } else {
                 // It's a command argument (like model name)
                 config_.command_args.push_back(arg);
@@ -700,6 +704,8 @@ void TrayApp::print_usage(bool show_serve_options, bool show_run_options) {
         if (show_run_options) {
             std::cout << "  --save-options           Save model load options as default for this model (run only)\n";
         }
+        std::cout << "  --save-images            Save generated images to disk instead of deleting after response\n";
+        std::cout << "  --images-dir PATH        Directory to save generated images (default: temp directory)\n";
         std::cout << "\n";
     }
     
@@ -913,7 +919,9 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.max_reranking_models,
         config_.max_audio_models,
         config_.max_image_models,
-        config_.extra_models_dir  // Pass extra models directory
+        config_.extra_models_dir,  // Pass extra models directory
+        config_.save_images,       // Pass save_images flag
+        config_.images_dir         // Pass images directory
     );
 
     if (!success) {
@@ -1662,7 +1670,9 @@ bool TrayApp::start_server() {
         config_.max_reranking_models,
         config_.max_audio_models,
         config_.max_image_models,
-        config_.extra_models_dir  // Pass extra models directory
+        config_.extra_models_dir,  // Pass extra models directory
+        config_.save_images,       // Pass save_images flag
+        config_.images_dir         // Pass images directory
     );
 
     // Start log tail thread to show logs in console
