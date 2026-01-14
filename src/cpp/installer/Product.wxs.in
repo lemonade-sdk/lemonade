@@ -267,18 +267,30 @@
     <!-- UI -->
     <!-- ============================================ -->
     
-    <!-- Custom UI: Skip license and verification screens -->
+    <!-- Custom UI: Adds install scope selection (per-user vs all users) -->
     <UI>
       <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLDIR" />
       
-      <!-- Override default: Welcome goes directly to InstallDir (skip license) -->
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="99" />
+      <!-- Override default: Welcome goes to InstallScope dialog -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallScopeDlg" Order="99" />
+      
+      <!-- InstallScope dialog: Back goes to Welcome, Next goes to InstallDir -->
+      <Publish Dialog="InstallScopeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="99" Condition="1" />
+      
+      <!-- Set ALLUSERS based on WixAppFolder selection in InstallScopeDlg -->
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="ALLUSERS" Value="{}" Order="1" Condition="WixAppFolder = &quot;WixPerUserFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="ALLUSERS" Value="1" Order="2" Condition="WixAppFolder = &quot;WixPerMachineFolder&quot;" />
+      
+      <!-- Set default INSTALLDIR based on scope selection -->
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="INSTALLDIR" Value="[LocalAppDataFolder]lemonade_server" Order="3" Condition="WixAppFolder = &quot;WixPerUserFolder&quot;" />
+      <Publish Dialog="InstallScopeDlg" Control="Next" Property="INSTALLDIR" Value="[ProgramFilesFolder]AMD\Lemonade Server" Order="4" Condition="WixAppFolder = &quot;WixPerMachineFolder&quot;" />
       
       <!-- Override default: InstallDir Next triggers installation (skip VerifyReady) -->
       <Publish Dialog="InstallDirDlg" Control="Next" Event="EndDialog" Value="Return" Order="99" />
       
-      <!-- Override default: InstallDir Back goes to Welcome (skip license) -->
-      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+      <!-- Override default: InstallDir Back goes to InstallScope -->
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="InstallScopeDlg" Order="99" />
 
       <!-- On ExitDialog, run Lemonade when user clicks Finish with checkbox checked -->
       <Publish Dialog="ExitDialog"
@@ -287,6 +299,9 @@
                Value="LaunchApplication"
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
     </UI>
+    
+    <!-- Default to per-user installation -->
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
     
     <!-- Custom branding images -->
     <!-- WixUIDialogBmp = 493×312 left-side banner for welcome/finish screens -->
