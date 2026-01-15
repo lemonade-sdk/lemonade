@@ -103,6 +103,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   // Microphone recording state for streaming transcription
   const [isRecording, setIsRecording] = useState(false);
   const [partialTranscription, setPartialTranscription] = useState<string>('');
+  const [accumulatedTranscription, setAccumulatedTranscription] = useState<string>('');
+  const accumulatedTranscriptionRef = useRef<string>(''); // Ref to avoid stale closures
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -1285,16 +1287,42 @@ const sendMessage = async () => {
         try {
           const message = JSON.parse(event.data);
           if (message.type === 'partial') {
-            setPartialTranscription(message.text || '');
+            // Accumulate partial transcriptions using ref to avoid closure issues
+            const partialText = (message.text || '').trim();
+            if (partialText) {
+              const newAccumulated = accumulatedTranscriptionRef.current
+                ? accumulatedTranscriptionRef.current + ' ' + partialText
+                : partialText;
+              accumulatedTranscriptionRef.current = newAccumulated;
+              setAccumulatedTranscription(newAccumulated);
+            }
+            setPartialTranscription(partialText);
           } else if (message.type === 'final') {
-            // Add final transcription to history
-            if (message.text) {
-              setTranscriptionHistory(prev => [...prev, {
-                filename: `Recording (${Math.floor(recordingDuration)}s)`,
-                text: message.text
+            // Combine accumulated transcription with final chunk
+            const finalText = (message.text || '').trim();
+            let fullText = accumulatedTranscriptionRef.current;
+            if (finalText) {
+              fullText = fullText ? fullText + ' ' + finalText : finalText;
+            }
+
+            // Add the complete transcription to history
+            if (fullText.trim()) {
+              setTranscriptionHistory(prevHistory => [...prevHistory, {
+                filename: `Recording`,
+                text: fullText.trim()
               }]);
             }
+
+            // Reset state
+            accumulatedTranscriptionRef.current = '';
+            setAccumulatedTranscription('');
             setPartialTranscription('');
+
+            // Now close the WebSocket after receiving the final message
+            if (webSocketRef.current) {
+              webSocketRef.current.close();
+              webSocketRef.current = null;
+            }
           } else if (message.type === 'error') {
             console.error('Transcription error:', message.message);
             alert(`Transcription error: ${message.message}`);
@@ -1348,7 +1376,10 @@ const sendMessage = async () => {
       source.connect(processor);
       processor.connect(audioContext.destination);
 
-      // Start recording timer
+      // Reset transcription state and start recording timer
+      accumulatedTranscriptionRef.current = '';
+      setAccumulatedTranscription('');
+      setPartialTranscription('');
       setRecordingDuration(0);
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration(prev => prev + 1);
@@ -1369,18 +1400,12 @@ const sendMessage = async () => {
       recordingTimerRef.current = null;
     }
 
-    // Send stop message to server
+    // Send stop message to server (don't close WebSocket yet - wait for final message)
     if (webSocketRef.current?.readyState === WebSocket.OPEN) {
       webSocketRef.current.send(JSON.stringify({ type: 'stop' }));
     }
 
-    // Close WebSocket
-    if (webSocketRef.current) {
-      webSocketRef.current.close();
-      webSocketRef.current = null;
-    }
-
-    // Stop MediaRecorder
+    // Stop MediaRecorder and audio tracks
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -1732,10 +1757,10 @@ const sendMessage = async () => {
                   <span className="recording-dot"></span>
                   <span className="recording-text">Recording... {recordingDuration}s</span>
                 </div>
-                {partialTranscription && (
+                {accumulatedTranscription && (
                   <div className="partial-transcription">
                     <span className="partial-label">Live transcription:</span>
-                    <span className="partial-text">{partialTranscription}</span>
+                    <span className="partial-text">{accumulatedTranscription}</span>
                   </div>
                 )}
               </div>

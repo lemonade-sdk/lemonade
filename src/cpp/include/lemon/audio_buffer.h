@@ -23,10 +23,13 @@ public:
      * @brief Construct audio buffer with specified sample rate
      * @param sample_rate Audio sample rate in Hz (default: 16000)
      * @param threshold_seconds Minimum audio duration before transcription (default: 3.0)
+     * @param keep_seconds Audio to keep from previous transcription for context (default: 0.2)
+     *                     Following whisper.cpp stream example which uses 200ms default
      */
-    explicit AudioBuffer(int sample_rate = 16000, double threshold_seconds = 3.0)
+    explicit AudioBuffer(int sample_rate = 16000, double threshold_seconds = 3.0, double keep_seconds = 0.2)
         : sample_rate_(sample_rate)
         , threshold_seconds_(threshold_seconds)
+        , keep_seconds_(keep_seconds)
         , bytes_per_sample_(2)  // 16-bit PCM
     {
         // Pre-allocate for ~30 seconds of audio
@@ -73,6 +76,41 @@ public:
     }
 
     /**
+     * @brief Get audio data for transcription, keeping overlap for context
+     *
+     * This implements the sliding window approach used by whisper.cpp's stream example.
+     * It clears the buffer but keeps the last keep_seconds_ of audio to provide
+     * context for the next transcription, preventing word boundary issues.
+     *
+     * @return Vector containing accumulated audio data (full buffer before clear)
+     */
+    std::vector<uint8_t> get_audio_and_keep_overlap() {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // Return a copy of the full buffer for transcription
+        std::vector<uint8_t> result = buffer_;
+
+        // Calculate how many bytes to keep for overlap
+        size_t keep_samples = static_cast<size_t>(keep_seconds_ * sample_rate_);
+        size_t keep_bytes = keep_samples * bytes_per_sample_;
+
+        if (keep_bytes > 0 && buffer_.size() > keep_bytes) {
+            // Keep only the last keep_bytes of audio for context
+            std::vector<uint8_t> overlap(buffer_.end() - keep_bytes, buffer_.end());
+            buffer_ = std::move(overlap);
+        } else if (buffer_.size() <= keep_bytes) {
+            // Buffer is smaller than keep amount, keep it all
+            // (don't clear anything)
+        } else {
+            // keep_bytes is 0, clear everything
+            buffer_.clear();
+            buffer_.reserve(sample_rate_ * bytes_per_sample_ * 30);
+        }
+
+        return result;
+    }
+
+    /**
      * @brief Get audio data without clearing buffer (for partial transcription)
      * @return Copy of accumulated audio data
      */
@@ -109,6 +147,19 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         threshold_seconds_ = seconds;
     }
+
+    /**
+     * @brief Set keep overlap in seconds (for sliding window context)
+     */
+    void set_keep_seconds(double seconds) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        keep_seconds_ = seconds;
+    }
+
+    /**
+     * @brief Get keep overlap in seconds
+     */
+    double get_keep_seconds() const { return keep_seconds_; }
 
     /**
      * @brief Save audio buffer to WAV file
@@ -163,6 +214,7 @@ private:
 
     int sample_rate_;
     double threshold_seconds_;
+    double keep_seconds_;
     int bytes_per_sample_;
     std::vector<uint8_t> buffer_;
     mutable std::mutex mutex_;

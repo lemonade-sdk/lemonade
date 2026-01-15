@@ -316,14 +316,18 @@ private:
 
         // Check if we have enough audio to transcribe (e.g., 3 seconds)
         if (conn->audio_buffer->has_enough_audio()) {
-            // Get accumulated audio (but don't clear - keep for context)
-            auto audio = conn->audio_buffer->peek_audio();
             double duration = conn->audio_buffer->get_duration();
 
-            // Save audio to temp WAV file
+            // Save audio to temp WAV file BEFORE getting audio with overlap
+            // This saves the full buffer for transcription
             std::string temp_path = std::filesystem::temp_directory_path().string() +
                                    "/lemonade_stream_" + std::to_string(std::rand()) + ".wav";
             conn->audio_buffer->save_to_wav(temp_path);
+
+            // Now clear the buffer but keep overlap for context (sliding window approach)
+            // This keeps the last ~200ms of audio to provide context for the next chunk,
+            // preventing word boundary issues (following whisper.cpp stream example pattern)
+            conn->audio_buffer->get_audio_and_keep_overlap();
 
             // Create transcription request for Router
             nlohmann::json request;
@@ -365,9 +369,6 @@ private:
 
             // Clean up temp file
             std::filesystem::remove(temp_path);
-
-            // Clear the buffer after successful transcription
-            conn->audio_buffer->get_audio_for_transcription();
         }
     }
 
