@@ -46,8 +46,6 @@
     
     <!-- Custom properties for command-line installation -->
     <Property Id="WixAppFolder" Value="WixPerUserFolder" />
-    <Property Id="ALLUSERS" Value="2" Secure="yes" />
-    <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
     <Property Id="ADDTOSTARTUP" Value="0" Secure="yes" />
     <Property Id="LAUNCHAPP" Value="0" />
@@ -78,10 +76,12 @@
     </Property>
     <SetProperty Id="EXISTINGINSTALLDIR"
                  Value="[EXISTINGINSTALLDIR_HKLM]"
+                 Action="SetExistingInstallDirMachine"
                  Before="CostFinalize"
                  Condition="ALLUSERS=1 AND EXISTINGINSTALLDIR_HKLM" />
     <SetProperty Id="EXISTINGINSTALLDIR"
                  Value="[EXISTINGINSTALLDIR_HKCU]"
+                 Action="SetExistingInstallDirUser"
                  Before="CostFinalize"
                  Condition="ALLUSERS&lt;&gt;1 AND EXISTINGINSTALLDIR_HKCU" />
     
@@ -102,10 +102,12 @@
     </Property>
     <SetProperty Id="NSISINSTALLED"
                  Value="[NSISINSTALLED_HKLM]"
+                 Action="SetNsisInstalledMachine"
                  Before="CostFinalize"
                  Condition="ALLUSERS=1 AND NSISINSTALLED_HKLM" />
     <SetProperty Id="NSISINSTALLED"
                  Value="[NSISINSTALLED_HKCU]"
+                 Action="SetNsisInstalledUser"
                  Before="CostFinalize"
                  Condition="ALLUSERS&lt;&gt;1 AND NSISINSTALLED_HKCU" />
     
@@ -125,10 +127,12 @@
     </Property>
     <SetProperty Id="NSISUNINSTALLSTRING"
                  Value="[NSISUNINSTALLSTRING_HKLM]"
+                 Action="SetNsisUninstallStringMachine"
                  Before="CostFinalize"
                  Condition="ALLUSERS=1 AND NSISUNINSTALLSTRING_HKLM" />
     <SetProperty Id="NSISUNINSTALLSTRING"
                  Value="[NSISUNINSTALLSTRING_HKCU]"
+                 Action="SetNsisUninstallStringUser"
                  Before="CostFinalize"
                  Condition="ALLUSERS&lt;&gt;1 AND NSISUNINSTALLSTRING_HKCU" />
     
@@ -236,12 +240,12 @@
     
     <!-- PATH environment variable -->
     <Component Id="PathEnvironmentUser" Directory="BinDir" Guid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" Condition="ALLUSERS&lt;&gt;1">
-      <Environment Id="PATH" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="no" />
+      <Environment Id="PATH_User" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="no" />
       <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
     <Component Id="PathEnvironmentMachine" Directory="BinDir" Guid="e26fd3df-17df-42dd-a350-6ae934395282" Condition="ALLUSERS=1">
-      <Environment Id="PATH" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="yes" />
+      <Environment Id="PATH_Machine" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="yes" />
       <RegistryValue Root="HKLM" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
