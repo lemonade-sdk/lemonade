@@ -139,18 +139,11 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint,
 
 void FastFlowLMServer::load(const std::string& model_name,
                            const ModelInfo& model_info,
-                           int ctx_size,
-                           bool do_not_upgrade,
-                           const std::string& llamacpp_backend,
-                           const std::string& llamacpp_args) {
-    // Note: llamacpp_backend and llamacpp_args parameters are not used by FastFlowLM
-    // They are part of the uniform interface for polymorphism
-    (void)llamacpp_backend;  // Suppress unused parameter warning
-    (void)llamacpp_args;     // Suppress unused parameter warning
-    (void)ctx_size;          // FastFlowLM doesn't currently use ctx_size either
-    
+                           const RecipeOptions& options,
+                           bool do_not_upgrade) {
     std::cout << "[FastFlowLM] Loading model: " << model_name << std::endl;
-    
+    int ctx_size = options.get_option("ctx_size");
+
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
     

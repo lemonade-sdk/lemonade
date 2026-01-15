@@ -2,6 +2,7 @@
 
 #include "../wrapped_server.h"
 #include "../server_capabilities.h"
+#include "../recipe_options.h"
 #include <string>
 #include <filesystem>
 
@@ -26,10 +27,8 @@ public:
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
-             int ctx_size,
-             bool do_not_upgrade = false,
-             const std::string& llamacpp_backend = "",
-             const std::string& llamacpp_args = "") override;
+             const RecipeOptions& options,
+             bool do_not_upgrade = false) override;
 
     void unload() override;
 

@@ -441,12 +441,10 @@ std::string SDServer::download_model(const std::string& checkpoint,
 
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
-                    int ctx_size,
-                    bool do_not_upgrade,
-                    const std::string& /* llamacpp_backend */,
-                    const std::string& /* llamacpp_args */) {
-    // Note: llamacpp_backend and llamacpp_args are not used for sd
-    // They're included for API compatibility with WrappedServer interface
+                    const RecipeOptions& /* options */,
+                    bool do_not_upgrade) {
+    // Note: RecipeOptions is not used for sd-cpp
+    // SD-Turbo uses its own defaults (steps, cfg_scale, etc.)
 
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 

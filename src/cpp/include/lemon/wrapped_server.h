@@ -10,6 +10,7 @@
 #include "utils/process_manager.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "recipe_options.h"
 
 namespace lemon {
 
@@ -118,10 +119,8 @@ public:
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,
-                     int ctx_size,
-                     bool do_not_upgrade = false,
-                     const std::string& llamacpp_backend = "vulkan",
-                     const std::string& llamacpp_args = "") = 0;
+                     const RecipeOptions& options,
+                     bool do_not_upgrade = false) = 0;
     
     // Unload the model and stop the server
     virtual void unload() = 0;

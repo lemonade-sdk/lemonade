@@ -148,7 +148,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
-        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "model": "Qwen3-0.6B-GGUF",
         "messages": [
           {
             "role": "user",
@@ -164,7 +164,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
     curl -X POST http://localhost:8000/api/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
-            "model": "Llama-3.2-1B-Instruct-Hybrid",
+            "model": "Qwen3-0.6B-GGUF",
             "messages": [
               {"role": "user", "content": "What is the population of Paris?"}
             ],
@@ -181,7 +181,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       "id": "0",
       "object": "chat.completion",
       "created": 1742927481,
-      "model": "Llama-3.2-1B-Instruct-Hybrid",
+      "model": "Qwen3-0.6B-GGUF",
       "choices": [{
         "index": 0,
         "message": {
@@ -200,7 +200,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       "id": "0",
       "object": "chat.completion.chunk",
       "created": 1742927481,
-      "model": "Llama-3.2-1B-Instruct-Hybrid",
+      "model": "Qwen3-0.6B-GGUF",
       "choices": [{
         "index": 0,
         "delta": {
@@ -241,7 +241,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
-        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "model": "Qwen3-0.6B-GGUF",
         "prompt": "What is the population of Paris?",
         "stream": false
       }'
@@ -253,7 +253,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
     curl -X POST http://localhost:8000/api/v1/completions \
       -H "Content-Type: application/json" \
       -d '{
-            "model": "Llama-3.2-1B-Instruct-Hybrid",
+            "model": "Qwen3-0.6B-GGUF",
             "prompt": "What is the population of Paris?",
             "stream": false
           }'
@@ -268,7 +268,7 @@ The following format is used for both streaming and non-streaming responses:
   "id": "0",
   "object": "text_completion",
   "created": 1742927481,
-  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "model": "Qwen3-0.6B-GGUF",
   "choices": [{
     "index": 0,
     "text": "Paris has a population of approximately 2.2 million people in the city proper.",
@@ -770,7 +770,7 @@ If the model is not found, the endpoint returns a 404 error:
 ```json
 {
   "error": {
-    "message": "Model Llama-3.2-1B-Instruct-Hybrid has not been found",
+    "message": "Model Qwen3-0.6B-GGUF has not been found",
     "type": "not_found"
   }
 }
@@ -1024,7 +1024,7 @@ Unload a specific model:
 ```bash
 curl -X POST http://localhost:8000/api/v1/unload \
   -H "Content-Type: application/json" \
-  -d '{"model_name": "Llama-3.2-1B-Instruct-Hybrid"}'
+  -d '{"model_name": "Qwen3-0.6B-GGUF"}'
 ```
 
 Unload all models:
@@ -1049,7 +1049,7 @@ Error response (model not found):
 ```json
 {
   "status": "error",
-  "message": "Model not found: Llama-3.2-1B-Instruct-Hybrid"
+  "message": "Model not found: Qwen3-0.6B-GGUF"
 }
 ```
 
