@@ -148,6 +148,9 @@ class ServerAdapter(ModelAdapter):
         if "choices" in completion_data and len(completion_data["choices"]) > 0:
             message = completion_data["choices"][0].get("message", {})
             generated_text = message.get("content", "")
+            # For reasoning models, response may be in reasoning_content
+            if not generated_text:
+                generated_text = message.get("reasoning_content", "")
         else:
             generated_text = ""
 
