@@ -51,6 +51,7 @@ private:
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
+    void handle_live(const httplib::Request& req, httplib::Response& res);    
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
