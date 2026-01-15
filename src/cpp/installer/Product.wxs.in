@@ -14,6 +14,10 @@
     - All users: msiexec /i lemonade.msi ALLUSERS=1 (installs to %PROGRAMFILES%\AMD\Lemonade Server)
   -->
   
+  <!-- Enable both per-user and per-machine options in InstallScopeDlg -->
+  <WixVariable Id="WixUISupportPerUser" Value="1" />
+  <WixVariable Id="WixUISupportPerMachine" Value="1" />
+  
   <Package Name="Lemonade Server"
            Manufacturer="AMD"
            Version="@PROJECT_VERSION@"
