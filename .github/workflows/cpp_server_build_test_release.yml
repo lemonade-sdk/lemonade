@@ -203,9 +203,11 @@ jobs:
           $ErrorActionPreference = "Stop"
           
           cd src\cpp
+          $logFile = "installer-build.log"
           
           # Run the build installer script
-          .\build_installer.ps1
+          .\build_installer.ps1 2>&1 | Tee-Object -FilePath $logFile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
@@ -219,6 +221,15 @@ jobs:
           }
           
           Write-Host "Installers created successfully!" -ForegroundColor Green
+
+      - name: Upload Installer Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lemonade_Server_MSI_Logs
+          path: src\cpp\installer-build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Lemonade Server Installers
         uses: actions/upload-artifact@v4

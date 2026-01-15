@@ -61,30 +61,75 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Run Lemonade Server now" />
 
     <!-- Existing MSI-based C++ install location (for in-place upgrades) -->
-    <Property Id="EXISTINGINSTALLDIR">
-      <RegistrySearch Id="FindInstallDir"
-                      Root="HKMU"
+    <Property Id="EXISTINGINSTALLDIR_HKCU">
+      <RegistrySearch Id="FindInstallDirHKCU"
+                      Root="HKCU"
                       Key="Software\AMD\Lemonade Server"
                       Name="InstallLocation"
                       Type="raw" />
     </Property>
+    <Property Id="EXISTINGINSTALLDIR_HKLM">
+      <RegistrySearch Id="FindInstallDirHKLM"
+                      Root="HKLM"
+                      Key="Software\AMD\Lemonade Server"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
+    <SetProperty Id="EXISTINGINSTALLDIR"
+                 Value="[EXISTINGINSTALLDIR_HKLM]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS=1 AND EXISTINGINSTALLDIR_HKLM" />
+    <SetProperty Id="EXISTINGINSTALLDIR"
+                 Value="[EXISTINGINSTALLDIR_HKCU]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS&lt;&gt;1 AND EXISTINGINSTALLDIR_HKCU" />
     
     <!-- Detect legacy C++ NSIS-based installer location and uninstaller command -->
-    <Property Id="NSISINSTALLED">
-      <RegistrySearch Id="FindNsisInstall"
-                      Root="HKMU"
+    <Property Id="NSISINSTALLED_HKCU">
+      <RegistrySearch Id="FindNsisInstallHKCU"
+                      Root="HKCU"
                       Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
                       Name="InstallLocation"
                       Type="raw" />
     </Property>
+    <Property Id="NSISINSTALLED_HKLM">
+      <RegistrySearch Id="FindNsisInstallHKLM"
+                      Root="HKLM"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
+    <SetProperty Id="NSISINSTALLED"
+                 Value="[NSISINSTALLED_HKLM]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS=1 AND NSISINSTALLED_HKLM" />
+    <SetProperty Id="NSISINSTALLED"
+                 Value="[NSISINSTALLED_HKCU]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS&lt;&gt;1 AND NSISINSTALLED_HKCU" />
     
-    <Property Id="NSISUNINSTALLSTRING">
-      <RegistrySearch Id="FindNsisUninstall"
-                      Root="HKMU"
+    <Property Id="NSISUNINSTALLSTRING_HKCU">
+      <RegistrySearch Id="FindNsisUninstallHKCU"
+                      Root="HKCU"
                       Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
                       Name="UninstallString"
                       Type="raw" />
     </Property>
+    <Property Id="NSISUNINSTALLSTRING_HKLM">
+      <RegistrySearch Id="FindNsisUninstallHKLM"
+                      Root="HKLM"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\Lemonade Server"
+                      Name="UninstallString"
+                      Type="raw" />
+    </Property>
+    <SetProperty Id="NSISUNINSTALLSTRING"
+                 Value="[NSISUNINSTALLSTRING_HKLM]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS=1 AND NSISUNINSTALLSTRING_HKLM" />
+    <SetProperty Id="NSISUNINSTALLSTRING"
+                 Value="[NSISUNINSTALLSTRING_HKCU]"
+                 Before="CostFinalize"
+                 Condition="ALLUSERS&lt;&gt;1 AND NSISUNINSTALLSTRING_HKCU" />
     
     <!-- Media -->
     <Media Id="1" Cabinet="lemonade.cab" EmbedCab="yes" />
@@ -189,21 +234,27 @@
     </ComponentGroup>
     
     <!-- PATH environment variable -->
-    <Component Id="PathEnvironmentUser" Directory="BinDir" Guid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d">
-      <Condition>ALLUSERS&lt;&gt;1</Condition>
+    <Component Id="PathEnvironmentUser" Directory="BinDir" Guid="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" Condition="ALLUSERS&lt;&gt;1">
       <Environment Id="PATH" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="no" />
-      <RegistryValue Root="HKMU" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
-    <Component Id="PathEnvironmentMachine" Directory="BinDir" Guid="e26fd3df-17df-42dd-a350-6ae934395282">
-      <Condition>ALLUSERS=1</Condition>
+    <Component Id="PathEnvironmentMachine" Directory="BinDir" Guid="e26fd3df-17df-42dd-a350-6ae934395282" Condition="ALLUSERS=1">
       <Environment Id="PATH" Name="PATH" Value="[BinDir]" Action="set" Part="last" System="yes" />
-      <RegistryValue Root="HKMU" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\AMD\Lemonade Server" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
     <!-- Registry keys -->
-    <Component Id="RegistryEntries" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e">
-      <RegistryKey Root="HKMU" Key="Software\AMD\Lemonade Server">
+    <Component Id="RegistryEntriesUser" Directory="INSTALLDIR" Guid="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" Condition="ALLUSERS&lt;&gt;1">
+      <RegistryKey Root="HKCU" Key="Software\AMD\Lemonade Server">
+        <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
+        <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
+        <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
+      </RegistryKey>
+    </Component>
+    
+    <Component Id="RegistryEntriesMachine" Directory="INSTALLDIR" Guid="5b0b39f1-0ba5-4b2e-9c69-95a79c1c7c46" Condition="ALLUSERS=1">
+      <RegistryKey Root="HKLM" Key="Software\AMD\Lemonade Server">
         <RegistryValue Type="string" Name="InstallLocation" Value="[INSTALLDIR]" KeyPath="yes" />
         <RegistryValue Type="string" Name="Version" Value="@PROJECT_VERSION@" />
         <RegistryValue Type="integer" Name="Startup" Value="[ADDTOSTARTUP]" />
@@ -211,7 +262,7 @@
     </Component>
     
     <!-- Start Menu shortcuts -->
-    <Component Id="ProgramMenuShortcuts" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d">
+    <Component Id="ProgramMenuShortcutsUser" Directory="ProgramMenuDir" Guid="a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d" Condition="ALLUSERS&lt;&gt;1">
       <Shortcut Id="ApplicationStartMenuShortcut"
                 Name="Lemonade Server"
                 Target="[BinDir]lemonade-tray.exe"
@@ -222,17 +273,40 @@
                 Target="[SystemFolder]msiexec.exe"
                 Arguments="/x [ProductCode]" />
       <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
-      <RegistryValue Root="HKMU" Key="Software\AMD\Lemonade Server" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <Component Id="ProgramMenuShortcutsMachine" Directory="ProgramMenuDir" Guid="4a2ccacf-7c82-4df0-9f96-9fded89ab93e" Condition="ALLUSERS=1">
+      <Shortcut Id="ApplicationStartMenuShortcutMachine"
+                Name="Lemonade Server"
+                Target="[BinDir]lemonade-tray.exe"
+                WorkingDirectory="BinDir"
+                Icon="LemonadeIcon" />
+      <Shortcut Id="UninstallShortcutMachine"
+                Name="Uninstall Lemonade Server"
+                Target="[SystemFolder]msiexec.exe"
+                Arguments="/x [ProductCode]" />
+      <RemoveFolder Id="RemoveProgramMenuDirMachine" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\AMD\Lemonade Server" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
     <!-- Desktop shortcut (conditional) -->
-    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f" Condition="ADDDESKTOPSHORTCUT = 1">
+    <Component Id="DesktopShortcutUser" Directory="DesktopFolder" Guid="c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f" Condition="ADDDESKTOPSHORTCUT = 1 AND ALLUSERS&lt;&gt;1">
       <Shortcut Id="DesktopShortcutId"
                 Name="Lemonade Server"
                 Target="[BinDir]lemonade-tray.exe"
                 WorkingDirectory="BinDir"
                 Icon="LemonadeIcon" />
-      <RegistryValue Root="HKMU" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <Component Id="DesktopShortcutMachine" Directory="DesktopFolder" Guid="72f64902-782a-4f6c-82ea-0124c3fc0b5b" Condition="ADDDESKTOPSHORTCUT = 1 AND ALLUSERS=1">
+      <Shortcut Id="DesktopShortcutIdMachine"
+                Name="Lemonade Server"
+                Target="[BinDir]lemonade-tray.exe"
+                WorkingDirectory="BinDir"
+                Icon="LemonadeIcon" />
+      <RegistryValue Root="HKLM" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     
     <!-- ============================================ -->
@@ -247,9 +321,12 @@
 <?endif?>
       <ComponentRef Id="PathEnvironmentUser" />
       <ComponentRef Id="PathEnvironmentMachine" />
-      <ComponentRef Id="RegistryEntries" />
-      <ComponentRef Id="ProgramMenuShortcuts" />
-      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="RegistryEntriesUser" />
+      <ComponentRef Id="RegistryEntriesMachine" />
+      <ComponentRef Id="ProgramMenuShortcutsUser" />
+      <ComponentRef Id="ProgramMenuShortcutsMachine" />
+      <ComponentRef Id="DesktopShortcutUser" />
+      <ComponentRef Id="DesktopShortcutMachine" />
     </Feature>
     
     <!-- ============================================ -->
