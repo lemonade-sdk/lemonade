@@ -382,14 +382,16 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
     
-    if (device_lower.find("radeon") == std::string::npos) {
+    if (device_lower.find("radeon") == std::string::npos &&
+        device_lower.find("amd") == std::string::npos) {
         return "";
     }
     
     // STX Halo iGPUs (gfx1151 architecture)
     // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos || 
-        device_lower.find("8060s") != std::string::npos) {
+        device_lower.find("8060s") != std::string::npos ||
+        device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
     
