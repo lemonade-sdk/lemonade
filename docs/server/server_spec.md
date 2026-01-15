@@ -47,9 +47,10 @@ The additional endpoints are:
 - POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
 - POST `/api/v1/unload` - Unload a model
-- GET `/api/v1/health` - Check server health
+- GET `/api/v1/health` - Check server status, such as models loaded
 - GET `/api/v1/stats` - Performance statistics from the last request
 - GET `/api/v1/system-info` - System information and device enumeration
+- GET `/live` - Check server liveness for load balancers and orchestrators
 
 ## Multi-Model Support
 
