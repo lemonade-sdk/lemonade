@@ -628,23 +628,8 @@ void ModelManager::save_user_models(const json& user_models) {
 
 void ModelManager::save_model_options(const ModelInfo& info) {
     std::cout << "[ModelManager] Saving options for model: " << info.model_name << std::endl;
-
-    json model_options = json::object();
-
-    if (info.ctx_size >= 0) {
-        model_options["ctx_size"] = info.ctx_size;
-    }
-
-    if (!info.llamacpp_backend.empty()) {
-        model_options["llamacpp_backend"] = info.llamacpp_backend;
-    }
-
-    if (!info.llamacpp_args.empty()) {
-        model_options["llamacpp_args"] = info.llamacpp_args;
-    }
-
     // Persist changes
-    recipe_options_[info.model_name] = model_options;
+    recipe_options_[info.model_name] = info.recipe_options.to_json();
     update_model_options_in_cache(info);
     save_user_json(get_recipe_options_file(), recipe_options_);
 }
@@ -739,9 +724,9 @@ void ModelManager::build_cache() {
             std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
 
             auto options = recipe_options_[name];
-            info.llamacpp_args = JsonUtils::get_or_default<std::string>(options, "llamacpp_args", "");
-            info.llamacpp_backend = JsonUtils::get_or_default<std::string>(options, "llamacpp_backend", "");
-            info.ctx_size = JsonUtils::get_or_default<int>(options, "ctx_size", -1);
+            info.recipe_options = RecipeOptions(info.recipe, options);
+        } else {
+            info.recipe_options = RecipeOptions(info.recipe, json::object());
         }
     }
     
@@ -910,9 +895,7 @@ void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
     
     auto it = models_cache_.find(info.model_name);
     if (it != models_cache_.end()) {
-        it->second.ctx_size = info.ctx_size;
-        it->second.llamacpp_backend = info.llamacpp_backend;
-        it->second.llamacpp_args = info.llamacpp_args;
+        it->second.recipe_options = info.recipe_options;
     } else {
         std::cerr << "[ModelManager] Warning: '" << info.model_name << "' not found in cache" << std::endl;
     }    

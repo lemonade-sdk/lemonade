@@ -35,13 +35,11 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               int ctx_size, bool tray, const std::string& llamacpp_backend,
-               const std::string& llamacpp_args, int max_llm_models,
+               const json& default_options, bool tray, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
                const std::string& extra_models_dir)
-    : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
-      tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
-      running_(false) {
+    : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
+      tray_(tray), running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -75,7 +73,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     // Set extra models directory for GGUF discovery
     model_manager_->set_extra_models_dir(extra_models_dir);
     
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
+    router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_llm_models,
                                        max_embedding_models, max_reranking_models, max_audio_models);
     
@@ -690,7 +688,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
     std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -720,7 +718,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["max_models"] = router_->get_max_model_limits();
     
     // Add context size
-    response["context_size"] = router_->get_ctx_size();
+    response["context_size"] = RecipeOptions::get_ctx_size_from_cli_options(default_options_);
     
     // Add log streaming support information
     response["log_streaming"] = {
@@ -762,20 +760,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
 }
 
 nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
-    nlohmann::json recipe_options = nlohmann::json::object();
-
-    if (info.ctx_size >= 0) {
-        recipe_options["ctx_size"] = info.ctx_size;
-    }
-
-    if (!info.llamacpp_backend.empty()) {
-        recipe_options["llamacpp_backend"] = info.llamacpp_backend;
-    }
-
-    if (!info.llamacpp_args.empty()) {
-        recipe_options["llamacpp_args"] = info.llamacpp_args;
-    }
-
     nlohmann::json model_json = {
         {"id", model_id},
         {"object", "model"},
@@ -786,7 +770,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
-        {"recipe_options", recipe_options},
+        {"recipe_options", info.recipe_options.to_json()},
     };
     
     // Add size if available
@@ -1621,18 +1605,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
         
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
-        int ctx_size = request_json.value("ctx_size", -1);
-        std::string llamacpp_backend = request_json.value("llamacpp_backend", "");
-        std::string llamacpp_args = request_json.value("llamacpp_args", "");
-        bool save_options = request_json.value("save_options", false);
-        
-        std::cout << "[Server] Loading model: " << model_name;
-        if (ctx_size > 0) std::cout << " (ctx_size=" << ctx_size << ")";
-        if (!llamacpp_backend.empty()) std::cout << " (backend=" << llamacpp_backend << ")";
-        if (!llamacpp_args.empty()) std::cout << " (args=" << llamacpp_args << ")";
-        std::cout << std::endl;
-        
         // Check if model is already loaded (early return optimization)
         std::string loaded_model = router_->get_loaded_model();
         if (loaded_model == model_name) {
@@ -1660,11 +1632,17 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         
         auto info = model_manager_->get_model_info(model_name);
 
+        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        bool save_options = request_json.value("save_options", false);
+        
+        std::cout << "[Server] Loading model: " << model_name;
+        std::cout << " " << options.to_log_string(false);
+        std::cout << std::endl;
+
         // Persist request options to model info if requested
         if (save_options) {
-            info.ctx_size = ctx_size;
-            info.llamacpp_backend = llamacpp_backend;
-            info.llamacpp_args = llamacpp_args;
+            info.recipe_options = options;
             model_manager_->save_model_options(info);
         }
         
@@ -1676,7 +1654,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         // Load model with optional per-model settings
-        router_->load_model(model_name, info, true, ctx_size, llamacpp_backend, llamacpp_args);
+        router_->load_model(model_name, info, options, true);
         
         // Return success response
         nlohmann::json response = {
