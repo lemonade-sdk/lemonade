@@ -38,6 +38,25 @@ namespace fs = std::filesystem;
 
 namespace lemon_tray {
 
+// Helper function to detect if a path is a local filesystem path
+// Returns true for absolute paths (Windows: C:\... or D:\..., Unix: /...)
+static bool is_local_path(const std::string& path) {
+    if (path.empty()) return false;
+    
+    // Windows absolute path: C:\... or D:\... (also handles forward slashes)
+    if (path.length() >= 3 && std::isalpha(static_cast<unsigned char>(path[0])) && 
+        path[1] == ':' && (path[2] == '\\' || path[2] == '/')) {
+        return true;
+    }
+    
+    // Unix absolute path: /...
+    if (path[0] == '/') {
+        return true;
+    }
+    
+    return false;
+}
+
 // Helper macro for debug logging
 #define DEBUG_LOG(app, msg) \
     if ((app)->config_.log_level == "debug") { \
@@ -721,8 +740,12 @@ void TrayApp::print_pull_help() {
     std::cout << "  For custom models, use the registration options below.\n\n";
     std::cout << "Registration Options (for custom models):\n";
     std::cout << "  --checkpoint CHECKPOINT  Hugging Face checkpoint (format: org/model:variant)\n";
+    std::cout << "                           OR an absolute local path to a model directory.\n";
+    std::cout << "                           When a local path is provided, files are copied to\n";
+    std::cout << "                           the HuggingFace cache and registered.\n";
     std::cout << "  --recipe RECIPE          Inference recipe to use\n";
-    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n\n";
+    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n";
+    std::cout << "                           Required when using a local path.\n\n";
     std::cout << "  --reasoning              Mark model as a reasoning model (e.g., DeepSeek-R1)\n";
     std::cout << "                           Adds 'reasoning' label to model metadata.\n\n";
     std::cout << "  --vision                 Mark model as a vision model (multimodal)\n";
@@ -736,6 +759,17 @@ void TrayApp::print_pull_help() {
     std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
     std::cout << "                           Required for GGUF vision models.\n";
     std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
+    std::cout << "Examples:\n";
+    std::cout << "  # Pull a registered model\n";
+    std::cout << "  lemonade-server pull Llama-3.2-1B-Instruct-GGUF\n\n";
+    std::cout << "  # Pull from HuggingFace with custom name\n";
+    std::cout << "  lemonade-server pull user.MyLlama --checkpoint meta-llama/Llama-3.2-1B-Instruct-GGUF:Q4_K_M --recipe llamacpp\n\n";
+    std::cout << "  # Import from local directory\n";
+#ifdef _WIN32
+    std::cout << "  lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp\n\n";
+#else
+    std::cout << "  lemonade-server pull user.MyModel --checkpoint /home/user/models/my-model --recipe llamacpp\n\n";
+#endif
 }
 
 bool TrayApp::find_server_binary() {
@@ -996,7 +1030,110 @@ int TrayApp::execute_pull_command() {
     }
     
     std::string model_name = config_.command_args[0];
-    std::cout << "Pulling model: " << model_name << std::endl;
+    
+    // Parse optional arguments from config_.command_args (starting at index 1)
+    std::string checkpoint;
+    std::string recipe;
+    std::string mmproj;
+    bool reasoning = false;
+    bool vision = false;
+    bool embedding = false;
+    bool reranking = false;
+    
+    for (size_t i = 1; i < config_.command_args.size(); ++i) {
+        const auto& arg = config_.command_args[i];
+        
+        if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
+            checkpoint = config_.command_args[++i];
+        } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
+            recipe = config_.command_args[++i];
+        } else if (arg == "--reasoning") {
+            reasoning = true;
+        } else if (arg == "--vision") {
+            vision = true;
+        } else if (arg == "--embedding") {
+            embedding = true;
+        } else if (arg == "--reranking") {
+            reranking = true;
+        } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
+            mmproj = config_.command_args[++i];
+        }
+    }
+    
+    // Track if this is a local import (affects how we call the server)
+    bool local_import = false;
+    
+    // Check if checkpoint is a local filesystem path
+    if (!checkpoint.empty() && is_local_path(checkpoint)) {
+        // Validate path exists
+        if (!fs::exists(checkpoint)) {
+            std::cerr << "Error: Local path does not exist: " << checkpoint << std::endl;
+            return 1;
+        }
+        
+        // Validate model name has user. prefix for local imports
+        if (model_name.substr(0, 5) != "user.") {
+            std::cerr << "Error: When importing from a local path, model name must start with 'user.'" << std::endl;
+            std::cerr << "Example: lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp" << std::endl;
+            return 1;
+        }
+        
+        // Recipe is required for local imports
+        if (recipe.empty()) {
+            std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
+            std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Importing model from local path: " << checkpoint << std::endl;
+        
+        // Get HF cache directory (same logic as ModelManager)
+        std::string hf_cache;
+        if (const char* env = std::getenv("HF_HUB_CACHE")) {
+            hf_cache = env;
+        } else if (const char* env = std::getenv("HF_HOME")) {
+            hf_cache = std::string(env) + "/hub";
+        } else {
+#ifdef _WIN32
+            if (const char* userprofile = std::getenv("USERPROFILE")) {
+                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+            }
+#else
+            if (const char* home = std::getenv("HOME")) {
+                hf_cache = std::string(home) + "/.cache/huggingface/hub";
+            }
+#endif
+        }
+        
+        // Copy files to HF cache
+        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+        
+        std::cout << "Copying files to: " << dest_path << std::endl;
+        fs::create_directories(dest_path);
+        
+        fs::path src_path(checkpoint);
+        if (fs::is_directory(src_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(src_path)) {
+                fs::path relative = fs::relative(entry.path(), src_path);
+                fs::path dest_file = fs::path(dest_path) / relative;
+                if (entry.is_directory()) {
+                    fs::create_directories(dest_file);
+                } else {
+                    fs::create_directories(dest_file.parent_path());
+                    fs::copy_file(entry.path(), dest_file, fs::copy_options::overwrite_existing);
+                }
+            }
+        } else {
+            fs::copy_file(src_path, fs::path(dest_path) / src_path.filename(), 
+                         fs::copy_options::overwrite_existing);
+        }
+        
+        local_import = true;
+    }
+    
+    std::cout << (local_import ? "Registering model: " : "Pulling model: ") << model_name << std::endl;
     
     // Check if server is running
     auto [pid, running_port] = get_server_info();
@@ -1010,33 +1147,38 @@ int TrayApp::execute_pull_command() {
         }
     }
     
-    // Pull model via API with SSE streaming for progress
+    // Pull model via API (SSE streaming for downloads, simple POST for local imports)
     try {
         // Build request body with all optional parameters
-        nlohmann::json request_body = {{"model", model_name}, {"stream", true}};
+        // Local imports don't need streaming (no download progress)
+        nlohmann::json request_body = {{"model", model_name}, {"stream", !local_import}};
         
-        // Parse optional arguments from config_.command_args (starting at index 1)
-        for (size_t i = 1; i < config_.command_args.size(); ++i) {
-            const auto& arg = config_.command_args[i];
-            
-            if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
-                request_body["checkpoint"] = config_.command_args[++i];
-            } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
-                request_body["recipe"] = config_.command_args[++i];
-            } else if (arg == "--reasoning") {
-                request_body["reasoning"] = true;
-            } else if (arg == "--vision") {
-                request_body["vision"] = true;
-            } else if (arg == "--embedding") {
-                request_body["embedding"] = true;
-            } else if (arg == "--reranking") {
-                request_body["reranking"] = true;
-            } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
-                request_body["mmproj"] = config_.command_args[++i];
-            }
+        if (local_import) {
+            request_body["local_import"] = true;
+        }
+        if (!checkpoint.empty() && !local_import) {
+            // Only send checkpoint for remote downloads (local files already copied)
+            request_body["checkpoint"] = checkpoint;
+        }
+        if (!recipe.empty()) {
+            request_body["recipe"] = recipe;
+        }
+        if (reasoning) {
+            request_body["reasoning"] = true;
+        }
+        if (vision) {
+            request_body["vision"] = true;
+        }
+        if (embedding) {
+            request_body["embedding"] = true;
+        }
+        if (reranking) {
+            request_body["reranking"] = true;
+        }
+        if (!mmproj.empty()) {
+            request_body["mmproj"] = mmproj;
         }
         
-        // Use SSE streaming to receive progress events
         // Use the same host the server is bound to (0.0.0.0 is special - use localhost instead)
         std::string connect_host = (config_.host == "0.0.0.0") ? "localhost" : config_.host;
         
@@ -1044,6 +1186,30 @@ int TrayApp::execute_pull_command() {
         cli.set_connection_timeout(30, 0);
         cli.set_read_timeout(86400, 0);  // 24 hour read timeout for large downloads
         
+        // For local imports, use simple POST (no SSE streaming needed)
+        if (local_import) {
+            auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
+            
+            if (!res) {
+                throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+            }
+            
+            if (res->status != 200) {
+                try {
+                    auto error_json = nlohmann::json::parse(res->body);
+                    throw std::runtime_error(error_json.value("error", res->body));
+                } catch (const nlohmann::json::exception&) {
+                    throw std::runtime_error("Server returned status " + std::to_string(res->status));
+                }
+            }
+            
+            std::cout << "Model imported successfully: " << model_name << std::endl;
+            
+            if (!server_was_running) stop_server();
+            return 0;
+        }
+        
+        // Use SSE streaming to receive progress events (for remote downloads)
         std::string last_file;
         int last_percent = -1;
         bool success = false;
