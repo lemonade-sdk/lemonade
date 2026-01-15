@@ -3,17 +3,18 @@
 #include <CLI/CLI.hpp>
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace lemon {
+
+using json = nlohmann::json;
 
 struct ServerConfig {
     int port = 8000;
     std::string host = "localhost";
     std::string log_level = "info";
     bool tray = false;  // Tray is handled by lemonade-server, not lemonade-router
-    std::string llamacpp_backend = "vulkan";
-    int ctx_size = 4096;
-    std::string llamacpp_args = "";
+    json recipe_options = json::object();
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     
     // Multi-model support: Max loaded models by type

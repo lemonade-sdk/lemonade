@@ -300,6 +300,7 @@ set(SOURCES
     server/wrapped_server.cpp
     server/streaming_proxy.cpp
     server/system_info.cpp
+    server/recipe_options.cpp
     server/utils/http_client.cpp
     server/utils/json_utils.cpp
     server/utils/process_manager.cpp

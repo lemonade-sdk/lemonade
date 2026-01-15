@@ -333,13 +333,8 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
 
 void WhisperServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
-                        int ctx_size,
-                        bool do_not_upgrade,
-                        const std::string& /* llamacpp_backend */,
-                        const std::string& /* llamacpp_args */) {
-    // Note: llamacpp_backend and llamacpp_args are not used for whisper-server
-    // They're included for API compatibility with WrappedServer interface
-
+                        const RecipeOptions& options,
+                        bool do_not_upgrade) {
     std::cout << "[WhisperServer] Loading model: " << model_name << std::endl;
 
     // Install whisper-server if needed

@@ -21,10 +21,8 @@ public:
     Server(int port = 8000,
            const std::string& host = "127.0.0.1",
            const std::string& log_level = "info",
-           int ctx_size = 4096,
+           const json& default_options = json::object(),
            bool tray = false,
-           const std::string& llamacpp_backend = "vulkan",
-           const std::string& llamacpp_args = "",
            int max_llm_models = 1,
            int max_embedding_models = 1,
            int max_reranking_models = 1,
@@ -87,10 +85,8 @@ private:
     int port_;
     std::string host_;
     std::string log_level_;
-    int ctx_size_;
+    json default_options_;
     bool tray_;
-    std::string llamacpp_backend_;
-    std::string llamacpp_args_;
     std::string log_file_path_;
 
     std::thread http_v4_thread_;

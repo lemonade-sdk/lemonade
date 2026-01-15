@@ -16,10 +16,8 @@ using json = nlohmann::json;
 
 class Router {
 public:
-    Router(int ctx_size = 4096,
-           const std::string& llamacpp_backend = "vulkan",
+    Router(const json& default_options = json::object(),
            const std::string& log_level = "info",
-           const std::string& llamacpp_args = "",
            ModelManager* model_manager = nullptr,
            int max_llm_models = 1,
            int max_embedding_models = 1,
@@ -32,10 +30,8 @@ public:
     // Optional per-model settings override the defaults
     void load_model(const std::string& model_name,
                     const ModelInfo& model_info,
-                    bool do_not_upgrade = true,
-                    int ctx_size = -1,                           // -1 means use default
-                    const std::string& llamacpp_backend = "",    // empty means use default
-                    const std::string& llamacpp_args = "");
+                    RecipeOptions options,
+                    bool do_not_upgrade = true);
     
     // Unload model(s)
     void unload_model(const std::string& model_name = "");  // Empty = unload all
@@ -47,9 +43,6 @@ public:
     
     // Get all loaded models info
     json get_all_loaded_models() const;
-    
-    // Get the context size
-    int get_ctx_size() const { return ctx_size_; }
     
     // Get max model limits
     json get_max_model_limits() const;
@@ -96,10 +89,8 @@ private:
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
     
     // Configuration
-    int ctx_size_;
-    std::string llamacpp_backend_;
+    json default_options_;
     std::string log_level_;
-    std::string llamacpp_args_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     
     // Multi-model limits by type
@@ -131,10 +122,6 @@ private:
     // Generic streaming wrapper
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func);
-
-    // Option utilities
-    std::string prioritized_option(const std::string& load_option, const std::string& model_option, const std::string& fallback);
-    int prioritized_option(int load_option, int model_option, int fallback);
 };
 
 } // namespace lemon
