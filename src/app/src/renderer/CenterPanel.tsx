@@ -56,6 +56,11 @@ const apps = [
     url: 'https://www.iterate.ai/',
     logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png',
   },
+  {
+    name: 'Perplexica',
+    url: 'https://github.com/ItzCrazyKns/Perplexica',
+    logo: 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/perplexica.png',
+  },
 ];
 
 const CenterPanel: React.FC<CenterPanelProps> = ({ isVisible, onClose }) => {
