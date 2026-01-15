@@ -45,6 +45,7 @@
                   AllowSameVersionUpgrades="yes" />
     
     <!-- Custom properties for command-line installation -->
+    <Property Id="WixAppFolder" Value="WixPerUserFolder" />
     <Property Id="ALLUSERS" Value="2" Secure="yes" />
     <Property Id="MSIINSTALLPERUSER" Value="1" Secure="yes" />
     <Property Id="ADDDESKTOPSHORTCUT" Value="1" />
