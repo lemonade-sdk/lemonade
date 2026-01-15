@@ -27,14 +27,17 @@ def identify_rocm_arch_from_name(device_name: str) -> str | None:
     Identify the appropriate ROCm target architecture based on the device name
     """
     device_name_lower = device_name.lower()
-    if "radeon" not in device_name_lower:
+    if "radeon" not in device_name_lower and "amd" not in device_name_lower:
         return None
 
     # Check iGPUs
     # STX Halo iGPUs (gfx1151 architecture)
     # Radeon 8050S Graphics / Radeon 8060S Graphics
     target_arch = None
-    if any(halo_igpu in device_name_lower.lower() for halo_igpu in ["8050s", "8060s"]):
+    if any(
+        halo_igpu in device_name_lower
+        for halo_igpu in ["8050s", "8060s", "device 1586"]
+    ):
         return "gfx1151"
 
     # Check dGPUs
@@ -220,7 +223,6 @@ def get_binary_url_and_filename(backend: str, target_arch: str = None):
     system = platform.system().lower()
 
     if backend == "rocm":
-
         # ROCm support from lemonade-sdk/llamacpp-rocm
         repo = "lemonade-sdk/llamacpp-rocm"
         version = LLAMA_VERSION_ROCM
@@ -353,7 +355,6 @@ def install_llamacpp(backend):
 
     # Download llama.cpp server if it isn't already available
     if not os.path.exists(llama_server_exe_path):
-
         # Create the directory
         os.makedirs(llama_server_exe_dir, exist_ok=True)
 
@@ -500,7 +501,6 @@ def get_local_checkpoint_path(base_checkpoint, variant):
         model_to_use = None
 
         if os.path.isdir(snapshot_path) and os.listdir(snapshot_path):
-
             snapshot_files = [filename for filename in os.listdir(snapshot_path)]
 
             if variant.endswith(".gguf"):
