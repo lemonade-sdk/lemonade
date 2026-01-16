@@ -1005,7 +1005,6 @@ curl http://localhost:8000/api/v1/health
 ```json
 {
   "status": "ok",
-  "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
   "all_models_loaded": [
     {
