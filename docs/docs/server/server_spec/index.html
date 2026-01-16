@@ -4011,7 +4011,6 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <h4 id="response-format_10">Response format</h4>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoint_loaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;model_loaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;all_models_loaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
@@ -4020,6 +4019,10 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;last_use&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1732123456.789</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llm&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu npu&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oga-hybrid&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
+<span class="w">      </span><span class="p">},</span><span class="w">      </span>
 <span class="w">      </span><span class="nt">&quot;backend_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:8001/v1&quot;</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
@@ -4028,6 +4031,12 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;last_use&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1732123450.123</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;embedding&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpu&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--no-mmap&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">      </span><span class="p">},</span>
 <span class="w">      </span><span class="nt">&quot;backend_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:8002/v1&quot;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
@@ -4041,7 +4050,6 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <p><strong>Field Descriptions:</strong></p>
 <ul>
 <li><code>status</code> - Server health status, always <code>"ok"</code></li>
-<li><code>checkpoint_loaded</code> - Checkpoint identifier of the most recently accessed model</li>
 <li><code>model_loaded</code> - Model name of the most recently accessed model</li>
 <li><code>all_models_loaded</code> - Array of all currently loaded models with details:</li>
 <li><code>model_name</code> - Name of the loaded model</li>
@@ -4050,6 +4058,8 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>type</code> - Model type: <code>"llm"</code>, <code>"embedding"</code>, or <code>"reranking"</code></li>
 <li><code>device</code> - Space-separated device list: <code>"cpu"</code>, <code>"gpu"</code>, <code>"npu"</code>, or combinations like <code>"gpu npu"</code></li>
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
+<li><code>recipe</code>: - Backend/device recipe used to load the model (e.g., <code>"oga-cpu"</code>, <code>"oga-hybrid"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
+<li><code>recipe_options</code>: - Options used to load the model (e.g., <code>"ctx_size"</code>, <code>"llamacpp_backend"</code>, <code>"llamacpp_args"</code>)</li>
 <li><code>max_models</code> - Maximum number of models that can be loaded simultaneously (set via <code>--max-loaded-models</code>):</li>
 <li><code>llm</code> - Maximum LLM/chat models</li>
 <li><code>embedding</code> - Maximum embedding models</li>
