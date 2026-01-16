@@ -405,12 +405,6 @@ std::string Router::get_loaded_model() const {
     return server ? server->get_model_name() : "";
 }
 
-std::string Router::get_loaded_checkpoint() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
-    return server ? server->get_checkpoint() : "";
-}
-
 std::string Router::get_loaded_recipe() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
