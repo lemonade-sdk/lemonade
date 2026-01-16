@@ -28,6 +28,7 @@ on:
         - 'rai300_400'
         - 'stx'
         - 'stx-halo'
+        - 'stx-test'
 
 permissions:
   contents: read
