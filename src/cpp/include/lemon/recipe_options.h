@@ -15,9 +15,9 @@ public:
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
+    std::string get_recipe() const { return recipe_; };
 
     static void add_cli_options(CLI::App& app, json& storage);
-    static int get_ctx_size_from_cli_options(json options_) { return RecipeOptions("llamacpp", options_).get_option("ctx_size"); }
 private:
     json options_ = json::object();
     std::string recipe_ = "";

@@ -60,7 +60,6 @@ int main(int argc, char** argv) {
         std::cout << "  Port: " << config.port << std::endl;
         std::cout << "  Host: " << config.host << std::endl;
         std::cout << "  Log level: " << config.log_level << std::endl;
-        std::cout << "  Context size: " << RecipeOptions::get_ctx_size_from_cli_options(config.recipe_options) << std::endl;
         if (!config.extra_models_dir.empty()) {
             std::cout << "  Extra models dir: " << config.extra_models_dir << std::endl;
         }

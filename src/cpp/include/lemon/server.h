@@ -52,6 +52,7 @@ private:
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
+    void handle_live(const httplib::Request& req, httplib::Response& res);    
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
@@ -64,12 +65,26 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
+    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
+    
+    // Helper function for local model resolution and registration
+    void resolve_and_register_local_model(
+        const std::string& dest_path,
+        const std::string& model_name,
+        const std::string& recipe,
+        const std::string& variant,
+        const std::string& mmproj,
+        bool reasoning,
+        bool& vision,
+        bool embedding,
+        bool reranking,
+        bool image,
+        const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
