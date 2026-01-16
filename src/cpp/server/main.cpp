@@ -69,8 +69,7 @@ int main(int argc, char** argv) {
                     config.recipe_options, config.tray, config.max_llm_models,
                     config.max_embedding_models, config.max_reranking_models,
                     config.max_audio_models, config.max_image_models,
-                    config.extra_models_dir,
-                    config.save_images, config.images_dir);
+                    config.extra_models_dir);
         
         // Register signal handler for Ctrl+C
         g_server_instance = &server;

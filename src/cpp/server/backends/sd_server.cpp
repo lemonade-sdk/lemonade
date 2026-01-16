@@ -4,22 +4,20 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
+#include <httplib.h>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <random>
-#include <sstream>
-#include <iomanip>
-#include <algorithm>
-#include <vector>
+#include <thread>
 #include <chrono>
-#include <cstdio>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <winsock2.h>
 #else
-#include <sys/stat.h>
-#include <sys/wait.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #endif
 
@@ -37,8 +35,7 @@ static std::string get_sd_version() {
         json config = utils::JsonUtils::load_from_file(config_path);
 
         if (!config.contains("sd-cpp") || !config["sd-cpp"].is_string()) {
-            // Default version if not in config
-            return "master-2c39fd0";
+            return "master-471-7010bb4";
         }
 
         return config["sd-cpp"].get<std::string>();
@@ -46,8 +43,7 @@ static std::string get_sd_version() {
     } catch (const std::exception& e) {
         std::cerr << "[SDServer] Warning: Could not load version from config: "
                   << e.what() << std::endl;
-        std::cerr << "[SDServer] Using default version: master-2c39fd0" << std::endl;
-        return "master-2c39fd0";
+        return "master-471-7010bb4";
     }
 }
 
@@ -56,362 +52,319 @@ static std::string get_sd_install_dir() {
     return (fs::path(get_downloaded_bin_dir()) / "sd-cpp").string();
 }
 
-// Helper to run a process safely without shell injection vulnerabilities
-static int run_process_safe(const std::vector<std::string>& args) {
-#ifdef _WIN32
-    if (args.empty()) return -1;
-
-    // Build command line with proper quoting for Windows
-    std::string cmdline;
-    for (size_t i = 0; i < args.size(); ++i) {
-        if (i > 0) cmdline += " ";
-        // Quote arguments that contain spaces or special characters
-        bool needs_quotes = args[i].find_first_of(" \t\"") != std::string::npos;
-        if (needs_quotes) {
-            cmdline += "\"";
-            // Escape embedded quotes
-            for (char c : args[i]) {
-                if (c == '"') cmdline += "\\\"";
-                else cmdline += c;
-            }
-            cmdline += "\"";
-        } else {
-            cmdline += args[i];
-        }
-    }
-
-    STARTUPINFOA si = {};
-    PROCESS_INFORMATION pi = {};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    // CreateProcess needs a mutable string
-    std::vector<char> cmdline_buf(cmdline.begin(), cmdline.end());
-    cmdline_buf.push_back('\0');
-
-    if (!CreateProcessA(NULL, cmdline_buf.data(), NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        return -1;
-    }
-
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exit_code = 0;
-    GetExitCodeProcess(pi.hProcess, &exit_code);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    return static_cast<int>(exit_code);
-#else
-    pid_t pid = fork();
-    if (pid == -1) {
-        return -1;
-    } else if (pid == 0) {
-        // Child process
-        std::vector<char*> argv;
-        for (const auto& arg : args) {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
-        execvp(argv[0], argv.data());
-        _exit(127); // exec failed
-    } else {
-        // Parent process
-        int status;
-        waitpid(pid, &status, 0);
-        if (WIFEXITED(status)) {
-            return WEXITSTATUS(status);
-        }
-        return -1;
-    }
-#endif
-}
-
 // Helper to extract ZIP files
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
+#ifdef _WIN32
     std::cout << "[SDServer] Extracting ZIP to " << dest_dir << std::endl;
 
-#ifdef _WIN32
-    // Try PowerShell Expand-Archive (safest, uses argument array)
-    int result = run_process_safe({
-        "powershell.exe", "-NoProfile", "-Command",
-        "Expand-Archive -Path '" + zip_path + "' -DestinationPath '" + dest_dir + "' -Force"
-    });
-    if (result == 0) {
-        return true;
-    }
-    std::cerr << "[SDServer] PowerShell extraction failed with code: " << result << std::endl;
+    // Ensure destination directory exists
+    fs::create_directories(dest_dir);
 
-    // Try Windows tar (supports zip on Windows 10 1903+)
-    result = run_process_safe({"tar", "-xf", zip_path, "-C", dest_dir});
-    if (result == 0) {
-        return true;
+    // Use tar (available on Windows 10 1903+) which is more reliable
+    std::string tar_command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
+    int result = system(tar_command.c_str());
+
+    if (result != 0) {
+        std::cerr << "[SDServer] tar extraction failed with code: " << result
+                  << ", trying PowerShell..." << std::endl;
+        // Fall back to PowerShell with full path
+        std::string ps_command = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe "
+                                "-Command \"try { Expand-Archive -Path '" +
+                                zip_path + "' -DestinationPath '" + dest_dir +
+                                "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
+        result = system(ps_command.c_str());
+        if (result != 0) {
+            std::cerr << "[SDServer] PowerShell extraction also failed with code: " << result << std::endl;
+            return false;
+        }
     }
-    std::cerr << "[SDServer] All extraction methods failed" << std::endl;
-    return false;
+    return true;
 #else
-    int result = run_process_safe({"unzip", "-o", zip_path, "-d", dest_dir});
+    std::cout << "[SDServer] Extracting ZIP to " << dest_dir << std::endl;
+    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
+    int result = system(command.c_str());
     return result == 0;
 #endif
 }
 
-SDServer::SDServer(const std::string& log_level, ModelManager* model_manager,
-                   bool save_images, const std::string& images_dir)
-    : WrappedServer("sd-server", log_level, model_manager),
-      save_images_(save_images), images_dir_(images_dir) {
+SDServer::SDServer(const std::string& log_level,
+                   ModelManager* model_manager)
+    : WrappedServer("sd-server", log_level, model_manager)
+    , port_(0)
+    , process_handle_({nullptr, 0}) {
 
-    // Create directory for output images
-    if (save_images_) {
-        // Use specified directory or default to ./generated_images
-        if (images_dir_.empty()) {
-            temp_dir_ = fs::current_path() / "generated_images";
-        } else {
-            temp_dir_ = fs::path(images_dir_);
-        }
-        std::cout << "[SDServer] Images will be saved to: " << temp_dir_.string() << std::endl;
-    } else {
-        // Use temp directory for transient images
-        temp_dir_ = fs::temp_directory_path() / "lemonade_images";
+    if (is_debug()) {
+        std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
     }
-    fs::create_directories(temp_dir_);
 }
 
 SDServer::~SDServer() {
     unload();
+}
 
-    // Only clean up temp directory if we're not saving images
-    if (!save_images_) {
+int SDServer::choose_port() {
+    // Find an available port by binding to port 0
+#ifdef _WIN32
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) return 0;
+#else
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return 0;
+#endif
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = 0;  // Let OS choose
+
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+        return 0;
+    }
+
+    socklen_t len = sizeof(addr);
+    if (getsockname(sock, (struct sockaddr*)&addr, &len) < 0) {
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+        return 0;
+    }
+
+    int port = ntohs(addr.sin_port);
+
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+
+    return port;
+}
+
+bool SDServer::wait_for_ready(int timeout_seconds) {
+    std::cout << "[SDServer] Waiting for server to be ready on port " << port_ << "..." << std::endl;
+
+    auto start = std::chrono::steady_clock::now();
+
+    while (true) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start).count();
+
+        if (elapsed >= timeout_seconds) {
+            std::cerr << "[SDServer] Timeout waiting for server to be ready after "
+                      << timeout_seconds << "s" << std::endl;
+            return false;
+        }
+
+        // Check if process is still running
+        if (!utils::ProcessManager::is_running(process_handle_)) {
+            int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
+            std::cerr << "[SDServer] Server process exited unexpectedly with code: "
+                      << exit_code << std::endl;
+            return false;
+        }
+
         try {
-            if (fs::exists(temp_dir_)) {
-                fs::remove_all(temp_dir_);
+            httplib::Client client("127.0.0.1", port_);
+            client.set_connection_timeout(2);
+            client.set_read_timeout(2);
+
+            auto response = client.Get("/");
+            if (response && response->status == 200) {
+                std::cout << "[SDServer] Server is ready!" << std::endl;
+                return true;
+            }
+            if (response) {
+                std::cout << "[SDServer] Got response with status " << response->status
+                          << ", waiting for 200..." << std::endl;
             }
         } catch (const std::exception& e) {
-            std::cerr << "[SDServer] Warning: Could not clean up temp directory: "
-                      << e.what() << std::endl;
+            if (is_debug()) {
+                std::cout << "[SDServer] Health check failed: " << e.what() << std::endl;
+            }
+        } catch (...) {
+            // Server not ready yet
         }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 }
 
+std::string SDServer::get_sd_server_path() {
+    // First check if it's already installed
+    std::string install_dir = get_sd_install_dir();
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+
+    if (!exe_path.empty()) {
+        return exe_path;
+    }
+
+    // Try to find external sd-server
+    exe_path = find_external_sd_executable();
+    if (!exe_path.empty()) {
+        return exe_path;
+    }
+
+    return "";
+}
+
 std::string SDServer::find_executable_in_install_dir(const std::string& install_dir) {
-    // Look for sd executable
-    // The stable-diffusion.cpp releases use 'sd-cli' as the CLI executable name
+    if (!fs::exists(install_dir)) {
+        return "";
+    }
+
 #ifdef _WIN32
-    std::vector<std::string> exe_names = {"sd-cli.exe", "sd.exe", "stable-diffusion.exe"};
-    std::vector<std::string> subdirs = {"bin", ""};
+    fs::path exe_path = fs::path(install_dir) / "sd-server.exe";
 #else
-    std::vector<std::string> exe_names = {"sd-cli", "sd", "stable-diffusion"};
-    std::vector<std::string> subdirs = {"bin", ""};
+    fs::path exe_path = fs::path(install_dir) / "sd-server";
 #endif
 
-    for (const auto& subdir : subdirs) {
-        for (const auto& exe_name : exe_names) {
-            fs::path exe_path;
-            if (subdir.empty()) {
-                exe_path = fs::path(install_dir) / exe_name;
-            } else {
-                exe_path = fs::path(install_dir) / subdir / exe_name;
-            }
-            if (fs::exists(exe_path)) {
-                return exe_path.string();
-            }
-        }
+    if (fs::exists(exe_path)) {
+        return exe_path.string();
     }
 
     return "";
 }
 
 std::string SDServer::find_external_sd_executable() {
-    const char* sd_bin_env = std::getenv("LEMONADE_SDCPP_BIN");
-    if (!sd_bin_env) {
-        return "";
-    }
-
-    std::string sd_bin = std::string(sd_bin_env);
-
-    return fs::exists(sd_bin) ? sd_bin : "";
-}
-
-std::string SDServer::get_sd_executable_path() {
-    std::string exe_path = find_external_sd_executable();
-
-    if (!exe_path.empty()) {
-        return exe_path;
-    }
-
-    std::string install_dir = get_sd_install_dir();
-    return find_executable_in_install_dir(install_dir);
-}
-
-void SDServer::install(const std::string& backend) {
-    std::string install_dir;
-    std::string version_file;
-    std::string expected_version;
-    std::string exe_path = find_external_sd_executable();
-    bool needs_install = exe_path.empty();
-
-    if (needs_install) {
-        install_dir = get_sd_install_dir();
-        version_file = (fs::path(install_dir) / "version.txt").string();
-
-        // Get expected version from config
-        expected_version = get_sd_version();
-
-        // Check if already installed with correct version
-        exe_path = find_executable_in_install_dir(install_dir);
-        needs_install = exe_path.empty();
-
-        if (!needs_install && fs::exists(version_file)) {
-            std::string installed_version;
-
-            std::ifstream vf(version_file);
-            std::getline(vf, installed_version);
-            vf.close();
-
-            if (installed_version != expected_version) {
-                std::cout << "[SDServer] Upgrading from " << installed_version
-                        << " to " << expected_version << std::endl;
-                needs_install = true;
-                fs::remove_all(install_dir);
-            }
-        }
-    }
-
-    if (needs_install) {
-        std::cout << "[SDServer] Installing stable-diffusion.cpp (version: "
-                 << expected_version << ")" << std::endl;
-
-        // Create install directory
-        fs::create_directories(install_dir);
-
-        // Determine download URL
-        // stable-diffusion.cpp releases are at: https://github.com/leejet/stable-diffusion.cpp/releases
-        // Version format: "master-453-4ff2c8c" -> asset uses "master-4ff2c8c" (skip build number)
-        std::string repo = "leejet/stable-diffusion.cpp";
-        std::string filename;
-
-        // Extract short version for asset name (e.g., "master-453-4ff2c8c" -> "master-4ff2c8c")
-        std::string short_version = expected_version;
-        size_t first_dash = expected_version.find('-');
-        if (first_dash != std::string::npos) {
-            size_t second_dash = expected_version.find('-', first_dash + 1);
-            if (second_dash != std::string::npos) {
-                // Format: master-XXX-HASH -> master-HASH
-                short_version = expected_version.substr(0, first_dash) + "-" +
-                               expected_version.substr(second_dash + 1);
-            }
-        }
-
+    // Check common locations for sd-server
 #ifdef _WIN32
-        // Windows CPU build with AVX2: sd-master-4ff2c8c-bin-win-avx2-x64.zip
-        filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
-#elif defined(__linux__)
-        // Linux build: sd-master-4ff2c8c-bin-Linux-Ubuntu-24.04-x86_64.zip
-        filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-        // macOS ARM build: sd-master-4ff2c8c-bin-Darwin-macOS-15.7.2-arm64.zip
-        filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+    std::vector<std::string> paths = {
+        "sd-server.exe",
+        "C:/Program Files/stable-diffusion.cpp/sd-server.exe"
+    };
 #else
-        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+    std::vector<std::string> paths = {
+        "sd-server",
+        "/usr/local/bin/sd-server",
+        "/usr/bin/sd-server"
+    };
 #endif
 
-        std::string url = "https://github.com/" + repo + "/releases/download/" +
-                         expected_version + "/" + filename;
-
-        // Download ZIP to cache directory
-        fs::path cache_dir = model_manager_ ? fs::path(model_manager_->get_hf_cache_dir()) : fs::temp_directory_path();
-        fs::create_directories(cache_dir);
-        std::string zip_path = (cache_dir / ("sd_" + expected_version + ".zip")).string();
-
-        std::cout << "[SDServer] Downloading from: " << url << std::endl;
-        std::cout << "[SDServer] Downloading to: " << zip_path << std::endl;
-
-        // Download the file
-        auto download_result = utils::HttpClient::download_file(
-            url,
-            zip_path,
-            utils::create_throttled_progress_callback()
-        );
-
-        if (!download_result.success) {
-            throw std::runtime_error("Failed to download stable-diffusion.cpp from: " + url +
-                                    " - " + download_result.error_message);
+    for (const auto& path : paths) {
+        if (fs::exists(path)) {
+            return path;
         }
+    }
 
-        std::cout << std::endl << "[SDServer] Download complete!" << std::endl;
+    return "";
+}
 
-        // Verify the downloaded file
-        if (!fs::exists(zip_path)) {
-            throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
+void SDServer::install(const std::string& /* backend */) {
+    std::string install_dir = get_sd_install_dir();
+
+    // Check if already installed
+    std::string exe_path = find_executable_in_install_dir(install_dir);
+    if (!exe_path.empty()) {
+        std::cout << "[SDServer] sd-server already installed at: " << exe_path << std::endl;
+        return;
+    }
+
+    std::cout << "[SDServer] Installing stable-diffusion.cpp server..." << std::endl;
+
+    // Get version and construct download URL
+    std::string expected_version = get_sd_version();
+    std::string repo = "leejet/stable-diffusion.cpp";
+
+    // Transform version for URL (master-NNN-HASH -> master-HASH)
+    std::string short_version = expected_version;
+    size_t first_dash = expected_version.find('-');
+    if (first_dash != std::string::npos) {
+        size_t second_dash = expected_version.find('-', first_dash + 1);
+        if (second_dash != std::string::npos) {
+            short_version = expected_version.substr(0, first_dash) + "-" +
+                           expected_version.substr(second_dash + 1);
         }
+    }
 
-        std::uintmax_t file_size = fs::file_size(zip_path);
-        std::cout << "[SDServer] Downloaded ZIP file size: "
-                  << (file_size / 1024 / 1024) << " MB" << std::endl;
+    std::string filename;
+#ifdef _WIN32
+    // Windows CPU build with AVX2
+    filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+#elif defined(__linux__)
+    // Linux build
+    filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+#elif defined(__APPLE__)
+    // macOS ARM build
+    filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
+#else
+    throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
+#endif
 
-        const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
-        if (file_size < MIN_ZIP_SIZE) {
-            std::cerr << "[SDServer] ERROR: Downloaded file is too small" << std::endl;
-            fs::remove(zip_path);
-            throw std::runtime_error("Downloaded file is too small, likely corrupted");
-        }
+    std::string url = "https://github.com/" + repo + "/releases/download/" +
+                     expected_version + "/" + filename;
 
-        // Extract
-        if (!extract_zip(zip_path, install_dir)) {
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Failed to extract stable-diffusion.cpp archive");
-        }
+    // Download ZIP to cache directory
+    fs::path cache_dir = model_manager_ ? fs::path(model_manager_->get_hf_cache_dir()) : fs::temp_directory_path();
+    fs::create_directories(cache_dir);
+    std::string zip_path = (cache_dir / ("sd_" + expected_version + ".zip")).string();
 
-        // Verify extraction
-        exe_path = find_executable_in_install_dir(install_dir);
-        if (exe_path.empty()) {
-            std::cerr << "[SDServer] ERROR: Extraction completed but executable not found" << std::endl;
-            fs::remove(zip_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("Extraction failed: executable not found");
-        }
+    std::cout << "[SDServer] Downloading from: " << url << std::endl;
 
-        std::cout << "[SDServer] Executable verified at: " << exe_path << std::endl;
+    // Download with progress
+    auto download_result = utils::HttpClient::download_file(
+        url,
+        zip_path,
+        utils::create_throttled_progress_callback()
+    );
 
-        // Save version info
-        std::ofstream vf(version_file);
-        vf << expected_version;
-        vf.close();
+    if (!download_result.success) {
+        throw std::runtime_error("Failed to download stable-diffusion.cpp from: " + url +
+                                " - " + download_result.error_message);
+    }
+    std::cout << std::endl;
+
+    std::cout << "[SDServer] Download complete!" << std::endl;
+
+    // Verify file size
+    auto file_size = fs::file_size(zip_path);
+    std::cout << "[SDServer] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
+
+    // Create install directory and extract
+    fs::create_directories(install_dir);
+    std::cout << "[SDServer] Extracting ZIP to " << install_dir << std::endl;
+
+    // Extract the ZIP
+    if (!extract_zip(zip_path, install_dir)) {
+        throw std::runtime_error("Failed to extract ZIP file");
+    }
+
+    // Verify extraction
+    exe_path = find_executable_in_install_dir(install_dir);
+    if (exe_path.empty()) {
+        throw std::runtime_error("sd-server executable not found after extraction");
+    }
 
 #ifndef _WIN32
-        // Make executable on Linux/macOS
-        chmod(exe_path.c_str(), 0755);
+    // Make executable on Unix
+    chmod(exe_path.c_str(), 0755);
 #endif
 
-        // Delete ZIP file
-        fs::remove(zip_path);
+    std::cout << "[SDServer] Executable verified at: " << exe_path << std::endl;
+    std::cout << "[SDServer] Installation complete!" << std::endl;
 
-        std::cout << "[SDServer] Installation complete!" << std::endl;
-    } else {
-        std::cout << "[SDServer] Found stable-diffusion.cpp at: " << exe_path << std::endl;
+    // Clean up ZIP file
+    try {
+        fs::remove(zip_path);
+    } catch (...) {
+        // Ignore cleanup errors
     }
 }
 
 std::string SDServer::download_model(const std::string& checkpoint,
-                                     const std::string& mmproj,
+                                     const std::string& /* mmproj */,
                                      bool do_not_upgrade) {
-    // Parse checkpoint: "stabilityai/stable-diffusion-v1-5:v1-5-pruned.safetensors"
-    // or just "model.safetensors" for local files
-    std::string repo, filename;
-    size_t colon_pos = checkpoint.find(':');
-
-    if (colon_pos != std::string::npos) {
-        repo = checkpoint.substr(0, colon_pos);
-        filename = checkpoint.substr(colon_pos + 1);
-    } else {
-        throw std::runtime_error("Invalid checkpoint format. Expected 'repo:filename'");
-    }
-
-    // Download model file from Hugging Face using ModelManager
     if (!model_manager_) {
         throw std::runtime_error("ModelManager not available for model download");
     }
 
-    std::cout << "[SDServer] Downloading model: " << filename << " from " << repo << std::endl;
+    std::cout << "[SDServer] Downloading model: " << checkpoint << std::endl;
 
     // Use ModelManager's download_model which handles HuggingFace downloads
     model_manager_->download_model(
@@ -422,7 +375,7 @@ std::string SDServer::download_model(const std::string& checkpoint,
         false,       // vision
         false,       // embedding
         false,       // reranking
-        true,        // image (SD models are image generation models)
+        true,        // image
         "",          // mmproj
         do_not_upgrade
     );
@@ -431,7 +384,7 @@ std::string SDServer::download_model(const std::string& checkpoint,
     ModelInfo info = model_manager_->get_model_info(checkpoint);
     std::string model_path = info.resolved_path;
 
-    if (model_path.empty() || !fs::exists(model_path)) {
+    if (model_path.empty()) {
         throw std::runtime_error("Failed to download SD model: " + checkpoint);
     }
 
@@ -442,48 +395,39 @@ std::string SDServer::download_model(const std::string& checkpoint,
 void SDServer::load(const std::string& model_name,
                     const ModelInfo& model_info,
                     const RecipeOptions& /* options */,
-                    bool do_not_upgrade) {
-    // Note: RecipeOptions is not used for sd-cpp
-    // SD-Turbo uses its own defaults (steps, cfg_scale, etc.)
-
+                    bool /* do_not_upgrade */) {
     std::cout << "[SDServer] Loading model: " << model_name << std::endl;
 
-    // Install sd executable if needed
+    // Install sd-server if needed
     install("");
 
-    // Use pre-resolved model path
+    // Get model path
     std::string model_path = model_info.resolved_path;
     if (model_path.empty()) {
         throw std::runtime_error("Model file not found for checkpoint: " + model_info.checkpoint);
     }
 
-    // For SD models, the checkpoint format is "repo:filename" (e.g., "stabilityai/sd-turbo:sd_turbo.safetensors")
-    // The resolved_path may be the HuggingFace cache directory, we need to find the actual file
+    // For SD models, checkpoint format is "repo:filename" - find the actual file
     std::string target_filename;
     size_t colon_pos = model_info.checkpoint.find(':');
     if (colon_pos != std::string::npos) {
         target_filename = model_info.checkpoint.substr(colon_pos + 1);
     }
 
-    // Check if resolved_path is a directory (HuggingFace cache structure)
+    // Navigate HuggingFace cache structure if needed
     if (fs::is_directory(model_path)) {
         if (!target_filename.empty()) {
             std::cout << "[SDServer] Searching for " << target_filename << " in " << model_path << std::endl;
-        } else {
-            std::cout << "[SDServer] Searching for .safetensors file in " << model_path << std::endl;
         }
 
-        // Search in HuggingFace cache structure: models--org--repo/snapshots/*/filename
         fs::path snapshots_dir = fs::path(model_path) / "snapshots";
         if (fs::exists(snapshots_dir) && fs::is_directory(snapshots_dir)) {
             for (const auto& snapshot_entry : fs::directory_iterator(snapshots_dir)) {
                 if (snapshot_entry.is_directory()) {
                     if (!target_filename.empty()) {
-                        // Look for specific file
                         fs::path candidate = snapshot_entry.path() / target_filename;
                         if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
                             model_path = candidate.string();
-                            std::cout << "[SDServer] Found model file: " << model_path << std::endl;
                             break;
                         }
                     } else {
@@ -493,7 +437,6 @@ void SDServer::load(const std::string& model_name,
                                 std::string fname = file_entry.path().filename().string();
                                 if (fname.size() > 12 && fname.substr(fname.size() - 12) == ".safetensors") {
                                     model_path = file_entry.path().string();
-                                    std::cout << "[SDServer] Found model file: " << model_path << std::endl;
                                     break;
                                 }
                             }
@@ -503,19 +446,10 @@ void SDServer::load(const std::string& model_name,
                 }
             }
         }
-
-        // If still a directory and have target filename, try direct search
-        if (fs::is_directory(model_path) && !target_filename.empty()) {
-            fs::path direct_file = fs::path(model_path) / target_filename;
-            if (fs::exists(direct_file) && fs::is_regular_file(direct_file)) {
-                model_path = direct_file.string();
-            }
-        }
     }
 
-    // Final check - make sure we have an actual file
     if (fs::is_directory(model_path)) {
-        throw std::runtime_error("Model path is a directory, not a file. Expected a .safetensors file: " + model_path);
+        throw std::runtime_error("Model path is a directory, not a file: " + model_path);
     }
 
     if (!fs::exists(model_path)) {
@@ -525,113 +459,36 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Using model: " << model_path << std::endl;
     model_path_ = model_path;
 
-    // Get sd executable path
-    std::string exe_path = get_sd_executable_path();
+    // Get sd-server executable path
+    std::string exe_path = get_sd_server_path();
     if (exe_path.empty()) {
-        throw std::runtime_error("stable-diffusion.cpp executable not found");
+        throw std::runtime_error("sd-server executable not found");
     }
 
-    std::cout << "[SDServer] stable-diffusion.cpp ready at: " << exe_path << std::endl;
-
-    // Note: Unlike whisper-server, sd.cpp is a CLI tool that runs per-request
-    // We don't start a long-running server process here
-    // Each image_generations call will invoke the CLI
-}
-
-void SDServer::unload() {
-    model_path_.clear();
-    std::cout << "[SDServer] Model unloaded" << std::endl;
-}
-
-// ICompletionServer implementation - not supported for image generation
-json SDServer::chat_completion(const json& request) {
-    return json{
-        {"error", {
-            {"message", "Image generation models do not support chat completion. Use image generation endpoints instead."},
-            {"type", "unsupported_operation"},
-            {"code", "model_not_applicable"}
-        }}
-    };
-}
-
-json SDServer::completion(const json& request) {
-    return json{
-        {"error", {
-            {"message", "Image generation models do not support text completion. Use image generation endpoints instead."},
-            {"type", "unsupported_operation"},
-            {"code", "model_not_applicable"}
-        }}
-    };
-}
-
-json SDServer::responses(const json& request) {
-    return json{
-        {"error", {
-            {"message", "Image generation models do not support responses. Use image generation endpoints instead."},
-            {"type", "unsupported_operation"},
-            {"code", "model_not_applicable"}
-        }}
-    };
-}
-
-// Image generation helpers
-std::string SDServer::generate_output_path() {
-    // Generate unique filename
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 999999);
-
-    std::stringstream ss;
-    ss << "image_" << std::setfill('0') << std::setw(6) << dis(gen) << ".png";
-
-    return (temp_dir_ / ss.str()).string();
-}
-
-std::string SDServer::run_sd_cli(const std::string& prompt,
-                                  const std::string& output_path,
-                                  int width,
-                                  int height,
-                                  int steps,
-                                  float cfg_scale,
-                                  int64_t seed) {
-    std::string exe_path = get_sd_executable_path();
-    if (exe_path.empty()) {
-        throw std::runtime_error("stable-diffusion.cpp executable not found");
+    // Choose a port
+    port_ = choose_port();
+    if (port_ == 0) {
+        throw std::runtime_error("Failed to find an available port");
     }
 
-    // Build command line arguments for sd CLI
-    // Usage: sd -m MODEL -p "PROMPT" -o OUTPUT [OPTIONS]
+    std::cout << "[SDServer] Starting server on port " << port_ << std::endl;
+
+    // Build command line arguments
     std::vector<std::string> args = {
         "-m", model_path_,
-        "-p", prompt,
-        "-o", output_path,
-        "-W", std::to_string(width),
-        "-H", std::to_string(height),
-        "--steps", std::to_string(steps),
-        "--cfg-scale", std::to_string(cfg_scale)
+        "--listen-port", std::to_string(port_)
     };
 
-    if (seed >= 0) {
-        args.push_back("-s");
-        args.push_back(std::to_string(seed));
-    }
-
     if (is_debug()) {
-        std::cout << "[SDServer] Running: " << exe_path;
-        for (const auto& arg : args) {
-            std::cout << " " << arg;
-        }
-        std::cout << std::endl;
+        args.push_back("-v");
     }
 
-    // Set up environment variables
+    // Set up environment variables for Linux (LD_LIBRARY_PATH)
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifndef _WIN32
-    // On Linux, set LD_LIBRARY_PATH to include the directory containing libstable-diffusion.so
     fs::path exe_dir = fs::path(exe_path).parent_path();
     std::string lib_path = exe_dir.string();
 
-    // Preserve existing LD_LIBRARY_PATH if it exists
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {
         lib_path = lib_path + ":" + std::string(existing_ld_path);
@@ -643,8 +500,8 @@ std::string SDServer::run_sd_cli(const std::string& prompt,
     }
 #endif
 
-    // Run the CLI synchronously and wait for completion
-    auto process_handle = utils::ProcessManager::start_process(
+    // Launch the server process
+    process_handle_ = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -653,160 +510,134 @@ std::string SDServer::run_sd_cli(const std::string& prompt,
         env_vars
     );
 
-    if (process_handle.pid == 0) {
-        throw std::runtime_error("Failed to start stable-diffusion.cpp process");
+    if (process_handle_.pid == 0) {
+        throw std::runtime_error("Failed to start sd-server process");
     }
 
-    // Wait for the process to complete
-    int exit_code = utils::ProcessManager::wait_for_exit(process_handle, 600000);  // 10 minute timeout
+    std::cout << "[SDServer] Process started with PID: " << process_handle_.pid << std::endl;
 
-    if (exit_code != 0) {
-        throw std::runtime_error("stable-diffusion.cpp exited with code: " + std::to_string(exit_code));
+    // Wait for server to be ready
+    if (!wait_for_ready()) {
+        unload();
+        throw std::runtime_error("sd-server failed to start or become ready");
     }
 
-    // Verify output file was created
-    if (!fs::exists(output_path)) {
-        throw std::runtime_error("Image generation failed: output file not created");
-    }
-
-    return output_path;
+    std::cout << "[SDServer] Server is ready at http://127.0.0.1:" << port_ << std::endl;
 }
 
-std::string SDServer::read_image_as_base64(const std::string& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Could not open image file: " + path);
-    }
-
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string binary_data = oss.str();
-    file.close();
-
-    // Base64 encode
-    static const char base64_chars[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    std::string encoded;
-    encoded.reserve(((binary_data.size() + 2) / 3) * 4);
-
-    for (size_t i = 0; i < binary_data.size(); i += 3) {
-        unsigned int n = static_cast<unsigned char>(binary_data[i]) << 16;
-        if (i + 1 < binary_data.size()) {
-            n |= static_cast<unsigned char>(binary_data[i + 1]) << 8;
-        }
-        if (i + 2 < binary_data.size()) {
-            n |= static_cast<unsigned char>(binary_data[i + 2]);
-        }
-
-        encoded.push_back(base64_chars[(n >> 18) & 0x3F]);
-        encoded.push_back(base64_chars[(n >> 12) & 0x3F]);
-        encoded.push_back((i + 1 < binary_data.size()) ? base64_chars[(n >> 6) & 0x3F] : '=');
-        encoded.push_back((i + 2 < binary_data.size()) ? base64_chars[n & 0x3F] : '=');
-    }
-
-    return encoded;
-}
-
-void SDServer::cleanup_temp_file(const std::string& path) {
-    try {
-        if (fs::exists(path)) {
-            fs::remove(path);
-            if (is_debug()) {
-                std::cout << "[SDServer] Cleaned up temp file: " << path << std::endl;
-            }
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[SDServer] Warning: Could not delete temp file " << path
-                  << ": " << e.what() << std::endl;
+void SDServer::unload() {
+    if (process_handle_.pid != 0) {
+        std::cout << "[SDServer] Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(process_handle_);
+        process_handle_ = {nullptr, 0};
+        port_ = 0;
+        model_path_.clear();
     }
 }
 
-// IImageServer implementation
+// ICompletionServer implementation - not supported for image generation
+json SDServer::chat_completion(const json& /* request */) {
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Chat completion", "sd-cpp (image generation model)")
+    );
+}
+
+json SDServer::completion(const json& /* request */) {
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Text completion", "sd-cpp (image generation model)")
+    );
+}
+
+json SDServer::responses(const json& /* request */) {
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Responses", "sd-cpp (image generation model)")
+    );
+}
+
 json SDServer::image_generations(const json& request) {
+    if (port_ == 0 || process_handle_.pid == 0) {
+        return ErrorResponse::from_exception(
+            ModelNotLoadedException("No image generation model loaded")
+        );
+    }
+
     try {
-        // Extract parameters from request (OpenAI compatible)
-        std::string prompt = request.value("prompt", "");
-        if (prompt.empty()) {
-            throw std::runtime_error("Missing 'prompt' in request");
+        // Forward request to sd-server
+        httplib::Client client("127.0.0.1", port_);
+        client.set_connection_timeout(10);
+        client.set_read_timeout(600);  // 10 minutes for image generation
+
+        // Build request - sd-server uses OpenAI-compatible format
+        json sd_request = request;
+
+        // sd-server requires extra params (steps, sample_method, scheduler) to be
+        // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
+        // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
+        json extra_args;
+        if (request.contains("steps")) {
+            extra_args["steps"] = request["steps"];
+        }
+        if (request.contains("cfg_scale")) {
+            extra_args["cfg_scale"] = request["cfg_scale"];
+        }
+        if (request.contains("seed")) {
+            extra_args["seed"] = request["seed"];
+        }
+        if (request.contains("sample_method")) {
+            extra_args["sample_method"] = request["sample_method"];
+        }
+        if (request.contains("scheduler")) {
+            extra_args["scheduler"] = request["scheduler"];
         }
 
-        int n = request.value("n", 1);
-        if (n < 1 || n > 10) {
-            throw std::runtime_error("'n' must be between 1 and 10");
+        // Append extra args to prompt if any were specified
+        if (!extra_args.empty()) {
+            std::string prompt = sd_request.value("prompt", "");
+            prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+            sd_request["prompt"] = prompt;
         }
 
-        // Parse size (e.g., "512x512", "1024x1024")
-        std::string size = request.value("size", "512x512");
-        int width = 512, height = 512;
-        size_t x_pos = size.find('x');
-        if (x_pos != std::string::npos) {
-            try {
-                width = std::stoi(size.substr(0, x_pos));
-                height = std::stoi(size.substr(x_pos + 1));
-            } catch (...) {
-                throw std::runtime_error("Invalid size format. Expected 'WIDTHxHEIGHT'");
+        if (is_debug()) {
+            std::cout << "[SDServer] Forwarding request to sd-server: "
+                      << sd_request.dump(2) << std::endl;
+        }
+
+        auto response = client.Post(
+            "/v1/images/generations",
+            sd_request.dump(),
+            "application/json"
+        );
+
+        if (!response) {
+            throw std::runtime_error("Failed to connect to sd-server");
+        }
+
+        if (response->status != 200) {
+            std::string error_msg = "sd-server returned status " + std::to_string(response->status);
+            if (!response->body.empty()) {
+                error_msg += ": " + response->body;
             }
+            throw std::runtime_error(error_msg);
         }
 
-        // Additional SD-specific parameters (with OpenAI-compatible defaults)
-        int steps = request.value("steps", 20);
-        float cfg_scale = request.value("cfg_scale", 7.0f);
-        int64_t seed = request.value("seed", -1);  // -1 means random
+        // Parse and return response
+        json result = json::parse(response->body);
 
-        std::string response_format = request.value("response_format", "b64_json");
-
-        // Generate images
-        json data = json::array();
-        for (int i = 0; i < n; i++) {
-            std::string output_path = generate_output_path();
-
-            try {
-                // Run SD CLI
-                run_sd_cli(prompt, output_path, width, height, steps, cfg_scale, seed);
-
-                // Read and encode the image
-                if (response_format == "b64_json") {
-                    std::string base64_image = read_image_as_base64(output_path);
-                    data.push_back({{"b64_json", base64_image}});
-                } else if (response_format == "url") {
-                    // For URL format, we'd need to serve the file somehow
-                    // For now, just return the local path as a placeholder
-                    data.push_back({{"url", "file://" + output_path}});
-                }
-
-                // Clean up temp file if returning base64 and not saving images
-                if (response_format == "b64_json" && !save_images_) {
-                    cleanup_temp_file(output_path);
-                } else if (save_images_) {
-                    std::cout << "[SDServer] Image saved to: " << output_path << std::endl;
-                }
-
-            } catch (const std::exception& e) {
-                if (!save_images_) {
-                    cleanup_temp_file(output_path);
-                }
-                throw;
-            }
+        if (is_debug()) {
+            std::cout << "[SDServer] Response received, data items: "
+                      << (result.contains("data") ? result["data"].size() : 0) << std::endl;
         }
 
-        // Return OpenAI-compatible response
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            now.time_since_epoch()).count();
+        return result;
 
-        return json{
-            {"created", timestamp},
-            {"data", data}
-        };
-
+    } catch (const json::exception& e) {
+        return ErrorResponse::from_exception(
+            BackendException("sd-cpp", "Failed to parse sd-server response: " + std::string(e.what()))
+        );
     } catch (const std::exception& e) {
-        return json{
-            {"error", {
-                {"message", std::string("Image generation failed: ") + e.what()},
-                {"type", "image_generation_error"}
-            }}
-        };
+        return ErrorResponse::from_exception(
+            BackendException("sd-cpp", "Image generation failed: " + std::string(e.what()))
+        );
     }
 }
 

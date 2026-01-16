@@ -23,9 +23,7 @@ public:
            int max_embedding_models = 1,
            int max_reranking_models = 1,
            int max_audio_models = 1,
-           int max_image_models = 1,
-           bool save_images = false,
-           const std::string& images_dir = "");
+           int max_image_models = 1);
     
     ~Router();
     
@@ -97,8 +95,6 @@ private:
     // Configuration
     json default_options_;
     std::string log_level_;
-    bool save_images_;
-    std::string images_dir_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     
     // Multi-model limits by type

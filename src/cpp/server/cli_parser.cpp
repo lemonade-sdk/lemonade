@@ -27,14 +27,6 @@ CLIParser::CLIParser()
                    "Experimental feature: secondary directory to scan for LLM GGUF model files")
         ->default_val("");
 
-    // Image generation settings
-    app_.add_flag("--save-images", config_.save_images,
-                  "Save generated images to disk instead of cleaning up after returning base64");
-
-    app_.add_option("--images-dir", config_.images_dir,
-                   "Directory to save generated images (default: ./generated_images)")
-        ->default_val("");
-
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     app_.add_option("--max-loaded-models", max_models_vec_,

@@ -28,9 +28,7 @@ public:
            int max_reranking_models = 1,
            int max_audio_models = 1,
            int max_image_models = 1,
-           const std::string& extra_models_dir = "",
-           bool save_images = false,
-           const std::string& images_dir = "");
+           const std::string& extra_models_dir = "");
     
     ~Server();
     
@@ -94,8 +92,6 @@ private:
     json default_options_;
     bool tray_;
     std::string log_file_path_;
-    bool save_images_;
-    std::string images_dir_;
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;

@@ -37,10 +37,9 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, bool tray, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               int max_image_models, const std::string& extra_models_dir,
-               bool save_images, const std::string& images_dir)
+               int max_image_models, const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      tray_(tray), save_images_(save_images), images_dir_(images_dir), running_(false) {
+      tray_(tray), running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -76,8 +75,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models, max_image_models,
-                                       save_images_, images_dir_);
+                                       max_embedding_models, max_reranking_models, max_audio_models, max_image_models);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;

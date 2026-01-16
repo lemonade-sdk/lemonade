@@ -56,9 +56,7 @@ public:
         int max_reranking_models = 1,
         int max_audio_models = 1,
         int max_image_models = 1,
-        const std::string& extra_models_dir = "",
-        bool save_images = false,
-        const std::string& images_dir = ""
+        const std::string& extra_models_dir = ""
     );
     
     bool stop_server();
@@ -123,8 +121,6 @@ private:
     int max_image_models_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
-    bool save_images_;
-    std::string images_dir_;
     std::atomic<bool> server_started_;
     
 #ifdef _WIN32

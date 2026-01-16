@@ -7,7 +7,7 @@
     "cpu": "b7426"
   },
   "whispercpp": "v1.8.2",
-  "sd-cpp": "master-453-4ff2c8c",
+  "sd-cpp": "master-471-7010bb4",
   "flm": {
     "version": "v0.9.25",
     "min_npu_driver": "32.0.203.304"

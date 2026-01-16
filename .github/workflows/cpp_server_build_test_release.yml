@@ -1215,27 +1215,6 @@ jobs:
 
           Write-Host "Stable Diffusion tests PASSED!" -ForegroundColor Green
 
-      - name: Run Stable Diffusion --save-images tests
-        shell: PowerShell
-        env:
-          HF_HOME: "${{ env.HF_HOME }}"
-        run: |
-          $ErrorActionPreference = "Stop"
-          $venvPython = ".\.venv\Scripts\python.exe"
-
-          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-
-          Write-Host "Running Stable Diffusion --save-images tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
-          Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
-
-          & $venvPython test/server_sd.py --server-binary $serverExe --test-save-images
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "ERROR: Stable Diffusion --save-images tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
-              exit $LASTEXITCODE
-          }
-
-          Write-Host "Stable Diffusion --save-images tests PASSED!" -ForegroundColor Green
-
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
@@ -1328,19 +1307,6 @@ jobs:
           .venv/bin/python test/server_sd.py --server-binary $SERVER_BIN
 
           echo "Stable Diffusion tests PASSED!"
-
-      - name: Run Stable Diffusion --save-images tests
-        run: |
-          set -e
-
-          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
-
-          echo "Running Stable Diffusion --save-images tests with C++ server CLI: $SERVER_BIN"
-          echo "HF_HOME is set to: $HF_HOME"
-
-          .venv/bin/python test/server_sd.py --server-binary $SERVER_BIN --test-save-images
-
-          echo "Stable Diffusion --save-images tests PASSED!"
 
       - name: Cleanup
         if: always()

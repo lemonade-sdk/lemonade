@@ -23,10 +23,6 @@ struct ServerConfig {
     int max_reranking_models = 1;
     int max_audio_models = 1;
     int max_image_models = 1;
-
-    // Image generation settings
-    bool save_images = false;        // Save generated images to disk instead of cleaning up
-    std::string images_dir = "";     // Directory to save images (default: ./generated_images)
 };
 
 class CLIParser {

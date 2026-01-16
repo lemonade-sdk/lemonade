@@ -3,6 +3,7 @@
 #include "../wrapped_server.h"
 #include "../server_capabilities.h"
 #include "../recipe_options.h"
+#include "../utils/process_manager.h"
 #include <string>
 #include <filesystem>
 
@@ -12,9 +13,7 @@ namespace backends {
 class SDServer : public WrappedServer, public IImageServer {
 public:
     explicit SDServer(const std::string& log_level = "info",
-                      ModelManager* model_manager = nullptr,
-                      bool save_images = false,
-                      const std::string& images_dir = "");
+                      ModelManager* model_manager = nullptr);
 
     ~SDServer() override;
 
@@ -41,26 +40,19 @@ public:
     json image_generations(const json& request) override;
 
 private:
-    std::string get_sd_executable_path();
+    // Server executable helpers
+    std::string get_sd_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
     std::string find_external_sd_executable();
 
-    // Image generation helpers
-    std::string generate_output_path();
-    std::string run_sd_cli(const std::string& prompt,
-                           const std::string& output_path,
-                           int width,
-                           int height,
-                           int steps,
-                           float cfg_scale,
-                           int64_t seed);
-    std::string read_image_as_base64(const std::string& path);
-    void cleanup_temp_file(const std::string& path);
+    // Server lifecycle helpers
+    int choose_port();
+    bool wait_for_ready(int timeout_seconds = 60);
 
+    // Server state
     std::string model_path_;
-    std::filesystem::path temp_dir_;  // Directory for temporary output images
-    bool save_images_;                // Whether to keep generated images
-    std::string images_dir_;          // Directory for saved images (if save_images_ is true)
+    int port_ = 0;
+    utils::ProcessHandle process_handle_;
 };
 
 } // namespace backends

@@ -15,10 +15,8 @@ namespace lemon {
 
 Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
                int max_llm_models, int max_embedding_models, int max_reranking_models,
-               int max_audio_models, int max_image_models,
-               bool save_images, const std::string& images_dir)
-    : default_options_(default_options), log_level_(log_level),
-      save_images_(save_images), images_dir_(images_dir), model_manager_(model_manager),
+               int max_audio_models, int max_image_models)
+    : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
       max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
       max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models),
       max_image_models_(max_image_models) {
@@ -159,7 +157,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         new_server = std::make_unique<backends::WhisperServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "sd-cpp") {
         std::cout << "[Router] Creating SDServer backend" << std::endl;
-        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_, save_images_, images_dir_);
+        new_server = std::make_unique<backends::SDServer>(log_level_, model_manager_);
     } else if (model_info.recipe == "flm") {
         std::cout << "[Router] Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level_, model_manager_);
