@@ -824,6 +824,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.model_name = model_name;
     info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
