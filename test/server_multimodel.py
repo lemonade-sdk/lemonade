@@ -56,7 +56,6 @@ class MultiModelTesting(ServerTestingBase):
         self.assertIn("all_models_loaded", data)
         self.assertEqual(data["all_models_loaded"], [])
         self.assertIsNone(data.get("model_loaded"))
-        self.assertIsNone(data.get("checkpoint_loaded"))
 
     def test_002_load_single_model(self):
         """Test loading a single model and checking health."""
@@ -84,7 +83,6 @@ class MultiModelTesting(ServerTestingBase):
 
         # Check backward compatibility fields
         self.assertEqual(data["model_loaded"], self.model_llm_1)
-        self.assertIsNotNone(data["checkpoint_loaded"])
 
     def test_003_load_multiple_models_with_limit(self):
         """Test loading multiple LLM models respects max limit (max_llm_models=2)."""
@@ -121,7 +119,7 @@ class MultiModelTesting(ServerTestingBase):
         self.assertEqual(model_names, {self.model_llm_1, self.model_llm_2})
 
     def test_004_most_recent_model_updates_on_access(self):
-        """Test that model_loaded/checkpoint_loaded reflect most recently accessed model."""
+        """Test that model_loaded reflect most recently accessed model."""
         # Load model A
         response = requests.post(
             f"{self.base_url}/load", json={"model_name": self.model_llm_1}
