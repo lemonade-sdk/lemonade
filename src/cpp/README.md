@@ -148,8 +148,8 @@ cmake --build . --config Release --target wix_installer
 
 Creates `lemonade-server-minimal.msi` which:
 - MSI-based installer (Windows Installer technology)
-- Installs to `%LOCALAPPDATA%\lemonade_server\`
-- Adds `bin\` folder to user PATH using Windows Installer standard methods
+- **Per-user install (default):** Installs to `%LOCALAPPDATA%\lemonade_server\`, adds to user PATH, no UAC required
+- **All-users install (CLI only):** Installs to `%PROGRAMFILES%\Lemonade Server\`, adds to system PATH, requires elevation
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Uses Windows Installer Restart Manager to gracefully close running processes
@@ -167,7 +167,7 @@ msiexec /i lemonade-server-minimal.msi
 
 Silent installation:
 ```powershell
-# Install silently
+# Install silently (per-user, no UAC required)
 msiexec /i lemonade-server-minimal.msi /qn
 
 # Install to custom directory
@@ -179,6 +179,14 @@ msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
 # Install with startup entry
 msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
 ```
+
+All Users installation (from elevated command prompt):
+```powershell
+# Install for all users to Program Files (requires Administrator)
+msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files\Lemonade Server"
+```
+
+This installs to Program Files and adds Lemonade to the **system PATH** instead of the user PATH.
 
 ### Linux .deb Package (Debian/Ubuntu)
 
