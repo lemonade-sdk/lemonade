@@ -454,11 +454,8 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                 comp_req.top_k, comp_req.repeat_penalty, comp_req.stop
             );
             
-            auto start_time = std::chrono::high_resolution_clock::now();
-            std::string output = inference_engine_->complete(comp_req.prompt, params);
-            auto end_time = std::chrono::high_resolution_clock::now();
-            
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            CompletionTimingData timing;
+            std::string output = inference_engine_->complete(comp_req.prompt, params, &timing);
             
             // Parse reasoning content from output
             auto reasoning_result = parseReasoningContent(output);
@@ -472,9 +469,9 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
             // If echo=True, prepend the prompt to the output (matching Python reference)
             std::string final_text = comp_req.echo ? (comp_req.prompt + content) : content;
             
-            // Count tokens
+            // Count prompt tokens; completion_tokens from timing data
             int prompt_tokens = inference_engine_->countTokens(comp_req.prompt);
-            int completion_tokens = inference_engine_->countTokens(output);
+            int completion_tokens = timing.token_count;
             int total_tokens = prompt_tokens + completion_tokens;
             
             // Build choice object
@@ -499,11 +496,13 @@ void RyzenAIServer::handleCompletions(const httplib::Request& req, httplib::Resp
                     {"prompt_tokens", prompt_tokens},
                     {"completion_tokens", completion_tokens},
                     {"total_tokens", total_tokens},
-                    {"completion_time_ms", duration.count()}
+                    {"completion_time_ms", timing.total_time_ms},
+                    {"prefill_duration_ttft", timing.ttft_seconds},
+                    {"decoding_speed_tps", timing.tps}
                 }}
             };
             
-            std::cout << "[Server] [OK] Completion generated (" << duration.count() << "ms)" << std::endl;
+            std::cout << "[Server] [OK] Completion generated (" << timing.total_time_ms << "ms)" << std::endl;
             res.set_content(response.dump(), "application/json");
         }
         
@@ -850,11 +849,8 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                 chat_req.top_k, chat_req.repeat_penalty, chat_req.stop
             );
             
-            auto start_time = std::chrono::high_resolution_clock::now();
-            std::string output = inference_engine_->complete(prompt, params);
-            auto end_time = std::chrono::high_resolution_clock::now();
-            
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            CompletionTimingData timing;
+            std::string output = inference_engine_->complete(prompt, params, &timing);
             
             // Parse reasoning content from output
             auto reasoning_result = parseReasoningContent(output);
@@ -887,9 +883,9 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                 std::cout << "[Server DEBUG] No tools provided in request" << std::endl;
             }
             
-            // Count tokens
+            // Count prompt tokens; completion_tokens from timing data
             int prompt_tokens = inference_engine_->countTokens(prompt);
-            int completion_tokens = inference_engine_->countTokens(output);
+            int completion_tokens = timing.token_count;
             int total_tokens = prompt_tokens + completion_tokens;
             
             // Build message object
@@ -921,11 +917,13 @@ void RyzenAIServer::handleChatCompletions(const httplib::Request& req, httplib::
                     {"prompt_tokens", prompt_tokens},
                     {"completion_tokens", completion_tokens},
                     {"total_tokens", total_tokens},
-                    {"completion_time_ms", duration.count()}
+                    {"completion_time_ms", timing.total_time_ms},
+                    {"prefill_duration_ttft", timing.ttft_seconds},
+                    {"decoding_speed_tps", timing.tps}
                 }}
             };
             
-            std::cout << "[Server] [OK] Chat completion generated (" << duration.count() << "ms)" << std::endl;
+            std::cout << "[Server] [OK] Chat completion generated (" << timing.total_time_ms << "ms)" << std::endl;
             res.set_content(response.dump(), "application/json");
         }
         
