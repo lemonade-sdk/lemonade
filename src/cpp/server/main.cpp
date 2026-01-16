@@ -15,16 +15,19 @@ static Server* g_server_instance = nullptr;
 // Signal handler for Ctrl+C and SIGTERM
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\n[Server] Shutdown signal received, exiting..." << std::endl;
+        std::cout << "\n[Server] Shutdown signal received, stopping gracefully..." << std::endl;
         std::cout.flush();
-        
-        // Don't call server->stop() from signal handler - it can block/deadlock
-        // Just set the flag and exit immediately. The OS will clean up resources.
+
+        // Set shutdown flag
         g_shutdown_requested = true;
-        
-        // Use _exit() for async-signal-safe immediate termination
-        // The OS will handle cleanup of file descriptors, memory, and child processes
-        _exit(0);
+
+        // Call stop() to gracefully shutdown HTTP server and child processes
+        // This is safe for httplib's stop() which just sets a flag
+        if (g_server_instance) {
+            g_server_instance->stop();
+        }
+
+        // The main function will clean up and exit normally
     }
 }
 
