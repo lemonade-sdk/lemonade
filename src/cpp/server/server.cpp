@@ -711,10 +711,8 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["version"] = LEMON_VERSION_STRING;
     
     // Add model loaded information like Python implementation
-    std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
-    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
     response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
     
     // Multi-model support: Add all loaded models
@@ -722,9 +720,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
-    
-    // Add context size
-    response["context_size"] = RecipeOptions::get_ctx_size_from_cli_options(default_options_);
     
     // Add log streaming support information
     response["log_streaming"] = {

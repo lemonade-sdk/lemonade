@@ -1006,7 +1006,6 @@ curl http://localhost:8000/api/v1/health
 ```json
 {
   "status": "ok",
-  "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
   "all_models_loaded": [
     {
@@ -1015,6 +1014,10 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "recipe": "oga-hybrid",
+      "recipe_options": {
+        "ctx_size": 4096
+      },      
       "backend_url": "http://127.0.0.1:8001/v1"
     },
     {
@@ -1023,6 +1026,12 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "recipe": "llamacpp",
+      "recipe_options": {
+        "ctx_size": 8192,
+        "llamacpp_args": "--no-mmap",
+        "llamacpp_backend": "rocm"
+      },
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
@@ -1037,7 +1046,6 @@ curl http://localhost:8000/api/v1/health
 **Field Descriptions:**
 
 - `status` - Server health status, always `"ok"`
-- `checkpoint_loaded` - Checkpoint identifier of the most recently accessed model
 - `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
@@ -1046,6 +1054,8 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models

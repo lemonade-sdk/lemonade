@@ -38,7 +38,6 @@ public:
     
     // Get the most recently loaded model info (for backward compatibility)
     std::string get_loaded_model() const;
-    std::string get_loaded_checkpoint() const;
     std::string get_loaded_recipe() const;
     
     // Get all loaded models info
