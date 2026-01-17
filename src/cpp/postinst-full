@@ -1,88 +1,70 @@
 #!/bin/bash
 
-# Post-install script for the full Lemonade package (system-wide installation)
-echo "=== Lemonade System Post-Install Script Starting ==="
-echo "Running as user: $(whoami)"
+# ==============================================================================
+# Lemonade System Post-Install Script (Auto-Launch Version)
+# ==============================================================================
 
-# Check if we're running as root (required for system installation)
-if [ "$EUID" -ne 0 ]; then
-    echo "ERROR: This script must be run as root for system installation"
-    exit 1
+SERVICE_LABEL="com.lemonade.server"
+PLIST_DEST="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
+LOG_DIR="/var/log"
+CONFIG_DIR="/usr/local/etc/lemonade"
+
+echo "=== Starting Lemonade Post-Install ==="
+
+# 1. STOP EXISTING SERVICE (If upgrading)
+# We treat errors as warnings here so the script doesn't fail if the service isn't running yet.
+if launchctl list | grep -q "$SERVICE_LABEL"; then
+    echo "Service is currently running. Stopping it..."
+    launchctl bootout system/"$SERVICE_LABEL" 2>/dev/null || launchctl unload "$PLIST_DEST"
+    sleep 2
 fi
 
-# System directories
-INSTALL_DIR="/usr/local"
-PLIST_SRC="/usr/local/com.lemonade.server.plist"
-PLIST_DEST="/Library/LaunchDaemons/com.lemonade.server.plist"
-CONFIG_DIR="/usr/local/etc/lemonade"
-LOG_DIR="/var/log"
-
-# Create configuration directory
+# 2. SETUP DIRECTORIES
 mkdir -p "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
-
-# Create directories
-mkdir -p "$CONFIG_DIR"
-chmod 755 "$CONFIG_DIR"
-
-# Create log directory
 mkdir -p "$LOG_DIR"
 chmod 755 "$LOG_DIR"
 
-# Install resources to system location
+# 3. INSTALL RESOURCES
 if [ -d "/usr/local/resources" ]; then
+    echo "Installing resources..."
     mkdir -p "/Library/Application Support/Lemonade"
     cp -r "/usr/local/resources/"* "/Library/Application Support/Lemonade/" 2>/dev/null || true
     chmod -R 755 "/Library/Application Support/Lemonade"
-    echo "Installed resources to /Library/Application Support/Lemonade"
 fi
 
-# Make binaries executable
-if [ -f "/usr/local/bin/lemonade-router" ]; then
-    chmod +x "/usr/local/bin/lemonade-router"
-    echo "Made lemonade-router executable"
-fi
+# 4. SETUP BINARIES
+# Create symlinks so you can type 'lemonade' in terminal
+ln -sf "/Applications/Lemonade.app/Contents/MacOS/Lemonade" "/usr/local/bin/lemonade"
 
-if [ -f "/usr/local/bin/lemonade-server" ]; then
-    chmod +x "/usr/local/bin/lemonade-server"
-    echo "Made lemonade-server executable"
-fi
-
-# Make Electron app executable
-if [ -f "/Applications/Lemonade.app/Contents/MacOS/Lemonade" ]; then
-    chmod +x "/Applications/Lemonade.app/Contents/MacOS/Lemonade"
-    echo "Made Lemonade app executable"
-fi
-
-# Install system LaunchDaemon
-if [ -f "$PLIST_SRC" ]; then
-    echo "Installing Lemonade server as system LaunchDaemon..."
-    echo "Using plist from: $PLIST_SRC"
-
-    # Copy plist to LaunchDaemons
-    cp "$PLIST_SRC" "$PLIST_DEST"
+# 5. ENSURE SERVICE DEFINITION PERMISSIONS
+if [ -f "$PLIST_DEST" ]; then
+    echo "Ensuring Service Plist permissions..."
     chown root:wheel "$PLIST_DEST"
     chmod 644 "$PLIST_DEST"
-
-    # Load the service
-    launchctl load -w "$PLIST_DEST"
-
-    echo "Lemonade server LaunchDaemon installed and loaded."
-    echo "Configuration: $CONFIG_DIR/config.json"
-    echo "Logs: $LOG_DIR/lemonade-server.*.log"
-
-    # Add /usr/local/bin to system PATH (create symlink for easy access)
-    if [ ! -L "/usr/local/bin/lemonade" ]; then
-        ln -sf "/Applications/Lemonade.app/Contents/MacOS/Lemonade" "/usr/local/bin/lemonade"
-        echo "Created symlink: lemonade -> Lemonade.app"
-    fi
-
-    echo "Lemonade binaries are now available in system PATH."
-    echo "You can run 'lemonade-router', 'lemonade-server', and 'lemonade' from anywhere."
-    echo "=== Lemonade System Post-Install Script Completed Successfully ==="
 else
-    echo "ERROR: Could not find plist file at $PLIST_SRC"
+    echo "ERROR: Plist missing at $PLIST_DEST"
     exit 1
 fi
 
+# 6. AUTO-LAUNCH SERVICE
+echo "Loading and Starting Service..."
+
+# 'bootstrap' is the modern replacement for 'load', but 'load -w' is most compatible.
+# -w forces the 'Disabled' key in overrides.plist to be removed, ensuring it runs.
+launchctl load -w "$PLIST_DEST"
+
+# Wait a moment to ensure load completed
+sleep 2
+
+# Verify it started
+if launchctl list | grep -q "$SERVICE_LABEL"; then
+    echo "SUCCESS: Service '$SERVICE_LABEL' is running."
+else
+    echo "WARNING: Service loaded but not listed as running. Attempting kickstart..."
+    # Force a kickstart if it didn't come up immediately
+    launchctl kickstart -k system/"$SERVICE_LABEL"
+fi
+
+echo "=== Lemonade Post-Install Complete ==="
 exit 0
