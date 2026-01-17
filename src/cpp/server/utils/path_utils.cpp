@@ -62,10 +62,11 @@ std::string get_resource_path(const std::string& relative_path) {
 #ifndef _WIN32
     // On Linux/macOS, also check standard install locations
     std::vector<std::string> install_prefixes = {
+        "/Library/Application Support/Lemonade",  // macOS system install location
         "/usr/local/share/lemonade-server",
         "/usr/share/lemonade-server"
     };
-    
+
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
     if (home) {
@@ -136,4 +137,3 @@ std::string find_flm_executable() {
 
 } // namespace utils
 } // namespace lemon
-
