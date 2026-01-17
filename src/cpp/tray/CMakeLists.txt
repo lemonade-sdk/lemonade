@@ -36,10 +36,12 @@ elseif(APPLE)
     
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
-    
+    find_library(USERNOTIFICATIONS_LIBRARY UserNotifications REQUIRED)
+
     set(PLATFORM_LIBS
         ${COCOA_LIBRARY}
         ${FOUNDATION_LIBRARY}
+        ${USERNOTIFICATIONS_LIBRARY}
     )
     
     # Enable Objective-C++ compilation
@@ -198,4 +200,3 @@ elseif(UNIX)
     message(STATUS "  No LGPL dependencies - permissively licensed only")
 endif()
 message(STATUS "===============================================")
-

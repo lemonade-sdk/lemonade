@@ -125,7 +125,7 @@ private:
     double get_amd_vram_sysfs(const std::string& pci_id);
 };
 
-// macOS implementation (basic stub for now)
+// macOS implementation
 class MacOSSystemInfo : public SystemInfo {
 public:
     CPUInfo get_cpu_device() override;
@@ -133,6 +133,8 @@ public:
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
     NPUInfo get_npu_device() override;
+
+    std::vector<GPUInfo> detect_metal_gpus();
 };
 
 // Factory function
@@ -176,4 +178,3 @@ private:
 };
 
 } // namespace lemon
-

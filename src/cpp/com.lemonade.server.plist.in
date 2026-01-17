@@ -9,7 +9,6 @@
     <array>
         <string>/usr/local/bin/lemonade-server</string>
         <string>serve</string>
-        <string>--no-tray</string>
     </array>
 
     <key>RunAtLoad</key>

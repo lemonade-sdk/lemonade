@@ -17,10 +17,13 @@
 #include <set>
 
 #ifdef _WIN32
-#include <windows.h>
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #include <mach-o/dyld.h>
+    #include <limits.h>
 #else
-#include <sys/stat.h>
-#include <unistd.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -220,20 +223,42 @@ static std::string identify_rocm_arch() {
 // Helper to get the directory where llama binaries should be installed
 // Policy: Next to the executable for both dev builds and installed binaries
 static std::string get_llama_base_dir() {
+    // 1. Declare buffers at the top so they are visible to all scopes
+    char exe_path[PATH_MAX];
+    char real_path[PATH_MAX];
+
 #ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
+    // --- Windows (Returns early) ---
+    if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) == 0) {
+        return ".";
+    }
     fs::path exe_dir = fs::path(exe_path).parent_path();
     return exe_dir.string();
+
+#elif defined(__APPLE__)
+    // --- macOS ---
+    uint32_t size = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &size) != 0) {
+        return ".";
+    }
+    // _NSGetExecutablePath returns a raw path. We fall through to the 
+    // shared 'realpath' logic below to resolve it and check for share/ folders.
+
 #else
-    // Get the actual executable location
-    char exe_path[1024];
+    // --- Linux ---
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
+    if (len == -1) {
+        return ".";
+    }
+    exe_path[len] = '\0'; // CRITICAL: Null-terminate the string!
+#endif
+
+    // --- Shared Logic (Mac & Linux) ---
+    // Resolve symlinks and relative paths (e.g. /usr/local/bin/../bin/lemonade)
+    if (realpath(exe_path, real_path) != NULL) {
+        fs::path exe_dir = fs::path(real_path).parent_path();
         
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
+        // Logic to switch to share/ directory if installed in /usr/local/bin
         if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
             if (fs::exists("/usr/local/share/lemonade-server")) {
                 return "/usr/local/share/lemonade-server";
@@ -246,8 +271,8 @@ static std::string get_llama_base_dir() {
         // Otherwise (dev builds), use the exe directory
         return exe_dir.string();
     }
+
     return ".";
-#endif
 }
 
 // Helper to get the install directory for llama-server binaries
@@ -259,27 +284,44 @@ static std::string get_install_directory(const std::string& backend) {
 
 // Helper to extract ZIP files (Windows/Linux built-in tools)
 static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
+    std::string command;
 #ifdef _WIN32
+    // 1. Check if 'tar' is available (Windows 10 build 17063+) returns 0 command succeeds
+    int tar_check = system("tar --version >nul 2>&1");
+    if (tar_check == 0) {
+        std::cout << "[LlamaCpp] Extracting ZIP with native tar to " << dest_dir << std::endl;
+        // -x: extract, -f: file, -C: change dir
+        command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
+    } else {
+        std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
+        // Use PowerShell to extract with error handling
+        // Add -ErrorAction Stop to ensure errors are properly caught
+        std::string command = "powershell -Command \"try { Expand-Archive -Path '" + zip_path + 
+            "' -DestinationPath '" + dest_dir + 
+            "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
+        
+        int result = system(command.c_str());
+        if (result != 0) {
+            std::cerr << "[LlamaCpp] PowerShell extraction failed with code: " << result << std::endl;
+            return false;
+        }
+        return true;
+    }
+#elif defined(__APPLE__)
+    // macOS: Use ditto (safest for permissions/resource forks)
+    std::cout << "[LlamaCpp] Extracting with ditto..." << std::endl;
+    command = "ditto -xk \"" + zip_path + "\" \"" + dest_dir + "\"";
+#else
+    // Linux: Use unzip
     std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
-    
-    // Use PowerShell to extract with error handling
-    // Add -ErrorAction Stop to ensure errors are properly caught
-    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
-                         zip_path + "' -DestinationPath '" + dest_dir + 
-                         "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-    
+    command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
+#endif
     int result = system(command.c_str());
     if (result != 0) {
-        std::cerr << "[LlamaCpp] PowerShell extraction failed with code: " << result << std::endl;
+        std::cerr << "[LlamaCpp] Extraction failed with code: " << result << std::endl;
         return false;
     }
     return true;
-#else
-    std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
 }
 
 void LlamaCppServer::install(const std::string& backend) {

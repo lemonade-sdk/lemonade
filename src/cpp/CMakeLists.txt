@@ -440,8 +440,17 @@ add_subdirectory(tray)
 # ============================================================
 # macOS Packaging & Notarization
 # ============================================================
+# ============================================================
+# macOS Packaging & Notarization
+# ============================================================
 if(APPLE)
     # 1. SETUP IDENTITIES
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_VENDOR "Lemonade")
+    set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
+    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
+    
     if(NOT DEFINED SIGNING_IDENTITY)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
@@ -471,9 +480,8 @@ if(APPLE)
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
     endif()
 
-    # 3. SIGNING LOGIC (POST_BUILD)
+    # 3. SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        
         # Sign 'lemonade-router'
         add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
@@ -491,52 +499,47 @@ if(APPLE)
                 DEPENDS lemonade-server
             )
         endif()
-        
     endif()
 
     # 4. Prepare Electron App
     set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        # Use cp -R to preserve signatures
+        # Use cp -R to preserve signatures (cmake copy_directory destroys them)
         COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
         COMMENT "Copying Electron App (Preserving Signature)..."
         DEPENDS electron-app
     )
 
-    # 5. INSTALL LOGIC (PATHS FIX)
-    # ---------------------------------------------------------
-    # We set prefix to /usr/local. 
-    # Binaries go to bin -> /usr/local/bin (Correct)
-    # Resources go to resources -> /usr/local/resources (Correct)
-    # App & Plist use ../../ to escape to root -> /Applications & /Library
-    # ---------------------------------------------------------
-
+    # 5. INSTALL LOGIC (RELATIVE PATHS WITH /USR/LOCAL PREFIX)
+    
+    # Binaries -> /usr/local/bin
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
     endif()
 
-    # Escape /usr/local to reach /Applications
+    # Resources -> /usr/local/resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "resources" COMPONENT Resources)
+
+    # App -> /Applications (Break out of /usr/local using ../..)
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
         DESTINATION "../../Applications" 
         USE_SOURCE_PERMISSIONS 
         COMPONENT Applications
     )
     
-    # Escape /usr/local to reach /Library/LaunchDaemons
+    # Plist -> /Library/LaunchDaemons (Break out of /usr/local using ../..)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" 
         DESTINATION "../../Library/LaunchDaemons" 
         COMPONENT Runtime
     )
-    
-    install(DIRECTORY "${CMAKE_BINARY_DIR}/resources/"
-        DESTINATION "resources"
-        COMPONENT Resources
-    )
 
-    # Create lemonade-server share directory for llama binaries
-    install(DIRECTORY DESTINATION "share/lemonade-server"
+    # [FIX] Force creation of share directory by installing a placeholder file
+    # This fixes the missing "/usr/local/share/lemonade-server" issue
+    file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
+    install(FILES "${CMAKE_BINARY_DIR}/.keep"
+        DESTINATION "share/lemonade-server"
         COMPONENT Runtime
     )
 
@@ -544,20 +547,21 @@ if(APPLE)
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
-    set(CPACK_PRODUCTBUILD_DOMAIN "enable_anywhere") # Allows installing to system volume safely
+    set(CPACK_PRODUCTBUILD_DOMAIN "enable_anywhere") # Important for SIP
     if(INSTALLER_IDENTITY)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
 
-    # Set Prefix back to /usr/local so binaries are safe
+    # [FIX] Set Prefix to /usr/local so relative paths work safely
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
 
     set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
     include(CPack)
 
+    # Dependencies for the custom package target
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
-    if(TARGET sign_lemonade_server)
+    if(TARGET sign_lemonade_server AND CMAKE_BUILD_TYPE STREQUAL "Release")
         list(APPEND PACKAGE_DEPENDS sign_lemonade_server)
     endif()
 

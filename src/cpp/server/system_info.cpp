@@ -17,6 +17,14 @@
 #pragma comment(lib, "wbemuuid.lib")
 #endif
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <mach/mach.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/graphics/IOGraphicsLib.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 namespace lemon {
 
 namespace fs = std::filesystem;
@@ -168,6 +176,36 @@ json SystemInfo::get_device_dict() {
         };
         #endif
     }
+
+    #ifdef __APPLE__
+    // Get Metal GPU info (macOS only) - with fault tolerance
+    try {
+        auto metal_gpus = dynamic_cast<MacOSSystemInfo*>(this)->detect_metal_gpus();
+        devices["metal_gpu"] = json::array();
+        for (const auto& gpu : metal_gpus) {
+            json gpu_json = {
+                {"name", gpu.name},
+                {"available", gpu.available}
+            };
+            if (gpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (!gpu.driver_version.empty()) {
+                gpu_json["driver_version"] = gpu.driver_version;
+            }
+            if (!gpu.error.empty()) {
+                gpu_json["error"] = gpu.error;
+            }
+            if (!gpu.inference_engines.empty()) {
+                gpu_json["inference_engines"] = gpu.inference_engines;
+            }
+            devices["metal_gpu"].push_back(gpu_json);
+        }
+    } catch (const std::exception& e) {
+        devices["metal_gpu"] = json::array();
+        devices["metal_gpu_error"] = std::string("Metal GPU detection exception: ") + e.what();
+    }
+    #endif
     
     return devices;
 }
@@ -193,13 +231,13 @@ std::vector<std::string> SystemInfo::get_python_packages() {
 
 json SystemInfo::detect_inference_engines(const std::string& device_type, const std::string& device_name) {
     json engines;
-    
+
     // llamacpp-vulkan: Available for CPU, AMD iGPU, AMD dGPU, NVIDIA dGPU (NOT NPU)
-    if (device_type == "cpu" || device_type == "amd_igpu" || 
+    if (device_type == "cpu" || device_type == "amd_igpu" ||
         device_type == "amd_dgpu" || device_type == "nvidia_dgpu") {
-        
+
         bool device_supported = (device_type == "cpu") || check_vulkan_support();
-        
+
         if (!device_supported) {
             engines["llamacpp-vulkan"] = {{"available", false}, {"error", "vulkan not available"}};
         } else if (!is_llamacpp_installed("vulkan")) {
@@ -209,6 +247,19 @@ json SystemInfo::detect_inference_engines(const std::string& device_type, const 
                 {"available", true},
                 {"version", get_llamacpp_version("vulkan")},
                 {"backend", "vulkan"}
+            };
+        }
+    }
+    // llamacpp-metal: Available for Metal GPUs (macOS only)
+    if (device_type == "metal_gpu") {
+        // Check if Metal backend binaries are installed
+        if (!is_llamacpp_installed("metal")) {
+            engines["llamacpp-metal"] = {{"available", false}, {"error", "metal binaries not installed"}};
+        } else {
+            engines["llamacpp-metal"] = {
+                {"available", true},
+                {"version", get_llamacpp_version("metal")},
+                {"backend", "metal"}
             };
         }
     }
@@ -1660,7 +1711,7 @@ std::string LinuxSystemInfo::get_physical_memory() {
 #endif // __linux__
 
 // ============================================================================
-// macOS implementation (stubs)
+// macOS implementation
 // ============================================================================
 
 #ifdef __APPLE__
@@ -1668,31 +1719,77 @@ std::string LinuxSystemInfo::get_physical_memory() {
 CPUInfo MacOSSystemInfo::get_cpu_device() {
     CPUInfo cpu;
     cpu.available = false;
-    cpu.error = "macOS CPU detection not implemented yet";
+
+    size_t size;
+    char buffer[256];
+
+    // Get CPU name
+    size = sizeof(buffer);
+    if (sysctlbyname("machdep.cpu.brand_string", buffer, &size, nullptr, 0) == 0) {
+        cpu.name = buffer;
+        cpu.available = true;
+    } else {
+        cpu.error = "Failed to get CPU name";
+        return cpu;
+    }
+
+    // Get core count
+    int cores = 0;
+    size = sizeof(cores);
+    if (sysctlbyname("hw.physicalcpu", &cores, &size, nullptr, 0) == 0) {
+        cpu.cores = cores;
+    }
+
+    // Get thread count
+    int threads = 0;
+    size = sizeof(threads);
+    if (sysctlbyname("hw.logicalcpu", &threads, &size, nullptr, 0) == 0) {
+        cpu.threads = threads;
+    }
+
+    // Get max clock speed (in Hz, convert to MHz)
+    uint64_t freq = 0;
+    size = sizeof(freq);
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, nullptr, 0) == 0) {
+        cpu.max_clock_speed_mhz = freq / 1000000;  // Hz to MHz
+    }
+
+    // Detect inference engines
+    cpu.inference_engines = detect_inference_engines("cpu", cpu.name);
+
     return cpu;
 }
 
 GPUInfo MacOSSystemInfo::get_amd_igpu_device() {
     GPUInfo gpu;
     gpu.available = false;
-    gpu.error = "macOS AMD iGPU detection not implemented yet";
+    gpu.error = "AMD integrated GPUs not detected on macOS";
     return gpu;
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_amd_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "AMD discrete GPUs not detected on macOS";
+    return {gpu};
 }
 
 std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_dgpu_devices() {
-    return {};
+    GPUInfo gpu;
+    gpu.available = false;
+    gpu.error = "NVIDIA GPUs not detected on macOS";
+    return {gpu};
 }
 
 NPUInfo MacOSSystemInfo::get_npu_device() {
     NPUInfo npu;
+    npu.name = "NPU";
     npu.available = false;
-    npu.error = "macOS NPU detection not implemented yet";
+    npu.error = "NPU not supported on macOS (Ryzen AI NPUs are Windows/Linux only)";
     return npu;
 }
+
+
 
 #endif // __APPLE__
 
@@ -1897,6 +1994,7 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
             add_engines("cpu", "cpu");
             add_engines("amd_igpu", "amd_igpu");
             add_engines("npu", "npu");
+            add_engines("metal_gpu", "metal_gpu");
             
             // Handle GPU arrays
             for (const auto& gpu_type : {"amd_dgpu", "nvidia_dgpu"}) {
@@ -1946,4 +2044,3 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
 
 
 } // namespace lemon
-
