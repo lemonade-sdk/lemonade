@@ -69,9 +69,10 @@ public:
                             bool vision = false,
                             bool embedding = false,
                             bool reranking = false,
+                            bool image = false,
                             const std::string& mmproj = "",
                             const std::string& source = "");
-    
+
     // Download a model
     void download_model(const std::string& model_name,
                        const std::string& checkpoint = "",
@@ -80,6 +81,7 @@ public:
                        bool vision = false,
                        bool embedding = false,
                        bool reranking = false,
+                       bool image = false,
                        const std::string& mmproj = "",
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr);

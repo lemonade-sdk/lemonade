@@ -1211,20 +1211,21 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       bool vision,
                                       bool embedding,
                                       bool reranking,
+                                      bool image,
                                       const std::string& mmproj,
                                       const std::string& source) {
-    
+
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (clean_name.substr(0, 5) == "user.") {
         clean_name = clean_name.substr(5);
     }
-    
+
     json model_entry;
     model_entry["checkpoint"] = checkpoint;
     model_entry["recipe"] = recipe;
     model_entry["suggested"] = true;  // Always set suggested=true for user models
-    
+
     // Always start with "custom" label (matching Python implementation)
     std::vector<std::string> labels = {"custom"};
     if (reasoning) {
@@ -1238,6 +1239,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     if (reranking) {
         labels.push_back("reranking");
+    }
+    if (image) {
+        labels.push_back("image");
     }
     model_entry["labels"] = labels;
     
@@ -1355,10 +1359,11 @@ void ModelManager::download_model(const std::string& model_name,
                                  bool vision,
                                  bool embedding,
                                  bool reranking,
+                                 bool image,
                                  const std::string& mmproj,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
-    
+
     std::string actual_checkpoint = checkpoint;
     std::string actual_recipe = recipe;
     std::string actual_mmproj = mmproj;
@@ -1470,8 +1475,8 @@ void ModelManager::download_model(const std::string& model_name,
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (actual_recipe == "flm") {
         download_from_flm(actual_checkpoint, do_not_upgrade, progress_callback);
-    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp") {
-        // For llamacpp (GGUF) and whispercpp (.bin) models, use variant-aware download
+    } else if (actual_recipe == "llamacpp" || actual_recipe == "whispercpp" || actual_recipe == "sd-cpp") {
+        // For llamacpp (GGUF), whispercpp (.bin), and sd-cpp (.safetensors) models, use variant-aware download
         download_from_huggingface(repo_id, variant, actual_mmproj, progress_callback);
     } else {
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
@@ -1480,8 +1485,8 @@ void ModelManager::download_model(const std::string& model_name,
     
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
-        register_user_model(model_name, actual_checkpoint, actual_recipe, 
-                          reasoning, vision, embedding, reranking, actual_mmproj);
+        register_user_model(model_name, actual_checkpoint, actual_recipe,
+                          reasoning, vision, embedding, reranking, image, actual_mmproj);
     }
     
     // Update cache after successful download
@@ -1589,20 +1594,34 @@ void ModelManager::download_from_huggingface(const std::string& repo_id,
         std::cout << "[ModelManager] Repository contains " << repo_files.size() << " files" << std::endl;
         
         std::vector<std::string> files_to_download;
-        
+
         // Check if this is a GGUF model (variant provided) or non-GGUF (variant empty)
         if (!variant.empty() || !mmproj.empty()) {
-            // GGUF model: Use identify_gguf_models to determine which files to download
-            GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
-            
-            // Combine core files and sharded files into one list
-            for (const auto& [key, filename] : gguf_files.core_files) {
-                files_to_download.push_back(filename);
+            // Check if variant is a safetensors file (for sd-cpp models)
+            bool is_safetensors = variant.size() > 12 &&
+                variant.substr(variant.size() - 12) == ".safetensors";
+
+            if (is_safetensors) {
+                // For safetensors files, just download the specified file directly
+                if (std::find(repo_files.begin(), repo_files.end(), variant) != repo_files.end()) {
+                    files_to_download.push_back(variant);
+                    std::cout << "[ModelManager] Found safetensors file: " << variant << std::endl;
+                } else {
+                    throw std::runtime_error("Safetensors file not found in repository: " + variant);
+                }
+            } else {
+                // GGUF model: Use identify_gguf_models to determine which files to download
+                GGUFFiles gguf_files = identify_gguf_models(repo_id, variant, mmproj, repo_files);
+
+                // Combine core files and sharded files into one list
+                for (const auto& [key, filename] : gguf_files.core_files) {
+                    files_to_download.push_back(filename);
+                }
+                for (const auto& filename : gguf_files.sharded_files) {
+                    files_to_download.push_back(filename);
+                }
             }
-            for (const auto& filename : gguf_files.sharded_files) {
-                files_to_download.push_back(filename);
-            }
-            
+
             // Also download essential config files if they exist
             std::vector<std::string> config_files = {
                 "config.json",

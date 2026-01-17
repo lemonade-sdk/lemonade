@@ -37,7 +37,7 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, bool tray, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       tray_(tray), running_(false) {
     
@@ -75,7 +75,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models);
+                                       max_embedding_models, max_reranking_models, max_audio_models,
+                                       max_image_models);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -222,8 +223,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
     });
-    
-    
+
+    register_post("add-local-model", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_add_local_model(req, res);
+    });
+
     // System endpoints
     register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_stats(req, res);
@@ -1505,6 +1509,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool vision = request_json.value("vision", false);
         bool embedding = request_json.value("embedding", false);
         bool reranking = request_json.value("reranking", false);
+        bool image = request_json.value("image", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
@@ -1541,7 +1546,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             
             resolve_and_register_local_model(
                 dest_path, model_name, recipe, "", mmproj,
-                reasoning, vision, embedding, reranking, hf_cache
+                reasoning, vision, embedding, reranking, image, hf_cache
             );
             
             nlohmann::json response = {
@@ -1562,8 +1567,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, model_name, checkpoint, recipe, reasoning, vision, 
-                 embedding, reranking, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                [this, model_name, checkpoint, recipe, reasoning, vision,
+                 embedding, reranking, image, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) {
                         return false; // Already sent everything
                     }
@@ -1598,7 +1603,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
-                                                      reasoning, vision, embedding, reranking, 
+                                                      reasoning, vision, embedding, reranking, image,
                                                       mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
@@ -1617,8 +1622,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 });
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, checkpoint, recipe, 
-                                          reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
+            model_manager_->download_model(model_name, checkpoint, recipe,
+                                          reasoning, vision, embedding, reranking, image, mmproj, do_not_upgrade);
             
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -1878,7 +1883,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 //   - recipe: Inference recipe (llamacpp, oga-*, whispercpp)
 //   - variant: Optional variant hint for GGUF file selection
 //   - mmproj: Optional mmproj filename hint
-//   - reasoning, vision, embedding, reranking: Model labels
+//   - reasoning, vision, embedding, reranking, image: Model labels
 //   - hf_cache: HuggingFace cache directory for computing relative paths
 void Server::resolve_and_register_local_model(
     const std::string& dest_path,
@@ -1890,6 +1895,7 @@ void Server::resolve_and_register_local_model(
     bool& vision,  // May be modified if mmproj found
     bool embedding,
     bool reranking,
+    bool image,
     const std::string& hf_cache) {
     
     std::string resolved_checkpoint;
@@ -2005,11 +2011,300 @@ void Server::resolve_and_register_local_model(
         vision,
         embedding,
         reranking,
+        image,
         resolved_mmproj.empty() ? mmproj : resolved_mmproj,
         "local_upload"
     );
     
     std::cout << "[Server] Model registered successfully" << std::endl;
+}
+
+void Server::handle_add_local_model(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] Add local model request received" << std::endl;
+
+        // Validate that this is a multipart form request
+        if (!req.is_multipart_form_data()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Request must be multipart/form-data"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Extract form fields
+        std::string model_name;
+        std::string checkpoint;
+        std::string recipe;
+        std::string mmproj;
+        bool reasoning = false;
+        bool vision = false;
+        bool embedding = false;
+        bool reranking = false;
+        bool image = false;
+
+        // Parse form fields
+        if (req.form.has_field("model_name")) {
+            model_name = req.form.get_field("model_name");
+        }
+        if (req.form.has_field("checkpoint")) {
+            checkpoint = req.form.get_field("checkpoint");
+        }
+        if (req.form.has_field("recipe")) {
+            recipe = req.form.get_field("recipe");
+        }
+        if (req.form.has_field("mmproj")) {
+            mmproj = req.form.get_field("mmproj");
+        }
+        if (req.form.has_field("reasoning")) {
+            std::string reasoning_str = req.form.get_field("reasoning");
+            reasoning = (reasoning_str == "true" || reasoning_str == "True" || reasoning_str == "1");
+        }
+        if (req.form.has_field("vision")) {
+            std::string vision_str = req.form.get_field("vision");
+            vision = (vision_str == "true" || vision_str == "True" || vision_str == "1");
+        }
+        if (req.form.has_field("embedding")) {
+            std::string embedding_str = req.form.get_field("embedding");
+            embedding = (embedding_str == "true" || embedding_str == "True" || embedding_str == "1");
+        }
+        if (req.form.has_field("reranking")) {
+            std::string reranking_str = req.form.get_field("reranking");
+            reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
+        }
+        if (req.form.has_field("image")) {
+            std::string image_str = req.form.get_field("image");
+            image = (image_str == "true" || image_str == "True" || image_str == "1");
+        }
+
+        std::cout << "[Server] Model name: " << model_name << std::endl;
+        std::cout << "[Server] Recipe: " << recipe << std::endl;
+        std::cout << "[Server] Checkpoint: " << checkpoint << std::endl;
+
+        // Validate required fields
+        if (model_name.empty() || recipe.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "model_name and recipe are required"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Validate model name starts with "user."
+        if (model_name.substr(0, 5) != "user.") {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Model name must start with 'user.'"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Validate recipe
+        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp", "sd-cpp"};
+        if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp, sd-cpp"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Check if model files are provided (or checkpoint path for whisper)
+        const auto& files = req.form.files;
+        bool is_whisper = (recipe == "whispercpp");
+        if (files.empty() && !is_whisper) {
+            res.status = 400;
+            nlohmann::json error = {{"error", "No model files provided for upload"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // For whisper models, checkpoint can be a local path
+        if (is_whisper && !checkpoint.empty() && files.empty()) {
+            if (!std::filesystem::exists(checkpoint)) {
+                res.status = 400;
+                nlohmann::json error = {{"error", "Checkpoint file does not exist: " + checkpoint}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        // For llamacpp, ensure at least one .gguf file is present
+        if (recipe == "llamacpp") {
+            bool has_gguf = false;
+            for (const auto& file_pair : files) {
+                std::string filename = file_pair.second.filename;
+                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+                if (filename.find(".gguf") != std::string::npos) {
+                    has_gguf = true;
+                    break;
+                }
+            }
+            if (!has_gguf) {
+                res.status = 400;
+                nlohmann::json error = {{"error", "At least one .gguf file is required for llamacpp"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        // Check if model name already exists
+        if (model_manager_->model_exists(model_name)) {
+            res.status = 409;
+            nlohmann::json error = {{"error", "Model name '" + model_name + "' already exists. Please use a different name."}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Get HF cache directory
+        std::string hf_cache = model_manager_->get_hf_cache_dir();
+
+        // Create model directory in HF cache
+        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+        std::string repo_cache_name = model_name_clean;
+        std::replace(repo_cache_name.begin(), repo_cache_name.end(), '/', '-');
+
+        std::string snapshot_path = hf_cache + "/models--" + repo_cache_name;
+        std::cout << "[Server] Creating directory: " << snapshot_path << std::endl;
+        std::filesystem::create_directories(snapshot_path);
+
+        // Extract variant from checkpoint field if provided
+        std::string variant;
+        if (!checkpoint.empty() && checkpoint.find(':') != std::string::npos) {
+            size_t colon_pos = checkpoint.find(':');
+            variant = checkpoint.substr(colon_pos + 1);
+        }
+
+        // Save uploaded files
+        std::cout << "[Server] Saving " << files.size() << " uploaded files..." << std::endl;
+        for (const auto& file_pair : files) {
+            if (file_pair.first != "model_files") {
+                continue;
+            }
+
+            const auto& file = file_pair.second;
+            std::string filename = file.filename;
+            std::cout << "[Server]   Processing file: " << filename << std::endl;
+
+            std::string file_path;
+            size_t first_slash = filename.find('/');
+            if (first_slash != std::string::npos) {
+                file_path = snapshot_path + "/" + filename.substr(first_slash + 1);
+            } else {
+                file_path = snapshot_path + "/" + filename;
+            }
+
+            std::filesystem::path parent_dir = std::filesystem::path(file_path).parent_path();
+            std::filesystem::create_directories(parent_dir);
+
+            std::ofstream out(file_path, std::ios::binary);
+            if (!out) {
+                throw std::runtime_error("Failed to create file: " + file_path);
+            }
+            out.write(file.content.c_str(), file.content.size());
+            out.close();
+
+            std::cout << "[Server]     Saved to: " << file_path << std::endl;
+        }
+
+        // Resolve actual file paths after upload
+        std::string resolved_checkpoint;
+        std::string resolved_mmproj;
+
+        if (recipe.find("oga-") == 0) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
+                    resolved_checkpoint = entry.path().parent_path().string();
+                    break;
+                }
+            }
+            if (resolved_checkpoint.empty()) {
+                resolved_checkpoint = snapshot_path;
+            }
+        } else if (recipe == "llamacpp") {
+            std::string gguf_file_found;
+
+            if (!variant.empty()) {
+                std::string search_term = variant;
+                if (variant.find(".gguf") == std::string::npos) {
+                    search_term = variant + ".gguf";
+                }
+
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
+                    if (entry.is_regular_file() && entry.path().filename() == search_term) {
+                        gguf_file_found = entry.path().string();
+                        break;
+                    }
+                }
+            }
+
+            if (gguf_file_found.empty()) {
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
+                    if (entry.is_regular_file()) {
+                        std::string fname = entry.path().filename().string();
+                        std::string fname_lower = fname;
+                        std::transform(fname_lower.begin(), fname_lower.end(), fname_lower.begin(), ::tolower);
+
+                        if (fname_lower.find(".gguf") != std::string::npos &&
+                            fname_lower.find("mmproj") == std::string::npos) {
+                            gguf_file_found = entry.path().string();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            resolved_checkpoint = gguf_file_found.empty() ? snapshot_path : gguf_file_found;
+        }
+
+        if (!mmproj.empty()) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == mmproj) {
+                    resolved_mmproj = entry.path().string();
+                    break;
+                }
+            }
+        }
+
+        std::string checkpoint_to_register;
+        std::string source_type = "local_upload";
+
+        if (is_whisper && files.empty() && !checkpoint.empty()) {
+            checkpoint_to_register = checkpoint;
+            source_type = "local_path";
+            std::cout << "[Server] Using local whisper model path: " << checkpoint_to_register << std::endl;
+        } else if (!resolved_checkpoint.empty()) {
+            std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
+            checkpoint_to_register = rel.string();
+        } else {
+            checkpoint_to_register = "models--" + repo_cache_name;
+        }
+
+        std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
+
+        model_manager_->register_user_model(
+            model_name,
+            checkpoint_to_register,
+            recipe,
+            reasoning,
+            vision,
+            embedding,
+            reranking,
+            image,
+            resolved_mmproj.empty() ? mmproj : resolved_mmproj,
+            source_type
+        );
+
+        std::cout << "[Server] Model registered successfully" << std::endl;
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"message", "Model " + model_name + " uploaded and registered successfully"}
+        };
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_add_local_model: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", "Failed to upload model: " + std::string(e.what())}};
+        res.set_content(error.dump(), "application/json");
+    }
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {

@@ -27,6 +27,7 @@ public:
            int max_embedding_models = 1,
            int max_reranking_models = 1,
            int max_audio_models = 1,
+           int max_image_models = 1,
            const std::string& extra_models_dir = "");
     
     ~Server();
@@ -64,6 +65,7 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
+    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
@@ -81,10 +83,14 @@ private:
         bool& vision,
         bool embedding,
         bool reranking,
+        bool image,
         const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
+
+    // Image endpoint handlers (OpenAI /v1/images/* compatible)
+    void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);

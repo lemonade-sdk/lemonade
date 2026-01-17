@@ -28,10 +28,10 @@ CLIParser::CLIParser()
         ->default_val("");
 
     // Multi-model support: Max loaded models
-    // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)
+    // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     app_.add_option("--max-loaded-models", max_models_vec_,
-                   "Maximum number of models to keep loaded (format: LLMS or LLMS EMBEDDINGS RERANKINGS [AUDIO])")
-        ->expected(1, 4)
+                   "Maximum number of models to keep loaded (format: LLMS or LLMS EMBEDDINGS RERANKINGS [AUDIO] [IMAGE])")
+        ->expected(1, 5)
         ->check([](const std::string& val) -> std::string {
             // Validate that value is a positive integer (digits only, no floats)
             if (val.empty()) {
@@ -62,9 +62,9 @@ int CLIParser::parse(int argc, char** argv) {
 
         // Process --max-loaded-models values
         if (!max_models_vec_.empty()) {
-            // Validate that we have exactly 1, 3, or 4 values (2 is not allowed)
+            // Validate that we have exactly 1, 3, 4, or 5 values (2 is not allowed)
             if (max_models_vec_.size() == 2) {
-                throw CLI::ValidationError("--max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), or 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), not 2");
+                throw CLI::ValidationError("--max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), or 5 values (LLMS EMBEDDINGS RERANKINGS AUDIO IMAGE), not 2");
             }
 
             config_.max_llm_models = max_models_vec_[0];
@@ -74,6 +74,9 @@ int CLIParser::parse(int argc, char** argv) {
             }
             if (max_models_vec_.size() > 3) {
                 config_.max_audio_models = max_models_vec_[3];
+            }
+            if (max_models_vec_.size() > 4) {
+                config_.max_image_models = max_models_vec_[4];
             }
         }
 

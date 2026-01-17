@@ -9,7 +9,8 @@ enum class ModelType {
     LLM,        // Chat/completion models
     EMBEDDING,  // Embedding models
     RERANKING,  // Reranking models
-    AUDIO       // Audio models (speech-to-text transcription)
+    AUDIO,      // Audio models (speech-to-text transcription)
+    IMAGE       // Image generation models (text-to-image)
 };
 
 // Device type flags for tracking hardware usage
@@ -42,6 +43,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::EMBEDDING: return "embedding";
         case ModelType::RERANKING: return "reranking";
         case ModelType::AUDIO: return "audio";
+        case ModelType::IMAGE: return "image";
         default: return "unknown";
     }
 }
@@ -76,6 +78,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "audio") {
             return ModelType::AUDIO;
         }
+        if (label == "image") {
+            return ModelType::IMAGE;
+        }
     }
     return ModelType::LLM;
 }
@@ -94,6 +99,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
         return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
+    } else if (recipe == "sd-cpp") {
+        return DEVICE_CPU;  // stable-diffusion.cpp uses CPU (AVX2) by default
     }
     return DEVICE_NONE;
 }

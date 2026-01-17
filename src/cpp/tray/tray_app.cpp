@@ -943,6 +943,7 @@ bool TrayApp::start_ephemeral_server(int port) {
         config_.max_embedding_models,
         config_.max_reranking_models,
         config_.max_audio_models,
+        config_.max_image_models,
         config_.extra_models_dir  // Pass extra models directory
     );
 
@@ -1821,6 +1822,7 @@ bool TrayApp::start_server() {
         config_.max_embedding_models,
         config_.max_reranking_models,
         config_.max_audio_models,
+        config_.max_image_models,
         config_.extra_models_dir  // Pass extra models directory
     );
 
