@@ -519,6 +519,13 @@ if(APPLE)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+
+    # Set Install Prefix so binaries go to /usr/local/bin
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+
+    # Add Post-Install Script to auto-start the service
+    # This attaches the script to the "Services" component we defined earlier
+    set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
     include(CPack)
 
     # Define build dependencies for the package
@@ -597,7 +604,7 @@ if(UNIX AND NOT APPLE)
         )
         
         # Post-install script for full package
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac" 
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
                        "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
     else()
