@@ -441,6 +441,7 @@ add_subdirectory(tray)
 # macOS Packaging & Notarization
 # ============================================================
 if(APPLE)
+    # 1. SETUP IDENTITIES
     if(NOT DEFINED SIGNING_IDENTITY)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
@@ -457,7 +458,7 @@ if(APPLE)
         endif()
     endif()
 
-    # --- ADDED: Generate the plist file (Fix for previous error) ---
+    # 2. Configure Files
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in
         ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist
@@ -466,40 +467,50 @@ if(APPLE)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
-        file(WRITE "${ENTITLEMENTS_PATH}" "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
+        file(WRITE "${ENTITLEMENTS_PATH}" 
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
     endif()
 
-    # Install binaries (Relative paths used for CPack)
+    # 3. SIGNING LOGIC
+    # Sign 'lemonade-router' (Local target: Use POST_BUILD)
+    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
+        COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
+        COMMENT "Signing ${EXECUTABLE_NAME}"
+        VERBATIM
+    )
+
+    # Sign 'lemonade-server' (Subdir target: Use Custom Target)
+    if(TARGET lemonade-server)
+        add_custom_target(sign_lemonade_server
+            COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
+            COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
+            COMMENT "Signing lemonade-server"
+            DEPENDS lemonade-server
+        )
+    endif()
+
+    # 4. Prepare Electron App (USE CP -R TO PRESERVE SIGNATURE)
+    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
+    add_custom_target(prepare_electron_app
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
+        # FIX: Using 'cp -R' preserves the signature structure that 'cmake copy_directory' destroys
+        COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
+        COMMENT "Copying Electron App (Preserving Signature)..."
+        DEPENDS electron-app
+    )
+
+    # 5. Install Logic
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
     endif()
 
-    # Install-time signing logic (C++ binaries only)
-    install(CODE "
-        function(sign_file FILE_PATH)
-            if(EXISTS \"\${FILE_PATH}\")
-                message(STATUS \"Signing: \${FILE_PATH}\")
-                execute_process(COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" \"\${FILE_PATH}\")
-            endif()
-        endfunction()
-        sign_file(\"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/${EXECUTABLE_NAME}\")
-        sign_file(\"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/lemonade-server\")
-    " COMPONENT Runtime)
-
-    # Prepare Electron App (Copy only, assume signed by npm)
-    set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
-    add_custom_target(prepare_electron_app
-        COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${ELECTRON_BUILD_COPY}"
-        COMMENT "Copying Electron App..."
-        DEPENDS electron-app
-    )
-
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" DESTINATION "Applications" USE_SOURCE_PERMISSIONS COMPONENT Applications)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Services)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "share/lemonade/resources" COMPONENT Resources)
 
+    # 6. Packaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
@@ -510,10 +521,16 @@ if(APPLE)
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
     include(CPack)
 
+    # Define build dependencies for the package
+    set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
+    if(TARGET sign_lemonade_server)
+        list(APPEND PACKAGE_DEPENDS sign_lemonade_server)
+    endif()
+
     add_custom_target(package-macos
-        DEPENDS prepare_electron_app ${EXECUTABLE_NAME}
+        DEPENDS ${PACKAGE_DEPENDS}
         COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package
-        COMMENT "Running CPack..."
+        COMMENT "Running CPack to create signed installer..."
         VERBATIM
     )
 
