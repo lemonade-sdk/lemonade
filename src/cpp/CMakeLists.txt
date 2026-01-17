@@ -507,7 +507,7 @@ if(APPLE)
     endif()
 
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" DESTINATION "Applications" USE_SOURCE_PERMISSIONS COMPONENT Applications)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Services)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Services)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "share/lemonade/resources" COMPONENT Resources)
 
     # 6. Packaging & Notarization
