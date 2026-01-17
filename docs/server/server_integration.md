@@ -138,10 +138,21 @@ You can combine multiple parameters:
 msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
 ```
 
+**All Users Installation (requires elevated prompt):**
+
+To install for all users on the machine (to Program Files with system PATH), run from an **Administrator command prompt**:
+
+```bash
+msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files\Lemonade Server"
+```
+
+This installs to Program Files and adds Lemonade to the system PATH instead of the user PATH.
+
 **MSI Properties:**
 - `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
 - `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
 - `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
+- `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user install)
 
 The available models are documented [here](./server_models.md).
 
