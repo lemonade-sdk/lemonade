@@ -5,53 +5,55 @@ set -e
 APP_PATH="/Applications/Lemonade.app"
 EXECUTABLE_NAME="@EXECUTABLE_NAME@"
 PLIST_SRC="${APP_PATH}/Contents/Resources/com.lemonade.server.plist"
-PLIST_DEST="/Library/LaunchDaemons/com.lemonade.server.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.lemonade.server.plist"
 CONFIG_SRC="${APP_PATH}/Contents/Resources/config.default.json"
-CONFIG_DEST="/etc/lemonade/config.json"
-CONFIG_DIR="/etc/lemonade"
+CONFIG_DEST="$HOME/Library/Application Support/Lemonade/config.json"
+CONFIG_DIR="$HOME/Library/Application Support/Lemonade"
+LOG_DIR="$HOME/Library/Logs"
 
-echo "Installing Lemonade as a system-wide service..."
-echo "This requires administrator privileges."
+echo "Installing Lemonade as a user service..."
+echo "This runs as your user account."
+
+# Create directories
+mkdir -p "$CONFIG_DIR"
+mkdir -p "$LOG_DIR"
 
 # Create log files
-sudo touch /var/log/lemonade-server.out.log
-sudo touch /var/log/lemonade-server.err.log
-sudo chmod 644 /var/log/lemonade-server.*.log
+touch "$LOG_DIR/lemonade-server.out.log"
+touch "$LOG_DIR/lemonade-server.err.log"
+chmod 644 "$LOG_DIR/lemonade-server."*.log
 
 # Install config file
-sudo mkdir -p "$CONFIG_DIR"
-
 if [ ! -f "$CONFIG_DEST" ]; then
-    sudo cp "$CONFIG_SRC" "$CONFIG_DEST"
-    sudo chmod 644 "$CONFIG_DEST"
+    cp "$CONFIG_SRC" "$CONFIG_DEST"
+    chmod 644 "$CONFIG_DEST"
     echo "Default configuration installed to $CONFIG_DEST"
 else
     echo "Existing config found at $CONFIG_DEST — leaving unchanged."
     echo "   (Edit it manually to customize port, backend, etc.)"
 fi
 
-# Install and configure the LaunchDaemon plist
-sudo cp "$PLIST_SRC" "$PLIST_DEST"
+# Install and configure the LaunchAgent plist
+cp "$PLIST_SRC" "$PLIST_DEST"
 
-sudo sed -i '' "s|@APP_PATH@|${APP_PATH}|g" "$PLIST_DEST"
-sudo sed -i '' "s|@EXECUTABLE_NAME@|${EXECUTABLE_NAME}|g" "$PLIST_DEST"
+sed -i '' "s|@APP_PATH@|${APP_PATH}|g" "$PLIST_DEST"
+sed -i '' "s|@EXECUTABLE_NAME@|${EXECUTABLE_NAME}|g" "$PLIST_DEST"
 
-sudo chown root:wheel "$PLIST_DEST"
-sudo chmod 644 "$PLIST_DEST"
+chmod 644 "$PLIST_DEST"
 
 # Load the service
-sudo launchctl load -w "$PLIST_DEST"
+launchctl load -w "$PLIST_DEST"
 
 echo ""
-echo "Lemonade server is now running as a system service!"
+echo "Lemonade server is now running as a user service!"
 echo "• Configuration: $CONFIG_DEST"
-echo "• Logs: /var/log/lemonade-server.out.log and .err.log"
+echo "• Logs: $LOG_DIR/lemonade-server.out.log and .err.log"
 echo ""
 echo "To restart after config changes:"
-echo "  sudo launchctl unload -w $PLIST_DEST"
-echo "  sudo launchctl load -w $PLIST_DEST"
+echo "  launchctl unload -w $PLIST_DEST"
+echo "  launchctl load -w $PLIST_DEST"
 echo ""
 echo "To uninstall:"
-echo "  sudo launchctl unload -w $PLIST_DEST"
-echo "  sudo rm $PLIST_DEST"
-echo "  sudo rm -rf $CONFIG_DIR"
+echo "  launchctl unload -w $PLIST_DEST"
+echo "  rm $PLIST_DEST"
+echo "  rm -rf $CONFIG_DIR"

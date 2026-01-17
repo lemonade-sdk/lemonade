@@ -369,6 +369,12 @@ if(APPLE)
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources/bin"
     )
+    # Also install lemonade-server into the app bundle
+    if(TARGET lemonade-server)
+        install(TARGETS lemonade-server
+            RUNTIME DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources/bin"
+        )
+    endif()
 endif()
 # ============================================================
 # Resources
@@ -445,32 +451,21 @@ add_subdirectory(tray)
 # CPack Configuration for .deb Package (Linux only)
 # ============================================================
 if(APPLE)
+    # Enable service installation by default on macOS
+    set(INSTALL_AS_SYSTEM_SERVICE ON CACHE BOOL "Install system service (LaunchAgent on macOS)")
+
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
-    
+
     # Crucial for absolute path installation
     set(CPACK_SET_DESTDIR OFF)
     set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
     # Group components so they appear as one single installation
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
-
-    # 1. SERVICES (The C++ Binaries)
-    install(TARGETS lemonade-router
-        RUNTIME DESTINATION "usr/local/bin"
-        COMPONENT Services
-    )
-
-    if(TARGET lemonade-server)
-        install(TARGETS lemonade-server
-            RUNTIME DESTINATION "usr/local/bin"
-            COMPONENT Services
-        )
-    endif()
-
-    # 2. APPLICATION (The Electron App)
+    
     file(GLOB ELECTRON_BUNDLE_PATH
         "${ELECTRON_APP_UNPACKED_DIR}/*/Lemonade.app"
         "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app"
@@ -485,32 +480,34 @@ if(APPLE)
         )
     endif()
 
-    # 3. RESOURCES (Shared assets)
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-        DESTINATION "Library/Application Support/Lemonade/resources"
-        COMPONENT Resources
-    )
+    # RESOURCES (Shared assets - installed inside the Electron app bundle)
+    if(ELECTRON_BUNDLE_PATH)
+        install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
+            DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources"
+            COMPONENT Resources
+        )
+    endif()
 
-    # 4. SERVICE CONFIGURATION (LaunchDaemon)
+    # SERVICE CONFIGURATION (LaunchAgent for user-space operation on macOS)
     if(INSTALL_AS_SYSTEM_SERVICE)
         if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist")
+            # Install plist for user to manually install as LaunchAgent
             install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
-                    DESTINATION "Library/LaunchDaemons"
+                    DESTINATION "Applications/Lemonade.app/Contents/Resources"
                     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
                     COMPONENT Services)
         endif()
 
         if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh")
             install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
-                    DESTINATION "Library/Application Support/Lemonade/scripts"
+                    DESTINATION "Applications/Lemonade.app/Contents/Resources"
                     COMPONENT Services)
         endif()
     endif()
 
     include(CPack)
 
-    # 5. PACKAGING TARGET
-    # Removed the line causing the resource copy error
+    # PACKAGING TARGET
     add_custom_target(package-macos
         DEPENDS electron-app lemonade-router lemonade-server
         COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package
