@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# ==============================================================================
+# Lemonade System Post-Install Script (Auto-Launch Version)
+# ==============================================================================
+
+SERVICE_LABEL="com.lemonade.server"
+PLIST_DEST="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
+LOG_DIR="/var/log"
+CONFIG_DIR="/usr/local/etc/lemonade"
+
+echo "=== Starting Lemonade Post-Install ==="
+
+# 1. STOP EXISTING SERVICE (If upgrading)
+# We treat errors as warnings here so the script doesn't fail if the service isn't running yet.
+if launchctl list | grep -q "$SERVICE_LABEL"; then
+    echo "Service is currently running. Stopping it..."
+    launchctl bootout system/"$SERVICE_LABEL" 2>/dev/null || launchctl unload "$PLIST_DEST"
+    sleep 2
+fi
+
+# 2. SETUP DIRECTORIES
+mkdir -p "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
+mkdir -p "$LOG_DIR"
+chmod 755 "$LOG_DIR"
+
+# 3. INSTALL RESOURCES
+if [ -d "/usr/local/resources" ]; then
+    echo "Installing resources..."
+    mkdir -p "/Library/Application Support/Lemonade"
+    cp -r "/usr/local/resources/"* "/Library/Application Support/Lemonade/" 2>/dev/null || true
+    chmod -R 755 "/Library/Application Support/Lemonade"
+fi
+
+# 4. SETUP BINARIES
+# Create symlinks so you can type 'lemonade' in terminal
+ln -sf "/Applications/Lemonade.app/Contents/MacOS/Lemonade" "/usr/local/bin/lemonade"
+
+# 5. ENSURE SERVICE DEFINITION PERMISSIONS
+if [ -f "$PLIST_DEST" ]; then
+    echo "Ensuring Service Plist permissions..."
+    chown root:wheel "$PLIST_DEST"
+    chmod 644 "$PLIST_DEST"
+else
+    echo "ERROR: Plist missing at $PLIST_DEST"
+    exit 1
+fi
+
+# 6. AUTO-LAUNCH SERVICE
+echo "Loading and Starting Service..."
+
+# 'bootstrap' is the modern replacement for 'load', but 'load -w' is most compatible.
+# -w forces the 'Disabled' key in overrides.plist to be removed, ensuring it runs.
+launchctl load -w "$PLIST_DEST"
+
+# Wait a moment to ensure load completed
+sleep 2
+
+# Verify it started
+if launchctl list | grep -q "$SERVICE_LABEL"; then
+    echo "SUCCESS: Service '$SERVICE_LABEL' is running."
+else
+    echo "WARNING: Service loaded but not listed as running. Attempting kickstart..."
+    # Force a kickstart if it didn't come up immediately
+    launchctl kickstart -k system/"$SERVICE_LABEL"
+fi
+
+echo "=== Lemonade Post-Install Complete ==="
+exit 0

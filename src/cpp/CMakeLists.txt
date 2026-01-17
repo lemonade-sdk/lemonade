@@ -597,7 +597,7 @@ if(UNIX AND NOT APPLE)
         )
         
         # Post-install script for full package
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
+        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac" 
                        "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
     else()

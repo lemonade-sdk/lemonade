@@ -1,70 +1,42 @@
 #!/bin/bash
 
-# ==============================================================================
-# Lemonade System Post-Install Script (Auto-Launch Version)
-# ==============================================================================
+# Post-install script for the full Lemonade package (with Electron app)
 
-SERVICE_LABEL="com.lemonade.server"
-PLIST_DEST="/Library/LaunchDaemons/${SERVICE_LABEL}.plist"
-LOG_DIR="/var/log"
-CONFIG_DIR="/usr/local/etc/lemonade"
+INSTALL_DIR="/usr/local/share/lemonade-server"
+LLAMA_DIR="${INSTALL_DIR}/llama"
+APP_DIR="${INSTALL_DIR}/app"
 
-echo "=== Starting Lemonade Post-Install ==="
+# Create llama directory if it doesn't exist and make it writable
+mkdir -p "$LLAMA_DIR"
+chmod 777 "$LLAMA_DIR"
 
-# 1. STOP EXISTING SERVICE (If upgrading)
-# We treat errors as warnings here so the script doesn't fail if the service isn't running yet.
-if launchctl list | grep -q "$SERVICE_LABEL"; then
-    echo "Service is currently running. Stopping it..."
-    launchctl bootout system/"$SERVICE_LABEL" 2>/dev/null || launchctl unload "$PLIST_DEST"
-    sleep 2
+# Make the Electron app executable
+if [ -f "$APP_DIR/lemonade" ]; then
+    chmod +x "$APP_DIR/lemonade"
 fi
 
-# 2. SETUP DIRECTORIES
-mkdir -p "$CONFIG_DIR"
-chmod 755 "$CONFIG_DIR"
-mkdir -p "$LOG_DIR"
-chmod 755 "$LOG_DIR"
-
-# 3. INSTALL RESOURCES
-if [ -d "/usr/local/resources" ]; then
-    echo "Installing resources..."
-    mkdir -p "/Library/Application Support/Lemonade"
-    cp -r "/usr/local/resources/"* "/Library/Application Support/Lemonade/" 2>/dev/null || true
-    chmod -R 755 "/Library/Application Support/Lemonade"
+# Fix chrome-sandbox permissions (required for Electron/Chromium sandbox)
+# The chrome-sandbox binary must be owned by root and have SUID bit set
+if [ -f "$APP_DIR/chrome-sandbox" ]; then
+    chown root:root "$APP_DIR/chrome-sandbox"
+    chmod 4755 "$APP_DIR/chrome-sandbox"
 fi
 
-# 4. SETUP BINARIES
-# Create symlinks so you can type 'lemonade' in terminal
-ln -sf "/Applications/Lemonade.app/Contents/MacOS/Lemonade" "/usr/local/bin/lemonade"
+# Make other Electron helper binaries executable
+for binary in "$APP_DIR/chrome_crashpad_handler" "$APP_DIR/libvulkan.so.1" "$APP_DIR/libvk_swiftshader.so" "$APP_DIR/libGLESv2.so" "$APP_DIR/libEGL.so"; do
+    if [ -f "$binary" ]; then
+        chmod +x "$binary"
+    fi
+done
 
-# 5. ENSURE SERVICE DEFINITION PERMISSIONS
-if [ -f "$PLIST_DEST" ]; then
-    echo "Ensuring Service Plist permissions..."
-    chown root:wheel "$PLIST_DEST"
-    chmod 644 "$PLIST_DEST"
-else
-    echo "ERROR: Plist missing at $PLIST_DEST"
-    exit 1
+# Ensure all .so files in the app directory are readable and executable
+find "$APP_DIR" -name "*.so*" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
+# Create lemonade-app symlink in bin directory for PATH access
+BIN_DIR="/usr/local/bin"
+if [ -f "$APP_DIR/lemonade" ] && [ -d "$BIN_DIR" ]; then
+    ln -sf "$APP_DIR/lemonade" "$BIN_DIR/lemonade-app"
+    echo "Created lemonade-app symlink in $BIN_DIR"
 fi
 
-# 6. AUTO-LAUNCH SERVICE
-echo "Loading and Starting Service..."
-
-# 'bootstrap' is the modern replacement for 'load', but 'load -w' is most compatible.
-# -w forces the 'Disabled' key in overrides.plist to be removed, ensuring it runs.
-launchctl load -w "$PLIST_DEST"
-
-# Wait a moment to ensure load completed
-sleep 2
-
-# Verify it started
-if launchctl list | grep -q "$SERVICE_LABEL"; then
-    echo "SUCCESS: Service '$SERVICE_LABEL' is running."
-else
-    echo "WARNING: Service loaded but not listed as running. Attempting kickstart..."
-    # Force a kickstart if it didn't come up immediately
-    launchctl kickstart -k system/"$SERVICE_LABEL"
-fi
-
-echo "=== Lemonade Post-Install Complete ==="
 exit 0
