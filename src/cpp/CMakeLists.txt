@@ -471,8 +471,7 @@ if(APPLE)
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
     endif()
 
-    # 3. SIGNING LOGIC
-    # Sign 'lemonade-router' (Local target: Use POST_BUILD)
+    # 3. SIGNING LOGIC (POST_BUILD)
     add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
         COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
@@ -480,7 +479,6 @@ if(APPLE)
         VERBATIM
     )
 
-    # Sign 'lemonade-server' (Subdir target: Use Custom Target)
     if(TARGET lemonade-server)
         add_custom_target(sign_lemonade_server
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
@@ -490,45 +488,63 @@ if(APPLE)
         )
     endif()
 
-    # 4. Prepare Electron App (USE CP -R TO PRESERVE SIGNATURE)
+    # 4. Prepare Electron App
     set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        # FIX: Using 'cp -R' preserves the signature structure that 'cmake copy_directory' destroys
+        # Use cp -R to preserve signatures
         COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
         COMMENT "Copying Electron App (Preserving Signature)..."
         DEPENDS electron-app
     )
 
-    # 5. Install Logic
+    # 5. INSTALL LOGIC (PATHS FIX)
+    # ---------------------------------------------------------
+    # We set prefix to /usr/local. 
+    # Binaries go to bin -> /usr/local/bin (Correct)
+    # Resources go to resources -> /usr/local/resources (Correct)
+    # App & Plist use ../../ to escape to root -> /Applications & /Library
+    # ---------------------------------------------------------
+
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
     endif()
 
-    install(DIRECTORY "${ELECTRON_BUILD_COPY}" DESTINATION "Applications" USE_SOURCE_PERMISSIONS COMPONENT Applications)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Runtime)
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "share/lemonade/resources" COMPONENT Resources)
+    # Escape /usr/local to reach /Applications
+    install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
+        DESTINATION "../../Applications" 
+        USE_SOURCE_PERMISSIONS 
+        COMPONENT Applications
+    )
+    
+    # Escape /usr/local to reach /Library/LaunchDaemons
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" 
+        DESTINATION "../../Library/LaunchDaemons" 
+        COMPONENT Runtime
+    )
+    
+    install(DIRECTORY "${CMAKE_BINARY_DIR}/resources/" 
+        DESTINATION "resources" 
+        COMPONENT Resources
+    )
 
     # 6. Packaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
-    set(CPACK_PRODUCTBUILD_DOMAIN "true")
+    set(CPACK_PRODUCTBUILD_DOMAIN "enable_anywhere") # Allows installing to system volume safely
     if(INSTALLER_IDENTITY)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
 
-    # Set Install Prefix so binaries go to /usr/local/bin
+    # Set Prefix back to /usr/local so binaries are safe
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
 
-    # Add Post-Install Script to auto-start the service
-    # This attaches the script to the "Services" component we defined earlier
     set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
     include(CPack)
 
-    # Define build dependencies for the package
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
     if(TARGET sign_lemonade_server)
         list(APPEND PACKAGE_DEPENDS sign_lemonade_server)
