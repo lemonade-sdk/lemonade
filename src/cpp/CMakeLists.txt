@@ -312,6 +312,11 @@ set(SOURCES
     server/backends/whisper_server.cpp
 )
 
+# Add platform-specific source files
+if(APPLE)
+    list(APPEND SOURCES server/macos_system_info.mm)
+endif()
+
 # Add version resource file on Windows
 if(WIN32)
     list(APPEND SOURCES server/version.rc)
@@ -362,6 +367,10 @@ if(WIN32)
         wbemuuid
         ole32
         oleaut32
+    )
+elseif(APPLE)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE
+        "-framework Metal"
     )
 endif()
 

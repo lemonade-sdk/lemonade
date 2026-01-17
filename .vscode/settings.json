@@ -5,7 +5,7 @@
     "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
     "cmake.debugConfig": {
         "args": [
-            "--llamacpp", "cpu"
+            "--llamacpp", "metal"
         ]
     },
     "files.associations": {
