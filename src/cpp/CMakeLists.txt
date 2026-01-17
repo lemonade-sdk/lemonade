@@ -364,7 +364,12 @@ if(WIN32)
     )
 endif()
 
-
+if(APPLE)
+    # This forces the router into the Electron App bundle that CPack is building
+    install(TARGETS ${EXECUTABLE_NAME}
+        RUNTIME DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources/bin"
+    )
+endif()
 # ============================================================
 # Resources
 # ============================================================
@@ -439,187 +444,76 @@ add_subdirectory(tray)
 # ============================================================
 # CPack Configuration for .deb Package (Linux only)
 # ============================================================
-if(UNIX AND NOT APPLE)
-    set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-    set(CPACK_PACKAGE_VENDOR "Lemonade")
-    set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
-    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
-    
-    # Debian-specific settings
-    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lemonade Team <lemonade@amd.com>")
-    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
-    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
-    
-    # Installation paths - use ~/.local for user install (no sudo needed)
-    # Set via environment: cmake -DCPACK_PACKAGING_INSTALL_PREFIX=$HOME/.local ..
-    if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-        set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
-    endif()
-    
-    # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
-    install(TARGETS ${EXECUTABLE_NAME}
-        RUNTIME DESTINATION bin
-    )
-    
-    # Install resources
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-        DESTINATION share/lemonade-server/resources
-    )
-    
-    # Check if Electron app is available for full package
-    option(INCLUDE_ELECTRON_APP "Include Electron app in deb package" OFF)
-    
-    if(INCLUDE_ELECTRON_APP AND EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
-        message(STATUS "Electron app found at ${ELECTRON_APP_UNPACKED_DIR}")
-        message(STATUS "Building full deb package with Electron app")
-        
-        # Full package name
-        set(CPACK_PACKAGE_NAME "lemonade")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-        
-        # Install Electron app
-        install(DIRECTORY "${ELECTRON_APP_UNPACKED_DIR}/"
-            DESTINATION share/lemonade-server/app
-            USE_SOURCE_PERMISSIONS
-            PATTERN "*.so" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-        )
-        
-        # Post-install script for full package
-        # Note: CPack requires the script to be named 'postinst' exactly
-        # We copy postinst-full to a temporary postinst file for CPack
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/postinst-full" 
-                       "${CMAKE_CURRENT_BINARY_DIR}/postinst" COPYONLY)
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_BINARY_DIR}/postinst")
-    else()
-        # Minimal package (server only)
-        set(CPACK_PACKAGE_NAME "lemonade-server-minimal")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip")
-        set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
-        
-        # Post-install script for minimal package
-        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
-        
-        if(INCLUDE_ELECTRON_APP)
-            message(WARNING "INCLUDE_ELECTRON_APP is ON but Electron app not found at ${ELECTRON_APP_UNPACKED_DIR}")
-            message(WARNING "Building minimal deb package instead")
-        endif()
-    endif()
-    
-    include(CPack)
-endif()
-
-# ============================================================
-# CPack Configuration for macOS (.app bundle in .dmg)
-# ============================================================
 if(APPLE)
-    set(CPACK_GENERATOR "DragNDrop")
-
+    set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
-    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
-    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends.")
+    
+    # Crucial for absolute path installation
+    set(CPACK_SET_DESTDIR OFF)
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
-    set(CPACK_DMG_VOLUME_NAME "Lemonade ${PROJECT_VERSION}")
-    set(CPACK_DMG_FORMAT "UDBZ")
+    # Group components so they appear as one single installation
+    set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
 
-    if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
-        set(CPACK_SYSTEM_NAME "macos-x64")
-    elseif(CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
-        set(CPACK_SYSTEM_NAME "macos-arm64")
-    else()
-        set(CPACK_SYSTEM_NAME "macos-universal")
+    # 1. SERVICES (The C++ Binaries)
+    install(TARGETS lemonade-router
+        RUNTIME DESTINATION "usr/local/bin"
+        COMPONENT Services
+    )
+
+    if(TARGET lemonade-server)
+        install(TARGETS lemonade-server
+            RUNTIME DESTINATION "usr/local/bin"
+            COMPONENT Services
+        )
     endif()
 
-    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_SYSTEM_NAME}")
-
-    option(INSTALL_AS_SYSTEM_SERVICE "Include scripts to install as system-wide LaunchDaemon" ON)
-
-    # === Ensure Electron app exists before packaging ===
-    if(NOT EXISTS "${ELECTRON_APP_UNPACKED_DIR}/${ELECTRON_EXE_NAME}")
-        message(STATUS "Electron app not found — will build it automatically before packaging")
-    endif()
-
-    message(STATUS "Using Electron app from: ${ELECTRON_APP_UNPACKED_DIR}")
-
-    # Find the actual .app bundle (in case of arm64/x64 subfolders)
+    # 2. APPLICATION (The Electron App)
     file(GLOB ELECTRON_BUNDLE_PATH
         "${ELECTRON_APP_UNPACKED_DIR}/*/Lemonade.app"
         "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app"
     )
 
-    if(NOT ELECTRON_BUNDLE_PATH)
-        message(FATAL_ERROR "Electron app bundle not found in ${ELECTRON_APP_UNPACKED_DIR}")
+    if(ELECTRON_BUNDLE_PATH)
+        list(GET ELECTRON_BUNDLE_PATH 0 ACTUAL_BUNDLE)
+        install(DIRECTORY "${ACTUAL_BUNDLE}"
+            DESTINATION "Applications"
+            USE_SOURCE_PERMISSIONS
+            COMPONENT Applications
+        )
     endif()
 
-    list(GET ELECTRON_BUNDLE_PATH 0 ELECTRON_BUNDLE_PATH)  # Take first match
-
-    message(STATUS "Using Electron bundle: ${ELECTRON_BUNDLE_PATH}")
-
-    install(DIRECTORY "${ELECTRON_BUNDLE_PATH}"
-        DESTINATION "."
-        USE_SOURCE_PERMISSIONS
-    )
-
-    # Embed C++ router binary
-    install(TARGETS ${EXECUTABLE_NAME}
-        RUNTIME DESTINATION "Lemonade.app/Contents/Resources/bin"
-    )
-
-    # Install resources
+    # 3. RESOURCES (Shared assets)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-        DESTINATION "Lemonade.app/Contents/Resources/resources"
+        DESTINATION "Library/Application Support/Lemonade/resources"
+        COMPONENT Resources
     )
 
-    # Optional: tray app
-    if(TARGET lemonade-tray)
-        install(TARGETS lemonade-tray
-            RUNTIME DESTINATION "Lemonade.app/Contents/Resources/bin"
-        )
-    endif()
-
-    # === System Service Support ===
+    # 4. SERVICE CONFIGURATION (LaunchDaemon)
     if(INSTALL_AS_SYSTEM_SERVICE)
-        configure_file(
-            "${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
-            @ONLY
-        )
-        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
-            DESTINATION "Lemonade.app/Contents/Resources"
-        )
+        if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist")
+            install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
+                    DESTINATION "Library/LaunchDaemons"
+                    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+                    COMPONENT Services)
+        endif()
 
-        configure_file(
-            "${CMAKE_CURRENT_SOURCE_DIR}/install-daemon.sh.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
-            @ONLY
-        )
-        install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
-            DESTINATION "Lemonade.app/Contents/Resources"
-        )
-
-        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
-            DESTINATION "Lemonade.app/Contents/Resources"
-            RENAME config.default.json
-        )
+        if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh")
+            install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
+                    DESTINATION "Library/Application Support/Lemonade/scripts"
+                    COMPONENT Services)
+        endif()
     endif()
 
     include(CPack)
 
-    # === NEW: Custom target that auto-builds Electron + packages ===
+    # 5. PACKAGING TARGET
+    # Removed the line causing the resource copy error
     add_custom_target(package-macos
-        DEPENDS electron-app ${EXECUTABLE_NAME}
-        COMMAND ${CMAKE_COMMAND} --build . --target package
-        COMMENT "Building Electron app + C++ server + creating macOS .dmg"
+        DEPENDS electron-app lemonade-router lemonade-server
+        COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package
+        VERBATIM
     )
-
-    # Optional: Make 'package' target (default for cpack) depend on electron-app
-    if(TARGET package)
-        add_dependencies(package electron-app)
-    endif()
 endif()
