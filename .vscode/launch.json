@@ -5,30 +5,10 @@
       "name": "C++ Debug (lldb-dap)",
       "type": "lldb-dap",
       "request": "launch",
-      "program": "${workspaceFolder}/build/lemonade-router",
-      "args": ["--host", "127.0.0.1", "--log-level", "debug"],
+      "program": "${workspaceFolder}/build/lemonade-server",
+      "args": ["serve"],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false
-    },
-    {
-      "name": "C++ Debug (cppdbg)",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${workspaceFolder}/build/lemonade-router",
-      "args": ["--host", "127.0.0.1", "--log-level", "debug"],
-      "stopAtEntry": false,
-      "cwd": "${workspaceFolder}",
-      "environment": [],
-      "externalConsole": false,
-      "MIMode": "lldb",
-      "targetArchitecture": "arm64",
-      "setupCommands": [
-        {
-          "description": "Enable pretty-printing for lldb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ]
     }
   ]
 }
