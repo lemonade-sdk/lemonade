@@ -7,9 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>@APP_PATH@/Contents/MacOS/@EXECUTABLE_NAME@</string>
-        <string>--config</string>
-        <string>~/Library/Application Support/Lemonade/config.json</string>
+        <string>/usr/local/bin/lemonade-server</string>
+        <string>serve</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -19,9 +18,8 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>~/Library/Logs/lemonade-server.out.log</string>
-
+    <string>/var/log/lemonade-server.out.log</string>
     <key>StandardErrorPath</key>
-    <string>~/Library/Logs/lemonade-server.err.log</string>
+    <string>/var/log/lemonade-server.err.log</string>
 </dict>
 </plist>

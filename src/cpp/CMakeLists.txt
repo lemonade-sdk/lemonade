@@ -365,16 +365,31 @@ if(WIN32)
 endif()
 
 if(APPLE)
-    # This forces the router into the Electron App bundle that CPack is building
+    # Install binaries to /usr/local/bin (system path)
     install(TARGETS ${EXECUTABLE_NAME}
-        RUNTIME DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources/bin"
+        RUNTIME DESTINATION "/usr/local/bin"
     )
-    # Also install lemonade-server into the app bundle
+    # Also install lemonade-server to /usr/local/bin
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server
-            RUNTIME DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources/bin"
+            RUNTIME DESTINATION "/usr/local/bin"
         )
     endif()
+
+    # Install the plist file for system service
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
+        DESTINATION "/usr/local"
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+        COMPONENT Services
+    )
+
+    # Install resources to /usr/local/resources (will be moved by post-install script)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
+        DESTINATION "/usr/local/resources"
+        COMPONENT Resources
+    )
+
+
 endif()
 # ============================================================
 # Resources
@@ -451,21 +466,34 @@ add_subdirectory(tray)
 # CPack Configuration for .deb Package (Linux only)
 # ============================================================
 if(APPLE)
+    # Generate plist from template for macOS
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in
+        ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist
+        @ONLY
+    )
+
     # Enable service installation by default on macOS
-    set(INSTALL_AS_SYSTEM_SERVICE ON CACHE BOOL "Install system service (LaunchAgent on macOS)")
+    set(INSTALL_AS_SYSTEM_SERVICE ON CACHE BOOL "Install system service (LaunchAgent on macOS under system)")
 
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
 
-    # Crucial for absolute path installation
-    set(CPACK_SET_DESTDIR OFF)
-    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+    # Install to system directories (requires admin privileges)
+    set(CPACK_SET_DESTDIR ON)
+
+    # Configure productbuild to require admin privileges and show service installation option
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
+    set(CPACK_PRODUCTBUILD_DOMAIN "true")  # Enable system domain installation
+
+    # Post-install script for service setup
+    set(CPACK_POSTFLIGHT_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full")
 
     # Group components so they appear as one single installation
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
-    
+
     file(GLOB ELECTRON_BUNDLE_PATH
         "${ELECTRON_APP_UNPACKED_DIR}/*/Lemonade.app"
         "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app"
@@ -473,37 +501,17 @@ if(APPLE)
 
     if(ELECTRON_BUNDLE_PATH)
         list(GET ELECTRON_BUNDLE_PATH 0 ACTUAL_BUNDLE)
+        # Install Electron app to system Applications directory
+        # Use absolute path to ensure it goes to /Applications on target system
         install(DIRECTORY "${ACTUAL_BUNDLE}"
-            DESTINATION "Applications"
+            DESTINATION "/Applications"
             USE_SOURCE_PERMISSIONS
             COMPONENT Applications
         )
     endif()
 
-    # RESOURCES (Shared assets - installed inside the Electron app bundle)
-    if(ELECTRON_BUNDLE_PATH)
-        install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/
-            DESTINATION "${ELECTRON_EXE_NAME}/Contents/Resources"
-            COMPONENT Resources
-        )
-    endif()
-
-    # SERVICE CONFIGURATION (LaunchAgent for user-space operation on macOS)
-    if(INSTALL_AS_SYSTEM_SERVICE)
-        if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist")
-            # Install plist for user to manually install as LaunchAgent
-            install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist"
-                    DESTINATION "Applications/Lemonade.app/Contents/Resources"
-                    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-                    COMPONENT Services)
-        endif()
-
-        if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh")
-            install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/install-daemon.sh"
-                    DESTINATION "Applications/Lemonade.app/Contents/Resources"
-                    COMPONENT Services)
-        endif()
-    endif()
+    # SERVICE CONFIGURATION (LaunchDaemon for system-wide operation on macOS)
+    # Install as system service since we're installing to system directories
 
     include(CPack)
 
