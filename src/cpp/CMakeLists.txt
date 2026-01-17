@@ -472,20 +472,26 @@ if(APPLE)
     endif()
 
     # 3. SIGNING LOGIC (POST_BUILD)
-    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
-        COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
-        COMMENT "Signing ${EXECUTABLE_NAME}"
-        VERBATIM
-    )
-
-    if(TARGET lemonade-server)
-        add_custom_target(sign_lemonade_server
-            COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
-            COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
-            COMMENT "Signing lemonade-server"
-            DEPENDS lemonade-server
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        
+        # Sign 'lemonade-router'
+        add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
+            COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
+            COMMENT "Signing ${EXECUTABLE_NAME}"
+            VERBATIM
         )
+
+        # Sign 'lemonade-server'
+        if(TARGET lemonade-server)
+            add_custom_target(sign_lemonade_server
+                COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
+                COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
+                COMMENT "Signing lemonade-server"
+                DEPENDS lemonade-server
+            )
+        endif()
+        
     endif()
 
     # 4. Prepare Electron App
@@ -524,9 +530,14 @@ if(APPLE)
         COMPONENT Runtime
     )
     
-    install(DIRECTORY "${CMAKE_BINARY_DIR}/resources/" 
-        DESTINATION "resources" 
+    install(DIRECTORY "${CMAKE_BINARY_DIR}/resources/"
+        DESTINATION "resources"
         COMPONENT Resources
+    )
+
+    # Create lemonade-server share directory for llama binaries
+    install(DIRECTORY DESTINATION "share/lemonade-server"
+        COMPONENT Runtime
     )
 
     # 6. Packaging & Notarization

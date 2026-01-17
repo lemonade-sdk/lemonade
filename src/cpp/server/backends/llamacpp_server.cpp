@@ -814,4 +814,3 @@ std::string LlamaCppServer::get_llama_server_path() {
 
 } // namespace backends
 } // namespace lemon
-

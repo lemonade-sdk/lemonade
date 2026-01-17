@@ -33,6 +33,12 @@ mkdir -p "$LOG_DIR"
 chmod 755 "$LOG_DIR"
 chown root:wheel "$LOG_DIR" # Ensure root owns system logs
 
+# Create lemonade-server share directory for llama binaries
+LEMONADE_SHARE_DIR="${INSTALL_ROOT}/usr/local/share/lemonade-server"
+mkdir -p "$LEMONADE_SHARE_DIR"
+chmod 755 "$LEMONADE_SHARE_DIR"
+chown root:wheel "$LEMONADE_SHARE_DIR"
+
 # 3. INSTALL RESOURCES
 # Move resources from the staging area (/usr/local/resources) to the permanent Application Support folder
 # We check both possible staging locations just in case CPack moved things around.
@@ -59,10 +65,10 @@ fi
 # 4. SETUP BINARIES
 # Create symlink for the CLI tool
 APP_BINARY="${INSTALL_ROOT}/Applications/Lemonade.app/Contents/MacOS/Lemonade"
-TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade"
+TARGET_LINK="${INSTALL_ROOT}/usr/local/bin/lemonade-server"
 
 if [ -f "$APP_BINARY" ]; then
-    echo "Linking 'lemonade' to /usr/local/bin..."
+    echo "Linking 'lemonade-server' to /usr/local/bin..."
     mkdir -p "$(dirname "$TARGET_LINK")"
     ln -sf "$APP_BINARY" "$TARGET_LINK"
 fi
@@ -92,10 +98,13 @@ launchctl kickstart -k system/"$SERVICE_LABEL" 2>/dev/null || true
 
 # Verification
 sleep 2
-if launchctl list | grep -q "$SERVICE_LABEL"; then
-    echo "SUCCESS: Service '$SERVICE_LABEL' is active."
+SERVICE_STATUS=$(launchctl list | grep "$SERVICE_LABEL")
+if echo "$SERVICE_STATUS" | grep -q "^[0-9]"; then
+    echo "SUCCESS: Service '$SERVICE_LABEL' is running."
+elif echo "$SERVICE_STATUS" | grep -q "^-"; then
+    echo "WARNING: Service '$SERVICE_LABEL' is loaded but not running."
 else
-    echo "WARNING: Service loaded but may not be running yet."
+    echo "ERROR: Service '$SERVICE_LABEL' failed to load."
 fi
 
 echo "=== Lemonade Post-Install Complete ==="
