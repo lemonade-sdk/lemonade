@@ -10,6 +10,9 @@
 #include <unistd.h>
 #include <limits.h>
 #ifdef __APPLE__
+#include <unistd.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include <mach-o/dyld.h>
 #endif
 #endif
@@ -140,19 +143,40 @@ std::string get_cache_dir() {
     if (cache_dir_env) {
         return std::string(cache_dir_env);
     }
-    
-    #ifdef _WIN32
+
+#ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
     if (userprofile) {
         return std::string(userprofile) + "\\.cache\\lemonade";
     }
-    #else
+#elif defined(__APPLE__)
+    // Check if we are running as root (UID 0)
+    if (geteuid() != 0) {
+        // --- NORMAL USER MODE ---
+        const char* home = std::getenv("HOME");
+        if (home) {
+            return std::string(home) + "/.cache/lemonade";
+        }
+        // Fallback if HOME is missing but we aren't root
+        struct passwd* pw = getpwuid(getuid());
+        if (pw) {
+            return std::string(pw->pw_dir) + "/.cache/lemonade";
+        }
+    } 
+    
+    // --- SYSTEM SERVICE / ROOT MODE ---
+    // If we are root (or getting HOME failed), use a shared system location.
+    // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
+    return "/Library/Application Support/Lemonade";
+
+#else
+    // Linux and other Unix systems
     const char* home = std::getenv("HOME");
     if (home) {
         return std::string(home) + "/.cache/lemonade";
     }
     #endif
-    
+
     return ".cache/lemonade";
 }
 
