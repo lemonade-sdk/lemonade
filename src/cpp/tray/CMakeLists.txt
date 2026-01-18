@@ -179,10 +179,31 @@ if(UNIX AND NOT APPLE)
     )
 endif()
 
-# Install target
-install(TARGETS lemonade-server
-    RUNTIME DESTINATION bin
-)
+# Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)
+if(NOT APPLE)
+    install(TARGETS lemonade-server
+        RUNTIME DESTINATION bin
+    )
+endif()
+
+# ============================================================
+# macOS Signing (Must be in this file where target is defined)
+# ============================================================
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Configuring signing for Tray Application (lemonade-server)")
+    
+    # Inherit variables from Parent CMake
+    if(NOT DEFINED SIGNING_IDENTITY OR NOT DEFINED ENTITLEMENTS_PATH)
+        message(FATAL_ERROR "Signing variables missing! Ensure add_subdirectory(tray) is called AFTER identities are set in root CMakeLists.txt")
+    endif()
+
+    add_custom_command(TARGET lemonade-server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server (Tray) ---"
+        COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
+        COMMENT "Signing lemonade-server with Hardened Runtime"
+        VERBATIM
+    )
+endif()
 
 # Note: Icon resources are copied by parent CMakeLists.txt
 

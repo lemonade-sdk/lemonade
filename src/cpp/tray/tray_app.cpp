@@ -322,30 +322,30 @@ int TrayApp::run() {
             // If 'run' command and server is already running, connect to it and execute the run command
             if (config_.command == "run") {
                 std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
-                
+
                 // Get the running server's info
                 auto [pid, running_port] = get_server_info();
                 if (running_port == 0) {
                     std::cerr << "Error: Could not connect to running server" << std::endl;
                     return 1;
                 }
-                
+
                 // Create server manager to communicate with running server
                 server_manager_ = std::make_unique<ServerManager>();
                 server_manager_->set_port(running_port);
                 config_.port = running_port;  // Update config to match running server
-                
+
                 // Use localhost to connect (works regardless of what the server is bound to)
                 if (config_.host.empty() || config_.host == "0.0.0.0") {
                     config_.host = "localhost";
                 }
-                
+
                 // Execute the run command (load model and open browser)
                 return execute_run_command();
             }
-            
+
             // For 'serve' command, don't allow duplicate servers
-#ifdef _WIN32
+            #ifdef _WIN32
             show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
             std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
@@ -355,21 +355,49 @@ int TrayApp::run() {
             return 1;
         }
         // Continue to server initialization below
+    } else if (config_.command == "tray") {
+        // Tray-only mode: just show tray connected to existing server
+        // Check if server is already running
+        auto [pid, running_port] = get_server_info();
+        if (running_port == 0) {
+            std::cerr << "Error: No Lemonade Server is currently running.\n"
+                      << "Start the server first with: lemonade-server serve\n"
+                      << "Or run: lemonade-server serve --no-tray" << std::endl;
+            return 1;
+        }
+
+        // Create server manager to communicate with running server
+        server_manager_ = std::make_unique<ServerManager>();
+        server_manager_->set_port(running_port);
+        config_.port = running_port;  // Update config to match running server
+
+        // Use localhost to connect (works regardless of what the server is bound to)
+        if (config_.host.empty() || config_.host == "0.0.0.0") {
+            config_.host = "localhost";
+        }
+
+        std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+
+        // Continue to tray initialization below (skip server startup)
     } else {
         std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
         print_usage();
         return 1;
     }
     
-    // Create server manager
-    DEBUG_LOG(this, "Creating server manager...");
-    server_manager_ = std::make_unique<ServerManager>();
-    
-    // Start server
-    DEBUG_LOG(this, "Starting server...");
-    if (!start_server()) {
-        std::cerr << "Error: Failed to start server" << std::endl;
-        return 1;
+    // For 'tray' command, server_manager_ is already created and connected
+    // For other commands, create server manager and start server
+    if (config_.command != "tray") {
+        // Create server manager
+        DEBUG_LOG(this, "Creating server manager...");
+        server_manager_ = std::make_unique<ServerManager>();
+
+        // Start server
+        DEBUG_LOG(this, "Starting server...");
+        if (!start_server()) {
+            std::cerr << "Error: Failed to start server" << std::endl;
+            return 1;
+        }
     }
     
     DEBUG_LOG(this, "Server started successfully!");
@@ -666,6 +694,7 @@ void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "Commands:\n";
     std::cout << "  serve                    Start the server\n";
     std::cout << "  run <model>              Run a model\n";
+    std::cout << "  tray                     Show tray icon for existing server\n";
     std::cout << "  list                     List available models\n";
     std::cout << "  pull <model>             Download a model\n";
     std::cout << "  delete <model>           Delete a model\n";

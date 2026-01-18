@@ -434,7 +434,7 @@ else()
     message(STATUS "Install Node.js to enable: https://nodejs.org/")
 endif()
 
-# RESTORED: Custom command to copy Electron app (Wrapped in NOT APPLE to avoid conflicts)
+# Custom command to copy Electron app (Wrapped in NOT APPLE to avoid conflicts)
 if(NOT APPLE)
     add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E echo "Checking for Electron app at ${ELECTRON_APP_UNPACKED_DIR}..."
@@ -448,12 +448,6 @@ if(NOT APPLE)
     )
 endif()
 
-# Add tray application subdirectory
-add_subdirectory(tray)
-
-# ============================================================
-# macOS Packaging & Notarization
-# ============================================================
 # ============================================================
 # macOS Packaging & Notarization
 # ============================================================
@@ -463,8 +457,8 @@ if(APPLE)
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
-    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
-    
+    set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server.")
+
     if(NOT DEFINED SIGNING_IDENTITY)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
@@ -481,104 +475,106 @@ if(APPLE)
         endif()
     endif()
 
-    # 2. Configure Files
-    configure_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in
-        ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist
-        @ONLY
-    )
+    # 2. Configure Plists & Entitlements
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist @ONLY)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
-        file(WRITE "${ENTITLEMENTS_PATH}" 
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
+        file(WRITE "${ENTITLEMENTS_PATH}" "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
     endif()
+endif()
 
+# ============================================================
+# TRAY SUBDIRECTORY (Depends on Identities being set above)
+# ============================================================
+add_subdirectory(tray)
+
+if(APPLE)
     # 3. SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
+        
         # Sign 'lemonade-router'
         add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "--- Signing ${EXECUTABLE_NAME} ---"
             COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:${EXECUTABLE_NAME}>
-            COMMENT "Signing ${EXECUTABLE_NAME}"
+            COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-
-        # Sign 'lemonade-server'
-        if(TARGET lemonade-server)
-            add_custom_target(sign_lemonade_server
-                COMMAND ${CMAKE_COMMAND} -E echo "--- Signing lemonade-server ---"
-                COMMAND codesign --force --options runtime --timestamp --entitlements "${ENTITLEMENTS_PATH}" --sign "${SIGNING_IDENTITY}" -v $<TARGET_FILE:lemonade-server>
-                COMMENT "Signing lemonade-server"
-                DEPENDS lemonade-server
-            )
-        endif()
+        # Note: 'lemonade-server' (Tray) signs itself inside tray/CMakeLists.txt 
+        # using the SIGNING_IDENTITY we defined above.
     endif()
 
     # 4. Prepare Electron App
     set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
-        # Use cp -R to preserve signatures (cmake copy_directory destroys them)
         COMMAND cp -R "${ELECTRON_APP_UNPACKED_DIR}/Lemonade.app" "${CMAKE_BINARY_DIR}/"
         COMMENT "Copying Electron App (Preserving Signature)..."
         DEPENDS electron-app
     )
-
-    # 5. INSTALL LOGIC (RELATIVE PATHS WITH /USR/LOCAL PREFIX)
     
-    # Binaries -> /usr/local/bin
-    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
+    set(CPACK_PRE_BUILD_SCRIPTS "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake")
+    file(WRITE "${CMAKE_BINARY_DIR}/cpack_prebuild.cmake"
+        "message(STATUS \"Pre-build: Ensuring Electron app is prepared...\")\n"
+        "execute_process(COMMAND ${CMAKE_COMMAND} --build \"${CMAKE_BINARY_DIR}\" --target prepare_electron_app)\n"
+    )
+
+    # 5. INSTALLATION (Component Structure)
+    
+    # [1] Main Router -> /usr/local/bin
+    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
+
+    # [2] Tray/Server -> /usr/local/bin
+    # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
     if(TARGET lemonade-server)
-        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
+        install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
     endif()
 
-    # Resources -> /usr/local/resources
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "resources" COMPONENT Resources)
+    # [3] Resources -> /usr/local/resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "usr/local/resources" COMPONENT Resources)
 
-    # App -> /Applications (Break out of /usr/local using ../..)
+    # [4] App Bundle -> /Applications
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
-        DESTINATION "../../Applications" 
+        DESTINATION "Applications" 
         USE_SOURCE_PERMISSIONS 
         COMPONENT Applications
     )
     
-    # Plist -> /Library/LaunchDaemons (Break out of /usr/local using ../..)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" 
-        DESTINATION "../../Library/LaunchDaemons" 
-        COMPONENT Runtime
-    )
+    # [5] Plists -> /Library/...
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "Library/LaunchAgents" COMPONENT Runtime)
 
-    # [FIX] Force creation of share directory by installing a placeholder file
-    # This fixes the missing "/usr/local/share/lemonade-server" issue
+    # [6] Placeholder -> /usr/local/share/lemonade-server
     file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
-    install(FILES "${CMAKE_BINARY_DIR}/.keep"
-        DESTINATION "share/lemonade-server"
-        COMPONENT Runtime
-    )
+    install(FILES "${CMAKE_BINARY_DIR}/.keep" DESTINATION "usr/local/share/lemonade-server" COMPONENT Runtime)
 
     # 6. Packaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
-    set(CPACK_PRODUCTBUILD_DOMAIN "enable_anywhere") # Important for SIP
+    
+    # [FIX] Force System installation
+    set(CPACK_PRODUCTBUILD_DOMAIN "system") 
+    
     if(INSTALLER_IDENTITY)
         set(CPACK_PRODUCTBUILD_IDENTITY_NAME "${INSTALLER_IDENTITY}")
     endif()
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+    set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
+    set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
 
-    # [FIX] Set Prefix to /usr/local so relative paths work safely
-    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
+    set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+    set(CPACK_PACKAGE_RELOCATABLE OFF)
+    set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+    set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
 
     set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
     include(CPack)
 
-    # Dependencies for the custom package target
     set(PACKAGE_DEPENDS prepare_electron_app ${EXECUTABLE_NAME})
-    if(TARGET sign_lemonade_server AND CMAKE_BUILD_TYPE STREQUAL "Release")
-        list(APPEND PACKAGE_DEPENDS sign_lemonade_server)
-    endif()
-
+    
     add_custom_target(package-macos
         DEPENDS ${PACKAGE_DEPENDS}
         COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG> --target package

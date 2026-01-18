@@ -27,7 +27,12 @@ struct AppConfig {
     bool show_help = false;
     bool show_version = false;
     std::string host = "localhost";
-    std::string llamacpp_backend = "vulkan";  // Default to vulkan
+    // Default backend based on platform (vulkan for Windows/Linux, metal for macOS)
+#if defined(__APPLE__) && defined(__MACH__)
+    std::string llamacpp_backend = "metal";   // macOS default to metal
+#else
+    std::string llamacpp_backend = "vulkan";  // Windows/Linux default to vulkan
+#endif
     std::string llamacpp_args = "";  // Custom arguments for llama-server
     std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
     
@@ -171,4 +176,3 @@ private:
 };
 
 } // namespace lemon_tray
-

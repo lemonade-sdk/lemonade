@@ -3,13 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.lemonade.server</string>
+    <string>com.lemonade.tray</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/lemonade-server</string>
-        <string>serve</string>
-        <string>--no-tray</string>
+        <string>tray</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -19,8 +18,14 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/var/log/lemonade/lemonade-server.out.log</string>
+    <string>/tmp/lemonade-tray.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/lemonade/lemonade-server.err.log</string>
+    <string>/tmp/lemonade-tray.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
 </dict>
 </plist>
