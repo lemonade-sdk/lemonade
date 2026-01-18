@@ -32,6 +32,9 @@
 #include <sys/file.h>  // for flock
 #include <fcntl.h>     // for open
 #include <cerrno>      // for errno
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  // for _NSGetExecutablePath
+#endif
 #endif
 
 namespace fs = std::filesystem;
@@ -818,12 +821,27 @@ bool TrayApp::find_server_binary() {
     }
 #else
     std::string binary_name = "lemonade-router";
-    
+
     // On Unix, try to get executable path
     char exe_path_buf[1024];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path_buf);
+    if (_NSGetExecutablePath(exe_path_buf, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path_buf, sizeof(exe_path_buf) - 1);
     if (len != -1) {
         exe_path_buf[len] = '\0';
+        got_exe_path = true;
+    }
+#endif
+
+    if (got_exe_path) {
         fs::path exe_dir = fs::path(exe_path_buf).parent_path();
         search_paths.push_back((exe_dir / binary_name).string());
     }
