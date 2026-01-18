@@ -359,6 +359,11 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE
     libcurl
 )
 
+# Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
+if(APPLE)
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE -fobjc-arc)
+endif()
+
 # Platform-specific linking
 if(WIN32)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE

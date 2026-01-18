@@ -325,6 +325,14 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 }
 
 void LlamaCppServer::install(const std::string& backend) {
+    // Auto-convert Vulkan to Metal on macOS at install time
+#ifdef __APPLE__
+    if (backend_ == "vulkan") {
+        std::cout << "[LlamaCpp] Converting Vulkan backend to Metal for macOS during install" << std::endl;
+        backend_ = "metal";
+    }
+#endif
+
     std::string install_dir;
     std::string version_file;
     std::string backend_file;
@@ -545,8 +553,17 @@ void LlamaCppServer::load(const std::string& model_name,
     
     // Update backend and custom args with per-model settings
     backend_ = llamacpp_backend;
+
+    // Auto-convert Vulkan to Metal on macOS
+#ifdef __APPLE__
+    if (backend_ == "vulkan") {
+        std::cout << "[LlamaCpp] Converting Vulkan backend to Metal for macOS" << std::endl;
+        backend_ = "metal";
+    }
+#endif
+
     custom_args_ = llamacpp_args;
-    
+
     // Install llama-server if needed (use per-model backend)
     install(backend_);
     

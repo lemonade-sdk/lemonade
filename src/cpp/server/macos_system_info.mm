@@ -49,10 +49,10 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
                 gpus.push_back(additional_gpu);
             }
         }
-        [devices release];
+        // ARC handles memory management automatically
     }
 
-    [device release];
+    // ARC handles memory management automatically
 
     if (gpus.empty()) {
         GPUInfo gpu;
