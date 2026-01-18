@@ -35,13 +35,11 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               int ctx_size, bool tray, const std::string& llamacpp_backend,
-               const std::string& llamacpp_args, int max_llm_models,
+               const json& default_options, bool tray, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
                const std::string& extra_models_dir)
-    : port_(port), host_(host), log_level_(log_level), ctx_size_(ctx_size),
-      tray_(tray), llamacpp_backend_(llamacpp_backend), llamacpp_args_(llamacpp_args),
-      running_(false) {
+    : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
+      tray_(tray), running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -75,7 +73,7 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     // Set extra models directory for GGUF discovery
     model_manager_->set_extra_models_dir(extra_models_dir);
     
-    router_ = std::make_unique<Router>(ctx_size, llamacpp_backend, log_level, llamacpp_args,
+    router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_llm_models,
                                        max_embedding_models, max_reranking_models, max_audio_models);
     
@@ -117,10 +115,19 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        // Absolute bypass for liveness probe
+        if (req.path == "/live") {
+            return httplib::Server::HandlerResponse::Unhandled;
+        }
+
         this->log_request(req);
         return authenticate_request(req, res);
     });
     
+    web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_live(req, res);
+    });
+
     // Setup CORS for all routes
     setup_cors(web_server);
     
@@ -216,9 +223,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_params(req, res);
     });
     
-    register_post("add-local-model", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_add_local_model(req, res);
-    });
     
     // System endpoints
     register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
@@ -473,7 +477,7 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     // Add request logging for ALL requests (except health checks)
     web_server.set_logger([](const httplib::Request& req, const httplib::Response& res) {
         // Skip logging health checks to reduce log noise
-        if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+        if (req.path != "/api/v0/health" && req.path != "/api/v1/health" && req.path != "/live") {
             std::cout << "[Server] " << req.method << " " << req.path << " - " << res.status << std::endl;
         }
     });
@@ -690,7 +694,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, true);
+    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
     std::cout << "[Server] Model loaded successfully: " << requested_model << std::endl;
 }
 
@@ -707,10 +711,8 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["version"] = LEMON_VERSION_STRING;
     
     // Add model loaded information like Python implementation
-    std::string loaded_checkpoint = router_->get_loaded_checkpoint();
     std::string loaded_model = router_->get_loaded_model();
     
-    response["checkpoint_loaded"] = loaded_checkpoint.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_checkpoint);
     response["model_loaded"] = loaded_model.empty() ? nlohmann::json(nullptr) : nlohmann::json(loaded_model);
     
     // Multi-model support: Add all loaded models
@@ -719,9 +721,6 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
     
-    // Add context size
-    response["context_size"] = router_->get_ctx_size();
-    
     // Add log streaming support information
     response["log_streaming"] = {
         {"sse", true},
@@ -729,6 +728,20 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     };
     
     res.set_content(response.dump(), "application/json");
+}
+
+void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
+    // For HEAD requests, just return 200 OK
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+        
+    // liveness response
+    static const char* kLiveResponse = R"({"status":"ok"})";
+
+    res.set_content(kLiveResponse, "application/json");
+    res.status = 200;
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
@@ -771,7 +784,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
-        {"labels", info.labels}
+        {"labels", info.labels},
+        {"recipe_options", info.recipe_options.to_json()},
     };
     
     // Add size if available
@@ -1507,14 +1521,38 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
                 res.status = 400;
-                nlohmann::json error = {{"error", 
+                nlohmann::json error = {{"error",
                     "When providing 'checkpoint' or 'recipe', the model name must include the "
                     "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
                 res.set_content(error.dump(), "application/json");
                 return;
             }
         }
-        
+
+        // Local import mode: CLI has already copied files to HF cache, just resolve and register
+        bool local_import = request_json.value("local_import", false);
+        if (local_import) {
+            std::string hf_cache = model_manager_->get_hf_cache_dir();
+            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+            std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+            std::string dest_path = hf_cache + "/models--" + model_name_clean;
+            
+            std::cout << "[Server] Local import mode - resolving files in: " << dest_path << std::endl;
+            
+            resolve_and_register_local_model(
+                dest_path, model_name, recipe, "", mmproj,
+                reasoning, vision, embedding, reranking, hf_cache
+            );
+            
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"message", "Model imported and registered successfully"}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         if (stream) {
             // SSE streaming mode - send progress events
             res.set_header("Content-Type", "text/event-stream");
@@ -1606,17 +1644,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
         
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
-        int ctx_size = request_json.value("ctx_size", -1);
-        std::string llamacpp_backend = request_json.value("llamacpp_backend", "");
-        std::string llamacpp_args = request_json.value("llamacpp_args", "");
-        
-        std::cout << "[Server] Loading model: " << model_name;
-        if (ctx_size > 0) std::cout << " (ctx_size=" << ctx_size << ")";
-        if (!llamacpp_backend.empty()) std::cout << " (backend=" << llamacpp_backend << ")";
-        if (!llamacpp_args.empty()) std::cout << " (args=" << llamacpp_args << ")";
-        std::cout << std::endl;
-        
         // Check if model is already loaded (early return optimization)
         std::string loaded_model = router_->get_loaded_model();
         if (loaded_model == model_name) {
@@ -1643,6 +1670,20 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         auto info = model_manager_->get_model_info(model_name);
+
+        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        bool save_options = request_json.value("save_options", false);
+        
+        std::cout << "[Server] Loading model: " << model_name;
+        std::cout << " " << options.to_log_string(false);
+        std::cout << std::endl;
+
+        // Persist request options to model info if requested
+        if (save_options) {
+            info.recipe_options = options;
+            model_manager_->save_model_options(info);
+        }
         
         // Download model if needed (first-time use)
         if (!info.downloaded) {
@@ -1652,7 +1693,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
         
         // Load model with optional per-model settings
-        router_->load_model(model_name, info, true, ctx_size, llamacpp_backend, llamacpp_args);
+        router_->load_model(model_name, info, options, true);
         
         // Return success response
         nlohmann::json response = {
@@ -1829,307 +1870,146 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
     }
 }
 
-void Server::handle_add_local_model(const httplib::Request& req, httplib::Response& res) {
-    try {
-        std::cout << "[Server] Add local model request received" << std::endl;
-        
-        // Validate that this is a multipart form request
-        if (!req.is_multipart_form_data()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Request must be multipart/form-data"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Extract form fields
-        std::string model_name;
-        std::string checkpoint;
-        std::string recipe;
-        std::string mmproj;
-        bool reasoning = false;
-        bool vision = false;
-        bool embedding = false;
-        bool reranking = false;
-        
-        // Parse form fields
-        if (req.form.has_field("model_name")) {
-            model_name = req.form.get_field("model_name");
-        }
-        if (req.form.has_field("checkpoint")) {
-            checkpoint = req.form.get_field("checkpoint");
-        }
-        if (req.form.has_field("recipe")) {
-            recipe = req.form.get_field("recipe");
-        }
-        if (req.form.has_field("mmproj")) {
-            mmproj = req.form.get_field("mmproj");
-        }
-        if (req.form.has_field("reasoning")) {
-            std::string reasoning_str = req.form.get_field("reasoning");
-            reasoning = (reasoning_str == "true" || reasoning_str == "True" || reasoning_str == "1");
-        }
-        if (req.form.has_field("vision")) {
-            std::string vision_str = req.form.get_field("vision");
-            vision = (vision_str == "true" || vision_str == "True" || vision_str == "1");
-        }
-        if (req.form.has_field("embedding")) {
-            std::string embedding_str = req.form.get_field("embedding");
-            embedding = (embedding_str == "true" || embedding_str == "True" || embedding_str == "1");
-        }
-        if (req.form.has_field("reranking")) {
-            std::string reranking_str = req.form.get_field("reranking");
-            reranking = (reranking_str == "true" || reranking_str == "True" || reranking_str == "1");
-        }
-        
-        std::cout << "[Server] Model name: " << model_name << std::endl;
-        std::cout << "[Server] Recipe: " << recipe << std::endl;
-        std::cout << "[Server] Checkpoint: " << checkpoint << std::endl;
-        
-        // Validate required fields
-        if (model_name.empty() || recipe.empty()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "model_name and recipe are required"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate model name starts with "user."
-        if (model_name.substr(0, 5) != "user.") {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Model name must start with 'user.'"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Validate recipe
-        std::vector<std::string> valid_recipes = {"llamacpp", "oga-npu", "oga-hybrid", "oga-cpu", "whispercpp"};
-        if (std::find(valid_recipes.begin(), valid_recipes.end(), recipe) == valid_recipes.end()) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "Invalid recipe. Must be one of: llamacpp, oga-npu, oga-hybrid, oga-cpu, whispercpp"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // Check if model files are provided (or checkpoint path for whisper)
-        const auto& files = req.form.files;
-        bool is_whisper = (recipe == "whispercpp");
-        if (files.empty() && !is_whisper) {
-            res.status = 400;
-            nlohmann::json error = {{"error", "No model files provided for upload"}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        // For whisper models, checkpoint can be a local path
-        if (is_whisper && !checkpoint.empty() && files.empty()) {
-            // Use checkpoint as local path - validate it exists
-            if (!std::filesystem::exists(checkpoint)) {
-                res.status = 400;
-                nlohmann::json error = {{"error", "Checkpoint file does not exist: " + checkpoint}};
-                res.set_content(error.dump(), "application/json");
-                return;
+// Helper function to resolve model files and register a local model
+// Called by handle_pull when local_import=true
+// Parameters:
+//   - dest_path: Directory where model files are located (already copied/uploaded)
+//   - model_name: Model name with "user." prefix
+//   - recipe: Inference recipe (llamacpp, oga-*, whispercpp)
+//   - variant: Optional variant hint for GGUF file selection
+//   - mmproj: Optional mmproj filename hint
+//   - reasoning, vision, embedding, reranking: Model labels
+//   - hf_cache: HuggingFace cache directory for computing relative paths
+void Server::resolve_and_register_local_model(
+    const std::string& dest_path,
+    const std::string& model_name,
+    const std::string& recipe,
+    const std::string& variant,
+    const std::string& mmproj,
+    bool reasoning,
+    bool& vision,  // May be modified if mmproj found
+    bool embedding,
+    bool reranking,
+    const std::string& hf_cache) {
+    
+    std::string resolved_checkpoint;
+    std::string resolved_mmproj;
+    
+    // For OGA models, find genai_config.json
+    if (recipe.find("oga-") == 0) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
+            if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
+                resolved_checkpoint = entry.path().parent_path().string();
+                break;
             }
         }
+        if (resolved_checkpoint.empty()) {
+            resolved_checkpoint = dest_path;
+        }
+    }
+    // For llamacpp models, find the GGUF file
+    else if (recipe == "llamacpp") {
+        std::string gguf_file_found;
         
-        // For llamacpp, ensure at least one .gguf file is present
-        if (recipe == "llamacpp") {
-            bool has_gguf = false;
-            for (const auto& file_pair : files) {
-                std::string filename = file_pair.second.filename;
-                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-                if (filename.find(".gguf") != std::string::npos) {
-                    has_gguf = true;
+        // If variant is specified, look for that specific file
+        if (!variant.empty()) {
+            std::string search_term = variant;
+            if (variant.find(".gguf") == std::string::npos) {
+                search_term = variant + ".gguf";
+            }
+            
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
+                if (entry.is_regular_file() && entry.path().filename() == search_term) {
+                    gguf_file_found = entry.path().string();
                     break;
                 }
             }
-            if (!has_gguf) {
-                res.status = 400;
-                nlohmann::json error = {{"error", "At least one .gguf file is required for llamacpp"}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
         }
         
-        // Check if model name already exists
-        if (model_manager_->model_exists(model_name)) {
-            res.status = 409;
-            nlohmann::json error = {{"error", "Model name '" + model_name + "' already exists. Please use a different name."}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-        
-        // Get HF cache directory
-        std::string hf_cache = model_manager_->get_hf_cache_dir();
-        
-        // Create model directory in HF cache
-        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
-        std::string repo_cache_name = model_name_clean;
-        // Replace / with --
-        std::replace(repo_cache_name.begin(), repo_cache_name.end(), '/', '-');
-        
-        std::string snapshot_path = hf_cache + "/models--" + repo_cache_name;
-        std::cout << "[Server] Creating directory: " << snapshot_path << std::endl;
-        
-        // Create directories
-        std::filesystem::create_directories(snapshot_path);
-        
-        // Extract variant from checkpoint field if provided
-        std::string variant;
-        if (!checkpoint.empty() && checkpoint.find(':') != std::string::npos) {
-            size_t colon_pos = checkpoint.find(':');
-            variant = checkpoint.substr(colon_pos + 1);
-        }
-        
-        // Save uploaded files
-        std::cout << "[Server] Saving " << files.size() << " uploaded files..." << std::endl;
-        for (const auto& file_pair : files) {
-            // Skip form fields (model_name, recipe, etc.)
-            if (file_pair.first != "model_files") {
-                continue;
-            }
-            
-            const auto& file = file_pair.second;
-            std::string filename = file.filename;
-            std::cout << "[Server]   Processing file: " << filename << std::endl;
-            
-            // Extract relative path from filename (browser sends folder/file.ext)
-            std::string file_path;
-            size_t first_slash = filename.find('/');
-            if (first_slash != std::string::npos) {
-                // Has folder structure - use everything after first slash
-                file_path = snapshot_path + "/" + filename.substr(first_slash + 1);
-            } else {
-                // No folder structure - save directly
-                file_path = snapshot_path + "/" + filename;
-            }
-            
-            // Create parent directories
-            std::filesystem::path parent_dir = std::filesystem::path(file_path).parent_path();
-            std::filesystem::create_directories(parent_dir);
-            
-            // Write file
-            std::ofstream out(file_path, std::ios::binary);
-            if (!out) {
-                throw std::runtime_error("Failed to create file: " + file_path);
-            }
-            out.write(file.content.c_str(), file.content.size());
-            out.close();
-            
-            std::cout << "[Server]     Saved to: " << file_path << std::endl;
-        }
-        
-        // Resolve actual file paths after upload
-        std::string resolved_checkpoint;
-        std::string resolved_mmproj;
-        
-        // For OGA models, find genai_config.json
-        if (recipe.find("oga-") == 0) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
-                if (entry.is_regular_file() && entry.path().filename() == "genai_config.json") {
-                    resolved_checkpoint = entry.path().parent_path().string();
-                    break;
-                }
-            }
-            if (resolved_checkpoint.empty()) {
-                resolved_checkpoint = snapshot_path;
-            }
-        }
-        // For llamacpp models, find the GGUF file
-        else if (recipe == "llamacpp") {
-            std::string gguf_file_found;
-            
-            // If variant is specified, look for that specific file
-            if (!variant.empty()) {
-                std::string search_term = variant;
-                if (variant.find(".gguf") == std::string::npos) {
-                    search_term = variant + ".gguf";
-                }
-                
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
-                    if (entry.is_regular_file() && entry.path().filename() == search_term) {
+        // If no variant or variant not found, search for any .gguf file (excluding mmproj)
+        if (gguf_file_found.empty()) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
+                if (entry.is_regular_file()) {
+                    std::string filename = entry.path().filename().string();
+                    std::string filename_lower = filename;
+                    std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+                    
+                    if (filename_lower.find(".gguf") != std::string::npos && 
+                        filename_lower.find("mmproj") == std::string::npos) {
                         gguf_file_found = entry.path().string();
                         break;
                     }
                 }
             }
-            
-            // If no variant or variant not found, search for any .gguf file (excluding mmproj)
-            if (gguf_file_found.empty()) {
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
-                    if (entry.is_regular_file()) {
-                        std::string filename = entry.path().filename().string();
-                        std::string filename_lower = filename;
-                        std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
-                        
-                        if (filename_lower.find(".gguf") != std::string::npos && 
-                            filename_lower.find("mmproj") == std::string::npos) {
-                            gguf_file_found = entry.path().string();
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            resolved_checkpoint = gguf_file_found.empty() ? snapshot_path : gguf_file_found;
         }
         
-        // Search for mmproj file if provided
-        if (!mmproj.empty()) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(snapshot_path)) {
-                if (entry.is_regular_file() && entry.path().filename() == mmproj) {
-                    resolved_mmproj = entry.path().string();
+        resolved_checkpoint = gguf_file_found.empty() ? dest_path : gguf_file_found;
+    }
+    // For whispercpp, find .bin file
+    else if (recipe == "whispercpp") {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                if (filename.find(".bin") != std::string::npos) {
+                    resolved_checkpoint = entry.path().string();
                     break;
                 }
             }
         }
-        
-        // Build checkpoint for registration - store as relative path from HF cache
-        std::string checkpoint_to_register;
-        std::string source_type = "local_upload";
-
-        // For whisper models with local checkpoint path (no files uploaded), use the path directly
-        if (is_whisper && files.empty() && !checkpoint.empty()) {
-            // Store absolute path for whisper local models
-            checkpoint_to_register = checkpoint;
-            source_type = "local_path";  // Use special source so it's resolved as-is
-            std::cout << "[Server] Using local whisper model path: " << checkpoint_to_register << std::endl;
-        } else if (!resolved_checkpoint.empty()) {
-            std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
-            checkpoint_to_register = rel.string();
-        } else {
-            // Fallback if no files found - use directory path
-            checkpoint_to_register = "models--" + repo_cache_name;
+        if (resolved_checkpoint.empty()) {
+            resolved_checkpoint = dest_path;
         }
-
-        std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
-
-        // Register the model with source to mark how it was added
-        model_manager_->register_user_model(
-            model_name,
-            checkpoint_to_register,
-            recipe,
-            reasoning,
-            vision,
-            embedding,
-            reranking,
-            resolved_mmproj.empty() ? mmproj : resolved_mmproj,
-            source_type
-        );
-        
-        std::cout << "[Server] Model registered successfully" << std::endl;
-        
-        nlohmann::json response = {
-            {"status", "success"},
-            {"message", "Model " + model_name + " uploaded and registered successfully"}
-        };
-        res.set_content(response.dump(), "application/json");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[Server] ERROR in handle_add_local_model: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", "Failed to upload model: " + std::string(e.what())}};
-        res.set_content(error.dump(), "application/json");
     }
+    
+    // Search for mmproj file if vision is enabled or mmproj hint provided
+    if (vision || !mmproj.empty()) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(dest_path)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                std::string filename_lower = filename;
+                std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+                
+                // Match either the provided mmproj name or any mmproj file
+                if (!mmproj.empty() && filename == mmproj) {
+                    resolved_mmproj = filename;
+                    vision = true;  // Ensure vision is set
+                    break;
+                } else if (filename_lower.find("mmproj") != std::string::npos) {
+                    resolved_mmproj = filename;
+                    vision = true;  // Ensure vision is set
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Build checkpoint for registration - store as relative path from HF cache
+    std::string checkpoint_to_register;
+    if (!resolved_checkpoint.empty()) {
+        std::filesystem::path rel = std::filesystem::relative(resolved_checkpoint, hf_cache);
+        checkpoint_to_register = rel.string();
+    } else {
+        // Fallback - use dest_path relative to hf_cache
+        std::filesystem::path rel = std::filesystem::relative(dest_path, hf_cache);
+        checkpoint_to_register = rel.string();
+    }
+    
+    std::cout << "[Server] Registering model with checkpoint: " << checkpoint_to_register << std::endl;
+    
+    // Register the model with source to mark how it was added
+    model_manager_->register_user_model(
+        model_name,
+        checkpoint_to_register,
+        recipe,
+        reasoning,
+        vision,
+        embedding,
+        reranking,
+        resolved_mmproj.empty() ? mmproj : resolved_mmproj,
+        "local_upload"
+    );
+    
+    std::cout << "[Server] Model registered successfully" << std::endl;
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {

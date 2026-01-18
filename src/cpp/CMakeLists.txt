@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.2)
+project(lemon_cpp VERSION 9.1.4)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -301,6 +301,7 @@ set(SOURCES
     server/wrapped_server.cpp
     server/streaming_proxy.cpp
     server/system_info.cpp
+    server/recipe_options.cpp
     server/utils/http_client.cpp
     server/utils/json_utils.cpp
     server/utils/process_manager.cpp
@@ -657,7 +658,8 @@ if(UNIX AND NOT APPLE)
         # Post-install script for minimal package
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
     endif()
-    
+
+    # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
     include(CPack)
 endif()

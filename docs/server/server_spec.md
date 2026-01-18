@@ -44,11 +44,13 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 The additional endpoints are:
 
 - POST `/api/v1/pull` - Install a model
+- POST `/api/v1/delete` - Delete a model
 - POST `/api/v1/load` - Load a model
 - POST `/api/v1/unload` - Unload a model
-- GET `/api/v1/health` - Check server health
+- GET `/api/v1/health` - Check server status, such as models loaded
 - GET `/api/v1/stats` - Performance statistics from the last request
 - GET `/api/v1/system-info` - System information and device enumeration
+- GET `/live` - Check server liveness for load balancers and orchestrators
 
 ## Multi-Model Support
 
@@ -145,7 +147,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
-        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "model": "Qwen3-0.6B-GGUF",
         "messages": [
           {
             "role": "user",
@@ -161,7 +163,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
     curl -X POST http://localhost:8000/api/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{
-            "model": "Llama-3.2-1B-Instruct-Hybrid",
+            "model": "Qwen3-0.6B-GGUF",
             "messages": [
               {"role": "user", "content": "What is the population of Paris?"}
             ],
@@ -178,7 +180,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       "id": "0",
       "object": "chat.completion",
       "created": 1742927481,
-      "model": "Llama-3.2-1B-Instruct-Hybrid",
+      "model": "Qwen3-0.6B-GGUF",
       "choices": [{
         "index": 0,
         "message": {
@@ -197,7 +199,7 @@ Chat Completions API. You provide a list of messages and receive a completion. T
       "id": "0",
       "object": "chat.completion.chunk",
       "created": 1742927481,
-      "model": "Llama-3.2-1B-Instruct-Hybrid",
+      "model": "Qwen3-0.6B-GGUF",
       "choices": [{
         "index": 0,
         "delta": {
@@ -238,7 +240,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{
-        "model": "Llama-3.2-1B-Instruct-Hybrid",
+        "model": "Qwen3-0.6B-GGUF",
         "prompt": "What is the population of Paris?",
         "stream": false
       }'
@@ -250,7 +252,7 @@ Text Completions API. You provide a prompt and receive a completion. This API wi
     curl -X POST http://localhost:8000/api/v1/completions \
       -H "Content-Type: application/json" \
       -d '{
-            "model": "Llama-3.2-1B-Instruct-Hybrid",
+            "model": "Qwen3-0.6B-GGUF",
             "prompt": "What is the population of Paris?",
             "stream": false
           }'
@@ -265,7 +267,7 @@ The following format is used for both streaming and non-streaming responses:
   "id": "0",
   "object": "text_completion",
   "created": 1742927481,
-  "model": "Llama-3.2-1B-Instruct-Hybrid",
+  "model": "Qwen3-0.6B-GGUF",
   "choices": [{
     "index": 0,
     "text": "Paris has a population of approximately 2.2 million people in the city proper.",
@@ -684,7 +686,12 @@ Returns a single model object with the same fields as described in the [models l
   "size": 0.38,
   "downloaded": true,
   "suggested": true,
-  "labels": ["reasoning"]
+  "labels": ["reasoning"],
+  "recipe_options" {
+    "ctx_size": 8192,
+    "llamacpp_args": "--no-mmap",
+    "llamacpp_backend": "rocm"
+  }
 }
 ```
 
@@ -695,7 +702,7 @@ If the model is not found, the endpoint returns a 404 error:
 ```json
 {
   "error": {
-    "message": "Model Llama-3.2-1B-Instruct-Hybrid has not been found",
+    "message": "Model Qwen3-0.6B-GGUF has not been found",
     "type": "not_found"
   }
 }
@@ -853,6 +860,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `ctx_size` | No | Context size for the model. Overrides the default value for this model. |
 | `llamacpp_backend` | No | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). Only applies to llamacpp models. |
 | `llamacpp_args` | No | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`. |
+| `save_options` | No | Boolean. If true, saves `ctx_size`, `llamacpp_backend` and `llamacpp_args` to the `recipe_options.json` file. Any previously stored value for `model_name` is replaced with the parameters of this request. |
 
 **Setting Priority:**
 
@@ -864,7 +872,7 @@ When loading a model, settings are applied in this priority order:
 
 #### Per-model options
 
-You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To do this you need to create a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
+You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` on a per-model basis. To achieve this, Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). An example `recipe_options.json` file follows:
 
 ```json
 {
@@ -879,7 +887,7 @@ You can configure a default `ctx_size`, `llamacpp_backend` and `llamacpp_args` o
 }
 ```
 
-Note that user models (i.e. those defined in `user_models.json`) must include the "user." prefix in their name when referencing them in `recipe_options.json`.
+Note that model names include any applicable prefix, such as `user.` and `extra.`.
 
 #### Example requests
 
@@ -903,6 +911,20 @@ curl -X POST http://localhost:8000/api/v1/load \
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
     "llamacpp_args": "--flash-attn on --no-mmap"
+  }'
+```
+
+Load and save settings:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen3-0.6B-GGUF",
+    "ctx_size": 8192,
+    "llamacpp_backend": "vulkan",
+    "llamacpp_args": "--no-context-shift --no-mmap",
+    "save_options": true
   }'
 ```
 
@@ -934,7 +956,7 @@ Unload a specific model:
 ```bash
 curl -X POST http://localhost:8000/api/v1/unload \
   -H "Content-Type: application/json" \
-  -d '{"model_name": "Llama-3.2-1B-Instruct-Hybrid"}'
+  -d '{"model_name": "Qwen3-0.6B-GGUF"}'
 ```
 
 Unload all models:
@@ -959,7 +981,7 @@ Error response (model not found):
 ```json
 {
   "status": "error",
-  "message": "Model not found: Llama-3.2-1B-Instruct-Hybrid"
+  "message": "Model not found: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -984,7 +1006,6 @@ curl http://localhost:8000/api/v1/health
 ```json
 {
   "status": "ok",
-  "checkpoint_loaded": "amd/Llama-3.2-1B-Instruct-awq-g128-int4-asym-fp16-onnx-hybrid",
   "model_loaded": "Llama-3.2-1B-Instruct-Hybrid",
   "all_models_loaded": [
     {
@@ -993,6 +1014,10 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "recipe": "oga-hybrid",
+      "recipe_options": {
+        "ctx_size": 4096
+      },      
       "backend_url": "http://127.0.0.1:8001/v1"
     },
     {
@@ -1001,6 +1026,12 @@ curl http://localhost:8000/api/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "recipe": "llamacpp",
+      "recipe_options": {
+        "ctx_size": 8192,
+        "llamacpp_args": "--no-mmap",
+        "llamacpp_backend": "rocm"
+      },
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
@@ -1015,7 +1046,6 @@ curl http://localhost:8000/api/v1/health
 **Field Descriptions:**
 
 - `status` - Server health status, always `"ok"`
-- `checkpoint_loaded` - Checkpoint identifier of the most recently accessed model
 - `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
@@ -1024,6 +1054,8 @@ curl http://localhost:8000/api/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"oga-cpu"`, `"oga-hybrid"`, `"llamacpp"`, `"flm"`)
+  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously (set via `--max-loaded-models`):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models

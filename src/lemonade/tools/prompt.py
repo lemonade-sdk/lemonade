@@ -158,8 +158,12 @@ class LLMPrompt(Tool):
         model: ModelAdapter = state.model
         tokenizer: TokenizerAdapter = state.tokenizer
 
+        # Check if this is a server-loaded model (uses /chat/completions which handles templates)
+        is_server_model = getattr(model, "type", None) == "server"
+
         # If template flag is set, then wrap prompt in template
-        if template:
+        # Skip for server models since /chat/completions already applies chat formatting
+        if template and not is_server_model:
             # Embed prompt in model's chat template
             if not hasattr(tokenizer, "prompt_template"):
                 printing.log_warning(
@@ -216,10 +220,13 @@ class LLMPrompt(Tool):
 
             # Remove the input from the response
             # (up to the point they diverge, which they should not)
+            # For server/passthrough models, response is already clean text
             counter = 0
             len_input_ids = len(input_ids_array)
+            len_response = len(response_array)
             while (
                 counter < len_input_ids
+                and counter < len_response
                 and input_ids_array[counter] == response_array[counter]
             ):
                 counter += 1

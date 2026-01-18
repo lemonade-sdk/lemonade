@@ -15,13 +15,22 @@ struct OgaSequences;
 
 namespace ryzenai {
 
+// Timing data returned from completion
+struct CompletionTimingData {
+    int token_count = 0;           // Number of generated tokens
+    double ttft_seconds = 0.0;     // Time to first token in seconds
+    double tps = 0.0;              // Tokens per second (decode speed)
+    double total_time_ms = 0.0;    // Total completion time in milliseconds
+};
+
 class InferenceEngine {
 public:
     InferenceEngine(const std::string& model_path, const std::string& mode);
     ~InferenceEngine();
     
     // Synchronous completion
-    std::string complete(const std::string& prompt, const GenerationParams& params);
+    // Returns generated text. If out_timing is provided, stores timing data.
+    std::string complete(const std::string& prompt, const GenerationParams& params, CompletionTimingData* out_timing = nullptr);
     
     // Streaming completion
     void streamComplete(const std::string& prompt, 

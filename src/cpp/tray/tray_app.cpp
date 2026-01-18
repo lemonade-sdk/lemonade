@@ -38,6 +38,25 @@ namespace fs = std::filesystem;
 
 namespace lemon_tray {
 
+// Helper function to detect if a path is a local filesystem path
+// Returns true for absolute paths (Windows: C:\... or D:\..., Unix: /...)
+static bool is_local_path(const std::string& path) {
+    if (path.empty()) return false;
+    
+    // Windows absolute path: C:\... or D:\... (also handles forward slashes)
+    if (path.length() >= 3 && std::isalpha(static_cast<unsigned char>(path[0])) && 
+        path[1] == ':' && (path[2] == '\\' || path[2] == '/')) {
+        return true;
+    }
+    
+    // Unix absolute path: /...
+    if (path[0] == '/') {
+        return true;
+    }
+    
+    return false;
+}
+
 // Helper macro for debug logging
 #define DEBUG_LOG(app, msg) \
     if ((app)->config_.log_level == "debug") { \
@@ -207,9 +226,8 @@ TrayApp::TrayApp(int argc, char* argv[])
         if (config_.command == "pull") {
             print_pull_help();
         } else {
-            // Show serve options only if command is "serve" or "run"
-            bool show_serve_options = (config_.command == "serve" || config_.command == "run");
-            print_usage(show_serve_options);
+            // Show serve / run options only if command is "serve" or "run"
+            print_usage(config_.command == "serve", config_.command == "run");
         }
         exit(0);
     }
@@ -339,8 +357,8 @@ int TrayApp::run() {
                 if (config_.host.empty() || config_.host == "0.0.0.0") {
                     config_.host = "localhost";
                 }
-
-                // Execute the run command (load model and open browser)
+                
+                // Execute the run command (load model)
                 return execute_run_command();
             }
 
@@ -401,15 +419,21 @@ int TrayApp::run() {
     }
     
     DEBUG_LOG(this, "Server started successfully!");
+    if (config_.command == "serve" && config_.save_options) {
+        config_.save_options = false;
+        std::cerr << "Warning: Argument --save-options only available for the run command. Ignoring.\n";
+    }
     
-    // If this is the 'run' command, load the model and open browser
+    process_owns_server_ = true;
+
+    // If this is the 'run' command, load the model and run electron app
     if (config_.command == "run") {
         int result = execute_run_command();
         if (result != 0) {
             return result;
         }
     }
-    
+
     // If no-tray mode, just wait for server to exit
     if (config_.no_tray) {
         std::cout << "Press Ctrl+C to stop" << std::endl;
@@ -658,6 +682,8 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
                 }
             } else if (arg == "--no-tray") {
                 config_.no_tray = true;
+            } else if (arg == "--save-options") {
+                config_.save_options = true;
             } else {
                 // It's a command argument (like model name)
                 config_.command_args.push_back(arg);
@@ -688,7 +714,7 @@ void TrayApp::parse_arguments(int argc, char* argv[]) {
     config_.command = "";
 }
 
-void TrayApp::print_usage(bool show_serve_options) {
+void TrayApp::print_usage(bool show_serve_options, bool show_run_options) {
     std::cout << "lemonade-server - Lemonade Server\n\n";
     std::cout << "Usage: lemonade-server <command> [options]\n\n";
     std::cout << "Commands:\n";
@@ -701,8 +727,8 @@ void TrayApp::print_usage(bool show_serve_options) {
     std::cout << "  status                   Check server status\n";
     std::cout << "  stop                     Stop the server\n\n";
     
-    // Only show serve options if requested (for serve/run --help)
-    if (show_serve_options) {
+    // Only show serve/run options if requested (for serve/run --help)
+    if (show_serve_options || show_run_options) {
         std::cout << "Serve/Run Options:\n";
         std::cout << "  --port PORT              Server port (default: 8000)\n";
         std::cout << "  --host HOST              Server host (default: 127.0.0.1)\n";
@@ -719,6 +745,9 @@ void TrayApp::print_usage(bool show_serve_options) {
 #else
         std::cout << "  --no-tray                Start server without tray (headless mode)\n";
 #endif
+        if (show_run_options) {
+            std::cout << "  --save-options           Save model load options as default for this model (run only)\n";
+        }
         std::cout << "\n";
     }
     
@@ -740,8 +769,12 @@ void TrayApp::print_pull_help() {
     std::cout << "  For custom models, use the registration options below.\n\n";
     std::cout << "Registration Options (for custom models):\n";
     std::cout << "  --checkpoint CHECKPOINT  Hugging Face checkpoint (format: org/model:variant)\n";
+    std::cout << "                           OR an absolute local path to a model directory.\n";
+    std::cout << "                           When a local path is provided, files are copied to\n";
+    std::cout << "                           the HuggingFace cache and registered.\n";
     std::cout << "  --recipe RECIPE          Inference recipe to use\n";
-    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n\n";
+    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n";
+    std::cout << "                           Required when using a local path.\n\n";
     std::cout << "  --reasoning              Mark model as a reasoning model (e.g., DeepSeek-R1)\n";
     std::cout << "                           Adds 'reasoning' label to model metadata.\n\n";
     std::cout << "  --vision                 Mark model as a vision model (multimodal)\n";
@@ -755,6 +788,17 @@ void TrayApp::print_pull_help() {
     std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
     std::cout << "                           Required for GGUF vision models.\n";
     std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
+    std::cout << "Examples:\n";
+    std::cout << "  # Pull a registered model\n";
+    std::cout << "  lemonade-server pull Llama-3.2-1B-Instruct-GGUF\n\n";
+    std::cout << "  # Pull from HuggingFace with custom name\n";
+    std::cout << "  lemonade-server pull user.MyLlama --checkpoint meta-llama/Llama-3.2-1B-Instruct-GGUF:Q4_K_M --recipe llamacpp\n\n";
+    std::cout << "  # Import from local directory\n";
+#ifdef _WIN32
+    std::cout << "  lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp\n\n";
+#else
+    std::cout << "  lemonade-server pull user.MyModel --checkpoint /home/user/models/my-model --recipe llamacpp\n\n";
+#endif
 }
 
 bool TrayApp::find_server_binary() {
@@ -893,7 +937,7 @@ std::pair<int, int> TrayApp::get_server_info() {
         pid_file.close();
         
         // Verify the PID is still alive
-        if (kill(pid, 0) == 0) {
+        if (getpgid(pid) != -1) {
             return {pid, port};
         }
         
@@ -1015,7 +1059,110 @@ int TrayApp::execute_pull_command() {
     }
     
     std::string model_name = config_.command_args[0];
-    std::cout << "Pulling model: " << model_name << std::endl;
+    
+    // Parse optional arguments from config_.command_args (starting at index 1)
+    std::string checkpoint;
+    std::string recipe;
+    std::string mmproj;
+    bool reasoning = false;
+    bool vision = false;
+    bool embedding = false;
+    bool reranking = false;
+    
+    for (size_t i = 1; i < config_.command_args.size(); ++i) {
+        const auto& arg = config_.command_args[i];
+        
+        if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
+            checkpoint = config_.command_args[++i];
+        } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
+            recipe = config_.command_args[++i];
+        } else if (arg == "--reasoning") {
+            reasoning = true;
+        } else if (arg == "--vision") {
+            vision = true;
+        } else if (arg == "--embedding") {
+            embedding = true;
+        } else if (arg == "--reranking") {
+            reranking = true;
+        } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
+            mmproj = config_.command_args[++i];
+        }
+    }
+    
+    // Track if this is a local import (affects how we call the server)
+    bool local_import = false;
+    
+    // Check if checkpoint is a local filesystem path
+    if (!checkpoint.empty() && is_local_path(checkpoint)) {
+        // Validate path exists
+        if (!fs::exists(checkpoint)) {
+            std::cerr << "Error: Local path does not exist: " << checkpoint << std::endl;
+            return 1;
+        }
+        
+        // Validate model name has user. prefix for local imports
+        if (model_name.substr(0, 5) != "user.") {
+            std::cerr << "Error: When importing from a local path, model name must start with 'user.'" << std::endl;
+            std::cerr << "Example: lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp" << std::endl;
+            return 1;
+        }
+        
+        // Recipe is required for local imports
+        if (recipe.empty()) {
+            std::cerr << "Error: --recipe is required when importing from a local path" << std::endl;
+            std::cerr << "Options: llamacpp, oga-cpu, oga-hybrid, oga-npu, whispercpp" << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Importing model from local path: " << checkpoint << std::endl;
+        
+        // Get HF cache directory (same logic as ModelManager)
+        std::string hf_cache;
+        if (const char* env = std::getenv("HF_HUB_CACHE")) {
+            hf_cache = env;
+        } else if (const char* env = std::getenv("HF_HOME")) {
+            hf_cache = std::string(env) + "/hub";
+        } else {
+#ifdef _WIN32
+            if (const char* userprofile = std::getenv("USERPROFILE")) {
+                hf_cache = std::string(userprofile) + "\\.cache\\huggingface\\hub";
+            }
+#else
+            if (const char* home = std::getenv("HOME")) {
+                hf_cache = std::string(home) + "/.cache/huggingface/hub";
+            }
+#endif
+        }
+        
+        // Copy files to HF cache
+        std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+        std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
+        std::string dest_path = hf_cache + "/models--" + model_name_clean;
+        
+        std::cout << "Copying files to: " << dest_path << std::endl;
+        fs::create_directories(dest_path);
+        
+        fs::path src_path(checkpoint);
+        if (fs::is_directory(src_path)) {
+            for (const auto& entry : fs::recursive_directory_iterator(src_path)) {
+                fs::path relative = fs::relative(entry.path(), src_path);
+                fs::path dest_file = fs::path(dest_path) / relative;
+                if (entry.is_directory()) {
+                    fs::create_directories(dest_file);
+                } else {
+                    fs::create_directories(dest_file.parent_path());
+                    fs::copy_file(entry.path(), dest_file, fs::copy_options::overwrite_existing);
+                }
+            }
+        } else {
+            fs::copy_file(src_path, fs::path(dest_path) / src_path.filename(), 
+                         fs::copy_options::overwrite_existing);
+        }
+        
+        local_import = true;
+    }
+    
+    std::cout << (local_import ? "Registering model: " : "Pulling model: ") << model_name << std::endl;
     
     // Check if server is running
     auto [pid, running_port] = get_server_info();
@@ -1029,33 +1176,38 @@ int TrayApp::execute_pull_command() {
         }
     }
     
-    // Pull model via API with SSE streaming for progress
+    // Pull model via API (SSE streaming for downloads, simple POST for local imports)
     try {
         // Build request body with all optional parameters
-        nlohmann::json request_body = {{"model", model_name}, {"stream", true}};
+        // Local imports don't need streaming (no download progress)
+        nlohmann::json request_body = {{"model", model_name}, {"stream", !local_import}};
         
-        // Parse optional arguments from config_.command_args (starting at index 1)
-        for (size_t i = 1; i < config_.command_args.size(); ++i) {
-            const auto& arg = config_.command_args[i];
-            
-            if (arg == "--checkpoint" && i + 1 < config_.command_args.size()) {
-                request_body["checkpoint"] = config_.command_args[++i];
-            } else if (arg == "--recipe" && i + 1 < config_.command_args.size()) {
-                request_body["recipe"] = config_.command_args[++i];
-            } else if (arg == "--reasoning") {
-                request_body["reasoning"] = true;
-            } else if (arg == "--vision") {
-                request_body["vision"] = true;
-            } else if (arg == "--embedding") {
-                request_body["embedding"] = true;
-            } else if (arg == "--reranking") {
-                request_body["reranking"] = true;
-            } else if (arg == "--mmproj" && i + 1 < config_.command_args.size()) {
-                request_body["mmproj"] = config_.command_args[++i];
-            }
+        if (local_import) {
+            request_body["local_import"] = true;
+        }
+        if (!checkpoint.empty() && !local_import) {
+            // Only send checkpoint for remote downloads (local files already copied)
+            request_body["checkpoint"] = checkpoint;
+        }
+        if (!recipe.empty()) {
+            request_body["recipe"] = recipe;
+        }
+        if (reasoning) {
+            request_body["reasoning"] = true;
+        }
+        if (vision) {
+            request_body["vision"] = true;
+        }
+        if (embedding) {
+            request_body["embedding"] = true;
+        }
+        if (reranking) {
+            request_body["reranking"] = true;
+        }
+        if (!mmproj.empty()) {
+            request_body["mmproj"] = mmproj;
         }
         
-        // Use SSE streaming to receive progress events
         // Use the same host the server is bound to (0.0.0.0 is special - use localhost instead)
         std::string connect_host = (config_.host == "0.0.0.0") ? "localhost" : config_.host;
         
@@ -1063,6 +1215,30 @@ int TrayApp::execute_pull_command() {
         cli.set_connection_timeout(30, 0);
         cli.set_read_timeout(86400, 0);  // 24 hour read timeout for large downloads
         
+        // For local imports, use simple POST (no SSE streaming needed)
+        if (local_import) {
+            auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
+            
+            if (!res) {
+                throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+            }
+            
+            if (res->status != 200) {
+                try {
+                    auto error_json = nlohmann::json::parse(res->body);
+                    throw std::runtime_error(error_json.value("error", res->body));
+                } catch (const nlohmann::json::exception&) {
+                    throw std::runtime_error("Server returned status " + std::to_string(res->status));
+                }
+            }
+            
+            std::cout << "Model imported successfully: " << model_name << std::endl;
+            
+            if (!server_was_running) stop_server();
+            return 0;
+        }
+        
+        // Use SSE streaming to receive progress events (for remote downloads)
         std::string last_file;
         int last_percent = -1;
         bool success = false;
@@ -1270,12 +1446,14 @@ int TrayApp::execute_run_command() {
     
     // Load the model
     std::cout << "Loading model " << model_name << "..." << std::endl;
-    if (server_manager_->load_model(model_name)) {
+    if (server_manager_->load_model(model_name, config_.save_options)) {
         std::cout << "Model loaded successfully!" << std::endl;
         
-        // Launch the Electron app
-        std::cout << "Launching Lemonade app..." << std::endl;
-        launch_electron_app();
+        // Launch the Electron app only if we are not terminating immediately
+        if (process_owns_server_) {
+            std::cout << "Launching Lemonade app..." << std::endl;
+            launch_electron_app();
+        }
     } else {
         std::cerr << "Failed to load model" << std::endl;
         return 1;
@@ -2058,9 +2236,8 @@ void TrayApp::shutdown() {
     
     should_exit_ = true;
     
-    // Only print shutdown message for persistent server commands (serve/run)
-    // Don't print for ephemeral commands (list/pull/delete/status/stop)
-    if (config_.command == "serve" || config_.command == "run") {
+    // Only print shutdown message if we started the server
+    if (process_owns_server_) {
         std::cout << "Shutting down server..." << std::endl;
     }
     
@@ -2122,7 +2299,7 @@ void TrayApp::shutdown() {
 #endif
     
     // Stop the server
-    if (server_manager_) {
+    if (server_manager_ && process_owns_server_) {
         stop_server();
     }
     
@@ -2220,6 +2397,15 @@ void TrayApp::launch_electron_app() {
         }
     }
     
+    // Compose the server base URL for the Electron app
+    // Translate 0.0.0.0 to localhost since 0.0.0.0 is not a valid connect address
+    std::string connect_host = config_.host;
+    if (connect_host.empty() || connect_host == "0.0.0.0") {
+        connect_host = "localhost";
+    }
+    std::string base_url = "http://" + connect_host + ":" + std::to_string(config_.port);
+    std::cout << "Launching Electron app with server URL: " << base_url << std::endl;
+    
 #ifdef _WIN32
     // Single-instance enforcement: Only allow one Electron app to be open at a time
     // Reuse child process tracking to determine if the app is already running
@@ -2264,15 +2450,21 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // Launch the .exe
+    // Launch the .exe with --base-url argument
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     
+    // Build command line: "path\to\Lemonade.exe" --base-url http://host:port
+    // Note: CreateProcessA modifies the command line buffer, so we need a mutable copy
+    std::string cmd_line = "\"" + electron_app_path_ + "\" --base-url " + base_url;
+    std::vector<char> cmd_line_buf(cmd_line.begin(), cmd_line.end());
+    cmd_line_buf.push_back('\0');
+    
     // Create the process
     if (CreateProcessA(
-        electron_app_path_.c_str(),  // Application name
-        NULL,                         // Command line
+        NULL,                         // Application name (NULL = use command line)
+        cmd_line_buf.data(),          // Command line with arguments
         NULL,                         // Process security attributes
         NULL,                         // Thread security attributes
         FALSE,                        // Don't inherit handles
@@ -2316,9 +2508,9 @@ void TrayApp::launch_electron_app() {
         }
     }
     
-    // macOS: Use 'open' command to launch the .app
+    // macOS: Use 'open' command to launch the .app with --args to pass arguments
     // Note: 'open' doesn't give us the PID directly, so we'll need to find it
-    std::string cmd = "open \"" + electron_app_path_ + "\"";
+    std::string cmd = "open \"" + electron_app_path_ + "\" --args --base-url " + base_url;
     int result = system(cmd.c_str());
     if (result == 0) {
         std::cout << "Launched Electron app" << std::endl;
@@ -2355,8 +2547,9 @@ void TrayApp::launch_electron_app() {
     // Linux: Launch the binary directly using fork/exec for proper PID tracking
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process: execute the Electron app
-        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), nullptr);
+        // Child process: execute the Electron app with --base-url argument
+        execl(electron_app_path_.c_str(), electron_app_path_.c_str(), 
+              "--base-url", base_url.c_str(), nullptr);
         // If execl returns, it failed
         std::cerr << "Failed to execute Electron app: " << strerror(errno) << std::endl;
         _exit(1);

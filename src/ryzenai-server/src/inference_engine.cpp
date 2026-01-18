@@ -333,10 +333,15 @@ std::vector<int32_t> InferenceEngine::truncatePrompt(const std::vector<int32_t>&
     );
 }
 
-std::string InferenceEngine::complete(const std::string& prompt, const GenerationParams& params) {
+std::string InferenceEngine::complete(const std::string& prompt, const GenerationParams& params, CompletionTimingData* out_timing) {
     std::lock_guard<std::mutex> lock(inference_mutex_);
     
     try {
+        // Start timing
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto first_token_time = start_time;
+        bool first_token_received = false;
+        
         // Tokenize input
         auto sequences = OgaSequences::Create();
         tokenizer_->Encode(prompt.c_str(), *sequences);
@@ -370,11 +375,50 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
         
         while (!generator->IsDone()) {
             generator->GenerateNextToken();
+            
+            // Track time to first token
+            if (!first_token_received) {
+                first_token_time = std::chrono::high_resolution_clock::now();
+                first_token_received = true;
+            }
         }
+        
+        // End timing
+        auto end_time = std::chrono::high_resolution_clock::now();
         
         // Get the output
         const int32_t* output_ptr = generator->GetSequenceData(0);
         size_t output_count = generator->GetSequenceCount(0);
+        
+        // Calculate actual generated token count
+        int generated_token_count = (output_count > input_ids.size()) 
+            ? static_cast<int>(output_count - input_ids.size()) 
+            : 0;
+        
+        // Calculate timing metrics
+        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        auto ttft_duration = std::chrono::duration_cast<std::chrono::milliseconds>(first_token_time - start_time);
+        double ttft_seconds = ttft_duration.count() / 1000.0;
+        double total_time_ms = static_cast<double>(total_duration.count());
+        
+        // Calculate TPS: tokens generated after the first token, divided by time after first token
+        double decode_time_seconds = (total_duration.count() - ttft_duration.count()) / 1000.0;
+        double tps = 0.0;
+        if (generated_token_count > 1 && decode_time_seconds > 0) {
+            // TPS = (tokens - 1) / decode_time (exclude first token from TPS calculation)
+            tps = (generated_token_count - 1) / decode_time_seconds;
+        } else if (generated_token_count == 1 && total_time_ms > 0) {
+            // Only one token generated - use total time
+            tps = 1.0 / (total_time_ms / 1000.0);
+        }
+        
+        // Return timing data if requested
+        if (out_timing != nullptr) {
+            out_timing->token_count = generated_token_count;
+            out_timing->ttft_seconds = ttft_seconds;
+            out_timing->tps = tps;
+            out_timing->total_time_ms = total_time_ms;
+        }
         
         // Decode only the newly generated tokens (skip the input prompt)
         std::string result;
@@ -395,8 +439,8 @@ std::string InferenceEngine::complete(const std::string& prompt, const Generatio
             }
         }
         
-        std::cout << "[InferenceEngine] Generated " << (output_count > input_ids.size() ? output_count - input_ids.size() : 0)
-                 << " tokens" << std::endl;
+        std::cout << "[InferenceEngine] Generated " << generated_token_count << " tokens in " 
+                  << total_time_ms << "ms (TTFT: " << (ttft_seconds * 1000) << "ms, TPS: " << tps << ")" << std::endl;
         
         return result;
         

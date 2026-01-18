@@ -417,8 +417,10 @@ class LMEvalHarness(Tool):
         except subprocess.CalledProcessError as e:
             printing.log_error(f"Error running lm-eval-harness: {e}")
             printing.log_error(f"stderr: {e.stderr}")
+            raise
         except (IOError, ValueError, requests.RequestException) as e:
             printing.log_error(f"Error: {e}")
+            raise
         finally:
             # Shut down server
             if self.server_runner and self.server_runner.is_alive():

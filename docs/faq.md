@@ -140,6 +140,15 @@
 
    File a detailed issue on TheRock repo for support: https://github.com/ROCm/TheRock
 
+### 4. **How should dedicated GPU RAM be allocated on Strix Halo**
+
+   Strix Halo PCs can have up to 128 GB of unified RAM and Windows allows the user to allocate a portion of this to dedicated GPU RAM.
+
+   We suggest setting dedicated GPU RAM to `64/64 (auto)`.
+
+   > Note: On Windows, the GPU can access both unified RAM and dedicated GPU RAM, but the CPU is blocked from accessing dedicated GPU RAM. For this reason, allocating too much dedicated GPU RAM can interfere with model loading, which requires the CPU to access a substantial amount unified RAM.
+
+
 ## Hybrid and NPU Questions
 
 ### 1. **Does LLM inference with the NPU only work on Windows?**
@@ -192,6 +201,24 @@
    cd C:\Windows\System32\AMD
    .\xrt-smi configure --pmode turbo
    ```
+
+## Remote Access
+
+### 1. **How do I run Lemonade Server on one PC and access it from another?**
+
+   Lemonade supports running the server on one machine while using the app from another machine on the same network.
+
+   **Quick setup:**
+   1. On the server machine, start with network access enabled:
+      ```bash
+      lemonade-server serve --host 0.0.0.0 --port 8000
+      ```
+   2. On the client machine, launch the app pointing to the server's IP:
+      ```bash
+      lemonade-app --base-url http://SERVER_IP:8000
+      ```
+
+   For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
 
 ## Support & Roadmap
 
