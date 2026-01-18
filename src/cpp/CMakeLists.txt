@@ -533,8 +533,8 @@ if(APPLE)
         install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
     endif()
 
-    # [3] Resources -> /usr/local/resources
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "usr/local/resources" COMPONENT Resources)
+    # [3] Resources -> /Library/Application Support/Lemonade/resources
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "Library/Application Support/Lemonade/resources" COMPONENT Resources)
 
     # [4] App Bundle -> /Applications
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
