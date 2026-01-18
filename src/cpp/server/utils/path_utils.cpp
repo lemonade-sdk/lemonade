@@ -19,8 +19,7 @@
 
 namespace fs = std::filesystem;
 
-namespace lemon {
-namespace utils {
+namespace lemon::utils {
 
 std::string get_executable_dir() {
 #ifdef _WIN32
@@ -218,5 +217,4 @@ std::string get_deprecated_downloaded_bin_dir() {
 #endif
 
 
-} // namespace utils
-} // namespace lemon
+} // namespace utils::lemon
