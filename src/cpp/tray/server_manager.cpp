@@ -5,6 +5,9 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 
 // Helper macro for debug logging
 #define DEBUG_LOG(mgr, msg) \
@@ -109,7 +112,7 @@ bool ServerManager::start_server(
 
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
     api_key_ = api_key_env ? std::string(api_key_env) : "";
-    
+
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
         return false;
@@ -151,36 +154,7 @@ bool ServerManager::start_server(
         return false;
     }
     
-    // Step 2: Quick check if server is ready (try models endpoint with short timeout)
     DEBUG_LOG(this, "Checking if server is ready...");
-    try {
-        // Use 1 second timeout for quick check
-        make_http_request("/api/v1/models", "GET", "", 1);
-        
-        // Success! Server is ready immediately
-        if (!is_ephemeral) {
-            std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
-            // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-            std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
-            std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
-            std::cout << "Connect your apps to the endpoint above." << std::endl;
-            std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
-        }
-        
-        server_started_ = true;
-        
-#ifndef _WIN32
-        // Write PID file on Linux for efficient server discovery
-        DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
-        write_pid_file();
-#endif
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        DEBUG_LOG(this, "Quick check failed (expected on first run): " << e.what());
-    }
-    
     // Step 3: Server is initializing, wait for it
     std::cout << "Setting things up..." << std::endl;
     
@@ -201,14 +175,7 @@ bool ServerManager::start_server(
                 std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
             }
             
-            server_started_ = true;
-            
-#ifndef _WIN32
-            // Write PID file on Linux for efficient server discovery
-            DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
-            write_pid_file();
-#endif
-            
+            server_started_ = true;    
             return true;
             
         } catch (const std::exception& e) {
@@ -683,36 +650,45 @@ bool ServerManager::terminate_process() {
     return false;
 }
 
+
 bool ServerManager::is_process_alive() const {
     if (server_pid_ <= 0) return false;
     
-    // First check if process exists at all
-    if (kill(server_pid_, 0) != 0) {
-        return false;  // Process doesn't exist
+    // Send signal 0 to check if process exists (works on Mac and Linux)
+    if (kill(server_pid_, 0) == 0) {
+        // Process exists.
+        
+#ifdef __linux__
+        // Linux: Check for Zombie state via /proc
+        std::string stat_path = "/proc/" + std::to_string(server_pid_) + "/stat";
+        std::ifstream stat_file(stat_path);
+        if (stat_file) {
+            std::string line;
+            std::getline(stat_file, line);
+            size_t paren_pos = line.rfind(')');
+            if (paren_pos != std::string::npos && paren_pos + 2 < line.length()) {
+                char state = line[paren_pos + 2];
+                return (state != 'Z'); // Return true if not a Zombie
+            }
+        }
+        return true; // Assume alive if we can't read stat
+#elif defined(__APPLE__)
+        // macOS: zombies still respond to kill(0) with success.
+        // We can check waitpid with WNOHANG to see if it's already dead/zombie.
+        int status;
+        pid_t result = waitpid(server_pid_, &status, WNOHANG);
+        if (result == 0) {
+            return true; // Child is still running
+        } else if (result == server_pid_) {
+            return false; // Child has exited (we just reaped it)
+        }
+        // If result == -1, process might not be our child or error, rely on kill(0)
+        return true;
+#else
+        return true;
+#endif
     }
-    
-    // Check if it's a zombie by reading /proc/PID/stat
-    // Format: PID (name) STATE ...
-    // State can be: R (running), S (sleeping), D (disk sleep), Z (zombie), T (stopped), etc.
-    std::string stat_path = "/proc/" + std::to_string(server_pid_) + "/stat";
-    std::ifstream stat_file(stat_path);
-    if (!stat_file) {
-        return false;  // Can't read stat, assume dead
-    }
-    
-    std::string line;
-    std::getline(stat_file, line);
-    
-    // Find the state character (after the closing paren of the process name)
-    size_t paren_pos = line.rfind(')');
-    if (paren_pos != std::string::npos && paren_pos + 2 < line.length()) {
-        char state = line[paren_pos + 2];
-        // Return false if zombie - we consider zombies as "not alive" for our purposes
-        return (state != 'Z');
-    }
-    
-    // If we can't parse the state, assume alive to be safe
-    return true;
+    return false; // kill failed, process dead
 }
 
 bool ServerManager::terminate_router_tree() {

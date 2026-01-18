@@ -42,11 +42,77 @@ sudo dnf install rpm-build rpmdevtools
 ```
 
 **macOS:**
+
+### Building from Source on MacOS for M-Series / arm64 Family
+
 ```bash
 # Install Xcode command line tools
 xcode-select --install
+
+# Navigate to the C++ source directory
+cd src/cpp
+
+# Create and enter build directory
+mkdir build
+cd build
+
+# Configure with CMake
+cmake ..
+
+# Build with all cores
+cmake --build . --config Release -j
 ```
 
+### CMake Targets
+
+The build system provides several CMake targets for different build configurations:
+
+- **`lemonade-router`**: The main HTTP server executable that handles LLM inference requests
+- **`package-macos`**: Creates a signed macOS installer package (.pkg) using productbuild
+- **`notarize_package`**: Builds and submits the package to Apple for notarization and staples the ticket
+- **`electron-app`**: Builds the Electron-based GUI application
+- **`prepare_electron_app`**: Prepares the Electron app for inclusion in the installer
+
+### Building and Notarizing for Distribution
+
+To build a notarized macOS installer for distribution:
+
+1. **Prerequisites**:
+   - Apple Developer Program membership
+   - Valid Developer ID Application and Installer certificates
+   - App-specific password for notarization
+   - Xcode command line tools
+
+2. **Set Environment Variables**:
+   ```bash
+   export DEVELOPER_ID_APPLICATION_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+   export DEVELOPER_ID_INSTALLER_IDENTITY="Developer ID Installer: Your Name (TEAMID)"
+   export AC_PASSWORD="your-app-specific-password"
+   ```
+
+3. **Configure Notarization Keychain Profile**:
+   ```bash
+   xcrun notarytool store-credentials "AC_PASSWORD" \
+     --apple-id "your-apple-id@example.com" \
+     --team-id "YOURTEAMID" \
+     --password "your-app-specific-password"
+   ```
+
+4. **Build and Notarize**:
+   ```bash
+   cd src/cpp/build
+   cmake --build . --config Release --target package-macos
+   cmake --build . --config Release --target notarize_package
+   ```
+
+The notarization process will:
+- Submit the package to Apple's notarization service
+- Wait for approval
+- Staple the notarization ticket to the package
+
+**Note**: The package is signed with hardened runtime entitlements during the build process for security.
+
+### Building from Source for Linux based systems.
 ### Build Steps
 
 ```bash

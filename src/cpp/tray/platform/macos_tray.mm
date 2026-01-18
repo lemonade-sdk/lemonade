@@ -2,86 +2,278 @@
 
 #include "lemon_tray/platform/macos_tray.h"
 #include <iostream>
+#include <memory>
+#include <string>
 
-// TODO: Implement macOS tray using Objective-C++
-// This will use NSStatusBar, NSMenu, NSMenuItem, etc.
+// macOS imports for system tray
+#import <Cocoa/Cocoa.h>
+#import <AppKit/AppKit.h>
+#import <UserNotifications/UserNotifications.h>
+
+// -----------------------------------------------------------------------------
+// Objective-C Interface
+// -----------------------------------------------------------------------------
+
+// Wrapper to hold C++ std::function safely in Obj-C
+@interface CallbackWrapper : NSObject {
+    std::function<void()> _callback;
+}
+- (instancetype)initWithCallback:(std::function<void()>)cb;
+- (void)execute;
+@end
+
+@implementation CallbackWrapper
+- (instancetype)initWithCallback:(std::function<void()>)cb {
+    self = [super init];
+    if (self) { _callback = cb; }
+    return self;
+}
+- (void)execute {
+    if (_callback) _callback();
+}
+@end
+
+// Helper to handle menu actions
+@interface MenuActionReceiver : NSObject
+- (void)actionHandler:(id)sender;
+@end
+
+@implementation MenuActionReceiver
+- (void)actionHandler:(id)sender {
+    NSMenuItem *item = (NSMenuItem*)sender;
+    if ([item.representedObject isKindOfClass:[CallbackWrapper class]]) {
+        [(CallbackWrapper*)item.representedObject execute];
+    }
+}
+@end
+
+// The main tray implementation
+// We implement NSUserNotificationCenterDelegate to support the legacy fallback
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+@interface MacOSTrayImpl : NSObject <NSUserNotificationCenterDelegate>
+#pragma clang diagnostic pop
+@property (strong, nonatomic) NSStatusItem *statusItem;
+@property (strong, nonatomic) NSMenu *menu;
+@property (strong, nonatomic) CallbackWrapper *readyCallback;
+@property (strong, nonatomic) MenuActionReceiver *actionReceiver;
+@end
+
+@implementation MacOSTrayImpl
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _actionReceiver = [[MenuActionReceiver alloc] init];
+    }
+    return self;
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center 
+     shouldPresentNotification:(NSUserNotification *)notification {
+    return YES;
+}
+#pragma clang diagnostic pop
+@end
+
+// -----------------------------------------------------------------------------
+// C++ Implementation
+// -----------------------------------------------------------------------------
 
 namespace lemon_tray {
 
-MacOSTray::MacOSTray()
-    : impl_(nullptr)
-{
-    // TODO: Initialize Objective-C objects
-}
+MacOSTray::MacOSTray() : impl_(nullptr) {}
 
 MacOSTray::~MacOSTray() {
-    // TODO: Clean up Objective-C objects
+    impl_ = nullptr;
 }
 
 bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_path) {
     app_name_ = app_name;
     icon_path_ = icon_path;
-    
-    std::cout << "[macOS Tray] TODO: Initialize system tray" << std::endl;
-    std::cout << "[macOS Tray] App name: " << app_name << std::endl;
-    std::cout << "[macOS Tray] Icon path: " << icon_path << std::endl;
-    
-    // TODO: Implement using NSStatusBar
-    // NSStatusBar *statusBar = [NSStatusBar systemStatusBar];
-    // NSStatusItem *statusItem = [statusBar statusItemWithLength:NSVariableStatusItemLength];
+
+    [NSApplication sharedApplication];
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+
+    MacOSTrayImpl* trayImpl = [[MacOSTrayImpl alloc] init];
     
     if (ready_callback_) {
-        ready_callback_();
+        trayImpl.readyCallback = [[CallbackWrapper alloc] initWithCallback:ready_callback_];
     }
     
-    return false; // Not implemented yet
+    // ARC Retain
+    impl_ = (__bridge_retained void*)trayImpl; 
+
+    NSStatusBar *statusBar = [NSStatusBar systemStatusBar];
+    trayImpl.statusItem = [statusBar statusItemWithLength:NSVariableStatusItemLength];
+
+    if (trayImpl.statusItem) {
+        trayImpl.statusItem.button.title = @"🍋"; 
+
+        if (!icon_path.empty()) {
+            set_icon(icon_path);
+        }
+
+        trayImpl.menu = [[NSMenu alloc] initWithTitle:[NSString stringWithUTF8String:app_name.c_str()]];
+        
+        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit" 
+                                                          action:@selector(terminate:) 
+                                                   keyEquivalent:@"q"];
+        [quitItem setTarget:NSApp];
+        [trayImpl.menu addItem:quitItem];
+
+        trayImpl.statusItem.menu = trayImpl.menu;
+
+        if (trayImpl.readyCallback) {
+            [trayImpl.readyCallback execute];
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 void MacOSTray::run() {
-    std::cout << "[macOS Tray] TODO: Run event loop" << std::endl;
-    // TODO: Start NSApplication run loop
+    if (log_level_ == "debug") {
+        std::cout << "[macOS Tray] Entering Run Loop..." << std::endl;
+    }
+    [NSApp run];
 }
 
 void MacOSTray::stop() {
-    std::cout << "[macOS Tray] TODO: Stop event loop" << std::endl;
-    // TODO: Terminate NSApplication
+    if (impl_) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
+            if (trayImpl.statusItem) {
+                [[NSStatusBar systemStatusBar] removeStatusItem:trayImpl.statusItem];
+                trayImpl.statusItem = nil;
+            }
+            [NSApp terminate:nil];
+        });
+    }
 }
 
 void MacOSTray::set_menu(const Menu& menu) {
-    std::cout << "[macOS Tray] TODO: Set menu with " << menu.items.size() << " items" << std::endl;
-    // TODO: Build NSMenu from Menu structure
+    if (!impl_) return;
+
+    MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
+
+    // Create a copy of menu items for thread safety
+    std::vector<MenuItem> menuItems = menu.items;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [trayImpl.menu removeAllItems];
+
+        for (const auto& item : menuItems) {
+            if (item.is_separator) {
+                [trayImpl.menu addItem:[NSMenuItem separatorItem]];
+            } else {
+                NSString *title = [NSString stringWithUTF8String:item.text.c_str()];
+
+                NSMenuItem *menuItem = [[NSMenuItem alloc] initWithTitle:title
+                                                                 action:nil
+                                                          keyEquivalent:@""];
+
+                if (item.callback) {
+                    CallbackWrapper *wrapper = [[CallbackWrapper alloc] initWithCallback:item.callback];
+                    menuItem.representedObject = wrapper;
+                    menuItem.target = trayImpl.actionReceiver;
+                    menuItem.action = @selector(actionHandler:);
+                }
+
+                if (item.checked) menuItem.state = NSControlStateValueOn;
+                menuItem.enabled = item.enabled;
+
+                [trayImpl.menu addItem:menuItem];
+            }
+        }
+
+        [trayImpl.menu addItem:[NSMenuItem separatorItem]];
+        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
+                                                          action:@selector(terminate:)
+                                                   keyEquivalent:@"q"];
+        [quitItem setTarget:NSApp];
+        [trayImpl.menu addItem:quitItem];
+    });
 }
 
 void MacOSTray::update_menu() {
-    std::cout << "[macOS Tray] TODO: Update menu" << std::endl;
-    // TODO: Rebuild menu
+    // No-op
 }
 
-void MacOSTray::show_notification(
-    const std::string& title,
-    const std::string& message,
-    NotificationType type)
-{
-    std::cout << "[macOS Tray] TODO: Show notification: " << title << " - " << message << std::endl;
-    // TODO: Use NSUserNotificationCenter or UNUserNotificationCenter
+void MacOSTray::show_notification(const std::string& title, const std::string& message, NotificationType type) {
+    NSString *nsTitle = [NSString stringWithUTF8String:title.c_str()];
+    NSString *nsMessage = [NSString stringWithUTF8String:message.c_str()];
+    std::string current_log_level = log_level_;
+
+    // 1. Production Mode (Bundled App)
+    if ([[NSBundle mainBundle] bundleIdentifier] != nil) {
+        if (@available(macOS 10.14, *)) {
+            UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+            [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                                  completionHandler:^(BOOL granted, NSError * _Nullable error) {
+                if (granted) {
+                    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+                    content.title = nsTitle;
+                    content.body = nsMessage;
+                    
+                    NSString *uuid = [[NSUUID UUID] UUIDString];
+                    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:uuid content:content trigger:nil];
+                    [center addNotificationRequest:request withCompletionHandler:nil];
+                }
+            }];
+        }
+    } 
+    // 2. CLI/Debug Mode (No Bundle ID) - Uses Deprecated API safely
+    else {
+        if (current_log_level == "debug") std::cout << "[macOS Tray] Using legacy notification fallback" << std::endl;
+        
+        // Silence warnings for this specific block
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        
+        NSUserNotification *notification = [[NSUserNotification alloc] init];
+        notification.title = nsTitle;
+        notification.informativeText = nsMessage;
+        notification.soundName = NSUserNotificationDefaultSoundName;
+        
+        MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
+        [[NSUserNotificationCenter defaultUserNotificationCenter] setDelegate:trayImpl];
+        [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
+        
+        #pragma clang diagnostic pop
+    }
 }
 
 void MacOSTray::set_icon(const std::string& icon_path) {
+    if (!impl_ || icon_path.empty()) return;
+    
     icon_path_ = icon_path;
-    std::cout << "[macOS Tray] TODO: Set icon: " << icon_path << std::endl;
-    // TODO: Load and set NSImage
+    MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *nsPath = [NSString stringWithUTF8String:icon_path.c_str()];
+        NSImage *image = [[NSImage alloc] initWithContentsOfFile:nsPath];
+        if (image) {
+            [image setSize:NSMakeSize(18, 18)];
+            [image setTemplate:YES]; 
+            trayImpl.statusItem.button.image = image;
+        }
+    });
 }
 
-void MacOSTray::set_tooltip(const std::string& tooltip) {
-    std::cout << "[macOS Tray] TODO: Set tooltip: " << tooltip << std::endl;
-    // Note: macOS status items don't traditionally have tooltips, but can set button title
-}
+void MacOSTray::set_tooltip(const std::string& tooltip) {}
 
 void MacOSTray::set_ready_callback(std::function<void()> callback) {
     ready_callback_ = callback;
 }
 
+void MacOSTray::set_log_level(const std::string& log_level) {
+    log_level_ = log_level;
+}
+
 } // namespace lemon_tray
 
 #endif // __APPLE__
-
