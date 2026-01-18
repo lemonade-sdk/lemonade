@@ -424,6 +424,7 @@ ipcMain.handle('get-server-port', async () => {
   return cachedServerPort;
 });
 
+
 // Track CPU usage between calls (for Linux /proc/stat parsing)
 let lastCpuStats = null;
 
