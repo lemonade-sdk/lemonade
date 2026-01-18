@@ -604,7 +604,7 @@ footer {
 /* App Layout */
 .app-layout {
     display: flex;
-    height: calc(100vh - 32px);
+    height: calc(100vh - 32px - 28px); /* 32px title bar + 28px status bar */
     overflow: hidden;
 }
 
@@ -4130,4 +4130,34 @@ footer {
 .audio-file-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Status Bar Styles */
+.status-bar {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    background: #000000;
+    border-top: 1px solid #1a1a1a;
+    padding: 0 12px;
+    gap: 20px;
+    flex-shrink: 0;
+    font-size: 12px;
+    user-select: none;
+}
+
+.status-bar-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-bar-label {
+    color: #555;
+    font-size: 11px;
+}
+
+.status-bar-value {
+    color: #888;
+    font-variant-numeric: tabular-nums;
 }

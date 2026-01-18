@@ -424,6 +424,170 @@ ipcMain.handle('get-server-port', async () => {
   return cachedServerPort;
 });
 
+// Track CPU usage between calls
+let lastCpuUsage = process.cpuUsage();
+let lastCpuTime = Date.now();
+
+// Platform-specific GPU utilization detection
+const getGpuUsage = async () => {
+  if (process.platform === 'linux') {
+    // Linux: Read from sysfs (AMD GPUs expose gpu_busy_percent)
+    try {
+      const drmPath = '/sys/class/drm';
+      const cards = await fs.promises.readdir(drmPath).catch(() => []);
+
+      for (const card of cards) {
+        if (!card.match(/^card\d+$/)) continue;
+
+        const amdBusyPath = path.join(drmPath, card, 'device', 'gpu_busy_percent');
+        try {
+          const content = await fs.promises.readFile(amdBusyPath, 'utf-8');
+          const percent = parseFloat(content.trim());
+          if (!isNaN(percent)) {
+            return percent;
+          }
+        } catch {
+          // File doesn't exist, try next card
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read GPU stats from sysfs:', error);
+    }
+    return null;
+
+  } else if (process.platform === 'win32') {
+    // Windows: Use PowerShell to query GPU utilization
+    return new Promise((resolve) => {
+      const psCommand = `(Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Average | Select-Object -ExpandProperty Average`;
+      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const percent = parseFloat(stdout.trim());
+        resolve(isNaN(percent) ? null : Math.round(percent * 100) / 100);
+      });
+    });
+
+  } else if (process.platform === 'darwin') {
+    // macOS: Use ioreg to query GPU performance stats
+    return new Promise((resolve) => {
+      exec('ioreg -r -d 1 -c IOAccelerator', { timeout: 2000 }, (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const match = stdout.match(/"Device Utilization %"\s*=\s*(\d+)/i) ||
+                      stdout.match(/"GPU Activity"\s*=\s*(\d+)/i);
+        resolve(match ? parseFloat(match[1]) : null);
+      });
+    });
+  }
+
+  return null;
+};
+
+// Platform-specific NPU utilization detection
+const getNpuUsage = async () => {
+  if (process.platform === 'linux') {
+    // Linux: Read from sysfs (AMD XDNA/Ryzen AI)
+    try {
+      const accelPath = '/sys/class/accel';
+      const devices = await fs.promises.readdir(accelPath).catch(() => []);
+
+      for (const device of devices) {
+        const devicePath = path.join(accelPath, device, 'device');
+        const possiblePaths = [
+          path.join(devicePath, 'npu_busy_percent'),
+          path.join(devicePath, 'device_busy_percent'),
+          path.join(accelPath, device, 'busy_percent'),
+        ];
+
+        for (const busyPath of possiblePaths) {
+          try {
+            const content = await fs.promises.readFile(busyPath, 'utf-8');
+            const percent = parseFloat(content.trim());
+            if (!isNaN(percent)) {
+              return percent;
+            }
+          } catch {
+            // File doesn't exist, try next path
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read NPU stats from sysfs:', error);
+    }
+    return null;
+
+  } else if (process.platform === 'win32') {
+    // Windows: Use xrt-smi for AMD Ryzen AI NPU
+    return new Promise((resolve) => {
+      const xrtSmiPath = path.join('C:', 'Windows', 'System32', 'AMD', 'xrt-smi.exe');
+      exec(`"${xrtSmiPath}" examine -r aie`, { timeout: 3000 }, (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const match = stdout.match(/utilization[:\s]+(\d+(?:\.\d+)?)\s*%/i);
+        resolve(match ? parseFloat(match[1]) : null);
+      });
+    });
+
+  } else if (process.platform === 'darwin') {
+    // macOS: Apple Neural Engine has no public utilization API
+    return null;
+  }
+
+  return null;
+};
+
+ipcMain.handle('get-system-stats', async () => {
+  try {
+    // Get memory info
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+    const memoryGb = usedMemory / (1024 * 1024 * 1024);
+
+    // Calculate CPU percentage
+    const currentCpuUsage = process.cpuUsage(lastCpuUsage);
+    const currentTime = Date.now();
+    const elapsedMs = currentTime - lastCpuTime;
+
+    // CPU usage is in microseconds, convert to percentage
+    // user + system time / elapsed time * 100
+    const cpuPercent = elapsedMs > 0
+      ? ((currentCpuUsage.user + currentCpuUsage.system) / 1000 / elapsedMs) * 100
+      : 0;
+
+    // Update tracking for next call
+    lastCpuUsage = process.cpuUsage();
+    lastCpuTime = currentTime;
+
+    // Get GPU usage (platform-specific)
+    const gpuPercent = await getGpuUsage();
+
+    // Get NPU usage (platform-specific)
+    const npuPercent = await getNpuUsage();
+
+    return {
+      cpu_percent: Math.min(cpuPercent, 100), // Cap at 100%
+      memory_gb: memoryGb,
+      gpu_percent: gpuPercent,
+      npu_percent: npuPercent,
+    };
+  } catch (error) {
+    console.error('Failed to get system stats:', error);
+    return {
+      cpu_percent: 0,
+      memory_gb: 0,
+      gpu_percent: null,
+      npu_percent: null,
+    };
+  }
+});
+
 function updateWindowMinWidth(requestedWidth) {
   if (!mainWindow || typeof requestedWidth !== 'number' || !isFinite(requestedWidth)) {
     return;
