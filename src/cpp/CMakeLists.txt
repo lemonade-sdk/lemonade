@@ -62,6 +62,15 @@ FetchContent_Declare(zstd
     EXCLUDE_FROM_ALL
 )
 
+if(APPLE)
+    # brotli (MIT License) - required by httplib for compression on macOS
+    FetchContent_Declare(brotli
+        GIT_REPOSITORY https://github.com/google/brotli.git
+        GIT_TAG v1.1.0
+        EXCLUDE_FROM_ALL
+    )
+endif()
+
 # cpp-httplib (MIT License)
 FetchContent_Declare(httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
@@ -116,6 +125,28 @@ set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(zstd)
 add_library(zstd::libzstd ALIAS libzstd_static)  # Alias for httplib
 
+if(APPLE)
+    # === brotli ===
+    set(BROTLI_BUILD_STATIC ON CACHE INTERNAL "")
+    set(BROTLI_BUILD_PROGRAMS OFF CACHE INTERNAL "")
+    set(BROTLI_BUILD_SHARED OFF CACHE INTERNAL "")
+    set(BROTLI_BUILD_TESTS OFF CACHE INTERNAL "")
+    
+    FetchContent_MakeAvailable(brotli)
+    
+    if(TARGET brotlicommon)
+        add_library(Brotli::common ALIAS brotlicommon)
+    endif()
+    
+    if(TARGET brotlienc)
+        add_library(Brotli::encoder ALIAS brotlienc)
+    endif()
+    
+    if(TARGET brotlidec)
+        add_library(Brotli::decoder ALIAS brotlidec)
+    endif()
+endif()
+
 # === httplib ===
 # Disable OpenSSL in httplib (not needed for localhost HTTP server)
 # All HTTPS downloads are handled by libcurl with native SSL backends:
@@ -128,13 +159,24 @@ set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
 set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")           # Skip zstd checks
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip zstd checks
 set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")           # zstd is provided
+# Use brotli for compression on macOS
+if(APPLE)
+    set(HTTPLIB_REQUIRE_BROTLI OFF CACHE INTERNAL "")           # Skip brotli checks
+    set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip brotli checks
+    set(HTTPLIB_IS_USING_BROTLI ON CACHE INTERNAL "")           # brotli is provided
+endif()
 set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")                # Prevent installing
 FetchContent_MakeAvailable(httplib)
-# Patch httplib includes due to manual zstd fetching
+# Patch httplib includes due to manual zstd and brotli fetching
 target_include_directories(httplib INTERFACE
     ${zstd_SOURCE_DIR}/lib
     ${zstd_SOURCE_DIR}/lib/common
 )
+if(APPLE)
+    target_include_directories(httplib INTERFACE
+        ${brotli_SOURCE_DIR}/c/include
+    )
+endif()
 
 
 # ============================================================
@@ -464,7 +506,7 @@ if(APPLE)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
         else()
-            set(SIGNING_IDENTITY "1B1DCEE34FB1C8EBDC8E9DFC8C3569A8E0F296F0")
+            set(SIGNING_IDENTITY "BBC1E1924FF481293CF0928B5DFFF8A6419D7DA0")
         endif()
     endif()
 
@@ -472,7 +514,7 @@ if(APPLE)
         if(DEFINED ENV{DEVELOPER_ID_INSTALLER_IDENTITY})
             set(INSTALLER_IDENTITY "$ENV{DEVELOPER_ID_INSTALLER_IDENTITY}")
         else()
-            set(INSTALLER_IDENTITY "C152E54D928FEC8ADC24890256EEA02476478FB9")
+            set(INSTALLER_IDENTITY "B69167355F20D364EE8FD7126D767B93B5344EBB")
         endif()
     endif()
 
