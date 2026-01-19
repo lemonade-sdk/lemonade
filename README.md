@@ -9,6 +9,8 @@
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/#linux" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
+  <a href="https://lemonade-server.ai/#linux" title="Arch Linux Supported">
+    <img src="https://img.shields.io/aur/version/lemonade-server" alt="Arch Linux"></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
@@ -41,7 +43,7 @@ Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](
 
 ## Getting Started
 
-1. **Install**: [Windows](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi) · [Ubuntu](https://lemonade-server.ai/install_options.html) · [Source](https://lemonade-server.ai/install_options.html)
+1. **Install**: [Windows](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi) · [Linux](https://lemonade-server.ai/install_options.html) · [Source](https://lemonade-server.ai/install_options.html) · [Docker](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/DOCKER_GUIDE.md)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Chat**: Try models with the built-in chat interface
 4. **Connect**: Use Lemonade with your favorite apps:
@@ -135,8 +137,8 @@ Lemonade supports the following configurations, while also making it easy to swi
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
 | Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Check back in 2026 :)    | Handheld devices: Ryzen AI Z2 Extreme APUs     | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-|     | Text to speech                               | Lemonade desktop app                     |
+| Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
+|     |                                | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application
 
@@ -197,7 +199,7 @@ New contributors can find beginner-friendly issues tagged with "Good First Issue
 
 ## Maintainers
 
-This project is sponsored by AMD. It is maintained by @danielholanda @jeremyfowers @ramkrishna @vgodsoe in equal measure. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @Geramy @ramkrishna2910 @siavashhub @sofiageo @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
 
 ## License and Attribution
 

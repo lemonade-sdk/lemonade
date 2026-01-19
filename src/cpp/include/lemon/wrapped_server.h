@@ -10,6 +10,7 @@
 #include "utils/process_manager.h"
 #include "server_capabilities.h"
 #include "model_manager.h"
+#include "recipe_options.h"
 
 namespace lemon {
 
@@ -95,17 +96,19 @@ public:
     
     // Multi-model support: Model metadata
     void set_model_metadata(const std::string& model_name, const std::string& checkpoint, 
-                           ModelType type, DeviceType device) {
+                           ModelType type, DeviceType device, const RecipeOptions& recipe_options) {
         model_name_ = model_name;
         checkpoint_ = checkpoint;
         model_type_ = type;
         device_type_ = device;
+        recipe_options_ = recipe_options;
     }
     
     std::string get_model_name() const { return model_name_; }
     std::string get_checkpoint() const { return checkpoint_; }
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
+    RecipeOptions get_recipe_options() const { return recipe_options_; }
     
     // Install the backend server
     virtual void install(const std::string& backend = "") = 0;
@@ -118,10 +121,8 @@ public:
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,
-                     int ctx_size,
-                     bool do_not_upgrade = false,
-                     const std::string& llamacpp_backend = "vulkan",
-                     const std::string& llamacpp_args = "") = 0;
+                     const RecipeOptions& options,
+                     bool do_not_upgrade = false) = 0;
     
     // Unload the model and stop the server
     virtual void unload() = 0;
@@ -190,6 +191,7 @@ protected:
     ModelType model_type_ = ModelType::LLM;
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
+    RecipeOptions recipe_options_;
     
     // Busy state tracking (for safe eviction)
     mutable std::mutex busy_mutex_;

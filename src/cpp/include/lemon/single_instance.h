@@ -42,8 +42,13 @@ public:
         // Unix/Linux: Use file locking
         std::string lock_file = "/tmp/lemonade_" + app_name + ".lock";
         int fd = open(lock_file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
-        if (fd == -1) return false;
+
+        // If the file exists and has been created by another user, let's try again in read-only mode
+        if (fd == -1) fd = open(lock_file.c_str(), O_RDONLY | O_CLOEXEC);
         
+        // No running instance detected
+        if (fd == -1) return false;
+
         // Try to acquire exclusive lock (non-blocking)
         if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
             close(fd);

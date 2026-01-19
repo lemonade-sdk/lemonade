@@ -1,5 +1,6 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include "lemon/utils/path_utils.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -20,6 +21,7 @@
 namespace lemon {
 
 namespace fs = std::filesystem;
+using namespace lemon::utils;
 
 // AMD discrete GPU keywords
 const std::vector<std::string> AMD_DISCRETE_GPU_KEYWORDS = {
@@ -380,14 +382,16 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
     
-    if (device_lower.find("radeon") == std::string::npos) {
+    if (device_lower.find("radeon") == std::string::npos &&
+        device_lower.find("amd") == std::string::npos) {
         return "";
     }
     
     // STX Halo iGPUs (gfx1151 architecture)
     // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos || 
-        device_lower.find("8060s") != std::string::npos) {
+        device_lower.find("8060s") != std::string::npos ||
+        device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
     
@@ -1702,27 +1706,6 @@ NPUInfo MacOSSystemInfo::get_npu_device() {
 
 SystemInfoCache::SystemInfoCache() {
     cache_file_path_ = get_cache_dir() + "/hardware_info.json";
-}
-
-std::string SystemInfoCache::get_cache_dir() const {
-    const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_dir_env) {
-        return std::string(cache_dir_env);
-    }
-    
-    #ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
-    }
-    #else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
-    }
-    #endif
-    
-    return ".cache/lemonade";
 }
 
 std::string SystemInfoCache::get_lemonade_version() const {

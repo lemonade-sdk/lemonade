@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.2)
+project(lemon_cpp VERSION 9.1.4)
 
 # ============================================================
 # Electron source paths (used by both runtime and installers)
@@ -300,6 +300,7 @@ set(SOURCES
     server/wrapped_server.cpp
     server/streaming_proxy.cpp
     server/system_info.cpp
+    server/recipe_options.cpp
     server/utils/http_client.cpp
     server/utils/json_utils.cpp
     server/utils/process_manager.cpp
@@ -479,7 +480,7 @@ if(UNIX AND NOT APPLE)
         
         # Full package name
         set(CPACK_PACKAGE_NAME "lemonade")
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libcurl4, libssl3, libz1, unzip, libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libsecret-1-0, libasound2t64")
         set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
         
         # Install Electron app
@@ -510,5 +511,7 @@ if(UNIX AND NOT APPLE)
         endif()
     endif()
     
+    # RPM specific variables defined within
+    include(${CMAKE_CURRENT_SOURCE_DIR}/CPackRPM.cmake)
     include(CPack)
 endif()

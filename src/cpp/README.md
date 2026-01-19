@@ -30,6 +30,17 @@ sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-confi
 # This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
 
+**Linux (Fedora):**
+```bash
+sudo dnf install @development-tools cmake libcurl-devel openssl-devel
+
+# If you then want to package the binaries into .rpm
+sudo dnf install rpm-build rpmdevtools
+
+# Note: Tray application is disabled on Linux (headless mode only)
+# This avoids LGPL dependencies and provides a cleaner server-only experience
+```
+
 **macOS:**
 ```bash
 # Install Xcode command line tools
@@ -220,6 +231,39 @@ lemonade-server serve --no-tray
 # Or just:
 lemonade-server serve
 ```
+
+### Linux .rpm Package (Fedora, RHEL etc)
+
+Very similar to the Debian instructions above with minor changes
+
+**Building:**
+
+```bash
+cd src/cpp/build
+cpack -G RPM
+```
+
+**Package Output:**
+
+Creates `lemonade-server-minimal-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-minimal-9.1.2.x86_64.rpm`) and 
+resources are installed as per DEB version above
+
+**Installation:**
+
+```bash
+# Replace <VERSION> with the actual version (e.g., 9.0.0)
+sudo dnf install ./lemonade-server-minimal-<VERSION>.x86_64.rpm
+```
+
+**Uninstallation:**
+
+```bash
+sudo dnf remove lemonade-server-minimal
+```
+
+**Post-Installation:**
+
+Same as .deb above
 
 ### Developer IDE & IDE Build Steps
 

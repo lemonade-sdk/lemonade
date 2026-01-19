@@ -73,7 +73,7 @@ public:
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();
-    bool load_model(const std::string& model_name);
+    bool load_model(const std::string& model_name, bool save_options=false);
     bool unload_model();  // Unload all models
     bool unload_model(const std::string& model_name);  // Unload specific model
     

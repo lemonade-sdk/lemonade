@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getServerBaseUrl, onServerPortChange } from './utils/serverConfig';
+import { getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -14,13 +14,21 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const logsContentRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [serverUrl, setServerUrl] = useState<string>(getServerBaseUrl());
+  const [serverUrl, setServerUrl] = useState<string>('');
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Listen for port changes and update server URL
+  // Wait for serverConfig to initialize and get the correct URL
   useEffect(() => {
-    const unsubscribe = onServerPortChange(() => {
-      const newUrl = getServerBaseUrl();
-      console.log('Server port changed, updating logs URL:', newUrl);
+    serverConfig.waitForInit().then(() => {
+      setServerUrl(getServerBaseUrl());
+      setIsInitialized(true);
+    });
+  }, []);
+
+  // Listen for URL changes (covers both port changes and explicit URL updates)
+  useEffect(() => {
+    const unsubscribe = onServerUrlChange((newUrl: string) => {
+      console.log('Server URL changed, updating logs URL:', newUrl);
       setServerUrl(newUrl);
     });
 
@@ -53,8 +61,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   // Connect to SSE log stream
   useEffect(() => {
-    if (!isVisible) {
-      // Clean up connection when logs window is hidden
+    // Don't connect until we have the correct URL from initialization
+    if (!isVisible || !isInitialized || !serverUrl) {
+      // Clean up connection when logs window is hidden or not ready
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -79,7 +88,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
-          console.log('Log stream connected');
+          console.log('Log stream connected to:', serverUrl);
           setConnectionStatus('connected');
         };
 
@@ -135,7 +144,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [isVisible, serverUrl]);
+  }, [isVisible, serverUrl, isInitialized]);
 
   const handleClearLogs = () => {
     setLogs([]);

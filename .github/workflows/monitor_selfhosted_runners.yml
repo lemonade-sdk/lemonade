@@ -1,0 +1,133 @@
+name: Monitor Self-Hosted Runners
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"   # every Monday at 1AM UTC
+  workflow_dispatch:
+
+permissions:
+  actions: read  # Required to read artifacts
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get list of runners
+        id: runners
+        run: |
+          # Try to get repo-level runners first
+          curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/actions/runners \
+            > repo_runners.json
+          
+          # Also get org-level runners
+          curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/orgs/${{ github.repository_owner }}/actions/runners \
+            > org_runners.json
+          
+          # Combine and deduplicate runner names
+          repo_names=$(jq -r '.runners[]?.name // empty' repo_runners.json 2>/dev/null || echo "")
+          org_names=$(jq -r '.runners[]?.name // empty' org_runners.json 2>/dev/null || echo "")
+          
+          # Fallback to known runner list if API fails
+          known_runners="jfowers-stx-01,jfowers-stx-02,sjlab-stx-halo-06,sjlab-stx-halo-07,sjlab-stx-halo-08,sjlab-stx-halo-09,sjlab-stx-halo-10,sjlab-stx-halo-11,sjlab-stx-halo-12,sjlab-stx-halo-13,sjlab-stx-0"
+          
+          if [ -n "$repo_names" ] || [ -n "$org_names" ]; then
+            all_names=$(echo -e "$repo_names\n$org_names" | sort -u | tr '\n' ',' | sed 's/,$//') 
+            echo "names=$all_names" >> $GITHUB_OUTPUT
+            echo "Using API discovered runners: $all_names"
+          else
+            echo "names=$known_runners" >> $GITHUB_OUTPUT
+            echo "Using fallback runner list: $known_runners"
+          fi
+
+      - name: Get artifacts
+        id: artifacts
+        run: |
+          curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/actions/artifacts \
+            > artifacts.json
+
+      - name: Check each runner heartbeat
+        id: check
+        run: |
+          missing=""
+          now=$(date -u +%s)
+
+          for r in $(echo "${{ steps.runners.outputs.names }}" | tr ',' ' '); do
+            [ -z "$r" ] && continue
+            echo "Checking $r"
+
+            ts=$(jq -r --arg r "$r" '[.artifacts[] | select(.name=="heartbeat-"+$r)] | sort_by(.updated_at) | last | .updated_at // empty' artifacts.json)
+
+            if [ -z "$ts" ] || [ "$ts" == "null" ]; then
+              echo "No heartbeat found for $r"
+              missing="$missing $r"
+              continue
+            fi
+
+            hb=$(date -d "$ts" +%s)
+            diff=$((now - hb))
+
+            if [ $diff -gt 691200 ]; then   # 8 days (weekly + 1 day buffer)
+              echo "Heartbeat stale for $r (last seen: $ts)"
+              missing="$missing $r"
+            fi
+          done
+
+          echo "missing=$missing" >> $GITHUB_OUTPUT
+
+      - name: Fail if any runner missing
+        if: steps.check.outputs.missing != ''
+        run: |
+          echo "Missing or stale runners: ${{ steps.check.outputs.missing }}"
+          exit 1
+
+      - name: Send Teams alert via Power Automate
+        if: failure()
+        run: |
+          echo "Sending Teams alert via Power Automate..."
+          response=$(curl -s -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "type": "AdaptiveCard",
+              "version": "1.3",
+              "body": [
+                {
+                  "type": "TextBlock",
+                  "text": "⚠️ Self-hosted Runner Alert",
+                  "weight": "bolder",
+                  "size": "medium",
+                  "color": "attention"
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "The following runners are offline or missing heartbeats:",
+                  "wrap": true
+                },
+                {
+                  "type": "TextBlock",
+                  "text": "${{ steps.check.outputs.missing }}",
+                  "wrap": true,
+                  "fontType": "monospace"
+                }
+              ]
+            }' \
+            "${{ secrets.TEAMS_WEBHOOK_URL }}")
+          
+          http_code="${response: -3}"
+          response_body="${response%???}"
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $response_body"
+          
+          
+          if [ "$http_code" != "200" ] && [ "$http_code" != "202" ]; then
+            echo "Power Automate webhook failed with status $http_code"
+          else
+            echo "Teams alert sent successfully via Power Automate"
+          fi

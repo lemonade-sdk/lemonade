@@ -5,18 +5,17 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
+#include "lemon/recipe_options.h"
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
 
 namespace lemon {
 
-Router::Router(int ctx_size, const std::string& llamacpp_backend, const std::string& log_level,
-               const std::string& llamacpp_args, ModelManager* model_manager,
+Router::Router(const json& default_options, const std::string& log_level, ModelManager* model_manager,
                int max_llm_models, int max_embedding_models, int max_reranking_models,
                int max_audio_models)
-    : ctx_size_(ctx_size), llamacpp_backend_(llamacpp_backend), log_level_(log_level),
-      llamacpp_args_(llamacpp_args), model_manager_(model_manager),
+    : default_options_(default_options), log_level_(log_level), model_manager_(model_manager),
       max_llm_models_(max_llm_models), max_embedding_models_(max_embedding_models),
       max_reranking_models_(max_reranking_models), max_audio_models_(max_audio_models) {
 
@@ -180,53 +179,22 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         ryzenai_server->set_execution_mode(backend_mode);
         new_server.reset(ryzenai_server);
     } else {
-        std::cout << "[Router] Creating LlamaCpp backend: " << llamacpp_backend_ << std::endl;
-        new_server = std::make_unique<backends::LlamaCppServer>(llamacpp_backend_, log_level_, 
-                                                                 llamacpp_args_, model_manager_);
+        std::cout << "[Router] Creating LlamaCpp backend" << std::endl;
+        new_server = std::make_unique<backends::LlamaCppServer>(log_level_, model_manager_);
     }
     
     return new_server;
 }
 
-std::string Router::prioritized_option(const std::string& load_option, const std::string& model_option, const std::string& fallback) {
-    if (!load_option.empty()) {
-        return load_option;
-    }
-
-    if (!model_option.empty()) {
-        return model_option;
-    }
-
-    return fallback;
-}
-
-int Router::prioritized_option(int load_option, int model_option, int fallback) {
-    if (load_option >= 0) {
-        return load_option;
-    }
-
-    if (model_option >= 0) {
-        return model_option;
-    }
-
-    return fallback;
-}
-
 void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
-                       bool do_not_upgrade,
-                       int ctx_size_override,
-                       const std::string& llamacpp_backend_override,
-                       const std::string& llamacpp_args_override) {
-    
+                       RecipeOptions options,
+                       bool do_not_upgrade) {
+    RecipeOptions default_opt = RecipeOptions(model_info.recipe, default_options_);
+
     // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
-    int effective_ctx_size = prioritized_option(ctx_size_override, model_info.ctx_size, ctx_size_);
-    std::string effective_backend = prioritized_option(llamacpp_backend_override, model_info.llamacpp_backend, llamacpp_backend_);
-    std::string effective_args = prioritized_option(llamacpp_args_override, model_info.llamacpp_args, llamacpp_args_);
-    
-    std::cout << "[Router] Effective settings: ctx_size=" << effective_ctx_size 
-              << ", backend=" << effective_backend 
-              << ", args=" << (effective_args.empty() ? "(none)" : effective_args) << std::endl;
+    RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
+    std::cout << "[Router] Effective settings: " << effective_options.to_log_string() << std::endl;
     
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
@@ -304,7 +272,7 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
         
         // Set model metadata
-        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type);
+        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
         new_server->update_access_time();
         
         // CRITICAL: Release lock before slow backend startup
@@ -316,8 +284,7 @@ void Router::load_model(const std::string& model_name,
         std::string error_message;
         
         try {
-            new_server->load(model_name, model_info, effective_ctx_size, do_not_upgrade, 
-                           effective_backend, effective_args);
+            new_server->load(model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
             std::cout << "[Router] Backend started successfully" << std::endl;
         } catch (const std::exception& e) {
@@ -373,7 +340,7 @@ void Router::load_model(const std::string& model_name,
             
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
-            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type);
+            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
             retry_server->update_access_time();
             
             // Release lock for retry
@@ -381,8 +348,7 @@ void Router::load_model(const std::string& model_name,
             
             std::cout << "[Router] Retrying backend load..." << std::endl;
             try {
-                retry_server->load(model_name, model_info, effective_ctx_size, do_not_upgrade,
-                                 effective_backend, effective_args);
+                retry_server->load(model_name, model_info, effective_options, do_not_upgrade);
                 
                 // Re-acquire lock
                 lock.lock();
@@ -439,12 +405,6 @@ std::string Router::get_loaded_model() const {
     return server ? server->get_model_name() : "";
 }
 
-std::string Router::get_loaded_checkpoint() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
-    return server ? server->get_checkpoint() : "";
-}
-
 std::string Router::get_loaded_recipe() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
@@ -472,6 +432,9 @@ json Router::get_all_loaded_models() const {
         model_info["type"] = model_type_to_string(server->get_model_type());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
+        RecipeOptions recipe_options =  server->get_recipe_options();
+        model_info["recipe"] = recipe_options.get_recipe();
+        model_info["recipe_options"] = recipe_options.to_json();
         
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();

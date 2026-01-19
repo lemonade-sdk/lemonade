@@ -21,10 +21,8 @@ public:
     Server(int port = 8000,
            const std::string& host = "127.0.0.1",
            const std::string& log_level = "info",
-           int ctx_size = 4096,
+           const json& default_options = json::object(),
            bool tray = false,
-           const std::string& llamacpp_backend = "vulkan",
-           const std::string& llamacpp_args = "",
            int max_llm_models = 1,
            int max_embedding_models = 1,
            int max_reranking_models = 1,
@@ -53,6 +51,7 @@ private:
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
+    void handle_live(const httplib::Request& req, httplib::Response& res);    
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
@@ -70,7 +69,19 @@ private:
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
+    
+    // Helper function for local model resolution and registration
+    void resolve_and_register_local_model(
+        const std::string& dest_path,
+        const std::string& model_name,
+        const std::string& recipe,
+        const std::string& variant,
+        const std::string& mmproj,
+        bool reasoning,
+        bool& vision,
+        bool embedding,
+        bool reranking,
+        const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
@@ -87,10 +98,8 @@ private:
     int port_;
     std::string host_;
     std::string log_level_;
-    int ctx_size_;
+    json default_options_;
     bool tray_;
-    std::string llamacpp_backend_;
-    std::string llamacpp_args_;
     std::string log_file_path_;
 
     std::thread http_v4_thread_;

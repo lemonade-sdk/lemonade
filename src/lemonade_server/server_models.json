@@ -605,6 +605,18 @@
         "suggested": true,
         "size": 0.96
     },
+    "LFM2.5-1.2B-FLM": {
+        "checkpoint": "lfm2.5:1.2b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 0.96
+    },
+    "Phi-4-Mini-Instruct-FLM": {
+        "checkpoint": "phi4-mini-it:4b",
+        "recipe": "flm",
+        "suggested": true,
+        "size": 3.39
+    },
     "Whisper-Tiny": {
         "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
         "recipe": "whispercpp",

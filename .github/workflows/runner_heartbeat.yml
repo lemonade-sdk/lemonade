@@ -1,0 +1,51 @@
+name: Runner Heartbeat
+
+on:
+  schedule:
+    - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
+  workflow_dispatch:
+
+permissions:
+  actions: write  # Required to upload artifacts
+
+jobs:
+  heartbeat:
+    strategy:
+      matrix:
+        runner: 
+          - jfowers-stx-01
+          - jfowers-stx-02
+          - sjlab-stx-halo-06
+          - sjlab-stx-halo-07
+          - sjlab-stx-halo-08
+          - sjlab-stx-halo-09
+          - sjlab-stx-halo-10
+          - sjlab-stx-halo-11
+          - sjlab-stx-halo-12
+          - sjlab-stx-halo-13
+          - sjlab-stx-0
+      fail-fast: false  # Continue even if one runner fails
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
+    steps:
+      - name: Create heartbeat file (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
+          $runner = "${{ runner.name }}"
+          "$timestamp" | Out-File -FilePath "heartbeat-$runner.txt" -Encoding utf8
+
+      - name: Create heartbeat file (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          timestamp=$(date -Iseconds)
+          runner="${{ runner.name }}"
+          echo "$timestamp" > "heartbeat-$runner.txt"
+
+      - name: Upload heartbeat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heartbeat-${{ runner.name }}
+          path: heartbeat-${{ runner.name }}.txt
+          retention-days: 14

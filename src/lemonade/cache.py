@@ -80,12 +80,14 @@ class Keys:
     RESPONSE_LENGTHS_HISTOGRAM = "response_lengths_histogram"
     CACHE_DIR = "cache_dir"
     DEVICE = "device"
+    BACKEND = "backend"
     LOCAL_MODEL_FOLDER = "local_model_folder"
     MEMORY_USAGE_PLOT = "memory_usage_plot"
     MAX_MEMORY_USED_GB = "max_memory_used_GB"
     MAX_MEMORY_USED_GBYTE = "max_memory_used_gbyte"
     RYZEN_AI_VERSION_INFO = "ryzen_ai_version_info"
     LLAMA_CLI_VERSION_INFO = "llama_cli_version_info"
+    FLM_VERSION_INFO = "flm_version_info"
 
 
 # This file was originally licensed under Apache 2.0. It has been modified.

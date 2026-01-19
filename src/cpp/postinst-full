@@ -32,5 +32,12 @@ done
 # Ensure all .so files in the app directory are readable and executable
 find "$APP_DIR" -name "*.so*" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
+# Create lemonade-app symlink in bin directory for PATH access
+BIN_DIR="/usr/local/bin"
+if [ -f "$APP_DIR/lemonade" ] && [ -d "$BIN_DIR" ]; then
+    ln -sf "$APP_DIR/lemonade" "$BIN_DIR/lemonade-app"
+    echo "Created lemonade-app symlink in $BIN_DIR"
+fi
+
 exit 0
 

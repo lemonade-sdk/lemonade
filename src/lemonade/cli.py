@@ -53,6 +53,10 @@ from lemonade.tools.oga.load import OgaLoad
 from lemonade.tools.oga.bench import OgaBench
 from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.llamacpp.load import LoadLlamaCpp
+from lemonade.tools.flm.load import FLMLoad
+from lemonade.tools.flm.bench import FLMBench
+from lemonade.tools.server_load import Load as ServerLoad
+from lemonade.tools.server_bench import ServerBench
 
 import lemonade.cache as cache
 from lemonade.tools.mmlu import AccuracyMMLU
@@ -78,6 +82,10 @@ def main():
         HuggingfaceBench,
         OgaLoad,
         OgaBench,
+        FLMLoad,
+        FLMBench,
+        ServerLoad,
+        ServerBench,
         LemonadeReport,
         # Inherited from lemonade
         Cache,

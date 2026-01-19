@@ -208,29 +208,6 @@ ModelManager::ModelManager() {
     recipe_options_ = load_optional_json(get_recipe_options_file());
 }
 
-std::string ModelManager::get_cache_dir() {
-    // Check environment variable first
-    const char* cache_env = std::getenv("LEMONADE_CACHE_DIR");
-    if (cache_env) {
-        return std::string(cache_env);
-    }
-    
-    // Default to ~/.cache/lemonade (matching Python implementation)
-#ifdef _WIN32
-    const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile) {
-        return std::string(userprofile) + "\\.cache\\lemonade";
-    }
-    return "C:\\.cache\\lemonade";
-#else
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/lemonade";
-    }
-    return "/tmp/.cache/lemonade";
-#endif
-}
-
 std::string ModelManager::get_user_models_file() {
     return get_cache_dir() + "/user_models.json";
 }
@@ -636,14 +613,25 @@ json ModelManager::load_optional_json(const std::string& path) {
     }
 }
 
-void ModelManager::save_user_models(const json& user_models) {
-    std::string user_models_path = get_user_models_file();
-    
+static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
-    fs::path dir = fs::path(user_models_path).parent_path();
+    fs::path dir = fs::path(save_path).parent_path();
     fs::create_directories(dir);
     
-    JsonUtils::save_to_file(user_models, user_models_path);
+    std::cout << "[ModelManager] Saving " << fs::path(save_path).filename() << std::endl;
+    JsonUtils::save_to_file(to_save, save_path);
+}
+
+void ModelManager::save_user_models(const json& user_models) {
+    save_user_json(get_user_models_file(), user_models);
+}
+
+void ModelManager::save_model_options(const ModelInfo& info) {
+    std::cout << "[ModelManager] Saving options for model: " << info.model_name << std::endl;
+    // Persist changes
+    recipe_options_[info.model_name] = info.recipe_options.to_json();
+    update_model_options_in_cache(info);
+    save_user_json(get_recipe_options_file(), recipe_options_);
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -736,9 +724,9 @@ void ModelManager::build_cache() {
             std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
 
             auto options = recipe_options_[name];
-            info.llamacpp_args = JsonUtils::get_or_default<std::string>(options, "llamacpp_args", "");
-            info.llamacpp_backend = JsonUtils::get_or_default<std::string>(options, "llamacpp_backend", "");
-            info.ctx_size = JsonUtils::get_or_default<int>(options, "ctx_size", -1);
+            info.recipe_options = RecipeOptions(info.recipe, options);
+        } else {
+            info.recipe_options = RecipeOptions(info.recipe, json::object());
         }
     }
     
@@ -836,6 +824,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.model_name = model_name;
     info.checkpoint = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.recipe_options = RecipeOptions(info.recipe, JsonUtils::get_or_default(recipe_options_, model_name, json::object()));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.mmproj = JsonUtils::get_or_default<std::string>(*model_json, "mmproj", "");
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
@@ -896,6 +885,21 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     
     models_cache_[model_name] = info;
     std::cout << "[ModelManager] Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
+}
+
+void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    
+    if (!cache_valid_) {
+        return; // Will rebuild on next access
+    }
+    
+    auto it = models_cache_.find(info.model_name);
+    if (it != models_cache_.end()) {
+        it->second.recipe_options = info.recipe_options;
+    } else {
+        std::cerr << "[ModelManager] Warning: '" << info.model_name << "' not found in cache" << std::endl;
+    }    
 }
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
