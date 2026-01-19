@@ -292,7 +292,14 @@ function renderDownload() {
   }
   
   // Build from source note (only depends on os and type)
-  let notes = `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
+  let notes = '';
+  
+  // Add Ubuntu-specific note if Ubuntu is selected
+  if (os === 'linux' && distro === 'ubuntu') {
+    notes += `<div class="lmn-note">Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.</div>`;
+  }
+  
+  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
   if (type === 'app') {
     notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App</a> dev READMEs`;
   } else {
