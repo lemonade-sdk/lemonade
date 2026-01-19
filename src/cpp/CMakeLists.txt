@@ -501,6 +501,9 @@ if(APPLE)
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lemonade Local LLM Server")
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server.")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/../../LICENSE")
+    # Skip readme page entirely
+    set(CPACK_INSTALL_README_DIR "")
 
     if(NOT DEFINED SIGNING_IDENTITY)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
