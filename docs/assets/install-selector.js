@@ -453,6 +453,43 @@ window.lmnCopyLine = function(e, idx) {
   }
 };
 
+// Parse URL hash and set appropriate state
+function parseHashAndSetState() {
+  const hash = window.location.hash.substring(1).toLowerCase(); // Remove # and make lowercase
+  
+  if (!hash) return; // No hash, use defaults
+  
+  // Handle anchors
+  switch (hash) {
+    case 'linux':
+      lmnSet('os', 'linux');
+      break;
+    case 'ubuntu':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'ubuntu');
+      break;
+    case 'arch':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'arch');
+      break;
+    case 'fedora':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'fedora');
+      break;
+    case 'docker':
+      lmnSet('os', 'docker');
+      break;
+    case 'windows':
+    case 'win':
+      lmnSet('os', 'win');
+      break;
+    case 'macos':
+    case 'mac':
+      lmnSet('os', 'macos');
+      break;
+  }
+}
+
 window.lmnInit = function() {
   const installer = document.getElementById('lmn-installer');
   if (installer && !document.getElementById('os-win')) {
@@ -505,6 +542,13 @@ window.lmnInit = function() {
       </div>
     `;
   }
+  
+  // Listen for hash changes
+  window.addEventListener('hashchange', parseHashAndSetState);
+  
+  // Parse hash on initial load (after HTML is set up)
+  parseHashAndSetState();
+  
   fetchLatestVersion();
   lmnRender();
 };

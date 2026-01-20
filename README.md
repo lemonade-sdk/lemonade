@@ -7,9 +7,9 @@
     <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
-  <a href="https://lemonade-server.ai/#linux" title="Ubuntu 24.04 & 25.04 Supported">
+  <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
     <img src="https://img.shields.io/badge/Ubuntu-24.04%20%7C%2025.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04 | 25.04" /></a>
-  <a href="https://lemonade-server.ai/#linux" title="Arch Linux Supported">
+  <a href="https://lemonade-server.ai/install_options.html#arch" title="Arch Linux Supported">
     <img src="https://img.shields.io/aur/version/lemonade-server" alt="Arch Linux"></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Python-3.10--3.13-blue?logo=python&logoColor=white" alt="Made with Python" /></a>
@@ -32,7 +32,7 @@
   <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
 </p>
 <h3 align="center">
-  <a href="https://lemonade-server.ai">Download</a> | 
+  <a href="https://lemonade-server.ai/install_options.html">Download</a> | 
   <a href="https://lemonade-server.ai/docs/">Documentation</a> | 
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
@@ -43,7 +43,7 @@ Apps like [n8n](https://n8n.io/integrations/lemonade-model/), [VS Code Copilot](
 
 ## Getting Started
 
-1. **Install**: [Windows](https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi) · [Linux](https://lemonade-server.ai/install_options.html) · [Source](https://lemonade-server.ai/install_options.html) · [Docker](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/DOCKER_GUIDE.md)
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](https://lemonade-server.ai/install_options.html)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Chat**: Try models with the built-in chat interface
 4. **Connect**: Use Lemonade with your favorite apps:
@@ -91,7 +91,7 @@ Use `lemonade-server pull` or the built-in **Model Manager** to download models.
 
 ## Supported Configurations
 
-Lemonade supports the following configurations, while also making it easy to switch between them at runtime. Find more information about it [here](./docs/README.md#software-and-hardware-overview).
+Lemonade supports the following configurations, while also making it easy to switch between them at runtime.
 
 | Hardware | Engine: OGA | Engine: llamacpp | Engine: FLM | Windows | Linux |
 |----------|-------------|------------------|------------|---------|-------|
@@ -138,7 +138,7 @@ Lemonade supports the following configurations, while also making it easy to swi
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
 | Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
 | Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-|     |                                | Lemonade desktop app                     |
+| macOS     |                                | Lemonade desktop app                     |
 
 ## Integrate Lemonade Server with Your Application
 
