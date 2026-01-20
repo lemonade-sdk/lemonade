@@ -262,7 +262,12 @@ json FastFlowLMServer::chat_completion(const json& request) {
 }
 
 json FastFlowLMServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    // FLM requires the checkpoint name in the request (e.g., "lfm2:1.2b")
+    // (whereas llama-server ignores the model name field)
+    json modified_request = request;
+    modified_request["model"] = checkpoint_;  // Use base class checkpoint field
+    
+    return forward_request("/v1/completions", modified_request);
 }
 
 json FastFlowLMServer::embeddings(const json& request) {

@@ -292,7 +292,14 @@ function renderDownload() {
   }
   
   // Build from source note (only depends on os and type)
-  let notes = `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
+  let notes = '';
+  
+  // Add Ubuntu-specific note if Ubuntu is selected
+  if (os === 'linux' && distro === 'ubuntu') {
+    notes += `<div class="lmn-note">Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.</div>`;
+  }
+  
+  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md" target="_blank">Server</a>`;
   if (type === 'app') {
     notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App</a> dev READMEs`;
   } else {
@@ -446,6 +453,43 @@ window.lmnCopyLine = function(e, idx) {
   }
 };
 
+// Parse URL hash and set appropriate state
+function parseHashAndSetState() {
+  const hash = window.location.hash.substring(1).toLowerCase(); // Remove # and make lowercase
+  
+  if (!hash) return; // No hash, use defaults
+  
+  // Handle anchors
+  switch (hash) {
+    case 'linux':
+      lmnSet('os', 'linux');
+      break;
+    case 'ubuntu':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'ubuntu');
+      break;
+    case 'arch':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'arch');
+      break;
+    case 'fedora':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'fedora');
+      break;
+    case 'docker':
+      lmnSet('os', 'docker');
+      break;
+    case 'windows':
+    case 'win':
+      lmnSet('os', 'win');
+      break;
+    case 'macos':
+    case 'mac':
+      lmnSet('os', 'macos');
+      break;
+  }
+}
+
 window.lmnInit = function() {
   const installer = document.getElementById('lmn-installer');
   if (installer && !document.getElementById('os-win')) {
@@ -498,6 +542,13 @@ window.lmnInit = function() {
       </div>
     `;
   }
+  
+  // Listen for hash changes
+  window.addEventListener('hashchange', parseHashAndSetState);
+  
+  // Parse hash on initial load (after HTML is set up)
+  parseHashAndSetState();
+  
   fetchLatestVersion();
   lmnRender();
 };

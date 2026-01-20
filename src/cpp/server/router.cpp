@@ -272,7 +272,7 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
         
         // Set model metadata
-        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type);
+        new_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
         new_server->update_access_time();
         
         // CRITICAL: Release lock before slow backend startup
@@ -340,7 +340,7 @@ void Router::load_model(const std::string& model_name,
             
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
-            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type);
+            retry_server->set_model_metadata(model_name, model_info.checkpoint, model_type, device_type, effective_options);
             retry_server->update_access_time();
             
             // Release lock for retry
@@ -405,12 +405,6 @@ std::string Router::get_loaded_model() const {
     return server ? server->get_model_name() : "";
 }
 
-std::string Router::get_loaded_checkpoint() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
-    return server ? server->get_checkpoint() : "";
-}
-
 std::string Router::get_loaded_recipe() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
@@ -438,6 +432,9 @@ json Router::get_all_loaded_models() const {
         model_info["type"] = model_type_to_string(server->get_model_type());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
+        RecipeOptions recipe_options =  server->get_recipe_options();
+        model_info["recipe"] = recipe_options.get_recipe();
+        model_info["recipe_options"] = recipe_options.to_json();
         
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();
