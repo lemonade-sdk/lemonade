@@ -47,11 +47,21 @@ static std::string get_llamacpp_version(const std::string& backend) {
         
         const auto& llamacpp_config = config["llamacpp"];
         
-        if (!llamacpp_config.contains(backend) || !llamacpp_config[backend].is_string()) {
-            throw std::runtime_error("backend_versions.json is missing version for backend: " + backend);
+        // ROCm has platform-specific versions (rocm_linux, rocm_windows)
+        std::string config_key = backend;
+        if (backend == "rocm") {
+#ifdef _WIN32
+            config_key = "rocm_windows";
+#else
+            config_key = "rocm_linux";
+#endif
         }
         
-        std::string version = llamacpp_config[backend].get<std::string>();
+        if (!llamacpp_config.contains(config_key) || !llamacpp_config[config_key].is_string()) {
+            throw std::runtime_error("backend_versions.json is missing version for backend: " + config_key);
+        }
+        
+        std::string version = llamacpp_config[config_key].get<std::string>();
         std::cout << "[LlamaCpp] Using " << backend << " version from config: " << version << std::endl;
         return version;
         
