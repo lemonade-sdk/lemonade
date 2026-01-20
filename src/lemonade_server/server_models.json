@@ -605,8 +605,8 @@
         "suggested": true,
         "size": 0.96
     },
-    "LFM2.5-1.2B-FLM": {
-        "checkpoint": "lfm2.5:1.2b",
+    "LFM2.5-1.2B-Instruct-FLM": {
+        "checkpoint": "lfm2.5-it:1.2b",
         "recipe": "flm",
         "suggested": true,
         "size": 0.96
@@ -685,5 +685,12 @@
         "suggested": true,
         "labels": ["reasoning"],
         "size": 1.59
+    },
+    "LFM2.5-1.2B-Thinking-FLM": {
+        "checkpoint": "lfm2.5-tk:1.2b",
+        "recipe": "flm",
+        "suggested": true,
+        "labels": ["reasoning"],
+        "size": 0.96
     }
 }
