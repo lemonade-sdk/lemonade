@@ -259,9 +259,11 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 
 #ifndef _WIN32
 // Helper to extract tar.gz files (Linux/macOS)
+// Uses --strip-components=1 to remove the top-level directory that llama.cpp releases include
+// (e.g., llama-b7783-bin-ubuntu-vulkan-x64/ wrapper directory)
 static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir) {
     std::cout << "[LlamaCpp] Extracting tar.gz to " << dest_dir << std::endl;
-    std::string command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\"";
+    std::string command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1";
     int result = system(command.c_str());
     return result == 0;
 }
