@@ -114,8 +114,8 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: `/usr/local/bin/`
-  - llama.cpp downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - llama-server binaries: `/usr/local/share/lemonade-server/llama/` (from .deb) or next to binary (dev builds)
+  - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
+  - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
