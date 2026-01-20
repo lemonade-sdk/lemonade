@@ -15,7 +15,7 @@
 
 namespace lemon {
 
-static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector<int> max_models_vec) {
+static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector<int>& max_models_vec) {
     serve->add_option("--port", config.port, "Port number to serve on")
         ->envname("LEMONADE_PORT")
         ->default_val(8000);
