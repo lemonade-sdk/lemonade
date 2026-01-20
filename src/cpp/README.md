@@ -163,39 +163,7 @@ Creates `lemonade-server-minimal.msi` which:
 
 **Installation:**
 
-GUI installation:
-```powershell
-# Double-click the MSI or run:
-msiexec /i lemonade.msi              # Full installer with desktop app
-msiexec /i lemonade-server-minimal.msi  # Server only
-```
-
-Silent installation (per-user, no UAC required):
-```powershell
-# Install silently
-msiexec /i lemonade.msi /qn
-
-# Install to custom directory
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path"
-
-# Install without desktop shortcut
-msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
-
-# Install with startup entry
-msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
-```
-
-All Users installation (requires Administrator command prompt):
-```powershell
-# Step 1: Open Command Prompt as Administrator (right-click -> "Run as administrator")
-# Step 2: Run:
-msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
-
-# For troubleshooting, add logging:
-msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server" /L*V install.log
-```
-
-This installs to Program Files and adds Lemonade to the **system PATH** instead of the user PATH.
+For detailed installation instructions including silent install, custom directories, and all-users installation, see the [Server Integration Guide](../../docs/server/server_integration.md#windows-installation).
 
 ### Linux .deb Package (Debian/Ubuntu)
 

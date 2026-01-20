@@ -104,81 +104,76 @@ You can also run the server as a background process using a subprocess or any pr
 
 To stop the server, you may use the `lemonade-server stop` command, or simply terminate the process you created by keeping track of its PID. Please do not run the `lemonade-server stop` command if your application has not started the server, as the server may be used by other applications.
 
-### Silent Installation
-
-Silent installation runs the MSI installer without a GUI, automatically accepting all prompts.
+## Windows Installation
 
 **Available Installers:**
 - `lemonade-server-minimal.msi` - Server only (~3 MB)
 - `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
 
-**Basic silent install** (per-user, no UAC required):
+**GUI Installation:**
+
+Double-click the MSI file, or run:
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn
+msiexec /i lemonade.msi
 ```
 
-Or for the full installer with desktop app:
+**MSI Properties:**
+
+Properties can be passed on the command line to customize the installation:
+
+- `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
+- `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
+- `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user)
+
+**Examples:**
+
+```bash
+# Custom install directory
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path"
+
+# Without desktop shortcut
+msiexec /i lemonade.msi ADDDESKTOPSHORTCUT=0
+
+# Combined parameters
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
+```
+
+### Silent Installation
+
+Add `/qn` to run without a GUI, automatically accepting all prompts:
 
 ```bash
 msiexec /i lemonade.msi /qn
 ```
 
-**Custom install directory:**
+This can be combined with any MSI properties:
 
 ```bash
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\a\new\path"
-```
-
-**Without desktop shortcut:**
-
-```bash
-msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
-```
-
-**With Windows startup entry:**
-
-```bash
-msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
-```
-
-**Combined parameters:**
-
-```bash
-msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
 ```
 
 ### All Users Installation
 
 To install for all users (Program Files + system PATH), you **must** run from an Administrator command prompt.
 
-**Step 1:** Open Command Prompt as Administrator (right-click → "Run as administrator")
+1. Open Command Prompt as Administrator (right-click → "Run as administrator")
+2. Run the install command:
 
-**Step 2:** Run the install command:
+```bash
+msiexec /i lemonade.msi ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+For silent all-users installation, add `/qn`:
 
 ```bash
 msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
 ```
 
-Or for the minimal server:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
-```
-
-**Troubleshooting All Users Install:**
+**Troubleshooting:**
 - If installation fails silently, check that you're running as Administrator
-- Add `/L*V install.log` to the command to generate a log file for debugging
-- Example: `msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server" /L*V install.log`
+- Add `/L*V install.log` to generate a debug log file
 
-**MSI Properties:**
-- `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
-- `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
-- `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
-- `ALLUSERS` - Install for all users (1=yes, requires elevation)
-- `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user install)
-
-The available models are documented [here](./server_models.md).
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
