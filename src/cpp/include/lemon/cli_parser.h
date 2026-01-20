@@ -47,29 +47,6 @@ struct TrayConfig {
     bool is_reranking = false;
 };
 
-/**
-    std::cout << "  --checkpoint CHECKPOINT  Hugging Face checkpoint (format: org/model:variant)\n";
-    std::cout << "                           OR an absolute local path to a model directory.\n";
-    std::cout << "                           When a local path is provided, files are copied to\n";
-    std::cout << "                           the HuggingFace cache and registered.\n";
-    std::cout << "  --recipe RECIPE          Inference recipe to use\n";
-    std::cout << "                           Options: llamacpp, flm, oga-cpu, oga-hybrid, oga-npu\n";
-    std::cout << "                           Required when using a local path.\n\n";
-    std::cout << "  --reasoning              Mark model as a reasoning model (e.g., DeepSeek-R1)\n";
-    std::cout << "                           Adds 'reasoning' label to model metadata.\n\n";
-    std::cout << "  --vision                 Mark model as a vision model (multimodal)\n";
-    std::cout << "                           Adds 'vision' label to model metadata.\n\n";
-    std::cout << "  --embedding              Mark model as an embedding model\n";
-    std::cout << "                           Adds 'embeddings' label to model metadata.\n";
-    std::cout << "                           For use with /api/v1/embeddings endpoint.\n\n";
-    std::cout << "  --reranking              Mark model as a reranking model\n";
-    std::cout << "                           Adds 'reranking' label to model metadata.\n";
-    std::cout << "                           For use with /api/v1/reranking endpoint.\n\n";
-    std::cout << "  --mmproj FILENAME        Multimodal projector file for vision models\n";
-    std::cout << "                           Required for GGUF vision models.\n";
-    std::cout << "                           Example: mmproj-model-f16.gguf\n\n";
-*/
-
 class CLIParser {
 public:
     CLIParser();

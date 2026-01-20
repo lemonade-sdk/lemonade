@@ -393,12 +393,18 @@ bool ServerManager::spawn_process() {
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --host " + host_;
-    cmdline += " --ctx-size " + std::to_string(ctx_size_);
-    cmdline += " --llamacpp " + llamacpp_backend_;
     cmdline += " --log-level debug";  // Always use debug logging for router
-    if (!llamacpp_args_.empty()) {
-        cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
+    
+    std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
+
+    for (const auto& arg : recipe_cli) {
+        if (arg.find(" ") != std::string::npos) {
+            cmdline += " \"" + arg + "\"";
+        } else {
+            cmdline += " " + arg;
+        }
     }
+
     // Multi-model support
     cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
                std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
