@@ -157,33 +157,42 @@ Creates `lemonade-server-minimal.msi` which:
 - Proper upgrade handling between versions
 - Includes uninstaller
 
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
+
 **Installation:**
 
 GUI installation:
 ```powershell
-# Double-click lemonade-server-minimal.msi or run:
-msiexec /i lemonade-server-minimal.msi
+# Double-click the MSI or run:
+msiexec /i lemonade.msi              # Full installer with desktop app
+msiexec /i lemonade-server-minimal.msi  # Server only
 ```
 
-Silent installation:
+Silent installation (per-user, no UAC required):
 ```powershell
-# Install silently (per-user, no UAC required)
-msiexec /i lemonade-server-minimal.msi /qn
+# Install silently
+msiexec /i lemonade.msi /qn
 
 # Install to custom directory
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path"
 
 # Install without desktop shortcut
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
+msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
 
 # Install with startup entry
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
+msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
 ```
 
-All Users installation (from elevated command prompt):
+All Users installation (requires Administrator command prompt):
 ```powershell
-# Install for all users to Program Files (requires Administrator)
-msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files\Lemonade Server"
+# Step 1: Open Command Prompt as Administrator (right-click -> "Run as administrator")
+# Step 2: Run:
+msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+
+# For troubleshooting, add logging:
+msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server" /L*V install.log
 ```
 
 This installs to Program Files and adds Lemonade to the **system PATH** instead of the user PATH.

@@ -106,52 +106,76 @@ To stop the server, you may use the `lemonade-server stop` command, or simply te
 
 ### Silent Installation
 
-Silent installation runs `lemonade-server-minimal.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
+Silent installation runs the MSI installer without a GUI, automatically accepting all prompts.
 
-In a `cmd.exe` or PowerShell terminal:
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
+
+**Basic silent install** (per-user, no UAC required):
 
 ```bash
 msiexec /i lemonade-server-minimal.msi /qn
 ```
 
-The install directory can also be changed from the default using the `INSTALLDIR` property:
+Or for the full installer with desktop app:
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\a\new\path"
+msiexec /i lemonade.msi /qn
 ```
 
-If you don't want to create a desktop shortcut during installation, use the `ADDDESKTOPSHORTCUT=0` parameter:
+**Custom install directory:**
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\a\new\path"
 ```
 
-To add Lemonade Server to Windows startup:
+**Without desktop shortcut:**
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
+msiexec /i lemonade.msi /qn ADDDESKTOPSHORTCUT=0
 ```
 
-You can combine multiple parameters:
+**With Windows startup entry:**
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
+msiexec /i lemonade.msi /qn ADDTOSTARTUP=1
 ```
 
-**All Users Installation (requires elevated prompt):**
-
-To install for all users on the machine (to Program Files with system PATH), run from an **Administrator command prompt**:
+**Combined parameters:**
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files\Lemonade Server"
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
 ```
 
-This installs to Program Files and adds Lemonade to the system PATH instead of the user PATH.
+### All Users Installation
+
+To install for all users (Program Files + system PATH), you **must** run from an Administrator command prompt.
+
+**Step 1:** Open Command Prompt as Administrator (right-click → "Run as administrator")
+
+**Step 2:** Run the install command:
+
+```bash
+msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+Or for the minimal server:
+
+```bash
+msiexec /i lemonade-server-minimal.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+**Troubleshooting All Users Install:**
+- If installation fails silently, check that you're running as Administrator
+- Add `/L*V install.log` to the command to generate a log file for debugging
+- Example: `msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server" /L*V install.log`
 
 **MSI Properties:**
 - `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
 - `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
 - `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
+- `ALLUSERS` - Install for all users (1=yes, requires elevation)
 - `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user install)
 
 The available models are documented [here](./server_models.md).
