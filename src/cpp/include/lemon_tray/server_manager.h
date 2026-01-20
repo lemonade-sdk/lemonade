@@ -43,19 +43,17 @@ public:
     bool start_server(
         const std::string& server_binary_path,
         int port,
-        int ctx_size,
+        const nlohmann::json& recipe_options,
         const std::string& log_file,
-        const std::string& log_level = "info",
-        const std::string& llamacpp_backend = "vulkan",
-        bool show_console = false,
-        bool is_ephemeral = false,
-        const std::string& llamacpp_args = "",
-        const std::string& host = "127.0.0.1",
-        int max_llm_models = 1,
-        int max_embedding_models = 1,
-        int max_reranking_models = 1,
-        int max_audio_models = 1,
-        const std::string& extra_models_dir = ""
+        const std::string& log_level,
+        bool show_console,
+        bool is_ephemeral,
+        const std::string& host,
+        int max_llm_models,
+        int max_embedding_models,
+        int max_reranking_models,
+        int max_audio_models,
+        const std::string& extra_models_dir
     );
     
     bool stop_server();
@@ -68,12 +66,11 @@ public:
     bool set_log_level(LogLevel level);
     
     int get_port() const { return port_; }
-    int get_context_size() const { return ctx_size_; }
     
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
     nlohmann::json get_models();
-    bool load_model(const std::string& model_name, bool save_options=false);
+    bool load_model(const std::string& model_name, const nlohmann::json& recipe_options=nlohmann::json::object(), bool save_options=false);
     bool unload_model();  // Unload all models
     bool unload_model(const std::string& model_name);  // Unload specific model
     
@@ -106,17 +103,15 @@ private:
     std::string server_binary_path_;
     std::string log_file_;
     std::string log_level_;
-    std::string llamacpp_backend_;
-    std::string llamacpp_args_;
     std::string extra_models_dir_;
     std::string host_;
     std::string api_key_;
     int port_;
-    int ctx_size_;
     int max_llm_models_;
     int max_embedding_models_;
     int max_reranking_models_;
     int max_audio_models_;
+    nlohmann::json recipe_options_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
     std::atomic<bool> server_started_;

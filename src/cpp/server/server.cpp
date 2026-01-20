@@ -35,11 +35,11 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, bool tray, int max_llm_models,
+               const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
                const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      tray_(tray), running_(false) {
+      running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file

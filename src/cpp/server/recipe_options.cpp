@@ -7,9 +7,9 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {{"ctx_size", 4096}, {"llamacpp_backend", "vulkan"}, {"llamacpp_args", ""}};
 static const json CLI_OPTIONS = {
-    {"--ctx-size", {{"option_name", "ctx_size"}, {"help", "Context size for the model"}}},
-    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"help", "LlamaCpp backend to use (vulkan, rocm, metal, cpu)"}}},
-    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}}},
+    {"--ctx-size", {{"option_name", "ctx_size"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
+    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use (vulkan, rocm, metal, cpu)"}}},
+    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}}},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -31,12 +31,36 @@ static const bool is_empty_option(json option) {
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
+        CLI::Option* o;
         if (DEFAULTS[opt_name].is_number()) {
-            app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
+            o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
         } else {
-            app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+            o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+        }
+
+        o->envname(opt["envname"]);
+    }
+}
+
+std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) {
+    std::vector<std::string> cli;
+
+    for (auto& [key, opt] : CLI_OPTIONS.items()) {
+        const std::string opt_name = opt["option_name"];
+        if (raw_options.contains(opt_name)) {
+            auto val = raw_options[opt_name];
+            if (val != "") {
+                cli.push_back(key);
+                if (val.is_number()) {
+                    cli.push_back(std::to_string((int) val));
+                } else {
+                    cli.push_back(val);
+                }
+            }
         }
     }
+
+    return cli;
 }
 
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
