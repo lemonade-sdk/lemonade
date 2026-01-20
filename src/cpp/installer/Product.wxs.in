@@ -91,6 +91,18 @@
                       Type="raw" />
     </Property>
     
+    <!-- ============================================ -->
+    <!-- Conflict Detection: Block dual per-user/all-users installs -->
+    <!-- ============================================ -->
+    
+    <!-- Block all-users install if per-user already exists -->
+    <Launch Condition="NOT (ALLUSERS = 1 AND EXISTINGINSTALLDIR)"
+            Message="Lemonade Server is already installed for the current user at [EXISTINGINSTALLDIR].&#13;&#10;&#13;&#10;Please uninstall the per-user version first before installing for all users." />
+    
+    <!-- Block per-user install if all-users already exists -->
+    <Launch Condition="NOT (ALLUSERS &lt;&gt; 1 AND EXISTINGINSTALLDIRMACHINE)"
+            Message="Lemonade Server is already installed for all users at [EXISTINGINSTALLDIRMACHINE].&#13;&#10;&#13;&#10;Please use the existing installation or uninstall the all-users version first." />
+    
     <!-- Media -->
     <Media Id="1" Cabinet="lemonade.cab" EmbedCab="yes" />
     
