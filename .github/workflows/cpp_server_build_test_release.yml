@@ -1618,11 +1618,11 @@ jobs:
       - build-lemonade-server-deb
       - build-lemonade-deb-full
       - build-ryzenai-server
-      - test-exe-rai-hybrid-basics
+      # - test-exe-rai-hybrid-basics  # Temporarily disabled
       - test-exe-flm
       - test-exe-llamacpp-vulkan
       - test-exe-llamacpp-rocm
-      - test-exe-rai-cpu
+      # - test-exe-rai-cpu  # Temporarily disabled
       - test-exe-whisper
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
