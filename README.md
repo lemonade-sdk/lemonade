@@ -137,8 +137,10 @@ Lemonade supports the following configurations, while also making it easy to swi
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
 | Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| Text to speech    |      | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-| macOS     |                                | Lemonade desktop app                     |
+| macOS    | Text to speech     | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
+| Apps marketplace     | MLX support                       | Lemonade desktop app                     |
+| lemonade-eval CLI     | ryzenai-server dedicated repo                               |                      |
+|      | Enhanced custom model support                               |                      |
 
 ## Integrate Lemonade Server with Your Application
 
