@@ -2,6 +2,7 @@
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <iomanip>
@@ -19,8 +20,48 @@
 #endif
 
 namespace fs = std::filesystem;
+using namespace lemon::utils;
 
 namespace lemon {
+
+#ifdef _WIN32
+static const std::string RYZENAI_EXE_NAME = "ryzenai-server.exe";
+#else
+static const std::string RYZENAI_EXE_NAME = "ryzenai-server";
+#endif
+
+// Helper to load ryzenai-server version from configuration file
+static std::string get_ryzenai_server_version() {
+    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+    
+    try {
+        json config = utils::JsonUtils::load_from_file(config_path);
+        
+        if (!config.contains("ryzenai-server") || !config["ryzenai-server"].is_string()) {
+            throw std::runtime_error("backend_versions.json is missing 'ryzenai-server' version");
+        }
+        
+        std::string version = config["ryzenai-server"].get<std::string>();
+        std::cout << "[RyzenAI-Server] Using version from config: " << version << std::endl;
+        return version;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "\n" << std::string(70, '=') << std::endl;
+        std::cerr << "ERROR: Failed to load ryzenai-server version from configuration" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl;
+        std::cerr << "\nConfig file: " << config_path << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "\nThe backend_versions.json file is required and must contain valid" << std::endl;
+        std::cerr << "version information for ryzenai-server." << std::endl;
+        std::cerr << std::string(70, '=') << std::endl << std::endl;
+        throw;
+    }
+}
+
+// Helper to get the install directory for ryzenai-server
+static std::string get_install_directory() {
+    return (fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server").string();
+}
 
 RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager), 
@@ -40,48 +81,100 @@ RyzenAIServer::~RyzenAIServer() {
 }
 
 void RyzenAIServer::install(const std::string& backend) {
-    // Check if already installed
-    std::string path = get_ryzenai_server_path();
-    if (!path.empty()) {
-        std::cout << "[RyzenAI-Server] Found existing installation at: " << path << std::endl;
-        return;
+    std::string install_dir;
+    std::string version_file;
+
+    // Check for custom binary via environment variable first
+    std::string exe_path = find_external_ryzenai_server();
+    bool needs_install = exe_path.empty();
+    
+    // Get expected version from config file
+    std::string expected_version = get_ryzenai_server_version();
+    
+    if (needs_install) {
+        install_dir = get_install_directory();
+        version_file = (fs::path(install_dir) / "version.txt").string();
+    
+        // Check if already installed with correct version
+        exe_path = find_executable_in_install_dir(install_dir);
+        needs_install = exe_path.empty();
+        
+        if (!needs_install && fs::exists(version_file)) {
+            std::string installed_version;
+            
+            // Read version info in a separate scope to ensure files are closed
+            {
+                std::ifstream vf(version_file);
+                std::getline(vf, installed_version);
+            }  // Files are closed here when ifstream objects go out of scope
+            
+            if (installed_version != expected_version) {
+                std::cout << "[RyzenAI-Server] Upgrading from " << installed_version 
+                        << " to " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
+            }
+        }
     }
-    
-    std::cout << "[RyzenAI-Server] ryzenai-server not found, downloading..." << std::endl;
-    
-    // Download and install ryzenai-server
-    download_and_install();
-}
 
-// Helper to get the install directory for ryzenai-server
-static std::string get_install_directory() {
-    return (fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server").string();
+    if (needs_install) {
+        std::cout << "[RyzenAI-Server] Installing ryzenai-server (version: " << expected_version << ")" << std::endl;
+        
+        // Download and install ryzenai-server
+        download_and_install(expected_version);
+    } else {
+        std::cout << "[RyzenAI-Server] Found ryzenai-server at: " << exe_path << std::endl;
+    }
 }
-
-#ifdef _WIN32
-static const std::string RYZENAI_EXE_NAME = "ryzenai-server.exe";
-#else
-static const std::string RYZENAI_EXE_NAME = "ryzenai-server";
-#endif
 
 bool RyzenAIServer::is_available() {
-    return !get_ryzenai_server_path().empty();
+    std::string exe_path = find_external_ryzenai_server();
+    if (!exe_path.empty()) {
+        return true;
+    }
+    
+    std::string install_dir = get_install_directory();
+    exe_path = find_executable_in_install_dir(install_dir);
+    return !exe_path.empty();
+}
+
+std::string RyzenAIServer::find_external_ryzenai_server() {
+    const char* ryzenai_bin_env = std::getenv("LEMONADE_RYZENAI_SERVER_BIN");
+    if (!ryzenai_bin_env) {
+        return "";
+    }
+
+    std::string ryzenai_bin = std::string(ryzenai_bin_env);
+    
+    return fs::exists(ryzenai_bin) ? ryzenai_bin : "";
+}
+
+std::string RyzenAIServer::find_executable_in_install_dir(const std::string& install_dir) {
+    fs::path exe_path = fs::path(install_dir) / RYZENAI_EXE_NAME;
+    if (fs::exists(exe_path)) {
+        return fs::absolute(exe_path).string();
+    }
+    return "";
 }
 
 std::string RyzenAIServer::get_ryzenai_server_path() {
-    // 1. Check in source tree location (for developers)
-    std::string relative_path = utils::get_resource_path("../../../ryzenai-server/build/bin/Release/" + RYZENAI_EXE_NAME);
-    if (fs::exists(relative_path)) {
-        return fs::absolute(relative_path).string();
+    // 1. Check for custom binary via environment variable
+    std::string exe_path = find_external_ryzenai_server();
+    if (!exe_path.empty()) {
+        return exe_path;
     }
     
-    // 2. Check in user cache directory (where download_and_install() places it)
-    fs::path install_path = fs::path(get_install_directory()) / RYZENAI_EXE_NAME;
-    if (fs::exists(install_path)) {
-        return fs::absolute(install_path).string();
+    // 2. Check in install directory (where download_and_install() places it)
+    std::string install_dir = get_install_directory();
+    exe_path = find_executable_in_install_dir(install_dir);
+    
+    if (!exe_path.empty()) {
+        return exe_path;
     }
     
-    return ""; // Not found
+    // If not found, throw error with helpful message
+    throw std::runtime_error("ryzenai-server not found in install directory: " + install_dir + 
+                           "\nThis may indicate a failed installation or corrupted download.");
 }
 
 // Helper function to extract ZIP files
@@ -108,19 +201,19 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 #endif
 }
 
-void RyzenAIServer::download_and_install() {
-    std::cout << "[RyzenAI-Server] Downloading ryzenai-server..." << std::endl;
+void RyzenAIServer::download_and_install(const std::string& version) {
+    std::cout << "[RyzenAI-Server] Downloading ryzenai-server " << version << "..." << std::endl;
     
-    // Download from latest GitHub release
-    std::string repo = "lemonade-sdk/lemonade";
+    // Download from GitHub release (from standalone ryzenai-server repo)
+    std::string repo = "lemonade-sdk/ryzenai-server";
     std::string filename = "ryzenai-server.zip";
-    std::string url = "https://github.com/" + repo + "/releases/latest/download/" + filename;
+    std::string url = "https://github.com/" + repo + "/releases/download/" + version + "/" + filename;
     
     // Install to user cache directory
     fs::path install_dir = get_install_directory();
     std::string zip_path = (fs::path(utils::get_downloaded_bin_dir()) / filename).string();
     
-    std::cout << "[RyzenAI-Server] Downloading from latest GitHub release..." << std::endl;
+    std::cout << "[RyzenAI-Server] Downloading from: " << url << std::endl;
     std::cout << "[RyzenAI-Server] Installing to: " << install_dir.string() << std::endl;
     
     // Download the ZIP file with throttled progress updates (once per second)
@@ -137,7 +230,7 @@ void RyzenAIServer::download_and_install() {
         std::cerr << "\n[RyzenAI-Server ERROR] Failed to download ryzenai-server: " << download_result.error_message << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Possible causes:" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR]   - No internet connection or GitHub is down" << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR]   - No release has been published yet" << std::endl;
+        std::cerr << "[RyzenAI-Server ERROR]   - Version " << version << " has not been released yet" << std::endl;
         std::cerr << "[RyzenAI-Server ERROR]   - The release does not contain " << filename << std::endl;
         std::cerr << "[RyzenAI-Server ERROR] Check releases at: https://github.com/" << repo << "/releases" << std::endl;
         throw std::runtime_error("Failed to download ryzenai-server from release");
@@ -172,46 +265,29 @@ void RyzenAIServer::download_and_install() {
         throw std::runtime_error("Failed to extract ryzenai-server archive");
     }
     
-    // Debug: List what was extracted
-    std::cout << "[RyzenAI-Server DEBUG] Contents of extracted directory:" << std::endl;
-    try {
-        int file_count = 0;
-        for (const auto& entry : fs::directory_iterator(install_dir)) {
-            std::cout << "  - " << entry.path().filename().string() << std::endl;
-            file_count++;
-            if (file_count > 20) {
-                std::cout << "  ... (and more files)" << std::endl;
-                break;
-            }
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[RyzenAI-Server ERROR] Failed to list directory: " << e.what() << std::endl;
+    // Verify extraction succeeded by finding the executable
+    std::string exe_path = find_executable_in_install_dir(install_dir.string());
+    if (exe_path.empty()) {
+        std::cerr << "[RyzenAI-Server ERROR] Extraction completed but executable not found in: " << install_dir << std::endl;
+        std::cerr << "[RyzenAI-Server ERROR] This usually indicates a corrupted download or unexpected archive structure." << std::endl;
+        std::cerr << "[RyzenAI-Server ERROR] Cleaning up..." << std::endl;
+        // Clean up corrupted files
+        fs::remove(zip_path);
+        fs::remove_all(install_dir);
+        throw std::runtime_error("Extraction failed: executable not found. Downloaded file may be corrupted.");
     }
     
-    // Verify extraction succeeded by checking if executable exists
-#ifdef _WIN32
-    std::string exe_name = "ryzenai-server.exe";
-#else
-    std::string exe_name = "ryzenai-server";
-#endif
+    std::cout << "[RyzenAI-Server] Executable verified at: " << exe_path << std::endl;
     
-    fs::path exe_path_check = install_dir / exe_name;
-    std::cout << "[RyzenAI-Server DEBUG] Looking for executable at: " << exe_path_check << std::endl;
-    
-    if (!fs::exists(exe_path_check)) {
-        std::cerr << "[RyzenAI-Server ERROR] Extraction completed but executable not found at: " 
-                  << exe_path_check << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] This usually indicates the ZIP structure is different than expected." << std::endl;
-        std::cerr << "[RyzenAI-Server ERROR] Check the extracted files above for the correct location." << std::endl;
-        // Don't clean up yet - let user inspect the directory
-        throw std::runtime_error("Extraction failed: executable not found in expected location.");
-    }
-    
-    std::cout << "[RyzenAI-Server] Executable verified at: " << exe_path_check << std::endl;
+    // Save version info
+    std::string version_file = (install_dir / "version.txt").string();
+    std::ofstream vf(version_file);
+    vf << version;
+    vf.close();
     
 #ifndef _WIN32
     // Make executable on Linux/macOS
-    chmod(exe_path_check.c_str(), 0755);
+    chmod(exe_path.c_str(), 0755);
 #endif
     
     // Delete ZIP file
