@@ -912,11 +912,39 @@
   
 </li>
         
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#windows-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Installation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Windows Installation">
+      <ul class="md-nav__list">
+        
           <li class="md-nav__item">
   <a href="#silent-installation" class="md-nav__link">
     <span class="md-ellipsis">
       
         Silent Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-users-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Users Installation
       
     </span>
   </a>
@@ -1111,11 +1139,39 @@
   
 </li>
         
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#windows-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Installation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Windows Installation">
+      <ul class="md-nav__list">
+        
           <li class="md-nav__item">
   <a href="#silent-installation" class="md-nav__link">
     <span class="md-ellipsis">
       
         Silent Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-users-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Users Installation
       
     </span>
   </a>
@@ -1217,28 +1273,52 @@
 </code></pre></div>
 <p>You can also run the server as a background process using a subprocess or any preferred method.</p>
 <p>To stop the server, you may use the <code>lemonade-server stop</code> command, or simply terminate the process you created by keeping track of its PID. Please do not run the <code>lemonade-server stop</code> command if your application has not started the server, as the server may be used by other applications.</p>
+<h2 id="windows-installation">Windows Installation</h2>
+<p><strong>Available Installers:</strong>
+- <code>lemonade-server-minimal.msi</code> - Server only (~3 MB)
+- <code>lemonade.msi</code> - Full installer with Electron desktop app (~105 MB)</p>
+<p><strong>GUI Installation:</strong></p>
+<p>Double-click the MSI file, or run:</p>
+<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi
+</code></pre></div>
+<p><strong>MSI Properties:</strong></p>
+<p>Properties can be passed on the command line to customize the installation:</p>
+<ul>
+<li><code>INSTALLDIR</code> - Custom installation directory (default: <code>%LOCALAPPDATA%\lemonade_server</code>)</li>
+<li><code>ADDDESKTOPSHORTCUT</code> - Create desktop shortcut (0=no, 1=yes, default: 1)</li>
+<li><code>ALLUSERS</code> - Install for all users (1=yes, requires elevation; default: per-user)</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Custom install directory</span>
+msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Custom\Path&quot;</span>
+
+<span class="c1"># Without desktop shortcut</span>
+msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span><span class="nv">ADDDESKTOPSHORTCUT</span><span class="o">=</span><span class="m">0</span>
+
+<span class="c1"># Combined parameters</span>
+msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Custom\Path&quot;</span><span class="w"> </span><span class="nv">ADDDESKTOPSHORTCUT</span><span class="o">=</span><span class="m">0</span>
+</code></pre></div>
 <h3 id="silent-installation">Silent Installation</h3>
-<p>Silent installation runs <code>lemonade-server-minimal.msi</code> without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.</p>
-<p>In a <code>cmd.exe</code> or PowerShell terminal:</p>
-<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade-server-minimal.msi<span class="w"> </span>/qn
+<p>Add <code>/qn</code> to run without a GUI, automatically accepting all prompts:</p>
+<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span>/qn
 </code></pre></div>
-<p>The install directory can also be changed from the default using the <code>INSTALLDIR</code> property:</p>
-<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade-server-minimal.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\a\new\path&quot;</span>
+<p>This can be combined with any MSI properties:</p>
+<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Custom\Path&quot;</span><span class="w"> </span><span class="nv">ADDDESKTOPSHORTCUT</span><span class="o">=</span><span class="m">0</span>
 </code></pre></div>
-<p>If you don't want to create a desktop shortcut during installation, use the <code>ADDDESKTOPSHORTCUT=0</code> parameter:</p>
-<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade-server-minimal.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">ADDDESKTOPSHORTCUT</span><span class="o">=</span><span class="m">0</span>
+<h3 id="all-users-installation">All Users Installation</h3>
+<p>To install for all users (Program Files + system PATH), you <strong>must</strong> run from an Administrator command prompt.</p>
+<ol>
+<li>Open Command Prompt as Administrator (right-click → "Run as administrator")</li>
+<li>Run the install command:</li>
+</ol>
+<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span><span class="nv">ALLUSERS</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Program Files (x86)\Lemonade Server&quot;</span>
 </code></pre></div>
-<p>To add Lemonade Server to Windows startup:</p>
-<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade-server-minimal.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">ADDTOSTARTUP</span><span class="o">=</span><span class="m">1</span>
+<p>For silent all-users installation, add <code>/qn</code>:</p>
+<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">ALLUSERS</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Program Files (x86)\Lemonade Server&quot;</span>
 </code></pre></div>
-<p>You can combine multiple parameters:</p>
-<div class="highlight"><pre><span></span><code>msiexec<span class="w"> </span>/i<span class="w"> </span>lemonade-server-minimal.msi<span class="w"> </span>/qn<span class="w"> </span><span class="nv">INSTALLDIR</span><span class="o">=</span><span class="s2">&quot;C:\Custom\Path&quot;</span><span class="w"> </span><span class="nv">ADDDESKTOPSHORTCUT</span><span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="nv">ADDTOSTARTUP</span><span class="o">=</span><span class="m">1</span>
-</code></pre></div>
-<p><strong>MSI Properties:</strong>
-- <code>INSTALLDIR</code> - Custom installation directory (default: <code>%LOCALAPPDATA%\lemonade_server</code>)
-- <code>ADDDESKTOPSHORTCUT</code> - Create desktop shortcut (0=no, 1=yes, default: 1)
-- <code>ADDTOSTARTUP</code> - Add to Windows startup (0=no, 1=yes, default: 0)</p>
-<p>The available models are documented <a href="../server_models/">here</a>.</p>
+<p><strong>Troubleshooting:</strong>
+- If installation fails silently, check that you're running as Administrator
+- Add <code>/L*V install.log</code> to generate a debug log file</p>
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
 
