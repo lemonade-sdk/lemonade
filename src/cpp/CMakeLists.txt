@@ -7,6 +7,11 @@ endif()
 
 project(lemon_cpp VERSION 9.1.4)
 
+# Prevent finding Homebrew libraries on macOS to use system ones
+if(APPLE)
+    set(CMAKE_IGNORE_PATH "/opt/homebrew/lib" "/opt/homebrew/include")
+endif()
+
 # ============================================================
 # Electron source paths (used by both runtime and installers)
 # ============================================================
@@ -420,6 +425,8 @@ elseif(APPLE)
     target_link_libraries(${EXECUTABLE_NAME} PRIVATE
         "-framework Metal"
     )
+    # Prevent linking to Homebrew OpenSSL on macOS, use Apple's built-in SSL
+    target_link_options(${EXECUTABLE_NAME} PRIVATE -Wl,-no_weak_imports)
 endif()
 
 # ============================================================
@@ -615,6 +622,10 @@ if(APPLE)
     set(CPACK_PACKAGE_RELOCATABLE OFF)
     set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
     set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
+
+    # Fix license file extension for CPack
+    configure_file("${CMAKE_SOURCE_DIR}/../../LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
     set(CPACK_POSTFLIGHT_SERVICES_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/postinst-full-mac")
     include(CPack)
