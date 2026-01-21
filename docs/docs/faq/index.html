@@ -1200,6 +1200,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-how-do-i-use-my-own-llamacpp-or-whispercpp-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. How do I use my own llama.cpp or whisper.cpp binaries?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1666,6 +1694,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Customization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-how-do-i-use-my-own-llamacpp-or-whispercpp-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. How do I use my own llama.cpp or whisper.cpp binaries?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-roadmap" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1793,7 +1849,7 @@
 <h3 id="2-what-models-are-supported">2. <strong>What models are supported?</strong></h3>
 <p>Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the <code>pull</code> command on the CLI.</p>
 <p>👉 <a href="https://lemonade-server.ai/docs/server/server_models/">Supported Models List</a>
-   👉 <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options">pull command</a></p>
+   👉 <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull">pull command</a></p>
 <h3 id="3-how-do-i-know-what-size-model-will-work-with-my-setup">3. <strong>How do I know what size model will work with my setup?</strong></h3>
 <p>Model compatibility depends on your system's RAM, VRAM, and NPU availability. <strong>The actual file size varies significantly between models</strong> due to different quantization techniques and architectures.</p>
 <p><strong>To check if a model will work:</strong>
@@ -1805,7 +1861,7 @@
 <p>If a model isn't listed, it may not be compatible with your PC due to device or RAM limitations, or we just haven't added it to the <code>server_models.json</code> file yet.</p>
 <p>You can:</p>
 <ul>
-<li>Add a custom model manually via the app's "Add a Model" interface or the <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options">CLI pull command</a>.</li>
+<li>Add a custom model manually via the app's "Add a Model" interface or the <a href="https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull">CLI pull command</a>.</li>
 <li>Use a pull request to add the model to the built-in <code>server_models.json</code> file.</li>
 <li>Request support by opening a <a href="https://github.com/lemonade-sdk/lemonade/issues">GitHub issue</a>.</li>
 </ul>
@@ -1883,6 +1939,10 @@
       <div class="highlight"><pre><span></span><code>lemonade-app<span class="w"> </span>--base-url<span class="w"> </span>http://SERVER_IP:8000
 </code></pre></div></p>
 <p>For detailed instructions and security considerations, see <a href="./lemonade-server-cli.md#remote-server-connection">Remote Server Connection</a>.</p>
+<h2 id="customization">Customization</h2>
+<h3 id="1-how-do-i-use-my-own-llamacpp-or-whispercpp-binaries">1. <strong>How do I use my own llama.cpp or whisper.cpp binaries?</strong></h3>
+<p>Lemonade Server allows you to use custom <code>llama-server</code> or <code>whisper-server</code> binaries instead of the bundled ones by setting environment variables to the full path of your binary.</p>
+<p>👉 <a href="../server/lemonade-server-cli/#custom-backend-binaries">Custom Backend Binaries</a></p>
 <h2 id="support-roadmap">Support &amp; Roadmap</h2>
 <h3 id="1-what-if-i-encounter-installation-or-runtime-errors">1. <strong>What if I encounter installation or runtime errors?</strong></h3>
 <p>Check the Lemonade Server logs via the App (all supported OSes) or tray icon (Windows only). Common issues include model compatibility or outdated versions.</p>

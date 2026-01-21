@@ -710,10 +710,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#command-line-options-for-serve-and-run" class="md-nav__link">
+  <a href="#commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Command Line Options for serve and run
+        Commands
       
     </span>
   </a>
@@ -721,10 +721,66 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pull-command-options" class="md-nav__link">
+  <a href="#options-for-serve-and-run" class="md-nav__link">
     <span class="md-ellipsis">
       
-        pull Command Options
+        Options for serve and run
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Options for serve and run">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-backend-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Backend Binaries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-key-and-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key and Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-pull" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for pull
       
     </span>
   </a>
@@ -978,10 +1034,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#command-line-options-for-serve-and-run" class="md-nav__link">
+  <a href="#commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Command Line Options for serve and run
+        Commands
       
     </span>
   </a>
@@ -989,10 +1045,66 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pull-command-options" class="md-nav__link">
+  <a href="#options-for-serve-and-run" class="md-nav__link">
     <span class="md-ellipsis">
       
-        pull Command Options
+        Options for serve and run
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Options for serve and run">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-backend-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Backend Binaries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-key-and-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key and Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-pull" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options for pull
       
     </span>
   </a>
@@ -1070,7 +1182,16 @@
 
 
 <h1 id="lemonade-server-cli"><code>lemonade-server</code> CLI</h1>
-<p>The <code>lemonade-server</code> command-line interface (CLI) provides a set of utility commands for managing the server. When you install Lemonade Server using the GUI installer, <code>lemonade-server</code> is added to your PATH so that it can be invoked from any terminal.</p>
+<p>The <code>lemonade-server</code> command-line interface (CLI) provides a set of utility commands for managing the server. When you install, <code>lemonade-server</code> is added to your PATH so that it can be invoked from any terminal.</p>
+<p><strong>Contents:</strong></p>
+<ul>
+<li><a href="#commands">Commands</a></li>
+<li><a href="#options-for-serve-and-run">Options for serve and run</a></li>
+<li><a href="#environment-variables">Environment Variables</a> | <a href="#custom-backend-binaries">Custom Backend Binaries</a> | <a href="#api-key-and-security">API Key and Security</a></li>
+<li><a href="#options-for-pull">Options for pull</a></li>
+<li><a href="#lemonade-desktop-app">Lemonade Desktop App</a> | <a href="#remote-server-connection">Remote Server Connection</a></li>
+</ul>
+<h2 id="commands">Commands</h2>
 <p><code>lemonade-server</code> provides these utilities:</p>
 <table>
 <thead>
@@ -1086,7 +1207,7 @@
 </tr>
 <tr>
 <td><code>serve</code></td>
-<td>Start the server process in the current terminal. See command options <a href="#command-line-options-for-serve-and-run">below</a>.</td>
+<td>Start the server process in the current terminal. See command options <a href="#options-for-serve-and-run">below</a>.</td>
 </tr>
 <tr>
 <td><code>status</code></td>
@@ -1098,7 +1219,7 @@
 </tr>
 <tr>
 <td><code>pull MODEL_NAME</code></td>
-<td>Install an LLM named <code>MODEL_NAME</code>. See <a href="#pull-command-options">pull command options</a> for registering custom models.</td>
+<td>Install an LLM named <code>MODEL_NAME</code>. See <a href="#options-for-pull">pull command options</a> for registering custom models.</td>
 </tr>
 <tr>
 <td><code>run MODEL_NAME</code></td>
@@ -1119,9 +1240,9 @@
 lemonade-server<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--log-level<span class="w"> </span>debug<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
 
 <span class="c1"># Run a specific model with custom server settings</span>
-lemonade-server<span class="w"> </span>run<span class="w"> </span>llama-3.2-3b-instruct<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--log-level<span class="w"> </span>debug<span class="w"> </span>--llamacpp<span class="w"> </span>rocm
+lemonade-server<span class="w"> </span>run<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--log-level<span class="w"> </span>debug<span class="w"> </span>--llamacpp<span class="w"> </span>rocm
 </code></pre></div>
-<h2 id="command-line-options-for-serve-and-run">Command Line Options for <code>serve</code> and <code>run</code></h2>
+<h2 id="options-for-serve-and-run">Options for serve and run</h2>
 <p>When using the <code>serve</code> command, you can configure the server with these additional options. The <code>run</code> command supports the same options but also requires a <code>MODEL_NAME</code> parameter:</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>serve<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
@@ -1187,13 +1308,92 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 </tr>
 </tbody>
 </table>
-<p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: <code>LEMONADE_HOST</code>, <code>LEMONADE_PORT</code>, <code>LEMONADE_LOG_LEVEL</code>, <code>LEMONADE_LLAMACPP</code>, <code>LEMONADE_CTX_SIZE</code>, <code>LEMONADE_LLAMACPP_ARGS</code>, and <code>LEMONADE_EXTRA_MODELS_DIR</code>.</p>
-<p>Set <code>LEMONADE_DISABLE_MODEL_FILTERING=1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities.</p>
-<p>Additionally, you can provide your own <code>llama-server</code> binary by giving the full path to it via the following environment variables: <code>LEMONADE_LLAMACPP_ROCM_BIN</code>, <code>LEMONADE_LLAMACPP_VULKAN_BIN</code>, <code>LEMONADE_LLAMACPP_CPU_BIN</code>. Note that this does not override the <code>--llamacpp</code> option, rather it allows to provide an alternative binary for specific backends.</p>
-<p>The same can also be done for the <code>whisper-server</code> binary. The environment variable to set in this case is <code>LEMONADE_WHISPERCPP_BIN</code>.</p>
-<p>If you expose your server over a network you can use the <code>LEMONADE_API_KEY</code> to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.</p>
+<h3 id="environment-variables">Environment Variables</h3>
+<p>These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method:</p>
+<table>
+<thead>
+<tr>
+<th>Environment Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LEMONADE_HOST</code></td>
+<td>Host address for where to listen for connections</td>
+</tr>
+<tr>
+<td><code>LEMONADE_PORT</code></td>
+<td>Port number to run the server on</td>
+</tr>
+<tr>
+<td><code>LEMONADE_LOG_LEVEL</code></td>
+<td>Logging level</td>
+</tr>
+<tr>
+<td><code>LEMONADE_LLAMACPP</code></td>
+<td>Default LlamaCpp backend (<code>vulkan</code>, <code>rocm</code>, or <code>cpu</code>)</td>
+</tr>
+<tr>
+<td><code>LEMONADE_CTX_SIZE</code></td>
+<td>Default context size for models</td>
+</tr>
+<tr>
+<td><code>LEMONADE_LLAMACPP_ARGS</code></td>
+<td>Custom arguments to pass to llama-server</td>
+</tr>
+<tr>
+<td><code>LEMONADE_EXTRA_MODELS_DIR</code></td>
+<td>Secondary directory to scan for GGUF model files</td>
+</tr>
+<tr>
+<td><code>LEMONADE_DISABLE_MODEL_FILTERING</code></td>
+<td>Set to <code>1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities</td>
+</tr>
+</tbody>
+</table>
+<h4 id="custom-backend-binaries">Custom Backend Binaries</h4>
+<p>You can provide your own <code>llama-server</code> or <code>whisper-server</code> binary by setting the full path via the following environment variables:</p>
+<table>
+<thead>
+<tr>
+<th>Environment Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LEMONADE_LLAMACPP_ROCM_BIN</code></td>
+<td>Path to custom <code>llama-server</code> binary for ROCm backend</td>
+</tr>
+<tr>
+<td><code>LEMONADE_LLAMACPP_VULKAN_BIN</code></td>
+<td>Path to custom <code>llama-server</code> binary for Vulkan backend</td>
+</tr>
+<tr>
+<td><code>LEMONADE_LLAMACPP_CPU_BIN</code></td>
+<td>Path to custom <code>llama-server</code> binary for CPU backend</td>
+</tr>
+<tr>
+<td><code>LEMONADE_WHISPERCPP_BIN</code></td>
+<td>Path to custom <code>whisper-server</code> binary</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> These environment variables do not override the <code>--llamacpp</code> option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.</p>
+<p><strong>Examples:</strong></p>
+<p>On Windows:</p>
+<div class="highlight"><pre><span></span><code>set LEMONADE_LLAMACPP_VULKAN_BIN=C:\path\to\my\llama-server.exe
+lemonade-server serve
+</code></pre></div>
+<p>On Linux:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_LLAMACPP_VULKAN_BIN</span><span class="o">=</span>/path/to/my/llama-server
+lemonade-server<span class="w"> </span>serve
+</code></pre></div>
+<h4 id="api-key-and-security">API Key and Security</h4>
+<p>If you expose your server over a network you can use the <code>LEMONADE_API_KEY</code> environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.</p>
 <p><strong>IMPORTANT</strong>: If you need to access <code>lemonade-server</code> over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!</p>
-<h2 id="pull-command-options"><code>pull</code> Command Options</h2>
+<h2 id="options-for-pull">Options for pull</h2>
 <p>The <code>pull</code> command downloads and installs models. For models already in the <a href="../server_models/">Lemonade Server registry</a>, only the model name is required. To register and install custom models from Hugging Face, use the registration options below:</p>
 <div class="highlight"><pre><span></span><code>lemonade-server<span class="w"> </span>pull<span class="w"> </span>&lt;model_name&gt;<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </code></pre></div>
