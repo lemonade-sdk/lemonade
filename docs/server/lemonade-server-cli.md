@@ -1,16 +1,26 @@
 # `lemonade-server` CLI
 
-The `lemonade-server` command-line interface (CLI) provides a set of utility commands for managing the server. When you install Lemonade Server using the GUI installer, `lemonade-server` is added to your PATH so that it can be invoked from any terminal.
+The `lemonade-server` command-line interface (CLI) provides a set of utility commands for managing the server. When you install, `lemonade-server` is added to your PATH so that it can be invoked from any terminal.
+
+**Contents:**
+
+- [Commands](#commands)
+- [Options for serve and run](#options-for-serve-and-run)
+  - [Environment Variables](#environment-variables) | [Custom Backend Binaries](#custom-backend-binaries) | [API Key and Security](#api-key-and-security)
+- [Options for pull](#options-for-pull)
+- [Lemonade Desktop App](#lemonade-desktop-app) | [Remote Server Connection](#remote-server-connection)
+
+## Commands
 
 `lemonade-server` provides these utilities:
 
 | Option/Command      | Description                         |
 |---------------------|-------------------------------------|
 | `-v`, `--version`   | Print the `lemonade-sdk` package version used to install Lemonade Server. |
-| `serve`             | Start the server process in the current terminal. See command options [below](#command-line-options-for-serve-and-run). |
+| `serve`             | Start the server process in the current terminal. See command options [below](#options-for-serve-and-run). |
 | `status`            | Check if server is running. If it is, print the port number. |
 | `stop`              | Stop any running Lemonade Server process. |
-| `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See [pull command options](#pull-command-options) for registering custom models. |
+| `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See [pull command options](#options-for-pull) for registering custom models. |
 | `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. Supports the same options as `serve`. |
 | `list`              | List all models. |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
@@ -23,10 +33,10 @@ Examples:
 lemonade-server serve --port 8080 --log-level debug --llamacpp vulkan
 
 # Run a specific model with custom server settings
-lemonade-server run llama-3.2-3b-instruct --port 8080 --log-level debug --llamacpp rocm
+lemonade-server run Qwen3-0.6B-GGUF --port 8080 --log-level debug --llamacpp rocm
 ```
 
-## Command Line Options for `serve` and `run`
+## Options for serve and run
 
 When using the `serve` command, you can configure the server with these additional options. The `run` command supports the same options but also requires a `MODEL_NAME` parameter:
 
@@ -48,19 +58,57 @@ lemonade-server run MODEL_NAME [options]
 | `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
-These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, `LEMONADE_LLAMACPP_ARGS`, and `LEMONADE_EXTRA_MODELS_DIR`.
+### Environment Variables
 
-Set `LEMONADE_DISABLE_MODEL_FILTERING=1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities.
+These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method:
 
-Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`, `LEMONADE_LLAMACPP_CPU_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
+| Environment Variable | Description |
+|---------------------|-------------|
+| `LEMONADE_HOST` | Host address for where to listen for connections |
+| `LEMONADE_PORT` | Port number to run the server on |
+| `LEMONADE_LOG_LEVEL` | Logging level |
+| `LEMONADE_LLAMACPP` | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`) |
+| `LEMONADE_CTX_SIZE` | Default context size for models |
+| `LEMONADE_LLAMACPP_ARGS` | Custom arguments to pass to llama-server |
+| `LEMONADE_EXTRA_MODELS_DIR` | Secondary directory to scan for GGUF model files |
+| `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities |
 
-The same can also be done for the `whisper-server` binary. The environment variable to set in this case is `LEMONADE_WHISPERCPP_BIN`.
+#### Custom Backend Binaries
 
-If you expose your server over a network you can use the `LEMONADE_API_KEY` to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
+You can provide your own `llama-server` or `whisper-server` binary by setting the full path via the following environment variables:
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `LEMONADE_LLAMACPP_ROCM_BIN` | Path to custom `llama-server` binary for ROCm backend |
+| `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
+| `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
+| `LEMONADE_WHISPERCPP_BIN` | Path to custom `whisper-server` binary |
+
+**Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
+
+**Examples:**
+
+On Windows:
+
+```cmd
+set LEMONADE_LLAMACPP_VULKAN_BIN=C:\path\to\my\llama-server.exe
+lemonade-server serve
+```
+
+On Linux:
+
+```bash
+export LEMONADE_LLAMACPP_VULKAN_BIN=/path/to/my/llama-server
+lemonade-server serve
+```
+
+#### API Key and Security
+
+If you expose your server over a network you can use the `LEMONADE_API_KEY` environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
 
 **IMPORTANT**: If you need to access `lemonade-server` over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
 
-## `pull` Command Options
+## Options for pull
 
 The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
 

@@ -2,8 +2,8 @@ name: Setup RyzenAI Server
 description: Setup RyzenAI Server from already-downloaded artifact files for testing
 
 inputs:
-  install-path:
-    description: 'The LEMONADE_INSTALL_PATH where RyzenAI Server should be installed'
+  cache-path:
+    description: 'The LEMONADE_CACHE_DIR where RyzenAI Server should be installed (in bin/ryzenai-server subdirectory)'
     required: true
   artifact-path:
     description: 'Path where the ryzenai-server artifact files have been downloaded'
@@ -27,7 +27,8 @@ runs:
             Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
         }
         
-        $ryzenaiDir = Join-Path "${{ inputs.install-path }}" "bin\ryzenai-server"
+        # Install to cache directory (where get_downloaded_bin_dir() expects it)
+        $ryzenaiDir = Join-Path "${{ inputs.cache-path }}" "bin\ryzenai-server"
         
         # Create ryzenai-server directory
         New-Item -ItemType Directory -Path $ryzenaiDir -Force | Out-Null
