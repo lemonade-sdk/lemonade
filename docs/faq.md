@@ -85,7 +85,7 @@
    Lemonade supports a wide range of LLMs including LLaMA, DeepSeek, Qwen, Gemma, Phi, gpt-oss, LFM, and many more. Most GGUF models can also be added to Lemonade Server by users using the Model Manager interface in the app or the `pull` command on the CLI.
    
    👉 [Supported Models List](https://lemonade-server.ai/docs/server/server_models/)
-   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options)
+   👉 [pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull)
 
 ### 3. **How do I know what size model will work with my setup?**
 
@@ -103,7 +103,7 @@
    
    You can:
 
-   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#pull-command-options).
+   - Add a custom model manually via the app's "Add a Model" interface or the [CLI pull command](https://lemonade-server.ai/docs/server/lemonade-server-cli/#options-for-pull).
    - Use a pull request to add the model to the built-in `server_models.json` file.
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 

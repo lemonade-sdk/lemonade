@@ -1,16 +1,26 @@
 # `lemonade-server` CLI
 
-The `lemonade-server` command-line interface (CLI) provides a set of utility commands for managing the server. When you install Lemonade Server using the GUI installer, `lemonade-server` is added to your PATH so that it can be invoked from any terminal.
+The `lemonade-server` command-line interface (CLI) provides a set of utility commands for managing the server. When you install, `lemonade-server` is added to your PATH so that it can be invoked from any terminal.
+
+**Contents:**
+
+- [Commands](#commands)
+- [Options for serve and run](#options-for-serve-and-run)
+  - [Environment Variables](#environment-variables) | [Custom Backend Binaries](#custom-backend-binaries) | [API Key and Security](#api-key-and-security)
+- [Options for pull](#options-for-pull)
+- [Lemonade Desktop App](#lemonade-desktop-app) | [Remote Server Connection](#remote-server-connection)
+
+## Commands
 
 `lemonade-server` provides these utilities:
 
 | Option/Command      | Description                         |
 |---------------------|-------------------------------------|
 | `-v`, `--version`   | Print the `lemonade-sdk` package version used to install Lemonade Server. |
-| `serve`             | Start the server process in the current terminal. See command options [below](#command-line-options-for-serve-and-run). |
+| `serve`             | Start the server process in the current terminal. See command options [below](#options-for-serve-and-run). |
 | `status`            | Check if server is running. If it is, print the port number. |
 | `stop`              | Stop any running Lemonade Server process. |
-| `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See [pull command options](#pull-command-options) for registering custom models. |
+| `pull MODEL_NAME`   | Install an LLM named `MODEL_NAME`. See [pull command options](#options-for-pull) for registering custom models. |
 | `run MODEL_NAME`    | Start the server (if not already running) and chat with the specified model. Supports the same options as `serve`. |
 | `list`              | List all models. |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
@@ -23,10 +33,10 @@ Examples:
 lemonade-server serve --port 8080 --log-level debug --llamacpp vulkan
 
 # Run a specific model with custom server settings
-lemonade-server run llama-3.2-3b-instruct --port 8080 --log-level debug --llamacpp rocm
+lemonade-server run Qwen3-0.6B-GGUF --port 8080 --log-level debug --llamacpp rocm
 ```
 
-## Command Line Options for `serve` and `run`
+## Options for serve and run
 
 When using the `serve` command, you can configure the server with these additional options. The `run` command supports the same options but also requires a `MODEL_NAME` parameter:
 
@@ -98,7 +108,7 @@ If you expose your server over a network you can use the `LEMONADE_API_KEY` envi
 
 **IMPORTANT**: If you need to access `lemonade-server` over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
 
-## `pull` Command Options
+## Options for pull
 
 The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](./server_models.md), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
 
