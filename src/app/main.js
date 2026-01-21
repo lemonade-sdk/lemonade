@@ -310,6 +310,35 @@ const broadcastServerPortUpdated = (port) => {
   }
 };
 
+const findLemonadeServerBinary = () => {
+  const possiblePaths = [
+    '/usr/local/bin/lemonade-server',
+    '/usr/bin/lemonade-server',
+  ];
+
+  for (const path of possiblePaths) {
+    try {
+      if (fs.existsSync(path)) {
+        return path;
+      }
+    } catch (e) {
+      // Continue checking other paths
+    }
+  }
+
+  // If not found in common locations, try which command
+  try {
+    const which = require('child_process').spawnSync('which', ['lemonade-server']);
+    if (which.status === 0) {
+      return which.stdout.toString().trim();
+    }
+  } catch (e) {
+    // which command failed
+  }
+
+  return null;
+};
+
 const ensureTrayRunning = () => {
   return new Promise((resolve) => {
     if (process.platform !== 'darwin') {
@@ -320,9 +349,19 @@ const ensureTrayRunning = () => {
     // Check if lemonade-server tray process is running
     exec('pgrep -f "lemonade-server tray"', { timeout: 2000 }, (error, stdout, stderr) => {
       if (error || !stdout.trim()) {
-        // Tray not running, launch it
+        // Tray not running, find and launch it
         console.warn('Tray not running on macOS, launching lemonade-server tray...');
-        const trayProcess = spawn('lemonade-server', ['tray'], {
+
+        const serverBinary = findLemonadeServerBinary();
+        if (!serverBinary) {
+          console.error('Could not find lemonade-server binary');
+          resolve();
+          return;
+        }
+
+        console.log('Found lemonade-server at:', serverBinary);
+
+        const trayProcess = spawn(serverBinary, ['tray'], {
           detached: true,
           stdio: 'ignore'
         });
