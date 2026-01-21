@@ -65,7 +65,7 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
         if (opt.contains("allowed_values")) {
-            o->check(CLI::IsMember((const std::vector<std::string>)opt["allowed_values"]));
+            o->check(CLI::IsMember(opt["allowed_values"].get<std::vector<std::string>>()));
         }
     }
 }
