@@ -310,48 +310,111 @@ const broadcastServerPortUpdated = (port) => {
   }
 };
 
+const ensureTrayRunning = () => {
+  return new Promise((resolve) => {
+    if (process.platform !== 'darwin') {
+      resolve();
+      return;
+    }
+
+    // Check if lemonade-server tray process is running
+    exec('pgrep -f "lemonade-server tray"', { timeout: 2000 }, (error, stdout, stderr) => {
+      if (error || !stdout.trim()) {
+        // Tray not running, launch it
+        console.warn('Tray not running on macOS, launching lemonade-server tray...');
+        const trayProcess = spawn('lemonade-server', ['tray'], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        trayProcess.unref();
+
+        // Wait a bit for tray to start
+        setTimeout(() => {
+          resolve();
+        }, 2000);
+      } else {
+        // Tray is running
+        resolve();
+      }
+    });
+  });
+};
+
 const discoverServerPort = () => {
   return new Promise((resolve) => {
-    exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.warn('Failed to discover server port:', error);
-        resolve(8000); // Fall back to default
-        return;
-      }
+    // On macOS, ensure tray is running first
+    ensureTrayRunning().then(() => {
+      exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
+        if (error || (stdout && stdout.trim().includes('not running'))) {
+          // On macOS, tray should have started the server, wait a bit more
+          if (process.platform === 'darwin') {
+            console.warn('Server still not running after ensuring tray, waiting longer...');
+            setTimeout(() => {
+              exec('lemonade-server status', { timeout: 5000 }, (error3, stdout3, stderr3) => {
+                if (error3 || (stdout3 && stdout3.trim().includes('not running'))) {
+                  console.warn('Server still not running, using default port 8000');
+                  resolve(8000);
+                  return;
+                }
 
-      try {
-        // Parse the output to find the port
-        // Expected format: "Server is running on port {port}" or "Server is not running"
-        const output = stdout.trim();
-        
-        // Check if server is not running
-        if (output.includes('not running')) {
-          console.log('Server is not running, using default port 8000');
-          resolve(8000);
-          return;
-        }
+                // Parse the delayed response
+                try {
+                  const output = stdout3.trim();
+                  const portMatch = output.match(/port[:\s]+(\d+)/i) ||
+                                   output.match(/localhost:(\d+)/i) ||
+                                   output.match(/127\.0\.0\.1:(\d+)/i);
 
-        // Try regex pattern to extract port number
-        // Pattern matches: "Server is running on port 8080" or any similar format
-        const portMatch = output.match(/port[:\s]+(\d+)/i) || 
-                         output.match(/localhost:(\d+)/i) ||
-                         output.match(/127\.0\.0\.1:(\d+)/i);
-        
-        if (portMatch && portMatch[1]) {
-          const port = parseInt(portMatch[1], 10);
-          if (!isNaN(port) && port > 0 && port < 65536) {
-            console.log('Discovered server port:', port);
-            resolve(port);
+                  if (portMatch && portMatch[1]) {
+                    const port = parseInt(portMatch[1], 10);
+                    if (!isNaN(port) && port > 0 && port < 65536) {
+                      console.log('Discovered server port after tray start:', port);
+                      resolve(port);
+                      return;
+                    }
+                  }
+
+                  console.warn('Could not parse port from delayed status output:', output);
+                  resolve(8000);
+                } catch (parseError) {
+                  console.error('Error parsing delayed status:', parseError);
+                  resolve(8000);
+                }
+              });
+            }, 10000); // Wait 10 seconds for tray to start server
+            return;
+          } else {
+            // On non-macOS platforms, just fall back to default
+            console.warn('Failed to discover server port:', error);
+            resolve(8000);
             return;
           }
         }
 
-        console.warn('Could not parse port from lemonade-server status output:', output);
-        resolve(8000);
-      } catch (parseError) {
-        console.error('Error parsing server status:', parseError);
-        resolve(8000);
-      }
+        try {
+          // Parse the output to find the port
+          const output = stdout.trim();
+
+          // Try regex pattern to extract port number
+          const portMatch = output.match(/port[:\s]+(\d+)/i) ||
+                           output.match(/localhost:(\d+)/i) ||
+                           output.match(/127\.0\.0\.1:(\d+)/i);
+          
+          if (portMatch && portMatch[1]) {
+            const port = parseInt(portMatch[1], 10);
+            if (!isNaN(port) && port > 0 && port < 65536) {
+              console.log('Discovered server port:', port);
+              resolve(port);
+              return;
+            }
+          }
+
+          console.warn('Could not parse port from lemonade-server status output:', output);
+          resolve(8000);
+        } catch (parseError) {
+          console.error('Error parsing server status:', parseError);
+          resolve(8000);
+        }
+      });
     });
   });
 };
@@ -556,5 +619,3 @@ app.on('activate', function () {
     createWindow();
   }
 });
-
-

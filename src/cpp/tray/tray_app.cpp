@@ -377,6 +377,12 @@ int TrayApp::run() {
         }
         // Continue to server initialization below
     } else if (config_.command == "tray") {
+        // Check for single instance - prevent duplicate tray processes
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+
         // Tray-only mode: just show tray connected to existing server
         // Check if server is already running
         auto [pid, running_port] = get_server_info();
@@ -1908,7 +1914,11 @@ Menu TrayApp::create_menu() {
         const_cast<TrayApp*>(this)->find_electron_app();
     }
     if (!electron_app_path_.empty()) {
+#ifdef __APPLE__
+        menu.add_item(MenuItem::Action("Open Lemonade App", [this]() { launch_electron_app(); }));
+#else
         menu.add_item(MenuItem::Action("Open app", [this]() { launch_electron_app(); }));
+#endif
         menu.add_separator();
     }
     
@@ -1995,7 +2005,35 @@ Menu TrayApp::create_menu() {
         }
     }
     menu.add_item(MenuItem::Submenu("Load Model", load_submenu));
-    
+
+#ifdef __APPLE__
+    // Service Control menu items (macOS only)
+    auto [pid, port] = get_server_info();
+    bool service_running = (port != 0);
+
+    if (service_running) {
+        menu.add_item(MenuItem::Action("Stop Service", [this]() {
+            system("launchctl stop com.lemonade.server");
+            build_menu();
+        }));
+    } else {
+        menu.add_item(MenuItem::Action("Start Service", [this]() {
+            system("launchctl start com.lemonade.server");
+            build_menu();
+        }));
+    }
+
+    menu.add_item(MenuItem::Action("Enable Service", [this]() {
+        system("launchctl load /Library/LaunchDaemons/com.lemonade.server.plist && launchctl load /Library/LaunchDaemons/com.lemonade.tray.plist");
+        build_menu();
+    }));
+
+    menu.add_item(MenuItem::Action("Disable Service", [this]() {
+        system("launchctl unload /Library/LaunchDaemons/com.lemonade.server.plist && launchctl unload /Library/LaunchDaemons/com.lemonade.tray.plist");
+        build_menu();
+    }));
+#endif
+
     // Port submenu
     auto port_submenu = std::make_shared<Menu>();
     std::vector<int> ports = {8000, 8020, 8040, 8060, 8080, 9000};
@@ -2244,6 +2282,11 @@ void TrayApp::on_upgrade() {
 
 void TrayApp::on_quit() {
     std::cout << "Quitting application..." << std::endl;
+#ifdef __APPLE__
+    // On macOS, disable the service first before quitting
+    std::cout << "Disabling service auto-start..." << std::endl;
+    system("launchctl unload /Library/LaunchDaemons/com.lemonade.server.plist");
+#endif
     shutdown();
 }
 
