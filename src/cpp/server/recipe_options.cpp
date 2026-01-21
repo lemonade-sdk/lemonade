@@ -5,11 +5,32 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-static const json DEFAULTS = {{"ctx_size", 4096}, {"llamacpp_backend", "vulkan"}, {"llamacpp_args", ""}};
+static const json DEFAULTS = {
+    {"ctx_size", 4096}, 
+    {"llamacpp_backend", "vulkan"}, 
+    {"llamacpp_args", ""}
+};
+
 static const json CLI_OPTIONS = {
-    {"--ctx-size", {{"option_name", "ctx_size"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
-    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use (vulkan, rocm, metal, cpu)"}}},
-    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}}},
+    {"--ctx-size", {
+        {"option_name", "ctx_size"}, 
+        {"type_name", "SIZE"}, 
+        {"envname", "LEMONADE_CTX_SIZE"}, 
+        {"help", "Context size for the model"}
+    }},
+    {"--llamacpp", {
+        {"option_name", "llamacpp_backend"}, 
+        {"type_name", "BACKEND"},
+        {"allowed_values", {"vulkan", "rocm", "metal", "cpu"}},
+        {"envname", "LEMONADE_LLAMACPP"}, 
+        {"help", "LlamaCpp backend to use"}
+    }},
+    {"--llamacpp-args", {
+        {"option_name", "llamacpp_args"}, 
+        {"type_name", "ARGS"}, 
+        {"envname", "LEMONADE_LLAMACPP_ARGS"}, 
+        {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
+    }},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -32,13 +53,20 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
     for (auto& [key, opt] : CLI_OPTIONS.items()) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
-        if (DEFAULTS[opt_name].is_number()) {
+        json defval = DEFAULTS[opt_name];
+        if (defval.is_number()) {
             o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val((int) defval);
         } else {
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val(defval);
         }
 
         o->envname(opt["envname"]);
+        o->type_name(opt["type_name"]);
+        if (opt.contains("allowed_values")) {
+            o->check(CLI::IsMember((std::vector<std::string>)opt["allowed_values"]));
+        }
     }
 }
 

@@ -13,32 +13,51 @@
 #define APP_DESC APP_NAME " - Lightweight LLM server"
 #endif
 
+#define PULL_FOOTER_COMMON "Examples:\n" \
+    "  # Pull a registered model\n" \
+    "  lemonade-server pull Llama-3.2-1B-Instruct-GGUF\n\n" \
+    "  # Pull from HuggingFace with custom name\n" \
+    "  lemonade-server pull user.MyLlama --checkpoint meta-llama/Llama-3.2-1B-Instruct-GGUF:Q4_K_M --recipe llamacpp\n\n" \
+    "  # Import from local directory\n"
+#ifdef _WIN32
+    #define PULL_FOOTER PULL_FOOTER_COMMON "  lemonade-server pull user.MyModel --checkpoint C:\\models\\my-model --recipe llamacpp"
+#else
+    #define PULL_FOOTER PULL_FOOTER_COMMON "  lemonade-server pull user.MyModel --checkpoint /home/user/models/my-model --recipe llamacpp"
+#endif
+
+
 namespace lemon {
 
 static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector<int>& max_models_vec) {
     serve->add_option("--port", config.port, "Port number to serve on")
         ->envname("LEMONADE_PORT")
-        ->default_val(8000);
+        ->type_name("PORT")
+        ->default_val(config.port);
 
     serve->add_option("--host", config.host, "Address to bind for connections")
         ->envname("LEMONADE_HOST")
-        ->default_val("localhost");
+        ->type_name("HOST")
+        ->default_val(config.host);
 
     serve->add_option("--log-level", config.log_level, "Log level for the server")
         ->envname("LEMONADE_LOG_LEVEL")
+        ->type_name("LEVEL")
         ->check(CLI::IsMember({"critical", "error", "warning", "info", "debug", "trace"}))
-        ->default_val("info");
+        ->default_val(config.log_level);
 
     serve->add_option("--extra-models-dir", config.extra_models_dir,
                    "Experimental feature: secondary directory to scan for LLM GGUF model files")
         ->envname("LEMONADE_EXTRA_MODELS_DIR")
-        ->default_val("");
+        ->type_name("PATH")
+        ->default_val(config.extra_models_dir);
 
     // Multi-model support: Max loaded models
     // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)
     serve->add_option("--max-loaded-models", max_models_vec,
-                   "Maximum number of models to keep loaded (format: LLMS or LLMS EMBEDDINGS RERANKINGS [AUDIO])")
+                   "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]")
+        ->type_name("N [E] [R] [A]")
         ->expected(1, 4)
+        ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models})
         ->check([](const std::string& val) -> std::string {
             // Validate that value is a positive integer (digits only, no floats)
             if (val.empty()) {
@@ -69,6 +88,7 @@ CLIParser::CLIParser()
 
 #ifdef LEMONADE_TRAY
     app_.require_subcommand(1);
+    app_.set_help_all_flag("--help-all", "Print help for all commands");
 
     // Serve
     CLI::App* serve = app_.add_subcommand("serve", "Start the server");
@@ -87,16 +107,22 @@ CLIParser::CLIParser()
 
     // Pull
     CLI::App* pull = app_.add_subcommand("pull", "Download a model");
-    pull->add_option("model", tray_config_.model, "The model to download")->required();
-    pull->add_option("--checkpoint", tray_config_.checkpoint, "Hugging Face checkpoint (format: org/model:variant) OR an absolute local path to a model directory. When a local path is provided, files are copied to the HuggingFace cache and registered.");
+    pull->add_option("model", tray_config_.model, "The model to download")
+        ->type_name("MODEL")
+        ->required();
+    pull->add_option("--checkpoint", tray_config_.checkpoint, "Hugging Face checkpoint (format: org/model:variant) OR an absolute local path to a model directory. When a local path is provided, files are copied to the HuggingFace cache and registered.")
+        ->type_name("CHECKPOINT");
     pull->add_option("--recipe", tray_config_.recipe, "Inference recipe to use. Required when using a local path.")
+        ->type_name("RECIPE")
         ->check(CLI::IsMember({"llamacpp", "flm", "oga-cpu", "oga-hybrid", "oga-npu", "ryzenai", "whispercpp"}));
     pull->add_flag("--reasoning", tray_config_.is_reasoning, "Mark model as a reasoning model (e.g., DeepSeek-R1). Adds 'reasoning' label to model metadata.");
     pull->add_flag("--vision", tray_config_.is_vision, "Mark model as a vision model (multimodal). Adds 'vision' label to model metadata.");
     pull->add_flag("--embedding", tray_config_.is_embedding, "Mark model as an embedding model. Adds 'embeddings' label to model metadata. For use with /api/v1/embeddings endpoint.");
     pull->add_flag("--reranking", tray_config_.is_reranking, "Mark model as a reranking model. Adds 'reranking' label to model metadata. For use with /api/v1/reranking endpoint.");
-    pull->add_option("--mmproj", tray_config_.mmproj, "Multimodal projector file for vision models. Required for GGUF vision models. Example: mmproj-model-f16.gguf");
-     
+    pull->add_option("--mmproj", tray_config_.mmproj, "Multimodal projector file for vision models. Required for GGUF vision models. Example: mmproj-model-f16.gguf")
+        ->type_name("FILENAME");
+    pull->footer(PULL_FOOTER);
+    
     // Delete
     CLI::App* del = app_.add_subcommand("delete", "Delete a model");
     del->add_option("model", tray_config_.model, "The model to delete")->required();
