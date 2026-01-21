@@ -53,39 +53,30 @@ void RyzenAIServer::install(const std::string& backend) {
     download_and_install();
 }
 
+// Helper to get the install directory for ryzenai-server
+static std::string get_install_directory() {
+    return (fs::path(utils::get_downloaded_bin_dir()) / "ryzenai-server").string();
+}
+
+#ifdef _WIN32
+static const std::string RYZENAI_EXE_NAME = "ryzenai-server.exe";
+#else
+static const std::string RYZENAI_EXE_NAME = "ryzenai-server";
+#endif
+
 bool RyzenAIServer::is_available() {
-    std::string path = get_ryzenai_server_path();
-    return !path.empty();
+    return !get_ryzenai_server_path().empty();
 }
 
 std::string RyzenAIServer::get_ryzenai_server_path() {
-#ifdef _WIN32
-    std::string exe_name = "ryzenai-server.exe";
-#else
-    std::string exe_name = "ryzenai-server";
-#endif
-    
-    // 1. Check in PATH first (highest priority)
-#ifdef _WIN32
-    std::string check_cmd = "where " + exe_name + " >nul 2>&1";
-#else
-    std::string check_cmd = "which " + exe_name + " >/dev/null 2>&1";
-#endif
-    
-    if (system(check_cmd.c_str()) == 0) {
-        return exe_name;
-    }
-    
-    // 2. Check in source tree location (for developers)
-    // From executable location to ../../../ryzenai-server/build/bin/Release
-    std::string relative_path = utils::get_resource_path("../../../ryzenai-server/build/bin/Release/" + exe_name);
+    // 1. Check in source tree location (for developers)
+    std::string relative_path = utils::get_resource_path("../../../ryzenai-server/build/bin/Release/" + RYZENAI_EXE_NAME);
     if (fs::exists(relative_path)) {
         return fs::absolute(relative_path).string();
     }
     
-    // 3. Check in downloaded/installed location next to lemonade binary
-    // This is where download_and_install() will place it
-    std::string install_path = utils::get_resource_path("ryzenai-server/" + exe_name);
+    // 2. Check in user cache directory (where download_and_install() places it)
+    fs::path install_path = fs::path(get_install_directory()) / RYZENAI_EXE_NAME;
     if (fs::exists(install_path)) {
         return fs::absolute(install_path).string();
     }
@@ -121,22 +112,13 @@ void RyzenAIServer::download_and_install() {
     std::cout << "[RyzenAI-Server] Downloading ryzenai-server..." << std::endl;
     
     // Download from latest GitHub release
-    // Format: https://github.com/{owner}/{repo}/releases/latest/download/{asset_name}
     std::string repo = "lemonade-sdk/lemonade";
     std::string filename = "ryzenai-server.zip";
     std::string url = "https://github.com/" + repo + "/releases/latest/download/" + filename;
     
-    // Determine install directory (next to lemonade-router.exe)
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-#else
-    fs::path exe_dir = fs::current_path();
-#endif
-    
-    fs::path install_dir = exe_dir / "ryzenai-server";
-    std::string zip_path = (exe_dir / filename).string();
+    // Install to user cache directory
+    fs::path install_dir = get_install_directory();
+    std::string zip_path = (fs::path(utils::get_downloaded_bin_dir()) / filename).string();
     
     std::cout << "[RyzenAI-Server] Downloading from latest GitHub release..." << std::endl;
     std::cout << "[RyzenAI-Server] Installing to: " << install_dir.string() << std::endl;
@@ -318,7 +300,12 @@ void RyzenAIServer::load(const std::string& model_name,
         args.push_back("--verbose");
     }
     
-    std::cout << "[RyzenAI-Server] Starting ryzenai-server..." << std::endl;
+    // Log the full command line
+    std::cout << "[RyzenAI-Server] Starting: \"" << ryzenai_server_path << "\"";
+    for (const auto& arg : args) {
+        std::cout << " \"" << arg << "\"";
+    }
+    std::cout << std::endl;
     
     // Start the process (filter health check spam)
     process_handle_ = utils::ProcessManager::start_process(

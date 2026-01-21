@@ -156,41 +156,17 @@ std::string get_cache_dir() {
 }
 
 std::string get_downloaded_bin_dir() {
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    GetModuleFileNameA(NULL, exe_path, MAX_PATH);
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-#else
-    return get_cache_dir() + "/bin";
-#endif
-}
-
-#ifndef _WIN32
-std::string get_deprecated_downloaded_bin_dir() {
-    // Get the actual executable location
-    char exe_path[1024];
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len != -1) {
-        exe_path[len] = '\0';
-        fs::path exe_dir = fs::path(exe_path).parent_path();
-        
-        // If we're in /usr/local/bin, use /usr/local/share/lemonade-server instead
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-        
-        // Otherwise (dev builds), use the exe directory
-        return exe_dir.string();
+    // Use cache directory on all platforms for consistent multi-user support
+    // This is important for All Users installs on Windows where Program Files is read-only
+    std::string bin_dir = get_cache_dir() + "/bin";
+    
+    // Ensure directory exists
+    if (!fs::exists(bin_dir)) {
+        fs::create_directories(bin_dir);
     }
-    return ".";
+    
+    return bin_dir;
 }
-#endif
 
 
 } // namespace utils

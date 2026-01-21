@@ -146,6 +146,24 @@ lemonade-server pull gpt-oss-20b-mxfp4-GGUF
 </details>
 
 <details>
+<summary>GLM-4.7-Flash-GGUF</summary>
+
+```bash
+lemonade-server pull GLM-4.7-Flash-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF">unsloth/GLM-4.7-Flash-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>GLM-4.7-Flash-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>17.6</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>Gemma3-4b-it-FLM</summary>
 
 ```bash
@@ -845,6 +863,24 @@ lemonade-server pull GLM-4.5-Air-UD-Q4K-XL-GGUF
 </details>
 
 <details>
+<summary>GLM-4.7-Flash-GGUF</summary>
+
+```bash
+lemonade-server pull GLM-4.7-Flash-GGUF
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF">unsloth/GLM-4.7-Flash-GGUF</a></td></tr>
+<tr><td>GGUF Variant</td><td>GLM-4.7-Flash-UD-Q4_K_XL.gguf</td></tr>
+<tr><td>Recipe</td><td>llamacpp</td></tr>
+<tr><td>Labels</td><td>hot</td></tr>
+<tr><td>Size (GB)</td><td>17.6</td></tr>
+</table>
+
+</details>
+
+<details>
 <summary>granite-4.0-h-tiny-GGUF</summary>
 
 ```bash
@@ -1372,6 +1408,122 @@ lemonade-server pull LFM2-1.2B-FLM
 <tr><th>Key</th><th>Value</th></tr>
 <tr><td>Checkpoint</td><td>lfm2:1.2b</td></tr>
 <tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size (GB)</td><td>0.96</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>LFM2.5-1.2B-Instruct-FLM</summary>
+
+```bash
+lemonade-server pull LFM2.5-1.2B-Instruct-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>lfm2.5-it:1.2b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size (GB)</td><td>0.96</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Phi-4-Mini-Instruct-FLM</summary>
+
+```bash
+lemonade-server pull Phi-4-Mini-Instruct-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>phi4-mini-it:4b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size (GB)</td><td>3.39</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>DeepSeek-R1-Distill-Llama-8B-FLM</summary>
+
+```bash
+lemonade-server pull DeepSeek-R1-Distill-Llama-8B-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>deepseek-r1:8b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
+<tr><td>Size (GB)</td><td>5.36</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>DeepSeek-R1-0528-Qwen3-8B-FLM</summary>
+
+```bash
+lemonade-server pull DeepSeek-R1-0528-Qwen3-8B-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>deepseek-r1-0528:8b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
+<tr><td>Size (GB)</td><td>5.57</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>LFM2-2.6B-FLM</summary>
+
+```bash
+lemonade-server pull LFM2-2.6B-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>lfm2:2.6b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Size (GB)</td><td>1.75</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>Qwen3-1.7b-FLM</summary>
+
+```bash
+lemonade-server pull Qwen3-1.7b-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>qwen3:1.7b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
+<tr><td>Size (GB)</td><td>1.59</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>LFM2.5-1.2B-Thinking-FLM</summary>
+
+```bash
+lemonade-server pull LFM2.5-1.2B-Thinking-FLM
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td>lfm2.5-tk:1.2b</td></tr>
+<tr><td>Recipe</td><td>flm</td></tr>
+<tr><td>Labels</td><td>reasoning</td></tr>
 <tr><td>Size (GB)</td><td>0.96</td></tr>
 </table>
 

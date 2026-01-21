@@ -114,8 +114,8 @@ The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NP
 - Proper graceful shutdown - all child processes cleaned up correctly
 - File locations:
   - Installed binaries: `/usr/local/bin/`
-  - llama.cpp downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - llama-server binaries: `/usr/local/share/lemonade-server/llama/` (from .deb) or next to binary (dev builds)
+  - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
+  - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -148,8 +148,8 @@ cmake --build . --config Release --target wix_installer
 
 Creates `lemonade-server-minimal.msi` which:
 - MSI-based installer (Windows Installer technology)
-- Installs to `%LOCALAPPDATA%\lemonade_server\`
-- Adds `bin\` folder to user PATH using Windows Installer standard methods
+- **Per-user install (default):** Installs to `%LOCALAPPDATA%\lemonade_server\`, adds to user PATH, no UAC required
+- **All-users install (CLI only):** Installs to `%PROGRAMFILES%\Lemonade Server\`, adds to system PATH, requires elevation
 - Creates Start Menu shortcuts (launches `lemonade-tray.exe`)
 - Optionally creates desktop shortcut and startup entry
 - Uses Windows Installer Restart Manager to gracefully close running processes
@@ -157,28 +157,13 @@ Creates `lemonade-server-minimal.msi` which:
 - Proper upgrade handling between versions
 - Includes uninstaller
 
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
+
 **Installation:**
 
-GUI installation:
-```powershell
-# Double-click lemonade-server-minimal.msi or run:
-msiexec /i lemonade-server-minimal.msi
-```
-
-Silent installation:
-```powershell
-# Install silently
-msiexec /i lemonade-server-minimal.msi /qn
-
-# Install to custom directory
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path"
-
-# Install without desktop shortcut
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
-
-# Install with startup entry
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
-```
+For detailed installation instructions including silent install, custom directories, and all-users installation, see the [Server Integration Guide](../../docs/server/server_integration.md#windows-installation).
 
 ### Linux .deb Package (Debian/Ubuntu)
 

@@ -514,6 +514,13 @@
         "labels": ["reasoning"],
         "size": 73.1
     },
+    "GLM-4.7-Flash-GGUF": {
+        "checkpoint": "unsloth/GLM-4.7-Flash-GGUF:GLM-4.7-Flash-UD-Q4_K_XL.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": ["hot"],
+        "size": 17.6
+    },
     "Playable1-GGUF": {
         "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
         "recipe": "llamacpp",

@@ -104,46 +104,76 @@ You can also run the server as a background process using a subprocess or any pr
 
 To stop the server, you may use the `lemonade-server stop` command, or simply terminate the process you created by keeping track of its PID. Please do not run the `lemonade-server stop` command if your application has not started the server, as the server may be used by other applications.
 
-### Silent Installation
+## Windows Installation
 
-Silent installation runs `lemonade-server-minimal.msi` without a GUI and automatically accepts all prompts using the Windows Installer command-line interface.
+**Available Installers:**
+- `lemonade-server-minimal.msi` - Server only (~3 MB)
+- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
 
-In a `cmd.exe` or PowerShell terminal:
+**GUI Installation:**
 
-```bash
-msiexec /i lemonade-server-minimal.msi /qn
-```
-
-The install directory can also be changed from the default using the `INSTALLDIR` property:
+Double-click the MSI file, or run:
 
 ```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\a\new\path"
-```
-
-If you don't want to create a desktop shortcut during installation, use the `ADDDESKTOPSHORTCUT=0` parameter:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDDESKTOPSHORTCUT=0
-```
-
-To add Lemonade Server to Windows startup:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn ADDTOSTARTUP=1
-```
-
-You can combine multiple parameters:
-
-```bash
-msiexec /i lemonade-server-minimal.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0 ADDTOSTARTUP=1
+msiexec /i lemonade.msi
 ```
 
 **MSI Properties:**
+
+Properties can be passed on the command line to customize the installation:
+
 - `INSTALLDIR` - Custom installation directory (default: `%LOCALAPPDATA%\lemonade_server`)
 - `ADDDESKTOPSHORTCUT` - Create desktop shortcut (0=no, 1=yes, default: 1)
-- `ADDTOSTARTUP` - Add to Windows startup (0=no, 1=yes, default: 0)
+- `ALLUSERS` - Install for all users (1=yes, requires elevation; default: per-user)
 
-The available models are documented [here](./server_models.md).
+**Examples:**
+
+```bash
+# Custom install directory
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path"
+
+# Without desktop shortcut
+msiexec /i lemonade.msi ADDDESKTOPSHORTCUT=0
+
+# Combined parameters
+msiexec /i lemonade.msi INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
+```
+
+### Silent Installation
+
+Add `/qn` to run without a GUI, automatically accepting all prompts:
+
+```bash
+msiexec /i lemonade.msi /qn
+```
+
+This can be combined with any MSI properties:
+
+```bash
+msiexec /i lemonade.msi /qn INSTALLDIR="C:\Custom\Path" ADDDESKTOPSHORTCUT=0
+```
+
+### All Users Installation
+
+To install for all users (Program Files + system PATH), you **must** run from an Administrator command prompt.
+
+1. Open Command Prompt as Administrator (right-click → "Run as administrator")
+2. Run the install command:
+
+```bash
+msiexec /i lemonade.msi ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+For silent all-users installation, add `/qn`:
+
+```bash
+msiexec /i lemonade.msi /qn ALLUSERS=1 INSTALLDIR="C:\Program Files (x86)\Lemonade Server"
+```
+
+**Troubleshooting:**
+- If installation fails silently, check that you're running as Administrator
+- Add `/L*V install.log` to generate a debug log file
+
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->
