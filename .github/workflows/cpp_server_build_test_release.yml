@@ -452,7 +452,7 @@ jobs:
       - name: Setup RyzenAI Serve
         uses: ./.github/actions/setup-ryzenai-server
         with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          cache-path: ${{ env.LEMONADE_CACHE_DIR }}
           artifact-path: ryzenai-server-files
 
 
@@ -996,7 +996,7 @@ jobs:
       - name: Setup RyzenAI Server
         uses: ./.github/actions/setup-ryzenai-server
         with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          cache-path: ${{ env.LEMONADE_CACHE_DIR }}
           artifact-path: ryzenai-server-files
 
       - name: Setup Python and virtual environment
