@@ -220,6 +220,14 @@
 
    For detailed instructions and security considerations, see [Remote Server Connection](./lemonade-server-cli.md#remote-server-connection).
 
+## Customization
+
+### 1. **How do I use my own llama.cpp or whisper.cpp binaries?**
+
+   Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
+
+   👉 [Custom Backend Binaries](./server/lemonade-server-cli.md#custom-backend-binaries)
+
 ## Support & Roadmap
 
 ### 1. **What if I encounter installation or runtime errors?**

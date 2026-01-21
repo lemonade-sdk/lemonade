@@ -48,15 +48,53 @@ lemonade-server run MODEL_NAME [options]
 | `--max-loaded-models [LLMS] [EMBEDDINGS] [RERANKINGS] [AUDIO]` | Maximum number of models to keep loaded simultaneously. Accepts 1, 3, or 4 values for LLM, embedding, reranking, and audio models respectively. Unspecified values default to 1. Example: `--max-loaded-models 3 2 1 1` loads up to 3 LLMs, 2 embedding models, 1 reranking model, and 1 audio model. | `1 1 1 1` |
 | `--save-options` | Only available for the run command. Saves the context size, LlamaCpp backend and custom llama-server arguments as default for running this model. Unspecified values will be saved using their default value. | False |
 
-These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method: `LEMONADE_HOST`, `LEMONADE_PORT`, `LEMONADE_LOG_LEVEL`, `LEMONADE_LLAMACPP`, `LEMONADE_CTX_SIZE`, `LEMONADE_LLAMACPP_ARGS`, and `LEMONADE_EXTRA_MODELS_DIR`.
+### Environment Variables
 
-Set `LEMONADE_DISABLE_MODEL_FILTERING=1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities.
+These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method:
 
-Additionally, you can provide your own `llama-server` binary by giving the full path to it via the following environment variables: `LEMONADE_LLAMACPP_ROCM_BIN`, `LEMONADE_LLAMACPP_VULKAN_BIN`, `LEMONADE_LLAMACPP_CPU_BIN`. Note that this does not override the `--llamacpp` option, rather it allows to provide an alternative binary for specific backends.
+| Environment Variable | Description |
+|---------------------|-------------|
+| `LEMONADE_HOST` | Host address for where to listen for connections |
+| `LEMONADE_PORT` | Port number to run the server on |
+| `LEMONADE_LOG_LEVEL` | Logging level |
+| `LEMONADE_LLAMACPP` | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`) |
+| `LEMONADE_CTX_SIZE` | Default context size for models |
+| `LEMONADE_LLAMACPP_ARGS` | Custom arguments to pass to llama-server |
+| `LEMONADE_EXTRA_MODELS_DIR` | Secondary directory to scan for GGUF model files |
+| `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities |
 
-The same can also be done for the `whisper-server` binary. The environment variable to set in this case is `LEMONADE_WHISPERCPP_BIN`.
+#### Custom Backend Binaries
 
-If you expose your server over a network you can use the `LEMONADE_API_KEY` to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
+You can provide your own `llama-server` or `whisper-server` binary by setting the full path via the following environment variables:
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `LEMONADE_LLAMACPP_ROCM_BIN` | Path to custom `llama-server` binary for ROCm backend |
+| `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
+| `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
+| `LEMONADE_WHISPERCPP_BIN` | Path to custom `whisper-server` binary |
+
+**Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
+
+**Examples:**
+
+On Windows:
+
+```cmd
+set LEMONADE_LLAMACPP_VULKAN_BIN=C:\path\to\my\llama-server.exe
+lemonade-server serve
+```
+
+On Linux:
+
+```bash
+export LEMONADE_LLAMACPP_VULKAN_BIN=/path/to/my/llama-server
+lemonade-server serve
+```
+
+#### API Key and Security
+
+If you expose your server over a network you can use the `LEMONADE_API_KEY` environment variable to set an API key (use a random long string) that will be required to execute any request. The API key will be expected as HTTP Bearer authentication, which is compatible with the OpenAI API.
 
 **IMPORTANT**: If you need to access `lemonade-server` over the internet, do not expose it directly! You will also need to setup an HTTPS reverse proxy (such as nginx) and expose that instead, otherwise all communication will be in plaintext!
 
