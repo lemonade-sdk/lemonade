@@ -1,14 +1,14 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b7426",
-    "rocm": "b1136",
-    "metal": "b7426",
-    "cpu": "b7426"
+    "vulkan": "b7788",
+    "rocm": "b1162",
+    "metal": "b7788",
+    "cpu": "b7788"
   },
   "whispercpp": "v1.8.2",
   "flm": {
-    "version": "v0.9.26",
+    "version": "v0.9.27",
     "min_npu_driver": "32.0.203.304"
   }
 }

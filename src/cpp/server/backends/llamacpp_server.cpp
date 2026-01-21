@@ -247,6 +247,35 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
 #endif
 }
 
+#ifndef _WIN32
+// Helper to extract tar.gz files (Linux/macOS)
+// Uses --strip-components=1 to remove the top-level directory that llama.cpp releases include
+// (e.g., llama-b7783-bin-ubuntu-vulkan-x64/ wrapper directory)
+static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir) {
+    std::cout << "[LlamaCpp] Extracting tar.gz to " << dest_dir << std::endl;
+    std::string command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1";
+    int result = system(command.c_str());
+    return result == 0;
+}
+#endif
+
+// Helper to extract archive files based on extension
+static bool extract_archive(const std::string& archive_path, const std::string& dest_dir) {
+    // Check if it's a tar.gz file
+    if (archive_path.size() > 7 && 
+        archive_path.substr(archive_path.size() - 7) == ".tar.gz") {
+#ifdef _WIN32
+        // tar.gz not expected on Windows, but handle gracefully
+        std::cerr << "[LlamaCpp] ERROR: tar.gz files not supported on Windows" << std::endl;
+        return false;
+#else
+        return extract_tarball(archive_path, dest_dir);
+#endif
+    }
+    // Default to ZIP extraction
+    return extract_zip(archive_path, dest_dir);
+}
+
 void LlamaCppServer::install(const std::string& backend) {
     std::string install_dir;
     std::string version_file;
@@ -315,7 +344,7 @@ void LlamaCppServer::install(const std::string& backend) {
             // Metal support for macOS Apple Silicon from ggml-org/llama.cpp
             repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
-            filename = "llama-" + expected_version + "-bin-macos-arm64.zip";
+            filename = "llama-" + expected_version + "-bin-macos-arm64.tar.gz";
 #else
             throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
@@ -327,7 +356,7 @@ void LlamaCppServer::install(const std::string& backend) {
 #ifdef _WIN32
             filename = "llama-" + expected_version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
-            filename = "llama-" + expected_version + "-bin-ubuntu-x64.zip";
+            filename = "llama-" + expected_version + "-bin-ubuntu-x64.tar.gz";
 #else
             throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
@@ -338,7 +367,7 @@ void LlamaCppServer::install(const std::string& backend) {
 #ifdef _WIN32
             filename = "llama-" + expected_version + "-bin-win-vulkan-x64.zip";
 #elif defined(__linux__)
-            filename = "llama-" + expected_version + "-bin-ubuntu-vulkan-x64.zip";
+            filename = "llama-" + expected_version + "-bin-ubuntu-vulkan-x64.tar.gz";
 #else
             throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
 #endif
@@ -347,20 +376,20 @@ void LlamaCppServer::install(const std::string& backend) {
         std::string url = "https://github.com/" + repo + "/releases/download/" + 
                          expected_version + "/" + filename;
         
-        // Download ZIP to HuggingFace cache directory (follows HF conventions)
+        // Download archive to HuggingFace cache directory (follows HF conventions)
         fs::path cache_dir = model_manager_ ? model_manager_->get_hf_cache_dir() : "";
         if (cache_dir.empty()) {
             throw std::runtime_error("ModelManager not available for cache directory lookup");
         }
         fs::create_directories(cache_dir);
-        std::string zip_path = (cache_dir / filename).string();
+        std::string archive_path = (cache_dir / filename).string();
         
         std::cout << "[LlamaCpp] Downloading from: " << url << std::endl;
-        std::cout << "[LlamaCpp] Downloading to: " << zip_path << std::endl;
+        std::cout << "[LlamaCpp] Downloading to: " << archive_path << std::endl;
         
         auto result = utils::HttpClient::download_file(
             url, 
-            zip_path, 
+            archive_path, 
             utils::create_throttled_progress_callback()
         );
         
@@ -371,25 +400,25 @@ void LlamaCppServer::install(const std::string& backend) {
         std::cout << "[LlamaCpp] Download complete!" << std::endl;
         
         // Verify the downloaded file exists and is valid
-        if (!fs::exists(zip_path)) {
-            throw std::runtime_error("Downloaded ZIP file does not exist: " + zip_path);
+        if (!fs::exists(archive_path)) {
+            throw std::runtime_error("Downloaded archive file does not exist: " + archive_path);
         }
         
-        std::uintmax_t file_size = fs::file_size(zip_path);
-        std::cout << "[LlamaCpp] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
+        std::uintmax_t file_size = fs::file_size(archive_path);
+        std::cout << "[LlamaCpp] Downloaded archive file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
         
-        const std::uintmax_t MIN_ZIP_SIZE = 1024 * 1024;  // 1 MB
-        if (file_size < MIN_ZIP_SIZE) {
+        const std::uintmax_t MIN_ARCHIVE_SIZE = 1024 * 1024;  // 1 MB
+        if (file_size < MIN_ARCHIVE_SIZE) {
             std::cerr << "[LlamaCpp] ERROR: Downloaded file is too small (" << file_size << " bytes)" << std::endl;
             std::cerr << "[LlamaCpp] This usually indicates a failed or incomplete download." << std::endl;
-            fs::remove(zip_path);
+            fs::remove(archive_path);
             throw std::runtime_error("Downloaded file is too small (< 1 MB), likely corrupted or incomplete");
         }
         
-        // Extract
-        if (!extract_zip(zip_path, install_dir)) {
+        // Extract (handles both .zip and .tar.gz based on extension)
+        if (!extract_archive(archive_path, install_dir)) {
             // Clean up corrupted files
-            fs::remove(zip_path);
+            fs::remove(archive_path);
             fs::remove_all(install_dir);
             throw std::runtime_error("Failed to extract llama-server archive");
         }
@@ -401,7 +430,7 @@ void LlamaCppServer::install(const std::string& backend) {
             std::cerr << "[LlamaCpp] This usually indicates a corrupted download or unexpected archive structure." << std::endl;
             std::cerr << "[LlamaCpp] Cleaning up..." << std::endl;
             // Clean up corrupted files
-            fs::remove(zip_path);
+            fs::remove(archive_path);
             fs::remove_all(install_dir);
             throw std::runtime_error("Extraction failed: executable not found. Downloaded file may be corrupted.");
         }
@@ -422,8 +451,8 @@ void LlamaCppServer::install(const std::string& backend) {
         chmod(exe_path.c_str(), 0755);
 #endif
         
-        // Delete ZIP file
-        fs::remove(zip_path);
+        // Delete archive file
+        fs::remove(archive_path);
         
         std::cout << "[LlamaCpp] Installation complete!" << std::endl;
     } else {
