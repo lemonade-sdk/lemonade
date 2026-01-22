@@ -346,35 +346,105 @@ const ensureTrayRunning = () => {
       return;
     }
 
-    // Check if lemonade-server tray process is running
-    exec('pgrep -f "lemonade-server tray"', { timeout: 2000 }, (error, stdout, stderr) => {
-      if (error || !stdout.trim()) {
-        // Tray not running, find and launch it
-        console.warn('Tray not running on macOS, launching lemonade-server tray...');
-
-        const serverBinary = findLemonadeServerBinary();
-        if (!serverBinary) {
-          console.error('Could not find lemonade-server binary');
-          resolve();
-          return;
-        }
-
-        console.log('Found lemonade-server at:', serverBinary);
-
-        const trayProcess = spawn(serverBinary, ['tray'], {
-          detached: true,
-          stdio: 'ignore'
-        });
-        trayProcess.unref();
-
-        // Wait a bit for tray to start
-        setTimeout(() => {
-          resolve();
-        }, 2000);
-      } else {
-        // Tray is running
+    // Get the current user ID for the target specifier
+    exec('id -u', { timeout: 2000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Could not get user ID:', error);
         resolve();
+        return;
       }
+
+      const uid = stdout.trim();
+      const target = `gui/${uid}/com.lemonade.tray`;
+
+      // Check if lemonade-server tray service is loaded and running
+      exec(`launchctl print ${target}`, { timeout: 2000 }, (error, stdout, stderr) => {
+        if (error || !stdout.includes('state = running')) {
+          // Tray service not loaded or not running, try to load and start it
+          console.warn('Tray service not running on macOS, loading and starting lemonade-server tray service...');
+
+          const serverBinary = findLemonadeServerBinary();
+          if (!serverBinary) {
+            console.error('Could not find lemonade-server binary');
+            resolve();
+            return;
+          }
+
+          console.log('Found lemonade-server at:', serverBinary);
+
+          // Find the plist file (assume it's in the same directory as the binary or common locations)
+          const plistPaths = [
+            path.join(path.dirname(serverBinary), 'com.lemonade.tray.plist'),
+            '/Library/LaunchAgents/com.lemonade.tray.plist',
+            path.join(os.homedir(), 'Library/LaunchAgents/com.lemonade.tray.plist')
+          ];
+
+          let plistPath = null;
+          for (const p of plistPaths) {
+            try {
+              if (fs.existsSync(p)) {
+                plistPath = p;
+                break;
+              }
+            } catch (e) {
+              // Continue checking other paths
+            }
+          }
+
+          if (!plistPath) {
+            console.error('Could not find com.lemonade.tray.plist file');
+            // Try to launch tray directly as fallback
+            console.log('Attempting direct tray launch as fallback...');
+            const trayProcess = spawn(serverBinary, ['tray'], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            trayProcess.unref();
+            setTimeout(() => resolve(), 2000);
+            return;
+          }
+
+          console.log('Found tray plist at:', plistPath);
+
+          // Load the service
+          exec(`launchctl bootstrap gui/${uid} "${plistPath}"`, { timeout: 5000 }, (loadError, loadStdout, loadStderr) => {
+            if (loadError) {
+              console.error('Failed to load tray service:', loadError);
+              // Try direct launch as fallback
+              const trayProcess = spawn(serverBinary, ['tray'], {
+                detached: true,
+                stdio: 'ignore'
+              });
+              trayProcess.unref();
+              setTimeout(() => resolve(), 2000);
+              return;
+            }
+
+            // Enable and start the service
+            exec(`launchctl enable ${target} && launchctl kickstart -k ${target}`, { timeout: 5000 }, (startError, startStdout, startStderr) => {
+              if (startError) {
+                console.error('Failed to start tray service:', startError);
+                // Try direct launch as fallback
+                const trayProcess = spawn(serverBinary, ['tray'], {
+                  detached: true,
+                  stdio: 'ignore'
+                });
+                trayProcess.unref();
+                setTimeout(() => resolve(), 2000);
+                return;
+              }
+
+              console.log('Tray service started successfully');
+              // Wait a bit for service to fully start
+              setTimeout(() => resolve(), 2000);
+            });
+          });
+        } else {
+          // Tray service is running
+          console.log('Tray service is already running');
+          resolve();
+        }
+      });
     });
   });
 };
