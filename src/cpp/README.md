@@ -81,20 +81,13 @@ cmake --build . --config Release -j
 
 ### RyzenAI Server Dependency
 
-The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU model inference. This dependency can be fulfilled in two ways:
+The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU/Hybrid model inference. This is handled automatically:
 
-1. **Development builds:** Build `ryzenai-server` from source in the same repository:
-   ```bash
-   # Build ryzenai-server
-   cd src/ryzenai-server
-   mkdir build && cd build
-   cmake .. -G "Visual Studio 17 2022"
-   cmake --build . --config Release
-   
-   # The executable will be at: src/ryzenai-server/build/bin/Release/ryzenai-server.exe
-   ```
+- **Runtime download:** `lemonade-router` automatically downloads the `ryzenai-server` executable from [lemonade-sdk/ryzenai-server](https://github.com/lemonade-sdk/ryzenai-server) releases when needed
+- **Version management:** The version is configured in `resources/backend_versions.json` and auto-upgrades when changed
+- **Custom binary:** Set `LEMONADE_RYZENAI_SERVER_BIN` environment variable to use a custom build
 
-2. **Runtime download:** For end users, `lemonade-router` will automatically download the `ryzenai-server` executable from GitHub releases as needed when attempting to run NPU models.
+For development on `ryzenai-server` itself, see the [ryzenai-server repository](https://github.com/lemonade-sdk/ryzenai-server).
 
 ### Platform-Specific Notes
 
