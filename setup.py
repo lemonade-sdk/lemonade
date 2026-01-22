@@ -14,13 +14,7 @@ setup(
         "lemonade.profilers",
         "lemonade.common",
         "lemonade.tools",
-        "lemonade.tools.huggingface",
-        "lemonade.tools.oga",
-        "lemonade.tools.llamacpp",
-        "lemonade.tools.flm",
         "lemonade.tools.report",
-        "lemonade.tools.server.utils",
-        "lemonade.tools.server",
     ],
     install_requires=[
         # Minimal dependencies required for end-users who are running
@@ -93,7 +87,7 @@ setup(
     long_description_content_type="text/markdown",
     include_package_data=True,
     package_data={
-        "lemonade": ["tools/server/static/**/*", "backend_versions.json"],
+        "lemonade": ["backend_versions.json"],
     },
 )
 

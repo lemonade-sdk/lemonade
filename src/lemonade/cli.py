@@ -47,14 +47,6 @@ def get_available_profilers(warn_missing=False):
     return profilers
 
 
-from lemonade.tools.huggingface.load import HuggingfaceLoad
-from lemonade.tools.huggingface.bench import HuggingfaceBench
-from lemonade.tools.oga.load import OgaLoad
-from lemonade.tools.oga.bench import OgaBench
-from lemonade.tools.llamacpp.bench import LlamaCppBench
-from lemonade.tools.llamacpp.load import LoadLlamaCpp
-from lemonade.tools.flm.load import FLMLoad
-from lemonade.tools.flm.bench import FLMBench
 from lemonade.tools.server_load import Load as ServerLoad
 from lemonade.tools.server_bench import ServerBench
 
@@ -71,21 +63,13 @@ def main():
 
     # List the available tools
     tools = [
-        HuggingfaceLoad,
-        LoadLlamaCpp,
-        LlamaCppBench,
+        ServerLoad,
+        ServerBench,
         AccuracyMMLU,
         AccuracyHumaneval,
         AccuracyPerplexity,
         LMEvalHarness,
         LLMPrompt,
-        HuggingfaceBench,
-        OgaLoad,
-        OgaBench,
-        FLMLoad,
-        FLMBench,
-        ServerLoad,
-        ServerBench,
         LemonadeReport,
         # Inherited from lemonade
         Cache,
