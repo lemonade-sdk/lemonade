@@ -95,17 +95,30 @@ jobs:
           Write-Host "Installation complete. Verifying..." -ForegroundColor Green
           & "$installPath\bin\lemonade-server.exe" --version
 
-      - name: Start Lemonade Server
+      - name: Test OGA-Load (CPU ONNX model)
+        shell: bash
+        run: |
+          venvPython=".venv/Scripts/python"
+          venvLemonade=".venv/Scripts/lemonade-eval"
+          
+          echo "Testing OGA-Load with CPU ONNX model..."
+          $venvLemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
+          
+          echo "Running OGA CPU API tests..."
+          $venvPython test/oga_cpu_api.py
+
+      - name: Test Server Integration (GGUF model)
         shell: PowerShell
         run: |
           $installPath = "${{ github.workspace }}\lemonade-server"
           $serverExe = "$installPath\bin\lemonade-server.exe"
           $logFile = "${{ github.workspace }}\lemonade-server.log"
+          $venvPython = ".venv\Scripts\python.exe"
           
           Write-Host "Starting Lemonade Server..." -ForegroundColor Cyan
           
           # Start server in background
-          Start-Process -FilePath $serverExe -ArgumentList "serve" -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err" -NoNewWindow
+          $serverProcess = Start-Process -FilePath $serverExe -ArgumentList "serve" -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err" -PassThru
           
           # Wait for server to be ready
           $maxAttempts = 30
@@ -140,26 +153,29 @@ jobs:
             }
             exit 1
           }
-
-      - name: Test OGA-Load (CPU ONNX model)
-        shell: bash
-        run: |
-          venvPython=".venv/Scripts/python"
-          venvLemonade=".venv/Scripts/lemonade-eval"
           
-          echo "Testing OGA-Load with CPU ONNX model..."
-          $venvLemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
-          
-          echo "Running OGA CPU API tests..."
-          $venvPython test/oga_cpu_api.py
-
-      - name: Test Server Integration (GGUF model)
-        shell: bash
-        run: |
-          venvPython=".venv/Scripts/python"
-          
-          echo "Running server integration tests with Qwen3-4B-Instruct-2507-GGUF..."
-          $venvPython test/llm_api.py
+          try {
+            Write-Host "Running server integration tests with Qwen3-4B-Instruct-2507-GGUF..." -ForegroundColor Cyan
+            & $venvPython test/llm_api.py
+            if ($LASTEXITCODE -ne 0) {
+              throw "Tests failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Write-Host "Stopping server..." -ForegroundColor Cyan
+            Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue
+            
+            # Show logs if tests failed
+            if ($LASTEXITCODE -ne 0) {
+              if (Test-Path $logFile) {
+                Write-Host "=== Server Log ===" -ForegroundColor Yellow
+                Get-Content $logFile | Select-Object -Last 50
+              }
+              if (Test-Path "$logFile.err") {
+                Write-Host "=== Server Error Log ===" -ForegroundColor Yellow
+                Get-Content "$logFile.err" | Select-Object -Last 50
+              }
+            }
+          }
 
       - name: Stop Lemonade Server
         if: always()
