@@ -2465,22 +2465,36 @@ void TrayApp::open_url(const std::string& url) {
 }
 
 bool TrayApp::find_electron_app() {
-    // Get directory of this executable (lemonade-tray.exe)
+    // Get directory of this executable (lemonade-tray)
     fs::path exe_dir;
-    
+
 #ifdef _WIN32
     wchar_t exe_path[MAX_PATH];
     GetModuleFileNameW(NULL, exe_path, MAX_PATH);
     exe_dir = fs::path(exe_path).parent_path();
 #else
     char exe_path[PATH_MAX];
+    bool got_exe_path = false;
+
+#ifdef __APPLE__
+    // macOS: Use _NSGetExecutablePath
+    uint32_t bufsize = sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &bufsize) == 0) {
+        got_exe_path = true;
+    }
+#else
+    // Linux: Use /proc/self/exe
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len != -1) {
         exe_path[len] = '\0';
-        exe_dir = fs::path(exe_path).parent_path();
-    } else {
+        got_exe_path = true;
+    }
+#endif
+
+    if (!got_exe_path) {
         return false;
     }
+    exe_dir = fs::path(exe_path).parent_path();
 #endif
     
     // The Electron app has exactly two possible locations:
@@ -2516,7 +2530,17 @@ bool TrayApp::find_electron_app() {
         std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
         return true;
     }
-    
+
+#ifdef __APPLE__
+    // macOS: Check standard installation location
+    fs::path mac_apps_path = fs::path("/Applications") / exe_name;
+    if (fs::exists(mac_apps_path)) {
+        electron_app_path_ = fs::canonical(mac_apps_path).string();
+        std::cout << "Found Electron app at: " << electron_app_path_ << std::endl;
+        return true;
+    }
+#endif
+
     // Check development path (same directory as tray executable)
     fs::path dev_path = exe_dir / exe_name;
     if (fs::exists(dev_path)) {
