@@ -351,6 +351,35 @@ static bool extract_archive(const std::string& archive_path, const std::string& 
     return extract_zip(archive_path, dest_dir);
 }
 
+#ifndef _WIN32
+// Helper to extract tar.gz files (Linux/macOS)
+// Uses --strip-components=1 to remove the top-level directory that llama.cpp releases include
+// (e.g., llama-b7783-bin-ubuntu-vulkan-x64/ wrapper directory)
+static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir) {
+    std::cout << "[LlamaCpp] Extracting tar.gz to " << dest_dir << std::endl;
+    std::string command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1";
+    int result = system(command.c_str());
+    return result == 0;
+}
+#endif
+
+// Helper to extract archive files based on extension
+static bool extract_archive(const std::string& archive_path, const std::string& dest_dir) {
+    // Check if it's a tar.gz file
+    if (archive_path.size() > 7 && 
+        archive_path.substr(archive_path.size() - 7) == ".tar.gz") {
+#ifdef _WIN32
+        // tar.gz not expected on Windows, but handle gracefully
+        std::cerr << "[LlamaCpp] ERROR: tar.gz files not supported on Windows" << std::endl;
+        return false;
+#else
+        return extract_tarball(archive_path, dest_dir);
+#endif
+    }
+    // Default to ZIP extraction
+    return extract_zip(archive_path, dest_dir);
+}
+
 void LlamaCppServer::install(const std::string& backend) {
     std::string install_dir;
     std::string version_file;
