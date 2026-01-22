@@ -207,7 +207,8 @@ class TestServerIntegration(unittest.TestCase):
             input=TEST_MODEL,
             server_url=SERVER_URL,
         )
-        state = AccuracyMMLU().run(state, ntrain=5, tests=subject)
+        # Use max_evals=1 to keep test fast
+        state = AccuracyMMLU().run(state, ntrain=5, tests=subject, max_evals=1)
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
         self.assertGreaterEqual(stats[f"mmlu_{subject[0]}_accuracy"], 0)
