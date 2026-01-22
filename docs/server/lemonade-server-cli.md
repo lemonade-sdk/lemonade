@@ -75,7 +75,7 @@ These settings can also be provided via environment variables that Lemonade Serv
 
 #### Custom Backend Binaries
 
-You can provide your own `llama-server` or `whisper-server` binary by setting the full path via the following environment variables:
+You can provide your own `llama-server`, `whisper-server`, or `ryzenai-server` binary by setting the full path via the following environment variables:
 
 | Environment Variable | Description |
 |---------------------|-------------|
@@ -83,6 +83,7 @@ You can provide your own `llama-server` or `whisper-server` binary by setting th
 | `LEMONADE_LLAMACPP_VULKAN_BIN` | Path to custom `llama-server` binary for Vulkan backend |
 | `LEMONADE_LLAMACPP_CPU_BIN` | Path to custom `llama-server` binary for CPU backend |
 | `LEMONADE_WHISPERCPP_BIN` | Path to custom `whisper-server` binary |
+| `LEMONADE_RYZENAI_SERVER_BIN` | Path to custom `ryzenai-server` binary for NPU/Hybrid models |
 
 **Note:** These environment variables do not override the `--llamacpp` option. They allow you to specify an alternative binary for specific backends while still using the standard backend selection mechanism.
 
