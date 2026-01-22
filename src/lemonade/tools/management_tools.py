@@ -230,7 +230,8 @@ class Cache(ManagementTool):
             else:
                 raise exp.CacheError(
                     f"No build found with name: {build}. "
-                    "Try running `lemonade-eval cache --list` to see the builds in your build cache."
+                    "Try running `lemonade-eval cache --list` to see the builds "
+                    "in your build cache."
                 )
 
         print()
