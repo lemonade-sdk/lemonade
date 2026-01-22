@@ -1,5 +1,6 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
 #include <lemon/version.h>
 #include <httplib.h>
@@ -383,7 +384,65 @@ int TrayApp::run() {
             return 0;
         }
 
-        // Tray-only mode: just show tray connected to existing server
+#ifdef __APPLE__
+        // macOS: Tray mode - show tray, starting server service if necessary
+        // Check if server service is already running
+        bool server_running = LemonadeServiceManager::isServerActive();
+        if (server_running) {
+            // Server is already running - get its port and connect
+            auto [pid, running_port] = get_server_info();
+            if (running_port != 0) {
+                std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
+
+                // Create server manager to communicate with running server
+                server_manager_ = std::make_unique<ServerManager>();
+                server_manager_->set_port(running_port);
+                config_.port = running_port;  // Update config to match running server
+
+                // Use localhost to connect (works regardless of what the server is bound to)
+                if (config_.host.empty() || config_.host == "0.0.0.0") {
+                    config_.host = "localhost";
+                }
+
+                // Continue to tray initialization below (skip server startup)
+            } else {
+                std::cerr << "Error: Server service is active but no port found" << std::endl;
+                return 1;
+            }
+        } else {
+            // Server is not running - start the service
+            std::cout << "Starting Lemonade Server service..." << std::endl;
+            LemonadeServiceManager::startServer();
+
+            // Wait for the service to start (up to 30 seconds)
+            int max_wait = 30;
+            for (int i = 0; i < max_wait; ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                auto [pid, running_port] = get_server_info();
+                if (running_port != 0) {
+                    std::cout << "Server service started on port " << running_port << std::endl;
+
+                    // Create server manager to communicate with running server
+                    server_manager_ = std::make_unique<ServerManager>();
+                    server_manager_->set_port(running_port);
+                    config_.port = running_port;  // Update config to match running server
+
+                    // Use localhost to connect (works regardless of what the server is bound to)
+                    if (config_.host.empty() || config_.host == "0.0.0.0") {
+                        config_.host = "localhost";
+                    }
+
+                    // Continue to tray initialization below
+                    break;
+                }
+                if (i == max_wait - 1) {
+                    std::cerr << "Error: Server service failed to start within 30 seconds" << std::endl;
+                    return 1;
+                }
+            }
+        }
+#else
+        // Other platforms: Tray-only mode - just show tray connected to existing server
         // Check if server is already running
         auto [pid, running_port] = get_server_info();
         if (running_port == 0) {
@@ -406,6 +465,7 @@ int TrayApp::run() {
         std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
 
         // Continue to tray initialization below (skip server startup)
+#endif
     } else {
         std::cerr << "Error: Unknown command '" << config_.command << "'\n" << std::endl;
         print_usage();
@@ -2008,30 +2068,34 @@ Menu TrayApp::create_menu() {
 
 #ifdef __APPLE__
     // Service Control menu items (macOS only)
-    auto [pid, port] = get_server_info();
-    bool service_running = (port != 0);
+    bool server_running = LemonadeServiceManager::isServerActive();
+    bool server_enabled = LemonadeServiceManager::isServerEnabled();
 
-    if (service_running) {
+    // Show Start/Stop Service based on running state
+    if (server_running) {
         menu.add_item(MenuItem::Action("Stop Service", [this]() {
-            system("launchctl stop com.lemonade.server");
+            LemonadeServiceManager::stopServer();
             build_menu();
         }));
     } else {
         menu.add_item(MenuItem::Action("Start Service", [this]() {
-            system("launchctl start com.lemonade.server");
+            LemonadeServiceManager::startServer();
             build_menu();
         }));
     }
 
-    menu.add_item(MenuItem::Action("Enable Service", [this]() {
-        system("launchctl load /Library/LaunchDaemons/com.lemonade.server.plist && launchctl load /Library/LaunchDaemons/com.lemonade.tray.plist");
-        build_menu();
-    }));
-
-    menu.add_item(MenuItem::Action("Disable Service", [this]() {
-        system("launchctl unload /Library/LaunchDaemons/com.lemonade.server.plist && launchctl unload /Library/LaunchDaemons/com.lemonade.tray.plist");
-        build_menu();
-    }));
+    // Show Enable/Disable Service based on enabled state
+    if (server_enabled) {
+        menu.add_item(MenuItem::Action("Disable Service", [this]() {
+            LemonadeServiceManager::disableServer();
+            build_menu();
+        }));
+    } else {
+        menu.add_item(MenuItem::Action("Enable Service", [this]() {
+            LemonadeServiceManager::enableServer();
+            build_menu();
+        }));
+    }
 #endif
 
     // Port submenu
@@ -2280,12 +2344,30 @@ void TrayApp::on_upgrade() {
     std::cout << "Upgrade functionality not yet implemented" << std::endl;
 }
 
+void TrayApp::send_unload_command() {
+#ifdef __APPLE__
+    // On macOS, send HTTP unload command directly to the server
+    if (server_manager_) {
+        try {
+            std::cout << "Sending unload command to server..." << std::endl;
+            server_manager_->make_http_request("/api/v1/unload", "POST", "", 30);
+            std::cout << "Unload command sent successfully" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to send unload command: " << e.what() << std::endl;
+        }
+    }
+#endif
+}
+
 void TrayApp::on_quit() {
     std::cout << "Quitting application..." << std::endl;
 #ifdef __APPLE__
     // On macOS, disable the service first before quitting
     std::cout << "Disabling service auto-start..." << std::endl;
-    system("launchctl unload /Library/LaunchDaemons/com.lemonade.server.plist");
+    LemonadeServiceManager::performFullQuit();
+
+    // Send UnloadModels command to the lemonade server
+    send_unload_command();
 #endif
     shutdown();
 }

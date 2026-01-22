@@ -72,6 +72,20 @@ set(COMMON_SOURCES
     platform/tray_factory.cpp
 )
 
+# macOS-specific sources
+if(APPLE)
+    list(APPEND COMMON_SOURCES
+        LemonadeServiceManager.mm
+    )
+
+    # Enable Objective-C++ compilation for macOS files
+    set_source_files_properties(
+        LemonadeServiceManager.mm
+        PROPERTIES
+        COMPILE_FLAGS "-x objective-c++"
+    )
+endif()
+
 # Add version resource file on Windows
 if(WIN32)
     list(APPEND COMMON_SOURCES version.rc)

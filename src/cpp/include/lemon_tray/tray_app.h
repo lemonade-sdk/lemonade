@@ -126,6 +126,7 @@ private:
     void launch_electron_app();
     bool find_electron_app();
     void show_notification(const std::string& title, const std::string& message);
+    void send_unload_command();
     std::string get_loaded_model();
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();

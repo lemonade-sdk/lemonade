@@ -16,11 +16,11 @@
     <true/>
 
     <key>KeepAlive</key>
-    <true/>
+    <false/>
 
     <key>StandardOutPath</key>
-    <string>/var/log/lemonade/lemonade-server.out.log</string>
+    <string>/tmp/lemonade-server.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/lemonade/lemonade-server.err.log</string>
+    <string>/tmp/lemonade-server.err.log</string>
 </dict>
 </plist>

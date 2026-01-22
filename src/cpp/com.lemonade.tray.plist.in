@@ -15,7 +15,7 @@
     <true/>
 
     <key>KeepAlive</key>
-    <true/>
+    <false/>
 
     <key>StandardOutPath</key>
     <string>/tmp/lemonade-tray.out.log</string>

@@ -189,13 +189,6 @@ void MacOSTray::set_menu(const Menu& menu) {
                 [trayImpl.menu addItem:menuItem];
             }
         }
-
-        [trayImpl.menu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
-                                                          action:@selector(terminate:)
-                                                   keyEquivalent:@"q"];
-        [quitItem setTarget:NSApp];
-        [trayImpl.menu addItem:quitItem];
     });
 }
 
