@@ -47,6 +47,7 @@ def get_available_profilers(warn_missing=False):
     return profilers
 
 
+from lemonade.tools.oga.load import OgaLoad
 from lemonade.tools.server_load import Load as ServerLoad
 from lemonade.tools.server_bench import ServerBench
 
@@ -63,6 +64,7 @@ def main():
 
     # List the available tools
     tools = [
+        OgaLoad,
         ServerLoad,
         ServerBench,
         AccuracyMMLU,

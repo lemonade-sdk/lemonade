@@ -14,6 +14,7 @@ setup(
         "lemonade.profilers",
         "lemonade.common",
         "lemonade.tools",
+        "lemonade.tools.oga",
         "lemonade.tools.report",
     ],
     install_requires=[
