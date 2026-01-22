@@ -39,7 +39,7 @@ cache_dir = None
 corpus_dir = None
 
 # Test model - Lemonade Server will download this automatically
-TEST_MODEL = "Llama-3.2-1B-Instruct-GGUF"
+TEST_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 SERVER_URL = os.getenv("LEMONADE_SERVER_URL", "http://localhost:8000")
 
 
@@ -115,9 +115,7 @@ class TestServerIntegration(unittest.TestCase):
             iterations=2,
             warmup_iterations=1,
             output_tokens=128,
-            prompts=[
-                "Hello, I am a test prompt that is long enough to get meaningful metrics."
-            ],
+            prompts=["Tell me an extremely long story about pirates."],
         )
 
         # Check if we got valid metrics
@@ -252,9 +250,10 @@ class TestServerIntegration(unittest.TestCase):
             input=TEST_MODEL,
             server_url=SERVER_URL,
         )
+        # Use gsm8k which uses generate_until (doesn't require logprobs)
         state = LMEvalHarness().run(
             state,
-            task="mmlu_abstract_algebra",
+            task="gsm8k",
             limit=1,
             num_fewshot=0,
         )

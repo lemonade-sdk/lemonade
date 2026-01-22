@@ -247,6 +247,79 @@ class LMEvalHarness(Tool):
         except (IOError, json.JSONDecodeError) as e:
             printing.log_error(f"Error processing results: {e}")
 
+    def _get_tokenizer_repo(self, server_url: str, model_name: str) -> str:
+        """
+        Get the HuggingFace repo that contains the tokenizer for a model.
+
+        For GGUF models, the checkpoint repo often doesn't have tokenizer files,
+        so we query HuggingFace API to find the base_model which has the tokenizer.
+
+        Args:
+            server_url: URL of the Lemonade Server
+            model_name: Name of the model in Lemonade
+
+        Returns:
+            HuggingFace repo ID that contains the tokenizer
+        """
+        # Step 1: Get checkpoint from Lemonade server
+        hf_repo = model_name  # Default fallback
+        try:
+            model_response = requests.get(
+                f"{server_url}/api/v1/models/{model_name}", timeout=10
+            )
+            if model_response.ok:
+                model_info = model_response.json()
+                checkpoint = model_info.get("checkpoint", "")
+                # Extract HF repo from checkpoint (format: "repo/name:variant")
+                if checkpoint and "/" in checkpoint:
+                    hf_repo = checkpoint.split(":")[0]
+        except requests.exceptions.RequestException:
+            printing.log_warning(
+                f"Could not fetch model info from server: {model_name}"
+            )
+            return model_name
+
+        # Step 2: Query HuggingFace API for base_model (which has the tokenizer)
+        try:
+            hf_api_url = f"https://huggingface.co/api/models/{hf_repo}"
+            hf_response = requests.get(hf_api_url, timeout=15)
+            if hf_response.ok:
+                hf_info = hf_response.json()
+                # Check cardData.base_model first (most reliable)
+                card_data = hf_info.get("cardData", {})
+                base_model = card_data.get("base_model")
+                if base_model:
+                    # base_model can be a string or list
+                    if isinstance(base_model, list) and base_model:
+                        tokenizer_repo = base_model[0]
+                    elif isinstance(base_model, str):
+                        tokenizer_repo = base_model
+                    else:
+                        tokenizer_repo = hf_repo
+                    printing.log_info(
+                        f"Using tokenizer from base model: {tokenizer_repo}"
+                    )
+                    return tokenizer_repo
+
+                # Fallback: check tags for base_model:
+                tags = hf_info.get("tags", [])
+                for tag in tags:
+                    if tag.startswith("base_model:") and not tag.startswith(
+                        "base_model:quantized:"
+                    ):
+                        tokenizer_repo = tag.replace("base_model:", "")
+                        printing.log_info(
+                            f"Using tokenizer from base model tag: {tokenizer_repo}"
+                        )
+                        return tokenizer_repo
+
+        except requests.exceptions.RequestException as e:
+            printing.log_warning(f"Could not query HuggingFace API: {e}")
+
+        # Fallback to the checkpoint repo itself
+        printing.log_info(f"Using tokenizer from checkpoint: {hf_repo}")
+        return hf_repo
+
     def run(
         self,
         state: State,
@@ -300,9 +373,9 @@ class LMEvalHarness(Tool):
                 "The model must be loaded via the 'load' tool."
             )
 
-        checkpoint = getattr(state, "checkpoint", "unknown")
+        model_name = getattr(state, "checkpoint", "unknown")
 
-        # Verify server is still healthy
+        # Verify server is still healthy and get model info for tokenizer
         printing.log_info(f"Verifying server at {server_url}...")
         try:
             response = requests.get(f"{server_url}/api/v1/health", timeout=10)
@@ -313,6 +386,10 @@ class LMEvalHarness(Tool):
                 f"Cannot connect to Lemonade Server at {server_url}: {e}\n"
                 "Make sure the server is still running."
             )
+
+        # Get the HuggingFace base model to use as tokenizer source
+        # lm-eval needs a valid HF repo with tokenizer files (not GGUF repos)
+        tokenizer_repo = self._get_tokenizer_repo(server_url, model_name)
 
         # Set up output path
         if output_path is None:
@@ -338,8 +415,9 @@ class LMEvalHarness(Tool):
             task,
             "--model_args",
             (
-                f"model={checkpoint},"
+                f"model={model_name},"
                 f"base_url={server_url}/api/v1/completions,"
+                f"tokenizer={tokenizer_repo},"
                 f"num_concurrent=1,"
                 f"max_retries=5,"
                 f"retry_timeout=10,"
