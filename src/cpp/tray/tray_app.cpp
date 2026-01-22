@@ -1,5 +1,7 @@
 #include "lemon_tray/tray_app.h"
+#ifdef _WIN32
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
+#endif
 #include "LemonadeServiceManager.h"  // For macOS service management
 #include <lemon/single_instance.h>
 #include <lemon/version.h>
@@ -566,7 +568,7 @@ int TrayApp::run() {
     if (auto* windows_tray = dynamic_cast<WindowsTray*>(tray_.get())) {
         windows_tray->set_menu_update_callback([this]() {
             DEBUG_LOG(this, "Refreshing menu state from server...");
-            build_menu();
+            refresh_menu();
         });
     }
 #endif
@@ -614,6 +616,9 @@ int TrayApp::run() {
     // This allows us to handle Ctrl+C cleanly even when tray is running
     DEBUG_LOG(this, "Starting signal monitor thread...");
     signal_monitor_thread_ = std::thread([this]() {
+        #ifdef __APPLE__
+        auto last_tick = std::chrono::steady_clock::now();
+        #endif
         while (!stop_signal_monitor_ && !should_exit_) {
             fd_set readfds;
             FD_ZERO(&readfds);
@@ -621,7 +626,18 @@ int TrayApp::run() {
             
             struct timeval tv = {0, 100000};  // 100ms timeout
             int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
-            
+            #ifdef __APPLE__
+            // Check if 5 seconds have passed, refresh menu
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
+
+                DEBUG_LOG(this, "Checking if menu needs refresh");
+                refresh_menu();
+
+                // Reset the tracker
+                last_tick = now;
+            }
+            #endif
             if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
                 // Signal received (SIGINT from Ctrl+C)
                 char sig;
@@ -638,11 +654,10 @@ int TrayApp::run() {
         DEBUG_LOG(this, "Signal monitor thread exiting");
     });
 #endif
-    
     DEBUG_LOG(this, "Menu built, entering event loop...");
     // Run tray event loop
     tray_->run();
-    
+    //Initialize thread to constantly update the tray models
     DEBUG_LOG(this, "Event loop exited");
     return 0;
 }
@@ -1960,9 +1975,41 @@ void TrayApp::stop_server() {
 
 void TrayApp::build_menu() {
     if (!tray_) return;
-    
+
     Menu menu = create_menu();
     tray_->set_menu(menu);
+
+    // Cache current state for refresh comparisons
+    last_menu_loaded_models_ = get_all_loaded_models();
+    last_menu_available_models_ = get_downloaded_models();
+}
+
+void TrayApp::refresh_menu() {
+    if (!tray_) return;
+
+    // Only refresh if something has actually changed
+    if (menu_needs_refresh()) {
+        DEBUG_LOG(this, "Menu state changed, rebuilding menu");
+        build_menu();
+    }
+}
+
+bool TrayApp::menu_needs_refresh() {
+    // Check if loaded models have changed
+    auto current_loaded = get_all_loaded_models();
+    if (current_loaded != last_menu_loaded_models_) {
+        return true;
+    }
+
+    // Check if available models have changed
+    auto current_available = get_downloaded_models();
+    if (current_available != last_menu_available_models_) {
+        return true;
+    }
+
+    // Could add more checks here for other dynamic content
+
+    return false;
 }
 
 Menu TrayApp::create_menu() {
@@ -2068,16 +2115,16 @@ Menu TrayApp::create_menu() {
 
 #ifdef __APPLE__
     // Service Control menu items (macOS only)
-    bool server_running = LemonadeServiceManager::isServerActive();
-    bool server_enabled = LemonadeServiceManager::isServerEnabled();
+    bool service_running = LemonadeServiceManager::isServerActive();
+    bool service_enabled = LemonadeServiceManager::isServerEnabled();
 
     // Show Start/Stop Service based on running state
-    if (server_running) {
+    if (service_running) {
         menu.add_item(MenuItem::Action("Stop Service", [this]() {
             LemonadeServiceManager::stopServer();
             build_menu();
         }));
-    } else {
+    } else if(service_enabled) {
         menu.add_item(MenuItem::Action("Start Service", [this]() {
             LemonadeServiceManager::startServer();
             build_menu();
@@ -2085,7 +2132,7 @@ Menu TrayApp::create_menu() {
     }
 
     // Show Enable/Disable Service based on enabled state
-    if (server_enabled) {
+    if (service_enabled) {
         menu.add_item(MenuItem::Action("Disable Service", [this]() {
             LemonadeServiceManager::disableServer();
             build_menu();

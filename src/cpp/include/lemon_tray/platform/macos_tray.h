@@ -31,6 +31,7 @@ private:
     // TODO: Add macOS-specific implementation details
     // Will use NSStatusBar and NSMenu via Objective-C++
     void* impl_; // Pointer to Objective-C implementation
+    std::string tooltip_;
     std::string app_name_;
     std::string icon_path_;
     std::string log_level_;

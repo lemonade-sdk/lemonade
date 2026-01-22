@@ -53,6 +53,10 @@ struct ModelInfo {
     std::string id;
     std::string checkpoint;
     std::string recipe;
+
+    bool operator==(const ModelInfo& other) const {
+        return id == other.id && checkpoint == other.checkpoint && recipe == other.recipe;
+    }
 };
 
 // Information about a loaded model from the health endpoint
@@ -63,6 +67,12 @@ struct LoadedModelInfo {
     std::string type;  // "llm", "embedding", or "reranking"
     std::string device;  // e.g., "gpu", "npu", "gpu npu"
     std::string backend_url;
+
+    bool operator==(const LoadedModelInfo& other) const {
+        return model_name == other.model_name && checkpoint == other.checkpoint &&
+               last_use == other.last_use && type == other.type &&
+               device == other.device && backend_url == other.backend_url;
+    }
 };
 
 class TrayApp {
@@ -108,7 +118,9 @@ private:
     
     // Menu building
     void build_menu();
+    void refresh_menu();
     Menu create_menu();
+    bool menu_needs_refresh();
     
     // Menu actions
     void on_load_model(const std::string& model_name);
@@ -170,7 +182,11 @@ private:
     // Log tail thread for console output (when show_console is true)
     std::atomic<bool> stop_tail_thread_{false};
     std::thread log_tail_thread_;
-    
+
+    // Menu refresh caching
+    std::vector<LoadedModelInfo> last_menu_loaded_models_;
+    std::vector<ModelInfo> last_menu_available_models_;
+
     void tail_log_to_console();
 
 #ifndef _WIN32

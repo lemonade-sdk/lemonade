@@ -6,7 +6,7 @@
       "type": "lldb-dap",
       "request": "launch",
       "program": "${workspaceFolder}/build/lemonade-server",
-      "args": ["serve", "--no-tray"],
+      "args": ["tray"],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false
     }
