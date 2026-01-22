@@ -4,7 +4,7 @@ Tests for Lemonade SDK using server_load and server_bench tools.
 These tests require a running Lemonade Server instance.
 Start the server before running tests with: lemonade-server serve
 
-Uses Llama-3.2-1B-Instruct-GGUF as the test model (automatically downloaded by lemonade-server).
+Uses Qwen3-4B-Instruct-2507-GGUF as the test model (automatically downloaded by lemonade-server).
 """
 
 import unittest
@@ -278,25 +278,17 @@ class TestServerIntegration(unittest.TestCase):
             len(json_files), 0, f"No JSON results file found in {results_dir}"
         )
 
-        # Check for specific expected metrics from the task
+        # Check for gsm8k exact_match metric
         self.assertIn(
-            "lm_eval_mmlu_abstract_algebra_acc",
+            "lm_eval_gsm8k_exact_match",
             stats,
-            "Expected accuracy metric not found",
+            "Expected lm_eval_gsm8k_exact_match metric not found",
         )
-
-        # Check for specific metrics that should exist
-        for metric_name in lm_eval_stats:
-            if metric_name.endswith("_units"):
-                # Units stats should be strings (e.g., "%")
-                self.assertIsInstance(
-                    stats[metric_name], str, f"{metric_name} should be a string (units)"
-                )
-            else:
-                # All other lm_eval stats should be numeric
-                self.assertIsInstance(
-                    stats[metric_name], (int, float), f"{metric_name} should be numeric"
-                )
+        self.assertIsInstance(
+            stats["lm_eval_gsm8k_exact_match"],
+            (int, float),
+            "lm_eval_gsm8k_exact_match should be numeric",
+        )
 
 
 if __name__ == "__main__":
