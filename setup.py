@@ -21,8 +21,6 @@ setup(
         "lemonade.tools.report",
         "lemonade.tools.server.utils",
         "lemonade.tools.server",
-        "lemonade_install",
-        "lemonade_server",
     ],
     install_requires=[
         # Minimal dependencies required for end-users who are running
@@ -87,10 +85,7 @@ setup(
     classifiers=[],
     entry_points={
         "console_scripts": [
-            "lemonade=lemonade:lemonadecli",
-            "lemonade-install=lemonade_install:installcli",
-            "lemonade-server-dev=lemonade_server.cli:main",
-            "lsdev=lemonade_server.cli:developer_entrypoint",
+            "lemonade-eval=lemonade:lemonadecli",
         ]
     },
     python_requires=">=3.10, <3.14",
@@ -98,7 +93,6 @@ setup(
     long_description_content_type="text/markdown",
     include_package_data=True,
     package_data={
-        "lemonade_server": ["server_models.json"],
         "lemonade": ["tools/server/static/**/*", "backend_versions.json"],
     },
 )
