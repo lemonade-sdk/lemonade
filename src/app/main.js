@@ -346,127 +346,47 @@ const ensureTrayRunning = () => {
       return;
     }
 
-    // Get the current user ID for the target specifier
-    exec('id -u', { timeout: 2000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Could not get user ID:', error);
-        resolve();
-        return;
-      }
+    // On macOS, always launch the tray directly
+    const serverBinary = findLemonadeServerBinary();
+    if (!serverBinary) {
+      console.error('Could not find lemonade-server binary for tray launch');
+      resolve();
+      return;
+    }
 
-      const uid = stdout.trim();
-      const target = `gui/${uid}/com.lemonade.tray`;
-
-      // Check if lemonade-server tray service is loaded and running
-      exec(`launchctl print ${target}`, { timeout: 2000 }, (error, stdout, stderr) => {
-        if (error || !stdout.includes('state = running')) {
-          // Tray service not loaded or not running, try to load and start it
-          console.warn('Tray service not running on macOS, loading and starting lemonade-server tray service...');
-
-          const serverBinary = findLemonadeServerBinary();
-          if (!serverBinary) {
-            console.error('Could not find lemonade-server binary');
-            resolve();
-            return;
-          }
-
-          console.log('Found lemonade-server at:', serverBinary);
-
-          // Find the plist file (assume it's in the same directory as the binary or common locations)
-          const plistPaths = [
-            path.join(path.dirname(serverBinary), 'com.lemonade.tray.plist'),
-            '/Library/LaunchAgents/com.lemonade.tray.plist',
-            path.join(os.homedir(), 'Library/LaunchAgents/com.lemonade.tray.plist')
-          ];
-
-          let plistPath = null;
-          for (const p of plistPaths) {
-            try {
-              if (fs.existsSync(p)) {
-                plistPath = p;
-                break;
-              }
-            } catch (e) {
-              // Continue checking other paths
-            }
-          }
-
-          if (!plistPath) {
-            console.error('Could not find com.lemonade.tray.plist file');
-            // Try to launch tray directly as fallback
-            console.log('Attempting direct tray launch as fallback...');
-            const trayProcess = spawn(serverBinary, ['tray'], {
-              detached: true,
-              stdio: 'ignore'
-            });
-            trayProcess.unref();
-            setTimeout(() => resolve(), 2000);
-            return;
-          }
-
-          console.log('Found tray plist at:', plistPath);
-
-          // Load the service
-          exec(`launchctl bootstrap gui/${uid} "${plistPath}"`, { timeout: 5000 }, (loadError, loadStdout, loadStderr) => {
-            if (loadError) {
-              console.error('Failed to load tray service:', loadError);
-              // Try direct launch as fallback
-              const trayProcess = spawn(serverBinary, ['tray'], {
-                detached: true,
-                stdio: 'ignore'
-              });
-              trayProcess.unref();
-              setTimeout(() => resolve(), 2000);
-              return;
-            }
-
-            // Enable and start the service
-            exec(`launchctl enable ${target} && launchctl kickstart -k ${target}`, { timeout: 5000 }, (startError, startStdout, startStderr) => {
-              if (startError) {
-                console.error('Failed to start tray service:', startError);
-                // Try direct launch as fallback
-                const trayProcess = spawn(serverBinary, ['tray'], {
-                  detached: true,
-                  stdio: 'ignore'
-                });
-                trayProcess.unref();
-                setTimeout(() => resolve(), 2000);
-                return;
-              }
-
-              console.log('Tray service started successfully');
-              // Wait a bit for service to fully start
-              setTimeout(() => resolve(), 2000);
-            });
-          });
-        } else {
-          // Tray service is running
-          console.log('Tray service is already running');
-          resolve();
-        }
-      });
+    console.log('Launching lemonade-server tray at:', serverBinary);
+    const trayProcess = spawn(serverBinary, ['tray'], {
+      detached: true,
+      stdio: 'ignore'
     });
+    trayProcess.unref();
+
+    // Wait a bit for tray to start
+    setTimeout(() => {
+      console.log('Tray launch initiated');
+      resolve();
+    }, 2000);
   });
 };
 
 const discoverServerPort = () => {
   return new Promise((resolve) => {
-    // On macOS, ensure tray is running first
+    // Always ensure tray is running on macOS, regardless of server status
     ensureTrayRunning().then(() => {
       exec('lemonade-server status', { timeout: 5000 }, (error, stdout, stderr) => {
         if (error || (stdout && stdout.trim().includes('not running'))) {
-          // On macOS, tray should have started the server, wait a bit more
+          // Server not running, tray should start it
           if (process.platform === 'darwin') {
-            console.warn('Server still not running after ensuring tray, waiting longer...');
+            console.warn('Server not running, tray should start it. Waiting...');
             setTimeout(() => {
               exec('lemonade-server status', { timeout: 5000 }, (error3, stdout3, stderr3) => {
                 if (error3 || (stdout3 && stdout3.trim().includes('not running'))) {
-                  console.warn('Server still not running, using default port 8000');
+                  console.warn('Server still not running after waiting, using default port 8000');
                   resolve(8000);
                   return;
                 }
 
-                // Parse the delayed response
+                // Parse the response
                 try {
                   const output = stdout3.trim();
                   const portMatch = output.match(/port[:\s]+(\d+)/i) ||
@@ -482,10 +402,10 @@ const discoverServerPort = () => {
                     }
                   }
 
-                  console.warn('Could not parse port from delayed status output:', output);
+                  console.warn('Could not parse port from status output:', output);
                   resolve(8000);
                 } catch (parseError) {
-                  console.error('Error parsing delayed status:', parseError);
+                  console.error('Error parsing status:', parseError);
                   resolve(8000);
                 }
               });
@@ -507,7 +427,7 @@ const discoverServerPort = () => {
           const portMatch = output.match(/port[:\s]+(\d+)/i) ||
                            output.match(/localhost:(\d+)/i) ||
                            output.match(/127\.0\.0\.1:(\d+)/i);
-          
+
           if (portMatch && portMatch[1]) {
             const port = parseInt(portMatch[1], 10);
             if (!isNaN(port) && port > 0 && port < 65536) {
