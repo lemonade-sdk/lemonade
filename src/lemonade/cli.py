@@ -111,7 +111,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/eval/README.md""",
         profiler.add_arguments_to_parser(parser)
 
     global_args, tool_instances, evaluation_tools = cli.parse_tools(
-        parser, tools, cli_name="lemonade"
+        parser, tools, cli_name="lemonade-eval"
     )
 
     # Check if any profilers are being requested
@@ -136,7 +136,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/eval/README.md""",
             parser.error(
                 "The first tool in the sequence needs to be one "
                 "of the 'tools that can start a sequence.' Use "
-                "`lemonade -h` to see that list of tools."
+                "`lemonade-eval -h` to see that list of tools."
             )
         # Run the evaluation tools as a build
         sequence = Sequence(tools=tool_instances, profilers=profiler_instances)

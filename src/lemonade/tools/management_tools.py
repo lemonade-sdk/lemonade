@@ -121,7 +121,7 @@ class Cache(ManagementTool):
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        # NOTE: `--cache-dir` is set as a global input to the lemonade CLI and
+        # NOTE: `--cache-dir` is set as a global input to the lemonade-eval CLI and
         # passed directly to the `run()` method
 
         parser = __class__.helpful_parser(
@@ -230,7 +230,7 @@ class Cache(ManagementTool):
             else:
                 raise exp.CacheError(
                     f"No build found with name: {build}. "
-                    "Try running `lemonade cache --list` to see the builds in your build cache."
+                    "Try running `lemonade-eval cache --list` to see the builds in your build cache."
                 )
 
         print()

@@ -48,7 +48,7 @@ Please refer to the [installation guide](https://lemonade-server.ai/install_opti
 In a terminal with your environment activated, run the following command:
 
 ```powershell
-lemonade-server-dev serve
+lemonade-server serve
 ```
 
 This starts a local LLM server on port 8000 by default.
@@ -98,7 +98,7 @@ These tests evaluate a model's ability to assign probabilities to different poss
 In a terminal with your environment activated, run the following command:
 
 ```powershell
-lemonade-server-dev serve
+lemonade-server serve
 ```
 **Step 3:** Load a Model
 
@@ -125,7 +125,7 @@ These tests evaluate a model's ability to predict text by measuring the perplexi
 In a terminal with your environment activated, run the following command:
 
 ```powershell
-lemonade-server-dev serve
+lemonade-server serve
 ```
 **Step 3:** Load a Model
 
@@ -152,7 +152,7 @@ These tests evaluate a model's ability to generate full responses to prompts. Th
 In a terminal with your environment activated, run the following command:
 
 ```powershell
-lemonade-server-dev serve
+lemonade-server serve
 ```
 **Step 3:** Load a Model
 
@@ -176,9 +176,9 @@ lm-eval provides detailed results for each benchmark, typically including:
 
 Results are provided in a structured format at the end of evaluation, with both detailed and summary statistics.
 
-## Future Work
+## lemonade-eval Integration
 
-- **Integrate lm-eval as a Lemonade tool**: Direct integration into the Lemonade CLI ecosystem.
+lm-eval-harness is also available as a tool in the `lemonade-eval` CLI. See the [lemonade-eval documentation](../../eval/lm-eval.md) for details on using `lm-eval-harness` directly with models loaded on Lemonade Server.
 
 ## References
 

@@ -27,7 +27,7 @@ class ServerBench(Bench):
         - Performance statistics including TTFT, tokens/second, etc.
 
     Example usage:
-        lemonade -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000 bench
+        lemonade-eval -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000 bench
     """
 
     unique_name = "bench"
