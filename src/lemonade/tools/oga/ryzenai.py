@@ -9,7 +9,6 @@ import site
 import sys
 
 from packaging.version import Version
-import onnxruntime_genai as og
 
 # NPU Driver configuration
 NPU_DRIVER_DOWNLOAD_URL = (
@@ -41,6 +40,8 @@ def get_ryzenai_version_info():
             if os.path.exists(oga_dir):
                 os.add_dll_directory(oga_dir)
                 break
+
+    import onnxruntime_genai as og  # pylint: disable=import-outside-toplevel
 
     if Version(og.__version__) >= Version("0.7.0"):
         oga_path = os.path.dirname(og.__file__)
