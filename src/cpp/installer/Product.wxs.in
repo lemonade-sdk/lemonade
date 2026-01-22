@@ -125,9 +125,7 @@
       <Directory Id="INSTALLDIR" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
-            <Directory Id="StaticDir" Name="static">
-              <Directory Id="JsDir" Name="js" />
-            </Directory>
+            <Directory Id="StaticDir" Name="static" />
           </Directory>
         </Directory>
 <?if $(var.IncludeElectron) = 1 ?>
@@ -187,32 +185,8 @@
         <File Id="favicon.ico" Source="$(var.SourceDir)\build\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
       
-      <Component Id="LogsHtml" Directory="StaticDir" Guid="d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a">
-        <File Id="logs.html" Source="$(var.SourceDir)\build\Release\resources\static\logs.html" KeyPath="yes" />
-      </Component>
-      
       <Component Id="IndexHtml" Directory="StaticDir" Guid="f3a4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c">
         <File Id="index.html" Source="$(var.SourceDir)\build\Release\resources\static\index.html" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="StylesCss" Directory="StaticDir" Guid="e2f3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b">
-        <File Id="styles.css" Source="$(var.SourceDir)\build\Release\resources\static\styles.css" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="ChatJs" Directory="JsDir" Guid="a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d">
-        <File Id="chat.js" Source="$(var.SourceDir)\build\Release\resources\static\js\chat.js" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="ModelSettingsJs" Directory="JsDir" Guid="b5c6d7e8-f9a0-4b1c-2d3e-4f5a6b7c8d9e">
-        <File Id="model_settings.js" Source="$(var.SourceDir)\build\Release\resources\static\js\model-settings.js" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="ModelsJs" Directory="JsDir" Guid="c6d7e8f9-a0b1-4c2d-3e4f-5a6b7c8d9e0f">
-        <File Id="models.js" Source="$(var.SourceDir)\build\Release\resources\static\js\models.js" KeyPath="yes" />
-      </Component>
-      
-      <Component Id="SharedJs" Directory="JsDir" Guid="d7e8f9a0-b1c2-4d3e-4f5a-6b7c8d9e0f1a">
-        <File Id="shared.js" Source="$(var.SourceDir)\build\Release\resources\static\js\shared.js" KeyPath="yes" />
       </Component>
     </ComponentGroup>
     
