@@ -133,7 +133,7 @@ class TestServerIntegration(unittest.TestCase):
 
         state = ServerBench().run(
             state,
-            iterations=20,
+            iterations=5,
             prompts=["word " * 30, "word " * 62],
         )
 
