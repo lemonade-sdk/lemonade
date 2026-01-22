@@ -229,130 +229,6 @@ jobs:
             src\cpp\lemonade.msi
           retention-days: 7
 
-  build-ryzenai-server:
-    name: Build RyzenAI Server
-    runs-on: [rai-160-sdk, Windows]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: true
-          fetch-depth: 0
-
-      - name: Cleanup processes
-        uses: ./.github/actions/cleanup-processes-windows
-
-      - name: Install CMake if not available
-        shell: PowerShell
-        run: |
-          # Check if CMake is already installed
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-          
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-              
-              # Download CMake installer
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-              
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
-              
-              # Install CMake silently
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-              
-              # Add CMake to PATH for this session AND future steps
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-              
-              # Persist to GITHUB_PATH for future steps
-              echo $cmakePath >> $env:GITHUB_PATH
-              
-              # Verify installation
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-              
-              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
-
-      - name: Build RyzenAI Server with CMake
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          Write-Host "Building ryzenai-server..." -ForegroundColor Cyan
-          
-          cd src\ryzenai-server
-          
-          # Create build directory
-          if (Test-Path "build") {
-              Remove-Item -Recurse -Force "build"
-          }
-          mkdir build
-          cd build
-          
-          # Configure - Ryzen AI should be at C:\Program Files\RyzenAI\1.6.0
-          cmake .. -G "Visual Studio 17 2022" -A x64
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: CMake configuration failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
-          }
-          
-          # Build
-          cmake --build . --config Release
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: Build failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
-          }
-          
-          # Verify binary exists
-          if (-not (Test-Path "bin\Release\ryzenai-server.exe")) {
-              Write-Host "ERROR: ryzenai-server.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-          
-          Write-Host "ryzenai-server build successful!" -ForegroundColor Green
-
-      - name: Verify RyzenAI Server build
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          $releaseDir = "src\ryzenai-server\build\bin\Release"
-          
-          Write-Host "Verifying ryzenai-server build output..." -ForegroundColor Cyan
-          
-          if (-not (Test-Path "$releaseDir\ryzenai-server.exe")) {
-              Write-Host "ERROR: ryzenai-server.exe not found in $releaseDir" -ForegroundColor Red
-              exit 1
-          }
-          
-          Write-Host "`nListing all files that will be uploaded:" -ForegroundColor Cyan
-          Get-ChildItem $releaseDir -File | ForEach-Object {
-              $sizeMB = [math]::Round($_.Length / 1MB, 2)
-              Write-Host "  - $($_.Name) ($sizeMB MB)" -ForegroundColor Gray
-          }
-          
-          $fileCount = (Get-ChildItem $releaseDir -File | Measure-Object).Count
-          Write-Host "`nFound $fileCount files in release directory" -ForegroundColor Green
-          Write-Host "Contents will be uploaded as artifact (GitHub will zip automatically)" -ForegroundColor Gray
-
-      - name: Upload RyzenAI Server Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: ryzenai-server
-          path: |
-            src/ryzenai-server/build/bin/Release/*.exe
-            src/ryzenai-server/build/bin/Release/*.dll
-            src/ryzenai-server/build/bin/Release/*.pdb
-            src/ryzenai-server/build/bin/Release/AMD_LICENSE
-          retention-days: 7
-
   build-lemonade-server-deb:
     name: Build Lemonade Server .deb Package
     runs-on: ubuntu-latest
@@ -413,11 +289,9 @@ jobs:
 
   test-exe-rai-hybrid-basics:
     name: Test .exe - Basic RAI Hybird Functionality
-    if: false  # Temporarily disabled - ryzenai-server cache path needs fixing
     runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
-      - build-ryzenai-server
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -443,19 +317,6 @@ jobs:
         uses: ./.github/actions/install-lemonade-server-msi
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-
-      - name: Download RyzenAI Serve artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ryzenai-server
-          path: ryzenai-server-files
-
-      - name: Setup RyzenAI Serve
-        uses: ./.github/actions/setup-ryzenai-server
-        with:
-          cache-path: ${{ env.LEMONADE_CACHE_DIR }}
-          artifact-path: ryzenai-server-files
-
 
       - name: Test lemonade-router CLI
         shell: PowerShell
@@ -957,11 +818,9 @@ jobs:
 
   test-exe-rai-cpu:
     name: Test .exe - ryzenai-server CPU
-    if: false  # Temporarily disabled - ryzenai-server cache path needs fixing
     runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
-      - build-ryzenai-server
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -988,18 +847,6 @@ jobs:
         uses: ./.github/actions/install-lemonade-server-msi
         with:
           install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-
-      - name: Download RyzenAI Server artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ryzenai-server
-          path: ryzenai-server-files
-
-      - name: Setup RyzenAI Server
-        uses: ./.github/actions/setup-ryzenai-server
-        with:
-          cache-path: ${{ env.LEMONADE_CACHE_DIR }}
-          artifact-path: ryzenai-server-files
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1617,12 +1464,11 @@ jobs:
       - build-lemonade-server-installer
       - build-lemonade-server-deb
       - build-lemonade-deb-full
-      - build-ryzenai-server
-      # - test-exe-rai-hybrid-basics  # Temporarily disabled
+      - test-exe-rai-hybrid-basics
       - test-exe-flm
       - test-exe-llamacpp-vulkan
       - test-exe-llamacpp-rocm
-      # - test-exe-rai-cpu  # Temporarily disabled
+      - test-exe-rai-cpu
       - test-exe-whisper
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
@@ -1649,19 +1495,6 @@ jobs:
           name: lemonade-deb-full
           path: .
 
-      - name: Download RyzenAI Server Package
-        uses: actions/download-artifact@v4
-        with:
-          name: ryzenai-server
-          path: ryzenai-server-files
-
-      - name: Create ryzenai-server.zip for release
-        run: |
-          cd ryzenai-server-files
-          zip -r ../ryzenai-server.zip *
-          cd ..
-          ls -lh ryzenai-server.zip
-
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -1669,7 +1502,6 @@ jobs:
           ls -lh lemonade.msi
           ls -lh lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb
           ls -lh lemonade_${LEMONADE_VERSION}_amd64.deb
-          ls -lh ryzenai-server.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -1679,6 +1511,5 @@ jobs:
             lemonade.msi
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
-            ryzenai-server.zip
           fail_on_unmatched_files: true
 
