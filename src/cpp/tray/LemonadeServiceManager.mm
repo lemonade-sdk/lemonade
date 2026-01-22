@@ -174,7 +174,7 @@ void LemonadeServiceManager::disableServer() {
 
 void LemonadeServiceManager::performFullQuit() {
     NSLog(@"[Lemonade] Performing Full Quit...");
-    stopServer();
+    //stopServer();
     NSLog(@"[Lemonade] Full Quit Complete.");
 }
 
