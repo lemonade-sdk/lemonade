@@ -44,7 +44,7 @@ jobs:
         uses: psf/black@stable
         with:
           options: "--check --verbose"
-          src: "./src"
+          src: "./src/lemonade"
 
       - name: Lint with PyLint
         shell: bash

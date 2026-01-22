@@ -566,10 +566,8 @@ class OgaLoad(FirstTool):
         else:
             raise ValueError(f"Unsupported device type for model generation: {device}")
 
-        printing.log_info(
-            f"Generating model for device: {device_flag}, \
-            input: {input_model_path}, output: {output_model_path}"
-        )
+        printing.log_info(f"Generating model for device: {device_flag}, \
+            input: {input_model_path}, output: {output_model_path}")
 
         try:
             if device_flag == "npu":
