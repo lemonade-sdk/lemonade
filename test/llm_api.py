@@ -14,6 +14,7 @@ import sys
 import logging
 
 import requests
+import urllib3
 
 from lemonade.state import State
 import lemonade.common.filesystem as fs
