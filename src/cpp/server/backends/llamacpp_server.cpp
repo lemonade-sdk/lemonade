@@ -306,13 +306,13 @@ static bool extract_zip(const std::string& zip_path, const std::string& dest_dir
         return true;
     }
 #elif defined(__APPLE__)
-    // macOS: Use ditto (safest for permissions/resource forks)
-    std::cout << "[LlamaCpp] Extracting with ditto..." << std::endl;
-    command = "ditto -xk \"" + zip_path + "\" \"" + dest_dir + "\"";
+    // macOS: Use tar (native support for .tar.gz)
+    std::cout << "[LlamaCpp] Extracting tarball with tar..." << std::endl;
+    command = "tar -xzf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
 #else
-    // Linux: Use unzip
-    std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
-    command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
+    // Linux: Use tar
+    std::cout << "[LlamaCpp] Extracting tarball to " << dest_dir << std::endl;
+    command = "tar -xzf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
 #endif
     int result = system(command.c_str());
     if (result != 0) {
