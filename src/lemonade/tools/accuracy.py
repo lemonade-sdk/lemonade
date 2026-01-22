@@ -1,24 +1,17 @@
 import argparse
 import json
 import os
-import socket
 import subprocess
 import sys
-import time
 from typing import Optional
+
+import requests
 
 from lemonade.state import State
 from lemonade.tools import Tool
+from lemonade.tools.server_load import ServerAdapter
 import lemonade.common.printing as printing
 import lemonade.common.build as build
-
-
-def is_port_in_use(port, host="localhost"):
-    """
-    Check if a port is in use
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex((host, port)) == 0
 
 
 class LMEvalHarness(Tool):
@@ -34,7 +27,6 @@ class LMEvalHarness(Tool):
             monitor_message="Evaluate model accuracy using ElutherAI's lm-eval-harness"
         )
         self.status_stats = []
-        self.server_runner = None
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
@@ -48,10 +40,6 @@ class LMEvalHarness(Tool):
             type=str,
             required=True,
             help="Task(s) to evaluate on (e.g., gsm8k, mmlu)",
-        )
-
-        parser.add_argument(
-            "--server-port", type=int, default=8000, help="Port to use for the server"
         )
 
         parser.add_argument(
@@ -263,14 +251,25 @@ class LMEvalHarness(Tool):
         self,
         state: State,
         task: str,
-        server_port: int = 8000,
-        server_host: str = "localhost",
         num_fewshot: int = 0,
         limit: Optional[int] = None,
         log_samples: bool = False,
         output_path: Optional[str] = None,
     ) -> State:
+        """
+        Run lm-eval-harness against a model loaded on Lemonade Server.
 
+        Requires: Model must be loaded via the `load` tool first, which sets
+        state.model to a ServerAdapter and state.server_url to the server URL.
+
+        Args:
+            state: State with model loaded via `load` tool
+            task: Task(s) to evaluate (e.g., gsm8k, mmlu)
+            num_fewshot: Number of few-shot examples
+            limit: Limit number of examples per task
+            log_samples: Whether to log samples
+            output_path: Path to save results
+        """
         # Check if lm-eval is available
         try:
             # pylint: disable=unused-import
@@ -285,15 +284,34 @@ class LMEvalHarness(Tool):
             printing.log_error(error_msg)
             raise ImportError(error_msg)
 
-        import requests
-        from lemonade.tools.server.utils.thread import ServerRunner
-
-        model = state.model
-        tokenizer = state.tokenizer
-
-        if model is None or tokenizer is None:
+        # Validate that model was loaded via server_load.py
+        if not isinstance(state.model, ServerAdapter):
             raise ValueError(
-                "Model and tokenizer must be loaded in state before running lm-eval-harness"
+                "lm-eval-harness requires a model loaded via the 'load' tool. "
+                "Use: lemonade-eval -i <model-name> load lm-eval-harness --task <task>\n"
+                "Make sure Lemonade Server is running with 'lemonade-server serve'."
+            )
+
+        # Get server URL from state (set by server_load.py)
+        server_url = getattr(state, "server_url", None)
+        if not server_url:
+            raise ValueError(
+                "Server URL not found in state. "
+                "The model must be loaded via the 'load' tool."
+            )
+
+        checkpoint = getattr(state, "checkpoint", "unknown")
+
+        # Verify server is still healthy
+        printing.log_info(f"Verifying server at {server_url}...")
+        try:
+            response = requests.get(f"{server_url}/api/v1/health", timeout=10)
+            response.raise_for_status()
+            printing.log_info("Server is healthy")
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(
+                f"Cannot connect to Lemonade Server at {server_url}: {e}\n"
+                "Make sure the server is still running."
             )
 
         # Set up output path
@@ -304,59 +322,6 @@ class LMEvalHarness(Tool):
 
         os.makedirs(output_path, exist_ok=True)
 
-        # Check if port is already in use
-        if is_port_in_use(server_port, server_host):
-            error_msg = (
-                f"Port {server_port} is already in use. "
-                "Please close all applications using this port and try again."
-            )
-            printing.log_error(error_msg)
-            raise RuntimeError(error_msg)
-
-        # Retroactively determine recipe based on model type to select correct iterator
-        # The model is already loaded in server, so we only need recipe for iterator selection
-        checkpoint = getattr(state, "checkpoint", "unknown")
-        if "OrtGenaiModel" in str(type(model)):
-            recipe = "oga-"
-        else:
-            recipe = "unknown"
-
-        # Start the server thread
-        self.server_runner = ServerRunner(
-            model=model,
-            tokenizer=tokenizer,
-            checkpoint=checkpoint,
-            recipe=recipe,
-            host=server_host,
-            port=server_port,
-        )
-        self.server_runner.start()
-
-        # Wait for server initialization
-        printing.log_info("Waiting for server initialization...")
-
-        # Wait for server to start and be responsive
-        server_url = f"http://{server_host}:{server_port}"
-        max_retries = 30
-        retry_delay = 1
-
-        printing.log_info(f"Checking if server is available at {server_url}...")
-        for i in range(max_retries):
-            try:
-                response = requests.get(f"{server_url}/api/v0/health", timeout=2)
-                if response.status_code == 200:
-                    printing.log_info(f"Server is ready after {i+1} attempts")
-                    break
-            except requests.exceptions.RequestException:
-                if i < max_retries - 1:
-                    time.sleep(retry_delay)
-                else:
-                    printing.log_error(
-                        f"Server did not start after {max_retries} attempts"
-                    )
-                    raise RuntimeError("Failed to start the server")
-
-        # Build API URL
         results_file = os.path.join(output_path, f"{task}_results.json")
 
         printing.log_info(f"Running lm-eval-harness on {task}...")
@@ -374,7 +339,7 @@ class LMEvalHarness(Tool):
             "--model_args",
             (
                 f"model={checkpoint},"
-                f"base_url={server_url}/api/v0/completions,"
+                f"base_url={server_url}/api/v1/completions,"
                 f"num_concurrent=1,"
                 f"max_retries=5,"
                 f"retry_timeout=10,"
@@ -418,17 +383,8 @@ class LMEvalHarness(Tool):
             printing.log_error(f"Error running lm-eval-harness: {e}")
             printing.log_error(f"stderr: {e.stderr}")
             raise
-        except (IOError, ValueError, requests.RequestException) as e:
+        except (IOError, ValueError) as e:
             printing.log_error(f"Error: {e}")
             raise
-        finally:
-            # Shut down server
-            if self.server_runner and self.server_runner.is_alive():
-                printing.log_info("Shutting down server runner...")
-                self.server_runner.shutdown()
-
-            # Make sure we don't have any lingering references to state's model/tokenizer
-            # that could prevent garbage collection
-            self.server_runner = None
 
         return state
