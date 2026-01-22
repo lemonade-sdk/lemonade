@@ -503,6 +503,7 @@ ipcMain.handle('discover-server-port', async () => {
   // (port discovery only works for local servers)
   if (configuredServerBaseUrl) {
     console.log('Port discovery skipped - using explicit server URL:', configuredServerBaseUrl);
+    ensureTrayRunning();
     return null;
   }
   
@@ -599,6 +600,7 @@ function createWindow() {
 
 
 app.on('ready', () => {
+  ensureTrayRunning();
   createWindow();
   
   // Window control handlers
