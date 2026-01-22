@@ -1353,7 +1353,7 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 </tbody>
 </table>
 <h4 id="custom-backend-binaries">Custom Backend Binaries</h4>
-<p>You can provide your own <code>llama-server</code> or <code>whisper-server</code> binary by setting the full path via the following environment variables:</p>
+<p>You can provide your own <code>llama-server</code>, <code>whisper-server</code>, or <code>ryzenai-server</code> binary by setting the full path via the following environment variables:</p>
 <table>
 <thead>
 <tr>
@@ -1377,6 +1377,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <tr>
 <td><code>LEMONADE_WHISPERCPP_BIN</code></td>
 <td>Path to custom <code>whisper-server</code> binary</td>
+</tr>
+<tr>
+<td><code>LEMONADE_RYZENAI_SERVER_BIN</code></td>
+<td>Path to custom <code>ryzenai-server</code> binary for NPU/Hybrid models</td>
 </tr>
 </tbody>
 </table>
