@@ -22,5 +22,11 @@
     <string>/tmp/lemonade-server.out.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/lemonade-server.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HF_HOME</key>
+        <string>/Library/Application Support/lemonade</string>
+    </dict>
 </dict>
 </plist>

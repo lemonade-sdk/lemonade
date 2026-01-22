@@ -534,7 +534,17 @@ if(APPLE)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
-        file(WRITE "${ENTITLEMENTS_PATH}" "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n<key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>\n<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>")
+        file(WRITE "${ENTITLEMENTS_PATH}" 
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+            <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+            <plist version=\"1.0\">
+            <dict>
+                <key>com.apple.security.cs.allow-jit</key><true/>
+                <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+                <key>com.apple.security.cs.disable-library-validation</key><true/>
+                <key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+            </dict>
+            </plist>")
     endif()
 endif()
 

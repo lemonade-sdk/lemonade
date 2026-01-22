@@ -26,6 +26,8 @@
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>HF_HOME</key>
+        <string>/Library/Application Support/lemonade</string>
     </dict>
 </dict>
 </plist>

@@ -296,7 +296,7 @@ void MacOSTray::show_notification(const std::string& title, const std::string& m
 
 void MacOSTray::set_icon(const std::string& icon_path) {
     if (!impl_ || icon_path.empty()) return;
-    
+
     icon_path_ = icon_path;
     MacOSTrayImpl* trayImpl = (__bridge MacOSTrayImpl*)impl_;
 

@@ -381,10 +381,23 @@ int TrayApp::run() {
         // Continue to server initialization below
     } else if (config_.command == "tray") {
         // Check for single instance - prevent duplicate tray processes
+        #ifdef __APPLE__
+        if(LemonadeServiceManager::isTrayActive())
+        {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        // Check #2
         if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
             std::cout << "Lemonade Tray is already running." << std::endl;
             return 0;
         }
+        #else
+        if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
+            std::cout << "Lemonade Tray is already running." << std::endl;
+            return 0;
+        }
+        #endif
 
 #ifdef __APPLE__
         // macOS: Tray mode - show tray, starting server service if necessary
@@ -575,27 +588,42 @@ int TrayApp::run() {
     
     // Find icon path (matching the CMake resources structure)
     DEBUG_LOG(this, "Searching for icon...");
-    std::string icon_path = "resources/static/favicon.ico";
+    std::string icon_path;
+
+#ifdef __APPLE__
+    // On macOS, look for icon in /Library/Application Support/lemonade/resources
+    icon_path = "/Library/Application Support/lemonade/resources/static/favicon.ico";
+    DEBUG_LOG(this, "Checking macOS Application Support icon at: " << icon_path);
+
+    if (!fs::exists(icon_path)) {
+        std::cout << "WARNING: Icon not found at /Library/Application Support/lemonade/resources/favicon.ico, will use default icon" << std::endl;
+    } else {
+        DEBUG_LOG(this, "Icon found at: " << icon_path);
+    }
+#else
+    // On other platforms, find icon file path
+    icon_path = "resources/static/favicon.ico";
     DEBUG_LOG(this, "Checking icon at: " << fs::absolute(icon_path).string());
-    
+
     if (!fs::exists(icon_path)) {
         // Try relative to executable directory
         fs::path exe_path = fs::path(config_.server_binary).parent_path();
         icon_path = (exe_path / "resources" / "static" / "favicon.ico").string();
         DEBUG_LOG(this, "Icon not found, trying: " << icon_path);
-        
+
         // If still not found, try without static subdir (fallback)
         if (!fs::exists(icon_path)) {
             icon_path = (exe_path / "resources" / "favicon.ico").string();
             DEBUG_LOG(this, "Icon not found, trying fallback: " << icon_path);
         }
     }
-    
+
     if (fs::exists(icon_path)) {
         DEBUG_LOG(this, "Icon found at: " << icon_path);
     } else {
         std::cout << "WARNING: Icon not found at any location, will use default icon" << std::endl;
     }
+#endif
     
     // Initialize tray
     DEBUG_LOG(this, "Initializing tray with icon: " << icon_path);

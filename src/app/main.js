@@ -346,26 +346,55 @@ const ensureTrayRunning = () => {
       return;
     }
 
-    // On macOS, always launch the tray directly
-    const serverBinary = findLemonadeServerBinary();
-    if (!serverBinary) {
-      console.error('Could not find lemonade-server binary for tray launch');
+    const binaryPath = '/usr/local/bin/lemonade-server';
+
+    if (!fs.existsSync(binaryPath)) {
+      console.error(`CRITICAL: Binary not found at ${binaryPath}`);
       resolve();
       return;
     }
 
-    console.log('Launching lemonade-server tray at:', serverBinary);
-    const trayProcess = spawn(serverBinary, ['tray'], {
-      detached: true,
-      stdio: 'ignore'
+    console.log('--- STARTING TRAY MANUALLY ---');
+
+    // 1. NUCLEAR CLEANUP (Crucial!)
+    // We must kill any "Ghost" processes and delete the lock files
+    // or the new one will think it's already running and quit immediately.
+    try {
+      // Kill any existing instances (ignore errors if none exist)
+      require('child_process').execSync('pkill -9 -f "lemonade-server tray" || true');
+
+      // Delete the lock files that cause "Already Running" errors
+      const locks = ['/tmp/lemonade_Tray.lock', '/tmp/lemonade_Server.lock', '/tmp/lemonade.lock'];
+      locks.forEach(lock => {
+        if (fs.existsSync(lock)) fs.unlinkSync(lock);
+      });
+      console.log('Cleanup complete (Zombies killed, Locks deleted).');
+    } catch (e) {
+      console.error('Cleanup warning:', e.message);
+    }
+
+    // 2. PREPARE ENVIRONMENT
+    // macOS GUI apps don't have /usr/local/bin in PATH. We must add it.
+    const env = { ...process.env };
+    env.PATH = `${env.PATH}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`;
+    // Ensure it can find libraries in /usr/local/lib
+    env.DYLD_LIBRARY_PATH = '/usr/local/lib';
+
+    // 3. LAUNCH
+    console.log('Spawning tray process...');
+    const trayProcess = spawn(binaryPath, ['tray'], {
+      detached: true, // Allows it to run independently of the main window
+      env: env,       // Pass our fixed environment
+      stdio: 'ignore' // Ignore output so it doesn't hang the parent
     });
+
+    // Unref so Electron doesn't wait for it to exit
     trayProcess.unref();
 
-    // Wait a bit for tray to start
-    setTimeout(() => {
-      console.log('Tray launch initiated');
-      resolve();
-    }, 2000);
+    console.log(`Tray launched! (PID: ${trayProcess.pid})`);
+
+    // Give it a moment to initialize
+    setTimeout(resolve, 1000);
   });
 };
 
