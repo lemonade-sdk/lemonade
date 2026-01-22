@@ -140,7 +140,14 @@ std::string find_flm_executable() {
 std::string get_cache_dir() {
     const char* cache_dir_env = std::getenv("LEMONADE_CACHE_DIR");
     if (cache_dir_env) {
-        return std::string(cache_dir_env);
+        std::string cache_dir = std::string(cache_dir_env);
+#ifdef __APPLE__
+        // Ensure directory exists on macOS
+        if (!fs::exists(cache_dir)) {
+            fs::create_directories(cache_dir);
+        }
+#endif
+        return cache_dir;
     }
 
 #ifdef _WIN32
@@ -154,19 +161,34 @@ std::string get_cache_dir() {
         // --- NORMAL USER MODE ---
         const char* home = std::getenv("HOME");
         if (home) {
-            return std::string(home) + "/.cache/lemonade";
+            std::string cache_dir = std::string(home) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
         }
         // Fallback if HOME is missing but we aren't root
         struct passwd* pw = getpwuid(getuid());
         if (pw) {
-            return std::string(pw->pw_dir) + "/.cache/lemonade";
+            std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
+            // Ensure directory exists
+            if (!fs::exists(cache_dir)) {
+                fs::create_directories(cache_dir);
+            }
+            return cache_dir;
         }
-    } 
-    
+    }
+
     // --- SYSTEM SERVICE / ROOT MODE ---
     // If we are root (or getting HOME failed), use a shared system location.
     // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
-    return "/Library/Application Support/Lemonade";
+    std::string cache_dir = "/Library/Application Support/lemonade/.cache";
+    // Ensure directory exists
+    if (!fs::exists(cache_dir)) {
+        fs::create_directories(cache_dir);
+    }
+    return cache_dir;
 
 #else
     // Linux and other Unix systems

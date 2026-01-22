@@ -2351,16 +2351,11 @@ void TrayApp::on_show_logs() {
         kill(log_viewer_pid_, SIGTERM);
         log_viewer_pid_ = 0;
     }
-    
-    // Fork and open Terminal.app with tail command
-    pid_t pid = fork();
-    if (pid == 0) {
-        // Child process
-        std::string cmd = "osascript -e 'tell application \"Terminal\" to do script \"tail -f " + config_.log_file + "\"'";
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        exit(0);
-    } else if (pid > 0) {
-        log_viewer_pid_ = pid;
+    // Use open command to open log file in default editor instead of Terminal.app
+    std::string cmd = "open \"" + config_.log_file + "\"";
+    int result = system(cmd.c_str());
+    if (result != 0) {
+        show_notification("Error", "Failed to open log file");
     }
 #else
     // Kill existing log viewer if any

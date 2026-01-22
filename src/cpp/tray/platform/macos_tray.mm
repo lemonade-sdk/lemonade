@@ -68,6 +68,16 @@
     return self;
 }
 
+- (void)terminateApp:(id)sender {
+    // Clean up status item first
+    if (self.statusItem) {
+        [[NSStatusBar systemStatusBar] removeStatusItem:self.statusItem];
+        self.statusItem = nil;
+    }
+    // Force exit as required for Accessory apps
+    exit(0); 
+}
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center
@@ -134,7 +144,10 @@ namespace lemon_tray {
 MacOSTray::MacOSTray() : impl_(nullptr), tooltip_("") {}
 
 MacOSTray::~MacOSTray() {
-    impl_ = nullptr;
+    if (impl_) {
+        CFRelease(impl_); 
+        impl_ = nullptr;
+    }
 }
 
 bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_path) {
@@ -166,9 +179,10 @@ bool MacOSTray::initialize(const std::string& app_name, const std::string& icon_
         trayImpl.menu = [[NSMenu alloc] initWithTitle:[NSString stringWithUTF8String:app_name.c_str()]];
 
         NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
-                                                          action:@selector(terminate:)
-                                                   keyEquivalent:@"q"];
-        [quitItem setTarget:NSApp];
+                                                      action:@selector(terminateApp:) // Call our custom method
+                                               keyEquivalent:@"q"];
+        [quitItem setTarget:trayImpl]; // Target the impl
+
         [trayImpl.menu addItem:quitItem];
 
         trayImpl.statusItem.menu = trayImpl.menu;
@@ -205,7 +219,9 @@ void MacOSTray::stop() {
                 [[NSStatusBar systemStatusBar] removeStatusItem:trayImpl.statusItem];
                 trayImpl.statusItem = nil;
             }
-            [NSApp terminate:nil];
+            // For accessory applications, [NSApp terminate:nil] doesn't work properly
+            // Force exit the process instead
+            exit(0);
         });
     }
 }
