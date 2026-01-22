@@ -178,12 +178,9 @@ print(completion.choices[0].message.content)
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
-## Beyond an LLM Server
+## lemonade-eval
 
-The [Lemonade Python SDK](./docs/README.md) is also available, which includes the following components:
-
-- 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
-- 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
+The [lemonade-eval](./docs/eval/README.md) CLI provides tools for accuracy testing, performance benchmarking, and device-specific model preparation (OGA/ONNX models for NPU/CPU).
 
 ## FAQ
 

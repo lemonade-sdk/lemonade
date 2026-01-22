@@ -1,7 +1,6 @@
 
 # Perplexity Evaluation
 
-
 ## Overview
 
 Perplexity is a measurement of how well a probability model predicts a sample. A lower perplexity indicates the model is more confident in its predictions. In the context of language models, perplexity measures the likelihood of the sequence according to the model, given as:
@@ -10,6 +9,15 @@ Perplexity is a measurement of how well a probability model predicts a sample. A
 
 `Where Average Negative Log-Likelihood = (1/N) * Sum[-log p(x_i) from i=1 to N]`
 
+## Usage
+
+The perplexity tool requires direct access to model logits, so it must be used with OGA models loaded via `oga-load`:
+
+```bash
+lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device cpu --dtype int4 accuracy-perplexity
+```
+
+> **Note**: Perplexity evaluation is not available through the Lemonade Server workflow (`load` tool) because it requires direct access to model logits. Use `oga-load` for perplexity calculations.
 
 ## Script Functionality
 
@@ -50,7 +58,7 @@ Lower Values are Better: A lower perplexity score indicates that the model has a
 
 ### Interpretation:
 
-**High Perplexity:** Indicates confusion or a high level of uncertainty in the model’s predictions. A high perplexity can suggest that the model's language understanding is poor or that the model is not well-tuned for the given data.
+**High Perplexity:** Indicates confusion or a high level of uncertainty in the model's predictions. A high perplexity can suggest that the model's language understanding is poor or that the model is not well-tuned for the given data.
 
 **Low Perplexity:** Suggests that the model predictions are more accurate and that it assigns higher probabilities to the actual observed outcomes. This is indicative of a model that has a good grasp of the language patterns seen in the test set.
 Practical Implications

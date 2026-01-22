@@ -65,13 +65,13 @@ pip install lemonade-sdk[dev,oga-ryzenai,model-generate] --extra-index-url https
 ### Usage
 
 ```bash
-lemonade -i <quantized_checkpoint> oga-load --device <hybrid|npu> --dtype int4 [options]
+lemonade-eval -i <quantized_checkpoint> oga-load --device <hybrid|npu> --dtype int4 [options]
 ```
 
 **Example using quantized model with prompt tool:**
 
 ```bash
-lemonade -i amd/Llama-3.2-1B-Instruct-awq-uint4-asym-g128-bf16-lmhead oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
+lemonade-eval -i amd/Llama-3.2-1B-Instruct-awq-uint4-asym-g128-bf16-lmhead oga-load --device hybrid --dtype int4 llm-prompt -p "Alice and Bob" --max-new-tokens 10
 ```
 
 Here, we have quantized the `Llama3.2-1B-Instruct` model using AWQ with a uint4 asymmetric quantization strategy and BF16 activations and uploaded it to Hugging Face. Now, using Lemonade, we’re running inference with the built-in prompt tool on this fine-tuned, quantized model. Under the hood, Lemonade handles model export and optimization to ensure optimal inference.
@@ -82,7 +82,7 @@ Here, we have quantized the `Llama3.2-1B-Instruct` model using AWQ with a uint4 
 - **Model Compatibility:** Ensure your model architecture is supported by Ryzen AI and Quark. Refer to the [supported model list](https://ryzenai.docs.amd.com/en/latest/llm/overview.html#featured-llms) for details.
 - **Quantization Parameters:** Adjust group size, data type, and quantization scheme as needed for your use case.
 - **Output Verification:** After quantization and export, validate model performance on your target device. Check this [notebook](https://github.com/lemonade-sdk/lemonade/blob/main/examples/notebooks/lemonade_model_validation.ipynb) out to verify your export
-- **Documentation:** Refer to [Quark documentation](https://quark.docs.amd.com/latest/) and Lemonade's help (`lemonade --help`) for advanced options.
+- **Documentation:** Refer to [Quark documentation](https://quark.docs.amd.com/latest/) and Lemonade's help (`lemonade-eval --help`) for advanced options.
 
 ---
 

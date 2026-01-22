@@ -10,7 +10,24 @@ The MMLU dataset can be automatically downloaded by the script to the mmlu_data 
 
 ## Running the Benchmark
 
-`lemonade -i facebook/opt-125m huggingface-load accuracy-mmlu --ntrain 5 --tests astronomy`
+First, start the Lemonade Server:
+
+```bash
+lemonade-server serve
+```
+
+Then run the MMLU benchmark:
+
+```bash
+# With a GGUF model
+lemonade-eval -i Qwen3-4B-Instruct-2507-GGUF load accuracy-mmlu --ntrain 5 --tests astronomy
+
+# With a Hybrid model (NPU + iGPU)
+lemonade-eval -i Qwen3-4B-Hybrid load accuracy-mmlu --ntrain 5 --tests astronomy
+
+# With an NPU model
+lemonade-eval -i Qwen-2.5-3B-Instruct-NPU load accuracy-mmlu --ntrain 5 --tests astronomy
+```
 
 ### Optional arguments:
 

@@ -17,8 +17,20 @@ The HumanEval dataset is automatically downloaded from [OpenAI's human-eval repo
 
 ## Running the Benchmark
 
+First, start the Lemonade Server:
+
 ```bash
-lemonade -i meta-llama/Llama-3.2-1B oga-load --device igpu --dtype int4 accuracy-humaneval --k-samples 1 --first-n-samples 5 --timeout 30.0
+lemonade-server serve
+```
+
+Then run the HumanEval benchmark:
+
+```bash
+# With a GGUF model
+lemonade-eval -i Qwen3-4B-Instruct-2507-GGUF load accuracy-humaneval --k-samples 1 --first-n-samples 5 --timeout 30.0
+
+# With a Hybrid model (NPU + iGPU)
+lemonade-eval -i Qwen3-4B-Hybrid load accuracy-humaneval --k-samples 1 --first-n-samples 5 --timeout 30.0
 ```
 
 ### Optional arguments:

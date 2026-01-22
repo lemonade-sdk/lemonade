@@ -84,10 +84,10 @@ def main():
 
     # Define the argument parser
     parser = cli.CustomArgumentParser(
-        description=f"""Tools for evaluating and deploying LLMs (v{version_number}).
+        description=f"""Tools for evaluating and benchmarking LLMs (v{version_number}).
 
 Read this to learn the command syntax:
-https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
+https://github.com/lemonade-sdk/lemonade/blob/main/docs/eval/README.md""",
         formatter_class=NiceHelpFormatter,
     )
 

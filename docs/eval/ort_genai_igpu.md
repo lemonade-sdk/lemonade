@@ -1,22 +1,30 @@
 # OnnxRuntime GenAI (OGA) for iGPU and CPU
 
-[onnxruntime-genai (aka OGA)](https://github.com/microsoft/onnxruntime-genai/tree/main?tab=readme-ov-file) is a new framework created by Microsoft for running ONNX LLMs.
+[onnxruntime-genai (aka OGA)](https://github.com/microsoft/onnxruntime-genai/tree/main?tab=readme-ov-file) is a framework created by Microsoft for running ONNX LLMs.
 
 ## Installation
 
-See [Lemonade Installation](./README.md#installation) for the OGA iGPU backend.
+Install with OGA support:
+
+```bash
+# For CPU inference
+pip install lemonade-sdk[oga-cpu]
+
+# For NPU/Hybrid support on RyzenAI
+pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple
+```
 
 ## Get models
 
-- The oga-load tool can download models from Hugging Face and build ONNX files using OGA's `model_builder`, which can quantize and optimize models for both iGPU and CPU.
+- The `oga-load` tool can download models from Hugging Face and build ONNX files using OGA's `model_builder`, which can quantize and optimize models for both iGPU and CPU.
 - Download and build ONNX model files:
-  - `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4`
-  - `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device cpu --dtype int4`
+  - `lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4`
+  - `lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device cpu --dtype int4`
 - The ONNX model files will be stored in the respective subfolder of the lemonade cache folder and will be reused in future oga-load calls:
   - `oga_models\microsoft_phi-3-mini-4k-instruct\dml-int4`
   - `oga_models\microsoft_phi-3-mini-4k-instruct\cpu-int4`
 - The ONNX model build process can be forced to run again, overwriting the above cache, by using the `--force` flag:
-  - `lemonade -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 --force`
+  - `lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4 --force`
 - Transformer model architectures supported by the model_builder tool include many popular state-of-the-art models, such as:
   - Gemma
   - LLaMa
@@ -35,9 +43,9 @@ See [Lemonade Installation](./README.md#installation) for the OGA iGPU backend.
   - `MODELNAME` is the Hugging Face checkpoint name where any '/' is mapped to an '_' and everything is lower case.
   - `SUBFOLDER` is `<EP>-<DTYPE>`, where `EP` is the execution provider (`dml` for `igpu`, `cpu` for `cpu`, and `npu` for `npu`) and `DTYPE` is the datatype.
   - If the `--int4-block-size` flag is used then `SUBFOLDER` is` <EP>-<DTYPE>-block-<SIZE>` where `SIZE` is the specified block size.
-- Other ONNX models in the format required by onnxruntime-genai can be loaded by Lemonade if placed in the `<LEMONADE_CACHE>\oga_models` folder.
+- Other ONNX models in the format required by onnxruntime-genai can be loaded by `lemonade-eval` if placed in the `<LEMONADE_CACHE>\oga_models` folder.
   - Use the `-i` and `--subfolder` flags to specify the folder and subfolder, for example:
-    - `lemonade -i my_model_name --subfolder my_subfolder --device igpu --dtype int4 oga-load`
+    - `lemonade-eval -i my_model_name oga-load --subfolder my_subfolder --device igpu --dtype int4`
   - Lemonade will expect the ONNX model files to be located in `<LEMONADE_CACHE>\oga_models\my_model_name\my_subfolder`
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
