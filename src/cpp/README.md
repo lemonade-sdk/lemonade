@@ -45,6 +45,21 @@ sudo dnf install rpm-build rpmdevtools
 
 ### Building from Source on MacOS for M-Series / arm64 Family
 
+#### Macos Notary Tool Command
+For access with P
+```
+xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --private-key "/path/to/AuthKey_XXXXXX.p8"
+```
+or
+For access with API password
+```
+xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --password ""
+```
+Get your team id at:
+https://developer.apple.com/account
+
+#### Cmake build instructions
+
 ```bash
 # Install Xcode command line tools
 xcode-select --install
