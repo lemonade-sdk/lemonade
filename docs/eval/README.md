@@ -39,22 +39,62 @@ Use `lemonade-eval -h` to see available options and tools, and `lemonade-eval TO
 
 ## Installation
 
-First, install Lemonade Server from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest):
+### 1. Install Lemonade Server
+
+Install from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest):
 - **Windows**: Download and run `lemonade-server.msi`
 - **Linux**: See [Linux installation options](https://lemonade-server.ai/install_options.html#linux)
 
-Then install lemonade-eval via pip:
+### 2. Create a Python Environment
+
+Choose one of the following methods:
+
+**Using venv:**
+
+```bash
+python -m venv lemon
+# Windows:
+lemon\Scripts\activate
+# Linux/macOS:
+source lemon/bin/activate
+```
+
+**Using conda:**
+
+```bash
+conda create -n lemon python=3.12
+conda activate lemon
+```
+
+**Using uv:**
+
+```bash
+uv venv lemon --python 3.12
+# Windows:
+lemon\Scripts\activate
+# Linux/macOS:
+source lemon/bin/activate
+```
+
+### 3. Install lemonade-eval
+
+Basic installation:
 
 ```bash
 pip install lemonade-sdk
 ```
 
-For OGA/NPU support:
+**Optional extras:**
 
 ```bash
+# For OGA CPU inference:
 pip install lemonade-sdk[oga-cpu]
-# OR for RyzenAI NPU support:
+
+# For RyzenAI NPU support (Windows + Python 3.12 only):
 pip install lemonade-sdk[oga-ryzenai] --extra-index-url=https://pypi.amd.com/simple
+
+# For model generation/export (Windows + Python 3.12 only):
+pip install lemonade-sdk[oga-ryzenai,model-generate] --extra-index-url=https://pypi.amd.com/simple
 ```
 
 ## Available Tools
