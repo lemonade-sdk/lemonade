@@ -35,6 +35,19 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
+// ROCm architecture mapping - maps specific gfx architectures to their family
+const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
+
+    // RDNA3 family (gfx110X)
+    {"gfx1100", "gfx110X"},
+    {"gfx1101", "gfx110X"},
+    {"gfx1102", "gfx110X"},
+    {"gfx1103", "gfx110X"},
+};
+
 // ============================================================================
 // SystemInfo base class implementation
 // ============================================================================
@@ -363,7 +376,30 @@ bool SystemInfo::check_vulkan_support() {
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
-    
+
+    // linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
+        if (device_lower.length() >= 4) {
+            std::string major = device_lower.substr(0, 2);
+
+            int minor_int = std::stoi(device_lower.substr(2, 2));
+            std::string minor = std::to_string(minor_int);
+
+            int revision_int = std::stoi(device_lower.substr(4, 2));
+            std::string revision = std::to_string(revision_int);
+
+            std::string arch = "gfx" + major + minor + revision;
+
+            // Apply architecture family mapping
+            auto it = ROCM_ARCH_MAPPING.find(arch);
+            if (it != ROCM_ARCH_MAPPING.end()) {
+                return it->second;
+            }
+
+            return arch;
+        }
+    }
+
     if (device_lower.find("radeon") == std::string::npos &&
         device_lower.find("amd") == std::string::npos) {
         return "";
@@ -1236,92 +1272,85 @@ NPUInfo LinuxSystemInfo::get_npu_device() {
 
 std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_type) {
     std::vector<GPUInfo> gpus;
-    
-    // Execute lspci to find GPUs
-    FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
-    if (!pipe) {
+    std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
+
+    if (!fs::exists(kfd_path)) {
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "Failed to execute lspci command";
+        gpu.error = "No KFD nodes found (AMD GPU driver not loaded or no GPU present)";
         gpus.push_back(gpu);
         return gpus;
     }
-    
-    char buffer[512];
-    std::vector<std::string> lspci_lines;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        lspci_lines.push_back(buffer);
-    }
-    pclose(pipe);
-    
-    // Parse AMD GPUs
-    for (const auto& line : lspci_lines) {
-        if (line.find("AMD") != std::string::npos || line.find("ATI") != std::string::npos) {
-            // Extract device name
-            std::string name;
-            size_t pos = line.find(": ");
-            if (pos != std::string::npos) {
-                name = line.substr(pos + 2);
-                // Remove newline
-                if (!name.empty() && name.back() == '\n') {
-                    name.pop_back();
+
+    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
+        if (!node_entry.is_directory()) continue;
+
+        std::string node_path = node_entry.path().string();
+        std::string properties_file = node_path + "/properties";
+
+        if (!fs::exists(properties_file)) continue;
+
+        std::ifstream props(properties_file);
+        if (!props.is_open()) continue;
+
+        std::string line;
+        std::string drm_render_minor;
+        std::string gfx_target_version;
+
+        bool is_gpu = false;
+
+        while (std::getline(props, line)) {
+            if (line.find("gfx_target_version") == 0) {
+                gfx_target_version = line.substr(line.find(" ") + 1);
+                gfx_target_version.erase(gfx_target_version.find_last_not_of(" \t\n\r") + 1);
+                if (!gfx_target_version.empty() && std::stoi(gfx_target_version) != 0) {
+                    is_gpu = true;
                 }
-            } else {
-                name = line;
-            }
-            
-            // Classify as discrete or integrated using keywords
-            std::string name_lower = name;
-            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-            
-            bool is_discrete = false;
-            for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
-                if (name_lower.find(keyword) != std::string::npos) {
-                    is_discrete = true;
-                    break;
-                }
-            }
-            bool is_integrated = !is_discrete;
-            
-            // Filter based on requested type
-            if ((gpu_type == "integrated" && is_integrated) || 
-                (gpu_type == "discrete" && is_discrete)) {
-                
-                GPUInfo gpu;
-                gpu.name = name;
-                gpu.available = true;
-                
-                // Get VRAM for discrete GPUs
-                if (is_discrete) {
-                    // Extract PCI ID from lspci line (first field)
-                    std::string pci_id = line.substr(0, line.find(" "));
-                    
-                    double vram = get_amd_vram_rocm_smi();
-                    if (vram == 0.0) {
-                        vram = get_amd_vram_sysfs(pci_id);
-                    }
-                    
-                    if (vram > 0.0) {
-                        gpu.vram_gb = vram;
-                    }
-                }
-                
-                // Detect inference engines
-                std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-                gpu.inference_engines = detect_inference_engines(device_type, name);
-                
-                gpus.push_back(gpu);
+            } else if (line.find("drm_render_minor") == 0) {
+                drm_render_minor = line.substr(line.find(" ") + 1);
+                drm_render_minor.erase(drm_render_minor.find_last_not_of(" \t\n\r") + 1);
             }
         }
-    }
-    
-    if (gpus.empty()) {
+        props.close();
+
+        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
+            continue;
+
+
+        std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
+        std::string board_info_path = device_path + "board_info";
+        bool is_integrated = !fs::exists(board_info_path) && fs::is_regular_file(board_info_path);
+
         GPUInfo gpu;
-        gpu.available = false;
-        gpu.error = "No AMD " + gpu_type + " GPU found";
-        gpus.push_back(gpu);
+        gpu.name = gfx_target_version;
+        gpu.available = true;
+
+        // Get VRAM for discrete GPUs
+        if (!is_integrated) {
+            std::string vram_file = device_path + "/mem_info_vram_total";
+            if (!fs::exists(vram_file))
+                continue;
+            std::ifstream vram_stream(vram_file);
+            std::string vram_str;
+            std::getline(vram_stream, vram_str);
+            uint64_t vram_bytes = std::stoull(vram_str);
+            gpu.vram_gb = std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+            
+            // Detect inference engines
+            std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
+            gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
+            
+            gpus.push_back(gpu);
+        }
+
+        if (gpus.empty()) {
+            GPUInfo gpu;
+            gpu.available = false;
+            gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
+            gpus.push_back(gpu);
+        }
     }
-    
+
     return gpus;
 }
 
