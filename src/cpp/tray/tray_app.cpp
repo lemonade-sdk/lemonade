@@ -459,7 +459,7 @@ int TrayApp::run() {
     
     // For 'tray' command, server_manager_ is already created and connected
     // For other commands, create server manager and start server
-    if (server_config_.command != "tray") {
+    if (tray_config_.command != "tray") {
         // Create server manager
         DEBUG_LOG(this, "Creating server manager...");
         server_manager_ = std::make_unique<ServerManager>();
@@ -2072,7 +2072,7 @@ void TrayApp::on_show_logs() {
         log_viewer_pid_ = 0;
     }
     // Use open command to open log file in default editor instead of Terminal.app
-    std::string cmd = "open \"" + config_.log_file + "\"";
+    std::string cmd = "open \"" + log_file_ + "\"";
     int result = system(cmd.c_str());
     if (result != 0) {
         show_notification("Error", "Failed to open log file");
