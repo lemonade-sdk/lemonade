@@ -1,0 +1,8 @@
+# SignPath policy for test-signing
+# See: https://docs.signpath.io/trusted-build-systems/github
+
+github-policies:
+  runners:
+    allowed_groups:
+      - 'GitHub Actions'  # GitHub-hosted runners
+      - 'stx'         # Ryzen AI self-hosted runners

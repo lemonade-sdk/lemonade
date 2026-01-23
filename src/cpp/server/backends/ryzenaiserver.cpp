@@ -1,4 +1,5 @@
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -234,7 +235,7 @@ void RyzenAIServer::download_and_install(const std::string& version) {
     fs::create_directories(install_dir);
     
     // Extract ZIP
-    if (!utils::extract_zip(zip_path, install_dir.string())) {
+    if (!backends::BackendUtils::extract_archive(zip_path, install_dir.string(), "RyzenAI-Server")) {
         // Clean up corrupted files
         fs::remove(zip_path);
         fs::remove_all(install_dir);

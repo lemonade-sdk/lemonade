@@ -9,6 +9,7 @@ Lemonade Server currently supports these backends:
 | [Llama.cpp](https://github.com/ggml-org/llama.cpp)    | `.GGUF`      | Uses llama.cpp's `llama-server` backend. More details [here](#gguf-support).                    |
 | [ONNX Runtime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai) | `.ONNX`      | Uses Lemonade's own `ryzenai-server` backend.                                                |
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
+| [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
 
 

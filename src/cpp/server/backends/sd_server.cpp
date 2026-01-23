@@ -1,4 +1,5 @@
 #include "lemon/backends/sd_server.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -305,12 +306,8 @@ void SDServer::install(const std::string& /* backend */) {
     auto file_size = fs::file_size(zip_path);
     std::cout << "[SDServer] Downloaded ZIP file size: " << (file_size / 1024 / 1024) << " MB" << std::endl;
 
-    // Create install directory and extract
-    fs::create_directories(install_dir);
-    std::cout << "[SDServer] Extracting ZIP to " << install_dir << std::endl;
-
     // Extract the ZIP
-    if (!utils::extract_zip(zip_path, install_dir)) {
+    if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "SDServer")) {
         throw std::runtime_error("Failed to extract ZIP file");
     }
 

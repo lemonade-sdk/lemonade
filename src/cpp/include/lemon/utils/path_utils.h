@@ -38,16 +38,6 @@ std::string get_cache_dir();
  */
 std::string get_downloaded_bin_dir();
 
-/**
- * Extract a ZIP archive to a destination directory.
- * Uses tar on Windows (available on Windows 10 1903+) with PowerShell fallback,
- * and unzip on Linux/macOS.
- * @param zip_path Path to the ZIP file
- * @param dest_dir Destination directory for extraction
- * @return true if extraction succeeded, false otherwise
- */
-bool extract_zip(const std::string& zip_path, const std::string& dest_dir);
-
 } // namespace utils
 } // namespace lemon
 

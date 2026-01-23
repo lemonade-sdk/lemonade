@@ -1,4 +1,5 @@
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
@@ -224,7 +225,7 @@ void WhisperServer::install(const std::string& backend) {
         }
 
         // Extract
-        if (!utils::extract_zip(zip_path, install_dir)) {
+        if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "WhisperServer")) {
             fs::remove(zip_path);
             fs::remove_all(install_dir);
             throw std::runtime_error("Failed to extract whisper-server archive");

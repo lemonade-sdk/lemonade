@@ -311,6 +311,7 @@ set(SOURCES
     server/backends/ryzenaiserver.cpp
     server/backends/whisper_server.cpp
     server/backends/sd_server.cpp
+    server/backends/backend_utils.cpp
 )
 
 # Add version resource file on Windows

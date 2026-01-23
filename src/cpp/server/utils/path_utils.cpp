@@ -168,37 +168,6 @@ std::string get_downloaded_bin_dir() {
     return bin_dir;
 }
 
-bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
-#ifdef _WIN32
-    // Ensure destination directory exists
-    fs::create_directories(dest_dir);
-
-    // Use tar (available on Windows 10 1903+) which is more reliable
-    std::string tar_command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
-    int result = system(tar_command.c_str());
-
-    if (result != 0) {
-        // Fall back to PowerShell with full path
-        std::string ps_command = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe "
-                                "-Command \"try { Expand-Archive -Path '" +
-                                zip_path + "' -DestinationPath '" + dest_dir +
-                                "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-        result = system(ps_command.c_str());
-        if (result != 0) {
-            return false;
-        }
-    }
-    return true;
-#else
-    // Ensure destination directory exists
-    fs::create_directories(dest_dir);
-
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
-
 } // namespace utils
 } // namespace lemon
 
