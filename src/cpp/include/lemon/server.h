@@ -18,16 +18,15 @@ namespace lemon {
 
 class Server {
 public:
-    Server(int port = 8000,
-           const std::string& host = "127.0.0.1",
-           const std::string& log_level = "info",
-           const json& default_options = json::object(),
-           bool tray = false,
-           int max_llm_models = 1,
-           int max_embedding_models = 1,
-           int max_reranking_models = 1,
-           int max_audio_models = 1,
-           const std::string& extra_models_dir = "");
+    Server(int port,
+           const std::string& host,
+           const std::string& log_level,
+           const json& default_options,
+           int max_llm_models,
+           int max_embedding_models,
+           int max_reranking_models,
+           int max_audio_models,
+           const std::string& extra_models_dir);
     
     ~Server();
     
@@ -99,7 +98,6 @@ private:
     std::string host_;
     std::string log_level_;
     json default_options_;
-    bool tray_;
     std::string log_file_path_;
 
     std::thread http_v4_thread_;

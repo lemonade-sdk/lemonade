@@ -1,5 +1,6 @@
 #include "lemon_tray/server_manager.h"
 #include "lemon/version.h"
+#include "lemon/recipe_options.h"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -49,9 +50,6 @@ namespace lemon_tray {
 
 ServerManager::ServerManager()
     : server_pid_(0)
-    , port_(8000)
-    , ctx_size_(4096)
-    , host_("localhost")
     , show_console_(false)
     , is_ephemeral_(false)
     , server_started_(false)
@@ -72,13 +70,11 @@ ServerManager::~ServerManager() {
 bool ServerManager::start_server(
     const std::string& server_binary_path,
     int port,
-    int ctx_size,
+    const nlohmann::json& recipe_options,
     const std::string& log_file,
     const std::string& log_level,
-    const std::string& llamacpp_backend,
     bool show_console,
     bool is_ephemeral,
-    const std::string& llamacpp_args,
     const std::string& host,
     int max_llm_models,
     int max_embedding_models,
@@ -93,17 +89,15 @@ bool ServerManager::start_server(
 
     server_binary_path_ = server_binary_path;
     port_ = port;
-    ctx_size_ = ctx_size;
+    recipe_options_ = recipe_options,
     max_llm_models_ = max_llm_models;
     max_embedding_models_ = max_embedding_models;
     max_reranking_models_ = max_reranking_models;
     max_audio_models_ = max_audio_models;
     log_file_ = log_file;
     log_level_ = log_level;
-    llamacpp_backend_ = llamacpp_backend;
     show_console_ = show_console;
     is_ephemeral_ = is_ephemeral;
-    llamacpp_args_ = llamacpp_args;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
 
@@ -280,7 +274,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, ctx_size_, log_file_, log_level_, llamacpp_backend_, show_console_, false, llamacpp_args_, host_);
+    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_llm_models_, max_embedding_models_, max_reranking_models_, max_audio_models_, extra_models_dir_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -297,8 +291,8 @@ void ServerManager::set_port(int port) {
 }
 
 void ServerManager::set_context_size(int ctx_size) {
-    if (ctx_size != ctx_size_) {
-        ctx_size_ = ctx_size;
+    if (ctx_size != recipe_options_["ctx_size"]) {
+        recipe_options_["ctx_size"] = ctx_size;
         if (is_server_running()) {
             restart_server();
         }
@@ -333,17 +327,18 @@ nlohmann::json ServerManager::get_models() {
     return nlohmann::json::parse(response);
 }
 
-bool ServerManager::load_model(const std::string& model_name, bool save_options) {
+bool ServerManager::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options) {
     try {
         nlohmann::json load_req = nlohmann::json::object();
         load_req["model_name"] = model_name;
 
         if (save_options) {
             load_req["save_options"] = true;
-            load_req["ctx_size"] = ctx_size_;  
-            load_req["llamacpp_backend"] = llamacpp_backend_;  
-            load_req["llamacpp_args"] = llamacpp_args_;  
-        } 
+        }
+
+        for (auto& [key, opt] : recipe_options.items()) {
+            load_req[key] = opt;
+        }
 
         std::string body = load_req.dump();
         
@@ -398,12 +393,18 @@ bool ServerManager::spawn_process() {
     std::string cmdline = "\"" + server_binary_path_ + "\"";
     cmdline += " --port " + std::to_string(port_);
     cmdline += " --host " + host_;
-    cmdline += " --ctx-size " + std::to_string(ctx_size_);
-    cmdline += " --llamacpp " + llamacpp_backend_;
     cmdline += " --log-level debug";  // Always use debug logging for router
-    if (!llamacpp_args_.empty()) {
-        cmdline += " --llamacpp-args \"" + llamacpp_args_ + "\"";
+    
+    std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
+
+    for (const auto& arg : recipe_cli) {
+        if (arg.find(" ") != std::string::npos) {
+            cmdline += " \"" + arg + "\"";
+        } else {
+            cmdline += " " + arg;
+        }
     }
+
     // Multi-model support
     cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
                std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
@@ -596,7 +597,7 @@ bool ServerManager::spawn_process() {
                 close(null_fd);
             }
         }
-        
+                
         std::vector<const char*> args;
         args.push_back(server_binary_path_.c_str());
         args.push_back("--port");
@@ -604,18 +605,13 @@ bool ServerManager::spawn_process() {
         args.push_back(port_str.c_str());
         args.push_back("--host");
         args.push_back(host_.c_str());
-        args.push_back("--ctx-size");
-        std::string ctx_str = std::to_string(ctx_size_);
-        args.push_back(ctx_str.c_str());
-        args.push_back("--llamacpp");
-        args.push_back(llamacpp_backend_.c_str());
         args.push_back("--log-level");
         args.push_back("debug");  // Always use debug logging
         
-        // Add llamacpp_args if present
-        if (!llamacpp_args_.empty()) {
-            args.push_back("--llamacpp-args");
-            args.push_back(llamacpp_args_.c_str());
+        std::vector<std::string> recipe_cli = lemon::RecipeOptions::to_cli_options(recipe_options_);
+
+        for (const auto& arg : recipe_cli) {
+            args.push_back(arg.c_str());
         }
         
         // Multi-model support

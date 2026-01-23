@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/tray_interface.h"
+#include "lemon/cli_parser.h"
 #include "server_manager.h"
 #include <memory>
 #include <string>
@@ -10,39 +11,6 @@
 #include <mutex>
 
 namespace lemon_tray {
-
-struct AppConfig {
-    std::string command;  // No default - must be explicitly specified
-    int port = 8000;
-    int ctx_size = 4096;
-    std::string log_file;
-    std::string log_level = "info";  // Default to info, can be set to debug
-    std::string server_binary;
-    // Default to headless mode on Linux (no tray support), tray mode on other platforms
-#if defined(__linux__) && !defined(__ANDROID__)
-    bool no_tray = true;
-#else
-    bool no_tray = false;
-#endif
-    bool show_help = false;
-    bool show_version = false;
-    std::string host = "localhost";
-    std::string llamacpp_backend = "vulkan";  // Default to vulkan
-    std::string llamacpp_args = "";  // Custom arguments for llama-server
-    std::string extra_models_dir = "";  // Secondary directory for GGUF model discovery
-    
-    // Multi-model support
-    int max_llm_models = 1;
-    int max_embedding_models = 1;
-    int max_reranking_models = 1;
-    int max_audio_models = 1;
-    
-    // For commands that take arguments
-    std::vector<std::string> command_args;
-
-    // run-only options
-    bool save_options = false;
-};
 
 struct ModelInfo {
     std::string id;
@@ -62,7 +30,7 @@ struct LoadedModelInfo {
 
 class TrayApp {
 public:
-    TrayApp(int argc, char* argv[]);
+    TrayApp(const lemon::ServerConfig& server_config, const lemon::TrayConfig& tray_config);
     ~TrayApp();
     
     int run();
@@ -76,11 +44,6 @@ public:
     
 private:
     // Initialization
-    void load_env_defaults();
-    void parse_arguments(int argc, char* argv[]);
-    void print_usage(bool show_serve_options = false, bool show_run_options = false);
-    void print_version();
-    void print_pull_help();
     bool find_server_binary();
     bool setup_logging();
     
@@ -126,7 +89,10 @@ private:
     std::vector<ModelInfo> get_downloaded_models();
     
     // Member variables
-    AppConfig config_;
+    lemon::ServerConfig server_config_;
+    lemon::TrayConfig tray_config_;
+    std::string server_binary_;
+    std::string log_file_;
     std::unique_ptr<TrayInterface> tray_;
     std::unique_ptr<ServerManager> server_manager_;
     std::string electron_app_path_;

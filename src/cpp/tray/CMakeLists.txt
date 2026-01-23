@@ -67,6 +67,8 @@ set(COMMON_SOURCES
     main.cpp
     tray_app.cpp
     server_manager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/cli_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server/recipe_options.cpp
     platform/tray_factory.cpp
 )
 
@@ -90,8 +92,11 @@ target_include_directories(lemonade-server PRIVATE
 target_link_libraries(lemonade-server PRIVATE
     nlohmann_json::nlohmann_json
     httplib::httplib
+    CLI11::CLI11
     ${PLATFORM_LIBS}
 )
+
+target_compile_definitions(lemonade-server PRIVATE LEMONADE_TRAY)
 
 # Set output directory to build root for all platforms
 # Windows uses Debug/Release subdirectories (multi-config generator)

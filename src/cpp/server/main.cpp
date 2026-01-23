@@ -46,11 +46,6 @@ int main(int argc, char** argv) {
             return parser.get_exit_code();
         }
         
-        if (parser.should_show_version()) {
-            std::cout << "lemonade-router version " << LEMON_VERSION_STRING << std::endl;
-            return 0;
-        }
-        
         // Get server configuration
         auto config = parser.get_config();
         
@@ -65,7 +60,7 @@ int main(int argc, char** argv) {
         }
 
         Server server(config.port, config.host, config.log_level,
-                    config.recipe_options, config.tray, config.max_llm_models,
+                    config.recipe_options, config.max_llm_models,
                     config.max_embedding_models, config.max_reranking_models,
                     config.max_audio_models, config.extra_models_dir);
         
