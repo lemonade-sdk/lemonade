@@ -593,7 +593,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 >
 > **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
 
-#### Parameters
+#### Parameters 
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
