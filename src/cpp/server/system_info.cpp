@@ -1488,28 +1488,36 @@ double LinuxSystemInfo::parse_vram_sysfs(const std::string& pci_id, const std::s
     // Try device-specific path first
     std::string vram_path = "/sys/bus/pci/devices/" + pci_id + "/" + deviceFile;
     std::ifstream file(vram_path);
-    
+    std::string vram_str;
+
     if (!file.is_open()) {
-        // Try wildcard path
-        std::string wildcard_path = "cat /sys/class/drm/card*/device/" + deviceFile + " 2>/dev/null | head -1";
-        FILE* pipe = popen(wildcard_path.c_str(), "r");
-        if (pipe) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                pclose(pipe);
-                try {
-                    uint64_t vram_bytes = std::stoull(buffer);
-                    return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-                } catch (...) {
-                    return 0.0;
-                }
+        // Try wildcard path - Fallback so it may grab VRAM from wrong device
+        for(const auto& entry : fs::directory_iterator("/sys/class/drm/")) {
+            // Skip empty or non "card*" directories
+            if(!entry.is_directory()) continue;
+            if(entry.path().filename().string().rfind("card") != 0) continue;
+
+            // Find Device File
+            fs::path device_path = entry.path() / "device" / deviceFile;
+            if(!fs::exists(device_path)) continue;
+
+            // Read in file
+            std::ifstream device_file(device_path);
+            if(!device_file.is_open()) continue;
+            std::getline(device_file, vram_str);
+            device_file.close();
+
+            try{
+                uint64_t bytes = std::stoull(vram_str);
+                return std::round(bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
             }
-            pclose(pipe);
+            catch(...){
+                continue;
+            }
         }
         return 0.0;
     }
     
-    std::string vram_str;
     std::getline(file, vram_str);
     file.close();
     
