@@ -35,11 +35,11 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 Server::Server(int port, const std::string& host, const std::string& log_level,
-               const json& default_options, bool tray, int max_llm_models,
+               const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
                const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
-      tray_(tray), running_(false) {
+      running_(false) {
     
     // Detect log file path (same location as tray uses)
     // NOTE: The ServerManager is responsible for redirecting stdout/stderr to this file
@@ -439,7 +439,7 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     struct addrinfo *result = nullptr;
     
     // Check return value (0 is success)
-    if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), "", &hints, &result, 5000) != 0) {
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &result) != 0) {
         std::cerr << "[Server] Warning: resolution failed for " << host << " no " << (ai_family == AF_INET ? "IPv4" : ai_family == AF_INET6 ? "IPv6" : "") << " resolution found." << std::endl;
         return ""; // Return empty string on failure, don't return void
     }
@@ -1644,22 +1644,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
         
-        // Check if model is already loaded (early return optimization)
-        std::string loaded_model = router_->get_loaded_model();
-        if (loaded_model == model_name) {
-            std::cout << "[Server] Model already loaded: " << model_name << std::endl;
-            auto info = model_manager_->get_model_info(model_name);
-            nlohmann::json response = {
-                {"status", "success"},
-                {"model_name", model_name},
-                {"checkpoint", info.checkpoint},
-                {"recipe", info.recipe},
-                {"message", "Model already loaded"}
-            };
-            res.set_content(response.dump(), "application/json");
-            return;
-        }
-        
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
             std::cerr << "[Server ERROR] Model not found: " << model_name << std::endl;
@@ -1675,7 +1659,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
         
-        std::cout << "[Server] Loading model: " << model_name;
+        if (router_->is_model_loaded(model_name)) {
+            router_->unload_model(model_name);
+            std::cout << "[Server] Reloading model: " << model_name;
+        } else {
+            std::cout << "[Server] Loading model: " << model_name;
+        }
         std::cout << " " << options.to_log_string(false);
         std::cout << std::endl;
 
