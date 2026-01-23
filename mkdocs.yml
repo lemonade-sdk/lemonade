@@ -68,7 +68,6 @@ nav:
       - AnythingLLM: server/apps/anythingLLM.md
       - CodeGPT: server/apps/codeGPT.md
       - Continue: server/apps/continue.md
-      - LM-Eval-Harness: server/apps/lm-eval.md
       - Mindcraft: server/apps/mindcraft.md
       - OpenHands: server/apps/open-hands.md
       - Open WebUI: server/apps/open-webui.md

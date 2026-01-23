@@ -61,17 +61,16 @@ lemonade-eval -i Qwen3-4B-Instruct-2507-GGUF load lm-eval-harness --task hellasw
 
 ## Supported Tasks
 
-The tool supports many tasks available in lm-evaluation-harness. Recommended tasks that work well with `lemonade-eval`:
+The tool supports many tasks available in lm-evaluation-harness. Since the Lemonade Server API does not support log probabilities, only **generation-based tasks** work with `lemonade-eval`. Recommended tasks:
 
-- **GSM8K**: Grade School Math word problems (generation-based)
-- **HellaSwag**: Commonsense reasoning
-- **Winogrande**: Commonsense reasoning with Winograd schemas
-- **ARC-Easy / ARC-Challenge**: AI2 Reasoning Challenge
-- **TruthfulQA**: Testing model truthfulness
+- **GSM8K**: Grade School Math word problems
+- **DROP**: Reading comprehension with discrete reasoning
+- **TriviaQA**: Trivia question answering
+- **NaturalQuestions**: Open-domain question answering
 
 For the full list of tasks, see the [lm-evaluation-harness task list](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/tasks/README.md).
 
-> **Note**: Some tasks (like MMLU multiple-choice) require log probabilities, which may not be fully supported. For MMLU evaluation, consider using the built-in `accuracy-mmlu` tool instead.
+> **Note**: Some popular benchmarks (HellaSwag, Winogrande, ARC, MMLU, TruthfulQA) are multiple-choice tasks that require log probabilities and will not work with Lemonade Server. For MMLU evaluation, use the built-in `accuracy-mmlu` tool instead.
 
 ## Understanding Results
 
