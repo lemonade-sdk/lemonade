@@ -600,8 +600,8 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The Stable Diffusion model to use (e.g., `SD-Turbo`, `SDXL-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. If not specified, a random seed is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
