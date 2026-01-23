@@ -29,16 +29,11 @@ jobs:
     runs-on: windows-latest
     outputs:
       unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
-      version: ${{ steps.get_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           fetch-depth: 0
-
-      - name: Get version from CMakeLists.txt
-        id: get_version
-        uses: ./.github/actions/get-version
 
       - name: Install CMake if not available
         shell: PowerShell
@@ -263,7 +258,7 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: 'signed-msi'
           parameters: |
-            version: "${{ needs.build-lemonade-server-installer.outputs.version }}"
+            version: "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'test' }}"
 
       - name: Verify Signed MSI Files
         shell: PowerShell
