@@ -999,12 +999,6 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      # NOTE: Removed Visual C++ Redistributable install step to test if it's actually needed
-      # on the CI runners. If tests fail with missing DLL errors, we need to either:
-      # 1. Restore this step
-      # 2. Bundle VC++ Redist in the MSI installer
-      # 3. Use statically-linked sd-server builds
-
       - name: Pre-download SD-Turbo model
         shell: PowerShell
         env:
@@ -1071,40 +1065,11 @@ jobs:
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "HF_HOME set to: $PWD/hf-cache"
 
-      - name: Download .deb package
-        uses: actions/download-artifact@v4
+      - name: Install Lemonade Server (.deb)
+        uses: ./.github/actions/install-lemonade-server-deb
         with:
-          name: lemonade-server-deb
-          path: .
-
-      - name: Extract .deb package (no sudo needed)
-        run: |
-          echo "Extracting .deb package..."
-
-          # Use dynamic version from build job
-          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-          echo "Extracting: $DEB_FILE"
-
-          # Extract the .deb package
-          mkdir -p lemonade-extracted
-          dpkg-deb -x "$DEB_FILE" ./lemonade-extracted
-
-          # Copy resources to user's local share (path_utils.cpp checks here!)
-          mkdir -p ~/.local/share/lemonade-server
-          cp -r ./lemonade-extracted/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
-
-          echo "Extraction complete. Contents:"
-          find ./lemonade-extracted -type f -name "lemonade-*" | head -20
-
-      - name: Verify binaries work
-        run: |
-          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-server
-          chmod +x ./lemonade-extracted/usr/local/bin/lemonade-router
-
-          echo "Verifying binaries..."
-          ./lemonade-extracted/usr/local/bin/lemonade-router --version
-          ./lemonade-extracted/usr/local/bin/lemonade-server --version
-          echo "Binaries verified!"
+          version: ${{ env.LEMONADE_VERSION }}
+          extract-path: './lemonade-extracted'
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1116,28 +1081,18 @@ jobs:
       - name: Pre-download SD-Turbo model
         run: |
           set -e
-
-          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
-
           echo "Pre-downloading SD-Turbo model..."
           echo "HF_HOME: $HF_HOME"
-
-          $SERVER_BIN pull SD-Turbo
-
+          lemonade-server pull SD-Turbo
           echo "SD-Turbo model downloaded successfully!"
 
       - name: Run Stable Diffusion tests with C++ server
         run: |
           set -e
-
-          SERVER_BIN="./lemonade-extracted/usr/local/bin/lemonade-server"
-
-          echo "Running Stable Diffusion tests with C++ server CLI: $SERVER_BIN"
+          echo "Running Stable Diffusion tests with C++ server"
           echo "HF_HOME is set to: $HF_HOME"
           echo "Note: Image generation may take 2-3 minutes with CPU backend"
-
-          .venv/bin/python test/server_sd.py --server-binary $SERVER_BIN
-
+          .venv/bin/python test/server_sd.py --server-binary lemonade-server
           echo "Stable Diffusion tests PASSED!"
 
       - name: Cleanup
@@ -1164,46 +1119,10 @@ jobs:
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "HF_HOME set to: $PWD/hf-cache"
 
-      - name: Download .deb package
-        uses: actions/download-artifact@v4
+      - name: Install Lemonade Server (.deb)
+        uses: ./.github/actions/install-lemonade-server-deb
         with:
-          name: lemonade-server-deb
-          path: .
-
-      - name: Extract .deb package (no sudo needed)
-        run: |
-          echo "Extracting .deb package..."
-          
-          # Use dynamic version from build job
-          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-          echo "Extracting: $DEB_FILE"
-          
-          # Extract the .deb package
-          mkdir -p ./deb-extract
-          dpkg-deb -x "$DEB_FILE" ./deb-extract
-          
-          # Copy resources to user's local share (path_utils.cpp checks here!)
-          mkdir -p ~/.local/share/lemonade-server
-          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
-          
-          # Make llama directory writable in the extracted location
-          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
-          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
-          
-          # Add binaries to PATH
-          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
-          
-          echo "Package extracted successfully!"
-
-      - name: Verify binaries work
-        run: |
-          echo "Verifying binaries..."
-          
-          # Test version
-          lemonade-router --version
-          lemonade-server --version
-          
-          echo "Binaries verified!"
+          version: ${{ env.LEMONADE_VERSION }}
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1218,14 +1137,11 @@ jobs:
         run: |
           echo "Running Llamacpp Vulkan tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
-          
-          venvPython=".venv/bin/python"
-          $venvPython test/server_llamacpp.py vulkan --server-binary lemonade-server
-          
+
+          .venv/bin/python test/server_llamacpp.py vulkan --server-binary lemonade-server
           echo "Llamacpp Vulkan tests PASSED!"
 
-          python test/server_multimodel.py vulkan --server-binary lemonade-server
-          
+          .venv/bin/python test/server_multimodel.py vulkan --server-binary lemonade-server
           echo "Llamacpp multi-model tests PASSED!"
 
       - name: Print server logs on failure
@@ -1275,46 +1191,10 @@ jobs:
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "HF_HOME set to: $PWD/hf-cache"
 
-      - name: Download .deb package
-        uses: actions/download-artifact@v4
+      - name: Install Lemonade Server (.deb)
+        uses: ./.github/actions/install-lemonade-server-deb
         with:
-          name: lemonade-server-deb
-          path: .
-
-      - name: Extract .deb package (no sudo needed)
-        run: |
-          echo "Extracting .deb package..."
-          
-          # Use dynamic version from build job
-          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-          echo "Extracting: $DEB_FILE"
-          
-          # Extract the .deb package
-          mkdir -p ./deb-extract
-          dpkg-deb -x "$DEB_FILE" ./deb-extract
-          
-          # Copy resources to user's local share (path_utils.cpp checks here!)
-          mkdir -p ~/.local/share/lemonade-server
-          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
-          
-          # Make llama directory writable in the extracted location
-          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
-          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
-          
-          # Add binaries to PATH
-          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
-          
-          echo "Package extracted successfully!"
-
-      - name: Verify binaries work
-        run: |
-          echo "Verifying binaries..."
-          
-          # Test version
-          lemonade-router --version
-          lemonade-server --version
-          
-          echo "Binaries verified!"
+          version: ${{ env.LEMONADE_VERSION }}
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1329,10 +1209,8 @@ jobs:
         run: |
           echo "Running Llamacpp ROCm tests with .deb installation..."
           echo "HF_HOME: $HF_HOME"
-          
-          venvPython=".venv/bin/python"
-          $venvPython test/server_llamacpp.py rocm --server-binary lemonade-server
-          
+
+          .venv/bin/python test/server_llamacpp.py rocm --server-binary lemonade-server
           echo "Llamacpp ROCm tests PASSED!"
 
       - name: Print server logs on failure
@@ -1386,52 +1264,10 @@ jobs:
           echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
           echo "HF_HOME set to: $PWD/hf-cache"
 
-      - name: Download .deb package
-        uses: actions/download-artifact@v4
+      - name: Install Lemonade Server (.deb)
+        uses: ./.github/actions/install-lemonade-server-deb
         with:
-          name: lemonade-server-deb
-          path: .
-
-      - name: Extract .deb package
-        run: |
-          echo "Extracting .deb package..."
-          
-          # Use dynamic version from build job
-          DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
-          echo "Extracting: $DEB_FILE"
-          
-          if [ ! -f "$DEB_FILE" ]; then
-              echo "ERROR: .deb file not found!"
-              ls -la
-              exit 1
-          fi
-          
-          # Extract the .deb package
-          mkdir -p ./deb-extract
-          dpkg-deb -x "$DEB_FILE" ./deb-extract
-          
-          # Copy resources to user's local share (path_utils.cpp checks here!)
-          mkdir -p ~/.local/share/lemonade-server
-          cp -r ./deb-extract/usr/local/share/lemonade-server/* ~/.local/share/lemonade-server/
-          
-          # Make llama directory writable
-          mkdir -p ./deb-extract/usr/local/share/lemonade-server/llama
-          chmod 777 ./deb-extract/usr/local/share/lemonade-server/llama
-          
-          # Add binaries to PATH
-          echo "$PWD/deb-extract/usr/local/bin" >> $GITHUB_PATH
-          
-          echo "Package extracted successfully!"
-
-      - name: Verify binaries work
-        run: |
-          echo "Verifying binaries..."
-          
-          # Test version
-          lemonade-router --version
-          lemonade-server --version
-          
-          echo "Binaries verified!"
+          version: ${{ env.LEMONADE_VERSION }}
 
       - name: Download test model (Qwen3-0.6B)
         env:
