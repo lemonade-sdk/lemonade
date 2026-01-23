@@ -86,7 +86,7 @@
         "size": 3.97
     },
     "Qwen-2.5-1.5B-Instruct-Hybrid": {
-    "checkpoint": "amd/Qwen2.5-1.5B-Instruct-onnx-ryzenai-hybrid",
+    "checkpoint": "amd/Qwen-2.5-1.5B-Instruct-onnx-ryzenai-hybrid",
         "recipe": "oga-hybrid",
         "suggested": true,
         "size": 2.16
