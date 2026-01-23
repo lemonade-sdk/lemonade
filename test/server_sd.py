@@ -41,7 +41,7 @@ class SDServerTesting(ServerTestingBase):
             "model": SD_MODEL,
             "prompt": "A red circle",
             "size": "256x256",  # Smallest practical size for speed
-            "steps": 4,  # SD-Turbo works well with few steps
+            "steps": 2,  # SD-Turbo works well with few steps
             "n": 1,
             "response_format": "b64_json"
         }

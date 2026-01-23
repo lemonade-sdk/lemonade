@@ -644,14 +644,6 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 - `data` - Array of generated images
   - `b64_json` - Base64-encoded PNG image data
 
-#### Saving Generated Images
-
-By default, generated images are cleaned up after being returned. To save images to disk, start the server with the `--save-images` flag:
-
-```bash
-lemonade-server serve --save-images --images-dir ./my_images
-```
-
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

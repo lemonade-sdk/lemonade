@@ -97,8 +97,8 @@ Lemonade supports image generation using Stable Diffusion models via [stable-dif
 # Pull an image generation model
 lemonade-server pull SD-Turbo
 
-# Start the server (optionally save generated images)
-lemonade-server --save-images
+# Start the server
+lemonade-server serve
 ```
 
 Available models: **SD-Turbo** (fast, 4-step), **SDXL-Turbo**, **SD-1.5**, **SDXL-Base-1.0**
