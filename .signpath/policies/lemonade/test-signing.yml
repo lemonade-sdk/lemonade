@@ -5,4 +5,4 @@ github-policies:
   runners:
     allowed_groups:
       - 'GitHub Actions'  # GitHub-hosted runners
-      - 'Default'         # Default group for self-hosted runners
+      - 'stx'         # Ryzen AI self-hosted runners
