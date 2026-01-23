@@ -60,12 +60,5 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-
-      - name: Tag image as latest
-        if: github.event_name == 'workflow_dispatch' && inputs.add_latest
-        run: |
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-          docker tag \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ github.event_name == 'push' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'workflow_dispatch' && inputs.add_latest && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
