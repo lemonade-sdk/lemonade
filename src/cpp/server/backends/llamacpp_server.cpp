@@ -222,31 +222,6 @@ static std::string get_install_directory(const std::string& backend) {
     return (fs::path(get_downloaded_bin_dir()) / "llama" / backend).string();
 }
 
-// Helper to extract ZIP files (Windows/Linux built-in tools)
-static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
-#ifdef _WIN32
-    std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
-    
-    // Use PowerShell to extract with error handling
-    // Add -ErrorAction Stop to ensure errors are properly caught
-    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
-                         zip_path + "' -DestinationPath '" + dest_dir + 
-                         "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-    
-    int result = system(command.c_str());
-    if (result != 0) {
-        std::cerr << "[LlamaCpp] PowerShell extraction failed with code: " << result << std::endl;
-        return false;
-    }
-    return true;
-#else
-    std::cout << "[LlamaCpp] Extracting ZIP to " << dest_dir << std::endl;
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
-
 #ifndef _WIN32
 // Helper to extract tar.gz files (Linux/macOS)
 // Uses --strip-components=1 to remove the top-level directory that llama.cpp releases include
@@ -262,7 +237,7 @@ static bool extract_tarball(const std::string& tarball_path, const std::string& 
 // Helper to extract archive files based on extension
 static bool extract_archive(const std::string& archive_path, const std::string& dest_dir) {
     // Check if it's a tar.gz file
-    if (archive_path.size() > 7 && 
+    if (archive_path.size() > 7 &&
         archive_path.substr(archive_path.size() - 7) == ".tar.gz") {
 #ifdef _WIN32
         // tar.gz not expected on Windows, but handle gracefully
@@ -273,7 +248,7 @@ static bool extract_archive(const std::string& archive_path, const std::string& 
 #endif
     }
     // Default to ZIP extraction
-    return extract_zip(archive_path, dest_dir);
+    return utils::extract_zip(archive_path, dest_dir);
 }
 
 void LlamaCppServer::install(const std::string& backend) {

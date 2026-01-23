@@ -53,41 +53,6 @@ static std::string get_sd_install_dir() {
     return (fs::path(get_downloaded_bin_dir()) / "sd-cpp").string();
 }
 
-// Helper to extract ZIP files
-static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
-#ifdef _WIN32
-    std::cout << "[SDServer] Extracting ZIP to " << dest_dir << std::endl;
-
-    // Ensure destination directory exists
-    fs::create_directories(dest_dir);
-
-    // Use tar (available on Windows 10 1903+) which is more reliable
-    std::string tar_command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
-    int result = system(tar_command.c_str());
-
-    if (result != 0) {
-        std::cerr << "[SDServer] tar extraction failed with code: " << result
-                  << ", trying PowerShell..." << std::endl;
-        // Fall back to PowerShell with full path
-        std::string ps_command = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe "
-                                "-Command \"try { Expand-Archive -Path '" +
-                                zip_path + "' -DestinationPath '" + dest_dir +
-                                "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-        result = system(ps_command.c_str());
-        if (result != 0) {
-            std::cerr << "[SDServer] PowerShell extraction also failed with code: " << result << std::endl;
-            return false;
-        }
-    }
-    return true;
-#else
-    std::cout << "[SDServer] Extracting ZIP to " << dest_dir << std::endl;
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
-
 SDServer::SDServer(const std::string& log_level,
                    ModelManager* model_manager)
     : WrappedServer("sd-server", log_level, model_manager)
@@ -345,7 +310,7 @@ void SDServer::install(const std::string& /* backend */) {
     std::cout << "[SDServer] Extracting ZIP to " << install_dir << std::endl;
 
     // Extract the ZIP
-    if (!extract_zip(zip_path, install_dir)) {
+    if (!utils::extract_zip(zip_path, install_dir)) {
         throw std::runtime_error("Failed to extract ZIP file");
     }
 
