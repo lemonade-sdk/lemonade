@@ -999,28 +999,11 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Install Visual C++ Redistributable (for sd-cpp AVX2 build)
-        shell: PowerShell
-        run: |
-          # Check if VC++ Redistributable is already installed
-          $vcInstalled = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
-
-          if ($vcInstalled) {
-              Write-Host "Visual C++ Redistributable already installed (version $($vcInstalled.Version))" -ForegroundColor Green
-          } else {
-              Write-Host "Installing Visual C++ Redistributable 2015-2022..." -ForegroundColor Cyan
-
-              # Download VC++ Redistributable
-              $vcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-              $vcRedistPath = "$env:TEMP\vc_redist.x64.exe"
-
-              Invoke-WebRequest -Uri $vcRedistUrl -OutFile $vcRedistPath -UseBasicParsing
-
-              # Install silently
-              Start-Process -FilePath $vcRedistPath -ArgumentList "/install", "/quiet", "/norestart" -Wait -NoNewWindow
-
-              Write-Host "Visual C++ Redistributable installed successfully!" -ForegroundColor Green
-          }
+      # NOTE: Removed Visual C++ Redistributable install step to test if it's actually needed
+      # on the CI runners. If tests fail with missing DLL errors, we need to either:
+      # 1. Restore this step
+      # 2. Bundle VC++ Redist in the MSI installer
+      # 3. Use statically-linked sd-server builds
 
       - name: Pre-download SD-Turbo model
         shell: PowerShell
