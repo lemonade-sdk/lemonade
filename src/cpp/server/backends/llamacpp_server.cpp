@@ -220,61 +220,6 @@ static std::string identify_rocm_arch() {
     return "gfx110X";  // Default architecture
 }
 
-// Helper to get the directory where llama binaries should be installed
-// Policy: Next to the executable for both dev builds and installed binaries
-static std::string get_llama_base_dir() {
-    // 1. Declare buffers at the top so they are visible to all scopes
-    char exe_path[PATH_MAX];
-    char real_path[PATH_MAX];
-
-#ifdef _WIN32
-    // --- Windows (Returns early) ---
-    if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) == 0) {
-        return ".";
-    }
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-    return exe_dir.string();
-
-#elif defined(__APPLE__)
-    // --- macOS ---
-    uint32_t size = sizeof(exe_path);
-    if (_NSGetExecutablePath(exe_path, &size) != 0) {
-        return ".";
-    }
-    // _NSGetExecutablePath returns a raw path. We fall through to the 
-    // shared 'realpath' logic below to resolve it and check for share/ folders.
-
-#else
-    // --- Linux ---
-    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
-    if (len == -1) {
-        return ".";
-    }
-    exe_path[len] = '\0'; // CRITICAL: Null-terminate the string!
-#endif
-
-    // --- Shared Logic (Mac & Linux) ---
-    // Resolve symlinks and relative paths (e.g. /usr/local/bin/../bin/lemonade)
-    if (realpath(exe_path, real_path) != NULL) {
-        fs::path exe_dir = fs::path(real_path).parent_path();
-        
-        // Logic to switch to share/ directory if installed in /usr/local/bin
-        if (exe_dir == "/usr/local/bin" || exe_dir == "/usr/bin") {
-            if (fs::exists("/usr/local/share/lemonade-server")) {
-                return "/usr/local/share/lemonade-server";
-            }
-            if (fs::exists("/usr/share/lemonade-server")) {
-                return "/usr/share/lemonade-server";
-            }
-        }
-        
-        // Otherwise (dev builds), use the exe directory
-        return exe_dir.string();
-    }
-
-    return ".";
-}
-
 // Helper to get the install directory for llama-server binaries
 // Policy: Put in llama/{backend}/ next to the executable
 static std::string get_install_directory(const std::string& backend) {
