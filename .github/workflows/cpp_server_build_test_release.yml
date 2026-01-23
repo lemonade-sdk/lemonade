@@ -289,7 +289,6 @@ jobs:
 
   test-exe-rai-hybrid-basics:
     name: Test .exe - Basic RAI Hybird Functionality
-    if: false  # Temporarily disabled - ryzenai-server cache path needs fixing
     runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -819,7 +818,6 @@ jobs:
 
   test-exe-rai-cpu:
     name: Test .exe - ryzenai-server CPU
-    if: false  # Temporarily disabled - ryzenai-server cache path needs fixing
     runs-on: [rai300_400, Windows]
     needs: 
       - build-lemonade-server-installer
@@ -1470,7 +1468,7 @@ jobs:
       - test-exe-flm
       - test-exe-llamacpp-vulkan
       - test-exe-llamacpp-rocm
-      # - test-exe-rai-cpu  # Temporarily disabled
+      - test-exe-rai-cpu
       - test-exe-whisper
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
@@ -1514,4 +1512,3 @@ jobs:
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           fail_on_unmatched_files: true
-
