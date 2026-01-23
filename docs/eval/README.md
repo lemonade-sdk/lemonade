@@ -286,15 +286,8 @@ Results can be filtered by model name, device type, and data type:
 lemonade-eval report --perf --filter-model "Qwen"
 ```
 
-## Memory Usage
 
-Track memory usage during evaluation with the `--memory` flag:
-
-```bash
-lemonade-eval --memory -i Qwen3-4B-Instruct-2507-GGUF load bench
-```
-
-This generates a PNG memory profile in the build folder.
+## Power Profiling
 
 For power profiling, see [Power Profiling](power_profiling.md).
 

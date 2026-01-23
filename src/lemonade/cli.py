@@ -5,7 +5,8 @@ import os
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 from lemonade.version import __version__ as version_number
 from lemonade.tools import FirstTool, NiceHelpFormatter
-from lemonade.profilers.memory_tracker import MemoryTracker
+
+# from lemonade.profilers.memory_tracker import MemoryTracker
 import lemonade.common.filesystem as fs
 import lemonade.common.cli_helpers as cli
 from lemonade.sequence import Sequence
@@ -19,7 +20,10 @@ def get_available_profilers(warn_missing=False):
     Args:
         warn_missing: If True, print warnings for missing profilers. If False, fail silently.
     """
-    profilers = [MemoryTracker]
+
+    # Temporarily disable memory profiling due to changes in lemonade architecture
+    # profilers = [MemoryTracker]
+    profilers = []
 
     try:
         from lemonade.profilers.hwinfo_power import HWINFOPowerProfiler
