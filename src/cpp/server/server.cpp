@@ -439,7 +439,7 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
     struct addrinfo *result = nullptr;
     
     // Check return value (0 is success)
-    if (httplib::detail::getaddrinfo_with_timeout(host.c_str(), "", &hints, &result, 5000) != 0) {
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &result) != 0) {
         std::cerr << "[Server] Warning: resolution failed for " << host << " no " << (ai_family == AF_INET ? "IPv4" : ai_family == AF_INET6 ? "IPv6" : "") << " resolution found." << std::endl;
         return ""; // Return empty string on failure, don't return void
     }
