@@ -1,4 +1,5 @@
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -177,30 +178,6 @@ std::string RyzenAIServer::get_ryzenai_server_path() {
                            "\nThis may indicate a failed installation or corrupted download.");
 }
 
-// Helper function to extract ZIP files
-static bool extract_zip(const std::string& zip_path, const std::string& dest_dir) {
-#ifdef _WIN32
-    std::cout << "[RyzenAI-Server] Extracting ZIP to " << dest_dir << std::endl;
-    
-    // Use PowerShell to extract with error handling
-    std::string command = "powershell -Command \"try { Expand-Archive -Path '" + 
-                         zip_path + "' -DestinationPath '" + dest_dir + 
-                         "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
-    
-    int result = system(command.c_str());
-    if (result != 0) {
-        std::cerr << "[RyzenAI-Server] PowerShell extraction failed with code: " << result << std::endl;
-        return false;
-    }
-    return true;
-#else
-    std::cout << "[RyzenAI-Server] Extracting ZIP to " << dest_dir << std::endl;
-    std::string command = "unzip -o \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
-
 void RyzenAIServer::download_and_install(const std::string& version) {
     std::cout << "[RyzenAI-Server] Downloading ryzenai-server " << version << "..." << std::endl;
     
@@ -258,7 +235,7 @@ void RyzenAIServer::download_and_install(const std::string& version) {
     fs::create_directories(install_dir);
     
     // Extract ZIP
-    if (!extract_zip(zip_path, install_dir.string())) {
+    if (!backends::BackendUtils::extract_archive(zip_path, install_dir.string(), "RyzenAI-Server")) {
         // Clean up corrupted files
         fs::remove(zip_path);
         fs::remove_all(install_dir);
