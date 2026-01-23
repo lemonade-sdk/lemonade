@@ -101,22 +101,6 @@ lemonade-server pull SD-Turbo
 lemonade-server --save-images
 ```
 
-Generate images using the OpenAI-compatible API:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/api/v1", api_key="lemonade")
-
-response = client.images.generate(
-    model="SD-Turbo",
-    prompt="A serene mountain landscape at sunset",
-    size="512x512",
-    n=1,
-    extra_body={"steps": 4}  # SD-Turbo works best with 4 steps
-)
-```
-
 Available models: **SD-Turbo** (fast, 4-step), **SDXL-Turbo**, **SD-1.5**, **SDXL-Base-1.0**
 
 > See `examples/api_image_generation.py` for complete examples.
