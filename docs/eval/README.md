@@ -177,9 +177,6 @@ The `oga-load` tool is for preparing custom OGA (ONNX Runtime GenAI) models. It 
 ```bash
 # Prepare and test a model on CPU
 lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device cpu --dtype int4 llm-prompt -p "Hello!"
-
-# Prepare a model for iGPU
-lemonade-eval -i microsoft/Phi-3-mini-4k-instruct oga-load --device igpu --dtype int4
 ```
 
 ### Installation for OGA
