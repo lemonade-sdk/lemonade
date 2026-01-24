@@ -40,8 +40,7 @@ public:
     json image_generations(const json& request) override;
 
 private:
-    // Server executable helpers
-    std::string get_sd_server_path();
+    // Server executable helper
     std::string find_executable_in_install_dir(const std::string& install_dir);
 
     // Server lifecycle helpers

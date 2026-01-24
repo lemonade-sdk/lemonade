@@ -112,11 +112,6 @@ bool SDServer::wait_for_ready(int timeout_seconds) {
     }
 }
 
-std::string SDServer::get_sd_server_path() {
-    std::string install_dir = get_sd_install_dir();
-    return find_executable_in_install_dir(install_dir);
-}
-
 std::string SDServer::find_executable_in_install_dir(const std::string& install_dir) {
     if (!fs::exists(install_dir)) {
         return "";
@@ -336,7 +331,7 @@ void SDServer::load(const std::string& model_name,
     model_path_ = model_path;
 
     // Get sd-server executable path
-    std::string exe_path = get_sd_server_path();
+    std::string exe_path = find_executable_in_install_dir(get_sd_install_dir());
     if (exe_path.empty()) {
         throw std::runtime_error("sd-server executable not found");
     }
