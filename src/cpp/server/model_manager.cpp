@@ -1193,7 +1193,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
         }
         if (largest_mem_pool_gb > 0.0) {
-            std::cout << "  - Largest VRAM target: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
+            std::cout << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         debug_printed = true;
     }
