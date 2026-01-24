@@ -1057,15 +1057,30 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-double get_max_memory_of_device(json device, std::optional<std::reference_wrapper<double>> current_max = std::nullopt) {
-    // Get the maximum POSSIBLE accessible memory of the device in question, then optionally replace an exising max.
+double get_max_memory_of_device(json device, bool unifiedMemory, std::optional<std::reference_wrapper<double>> current_max = std::nullopt) {
+    // Get the maximum POSSIBLE accessible memory of the device in question, then optionally replace an existing max.
     double curr_device_vram_gb = 0.0;
+    double dynamic_mem_gb = 0.0;
+    double vram_gb = 0.0;
+
     if (device.contains("vram_gb")) {
-        curr_device_vram_gb += device["vram_gb"].get<double>();
+        vram_gb = device["vram_gb"].get<double>();
     }
-    if (device.contains("dynamic_mem_gb")) {
-        curr_device_vram_gb += device["dynamic_mem_gb"].get<double>();
+    if (device.contains("dynamic_mem_gb"))
+    {
+        dynamic_mem_gb = device["dynamic_mem_gb"].get<double>();
     }
+
+    if (unifiedMemory)
+    {
+        curr_device_vram_gb = dynamic_mem_gb + vram_gb;
+    }
+    else
+    {
+        curr_device_vram_gb = vram_gb > dynamic_mem_gb ? vram_gb : dynamic_mem_gb;
+    }
+
+    // Optionally Assign to Reference
     if (current_max && (curr_device_vram_gb > current_max->get())) {
         current_max->get() = curr_device_vram_gb;
     }
@@ -1112,11 +1127,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         // Possible multiple entries per type
         if (dev_type_info.is_array()) {
             for (const auto& dev : dev_type_info) {
-                get_max_memory_of_device(dev, largest_vram_target_gb);
+                get_max_memory_of_device(dev, true, largest_vram_target_gb);
             }
         }
         else {
-            get_max_memory_of_device(dev_type_info, largest_vram_target_gb);
+            get_max_memory_of_device(dev_type_info, true, largest_vram_target_gb);
         }
     }
     // Get system RAM for memory-based filtering

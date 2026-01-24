@@ -1321,41 +1321,29 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
             continue;
 
-
-        std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
-        std::string board_info_path = device_path + "board_info";
-        bool is_integrated = !fs::exists(board_info_path) && fs::is_regular_file(board_info_path);
+        bool is_integrated = get_amd_is_igpu(drm_render_minor);
+        if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
         gpu.available = true;
 
-        // Get VRAM for discrete GPUs
-       
-        std::string vram_file = device_path + "/mem_info_vram_total";
-        if (!fs::exists(vram_file))
-            continue;
-        std::ifstream vram_stream(vram_file);
-        std::string vram_str;
-        std::getline(vram_stream, vram_str);
-        uint64_t vram_bytes = std::stoull(vram_str);
-        gpu.vram_gb = std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-        gpu.dynamic_gb = get_amd_dynamic_vram(drm_render_minor);
+        // Get VRAM and GTT for GPUs
+        gpu.vram_gb = get_amd_vram(drm_render_minor);
+        gpu.dynamic_gb = get_amd_gtt(drm_render_minor);
         
         // Detect inference engines
         std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
         gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
         
         gpus.push_back(gpu);
-        
+    }
 
-
-        if (gpus.empty()) {
-            GPUInfo gpu;
-            gpu.available = false;
-            gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
-            gpus.push_back(gpu);
-        }
+    if (gpus.empty()) {
+        GPUInfo gpu;
+        gpu.available = false;
+        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
+        gpus.push_back(gpu);
     }
 
     return gpus;
@@ -1423,58 +1411,17 @@ double LinuxSystemInfo::get_nvidia_vram() {
     return 0.0;
 }
 
-double LinuxSystemInfo::get_amd_vram_rocm_smi() {
-    FILE* pipe = popen("rocm-smi --showmeminfo vram --csv 2>/dev/null", "r");
-    if (!pipe) {
-        return 0.0;
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse CSV output for VRAM
-    std::istringstream iss(output);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (line.find("Total VRAM") != std::string::npos || 
-            line.find("vram") != std::string::npos) {
-            // Extract numbers
-            std::regex num_regex(R"(\d+)");
-            std::smatch match;
-            if (std::regex_search(line, match, num_regex)) {
-                try {
-                    double vram_value = std::stod(match[0].str());
-                    // Assume MB if large value, GB if small
-                    if (vram_value > 100) {
-                        return std::round(vram_value / 1024.0 * 10.0) / 10.0;
-                    } else {
-                        return vram_value;
-                    }
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-        }
-    }
-    
-    return 0.0;
-}
-
-double LinuxSystemInfo::get_dynamic_vram() {
+double LinuxSystemInfo::get_ttm_gb() {
     std::string ttm_path = "/sys/module/ttm/parameters/pages_limit";
-    std::ifstream file(ttm_path);
+    std::ifstream sysfs_file(ttm_path);
 
-    if (!file.is_open()) {
+    if (!sysfs_file.is_open()) {
         return 0.0;
     }
 
     std::string page_limit_str;
-    std::getline(file, page_limit_str);
-    file.close();
+    std::getline(sysfs_file, page_limit_str);
+    sysfs_file.close();
     
     try {
         uint64_t page_limit = std::stoull(page_limit_str);
@@ -1484,57 +1431,38 @@ double LinuxSystemInfo::get_dynamic_vram() {
     }   
 }
 
-double LinuxSystemInfo::parse_vram_sysfs(const std::string& pci_id, const std::string& deviceFile){
+bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
+    std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
+    std::string board_info_path = device_path + "board_info";
+    return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
+}
+
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
     // Try device-specific path first
-    std::string vram_path = "/sys/bus/pci/devices/" + pci_id + "/" + deviceFile;
-    std::ifstream file(vram_path);
-    std::string vram_str;
-
-    if (!file.is_open()) {
-        // Try wildcard path - Fallback so it may grab VRAM from wrong device
-        for(const auto& entry : fs::directory_iterator("/sys/class/drm/")) {
-            // Skip empty or non "card*" directories
-            if(!entry.is_directory()) continue;
-            if(entry.path().filename().string().rfind("card") != 0) continue;
-
-            // Find Device File
-            fs::path device_path = entry.path() / "device" / deviceFile;
-            if(!fs::exists(device_path)) continue;
-
-            // Read in file
-            std::ifstream device_file(device_path);
-            if(!device_file.is_open()) continue;
-            std::getline(device_file, vram_str);
-            device_file.close();
-
-            try{
-                uint64_t bytes = std::stoull(vram_str);
-                return std::round(bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-            }
-            catch(...){
-                continue;
-            }
-        }
+    std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
+    
+    if (!fs::exists(sysfs_path))
         return 0.0;
-    }
-    
-    std::getline(file, vram_str);
-    file.close();
-    
+
+    std::ifstream sysfs_file(sysfs_path);
+    std::string memory_str;
+    std::getline(sysfs_file, memory_str);
+    sysfs_file.close();
+
     try {
-        uint64_t vram_bytes = std::stoull(vram_str);
-        return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+        uint64_t memory_bytes = std::stoull(memory_str);
+        return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
 }
 
-double LinuxSystemInfo::get_amd_dynamic_vram(const std::string& pci_id){
-    return parse_vram_sysfs(pci_id, "mem_info_gtt_total");
+double LinuxSystemInfo::get_amd_gtt(const std::string& drm_render_minor){
+    return parse_memory_sysfs(drm_render_minor, "mem_info_gtt_total");
 }
 
-double LinuxSystemInfo::get_amd_vram_sysfs(const std::string& pci_id) {
-    return parse_vram_sysfs(pci_id, "mem_info_vram_total");
+double LinuxSystemInfo::get_amd_vram(const std::string& drm_render_minor) {
+    return parse_memory_sysfs(drm_render_minor, "mem_info_vram_total");
 }
 
 json LinuxSystemInfo::get_system_info_dict() {
@@ -1558,7 +1486,7 @@ std::string LinuxSystemInfo::get_os_version() {
 
         const std::string tag = "version ";
         size_t pos = line.find(tag);
-        if (pos < std::string::npos){
+        if (pos != std::string::npos){
             pos += tag.size();
             size_t end = line.find(' ', pos);
             kernel = line.substr(pos, end - pos);
