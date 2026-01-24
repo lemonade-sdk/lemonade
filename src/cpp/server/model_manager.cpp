@@ -1056,10 +1056,12 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-double get_max_memory_of_device(json device, bool unifiedMemory) {
-    // Get the maximum POSSIBLE accessible memory of the device in question, then optionally replace an existing max.
-    double curr_device_memory_gb = 0.0;
-    double dynamic_mem_gb = 0.0;
+
+double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
+    // Get the maximum POSSIBLE accessible memory of the device in question,
+    // taking into account the respective memory allocation behavior.
+
+    double virtual_mem_gb = 0.0;
     double vram_gb = 0.0;
 
     if (device.contains("vram_gb")) {
@@ -1067,19 +1069,26 @@ double get_max_memory_of_device(json device, bool unifiedMemory) {
     }
     if (device.contains("dynamic_mem_gb"))
     {
-        dynamic_mem_gb = device["dynamic_mem_gb"].get<double>();
+        virtual_mem_gb = device["dynamic_mem_gb"].get<double>();
     }
 
-    if (unifiedMemory)
+    switch (mem_alloc_behavior)
     {
-        curr_device_memory_gb = dynamic_mem_gb + vram_gb;
-    }
-    else
-    {
-        curr_device_memory_gb = vram_gb > dynamic_mem_gb ? vram_gb : dynamic_mem_gb;
-    }
+    case MemoryAllocBehavior::Hardware:
+        return vram_gb;
 
-    return curr_device_memory_gb;
+    case MemoryAllocBehavior::Virtual:
+        return virtual_mem_gb;
+
+    case MemoryAllocBehavior::Largest:
+        return vram_gb > virtual_mem_gb ? vram_gb : virtual_mem_gb;
+
+    case MemoryAllocBehavior::Unified:
+        return virtual_mem_gb + vram_gb;
+
+    default:
+        return vram_gb;
+    }
 }
 
 bool parse_TF_env_var(const char* env_var_name) {
@@ -1141,10 +1150,14 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
         // Expand this later to accommodate mixed pools
-        bool is_unified = enable_dgpu_gtt;
+        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+        if (dev_type == "amd_igpu")
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+        if (enable_dgpu_gtt)
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
 
         for (const auto& dev : dev_list) {
-            curr_mem_pool_gb = get_max_memory_of_device(dev, is_unified);
+            curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
             largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
         }
     }

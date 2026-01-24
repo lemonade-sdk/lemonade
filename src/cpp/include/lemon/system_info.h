@@ -25,12 +25,22 @@ struct CPUInfo : DeviceInfo {
 struct GPUInfo : DeviceInfo {
     std::string driver_version;
     double vram_gb = 0.0;
-    double dynamic_gb = 0.0;
+    double virtual_gb = 0.0;
 };
 
 struct NPUInfo : DeviceInfo {
     std::string driver_version;
     std::string power_mode;
+};
+
+//Enums
+
+enum class MemoryAllocBehavior
+{ // Example: VRAM=1, GTT=2, Both=3, Largest
+    Hardware = 1,
+    Virtual = 2,
+    Unified = 3,
+    Largest = 4,
 };
 
 // Base class for system information

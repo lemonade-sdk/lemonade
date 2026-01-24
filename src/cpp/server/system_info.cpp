@@ -93,7 +93,7 @@ json SystemInfo::get_device_dict() {
         devices["amd_igpu"] = {
             {"name", amd_igpu.name},
             {"vram_gb", amd_igpu.vram_gb},
-            {"dynamic_mem_gb", amd_igpu.dynamic_gb},
+            {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
         if (!amd_igpu.error.empty()) {
@@ -119,8 +119,8 @@ json SystemInfo::get_device_dict() {
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
             }
-            if (gpu.dynamic_gb > 0) {
-                gpu_json["dynamic_mem_gb"] = gpu.dynamic_gb;
+            if (gpu.virtual_gb > 0) {
+                gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
             }
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
@@ -1330,7 +1330,7 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
 
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
-        gpu.dynamic_gb = get_amd_gtt(drm_render_minor);
+        gpu.virtual_gb = get_amd_gtt(drm_render_minor);
         
         // Detect inference engines
         std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
