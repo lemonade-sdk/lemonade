@@ -46,13 +46,10 @@ private:
     std::string find_external_sd_executable();
 
     // Server lifecycle helpers
-    int choose_port();
     bool wait_for_ready(int timeout_seconds = 60);
 
-    // Server state
+    // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
-    int port_ = 0;
-    utils::ProcessHandle process_handle_;
 };
 
 } // namespace backends

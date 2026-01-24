@@ -14,15 +14,6 @@
 #include <thread>
 #include <chrono>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <winsock2.h>
-#else
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#endif
-
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -37,15 +28,23 @@ static std::string get_sd_version() {
         json config = utils::JsonUtils::load_from_file(config_path);
 
         if (!config.contains("sd-cpp") || !config["sd-cpp"].is_string()) {
-            return "master-471-7010bb4";
+            throw std::runtime_error("backend_versions.json is missing 'sd-cpp' version");
         }
 
-        return config["sd-cpp"].get<std::string>();
+        std::string version = config["sd-cpp"].get<std::string>();
+        std::cout << "[SDServer] Using sd-cpp version from config: " << version << std::endl;
+        return version;
 
     } catch (const std::exception& e) {
-        std::cerr << "[SDServer] Warning: Could not load version from config: "
-                  << e.what() << std::endl;
-        return "master-471-7010bb4";
+        std::cerr << "\n" << std::string(70, '=') << std::endl;
+        std::cerr << "ERROR: Failed to load sd-cpp version from configuration" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl;
+        std::cerr << "\nConfig file: " << config_path << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "\nThe backend_versions.json file is required and must contain a valid" << std::endl;
+        std::cerr << "'sd-cpp' version string." << std::endl;
+        std::cerr << std::string(70, '=') << std::endl << std::endl;
+        throw;
     }
 }
 
@@ -56,9 +55,7 @@ static std::string get_sd_install_dir() {
 
 SDServer::SDServer(const std::string& log_level,
                    ModelManager* model_manager)
-    : WrappedServer("sd-server", log_level, model_manager)
-    , port_(0)
-    , process_handle_({nullptr, 0}) {
+    : WrappedServer("sd-server", log_level, model_manager) {
 
     if (is_debug()) {
         std::cout << "[SDServer] Created with log_level=" << log_level << std::endl;
@@ -67,51 +64,6 @@ SDServer::SDServer(const std::string& log_level,
 
 SDServer::~SDServer() {
     unload();
-}
-
-int SDServer::choose_port() {
-    // Find an available port by binding to port 0
-#ifdef _WIN32
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET) return 0;
-#else
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) return 0;
-#endif
-
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = 0;  // Let OS choose
-
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
-        return 0;
-    }
-
-    socklen_t len = sizeof(addr);
-    if (getsockname(sock, (struct sockaddr*)&addr, &len) < 0) {
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
-        return 0;
-    }
-
-    int port = ntohs(addr.sin_port);
-
-#ifdef _WIN32
-    closesocket(sock);
-#else
-    close(sock);
-#endif
-
-    return port;
 }
 
 bool SDServer::wait_for_ready(int timeout_seconds) {
@@ -568,90 +520,43 @@ json SDServer::responses(const json& /* request */) {
 }
 
 json SDServer::image_generations(const json& request) {
-    if (port_ == 0 || process_handle_.pid == 0) {
-        return ErrorResponse::from_exception(
-            ModelNotLoadedException("No image generation model loaded")
-        );
+    // Build request - sd-server uses OpenAI-compatible format
+    json sd_request = request;
+
+    // sd-server requires extra params (steps, sample_method, scheduler) to be
+    // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
+    // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
+    json extra_args;
+    if (request.contains("steps")) {
+        extra_args["steps"] = request["steps"];
+    }
+    if (request.contains("cfg_scale")) {
+        extra_args["cfg_scale"] = request["cfg_scale"];
+    }
+    if (request.contains("seed")) {
+        extra_args["seed"] = request["seed"];
+    }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"];
+    }
+    if (request.contains("scheduler")) {
+        extra_args["scheduler"] = request["scheduler"];
     }
 
-    try {
-        // Forward request to sd-server
-        httplib::Client client("127.0.0.1", port_);
-        client.set_connection_timeout(10);
-        client.set_read_timeout(600);  // 10 minutes for image generation
-
-        // Build request - sd-server uses OpenAI-compatible format
-        json sd_request = request;
-
-        // sd-server requires extra params (steps, sample_method, scheduler) to be
-        // embedded in the prompt as <sd_cpp_extra_args>JSON</sd_cpp_extra_args>
-        // See PR #1173: https://github.com/leejet/stable-diffusion.cpp/pull/1173
-        json extra_args;
-        if (request.contains("steps")) {
-            extra_args["steps"] = request["steps"];
-        }
-        if (request.contains("cfg_scale")) {
-            extra_args["cfg_scale"] = request["cfg_scale"];
-        }
-        if (request.contains("seed")) {
-            extra_args["seed"] = request["seed"];
-        }
-        if (request.contains("sample_method")) {
-            extra_args["sample_method"] = request["sample_method"];
-        }
-        if (request.contains("scheduler")) {
-            extra_args["scheduler"] = request["scheduler"];
-        }
-
-        // Append extra args to prompt if any were specified
-        if (!extra_args.empty()) {
-            std::string prompt = sd_request.value("prompt", "");
-            prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
-            sd_request["prompt"] = prompt;
-        }
-
-        if (is_debug()) {
-            std::cout << "[SDServer] Forwarding request to sd-server: "
-                      << sd_request.dump(2) << std::endl;
-        }
-
-        auto response = client.Post(
-            "/v1/images/generations",
-            sd_request.dump(),
-            "application/json"
-        );
-
-        if (!response) {
-            throw std::runtime_error("Failed to connect to sd-server");
-        }
-
-        if (response->status != 200) {
-            std::string error_msg = "sd-server returned status " + std::to_string(response->status);
-            if (!response->body.empty()) {
-                error_msg += ": " + response->body;
-            }
-            throw std::runtime_error(error_msg);
-        }
-
-        // Parse and return response
-        json result = json::parse(response->body);
-
-        if (is_debug()) {
-            std::cout << "[SDServer] Response received, data items: "
-                      << (result.contains("data") ? result["data"].size() : 0) << std::endl;
-        }
-
-        return result;
-
-    } catch (const json::exception& e) {
-        return ErrorResponse::from_exception(
-            BackendException("sd-cpp", "Failed to parse sd-server response: " + std::string(e.what()))
-        );
-    } catch (const std::exception& e) {
-        return ErrorResponse::from_exception(
-            BackendException("sd-cpp", "Image generation failed: " + std::string(e.what()))
-        );
+    // Append extra args to prompt if any were specified
+    if (!extra_args.empty()) {
+        std::string prompt = sd_request.value("prompt", "");
+        prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
+        sd_request["prompt"] = prompt;
     }
+
+    if (is_debug()) {
+        std::cout << "[SDServer] Forwarding request to sd-server: "
+                  << sd_request.dump(2) << std::endl;
+    }
+
+    // Use base class forward_request with 10 minute timeout for image generation
+    return forward_request("/v1/images/generations", sd_request, 600);
 }
 
 } // namespace backends
