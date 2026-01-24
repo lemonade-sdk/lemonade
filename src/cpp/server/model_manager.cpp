@@ -15,7 +15,6 @@
 #include <chrono>
 #include <unordered_set>
 #include <iomanip>
-#include <optional>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -1057,9 +1056,9 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-double get_max_memory_of_device(json device, bool unifiedMemory, std::optional<std::reference_wrapper<double>> current_max = std::nullopt) {
+double get_max_memory_of_device(json device, bool unifiedMemory) {
     // Get the maximum POSSIBLE accessible memory of the device in question, then optionally replace an existing max.
-    double curr_device_vram_gb = 0.0;
+    double curr_device_memory_gb = 0.0;
     double dynamic_mem_gb = 0.0;
     double vram_gb = 0.0;
 
@@ -1073,30 +1072,43 @@ double get_max_memory_of_device(json device, bool unifiedMemory, std::optional<s
 
     if (unifiedMemory)
     {
-        curr_device_vram_gb = dynamic_mem_gb + vram_gb;
+        curr_device_memory_gb = dynamic_mem_gb + vram_gb;
     }
     else
     {
-        curr_device_vram_gb = vram_gb > dynamic_mem_gb ? vram_gb : dynamic_mem_gb;
+        curr_device_memory_gb = vram_gb > dynamic_mem_gb ? vram_gb : dynamic_mem_gb;
     }
 
-    // Optionally Assign to Reference
-    if (current_max && (curr_device_vram_gb > current_max->get())) {
-        current_max->get() = curr_device_vram_gb;
-    }
-    return curr_device_vram_gb;
+    return curr_device_memory_gb;
+}
+
+bool parse_TF_env_var(const char* env_var_name) {
+    const char* env = std::getenv(env_var_name);
+    return env && (std::string(env) == "1" ||
+                   std::string(env) == "true" ||
+                   std::string(env) == "TRUE" ||
+                   std::string(env) == "yes");
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
     // Check if model filtering is disabled via environment variable
-    const char* disable_filtering = std::getenv("LEMONADE_DISABLE_MODEL_FILTERING");
-    if (disable_filtering && (std::string(disable_filtering) == "1" || 
-                              std::string(disable_filtering) == "true" || 
-                              std::string(disable_filtering) == "yes")) {
+    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
+
+    // Check if dGPUs should use GTT
+    bool enable_dgpu_gtt = parse_TF_env_var("LEMONADE_ENABLE_DGPU_GTT");
+
+    if (disable_filtering) {
         filtered_out_models_.clear();
         return models;
+    }
+
+    if (enable_dgpu_gtt)
+    {
+      std::cout << "[ModelManager]: LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+                << "     Models are being filtered assuming GTT memory." << std::endl
+                << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
     
     std::map<std::string, ModelInfo> filtered;
@@ -1121,28 +1133,30 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool oga_available = is_oga_available(hardware);
 
     // Get largest VRAM object for memory-based filtering
-    double largest_vram_target_gb = 0.0;
-    for (const auto& [dev_type, dev_type_info] : hardware.items()) {
+    double largest_mem_pool_gb = 0.0;
+    double curr_mem_pool_gb = 0.0;
 
-        // Possible multiple entries per type
-        if (dev_type_info.is_array()) {
-            for (const auto& dev : dev_type_info) {
-                get_max_memory_of_device(dev, true, largest_vram_target_gb);
-            }
-        }
-        else {
-            get_max_memory_of_device(dev_type_info, true, largest_vram_target_gb);
+    for (const auto& [dev_type, devices] : hardware.items()) {
+        // Because we have mixed types this just makes every device_type an array.
+        nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
+
+        // Expand this later to accommodate mixed pools
+        bool is_unified = enable_dgpu_gtt;
+
+        for (const auto& dev : dev_list) {
+            curr_mem_pool_gb = get_max_memory_of_device(dev, is_unified);
+            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
         }
     }
+
     // Get system RAM for memory-based filtering
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
-    system_ram_gb *= 0.8;
 
     // Use the largest of the two values
-    double max_model_size_gb = largest_vram_target_gb > system_ram_gb ? largest_vram_target_gb : system_ram_gb;
+    double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
 
     // Get processor and OS for user-friendly error messages
     std::string processor = "Unknown";
@@ -1165,8 +1179,8 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb 
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
         }
-        if (largest_vram_target_gb > 0.0) {
-            std::cout << "  - Largest VRAM target: " << std::fixed << std::setprecision(1) << largest_vram_target_gb << std::endl;
+        if (largest_mem_pool_gb > 0.0) {
+            std::cout << "  - Largest VRAM target: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         debug_printed = true;
     }
