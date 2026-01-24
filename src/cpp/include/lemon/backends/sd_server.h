@@ -43,7 +43,6 @@ private:
     // Server executable helpers
     std::string get_sd_server_path();
     std::string find_executable_in_install_dir(const std::string& install_dir);
-    std::string find_external_sd_executable();
 
     // Server lifecycle helpers
     bool wait_for_ready(int timeout_seconds = 60);

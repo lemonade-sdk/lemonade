@@ -8,9 +8,6 @@
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <random>
 #include <thread>
 #include <chrono>
 
@@ -116,21 +113,8 @@ bool SDServer::wait_for_ready(int timeout_seconds) {
 }
 
 std::string SDServer::get_sd_server_path() {
-    // First check if it's already installed
     std::string install_dir = get_sd_install_dir();
-    std::string exe_path = find_executable_in_install_dir(install_dir);
-
-    if (!exe_path.empty()) {
-        return exe_path;
-    }
-
-    // Try to find external sd-server
-    exe_path = find_external_sd_executable();
-    if (!exe_path.empty()) {
-        return exe_path;
-    }
-
-    return "";
+    return find_executable_in_install_dir(install_dir);
 }
 
 std::string SDServer::find_executable_in_install_dir(const std::string& install_dir) {
@@ -140,53 +124,17 @@ std::string SDServer::find_executable_in_install_dir(const std::string& install_
 
 #ifdef _WIN32
     fs::path exe_path = fs::path(install_dir) / "sd-server.exe";
-    fs::path lib_path = fs::path(install_dir) / "stable-diffusion.dll";
 #else
     fs::path exe_path = fs::path(install_dir) / "sd-server";
-    fs::path lib_path = fs::path(install_dir) / "libstable-diffusion.so";
 #endif
 
-    // Both the exe and shared library must be present for dynamic builds
-    if (fs::exists(exe_path) && fs::exists(lib_path)) {
+    if (fs::exists(exe_path)) {
         return exe_path.string();
     }
 
-    // Also accept static builds (exe only, but larger than 10MB)
-    if (fs::exists(exe_path)) {
-        auto exe_size = fs::file_size(exe_path);
-        if (exe_size > 10 * 1024 * 1024) {  // Static build is ~23MB
-            return exe_path.string();
-        }
-        // Small exe without shared library - incomplete installation
-        return "";
-    }
-
     return "";
 }
 
-std::string SDServer::find_external_sd_executable() {
-    // Check common locations for sd-server
-#ifdef _WIN32
-    std::vector<std::string> paths = {
-        "sd-server.exe",
-        "C:/Program Files/stable-diffusion.cpp/sd-server.exe"
-    };
-#else
-    std::vector<std::string> paths = {
-        "sd-server",
-        "/usr/local/bin/sd-server",
-        "/usr/bin/sd-server"
-    };
-#endif
-
-    for (const auto& path : paths) {
-        if (fs::exists(path)) {
-            return path;
-        }
-    }
-
-    return "";
-}
 
 void SDServer::install(const std::string& /* backend */) {
     std::string install_dir = get_sd_install_dir();
@@ -266,44 +214,7 @@ void SDServer::install(const std::string& /* backend */) {
     // Verify extraction
     exe_path = find_executable_in_install_dir(install_dir);
     if (exe_path.empty()) {
-        // Check what's actually there to provide a helpful error message
-#ifdef _WIN32
-        fs::path check_exe = fs::path(install_dir) / "sd-server.exe";
-        fs::path check_lib = fs::path(install_dir) / "stable-diffusion.dll";
-        const char* lib_name = "stable-diffusion.dll";
-#else
-        fs::path check_exe = fs::path(install_dir) / "sd-server";
-        fs::path check_lib = fs::path(install_dir) / "libstable-diffusion.so";
-        const char* lib_name = "libstable-diffusion.so";
-#endif
-        bool has_exe = fs::exists(check_exe);
-        bool has_lib = fs::exists(check_lib);
-
-        if (has_exe && !has_lib) {
-            auto exe_size = fs::file_size(check_exe);
-            std::ostringstream oss;
-            oss << "sd-server found (" << (exe_size / 1024) << " KB) but " << lib_name << " is missing. "
-                << "The release requires both files to work correctly.";
-            throw std::runtime_error(oss.str());
-        } else if (!has_exe) {
-            throw std::runtime_error("sd-server executable not found after extraction");
-        }
         throw std::runtime_error("sd-server executable not found after extraction");
-    }
-
-    // Log what was found
-#ifdef _WIN32
-    fs::path lib_path = fs::path(install_dir) / "stable-diffusion.dll";
-#else
-    fs::path lib_path = fs::path(install_dir) / "libstable-diffusion.so";
-#endif
-    if (fs::exists(lib_path)) {
-        auto lib_size = fs::file_size(lib_path);
-        std::cout << "[SDServer] Shared library verified at: " << lib_path.string()
-                  << " (" << (lib_size / 1024 / 1024) << " MB)" << std::endl;
-    } else {
-        auto exe_size = fs::file_size(exe_path);
-        std::cout << "[SDServer] Static build detected (" << (exe_size / 1024 / 1024) << " MB)" << std::endl;
     }
 
 #ifndef _WIN32
@@ -311,7 +222,7 @@ void SDServer::install(const std::string& /* backend */) {
     chmod(exe_path.c_str(), 0755);
 #endif
 
-    std::cout << "[SDServer] Executable verified at: " << exe_path << std::endl;
+    std::cout << "[SDServer] Executable installed at: " << exe_path << std::endl;
     std::cout << "[SDServer] Installation complete!" << std::endl;
 
     // Clean up ZIP file
