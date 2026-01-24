@@ -64,7 +64,6 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
-    void handle_add_local_model(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
