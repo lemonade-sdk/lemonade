@@ -80,6 +80,7 @@ bool ServerManager::start_server(
     int max_embedding_models,
     int max_reranking_models,
     int max_audio_models,
+    int max_image_models,
     const std::string& extra_models_dir)
 {
     if (is_server_running()) {
@@ -94,6 +95,7 @@ bool ServerManager::start_server(
     max_embedding_models_ = max_embedding_models;
     max_reranking_models_ = max_reranking_models;
     max_audio_models_ = max_audio_models;
+    max_image_models_ = max_image_models;
     log_file_ = log_file;
     log_level_ = log_level;
     show_console_ = show_console;
@@ -274,7 +276,7 @@ bool ServerManager::stop_server() {
 bool ServerManager::restart_server() {
     stop_server();
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_llm_models_, max_embedding_models_, max_reranking_models_, max_audio_models_, extra_models_dir_);
+    return start_server(server_binary_path_, port_, recipe_options_, log_file_, log_level_, show_console_, false, host_, max_llm_models_, max_embedding_models_, max_reranking_models_, max_audio_models_, max_image_models_, extra_models_dir_);
 }
 
 bool ServerManager::is_server_running() const {
@@ -408,12 +410,12 @@ bool ServerManager::spawn_process() {
     // Multi-model support
     cmdline += " --max-loaded-models " + std::to_string(max_llm_models_) + " " +
                std::to_string(max_embedding_models_) + " " + std::to_string(max_reranking_models_) + " " +
-               std::to_string(max_audio_models_);
+               std::to_string(max_audio_models_) + " " + std::to_string(max_image_models_);
     // Extra models directory
     if (!extra_models_dir_.empty()) {
         cmdline += " --extra-models-dir \"" + extra_models_dir_ + "\"";
     }
-    
+
     DEBUG_LOG(this, "Starting server: " << cmdline);
     
     STARTUPINFOA si = {};
@@ -620,10 +622,12 @@ bool ServerManager::spawn_process() {
         std::string max_emb_str = std::to_string(max_embedding_models_);
         std::string max_rer_str = std::to_string(max_reranking_models_);
         std::string max_aud_str = std::to_string(max_audio_models_);
+        std::string max_img_str = std::to_string(max_image_models_);
         args.push_back(max_llm_str.c_str());
         args.push_back(max_emb_str.c_str());
         args.push_back(max_rer_str.c_str());
         args.push_back(max_aud_str.c_str());
+        args.push_back(max_img_str.c_str());
 
         // Extra models directory
         if (!extra_models_dir_.empty()) {

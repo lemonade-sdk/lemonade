@@ -8,7 +8,6 @@ import lemonade.common.filesystem as fs
 import lemonade.common.printing as printing
 from lemonade.profilers import Profiler
 
-
 DEFAULT_TRACK_MEMORY_INTERVAL = 0.25
 MEMORY_USAGE_YAML_FILENAME = "memory_usage.yaml"
 MEMORY_USAGE_PNG_FILENAME = "memory_usage.png"

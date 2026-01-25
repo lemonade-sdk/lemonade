@@ -11,7 +11,7 @@ from lemonade.tools.adapter import (
     TokenizerAdapter,
     PassthroughTokenizerResult,
 )
-from lemonade_install.install import _get_ryzenai_version_info
+from lemonade.tools.oga.ryzenai import get_ryzenai_version_info
 
 
 class OrtGenaiTokenizer(TokenizerAdapter):
@@ -71,7 +71,7 @@ class OrtGenaiModel(ModelAdapter):
         max_prompt_length = None
 
         try:
-            detected_version, _ = _get_ryzenai_version_info()
+            detected_version, _ = get_ryzenai_version_info()
 
             if os.path.exists(rai_config_path):
                 with open(rai_config_path, "r", encoding="utf-8") as f:

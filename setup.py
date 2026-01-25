@@ -14,19 +14,11 @@ setup(
         "lemonade.profilers",
         "lemonade.common",
         "lemonade.tools",
-        "lemonade.tools.huggingface",
         "lemonade.tools.oga",
-        "lemonade.tools.llamacpp",
-        "lemonade.tools.flm",
         "lemonade.tools.report",
-        "lemonade.tools.server.utils",
-        "lemonade.tools.server",
-        "lemonade_install",
-        "lemonade_server",
     ],
     install_requires=[
-        # Minimal dependencies required for end-users who are running
-        # apps deployed on Lemonade SDK
+        # Core dependencies
         "invoke>=2.0.0",
         "onnx==1.18.0",
         "pyyaml>=5.4",
@@ -40,8 +32,6 @@ setup(
         "py-cpuinfo",
         "pytz",
         "zstandard",
-        "fastapi",
-        "uvicorn[standard]",
         "openai>=2.0.0,<3.0.0",
         "transformers<=4.53.2",
         "jinja2",
@@ -49,14 +39,18 @@ setup(
         "sentencepiece",
         "huggingface-hub[hf_xet]==0.33.0",
         "python-dotenv",
-        "python-multipart",
-        # macOS-specific dependencies
-        "rumps>=0.4.0; sys_platform == 'darwin'",
+        # Dependencies for benchmarking, accuracy testing, and model preparation
+        "torch>=2.6.0",
+        "datasets",
+        "pandas>=1.5.3",
+        "matplotlib",
+        # Install human-eval from a forked repo with Windows support until the
+        # PR (https://github.com/openai/human-eval/pull/53) is merged
+        "human-eval-windows==1.0.4",
+        "lm-eval[api]",
     ],
     extras_require={
-        # The non-dev extras are meant to deploy specific backends into end-user
-        # applications, without including developer-focused tools
-        # Primary NPU extra using unified PyPI package
+        # Extras for specific backends
         "oga-ryzenai": [
             "onnxruntime-genai-directml-ryzenai==0.9.2.1",
             "protobuf>=6.30.1",
@@ -65,21 +59,6 @@ setup(
             "onnxruntime-genai==0.9.2",
             "onnxruntime >=1.22.0",
         ],
-        # Developer-focused tools for benchmarking, accuracy testing, and
-        # model preparation (ONNX export, quantization, device-specifc optimization, etc.)
-        "dev": [
-            # Minimal dependencies for developers to use all features of
-            # Lemonade SDK, including building and optimizing models
-            "torch>=2.6.0",
-            "accelerate",
-            "datasets",
-            "pandas>=1.5.3",
-            "matplotlib",
-            # Install human-eval from a forked repo with Windows support until the
-            # PR (https://github.com/openai/human-eval/pull/53) is merged
-            "human-eval-windows==1.0.4",
-            "lm-eval[api]",
-        ],
         "model-generate": [
             "model-generate==1.5.0; platform_system=='Windows' and python_version=='3.10'",
         ],
@@ -87,10 +66,7 @@ setup(
     classifiers=[],
     entry_points={
         "console_scripts": [
-            "lemonade=lemonade:lemonadecli",
-            "lemonade-install=lemonade_install:installcli",
-            "lemonade-server-dev=lemonade_server.cli:main",
-            "lsdev=lemonade_server.cli:developer_entrypoint",
+            "lemonade-eval=lemonade:lemonadecli",
         ]
     },
     python_requires=">=3.10, <3.14",
@@ -98,8 +74,7 @@ setup(
     long_description_content_type="text/markdown",
     include_package_data=True,
     package_data={
-        "lemonade_server": ["server_models.json"],
-        "lemonade": ["tools/server/static/**/*", "backend_versions.json"],
+        "lemonade": ["backend_versions.json"],
     },
 )
 

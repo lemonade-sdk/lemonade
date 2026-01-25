@@ -107,7 +107,7 @@ class ToolParser(argparse.ArgumentParser):
                 # This was probably a misspelled tool name
                 message = message + (
                     f". If `{unrecognized}` was intended to invoke "
-                    "a tool, please run `lemonade -h` and check the spelling and "
+                    "a tool, please run `lemonade-eval -h` and check the spelling and "
                     "availability of that tool."
                 )
         self.print_usage()
@@ -136,7 +136,7 @@ class Tool(abc.ABC):
     def helpful_parser(cls, short_description: str, **kwargs):
         epilog = (
             f"`{cls.unique_name}` is a Tool. It is intended to be invoked as "
-            "part of a sequence of Tools, for example: `lemonade -i INPUTS tool-one "
+            "part of a sequence of Tools, for example: `lemonade-eval -i INPUTS tool-one "
             "tool-two tool-three`. Tools communicate data to each other via State. "
             "You can learn more at "
             "https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md"

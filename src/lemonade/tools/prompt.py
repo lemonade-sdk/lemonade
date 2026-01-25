@@ -118,7 +118,7 @@ class LLMPrompt(Tool):
             "greater than one, then the seed is incremented by one for each "
             "trial. Set to `None` for random, non-repeatable results.  This "
             "random seed behavior only applies to models loaded with "
-            "`oga-load` or `huggingface-load`.",
+            "`oga-load`.",
         )
 
         return parser

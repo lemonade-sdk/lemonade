@@ -30,7 +30,9 @@ def _tool_list_help(tools: List[Tool], subclass, exclude=None) -> str:
 
 
 def parse_tools(
-    parser: argparse.ArgumentParser, supported_tools: List[Tool], cli_name="lemonade"
+    parser: argparse.ArgumentParser,
+    supported_tools: List[Tool],
+    cli_name="lemonade-eval",
 ) -> Tuple[Dict[str, Any], Dict[Tool, List[str]], List[str]]:
     """
     Add the help for parsing tools and their args to an ArgumentParser.

@@ -26,6 +26,7 @@ public:
            int max_embedding_models,
            int max_reranking_models,
            int max_audio_models,
+           int max_image_models,
            const std::string& extra_models_dir);
     
     ~Server();
@@ -80,10 +81,14 @@ private:
         bool& vision,
         bool embedding,
         bool reranking,
+        bool image,
         const std::string& hf_cache);
 
     // Audio endpoint handlers (OpenAI /v1/audio/* compatible)
     void handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res);
+
+    // Image endpoint handlers (OpenAI /v1/images/* compatible)
+    void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
