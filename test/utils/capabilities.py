@@ -94,7 +94,7 @@ WRAPPED_SERVER_CAPABILITIES = {
             "reranking": False,
             "tool_calls": False,
             "tool_calls_streaming": False,
-            "multi_model": True,
+            "multi_model": False,
             "stop_parameter": False,  # Not tested
             "echo_parameter": False,  # Not tested
             "generation_parameters": False,  # Not tested
