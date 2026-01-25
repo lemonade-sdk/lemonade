@@ -50,6 +50,8 @@ namespace lemon_tray {
 
 ServerManager::ServerManager()
     : server_pid_(0)
+    , port_(8000)
+    , host_("localhost")
     , show_console_(false)
     , is_ephemeral_(false)
     , server_started_(false)
