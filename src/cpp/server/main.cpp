@@ -25,10 +25,12 @@ void signal_handler(int signal) {
         // Use _exit() for async-signal-safe immediate termination
         // The OS will handle cleanup of file descriptors, memory, and child processes
         _exit(0);
+#ifdef SIGHUP
     } else if (signal == SIGHUP) {
         // Ignore SIGHUP to prevent termination when parent process exits
         // This allows the server to continue running as a daemon
         return;
+#endif
     }
 }
 
