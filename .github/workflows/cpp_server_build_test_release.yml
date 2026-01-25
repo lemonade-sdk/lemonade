@@ -550,10 +550,11 @@ jobs:
       # ---- Windows Setup ----
       - name: Setup (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: pwsh
         run: |
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
-          echo "LEMONADE_INSTALL_PATH=$PWD/lemonade_server_install" >> $GITHUB_ENV
+          $cwd = (Get-Item .).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install Lemonade Server (Windows)
         if: runner.os == 'Windows'
@@ -563,10 +564,10 @@ jobs:
 
       - name: Set paths (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: pwsh
         run: |
-          echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $GITHUB_ENV
-          echo "SERVER_BINARY=$LEMONADE_INSTALL_PATH/bin/lemonade-server.exe" >> $GITHUB_ENV
+          echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
+          echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
 
       # ---- Common Setup ----
       - name: Setup Python and virtual environment
