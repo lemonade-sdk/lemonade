@@ -27,7 +27,7 @@ class ServerBench(Bench):
         - Performance statistics including TTFT, tokens/second, etc.
 
     Example usage:
-        lemonade -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000 bench
+        lemonade-eval -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000 bench
     """
 
     unique_name = "bench"
@@ -46,18 +46,26 @@ class ServerBench(Bench):
 
         return parser
 
+    # Prefix to encourage long model responses for benchmarking
+    PROMPT_PREFIX = (
+        "Tell me an extremely long story that starts with the following "
+        "but goes from there: "
+    )
+
     def get_prompt_str(self, state, token_length):
         """
         Returns a string with approximately the prescribed token length.
 
-        Since we have access to the server's actual token count via /stats,
-        we use a calibration approach: generate an initial prompt, measure
-        actual tokens via the server, then adjust to match the target.
+        The prompt includes a prefix that encourages long responses, followed
+        by synthetic "word" tokens. We use calibration via the server's actual
+        token count to match the target length.
         """
         model: ServerAdapter = state.model
 
-        # Start with the base class estimation (typically 1 token per "word ")
-        test_prompt = "word " * max(1, token_length - 1)
+        # Start with an initial estimate: prefix + "word " repeated
+        # Assume prefix is ~20 tokens, so start with (token_length - 20) words
+        initial_word_count = max(1, token_length - 20)
+        test_prompt = self.PROMPT_PREFIX + "word " * initial_word_count
 
         # Make a calibration request to get the actual token count
         try:
@@ -65,7 +73,7 @@ class ServerBench(Bench):
             actual_tokens = model.prompt_tokens
 
             if actual_tokens is None:
-                # Fall back to base estimation if stats unavailable
+                # Fall back to estimation if stats unavailable
                 return test_prompt
 
             # Adjust based on the difference
@@ -74,11 +82,11 @@ class ServerBench(Bench):
                 return test_prompt
 
             # Calculate adjusted word count
-            adjusted_words = max(1, token_length - 1 - delta)
-            return "word " * adjusted_words
+            adjusted_words = max(1, initial_word_count - delta)
+            return self.PROMPT_PREFIX + "word " * adjusted_words
 
         except Exception:  # pylint: disable=broad-exception-caught
-            # If calibration fails, use base estimation
+            # If calibration fails, use initial estimation
             return test_prompt
 
     def run_prompt(

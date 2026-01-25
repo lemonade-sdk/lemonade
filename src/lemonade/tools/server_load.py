@@ -202,7 +202,7 @@ class Load(FirstTool):
         state.server_url: URL of the Lemonade Server
 
     Example usage:
-        lemonade -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000
+        lemonade-eval -i Qwen3-0.6B-GGUF load --server-url http://localhost:8000
     """
 
     unique_name = "load"

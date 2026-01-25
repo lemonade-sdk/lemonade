@@ -5,12 +5,13 @@ import platform
 import copy
 from datetime import datetime
 from typing import List, Dict, Optional
+
 import pytz
 import psutil
+
 import lemonade.common.printing as printing
 import lemonade.common.exceptions as exp
 import lemonade.common.build as build
-from lemonade.common.system_info import get_system_info_dict
 import lemonade.common.filesystem as fs
 import lemonade.common.status as status
 from lemonade.tools.tool import Tool
@@ -167,11 +168,12 @@ class Sequence:
         )
 
         # Save the system information used for this build
-        system_info = get_system_info_dict()
-        state.save_stat(
-            fs.Keys.SYSTEM_INFO,
-            system_info,
-        )
+        system_info = build.get_system_info_from_server()
+        if system_info:
+            state.save_stat(
+                fs.Keys.SYSTEM_INFO,
+                system_info,
+            )
 
         # Collect telemetry for the build
         state.save_stat(

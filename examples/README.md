@@ -1,27 +1,19 @@
 # Lemonade Examples
 
-This folder contains examples of how to deploy `lemonade` into applications. 
+Interactive demos that work with Lemonade Server.
 
-## Notebooks
+## Available Demos
 
-The `notebooks/` folder contains Jupyter notebooks that give tutorials on deeper topics.
+- **llm-debate.html**: A debate arena where multiple LLMs can debate each other on any topic
+- **multi-model-tester.html**: Test prompts across multiple models side-by-side
 
-## API Examples
+## Setup
 
-This folder has examples of using the Lemonade API to integrate LLMs into Python applications. These APIs make it easy to load a model, generate responses, and also show how to stream those responses.
+1. Install Lemonade Server from the [latest release](https://github.com/lemonade-sdk/lemonade/releases/latest)
+2. Start the server: `lemonade-server serve`
+3. Open the HTML file in your web browser
 
-The `demos/` folder also contains some higher-level application demos of the APIs. Learn more in `demos/README.md`.
-
-This table shows which API examples are available:
-
-| Framework                  | CPU                       | NPU             | Hybrid             |
-|----------------------------|---------------------------|-----------------|--------------------|
-| Huggingface                | api_basic.py              | -               | -                  |
-| OGA                        | api_oga_cpu.py            | api_oga_npu.py | api_oga_hybrid.py |
-| Huggingface with streaming | api_streaming.py          | -               | -                  |
-| OGA with streaming         | api_oga_cpu_streaming.py  | api_oga_npu_streaming.py | api_oga_hybrid_streaming.py |
-
-To run an API example, first set up a Python environment with the appropriate framework and backend support. Then run the scripts with a command like `python api_basic.py`.
+See [debate-arena.md](debate-arena.md) for detailed instructions on the debate demo.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

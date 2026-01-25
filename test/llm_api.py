@@ -1,29 +1,31 @@
+"""
+Tests for Lemonade SDK using server_load and server_bench tools.
+
+These tests require a running Lemonade Server instance.
+Start the server before running tests with: lemonade-server serve
+
+Uses Qwen3-4B-Instruct-2507-GGUF as the test model (automatically downloaded by lemonade-server).
+"""
+
 import unittest
 import shutil
 import os
 import sys
-import platform
-import zipfile
 import logging
-import urllib3
+
 import requests
+import urllib3
+
 from lemonade.state import State
 import lemonade.common.filesystem as fs
 import lemonade.common.test_helpers as common
 import lemonade.common.build as build
-from lemonade.tools.huggingface.load import HuggingfaceLoad
-from lemonade.tools.huggingface.bench import HuggingfaceBench
+from lemonade.tools.server_load import Load as ServerLoad
+from lemonade.tools.server_bench import ServerBench
 from lemonade.tools.mmlu import AccuracyMMLU
 from lemonade.tools.humaneval import AccuracyHumaneval
 from lemonade.tools.accuracy import LMEvalHarness
 from lemonade.tools.prompt import LLMPrompt
-from lemonade.tools.llamacpp.load import LoadLlamaCpp
-from lemonade.tools.llamacpp.bench import LlamaCppBench
-from lemonade.tools.llamacpp.utils import (
-    install_llamacpp,
-    get_llama_cli_exe_path,
-    get_llama_folder_path,
-)
 from lemonade.cache import Keys
 
 # Configure logging
@@ -32,134 +34,88 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Use None as the default value for environment variables
-ci_mode = os.getenv("LEMONADE_CI_MODE", None)
-
 # Define cache_dir and corpus_dir at the module level
 cache_dir = None
 corpus_dir = None
 
-
-def download_llamacpp_binary(backend: str = "vulkan"):
-    """Download the appropriate llama.cpp binary for the current platform"""
-    # Get the system type
-    system = platform.system().lower()
-
-    # Install llamacpp binary using the official function
-    install_llamacpp(backend)
-
-    # Get the executable path
-    executable = get_llama_cli_exe_path(backend)
-
-    # Make executable on Linux
-    if system != "windows":
-        os.chmod(executable, 0o755)
-
-    # Find shared libraries directory for Linux
-    lib_dir = None
-    if system != "windows":
-        # Get the binary directory
-        binary_dir = get_llama_folder_path(backend)
-
-        # Look for libllama.so in the extracted directory
-        for root, _, files in os.walk(binary_dir):
-            if any(f.startswith("libllama.so") for f in files):
-                lib_dir = root
-                logger.info(f"Found shared libraries in: {lib_dir}")
-                break
-
-    logger.info(f"Successfully prepared executable at: {executable}")
-    if lib_dir:
-        logger.info(f"Shared libraries directory: {lib_dir}")
-
-    return executable, lib_dir
+# Test model - Lemonade Server will download this automatically
+TEST_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
+SERVER_URL = os.getenv("LEMONADE_SERVER_URL", "http://localhost:8000")
 
 
-class TestLlamaCpp(unittest.TestCase):
+class TestServerIntegration(unittest.TestCase):
+    """
+    Integration tests using Lemonade Server with server_load and server_bench.
+
+    Requires a running Lemonade Server instance.
+    """
+
     @classmethod
     def setUpClass(cls):
-        """Download llama.cpp binary once for all tests"""
-        logger.info("Setting up TestLlamaCpp class...")
+        """Check that Lemonade Server is running"""
+        logger.info(f"Testing against Lemonade Server at {SERVER_URL}")
+        logger.info(f"Using test model: {TEST_MODEL}")
+
         try:
-            cls.executable, cls.lib_dir = download_llamacpp_binary()
+            response = requests.get(f"{SERVER_URL}/api/v1/health", timeout=10)
+            response.raise_for_status()
+            logger.info("Lemonade Server is running and healthy")
+        except requests.exceptions.ConnectionError as e:
+            raise ConnectionError(
+                f"Cannot connect to Lemonade Server at {SERVER_URL}. "
+                "Start the server with 'lemonade-server serve' before running tests."
+            ) from e
         except Exception as e:
-            error_msg = f"Failed to download llama.cpp binary: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-
-        # Use a small GGUF model for testing
-        cls.model_name = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-        cls.model_file = "qwen2.5-0.5b-instruct-fp16.gguf"
-        logger.info(f"Using test model: {cls.model_name}/{cls.model_file}")
-
-        # Download the model file
-        try:
-            model_url = (
-                f"https://huggingface.co/{cls.model_name}/resolve/main/{cls.model_file}"
-            )
-            cls.model_path = os.path.join(cache_dir, cls.model_file)
-
-            if not os.path.exists(cls.model_path):
-                logger.info(f"Downloading model from: {model_url}")
-                response = requests.get(model_url)
-                response.raise_for_status()
-                with open(cls.model_path, "wb") as f:
-                    f.write(response.content)
-                logger.info(f"Model downloaded to: {cls.model_path}")
-            else:
-                logger.info(f"Using existing model at: {cls.model_path}")
-        except Exception as e:
-            error_msg = f"Failed to download test model: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            raise RuntimeError(f"Error connecting to Lemonade Server: {e}") from e
 
     def setUp(self):
+        shutil.rmtree(cache_dir, ignore_errors=True)
         self.state = State(
             cache_dir=cache_dir,
-            build_name="test_llamacpp",
+            build_name="test_server",
         )
 
     def test_001_load_model(self):
-        """Test loading a model with llama.cpp"""
-        state = LoadLlamaCpp().run(
+        """Test loading a model via Lemonade Server"""
+        state = ServerLoad().run(
             self.state,
-            self.model_name + ":" + self.model_file,
-            context_size=512,
-            threads=1,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
         )
 
         self.assertIsNotNone(state.model)
+        self.assertIsNotNone(state.tokenizer)
+        self.assertEqual(state.checkpoint, TEST_MODEL)
 
-    def test_002_generate_text(self):
-        """Test text generation with llama.cpp"""
-        state = LoadLlamaCpp().run(
-            self.state,
-            self.model_name + ":" + self.model_file,
-        )
-
+    def test_002_prompt(self):
+        """Test the LLM Prompt tool via Lemonade Server"""
         prompt = "What is the capital of France?"
+
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
+        )
         state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=20)
 
-        self.assertIsNotNone(state.response)
-        self.assertGreater(len(state.response), 0, state.response)
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+        self.assertIn("response", stats)
+        self.assertGreater(len(stats["response"]), 0, stats["response"])
 
     def test_003_benchmark(self):
-        """Test benchmarking with llama.cpp"""
-        state = LoadLlamaCpp().run(
+        """Test benchmarking via Lemonade Server"""
+        state = ServerLoad().run(
             self.state,
-            self.model_name + ":" + self.model_file,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
         )
 
-        # Use longer output tokens to ensure we get valid performance metrics
-        state = LlamaCppBench().run(
+        state = ServerBench().run(
             state,
             iterations=2,
             warmup_iterations=1,
             output_tokens=128,
-            cli=True,
-            prompts=[
-                "Hello, I am a test prompt that is long enough to get meaningful metrics."
-            ],
+            prompts=["Tell me an extremely long story about pirates."],
         )
 
         # Check if we got valid metrics
@@ -167,59 +123,106 @@ class TestLlamaCpp(unittest.TestCase):
         self.assertIn(Keys.TOKEN_GENERATION_TOKENS_PER_SECOND, stats)
         self.assertIn(Keys.SECONDS_TO_FIRST_TOKEN, stats)
 
-
-class Testing(unittest.TestCase):
-    def setUp(self) -> None:
-        shutil.rmtree(cache_dir, ignore_errors=True)
-
-    def test_001_prompt(self):
-        """
-        Test the LLM Prompt tool
-        """
-
-        checkpoint = "facebook/opt-125m"
-        prompt = "my solution to the test is"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
+    def test_004_benchmark_multiple_prompts(self):
+        """Test benchmarking with multiple prompts"""
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
         )
 
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        state = LLMPrompt().run(state, prompt=prompt, max_new_tokens=15)
+        state = ServerBench().run(
+            state,
+            iterations=5,
+            prompts=["word " * 30, "word " * 62],
+        )
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
-        assert len(stats["response"]) > 0, stats["response"]
+        self.assertEqual(len(stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND]), 2)
+        self.assertTrue(
+            all(x > 0 for x in stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND])
+        )
 
-    def test_002_accuracy_mmlu(self):
-        # Test MMLU benchmarking with known model
-        checkpoint = "facebook/opt-125m"
+    def test_005_prompt_from_file(self):
+        """Test the LLM Prompt tool capability to load prompt from a file"""
+        prompt_str = "Who is Humpty Dumpty?"
+
+        prompt_path = os.path.join(corpus_dir, "prompt.txt")
+        with open(prompt_path, "w", encoding="utf-8") as f:
+            f.write(prompt_str)
+
+        llm_prompt_args = ["-p", prompt_path, "--max-new-tokens", "15"]
+
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
+        )
+        llm_prompt_kwargs = LLMPrompt().parse(state, llm_prompt_args).__dict__
+        state = LLMPrompt().run(state, **llm_prompt_kwargs)
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        self.assertGreater(len(stats["response"]), 0, stats["response"])
+        self.assertEqual(stats["prompt"], prompt_str, f"{stats['prompt']} {prompt_str}")
+
+    def test_006_multiple_prompt_responses(self):
+        """Test the LLM Prompt tool capability to run multiple inferences on the same prompt"""
+        prompt_str = "Who is Humpty Dumpty?"
+        n_trials = 2
+
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
+        )
+        state = LLMPrompt().run(
+            state, prompt=prompt_str, max_new_tokens=15, n_trials=n_trials
+        )
+
+        stats = fs.Stats(state.cache_dir, state.build_name).stats
+
+        # Check that two responses were generated
+        self.assertIsInstance(stats["response"], list)
+        self.assertEqual(len(stats["response"]), n_trials)
+        self.assertIsInstance(stats["response_tokens"], list)
+        self.assertEqual(len(stats["response_tokens"]), n_trials)
+
+        # Check that histogram figure was generated
+        self.assertTrue(
+            os.path.exists(
+                os.path.join(
+                    build.output_dir(state.cache_dir, state.build_name),
+                    "response_lengths.png",
+                )
+            )
+        )
+
+    def test_007_accuracy_mmlu(self):
+        """Test MMLU benchmarking via Lemonade Server"""
         subject = ["management"]
 
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
         )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        state = AccuracyMMLU().run(state, ntrain=5, tests=subject)
+        # Use max_evals=1 to keep test fast
+        state = AccuracyMMLU().run(state, ntrain=5, tests=subject, max_evals=1)
 
         stats = fs.Stats(state.cache_dir, state.build_name).stats
-        assert stats[f"mmlu_{subject[0]}_accuracy"] >= 0
+        self.assertGreaterEqual(stats[f"mmlu_{subject[0]}_accuracy"], 0)
 
-    def test_003_accuracy_humaneval(self):
-        """Test HumanEval benchmarking with known model"""
-        checkpoint = "facebook/opt-125m"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
-        )
-
+    def test_008_accuracy_humaneval(self):
+        """Test HumanEval benchmarking via Lemonade Server"""
         # Enable code evaluation for HumanEval
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 
-        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = ServerLoad().run(
+            self.state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
+        )
         state = AccuracyHumaneval().run(
             state,
             first_n_samples=1,  # Test only one problem for speed
@@ -229,24 +232,29 @@ class Testing(unittest.TestCase):
 
         # Verify results
         stats = fs.Stats(state.cache_dir, state.build_name).stats
-        assert "humaneval_pass@1" in stats, "HumanEval pass@1 metric not found"
-        assert isinstance(
-            stats["humaneval_pass@1"], (int, float)
-        ), "HumanEval pass@1 metric should be numeric"
+        self.assertIn("humaneval_pass@1", stats, "HumanEval pass@1 metric not found")
+        self.assertIsInstance(
+            stats["humaneval_pass@1"],
+            (int, float),
+            "HumanEval pass@1 metric should be numeric",
+        )
 
-    def test_004_accuracy_lmeval(self):
-        """Test lm-eval-harness benchmarking with known model"""
-        checkpoint = "facebook/opt-125m"
-
+    def test_009_accuracy_lmeval(self):
+        """Test lm-eval-harness benchmarking via Lemonade Server"""
         state = State(
             cache_dir=cache_dir,
             build_name="test_lmeval",
         )
 
-        state = HuggingfaceLoad().run(state, input=checkpoint)
+        state = ServerLoad().run(
+            state,
+            input=TEST_MODEL,
+            server_url=SERVER_URL,
+        )
+        # Use gsm8k which uses generate_until (doesn't require logprobs)
         state = LMEvalHarness().run(
             state,
-            task="mmlu_abstract_algebra",
+            task="gsm8k",
             limit=1,
             num_fewshot=0,
         )
@@ -256,311 +264,32 @@ class Testing(unittest.TestCase):
 
         # Check if any lm_eval stats were saved
         lm_eval_stats = [k for k in stats.keys() if k.startswith("lm_eval_")]
-        assert len(lm_eval_stats) > 0, "No lm-eval-harness metrics found in stats"
+        self.assertGreater(
+            len(lm_eval_stats), 0, "No lm-eval-harness metrics found in stats"
+        )
 
         results_dir = os.path.join(
             build.output_dir(state.cache_dir, state.build_name), "lm_eval_results"
         )
-        assert os.path.exists(
-            results_dir
-        ), f"Results directory not found: {results_dir}"
-        json_files = [f for f in os.listdir(results_dir) if f.endswith(".json")]
-        assert len(json_files) > 0, f"No JSON results file found in {results_dir}"
-
-        # Check for specific expected metrics from the task
-        assert (
-            "lm_eval_mmlu_abstract_algebra_acc" in stats
-        ), "Expected accuracy metric not found"
-
-        # Check for specific metrics that should exist
-        for metric_name in lm_eval_stats:
-            if metric_name.endswith("_units"):
-                # Units stats should be strings (e.g., "%")
-                assert isinstance(
-                    stats[metric_name], str
-                ), f"{metric_name} should be a string (units)"
-            else:
-                # All other lm_eval stats should be numeric
-                assert isinstance(
-                    stats[metric_name], (int, float)
-                ), f"{metric_name} should be numeric"
-
-    def test_004_huggingface_bench(self):
-        # Benchmark OPT
-        checkpoint = "facebook/opt-125m"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
-        )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        state = HuggingfaceBench().run(state, iterations=20)
-
-        stats = fs.Stats(state.cache_dir, state.build_name).stats
-
-        assert stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND] > 0
-
-    def test_005_prompt_from_file(self):
-        """
-        Test the LLM Prompt tool capability to load prompt from a file
-        """
-
-        checkpoint = "facebook/opt-125m"
-        prompt_str = "Who is Humpty Dumpty?"
-
-        prompt_path = os.path.join(corpus_dir, "prompt.txt")
-        with open(prompt_path, "w", encoding="utf-8") as f:
-            f.write(prompt_str)
-
-        llm_prompt_args = ["-p", prompt_path, "--max-new-tokens", "15"]
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
-        )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        llm_prompt_kwargs = LLMPrompt().parse(state, llm_prompt_args).__dict__
-        state = LLMPrompt().run(state, **llm_prompt_kwargs)
-
-        stats = fs.Stats(state.cache_dir, state.build_name).stats
-
-        assert len(stats["response"]) > 0, stats["response"]
-        assert stats["prompt"] == prompt_str, f"{stats['prompt']} {prompt_str}"
-
-    def test_006_multiple_prompt_responses(self):
-        """
-        Test the LLM Prompt tool capability to run multiple inferences on the same prompt
-        """
-
-        checkpoint = "facebook/opt-125m"
-        prompt_str = "Who is Humpty Dumpty?"
-        n_trials = 2
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
-        )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        state = LLMPrompt().run(
-            state, prompt=prompt_str, max_new_tokens=15, n_trials=n_trials
-        )
-
-        stats = fs.Stats(state.cache_dir, state.build_name).stats
-
-        # Check that two responses were generated
-        assert (
-            isinstance(stats["response"], list) and len(stats["response"]) == n_trials
-        ), stats["response"]
-        assert (
-            isinstance(stats["response_tokens"], list)
-            and len(stats["response_tokens"]) == n_trials
-        ), stats["response_tokens"]
-        # Check that histogram figure was generated
-        assert os.path.exists(
-            os.path.join(
-                build.output_dir(state.cache_dir, state.build_name),
-                "response_lengths.png",
-            )
-        )
-
-    def test_007_huggingface_multiple_bench(self):
-        # Benchmark OPT
-        checkpoint = "facebook/opt-125m"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name="test",
-        )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        state = HuggingfaceBench().run(
-            state, iterations=20, prompts=["word " * 30, "word " * 62]
-        )
-
-        stats = fs.Stats(state.cache_dir, state.build_name).stats
-        assert len(stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND]) == 2
-        assert all(x > 0 for x in stats[Keys.TOKEN_GENERATION_TOKENS_PER_SECOND])
-
-
-class TestHfLogprobs(unittest.TestCase):
-    """
-    Test the compute_logprobs functionality in Huggingface implementation.
-    """
-
-    def setUp(self) -> None:
-        # Use a unique build name for each test to avoid conflicts
-        self.build_name = f"test_hf_logprobs"
-
-    def test_008_compute_logprobs_completion(self):
-        """Test compute_logprobs with a specific completion"""
-        checkpoint = "facebook/opt-125m"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name=self.build_name,
-        )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        # Ensure model has compute_logprobs method
         self.assertTrue(
-            hasattr(state.model, "compute_logprobs"),
-            "Model should have compute_logprobs method",
+            os.path.exists(results_dir), f"Results directory not found: {results_dir}"
+        )
+        json_files = [f for f in os.listdir(results_dir) if f.endswith(".json")]
+        self.assertGreater(
+            len(json_files), 0, f"No JSON results file found in {results_dir}"
         )
 
-        # Test with a simple prompt
-        text = "The capital of France is Paris"
-
-        text_offset, token_logprobs, tokens, top_logprobs = (
-            state.model.compute_logprobs(
-                text=text, tokenizer=state.tokenizer, logprobs=5
-            )
+        # Check for gsm8k exact_match metric
+        self.assertIn(
+            "lm_eval_gsm8k_exact_match",
+            stats,
+            "Expected lm_eval_gsm8k_exact_match metric not found",
         )
-
-        # Verify we got valid outputs
-        self.assertIsNotNone(text_offset)
-        self.assertIsNotNone(token_logprobs)
-        self.assertIsNotNone(tokens)
-        self.assertIsNotNone(top_logprobs)
-
-        # Check the content of the output
-        self.assertEqual(len(tokens), len(token_logprobs))
-        self.assertEqual(len(tokens), len(text_offset))
-        self.assertEqual(len(tokens), len(top_logprobs))
-
-    def test_009_compute_logprobs_echo_parameter(self):
-        """
-        Test compute_logprobs with echo parameter controlling prompt token inclusion.
-        """
-        checkpoint = "facebook/opt-125m"
-
-        state = State(
-            cache_dir=cache_dir,
-            build_name=self.build_name,
+        self.assertIsInstance(
+            stats["lm_eval_gsm8k_exact_match"],
+            (int, float),
+            "lm_eval_gsm8k_exact_match should be numeric",
         )
-
-        state = HuggingfaceLoad().run(state, input=checkpoint)
-        # Define test inputs
-        prefix = "This is a test prompt."
-        completion = "This is the completion."
-        full_text = prefix + " " + completion
-
-        # First encode the text to get token counts
-        tokens = state.tokenizer(prefix).input_ids
-        prompt_length = len(tokens)
-
-        # Test with echo=False using prompt_length
-        text_offset_no_echo, token_logprobs_no_echo, tokens_no_echo, _ = (
-            state.model.compute_logprobs(
-                text=full_text,
-                tokenizer=state.tokenizer,
-                prompt_length=prompt_length,
-                logprobs=5,
-                echo=False,
-            )
-        )
-
-        # Test with echo=True
-        text_offset_with_echo, token_logprobs_with_echo, tokens_with_echo, _ = (
-            state.model.compute_logprobs(
-                text=full_text,
-                tokenizer=state.tokenizer,
-                prompt_length=prompt_length,
-                logprobs=5,
-                echo=True,
-            )
-        )
-
-        # Verify that echo=False returns only completion tokens
-        self.assertEqual(len(tokens_no_echo) + prompt_length, len(tokens_with_echo))
-
-        # Verify echo=True includes all tokens
-        self.assertGreaterEqual(len(tokens_with_echo), prompt_length)
-
-        # Test edge case - no prompt tokens
-        zero_prompt_text = "Only completion tokens."
-        zero_offset, zero_logprobs, zero_tokens, _ = state.model.compute_logprobs(
-            text=zero_prompt_text,
-            tokenizer=state.tokenizer,
-            prompt_length=0,  # No prompt tokens
-            logprobs=5,
-            echo=False,
-        )
-
-        # All tokens should be included when prompt_length=0
-        all_tokens = state.model.tokenizer(zero_prompt_text).input_ids
-        self.assertEqual(len(zero_tokens), len(all_tokens))
-
-
-class TestSystemInfoAPI(unittest.TestCase):
-    """
-    Test the system information API functions.
-    """
-
-    def test_001_get_system_info_basic(self):
-        """
-        Test basic system info functionality.
-        """
-        from lemonade.api import get_system_info
-
-        system_info = get_system_info()
-
-        # Check it returns a dictionary
-        self.assertIsInstance(system_info, dict)
-
-        # Check required keys exist in default (non-verbose) mode
-        required_keys = ["OS Version", "Processor", "Physical Memory", "Devices"]
-        for key in required_keys:
-            self.assertIn(key, system_info)
-
-        # Basic validation
-        self.assertIsInstance(system_info["OS Version"], str)
-        self.assertIsInstance(system_info["Devices"], dict)
-
-    def test_001_get_system_info_verbose(self):
-        """
-        Test verbose system info functionality.
-        """
-        from lemonade.api import get_system_info
-
-        system_info = get_system_info(verbose=True)
-
-        # Check it returns a dictionary
-        self.assertIsInstance(system_info, dict)
-
-        # Check required keys exist in verbose mode
-        required_keys = ["OS Version", "Devices", "Python Packages"]
-        for key in required_keys:
-            self.assertIn(key, system_info)
-
-        # Basic validation
-        self.assertIsInstance(system_info["OS Version"], str)
-        self.assertIsInstance(system_info["Devices"], dict)
-        self.assertIsInstance(system_info["Python Packages"], list)
-        self.assertGreater(len(system_info["Python Packages"]), 0)
-
-    def test_002_get_device_info_basic(self):
-        """
-        Test basic device info functionality.
-        """
-        from lemonade.api import get_device_info
-
-        device_info = get_device_info()
-
-        # Check it returns a dictionary
-        self.assertIsInstance(device_info, dict)
-
-        # Check required device types exist
-        required_devices = ["cpu", "amd_igpu", "amd_dgpu", "npu"]
-        for device in required_devices:
-            self.assertIn(device, device_info)
-
-        # Check CPU has proper structure
-        cpu_info = device_info["cpu"]
-        self.assertIsInstance(cpu_info, dict)
-        self.assertIn("available", cpu_info)
 
 
 if __name__ == "__main__":
@@ -591,10 +320,7 @@ if __name__ == "__main__":
 
     # Create test suite with all test classes
     suite = unittest.TestSuite()
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(Testing))
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestHfLogprobs))
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestLlamaCpp))
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestSystemInfoAPI))
+    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestServerIntegration))
 
     # Run the test suite
     runner = unittest.TextTestRunner()
