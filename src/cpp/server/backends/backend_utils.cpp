@@ -37,9 +37,8 @@ namespace lemon::backends {
             if (system_root) {
                 powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
             }
-            command = "\"" + powershell_path + "\" -Command \"try { Expand-Archive -Path '" + zip_path + 
-                    "' -DestinationPath '" + dest_dir + 
-                    "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
+            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path + 
+                    "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
         // macOS & Linux Logic
