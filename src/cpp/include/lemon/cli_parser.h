@@ -21,6 +21,7 @@ struct ServerConfig {
     int max_embedding_models = 1;
     int max_reranking_models = 1;
     int max_audio_models = 1;
+    int max_image_models = 1;
 };
 
 struct TrayConfig {
