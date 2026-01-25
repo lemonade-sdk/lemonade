@@ -1,40 +1,34 @@
 """
-Usage: python server_sd.py
+Stable Diffusion image generation tests for Lemonade Server.
 
-This will launch the lemonade server, test image generation with Stable Diffusion,
-and make sure that the response is valid.
+Tests the /images/generations endpoint with Stable Diffusion models.
 
-Examples:
-    python server_sd.py
-    python server_sd.py --server-binary ./lemonade-server
+Usage:
+    python server_sd.py --server-binary lemonade-server
+    python server_sd.py --server-binary ./lemonade-server --server-per-test
 
-Note: Image generation with CPU backend takes ~2-3 minutes per image at 256x256 with 1 step.
+Note: Image generation with CPU backend takes ~2-3 minutes per image at 256x256.
 The Vulkan backend is faster but may have compatibility issues with some GPUs.
 """
 
 import base64
-
 import requests
 
-# Import all shared functionality from utils/server_base.py
 from utils.server_base import (
-    ServerTestingBase,
-    run_server_tests_with_class,
+    ServerTestBase,
+    run_server_tests,
+)
+from utils.test_models import (
+    SD_MODEL,
     PORT,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
 )
 
-SD_MODEL = "SD-Turbo"
 
+class StableDiffusionTests(ServerTestBase):
+    """Tests for Stable Diffusion image generation."""
 
-class SDServerTesting(ServerTestingBase):
-    """Testing class for Stable Diffusion image generation."""
-
-    def setUp(self):
-        """Call parent setUp with SD-specific messaging."""
-        print(f"\n=== Starting new SD test ===")
-        super().setUp()
-
-    # Test 1: Basic image generation (optimized for CI - minimal size and steps)
     def test_001_basic_image_generation(self):
         """Test basic image generation with SD-Turbo."""
         payload = {
@@ -43,16 +37,16 @@ class SDServerTesting(ServerTestingBase):
             "size": "256x256",  # Smallest practical size for speed
             "steps": 2,  # SD-Turbo works well with few steps
             "n": 1,
-            "response_format": "b64_json"
+            "response_format": "b64_json",
         }
 
         print(f"[INFO] Sending image generation request with model {SD_MODEL}")
-        print(f"[INFO] Using minimal settings (256x256, 4 steps) for CI speed")
+        print(f"[INFO] Using minimal settings (256x256, 2 steps) for CI speed")
 
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=600  # 10 minute timeout for CPU inference
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         self.assertEqual(
@@ -77,8 +71,8 @@ class SDServerTesting(ServerTestingBase):
             decoded = base64.b64decode(b64_data)
             # PNG files start with specific magic bytes
             self.assertTrue(
-                decoded[:4] == b'\x89PNG',
-                "Decoded data should be a valid PNG"
+                decoded[:4] == b"\x89PNG",
+                "Decoded data should be a valid PNG",
             )
             print(f"[OK] Generated valid PNG image ({len(decoded)} bytes)")
         except Exception as e:
@@ -87,19 +81,18 @@ class SDServerTesting(ServerTestingBase):
         self.assertIn("created", result, "Response should contain 'created' timestamp")
         print(f"[OK] Image generation successful")
 
-    # Test 2: Error handling - missing prompt (fast, no image generation)
-    def test_002_missing_prompt(self):
+    def test_002_missing_prompt_error(self):
         """Test error handling when prompt is missing."""
         payload = {
             "model": SD_MODEL,
-            "size": "256x256"
+            "size": "256x256",
             # No prompt
         }
 
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=60
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Should return an error
@@ -110,23 +103,22 @@ class SDServerTesting(ServerTestingBase):
         )
         print(f"[OK] Correctly rejected request without prompt: {response.status_code}")
 
-    # Test 3: Error handling - invalid model (fast, no image generation)
-    def test_003_invalid_model(self):
+    def test_003_invalid_model_error(self):
         """Test error handling with invalid model."""
         payload = {
-            "model": "nonexistent-sd-model",
+            "model": "nonexistent-sd-model-xyz-123",
             "prompt": "A cat",
-            "size": "256x256"
+            "size": "256x256",
         }
 
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=60
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Should return an error (model not found)
-        # Note: Server returns 500 for model not found, ideally should be 404
+        # Note: Server may return 500 for model not found, ideally should be 404
         self.assertIn(
             response.status_code,
             [400, 404, 422, 500],
@@ -136,4 +128,4 @@ class SDServerTesting(ServerTestingBase):
 
 
 if __name__ == "__main__":
-    run_server_tests_with_class(SDServerTesting, "STABLE DIFFUSION SERVER TESTS")
+    run_server_tests(StableDiffusionTests, "STABLE DIFFUSION TESTS")

@@ -1,5 +1,5 @@
-# Test dependencies for Lemonade C++ server
-# Install with: pip install -r test/requirements.txt
+# Test dependencies for Lemonade server tests
+# Install with: pip install -r tests_new/requirements.txt
 
 # HTTP clients
 requests
@@ -14,9 +14,5 @@ huggingface_hub
 # Process and system utilities
 psutil
 
-# Testing framework
-pytest
-
-# Numerical computing (required for some tests)
+# Numerical computing (required for embedding similarity tests)
 numpy
-

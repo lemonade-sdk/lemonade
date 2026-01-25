@@ -419,14 +419,8 @@ std::string Router::get_loaded_recipe() const {
     WrappedServer* server = get_most_recent_server();
     if (!server) return "";
     
-    // Infer recipe from device type (reverse mapping)
-    DeviceType device = server->get_device_type();
-    if (device == DEVICE_GPU) return "llamacpp";
-    if (device == (DEVICE_GPU | DEVICE_NPU)) return "oga-hybrid";
-    if (device == DEVICE_NPU) return "flm";  // Could be flm or oga-npu
-    if (device == DEVICE_CPU) return "oga-cpu";
-    
-    return "";
+    // Get the actual recipe from the server's recipe options
+    return server->get_recipe_options().get_recipe();
 }
 
 json Router::get_all_loaded_models() const {
