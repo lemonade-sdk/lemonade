@@ -159,15 +159,14 @@ std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only
     std::string bin_dir = get_cache_dir() + "/bin";
-    
+
     // Ensure directory exists
     if (!fs::exists(bin_dir)) {
         fs::create_directories(bin_dir);
     }
-    
+
     return bin_dir;
 }
-
 
 } // namespace utils
 } // namespace lemon

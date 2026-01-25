@@ -90,6 +90,22 @@ Use `lemonade-server pull` or the built-in **Model Manager** to download models.
 
 <br clear="right"/>
 
+## Image Generation
+
+Lemonade supports image generation using Stable Diffusion models via [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp).
+
+```bash
+# Pull an image generation model
+lemonade-server pull SD-Turbo
+
+# Start the server
+lemonade-server serve
+```
+
+Available models: **SD-Turbo** (fast, 4-step), **SDXL-Turbo**, **SD-1.5**, **SDXL-Base-1.0**
+
+> See `examples/api_image_generation.py` for complete examples.
+
 ## Supported Configurations
 
 Lemonade supports the following configurations, while also making it easy to switch between them at runtime.
@@ -137,10 +153,10 @@ Lemonade supports the following configurations, while also making it easy to swi
 
 | Under Development                                 | Under Consideration                            | Recently Completed                       |
 |---------------------------------------------------|------------------------------------------------|------------------------------------------|
-| Image Generation      | vLLM support                                   | General speech-to-text support (whisper.cpp)                 |
-| macOS    | Text to speech     | ROCm support for Ryzen AI 360-375 (Strix) APUs  |
-| Apps marketplace     | MLX support                       | Lemonade desktop app                     |
-| lemonade-eval CLI     | ryzenai-server dedicated repo                               |                      |
+| macOS    | vLLM support                                   | Image generation (stable-diffusion.cpp)                 |
+| Apps marketplace    | Text to speech     | General speech-to-text support (whisper.cpp)  |
+| lemonade-eval CLI     | MLX support                       | ROCm support for Ryzen AI 360-375 (Strix) APUs                     |
+|      | ryzenai-server dedicated repo                               | Lemonade desktop app                     |
 |      | Enhanced custom model support                               |                      |
 
 ## Integrate Lemonade Server with Your Application

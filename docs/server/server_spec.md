@@ -9,6 +9,8 @@ Lemonade Server currently supports these backends:
 | [Llama.cpp](https://github.com/ggml-org/llama.cpp)    | `.GGUF`      | Uses llama.cpp's `llama-server` backend. More details [here](#gguf-support).                    |
 | [ONNX Runtime GenAI (OGA)](https://github.com/microsoft/onnxruntime-genai) | `.ONNX`      | Uses Lemonade's own `ryzenai-server` backend.                                                |
 | [FastFlowLM](https://github.com/FastFlowLM/FastFlowLM)    | `.q4nx`      | Uses FLM's `flm serve` backend. More details [here](#fastflowlm-support).                    |
+| [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | `.bin` | Uses whisper.cpp's `whisper-server` backend for audio transcription. Models: Whisper-Tiny, Whisper-Base, Whisper-Small. |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `.safetensors` | Uses sd.cpp's `sd-cli` backend for image generation. Models: SD-Turbo, SDXL-Turbo, etc. |
 
 
 ## Endpoints Overview
@@ -23,6 +25,7 @@ We are also actively investigating and developing [additional endpoints](#lemona
 - POST `/api/v1/embeddings` - Embeddings (text -> vector representations)
 - POST `/api/v1/responses` - Chat Completions (prompt|messages -> event)
 - POST `/api/v1/audio/transcriptions` - Audio Transcription (audio -> text)
+- POST `/api/v1/images/generations` - Image Generation (prompt -> image)
 - GET `/api/v1/models` - List models available locally
 - GET `/api/v1/models/{model_id}` - Retrieve a specific model by ID
 
@@ -581,6 +584,63 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 - `text` - The transcribed text from the audio file
 
+
+
+### `POST /api/v1/images/generations` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Image Generation API. You provide a text prompt and receive a generated image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+
+> **Note:** Image generation uses Stable Diffusion models. Available models include `SD-Turbo` (fast, ~4 steps), `SDXL-Turbo`, `SD-1.5`, and `SDXL-Base-1.0`.
+>
+> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
+
+#### Parameters 
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The Stable Diffusion model to use (e.g., `SD-Turbo`, `SDXL-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `steps` | No | Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. If not specified, a random seed is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+#### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/images/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "SD-Turbo",
+            "prompt": "A serene mountain landscape at sunset",
+            "size": "512x512",
+            "steps": 4,
+            "response_format": "b64_json"
+          }'
+    ```
+
+#### Response format
+
+```json
+{
+  "created": 1742927481,
+  "data": [
+    {
+      "b64_json": "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp when the image was generated
+- `data` - Array of generated images
+  - `b64_json` - Base64-encoded PNG image data
 
 
 ### `GET /api/v1/models` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

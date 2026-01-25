@@ -699,5 +699,33 @@
         "suggested": true,
         "labels": ["reasoning"],
         "size": 0.96
+    },
+    "SD-Turbo": {
+        "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 5.2
+    },
+    "SDXL-Turbo": {
+        "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 6.9
+    },
+    "SD-1.5": {
+        "checkpoint": "stable-diffusion-v1-5/stable-diffusion-v1-5:v1-5-pruned.safetensors",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 4.3
+    },
+    "SDXL-Base-1.0": {
+        "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0:sd_xl_base_1.0.safetensors",
+        "recipe": "sd-cpp",
+        "suggested": false,
+        "labels": ["image"],
+        "size": 6.9
     }
 }

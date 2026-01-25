@@ -53,6 +53,7 @@ public:
         int max_embedding_models,
         int max_reranking_models,
         int max_audio_models,
+        int max_image_models,
         const std::string& extra_models_dir
     );
     
@@ -111,6 +112,7 @@ private:
     int max_embedding_models_;
     int max_reranking_models_;
     int max_audio_models_;
+    int max_image_models_;
     nlohmann::json recipe_options_;
     bool show_console_;
     bool is_ephemeral_;  // Suppress output for ephemeral servers
