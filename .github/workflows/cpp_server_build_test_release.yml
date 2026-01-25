@@ -523,15 +523,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Cleanup ----
-      - name: Cleanup processes (Linux)
-        if: runner.os == 'Linux'
-        uses: ./.github/actions/cleanup-processes-linux
-
-      - name: Cleanup processes (Windows)
-        if: runner.os == 'Windows'
-        uses: ./.github/actions/cleanup-processes-windows
-
       # ---- Linux Setup ----
       - name: Install Lemonade Server (.deb)
         if: runner.os == 'Linux'
