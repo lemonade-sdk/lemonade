@@ -670,7 +670,7 @@ jobs:
           Write-Host "Running FLM tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          & $venvPython test/server_flm.py --server-binary $serverExe
+          & $venvPython test/server_llm.py --wrapped-server flm --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: FLM tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -733,21 +733,13 @@ jobs:
           Write-Host "Running Llamacpp Vulkan tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          & $venvPython test/server_llamacpp.py vulkan --server-binary $serverExe
+          & $venvPython test/server_llm.py --wrapped-server llamacpp --backend vulkan --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp Vulkan tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
           }
           
           Write-Host "Llamacpp Vulkan tests PASSED!" -ForegroundColor Green
-
-          & $venvPython test/server_multimodel.py vulkan --server-binary $serverExe
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: Llamacpp multi-model tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
-              exit $LASTEXITCODE 
-          }
-          
-          Write-Host "Llamacpp multi-model tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -804,7 +796,7 @@ jobs:
           Write-Host "Running Llamacpp ROCm tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          & $venvPython test/server_llamacpp.py rocm --server-binary $serverExe
+          & $venvPython test/server_llm.py --wrapped-server llamacpp --backend rocm --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
               Write-Host "ERROR: Llamacpp ROCm tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
@@ -886,13 +878,13 @@ jobs:
           Write-Host "Running general server tests with C++ server CLI: $serverExe" -ForegroundColor Cyan
           Write-Host "HF_HOME is set to: $env:HF_HOME" -ForegroundColor Cyan
           
-          & $venvPython test/server.py --server-binary $serverExe
+          & $venvPython test/server_llm.py --wrapped-server ryzenai --backend cpu --server-binary $serverExe
           if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: General server tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
+              Write-Host "ERROR: RyzenAI CPU tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE 
           }
           
-          Write-Host "General server tests PASSED!" -ForegroundColor Green
+          Write-Host "RyzenAI CPU tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
         if: always()
@@ -1139,13 +1131,9 @@ jobs:
           echo "HF_HOME: $HF_HOME"
           
           venvPython=".venv/bin/python"
-          $venvPython test/server_llamacpp.py vulkan --server-binary lemonade-server
+          $venvPython test/server_llm.py --wrapped-server llamacpp --backend vulkan --server-binary lemonade-server
           
           echo "Llamacpp Vulkan tests PASSED!"
-
-          python test/server_multimodel.py vulkan --server-binary lemonade-server
-          
-          echo "Llamacpp multi-model tests PASSED!"
 
       - name: Print server logs on failure
         if: failure()
@@ -1250,7 +1238,7 @@ jobs:
           echo "HF_HOME: $HF_HOME"
           
           venvPython=".venv/bin/python"
-          $venvPython test/server_llamacpp.py rocm --server-binary lemonade-server
+          $venvPython test/server_llm.py --wrapped-server llamacpp --backend rocm --server-binary lemonade-server
           
           echo "Llamacpp ROCm tests PASSED!"
 
