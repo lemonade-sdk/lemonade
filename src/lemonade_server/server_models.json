@@ -703,14 +703,14 @@
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
         "recipe": "sd-cpp",
-        "suggested": true,
+        "suggested": false,
         "labels": ["image"],
         "size": 5.2
     },
     "SDXL-Turbo": {
         "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
         "recipe": "sd-cpp",
-        "suggested": true,
+        "suggested": false,
         "labels": ["image"],
         "size": 6.9
     },
