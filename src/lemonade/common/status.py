@@ -338,7 +338,8 @@ class UniqueInvocationInfo(BasicInfo):
         )
         self._print_input_shape()
         self._print_build_dir(cache_dir=cache_dir, build_name=build_name)
-        self._print_peak_memory()
+        # Temporarily disable peak memory printout due to change in lemonade architecture
+        # self._print_peak_memory()
         self._print_status(cache_dir=cache_dir, build_name=build_name)
 
         print()

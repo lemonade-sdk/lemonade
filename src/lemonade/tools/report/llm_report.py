@@ -127,7 +127,7 @@ class LemonadeReport(ManagementTool):
             if not all(arg is None or arg is False for arg in perf_args):
                 raise ValueError(
                     "Invalid arguments for regular report.  Did you miss the --perf argument?"
-                    "  See `lemonade report -h` for help."
+                    "  See `lemonade-eval report -h` for help."
                 )
 
         return parsed_args

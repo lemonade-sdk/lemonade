@@ -3,7 +3,7 @@ import os
 
 # Define the paths
 json_file_path = os.path.join(
-    os.path.dirname(__file__), "..", "src", "lemonade_server", "server_models.json"
+    os.path.dirname(__file__), "..", "src", "cpp", "resources", "server_models.json"
 )
 markdown_file_path = os.path.join(
     os.path.dirname(__file__), "server", "server_models.md"

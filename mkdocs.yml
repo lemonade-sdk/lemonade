@@ -68,7 +68,6 @@ nav:
       - AnythingLLM: server/apps/anythingLLM.md
       - CodeGPT: server/apps/codeGPT.md
       - Continue: server/apps/continue.md
-      - LM-Eval-Harness: server/apps/lm-eval.md
       - Mindcraft: server/apps/mindcraft.md
       - OpenHands: server/apps/open-hands.md
       - Open WebUI: server/apps/open-webui.md
@@ -83,21 +82,19 @@ nav:
 
 not_in_nav: |
   /index.md
-  /lemonade_api.md
   /self_hosted_runners.md
-  /dev_cli/finetuned_model_export.md
+  /eval/finetuned_model_export.md
   
 exclude_docs: |
   code.md
   versioning.md
-  dev_cli/README.md
-  dev_cli/humaneval_accuracy.md
-  dev_cli/mmlu_accuracy.md
-  dev_cli/perplexity.md
-  dev_cli/quark.md
-  dev_cli/ort_genai_igpu.md
-  dev_cli/llamacpp.md
-  dev_cli/lm-eval.md
+  eval/README.md
+  eval/humaneval_accuracy.md
+  eval/mmlu_accuracy.md
+  eval/perplexity.md
+  eval/quark.md
+  eval/ort_genai_igpu.md
+  eval/lm-eval.md
 
 # The following adds icons on the bottom of the page
 extra:

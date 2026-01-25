@@ -4,7 +4,7 @@
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/tree/main/test" title="Check out our tests">
-    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/test_lemonade.yml/badge.svg" alt="Lemonade tests" /></a>
+    <img src="https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml/badge.svg" alt="Lemonade Server Build" /></a>
   <a href="docs/README.md#installation" title="Check out our instructions">
     <img src="https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white" alt="Windows 11" /></a>
   <a href="https://lemonade-server.ai/install_options.html#ubuntu" title="Ubuntu 24.04 & 25.04 Supported">
@@ -195,12 +195,9 @@ print(completion.choices[0].message.content)
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
-## Beyond an LLM Server
+## lemonade-eval
 
-The [Lemonade Python SDK](./docs/README.md) is also available, which includes the following components:
-
-- 🐍 **[Lemonade Python API](./docs/lemonade_api.md)**: High-level Python API to directly integrate Lemonade LLMs into Python applications.
-- 🖥️ **[Lemonade CLI](./docs/dev_cli/README.md)**: The `lemonade` CLI lets you mix-and-match LLMs (ONNX, GGUF, SafeTensors) with prompting templates, accuracy testing, performance benchmarking, and memory profiling to characterize your models on your hardware.
+The [lemonade-eval](./docs/eval/README.md) CLI provides tools for accuracy testing, performance benchmarking, and device-specific model preparation (OGA/ONNX models for NPU/CPU).
 
 ## FAQ
 

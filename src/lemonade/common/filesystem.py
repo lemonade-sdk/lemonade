@@ -106,7 +106,7 @@ def print_yaml_file(file_path, description):
     else:
         raise CacheError(
             f"No {description} found at {file_path}. "
-            "Try running `lemonade cache --list` to see the builds in your build cache."
+            "Try running `lemonade-eval cache --list` to see the builds in your build cache."
         )
 
 

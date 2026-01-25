@@ -15,8 +15,8 @@ from lemonade.tools import FirstTool
 from lemonade.cache import Keys
 import lemonade.common.status as status
 import lemonade.common.printing as printing
-from lemonade_install.install import (
-    _get_ryzenai_version_info,
+from lemonade.tools.oga.ryzenai import (
+    get_ryzenai_version_info,
     SUPPORTED_RYZEN_AI_SERIES,
     NPU_DRIVER_DOWNLOAD_URL,
     REQUIRED_NPU_DRIVER_VERSION,
@@ -131,7 +131,7 @@ class OgaLoad(FirstTool):
     Input: path to a checkpoint.
         Supported choices for cpu and igpu from HF model repository:
             LLM models on Huggingface supported by model_builder.  See documentation
-            (https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev_cli/ort_genai_igpu.md)
+            (https://github.com/lemonade-sdk/lemonade/blob/main/docs/eval/ort_genai_igpu.md)
             for supported models.
         Supported choices for npu from HF model repository:
             Models on Hugging Face that follow the "amd/**-onnx-ryzen-strix" pattern
@@ -346,7 +346,7 @@ class OgaLoad(FirstTool):
             required_driver_version = REQUIRED_NPU_DRIVER_VERSION
 
             current_driver_version = _get_npu_driver_version()
-            rai_version, _ = _get_ryzenai_version_info(device)
+            rai_version, _ = get_ryzenai_version_info()
 
             if not current_driver_version:
                 printing.log_warning(
@@ -566,10 +566,8 @@ class OgaLoad(FirstTool):
         else:
             raise ValueError(f"Unsupported device type for model generation: {device}")
 
-        printing.log_info(
-            f"Generating model for device: {device_flag}, \
-            input: {input_model_path}, output: {output_model_path}"
-        )
+        printing.log_info(f"Generating model for device: {device_flag}, \
+            input: {input_model_path}, output: {output_model_path}")
 
         try:
             if device_flag == "npu":
@@ -626,7 +624,7 @@ class OgaLoad(FirstTool):
         state.save_stat(Keys.DEVICE, device)
         state.save_stat(Keys.BACKEND, "ONNX GenAI")
         if device in ["hybrid", "npu"]:
-            ryzenai_version, _ = _get_ryzenai_version_info(device)
+            ryzenai_version, _ = get_ryzenai_version_info()
             ryzen_ai_version_info = {"version": ryzenai_version}
             state.save_stat(Keys.RYZEN_AI_VERSION_INFO, ryzen_ai_version_info)
 
@@ -774,7 +772,7 @@ class OgaLoad(FirstTool):
         if not download_only:
             # Get version information for NPU/Hybrid devices
             if device in ["hybrid", "npu"]:
-                ryzenai_version, oga_path = _get_ryzenai_version_info(device)
+                ryzenai_version, oga_path = get_ryzenai_version_info()
             else:
                 ryzenai_version, oga_path = None, None
 

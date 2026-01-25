@@ -4,11 +4,35 @@ import sys
 import traceback
 from typing import Dict
 import hashlib
+
 import psutil
+import requests
 import yaml
+
 import lemonade.common.exceptions as exp
 
 state_file_name = "state.yaml"
+
+# Default server URL for system info
+DEFAULT_SERVER_URL = os.getenv("LEMONADE_SERVER_URL", "http://localhost:8000")
+
+
+def get_system_info_from_server(server_url: str = DEFAULT_SERVER_URL) -> dict:
+    """
+    Fetch system information from Lemonade Server's /api/v1/system-info endpoint.
+
+    Args:
+        server_url: URL of the Lemonade Server
+
+    Returns:
+        System info dictionary, or empty dict if server unreachable
+    """
+    try:
+        response = requests.get(f"{server_url}/api/v1/system-info", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException:
+        return {}
 
 
 def load_yaml(file_path) -> Dict:

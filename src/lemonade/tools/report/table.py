@@ -8,12 +8,8 @@ import lemonade.common.build as build
 import lemonade.common.filesystem as fs
 from lemonade.cache import Keys
 from lemonade.tools.accuracy import LMEvalHarness
-from lemonade.tools.huggingface.bench import HuggingfaceBench
-from lemonade.tools.llamacpp.bench import LlamaCppBench
 from lemonade.tools.mmlu import AccuracyMMLU
-from lemonade.tools.oga.bench import OgaBench
-from lemonade.tools.flm.bench import FLMBench
-
+from lemonade.tools.server_bench import ServerBench
 
 # List of python packages for which to log the version
 PYTHON_PACKAGES = ["onnxruntime", "transformers", "lemonade-sdk", "voe"]
@@ -639,7 +635,7 @@ class LemonadePerfTable(Table):
             ),
         ],
         "tool_columns": {
-            OgaBench: [
+            ServerBench: [
                 SimpleStat(_wrap("Prompt Len (Tokens)", 8), Keys.PROMPT_TOKENS, "d"),
                 StatWithSD(
                     _wrap("Time to First Token (sec)", 8),
@@ -671,9 +667,6 @@ class LemonadePerfTable(Table):
                     _wrap("Memory Used (GB)", 8), Keys.MAX_MEMORY_USED_GBYTE, ".3f"
                 ),
             ],
-            HuggingfaceBench: OgaBench,
-            LlamaCppBench: OgaBench,
-            FLMBench: OgaBench,
             AccuracyMMLU: [
                 AdditionalStat(
                     "MMLU",
