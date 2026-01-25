@@ -670,11 +670,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[key] = info;
     }
@@ -695,11 +705,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
     }

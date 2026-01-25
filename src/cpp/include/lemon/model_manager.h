@@ -29,6 +29,16 @@ struct DownloadProgress {
 // Returns bool: true = continue download, false = cancel download
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
 
+// Image generation defaults for SD models
+struct ImageDefaults {
+    int steps = 20;
+    float cfg_scale = 7.0f;
+    int width = 512;
+    int height = 512;
+
+    bool has_defaults = false;  // True if explicit defaults were provided in JSON
+};
+
 struct ModelInfo {
     std::string model_name;
     std::string checkpoint;      // Original checkpoint identifier (for downloads/display)
@@ -41,10 +51,13 @@ struct ModelInfo {
     bool downloaded = false;     // Whether model is downloaded and available
     double size = 0.0;   // Model size in GB
     RecipeOptions recipe_options;
-    
+
     // Multi-model support fields
     ModelType type = ModelType::LLM;      // Model type for LRU cache management
     DeviceType device = DEVICE_NONE;      // Target device(s) for this model
+
+    // Image generation defaults (for sd-cpp models)
+    ImageDefaults image_defaults;
 };
 
 class ModelManager {
