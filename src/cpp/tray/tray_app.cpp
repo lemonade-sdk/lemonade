@@ -441,11 +441,11 @@ int TrayApp::run() {
         // Create server manager to communicate with running server
         server_manager_ = std::make_unique<ServerManager>();
         server_manager_->set_port(running_port);
-        config_.port = running_port;  // Update config to match running server
+        server_config_.port = running_port;  // Update config to match running server
 
         // Use localhost to connect (works regardless of what the server is bound to)
-        if (config_.host.empty() || config_.host == "0.0.0.0") {
-            config_.host = "localhost";
+        if (server_config_.host.empty() || server_config_.host == "0.0.0.0") {
+            server_config_.host = "localhost";
         }
 
         std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
