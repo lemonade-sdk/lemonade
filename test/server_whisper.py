@@ -17,7 +17,13 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
 )
-from utils.test_models import WHISPER_MODEL, TEST_AUDIO_URL, PORT
+from utils.test_models import (
+    WHISPER_MODEL,
+    TEST_AUDIO_URL,
+    PORT,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+)
 
 
 class WhisperTests(ServerTestBase):
@@ -73,7 +79,7 @@ class WhisperTests(ServerTestBase):
                 f"{self.base_url}/audio/transcriptions",
                 files=files,
                 data=data,
-                timeout=300,  # 5 minute timeout for model loading + transcription
+                timeout=TIMEOUT_MODEL_OPERATION,
             )
 
         self.assertEqual(
@@ -112,7 +118,7 @@ class WhisperTests(ServerTestBase):
                 f"{self.base_url}/audio/transcriptions",
                 files=files,
                 data=data,
-                timeout=300,
+                timeout=TIMEOUT_MODEL_OPERATION,
             )
 
         self.assertEqual(
@@ -136,7 +142,7 @@ class WhisperTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/audio/transcriptions",
             data=data,
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Should return an error (400 or 422)
@@ -157,7 +163,7 @@ class WhisperTests(ServerTestBase):
             response = requests.post(
                 f"{self.base_url}/audio/transcriptions",
                 files=files,
-                timeout=60,
+                timeout=TIMEOUT_DEFAULT,
             )
 
         # Should return an error (400 or 422)

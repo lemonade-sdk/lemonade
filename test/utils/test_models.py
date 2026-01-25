@@ -9,6 +9,17 @@ based on the current wrapped server and backend.
 # Default port for lemonade server
 PORT = 8000
 
+# =============================================================================
+# TIMEOUT CONSTANTS (in seconds)
+# =============================================================================
+
+# For requests that could download a model (inference, load, pull)
+# Model downloads can take several minutes on slow connections
+TIMEOUT_MODEL_OPERATION = 500
+
+# For requests that don't download a model (health, unload, stats, etc.)
+TIMEOUT_DEFAULT = 60
+
 # Standard test messages for chat completions
 STANDARD_MESSAGES = [
     {"role": "system", "content": "You are a helpful assistant."},

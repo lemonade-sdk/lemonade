@@ -45,6 +45,8 @@ from utils.test_models import (
     SAMPLE_TOOL,
     MULTI_MODEL_SECONDARY,
     MULTI_MODEL_TERTIARY,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
 )
 
 
@@ -595,7 +597,7 @@ class LLMTests(ServerTestBase):
             "model": model,
         }
 
-        response = requests.post(f"{self.base_url}/reranking", json=payload)
+        response = requests.post(f"{self.base_url}/reranking", json=payload, timeout=TIMEOUT_MODEL_OPERATION)
         response.raise_for_status()
         result = response.json()
 
@@ -620,7 +622,7 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_019_multi_model_load(self):
         """Test loading multiple models simultaneously."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model1 = self.get_test_model("llm")
         model2 = MULTI_MODEL_SECONDARY
@@ -629,7 +631,7 @@ class LLMTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": model1},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -637,12 +639,12 @@ class LLMTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": model2},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
         # Check health shows both models loaded
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(health_response.status_code, 200)
         health_data = health_response.json()
 
@@ -657,7 +659,7 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
         """Test unloading a specific model by name."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model = self.get_test_model("llm")
 
@@ -665,14 +667,14 @@ class LLMTests(ServerTestBase):
         requests.post(
             f"{self.base_url}/load",
             json={"model_name": model},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Unload specific model
         response = requests.post(
             f"{self.base_url}/unload",
             json={"model_name": model},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -682,20 +684,20 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_021_lru_eviction(self):
         """Test LRU eviction when loading a third model with max_llm_models=2."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model1 = self.get_test_model("llm")
         model2 = MULTI_MODEL_SECONDARY
         model3 = MULTI_MODEL_TERTIARY
 
         # Load first two models (fills the limit)
-        requests.post(f"{self.base_url}/load", json={"model_name": model1}, timeout=120)
+        requests.post(f"{self.base_url}/load", json={"model_name": model1}, timeout=TIMEOUT_MODEL_OPERATION)
         time.sleep(1)
-        requests.post(f"{self.base_url}/load", json={"model_name": model2}, timeout=120)
+        requests.post(f"{self.base_url}/load", json={"model_name": model2}, timeout=TIMEOUT_MODEL_OPERATION)
         time.sleep(1)
 
         # Verify both are loaded
-        response = requests.get(f"{self.base_url}/health", timeout=60)
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 
@@ -707,16 +709,16 @@ class LLMTests(ServerTestBase):
                 "messages": [{"role": "user", "content": "Hi"}],
                 "max_tokens": 5,
             },
-            timeout=60,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         time.sleep(1)
 
         # Load third model (should evict model1 as it's LRU)
-        requests.post(f"{self.base_url}/load", json={"model_name": model3}, timeout=120)
+        requests.post(f"{self.base_url}/load", json={"model_name": model3}, timeout=TIMEOUT_MODEL_OPERATION)
         time.sleep(1)
 
         # Verify only 2 models loaded and model1 was evicted
-        response = requests.get(f"{self.base_url}/health", timeout=60)
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 
@@ -728,21 +730,21 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_022_unload_all_models(self):
         """Test unloading all models without specifying model_name."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model = self.get_test_model("llm")
 
         # Load a model
-        requests.post(f"{self.base_url}/load", json={"model_name": model}, timeout=120)
+        requests.post(f"{self.base_url}/load", json={"model_name": model}, timeout=TIMEOUT_MODEL_OPERATION)
 
         # Unload all (no model_name parameter)
-        response = requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+        response = requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
         result = response.json()
         self.assertEqual(result["status"], "success")
 
         # Verify all unloaded
-        response = requests.get(f"{self.base_url}/health", timeout=60)
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 0)
 

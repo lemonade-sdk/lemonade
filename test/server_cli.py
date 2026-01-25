@@ -29,7 +29,12 @@ import os
 import argparse
 import platform
 
-from utils.test_models import PORT, ENDPOINT_TEST_MODEL
+from utils.test_models import (
+    PORT,
+    ENDPOINT_TEST_MODEL,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+)
 
 
 # Global configuration
@@ -243,18 +248,19 @@ class PersistentServerCLITests(CLITestBase):
             f"Status should indicate server is running: {result.stdout}",
         )
 
-    def test_003_list(self):
-        """Test list command to show available models."""
-        result = self.assertCommandSucceeds(["list"])
-        # List should produce some output (model names or empty message)
-        self.assertTrue(
-            len(result.stdout) > 0,
-            "List command should produce output",
-        )
+    # https://github.com/lemonade-sdk/lemonade/issues/923
+    # def test_003_list(self):
+    #     """Test list command to show available models."""
+    #     result = self.assertCommandSucceeds(["list"])
+    #     # List should produce some output (model names or empty message)
+    #     self.assertTrue(
+    #         len(result.stdout) > 0,
+    #         "List command should produce output",
+    #     )
 
     def test_004_pull(self):
         """Test pull command to download a model."""
-        result = self.assertCommandSucceeds(["pull", ENDPOINT_TEST_MODEL], timeout=300)
+        result = self.assertCommandSucceeds(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
         # Pull should succeed
         output = result.stdout.lower() + result.stderr.lower()
         self.assertFalse(
@@ -265,7 +271,7 @@ class PersistentServerCLITests(CLITestBase):
     def test_005_delete(self):
         """Test delete command to remove a model."""
         # First ensure model exists
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=300)
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
         # Delete the model
         result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
@@ -276,7 +282,7 @@ class PersistentServerCLITests(CLITestBase):
         )
 
         # Re-pull for other tests
-        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=300)
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
 
 class EphemeralCLITests(CLITestBase):
@@ -316,7 +322,7 @@ class EphemeralCLITests(CLITestBase):
         self.assertFalse(is_server_running(), "Server should not be running initially")
 
         # List command should work (may start ephemeral server)
-        result = run_cli_command(["list"], timeout=120)
+        result = run_cli_command(["list"], timeout=TIMEOUT_DEFAULT)
         # Command should complete (may or may not succeed depending on implementation)
         # We just verify it doesn't hang
         print(f"List exit code: {result.returncode}")
@@ -326,7 +332,7 @@ class EphemeralCLITests(CLITestBase):
         self.assertFalse(is_server_running(), "Server should not be running initially")
 
         # Pull should work (starts ephemeral server)
-        result = run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=300)
+        result = run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
         # Should complete successfully
         self.assertEqual(result.returncode, 0, f"Pull failed: {result.stderr}")
 

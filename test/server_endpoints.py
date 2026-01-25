@@ -28,7 +28,12 @@ from utils.server_base import (
     parse_args,
     OpenAI,
 )
-from utils.test_models import PORT, ENDPOINT_TEST_MODEL
+from utils.test_models import (
+    PORT,
+    ENDPOINT_TEST_MODEL,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+)
 
 
 def get_recipe_options_path():
@@ -53,7 +58,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/pull",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=600,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         if response.status_code == 200:
             print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
@@ -84,14 +89,14 @@ class EndpointTests(ServerTestBase):
 
         # Ensure 404 for non-existent endpoint
         url = f"http://localhost:{PORT}/api/v0/nonexistent"
-        response = session.head(url, timeout=60)
+        response = session.head(url, timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 404)
 
         # Check that all endpoints are properly registered on both v0 and v1
         for endpoint in valid_endpoints:
             for version in ["v0", "v1"]:
                 url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
-                response = session.head(url, timeout=60)
+                response = session.head(url, timeout=TIMEOUT_DEFAULT)
                 self.assertNotEqual(
                     response.status_code,
                     404,
@@ -102,13 +107,13 @@ class EndpointTests(ServerTestBase):
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
-        response = requests.get(f"http://localhost:{PORT}/live", timeout=60)
+        response = requests.get(f"http://localhost:{PORT}/live", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
         print("[OK] /live endpoint returned 200")
 
     def test_002_health_endpoint(self):
         """Test the /health endpoint returns valid response with expected fields."""
-        response = requests.get(f"{self.base_url}/health", timeout=60)
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
@@ -133,7 +138,7 @@ class EndpointTests(ServerTestBase):
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
         # Model is already pulled in setUpClass
-        response = requests.get(f"{self.base_url}/models", timeout=60)
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
@@ -159,12 +164,12 @@ class EndpointTests(ServerTestBase):
     def test_004_models_list_show_all(self):
         """Test that show_all=true returns more models than default."""
         # Get only downloaded models (default)
-        response_default = requests.get(f"{self.base_url}/models", timeout=60)
+        response_default = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response_default.status_code, 200)
         downloaded_count = len(response_default.json()["data"])
 
         # Get all models including not-yet-downloaded
-        response_all = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
+        response_all = requests.get(f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response_all.status_code, 200)
         all_count = len(response_all.json()["data"])
 
@@ -209,13 +214,13 @@ class EndpointTests(ServerTestBase):
         delete_response = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         # 200 = deleted, 422 = not found (both are acceptable)
         self.assertIn(delete_response.status_code, [200, 422])
 
         # Verify model is not in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=60)
+        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(
@@ -226,7 +231,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/pull",
             json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
-            timeout=600,  # Model download can take a while
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -235,7 +240,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is now in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=60)
+        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -250,7 +255,7 @@ class EndpointTests(ServerTestBase):
         delete_response = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertIn(delete_response.status_code, [200, 422])
 
@@ -258,7 +263,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/pull",
             json={"model_name": ENDPOINT_TEST_MODEL, "stream": True},
-            timeout=600,
+            timeout=TIMEOUT_MODEL_OPERATION,
             stream=True,
         )
         self.assertEqual(response.status_code, 200)
@@ -285,7 +290,7 @@ class EndpointTests(ServerTestBase):
         )
 
         # Verify model is now in downloaded list
-        models_response = requests.get(f"{self.base_url}/models", timeout=60)
+        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -302,7 +307,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -310,7 +315,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is loaded via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(health_response.status_code, 200)
         health_data = health_response.json()
 
@@ -332,12 +337,12 @@ class EndpointTests(ServerTestBase):
                 "model_name": ENDPOINT_TEST_MODEL,
                 "ctx_size": custom_ctx_size,
             },
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
         # Verify options were applied via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health_data = health_response.json()
 
         # Find our model in loaded models
@@ -369,7 +374,7 @@ class EndpointTests(ServerTestBase):
                 "ctx_size": custom_ctx_size,
                 "save_options": True,
             },
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -407,26 +412,26 @@ class EndpointTests(ServerTestBase):
                 "ctx_size": custom_ctx_size,
                 "save_options": True,
             },
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Unload the model so we can reload it fresh
         requests.post(
             f"{self.base_url}/unload",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Load again WITHOUT specifying ctx_size - should use saved value from recipe_options.json
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
 
         # Verify via health
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health_data = health_response.json()
 
         for m in health_data.get("all_models_loaded", []):
@@ -447,11 +452,11 @@ class EndpointTests(ServerTestBase):
         requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Verify model is loaded
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health_data = health_response.json()
         loaded_models = [
             m["model_name"] for m in health_data.get("all_models_loaded", [])
@@ -466,7 +471,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/unload",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -474,7 +479,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is actually unloaded via health endpoint
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health_data = health_response.json()
         loaded_models = [
             m["model_name"] for m in health_data.get("all_models_loaded", [])
@@ -492,7 +497,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/unload",
             json={"model_name": "NonexistentModel-XYZ-123"},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 404)
 
@@ -504,14 +509,14 @@ class EndpointTests(ServerTestBase):
         requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Unload all (no model_name parameter)
         response = requests.post(
             f"{self.base_url}/unload",
             json={},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -519,7 +524,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify all models are unloaded
-        health_response = requests.get(f"{self.base_url}/health", timeout=60)
+        health_response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health_data = health_response.json()
         self.assertEqual(len(health_data.get("all_models_loaded", [])), 0)
 
@@ -528,7 +533,7 @@ class EndpointTests(ServerTestBase):
     def test_016_delete_model(self):
         """Test deleting a model removes it from local storage."""
         # Model should already be pulled from setUpClass or pull tests
-        models_response = requests.get(f"{self.base_url}/models", timeout=60)
+        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
@@ -539,7 +544,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
 
@@ -547,7 +552,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["status"], "success")
 
         # Verify model is no longer in the list
-        models_response = requests.get(f"{self.base_url}/models", timeout=60)
+        models_response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(ENDPOINT_TEST_MODEL, model_ids)
@@ -556,7 +561,7 @@ class EndpointTests(ServerTestBase):
         requests.post(
             f"{self.base_url}/pull",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=600,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         print(f"[OK] Deleted and re-pulled model: {ENDPOINT_TEST_MODEL}")
@@ -566,7 +571,7 @@ class EndpointTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": "NonExistentModel-XYZ-123"},
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
         # Should return 422 Unprocessable Entity
         self.assertEqual(response.status_code, 422)
@@ -575,7 +580,7 @@ class EndpointTests(ServerTestBase):
 
     def test_018_system_info(self):
         """Test the /system-info endpoint returns required fields."""
-        response = requests.get(f"{self.base_url}/system-info", timeout=60)
+        response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
@@ -604,7 +609,7 @@ class EndpointTests(ServerTestBase):
 
     def test_019_system_info_verbose(self):
         """Test the /system-info endpoint with verbose flag includes extra details."""
-        response = requests.get(f"{self.base_url}/system-info?verbose=true", timeout=60)
+        response = requests.get(f"{self.base_url}/system-info?verbose=true", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
@@ -627,7 +632,7 @@ class EndpointTests(ServerTestBase):
         requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=120,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Make a simple completion to populate stats
@@ -641,7 +646,7 @@ class EndpointTests(ServerTestBase):
         except Exception:
             pass  # Stats may still be populated even if inference fails
 
-        response = requests.get(f"{self.base_url}/stats", timeout=60)
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 200)
 
         data = response.json()

@@ -18,7 +18,12 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
 )
-from utils.test_models import SD_MODEL, PORT
+from utils.test_models import (
+    SD_MODEL,
+    PORT,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+)
 
 
 class StableDiffusionTests(ServerTestBase):
@@ -41,7 +46,7 @@ class StableDiffusionTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=600,  # 10 minute timeout for CPU inference
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         self.assertEqual(
@@ -87,7 +92,7 @@ class StableDiffusionTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Should return an error
@@ -109,7 +114,7 @@ class StableDiffusionTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/images/generations",
             json=payload,
-            timeout=60,
+            timeout=TIMEOUT_DEFAULT,
         )
 
         # Should return an error (model not found)

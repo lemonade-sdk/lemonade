@@ -40,7 +40,7 @@ from .capabilities import (
     get_test_model,
     WRAPPED_SERVER_CAPABILITIES,
 )
-from .test_models import PORT, STANDARD_MESSAGES
+from .test_models import PORT, STANDARD_MESSAGES, TIMEOUT_MODEL_OPERATION, TIMEOUT_DEFAULT
 
 # Global configuration set by parse_args()
 _config = {
@@ -359,6 +359,7 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         return OpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required but unused
+            timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 
     def get_async_openai_client(self) -> AsyncOpenAI:
@@ -366,6 +367,7 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
         return AsyncOpenAI(
             base_url=self.base_url,
             api_key="lemonade",  # required but unused
+            timeout=TIMEOUT_MODEL_OPERATION,  # inference may trigger model download
         )
 
     def get_test_model(self, model_type: str = "llm") -> str:
