@@ -242,6 +242,12 @@
         "labels": ["reasoning"],
         "size": 0.38
     },
+    "Tiny-Test-Model-GGUF": {
+        "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "size": 0.18
+    },
     "Qwen3-1.7B-GGUF": {
         "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
         "recipe": "llamacpp",
