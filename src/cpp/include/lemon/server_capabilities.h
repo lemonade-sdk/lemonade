@@ -43,6 +43,15 @@ public:
     virtual json audio_transcriptions(const json& request) = 0;
 };
 
+// Optional image generation capability
+class IImageServer : public virtual ICapability {
+public:
+    virtual ~IImageServer() = default;
+
+    // Image generation (OpenAI /v1/images/generations compatible)
+    virtual json image_generations(const json& request) = 0;
+};
+
 // Helper to check if a server supports a capability
 template<typename T>
 bool supports_capability(ICapability* server) {

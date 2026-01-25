@@ -52,12 +52,12 @@ static void add_serve_options(CLI::App* serve, ServerConfig& config, std::vector
         ->default_val(config.extra_models_dir);
 
     // Multi-model support: Max loaded models
-    // Use a member vector to capture 1, 3, or 4 values (2 is not allowed)
+    // Use a member vector to capture 1, 3, 4, or 5 values (2 is not allowed)
     serve->add_option("--max-loaded-models", max_models_vec,
-                   "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO]")
-        ->type_name("N [E] [R] [A]")
-        ->expected(1, 4)
-        ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models})
+                   "Max loaded models: LLMS [EMBEDDINGS] [RERANKINGS] [AUDIO] [IMAGE]")
+        ->type_name("N [E] [R] [A] [I]")
+        ->expected(1, 5)
+        ->default_val(std::vector<int>{config.max_llm_models, config.max_embedding_models, config.max_reranking_models, config.max_audio_models, config.max_image_models})
         ->check([](const std::string& val) -> std::string {
             // Validate that value is a positive integer (digits only, no floats)
             if (val.empty()) {
@@ -143,9 +143,9 @@ int CLIParser::parse(int argc, char** argv) {
 
         // Process --max-loaded-models values
         if (!max_models_vec_.empty()) {
-            // Validate that we have exactly 1, 3, or 4 values (2 is not allowed)
+            // Validate that we have exactly 1, 3, 4, or 5 values (2 is not allowed)
             if (max_models_vec_.size() == 2) {
-                throw CLI::ValidationError("--max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), or 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), not 2");
+                throw CLI::ValidationError("--max-loaded-models requires 1 value (LLMS), 3 values (LLMS EMBEDDINGS RERANKINGS), 4 values (LLMS EMBEDDINGS RERANKINGS AUDIO), or 5 values (LLMS EMBEDDINGS RERANKINGS AUDIO IMAGE), not 2");
             }
 
             config_.max_llm_models = max_models_vec_[0];
@@ -155,6 +155,9 @@ int CLIParser::parse(int argc, char** argv) {
             }
             if (max_models_vec_.size() > 3) {
                 config_.max_audio_models = max_models_vec_[3];
+            }
+            if (max_models_vec_.size() > 4) {
+                config_.max_image_models = max_models_vec_[4];
             }
         }
 #ifdef LEMONADE_TRAY

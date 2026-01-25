@@ -5,7 +5,8 @@ import os
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 from lemonade.version import __version__ as version_number
 from lemonade.tools import FirstTool, NiceHelpFormatter
-from lemonade.profilers.memory_tracker import MemoryTracker
+
+# from lemonade.profilers.memory_tracker import MemoryTracker
 import lemonade.common.filesystem as fs
 import lemonade.common.cli_helpers as cli
 from lemonade.sequence import Sequence
@@ -19,7 +20,10 @@ def get_available_profilers(warn_missing=False):
     Args:
         warn_missing: If True, print warnings for missing profilers. If False, fail silently.
     """
-    profilers = [MemoryTracker]
+
+    # Temporarily disable memory profiling due to changes in lemonade architecture
+    # profilers = [MemoryTracker]
+    profilers = []
 
     try:
         from lemonade.profilers.hwinfo_power import HWINFOPowerProfiler
@@ -47,14 +51,7 @@ def get_available_profilers(warn_missing=False):
     return profilers
 
 
-from lemonade.tools.huggingface.load import HuggingfaceLoad
-from lemonade.tools.huggingface.bench import HuggingfaceBench
 from lemonade.tools.oga.load import OgaLoad
-from lemonade.tools.oga.bench import OgaBench
-from lemonade.tools.llamacpp.bench import LlamaCppBench
-from lemonade.tools.llamacpp.load import LoadLlamaCpp
-from lemonade.tools.flm.load import FLMLoad
-from lemonade.tools.flm.bench import FLMBench
 from lemonade.tools.server_load import Load as ServerLoad
 from lemonade.tools.server_bench import ServerBench
 
@@ -71,21 +68,14 @@ def main():
 
     # List the available tools
     tools = [
-        HuggingfaceLoad,
-        LoadLlamaCpp,
-        LlamaCppBench,
+        OgaLoad,
+        ServerLoad,
+        ServerBench,
         AccuracyMMLU,
         AccuracyHumaneval,
         AccuracyPerplexity,
         LMEvalHarness,
         LLMPrompt,
-        HuggingfaceBench,
-        OgaLoad,
-        OgaBench,
-        FLMLoad,
-        FLMBench,
-        ServerLoad,
-        ServerBench,
         LemonadeReport,
         # Inherited from lemonade
         Cache,
@@ -98,10 +88,10 @@ def main():
 
     # Define the argument parser
     parser = cli.CustomArgumentParser(
-        description=f"""Tools for evaluating and deploying LLMs (v{version_number}).
+        description=f"""Tools for evaluating and benchmarking LLMs (v{version_number}).
 
 Read this to learn the command syntax:
-https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
+https://github.com/lemonade-sdk/lemonade/blob/main/docs/eval/README.md""",
         formatter_class=NiceHelpFormatter,
     )
 
@@ -125,7 +115,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
         profiler.add_arguments_to_parser(parser)
 
     global_args, tool_instances, evaluation_tools = cli.parse_tools(
-        parser, tools, cli_name="lemonade"
+        parser, tools, cli_name="lemonade-eval"
     )
 
     # Check if any profilers are being requested
@@ -150,7 +140,7 @@ https://github.com/lemonade-sdk/lemonade/blob/main/docs/README.md""",
             parser.error(
                 "The first tool in the sequence needs to be one "
                 "of the 'tools that can start a sequence.' Use "
-                "`lemonade -h` to see that list of tools."
+                "`lemonade-eval -h` to see that list of tools."
             )
         # Run the evaluation tools as a build
         sequence = Sequence(tools=tool_instances, profilers=profiler_instances)

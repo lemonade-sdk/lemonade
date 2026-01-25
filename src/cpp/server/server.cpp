@@ -37,7 +37,7 @@ namespace lemon {
 Server::Server(int port, const std::string& host, const std::string& log_level,
                const json& default_options, int max_llm_models,
                int max_embedding_models, int max_reranking_models, int max_audio_models,
-               const std::string& extra_models_dir)
+               int max_image_models, const std::string& extra_models_dir)
     : port_(port), host_(host), log_level_(log_level), default_options_(default_options),
       running_(false) {
     
@@ -75,7 +75,8 @@ Server::Server(int port, const std::string& host, const std::string& log_level,
     
     router_ = std::make_unique<Router>(default_options_, log_level,
                                        model_manager_.get(), max_llm_models,
-                                       max_embedding_models, max_reranking_models, max_audio_models);
+                                       max_embedding_models, max_reranking_models, max_audio_models,
+                                       max_image_models);
     
     if (log_level_ == "debug" || log_level_ == "trace") {
         std::cout << "[Server] Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -197,6 +198,11 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_audio_transcriptions(req, res);
     });
 
+    // Image endpoints (OpenAI /v1/images/* compatible)
+    register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_image_generations(req, res);
+    });
+
     // Responses endpoint
     register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
         handle_responses(req, res);
@@ -222,8 +228,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
         handle_params(req, res);
     });
-    
-    
+
     // System endpoints
     register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_stats(req, res);
@@ -1399,10 +1404,79 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
     }
 }
 
+void Server::handle_image_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        std::cout << "[Server] POST /api/v1/images/generations" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        // Validate required fields
+        if (!request_json.contains("prompt")) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'prompt' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Handle model loading
+        if (request_json.contains("model")) {
+            std::string requested_model = request_json["model"];
+            try {
+                auto_load_model_if_needed(requested_model);
+            } catch (const std::exception& e) {
+                std::cerr << "[Server ERROR] Failed to load image model: " << e.what() << std::endl;
+                auto error_response = create_model_error(requested_model, e.what());
+                std::string error_code = error_response["error"]["code"].get<std::string>();
+                res.status = (error_code == "model_load_error" || error_code == "model_invalidated") ? 500 : 404;
+                res.set_content(error_response.dump(), "application/json");
+                return;
+            }
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Missing 'model' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Forward to router
+        auto response = router_->image_generations(request_json);
+
+        // Check for error in response
+        if (response.contains("error")) {
+            res.status = 500;
+        }
+
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        std::cerr << "[Server] JSON parse error in handle_image_generations: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] ERROR in handle_image_generations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
-        
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1505,6 +1579,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         bool vision = request_json.value("vision", false);
         bool embedding = request_json.value("embedding", false);
         bool reranking = request_json.value("reranking", false);
+        bool image = request_json.value("image", false);
         std::string mmproj = request_json.value("mmproj", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
@@ -1541,7 +1616,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             
             resolve_and_register_local_model(
                 dest_path, model_name, recipe, "", mmproj,
-                reasoning, vision, embedding, reranking, hf_cache
+                reasoning, vision, embedding, reranking, image, hf_cache
             );
             
             nlohmann::json response = {
@@ -1562,8 +1637,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             
             res.set_chunked_content_provider(
                 "text/event-stream",
-                [this, model_name, checkpoint, recipe, reasoning, vision, 
-                 embedding, reranking, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
+                [this, model_name, checkpoint, recipe, reasoning, vision,
+                 embedding, reranking, image, mmproj, do_not_upgrade](size_t offset, httplib::DataSink& sink) {
                     if (offset > 0) {
                         return false; // Already sent everything
                     }
@@ -1598,7 +1673,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                         };
                         
                         model_manager_->download_model(model_name, checkpoint, recipe,
-                                                      reasoning, vision, embedding, reranking, 
+                                                      reasoning, vision, embedding, reranking, image,
                                                       mmproj, do_not_upgrade, progress_cb);
                         
                     } catch (const std::exception& e) {
@@ -1617,8 +1692,8 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 });
         } else {
             // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, checkpoint, recipe, 
-                                          reasoning, vision, embedding, reranking, mmproj, do_not_upgrade);
+            model_manager_->download_model(model_name, checkpoint, recipe,
+                                          reasoning, vision, embedding, reranking, image, mmproj, do_not_upgrade);
             
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
@@ -1867,7 +1942,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 //   - recipe: Inference recipe (llamacpp, oga-*, whispercpp)
 //   - variant: Optional variant hint for GGUF file selection
 //   - mmproj: Optional mmproj filename hint
-//   - reasoning, vision, embedding, reranking: Model labels
+//   - reasoning, vision, embedding, reranking, image: Model labels
 //   - hf_cache: HuggingFace cache directory for computing relative paths
 void Server::resolve_and_register_local_model(
     const std::string& dest_path,
@@ -1879,6 +1954,7 @@ void Server::resolve_and_register_local_model(
     bool& vision,  // May be modified if mmproj found
     bool embedding,
     bool reranking,
+    bool image,
     const std::string& hf_cache) {
     
     std::string resolved_checkpoint;
@@ -1994,6 +2070,7 @@ void Server::resolve_and_register_local_model(
         vision,
         embedding,
         reranking,
+        image,
         resolved_mmproj.empty() ? mmproj : resolved_mmproj,
         "local_upload"
     );
