@@ -961,6 +961,108 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
 
+  test-exe-sd:
+    name: Test .exe - Stable Diffusion
+    runs-on: [rai300_400, Windows]
+    needs: build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      LEMONADE_CACHE_DIR: ".\\ci-cache"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Set environment variables
+        shell: PowerShell
+        run: |
+          $cwd = (Get-Item .\).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          Write-Host "HF_HOME set to: $cwd\hf-cache" -ForegroundColor Green
+
+          $installPath = Join-Path $cwd "lemonade_server_install"
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          Write-Host "LEMONADE_INSTALL_PATH set to: $installPath" -ForegroundColor Green
+
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run Stable Diffusion tests
+        shell: PowerShell
+        env:
+          HF_HOME: "${{ env.HF_HOME }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
+          $venvPython = ".\.venv\Scripts\python.exe"
+
+          Write-Host "Pre-downloading SD-Turbo model..." -ForegroundColor Cyan
+          & $serverExe pull SD-Turbo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Write-Host "Running Stable Diffusion tests (may take 2-3 minutes with CPU backend)..." -ForegroundColor Cyan
+          & $venvPython test/server_sd.py --server-binary $serverExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Write-Host "Stable Diffusion tests PASSED!" -ForegroundColor Green
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-windows
+
+  test-deb-sd:
+    name: Test .deb - Stable Diffusion
+    runs-on: [rai300_400, Linux]
+    needs: build-lemonade-server-deb
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-server-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Set HF_HOME environment variable
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
+      - name: Install Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run Stable Diffusion tests
+        run: |
+          echo "Pre-downloading SD-Turbo model..."
+          lemonade-server pull SD-Turbo
+          echo "Running Stable Diffusion tests (may take 2-3 minutes with CPU backend)..."
+          .venv/bin/python test/server_sd.py --server-binary lemonade-server
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
   test-deb-llamacpp-vulkan:
     name: Test .deb - Llamacpp (Vulkan)
     runs-on: [rai300_400, Linux]
@@ -1470,6 +1572,8 @@ jobs:
       - test-exe-llamacpp-rocm
       - test-exe-rai-cpu
       - test-exe-whisper
+      - test-exe-sd
+      - test-deb-sd
       - test-deb-llamacpp-vulkan
       - test-deb-llamacpp-rocm
       - test-deb-endpoints
