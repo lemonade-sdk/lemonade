@@ -586,15 +586,6 @@ jobs:
           
           echo "${{ matrix.test_type }} tests PASSED!"
 
-      # ---- Cleanup ----
-      - name: Cleanup (Linux)
-        if: always() && runner.os == 'Linux'
-        uses: ./.github/actions/cleanup-processes-linux
-
-      - name: Cleanup (Windows)
-        if: always() && runner.os == 'Windows'
-        uses: ./.github/actions/cleanup-processes-windows
-
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
