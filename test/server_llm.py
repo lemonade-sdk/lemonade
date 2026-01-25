@@ -620,6 +620,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_019_multi_model_load(self):
         """Test loading multiple models simultaneously."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+
         model1 = self.get_test_model("llm")
         model2 = MULTI_MODEL_SECONDARY
 
@@ -655,6 +657,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
         """Test unloading a specific model by name."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+
         model = self.get_test_model("llm")
 
         # Load a model
@@ -678,6 +682,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_021_lru_eviction(self):
         """Test LRU eviction when loading a third model with max_llm_models=2."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+
         model1 = self.get_test_model("llm")
         model2 = MULTI_MODEL_SECONDARY
         model3 = MULTI_MODEL_TERTIARY
@@ -722,6 +728,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_022_unload_all_models(self):
         """Test unloading all models without specifying model_name."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=60)
+
         model = self.get_test_model("llm")
 
         # Load a model
