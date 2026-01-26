@@ -7,7 +7,7 @@
     "cpu": "b7788"
   },
   "whispercpp": "v1.8.2",
-  "sd-cpp": "master-471-7010bb4",
+  "sd-cpp": "master-487-43e829f",
   "ryzenai-server": "v1.0.2",
   "flm": {
     "version": "v0.9.27",

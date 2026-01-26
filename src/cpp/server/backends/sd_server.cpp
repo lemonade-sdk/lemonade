@@ -345,10 +345,48 @@ void SDServer::load(const std::string& model_name,
     std::cout << "[SDServer] Starting server on port " << port_ << std::endl;
 
     // Build command line arguments
-    std::vector<std::string> args = {
-        "-m", model_path_,
-        "--listen-port", std::to_string(port_)
-    };
+    std::vector<std::string> args;
+
+    // Check if this is a multi-file model (Flux, etc.) with components
+    if (!model_info.components.empty()) {
+        // Multi-file model: use --diffusion-model for the main model
+        args.push_back("--diffusion-model");
+        args.push_back(model_path_);
+
+        // Add component-specific flags
+        if (model_info.components.count("vae")) {
+            args.push_back("--vae");
+            args.push_back(model_info.components.at("vae"));
+            std::cout << "[SDServer] Using VAE: " << model_info.components.at("vae") << std::endl;
+        }
+        if (model_info.components.count("clip_l")) {
+            args.push_back("--clip_l");
+            args.push_back(model_info.components.at("clip_l"));
+            std::cout << "[SDServer] Using CLIP-L: " << model_info.components.at("clip_l") << std::endl;
+        }
+        if (model_info.components.count("t5xxl")) {
+            args.push_back("--t5xxl");
+            args.push_back(model_info.components.at("t5xxl"));
+            std::cout << "[SDServer] Using T5-XXL: " << model_info.components.at("t5xxl") << std::endl;
+        }
+        if (model_info.components.count("clip_g")) {
+            args.push_back("--clip_g");
+            args.push_back(model_info.components.at("clip_g"));
+            std::cout << "[SDServer] Using CLIP-G: " << model_info.components.at("clip_g") << std::endl;
+        }
+        if (model_info.components.count("llm")) {
+            args.push_back("--llm");
+            args.push_back(model_info.components.at("llm"));
+            std::cout << "[SDServer] Using LLM: " << model_info.components.at("llm") << std::endl;
+        }
+    } else {
+        // Single-file model: use -m flag (existing behavior)
+        args.push_back("-m");
+        args.push_back(model_path_);
+    }
+
+    args.push_back("--listen-port");
+    args.push_back(std::to_string(port_));
 
     if (is_debug()) {
         args.push_back("-v");

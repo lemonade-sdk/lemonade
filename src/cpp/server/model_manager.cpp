@@ -586,6 +586,51 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info) const {
     return model_cache_path;
 }
 
+std::string ModelManager::resolve_component_path(const std::string& checkpoint) const {
+    // Parse checkpoint format: "repo_id:filename"
+    std::string repo_id = checkpoint;
+    std::string filename;
+
+    size_t colon_pos = checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        repo_id = checkpoint.substr(0, colon_pos);
+        filename = checkpoint.substr(colon_pos + 1);
+    }
+
+    if (filename.empty()) {
+        return "";  // No filename specified
+    }
+
+    std::string hf_cache = get_hf_cache_dir();
+
+    // Convert org/model to models--org--model
+    std::string cache_dir_name = "models--";
+    for (char c : repo_id) {
+        cache_dir_name += (c == '/') ? "--" : std::string(1, c);
+    }
+
+    std::string model_cache_path = hf_cache + "/" + cache_dir_name;
+
+    if (!fs::exists(model_cache_path)) {
+        return "";  // Cache directory doesn't exist
+    }
+
+    // Navigate HuggingFace cache structure: model_cache_path/snapshots/<hash>/<filename>
+    fs::path snapshots_dir = fs::path(model_cache_path) / "snapshots";
+    if (fs::exists(snapshots_dir) && fs::is_directory(snapshots_dir)) {
+        for (const auto& snapshot_entry : fs::directory_iterator(snapshots_dir)) {
+            if (snapshot_entry.is_directory()) {
+                fs::path candidate = snapshot_entry.path() / filename;
+                if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
+                    return candidate.string();
+                }
+            }
+        }
+    }
+
+    return "";  // File not found
+}
+
 json ModelManager::load_server_models() {
     try {
         // Load from resources directory (relative to executable)
@@ -681,14 +726,32 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
+        // Parse components if present (for multi-file models like Flux)
+        if (value.contains("components") && value["components"].is_object()) {
+            for (auto& [comp_key, comp_value] : value["components"].items()) {
+                if (comp_value.is_string()) {
+                    info.component_checkpoints[comp_key] = comp_value.get<std::string>();
+                }
+            }
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
         info.resolved_path = resolve_model_path(info);
+
+        // Resolve component paths (for multi-file models)
+        for (const auto& [comp_type, comp_checkpoint] : info.component_checkpoints) {
+            std::string resolved = resolve_component_path(comp_checkpoint);
+            if (!resolved.empty()) {
+                info.components[comp_type] = resolved;
+            }
+        }
+
         all_models[key] = info;
     }
-    
+
     // Load user models with "user." prefix
     for (auto& [key, value] : user_models_.items()) {
         ModelInfo info;
@@ -716,11 +779,29 @@ void ModelManager::build_cache() {
             info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
         }
 
+        // Parse components if present (for multi-file models like Flux)
+        if (value.contains("components") && value["components"].is_object()) {
+            for (auto& [comp_key, comp_value] : value["components"].items()) {
+                if (comp_value.is_string()) {
+                    info.component_checkpoints[comp_key] = comp_value.get<std::string>();
+                }
+            }
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
 
         info.resolved_path = resolve_model_path(info);
+
+        // Resolve component paths (for multi-file models)
+        for (const auto& [comp_type, comp_checkpoint] : info.component_checkpoints) {
+            std::string resolved = resolve_component_path(comp_checkpoint);
+            if (!resolved.empty()) {
+                info.components[comp_type] = resolved;
+            }
+        }
+
         all_models[info.model_name] = info;
     }
 
@@ -924,24 +1005,34 @@ void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
 
 void ModelManager::update_model_in_cache(const std::string& model_name, bool downloaded) {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    
+
     if (!cache_valid_) {
         return; // Will rebuild on next access
     }
-    
+
     auto it = models_cache_.find(model_name);
     if (it != models_cache_.end()) {
         it->second.downloaded = downloaded;
-        
+
         // Recompute resolved_path after download
         // The path changes now that files exist on disk
         if (downloaded) {
             it->second.resolved_path = resolve_model_path(it->second);
-            std::cout << "[ModelManager] Updated '" << model_name 
-                      << "' downloaded=" << downloaded 
+            std::cout << "[ModelManager] Updated '" << model_name
+                      << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path << std::endl;
+
+            // Also resolve component paths (for multi-file models like Flux, Z-Image)
+            for (const auto& [comp_type, comp_checkpoint] : it->second.component_checkpoints) {
+                std::string resolved = resolve_component_path(comp_checkpoint);
+                if (!resolved.empty()) {
+                    it->second.components[comp_type] = resolved;
+                    std::cout << "[ModelManager] Resolved component '" << comp_type
+                              << "': " << resolved << std::endl;
+                }
+            }
         } else {
-            std::cout << "[ModelManager] Updated '" << model_name 
+            std::cout << "[ModelManager] Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
     } else {
@@ -1502,7 +1593,34 @@ void ModelManager::download_model(const std::string& model_name,
         // For non-GGUF models (oga-*, etc.), download all files (no variant filtering)
         download_from_huggingface(repo_id, "", "", progress_callback);
     }
-    
+
+    // Download component files for multi-file models (Flux, etc.)
+    if (model_registered) {
+        auto info = get_model_info(model_name);
+        for (const auto& [comp_type, comp_checkpoint] : info.component_checkpoints) {
+            // Parse component checkpoint (format: "repo_id:filename")
+            std::string comp_repo_id = comp_checkpoint;
+            std::string comp_variant;
+
+            size_t comp_colon_pos = comp_checkpoint.find(':');
+            if (comp_colon_pos != std::string::npos) {
+                comp_repo_id = comp_checkpoint.substr(0, comp_colon_pos);
+                comp_variant = comp_checkpoint.substr(comp_colon_pos + 1);
+            }
+
+            // Check if component is already downloaded
+            std::string resolved = resolve_component_path(comp_checkpoint);
+            if (!resolved.empty() && fs::exists(resolved)) {
+                std::cout << "[ModelManager] Component '" << comp_type << "' already downloaded" << std::endl;
+                continue;
+            }
+
+            std::cout << "[ModelManager] Downloading component: " << comp_type
+                      << " from " << comp_repo_id << std::endl;
+            download_from_huggingface(comp_repo_id, comp_variant, "", progress_callback);
+        }
+    }
+
     // Register user models to user_models.json
     if (model_name.substr(0, 5) == "user.") {
         register_user_model(model_name, actual_checkpoint, actual_recipe,

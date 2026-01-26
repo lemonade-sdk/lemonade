@@ -58,6 +58,15 @@ struct ModelInfo {
 
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
+
+    // Multi-file model components (for Flux, etc.)
+    // Key: component type (vae, clip_l, t5xxl, llm, clip_g)
+    // Value: resolved absolute path to component file
+    std::map<std::string, std::string> components;
+
+    // Component checkpoints from JSON (for download)
+    // Key: component type, Value: checkpoint string (repo:file format)
+    std::map<std::string, std::string> component_checkpoints;
 };
 
 class ModelManager {
@@ -158,7 +167,10 @@ private:
     
     // Resolve model checkpoint to absolute path on disk
     std::string resolve_model_path(const ModelInfo& info) const;
-    
+
+    // Resolve component checkpoint (repo:file format) to absolute path on disk
+    std::string resolve_component_path(const std::string& checkpoint) const;
+
     // Download from Hugging Face
     void download_from_huggingface(const std::string& repo_id, 
                                    const std::string& variant = "",
