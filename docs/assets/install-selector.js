@@ -177,7 +177,7 @@ function renderDownload() {
   }
   
   if (os === 'linux') {
-    if (osDistro) osDistro.style.display = 'table-row'
+    if (osDistro) osDistro.style.display = 'table-row';
     if (installType) installType.style.display = 'table-row';
 
     if (distro === 'ubuntu') {
