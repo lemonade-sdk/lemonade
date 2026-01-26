@@ -29,28 +29,8 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Create virtual environment and install dependencies
-        shell: bash
-        run: |
-          python -m venv .venv
-          venvPython=".venv/Scripts/python"
-          venvPip=".venv/Scripts/pip"
-          $venvPython -m pip install --upgrade pip
-          $venvPip install pylint
-          $venvPython -m pip check
-          $venvPip install -e .[oga-cpu]
-
-      - name: Lint with Black
-        uses: psf/black@stable
-        with:
-          options: "--check --verbose"
-          src: "./src/lemonade"
-
-      - name: Lint with PyLint
-        shell: bash
-        run: |
-          venvPylint=".venv/Scripts/pylint"
-          $venvPylint src/lemonade --rcfile .pylintrc --disable E0401
+      - name: Lint and Test Lemonade
+        uses: ./.github/actions/lemonade-ci
 
       - name: Download latest Lemonade Server MSI
         shell: PowerShell
@@ -98,8 +78,8 @@ jobs:
       - name: Test OGA-Load (CPU ONNX model)
         shell: bash
         run: |
-          venvPython=".venv/Scripts/python"
-          venvLemonade=".venv/Scripts/lemonade-eval"
+          venvPython="$VENV_PYTHON"
+          venvLemonade="$VENV_LEMONADE"
           
           echo "Testing OGA-Load with CPU ONNX model..."
           $venvLemonade -i amd/Qwen2.5-0.5B-Instruct-quantized_int4-float16-cpu-onnx oga-load --device cpu --dtype int4 llm-prompt -p "tell me a story" --max-new-tokens 5
@@ -113,7 +93,7 @@ jobs:
           $installPath = "${{ github.workspace }}\lemonade-server"
           $serverExe = "$installPath\bin\lemonade-server.exe"
           $logFile = "${{ github.workspace }}\lemonade-server.log"
-          $venvPython = ".venv\Scripts\python.exe"
+          $venvPython = $env:VENV_PYTHON
           
           Write-Host "Starting Lemonade Server..." -ForegroundColor Cyan
           
@@ -184,6 +164,25 @@ jobs:
           Write-Host "Stopping Lemonade Server..." -ForegroundColor Cyan
           Get-Process -Name "lemonade-server", "lemonade-router", "llama-server" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Write-Host "Server stopped." -ForegroundColor Green
+
+  lint-test-lemonade-arch:
+    name: Lint and Test Lemonade (Arch Linux)
+    env:
+      LEMONADE_CI_MODE: "True"
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-archlinux
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install system dependencies
+        run: |
+          pacman -Syu --noconfirm --noprogressbar archlinux-keyring
+          pacman -Syu --noconfirm --noprogressbar base-devel python python-pip git cmake ninja pkgconf
+      - name: Lint and Test Lemonade
+        uses: ./.github/actions/lemonade-ci
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD

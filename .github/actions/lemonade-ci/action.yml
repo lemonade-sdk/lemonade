@@ -1,0 +1,56 @@
+name: Lemonade CI shared steps
+description: Common lint and test steps for Lemonade SDK
+runs:
+  using: composite
+  steps:
+    - name: Create virtual environment and install dependencies
+      shell: bash
+      run: |
+        python -m venv .venv
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          venvPython=".venv/Scripts/python"
+          venvPip=".venv/Scripts/pip"
+          venvLemonadeServerDev=".venv/Scripts/lemonade-server-dev"
+          venvLemonade=".venv/Scripts/lemonade"
+          venvPylint=".venv/Scripts/pylint"
+        else
+          venvPython=".venv/bin/python"
+          venvPip=".venv/bin/pip"
+          venvLemonadeServerDev=".venv/bin/lemonade-server-dev"
+          venvLemonade=".venv/bin/lemonade"
+          venvPylint=".venv/bin/pylint"
+        fi
+        $venvPython -m pip install --upgrade pip
+        $venvPip install pylint
+        $venvPython -m pip check
+        $venvPip install -e .[oga-cpu]
+        if [[ -f "$venvLemonadeServerDev" ]]; then
+          $venvLemonadeServerDev pull Qwen2.5-0.5B-Instruct-CPU
+        fi
+        echo "VENV_PYTHON=$venvPython" >> $GITHUB_ENV
+        echo "VENV_PYLINT=$venvPylint" >> $GITHUB_ENV
+        echo "VENV_LEMONADE=$venvLemonade" >> $GITHUB_ENV
+    - name: Lint with Black
+      uses: psf/black@stable
+      with:
+        options: "--check --verbose"
+        src: "./src"
+    - name: Lint with PyLint
+      shell: bash
+      run: |
+        $VENV_PYLINT src/lemonade --rcfile .pylintrc --disable E0401
+        $VENV_PYLINT examples --rcfile .pylintrc --disable E0401,E0611,F0010 --jobs=1 -v
+    - name: Run lemonade tests
+      shell: bash
+      run: |
+        venvPython="$VENV_PYTHON"
+        venvLemonade="$VENV_LEMONADE"
+        # Test CLI
+        $venvLemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
+        # Test low-level APIs
+        $venvPython test/llm_api.py
+        # Test server CLI
+        $venvPython test/server_cli.py
+        # Test high-level APIs
+        $venvPython examples/api_basic.py
+        $venvPython examples/api_streaming.py
