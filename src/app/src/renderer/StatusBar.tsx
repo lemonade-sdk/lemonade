@@ -109,7 +109,7 @@ const StatusBar: React.FC = () => {
         <span className="status-bar-value">{formatTokens(serverStats.input_tokens)}</span>
       </div>
       <div className="status-bar-item">
-        <span className="status-bar-label">TOKENS:</span>
+        <span className="status-bar-label">OUTPUT TOKENS:</span>
         <span className="status-bar-value">{formatTokens(serverStats.output_tokens)}</span>
       </div>
       <div className="status-bar-item">
