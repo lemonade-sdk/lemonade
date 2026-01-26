@@ -6,6 +6,34 @@ Prefer using get_test_model() from capabilities.py for dynamic model selection
 based on the current wrapped server and backend.
 """
 
+import os
+import platform
+
+
+def get_default_server_binary():
+    """
+    Get the default server binary path from the CMake build directory.
+    
+    This is the single source of truth for the default server binary path.
+    All test files should import this function rather than computing the path themselves.
+    
+    Returns:
+        Path to lemonade-server binary in the build directory.
+    """
+    # Get the workspace root (test/utils/test_models.py -> workspace root)
+    this_file = os.path.abspath(__file__)
+    utils_dir = os.path.dirname(this_file)
+    test_dir = os.path.dirname(utils_dir)
+    workspace_root = os.path.dirname(test_dir)
+
+    if platform.system() == "Windows":
+        return os.path.join(
+            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
+        )
+    else:
+        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
+
+
 # Default port for lemonade server
 PORT = 8000
 
