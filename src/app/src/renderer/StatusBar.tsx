@@ -12,6 +12,7 @@ interface SystemStats {
   cpu_percent: number;
   memory_gb: number;
   gpu_percent: number | null;
+  vram_gb: number | null;
   npu_percent: number | null;
 }
 
@@ -26,6 +27,7 @@ const StatusBar: React.FC = () => {
     cpu_percent: 0,
     memory_gb: 0,
     gpu_percent: null,
+    vram_gb: null,
     npu_percent: null,
   });
 
@@ -54,6 +56,7 @@ const StatusBar: React.FC = () => {
           cpu_percent: stats.cpu_percent ?? 0,
           memory_gb: stats.memory_gb ?? 0,
           gpu_percent: stats.gpu_percent ?? null,
+          vram_gb: stats.vram_gb ?? null,
           npu_percent: stats.npu_percent ?? null,
         });
       }
@@ -92,6 +95,11 @@ const StatusBar: React.FC = () => {
     return `${gb.toFixed(1)} GB`;
   };
 
+  const formatVram = (gb: number | null): string => {
+    if (gb === null || gb === undefined) return 'N/A';
+    return `${gb.toFixed(1)} GB`;
+  };
+
   const formatPercent = (percent: number | null): string => {
     if (percent === null || percent === undefined) return 'N/A';
     return `${percent.toFixed(2)} %`;
@@ -127,6 +135,10 @@ const StatusBar: React.FC = () => {
       <div className="status-bar-item">
         <span className="status-bar-label">GPU:</span>
         <span className="status-bar-value">{formatPercent(systemStats.gpu_percent)}</span>
+      </div>
+      <div className="status-bar-item">
+        <span className="status-bar-label">VRAM:</span>
+        <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
       </div>
       <div className="status-bar-item">
         <span className="status-bar-label">NPU:</span>

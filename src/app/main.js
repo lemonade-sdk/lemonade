@@ -487,6 +487,46 @@ const getGpuUsage = async () => {
   return null;
 };
 
+// Platform-specific VRAM usage detection (returns used VRAM in GB)
+const getVramUsage = async () => {
+  if (process.platform === 'linux') {
+    // Linux: Read from AMD sysfs
+    try {
+      const drmPath = '/sys/class/drm';
+      const cards = await fs.promises.readdir(drmPath).catch(() => []);
+
+      for (const card of cards) {
+        if (!card.match(/^card\d+$/)) continue;
+
+        // AMD GPUs expose mem_info_vram_used in bytes
+        const vramUsedPath = path.join(drmPath, card, 'device', 'mem_info_vram_used');
+        try {
+          const content = await fs.promises.readFile(vramUsedPath, 'utf-8');
+          const bytes = parseInt(content.trim(), 10);
+          if (!isNaN(bytes)) {
+            return bytes / (1024 * 1024 * 1024); // Convert to GB
+          }
+        } catch {
+          // File doesn't exist, try next card
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read VRAM stats from sysfs:', error);
+    }
+    return null;
+
+  } else if (process.platform === 'win32') {
+    // Windows: AMD VRAM monitoring not yet implemented
+    return null;
+
+  } else if (process.platform === 'darwin') {
+    // macOS: Metal doesn't expose VRAM usage in a standard way
+    return null;
+  }
+
+  return null;
+};
+
 // Platform-specific NPU utilization detection
 const getNpuUsage = async () => {
   if (process.platform === 'linux') {
@@ -568,6 +608,9 @@ ipcMain.handle('get-system-stats', async () => {
     // Get GPU usage (platform-specific)
     const gpuPercent = await getGpuUsage();
 
+    // Get VRAM usage (platform-specific)
+    const vramGb = await getVramUsage();
+
     // Get NPU usage (platform-specific)
     const npuPercent = await getNpuUsage();
 
@@ -575,6 +618,7 @@ ipcMain.handle('get-system-stats', async () => {
       cpu_percent: Math.min(cpuPercent, 100), // Cap at 100%
       memory_gb: memoryGb,
       gpu_percent: gpuPercent,
+      vram_gb: vramGb,
       npu_percent: npuPercent,
     };
   } catch (error) {
@@ -583,6 +627,7 @@ ipcMain.handle('get-system-stats', async () => {
       cpu_percent: 0,
       memory_gb: 0,
       gpu_percent: null,
+      vram_gb: null,
       npu_percent: null,
     };
   }
