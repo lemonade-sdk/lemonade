@@ -1530,6 +1530,91 @@ lemonade-server pull LFM2.5-1.2B-Thinking-FLM
 </details>
 
 
+### Image Generation (Stable Diffusion CPP)
+
+Image generation models use the [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) backend. Each model includes `image_defaults` that specify recommended generation parameters (steps, cfg_scale, width, height).
+
+<details>
+<summary>SD-Turbo</summary>
+
+```bash
+lemonade-server pull SD-Turbo
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/stabilityai/sd-turbo">stabilityai/sd-turbo</a></td></tr>
+<tr><td>Recipe</td><td>sd-cpp</td></tr>
+<tr><td>Labels</td><td>image</td></tr>
+<tr><td>Size (GB)</td><td>5.2</td></tr>
+<tr><td>Default Steps</td><td>4</td></tr>
+<tr><td>Default CFG Scale</td><td>1.0</td></tr>
+<tr><td>Default Size</td><td>512x512</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>SDXL-Turbo</summary>
+
+```bash
+lemonade-server pull SDXL-Turbo
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/stabilityai/sdxl-turbo">stabilityai/sdxl-turbo</a></td></tr>
+<tr><td>Recipe</td><td>sd-cpp</td></tr>
+<tr><td>Labels</td><td>image</td></tr>
+<tr><td>Size (GB)</td><td>13.9</td></tr>
+<tr><td>Default Steps</td><td>4</td></tr>
+<tr><td>Default CFG Scale</td><td>1.0</td></tr>
+<tr><td>Default Size</td><td>512x512</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>SD-1.5</summary>
+
+```bash
+lemonade-server pull SD-1.5
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5">stable-diffusion-v1-5/stable-diffusion-v1-5</a></td></tr>
+<tr><td>Recipe</td><td>sd-cpp</td></tr>
+<tr><td>Labels</td><td>image</td></tr>
+<tr><td>Size (GB)</td><td>5.2</td></tr>
+<tr><td>Default Steps</td><td>20</td></tr>
+<tr><td>Default CFG Scale</td><td>7.5</td></tr>
+<tr><td>Default Size</td><td>512x512</td></tr>
+</table>
+
+</details>
+
+<details>
+<summary>SDXL-Base-1.0</summary>
+
+```bash
+lemonade-server pull SDXL-Base-1.0
+```
+
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td>Checkpoint</td><td><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0">stabilityai/stable-diffusion-xl-base-1.0</a></td></tr>
+<tr><td>Recipe</td><td>sd-cpp</td></tr>
+<tr><td>Labels</td><td>image</td></tr>
+<tr><td>Size (GB)</td><td>13.9</td></tr>
+<tr><td>Default Steps</td><td>20</td></tr>
+<tr><td>Default CFG Scale</td><td>7.5</td></tr>
+<tr><td>Default Size</td><td>1024x1024</td></tr>
+</table>
+
+</details>
+
+
 ### CPU
 
 <details>

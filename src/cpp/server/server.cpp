@@ -792,12 +792,22 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"labels", info.labels},
         {"recipe_options", info.recipe_options.to_json()},
     };
-    
+
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;
     }
-    
+
+    // Add image_defaults if present (for sd-cpp models)
+    if (info.image_defaults.has_defaults) {
+        model_json["image_defaults"] = {
+            {"steps", info.image_defaults.steps},
+            {"cfg_scale", info.image_defaults.cfg_scale},
+            {"width", info.image_defaults.width},
+            {"height", info.image_defaults.height}
+        };
+    }
+
     return model_json;
 }
 
