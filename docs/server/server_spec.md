@@ -694,6 +694,24 @@ curl http://localhost:8000/api/v1/models?show_all=true
       "downloaded": true,
       "suggested": true,
       "labels": ["hot", "vision"]
+    },
+    {
+      "id": "SD-Turbo",
+      "created": 1744173590,
+      "object": "model",
+      "owned_by": "lemonade",
+      "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
+      "recipe": "sd-cpp",
+      "size": 5.2,
+      "downloaded": true,
+      "suggested": true,
+      "labels": ["image"],
+      "image_defaults": {
+        "steps": 4,
+        "cfg_scale": 1.0,
+        "width": 512,
+        "height": 512
+      }
     }
   ]
 }
@@ -712,7 +730,12 @@ curl http://localhost:8000/api/v1/models?show_all=true
   - `size` - Model size in GB (omitted for models without size information)
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
-  - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`)
+  - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`, `"image"`)
+  - `image_defaults` - (Image models only) Default generation parameters for the model:
+    - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
+    - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
+    - `width` - Default image width in pixels
+    - `height` - Default image height in pixels
 
 
 ### `GET /api/v1/models/{model_id}` <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

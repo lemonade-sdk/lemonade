@@ -670,11 +670,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[key] = info;
     }
@@ -695,11 +705,21 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
-        
+
+        // Parse image_defaults if present (for sd-cpp models)
+        if (value.contains("image_defaults") && value["image_defaults"].is_object()) {
+            const auto& img_defaults = value["image_defaults"];
+            info.image_defaults.has_defaults = true;
+            info.image_defaults.steps = JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
+            info.image_defaults.cfg_scale = JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
+            info.image_defaults.width = JsonUtils::get_or_default<int>(img_defaults, "width", 512);
+            info.image_defaults.height = JsonUtils::get_or_default<int>(img_defaults, "height", 512);
+        }
+
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
         info.device = get_device_type_from_recipe(info.recipe);
-        
+
         info.resolved_path = resolve_model_path(info);
         all_models[info.model_name] = info;
     }
@@ -720,14 +740,26 @@ void ModelManager::build_cache() {
 
     // Populate recipe options
     for (auto& [name, info] : all_models) {
+        // Start with image_defaults as base options for sd-cpp models
+        json base_options = json::object();
+        if (info.image_defaults.has_defaults) {
+            base_options["steps"] = info.image_defaults.steps;
+            base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+            base_options["width"] = info.image_defaults.width;
+            base_options["height"] = info.image_defaults.height;
+        }
+
+        // User-saved recipe options override image_defaults
         if (JsonUtils::has_key(recipe_options_, name)) {
             std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
-
-            auto options = recipe_options_[name];
-            info.recipe_options = RecipeOptions(info.recipe, options);
-        } else {
-            info.recipe_options = RecipeOptions(info.recipe, json::object());
+            auto saved_options = recipe_options_[name];
+            // Merge saved options over base options
+            for (auto& [key, value] : saved_options.items()) {
+                base_options[key] = value;
+            }
         }
+
+        info.recipe_options = RecipeOptions(info.recipe, base_options);
     }
     
     // Step 2: Filter by backend availability
