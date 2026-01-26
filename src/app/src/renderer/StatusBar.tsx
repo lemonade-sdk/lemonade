@@ -9,7 +9,7 @@ interface ServerStats {
 }
 
 interface SystemStats {
-  cpu_percent: number;
+  cpu_percent: number | null;
   memory_gb: number;
   gpu_percent: number | null;
   vram_gb: number | null;
@@ -24,7 +24,7 @@ const StatusBar: React.FC = () => {
     tokens_per_second: null,
   });
   const [systemStats, setSystemStats] = useState<SystemStats>({
-    cpu_percent: 0,
+    cpu_percent: null,
     memory_gb: 0,
     gpu_percent: null,
     vram_gb: null,
@@ -53,7 +53,7 @@ const StatusBar: React.FC = () => {
       if (window.api?.getSystemStats) {
         const stats = await window.api.getSystemStats();
         setSystemStats({
-          cpu_percent: stats.cpu_percent ?? 0,
+          cpu_percent: stats.cpu_percent ?? null,
           memory_gb: stats.memory_gb ?? 0,
           gpu_percent: stats.gpu_percent ?? null,
           vram_gb: stats.vram_gb ?? null,

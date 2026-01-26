@@ -424,9 +424,87 @@ ipcMain.handle('get-server-port', async () => {
   return cachedServerPort;
 });
 
-// Track CPU usage between calls
-let lastCpuUsage = process.cpuUsage();
-let lastCpuTime = Date.now();
+// Track CPU usage between calls (for Linux /proc/stat parsing)
+let lastCpuStats = null;
+
+// Platform-specific system-wide CPU utilization detection
+const getCpuUsage = async () => {
+  if (process.platform === 'linux') {
+    // Linux: Parse /proc/stat for system-wide CPU usage
+    try {
+      const content = await fs.promises.readFile('/proc/stat', 'utf-8');
+      const firstLine = content.split('\n')[0]; // "cpu  user nice system idle iowait irq softirq steal"
+      const parts = firstLine.split(/\s+/).slice(1).map(Number);
+
+      const [user, nice, system, idle, iowait, irq, softirq, steal] = parts;
+      const totalIdle = idle + iowait;
+      const totalActive = user + nice + system + irq + softirq + steal;
+      const total = totalIdle + totalActive;
+
+      if (lastCpuStats) {
+        const idleDiff = totalIdle - lastCpuStats.totalIdle;
+        const totalDiff = total - lastCpuStats.total;
+
+        lastCpuStats = { totalIdle, total };
+
+        if (totalDiff > 0) {
+          return ((totalDiff - idleDiff) / totalDiff) * 100;
+        }
+      }
+
+      lastCpuStats = { totalIdle, total };
+      return 0; // First call, no delta yet
+    } catch (err) {
+      console.debug('CPU detection (Linux): Failed to read /proc/stat:', err.message);
+      return null;
+    }
+
+  } else if (process.platform === 'win32') {
+    // Windows: Use PowerShell to query CPU utilization
+    return new Promise((resolve) => {
+      const psCommand = `Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue`;
+      exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
+        if (error) {
+          console.debug('CPU detection (Windows): PowerShell query failed:', error.message);
+          resolve(null);
+          return;
+        }
+        const percent = parseFloat(stdout.trim());
+        if (isNaN(percent)) {
+          console.debug('CPU detection (Windows): Could not parse CPU percentage from:', stdout.trim());
+          resolve(null);
+        } else {
+          resolve(Math.round(percent * 100) / 100);
+        }
+      });
+    });
+
+  } else if (process.platform === 'darwin') {
+    // macOS: Use top to get CPU usage
+    return new Promise((resolve) => {
+      exec('top -l 1 -n 0 | grep "CPU usage"', { timeout: 3000 }, (error, stdout) => {
+        if (error) {
+          console.debug('CPU detection (macOS): top query failed:', error.message);
+          resolve(null);
+          return;
+        }
+        // Format: "CPU usage: X.X% user, X.X% sys, X.X% idle"
+        const match = stdout.match(/(\d+\.?\d*)% user.*?(\d+\.?\d*)% sys/);
+        if (match) {
+          const userPercent = parseFloat(match[1]);
+          const sysPercent = parseFloat(match[2]);
+          resolve(Math.round((userPercent + sysPercent) * 100) / 100);
+        } else {
+          console.debug('CPU detection (macOS): Could not parse CPU usage from:', stdout.trim());
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  console.debug('CPU detection: Unsupported platform:', process.platform);
+  return null;
+};
 
 // Platform-specific GPU utilization detection
 const getGpuUsage = async () => {
@@ -634,20 +712,8 @@ ipcMain.handle('get-system-stats', async () => {
     const usedMemory = totalMemory - freeMemory;
     const memoryGb = usedMemory / (1024 * 1024 * 1024);
 
-    // Calculate CPU percentage
-    const currentCpuUsage = process.cpuUsage(lastCpuUsage);
-    const currentTime = Date.now();
-    const elapsedMs = currentTime - lastCpuTime;
-
-    // CPU usage is in microseconds, convert to percentage
-    // user + system time / elapsed time * 100
-    const cpuPercent = elapsedMs > 0
-      ? ((currentCpuUsage.user + currentCpuUsage.system) / 1000 / elapsedMs) * 100
-      : 0;
-
-    // Update tracking for next call
-    lastCpuUsage = process.cpuUsage();
-    lastCpuTime = currentTime;
+    // Get system-wide CPU usage (platform-specific)
+    const cpuPercent = await getCpuUsage();
 
     // Get GPU usage (platform-specific)
     const gpuPercent = await getGpuUsage();
@@ -659,7 +725,7 @@ ipcMain.handle('get-system-stats', async () => {
     const npuPercent = await getNpuUsage();
 
     return {
-      cpu_percent: Math.min(cpuPercent, 100), // Cap at 100%
+      cpu_percent: cpuPercent !== null ? Math.min(cpuPercent, 100) : null,
       memory_gb: memoryGb,
       gpu_percent: gpuPercent,
       vram_gb: vramGb,
@@ -668,7 +734,7 @@ ipcMain.handle('get-system-stats', async () => {
   } catch (error) {
     console.error('Failed to get system stats:', error);
     return {
-      cpu_percent: 0,
+      cpu_percent: null,
       memory_gb: 0,
       gpu_percent: null,
       vram_gb: null,
