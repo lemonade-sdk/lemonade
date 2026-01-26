@@ -40,7 +40,13 @@ from .capabilities import (
     get_test_model,
     WRAPPED_SERVER_CAPABILITIES,
 )
-from .test_models import PORT, STANDARD_MESSAGES, TIMEOUT_MODEL_OPERATION, TIMEOUT_DEFAULT
+from .test_models import (
+    PORT,
+    STANDARD_MESSAGES,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+    get_default_server_binary,
+)
 
 # Global configuration set by parse_args()
 _config = {
@@ -51,24 +57,6 @@ _config = {
     "offline": False,
     "additional_server_args": [],
 }
-
-
-def _get_default_server_binary():
-    """Get the default server binary path from the build directory."""
-    import platform
-
-    # Get the workspace root (tests_new/utils/server_base.py -> workspace root)
-    this_file = os.path.abspath(__file__)
-    utils_dir = os.path.dirname(this_file)
-    tests_new_dir = os.path.dirname(utils_dir)
-    workspace_root = os.path.dirname(tests_new_dir)
-
-    if platform.system() == "Windows":
-        return os.path.join(
-            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
-        )
-    else:
-        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
 
 
 def parse_args(additional_args=None):
@@ -90,7 +78,7 @@ def parse_args(additional_args=None):
     parser.add_argument(
         "--server-binary",
         type=str,
-        default=_get_default_server_binary(),
+        default=get_default_server_binary(),
         help="Path to server binary (default: lemonade-server in venv)",
     )
     parser.add_argument(
