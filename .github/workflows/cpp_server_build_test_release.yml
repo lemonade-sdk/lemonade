@@ -579,9 +579,11 @@ jobs:
           if [ "${{ matrix.test_type }}" = "cli" ]; then
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
           else
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
+              $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
           fi
           
           echo "${{ matrix.test_type }} tests PASSED!"
