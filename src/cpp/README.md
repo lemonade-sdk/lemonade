@@ -79,6 +79,23 @@ cmake --build . --config Release -j
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
 
+### Building the Electron Desktop App (Optional)
+
+The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
+
+```powershell
+# Build the Electron app (requires Node.js 20+)
+cd src\app
+npm install
+npm run build:win
+
+# Rebuild C++ to copy Electron files to build output
+cd ..\cpp\build
+cmake --build . --config Release
+```
+
+The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
+
 ### RyzenAI Server Dependency
 
 The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU/Hybrid model inference. This is handled automatically:
