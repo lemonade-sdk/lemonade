@@ -234,15 +234,14 @@ class PersistentServerCLITests(CLITestBase):
             f"Status should indicate server is running: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_003_list(self):
-    #     """Test list command to show available models."""
-    #     result = self.assertCommandSucceeds(["list"])
-    #     # List should produce some output (model names or empty message)
-    #     self.assertTrue(
-    #         len(result.stdout) > 0,
-    #         "List command should produce output",
-    #     )
+    def test_003_list(self):
+        """Test list command to show available models."""
+        result = self.assertCommandSucceeds(["list"])
+        # List should produce some output (model names or empty message)
+        self.assertTrue(
+            len(result.stdout) > 0,
+            "List command should produce output",
+        )
 
     def test_004_pull(self):
         """Test pull command to download a model."""
@@ -256,22 +255,21 @@ class PersistentServerCLITests(CLITestBase):
             f"Pull should not report errors: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_005_delete(self):
-    #     """Test delete command to remove a model."""
-    #     # First ensure model exists
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+    def test_005_delete(self):
+        """Test delete command to remove a model."""
+        # First ensure model exists
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
-    #     # Delete the model
-    #     result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
-    #     output = result.stdout.lower() + result.stderr.lower()
-    #     self.assertTrue(
-    #         "success" in output or "deleted" in output or "removed" in output,
-    #         f"Delete should indicate success: {result.stdout}",
-    #     )
+        # Delete the model
+        result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "success" in output or "deleted" in output or "removed" in output,
+            f"Delete should indicate success: {result.stdout}",
+        )
 
-    #     # Re-pull for other tests
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+        # Re-pull for other tests
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
 
 class EphemeralCLITests(CLITestBase):

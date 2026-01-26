@@ -59,6 +59,7 @@ private:
     bool is_server_running_on_port(int port);
     std::pair<int, int> get_server_info();  // Returns {pid, port}
     bool start_ephemeral_server(int port);
+    int server_call(std::function<int(std::unique_ptr<ServerManager> const &)> to_call);
     
     // Server management
     bool start_server();
