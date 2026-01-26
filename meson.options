@@ -1,0 +1,11 @@
+option('tests',
+  type: 'boolean',
+  value: true,
+  description: 'Enable test targets'
+)
+
+option('electron',
+  type: 'boolean',
+  value: true,
+  description: 'Include Electron app in the build'
+)

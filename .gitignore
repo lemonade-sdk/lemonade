@@ -185,3 +185,11 @@ src/app/.webpack/
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
+
+# Subprojects (meson build system)
+subprojects/.wraplock
+subprojects/cli11/
+subprojects/cpp-httplib/
+subprojects/json-3.11.3/
+subprojects/packagecache/
+src/app/lemonade

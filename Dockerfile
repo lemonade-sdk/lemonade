@@ -7,30 +7,36 @@ FROM ubuntu:24.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt update && apt install -y \
     build-essential \
-    cmake \
-    libssl-dev \
-    pkg-config \
     git \
+    libssl-dev \
+    meson \
+    ninja-build \
+    nodejs \
+    npm \
+    pkg-config \
+    python-is-python3 \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
 COPY . /app
-WORKDIR /app/src/cpp
+WORKDIR /app
 
 # Build the project
 RUN rm -rf build && \
-    mkdir -p build && \
-    cd build && \
-    cmake .. && \
-    cmake --build . --config Release -j"$(nproc)"
+    meson setup build --buildtype=release && \
+    meson compile -C build
 
-# Debug: Check build outputs
-RUN echo "=== Build directory contents ===" && \
-    ls -la build/ && \
-    echo "=== Checking for resources ===" && \
-    find build/ -name "*.json" -o -name "resources" -type d
+# Install to a staging directory to get all installed files including resources
+RUN DESTDIR=/app/staging meson install -C build
+
+# Debug: Check staging outputs
+RUN echo "=== Staging directory contents ===" && \
+    find /app/staging -type f | head -20 && \
+    echo "=== Build directory contents ===" && \
+    ls -la build/
 
 # # ============================================================
 # # 2. Runtime stage — small, clean image
@@ -47,15 +53,15 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     unzip \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*  
+    && rm -rf /var/lib/apt/lists/*
 
 # Create application directory
 WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
-COPY --from=builder /app/src/cpp/build/lemonade-router ./lemonade-router
-COPY --from=builder /app/src/cpp/build/lemonade-server ./lemonade-server
-COPY --from=builder /app/src/cpp/build/resources ./resources
+COPY --from=builder /app/build/lemonade-router ./lemonade-router
+COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/staging/usr/local/share/lemonade-server/resources ./resources
 
 # Make executables executable
 RUN chmod +x ./lemonade-router ./lemonade-server

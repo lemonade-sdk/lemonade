@@ -16,7 +16,7 @@ jobs:
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
-  
+
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
     runs-on: windows-latest
@@ -26,44 +26,33 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Install CMake if not available
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Meson and Ninja
         shell: PowerShell
         run: |
-          # Check if CMake is already installed
-          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
-          
-          if (-not $cmakeInstalled) {
-              Write-Host "CMake not found, installing..." -ForegroundColor Yellow
-              
-              # Download CMake installer
-              $cmakeVersion = "3.28.1"
-              $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
-              $cmakeInstaller = "cmake-installer.msi"
-              
-              Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller
-              
-              # Install CMake silently
-              Start-Process msiexec.exe -ArgumentList "/i $cmakeInstaller /quiet /norestart" -Wait
-              
-              # Add CMake to PATH for this session AND future steps
-              $cmakePath = "C:\Program Files\CMake\bin"
-              $env:PATH = "$cmakePath;$env:PATH"
-              
-              # Persist to GITHUB_PATH for future steps
-              echo $cmakePath >> $env:GITHUB_PATH
-              
-              # Verify installation
-              cmake --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: CMake installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-              
-              Write-Host "CMake installed successfully and added to PATH!" -ForegroundColor Green
-          } else {
-              Write-Host "CMake is already installed:" -ForegroundColor Green
-              cmake --version
-          }
+          Write-Host "Installing Meson and Ninja..." -ForegroundColor Cyan
+          python -m pip install --upgrade pip
+          python -m pip install meson ninja
+
+          # Verify installations
+          Write-Host "Verifying installations..." -ForegroundColor Yellow
+          python --version
+          meson --version
+          ninja --version
+
+          Write-Host "Meson build system installed successfully!" -ForegroundColor Green
+
+      - name: Install curl and pkg-config (system dependencies)
+        shell: PowerShell
+        run: |
+          Write-Host "Installing curl and pkg-config via Chocolatey..." -ForegroundColor Cyan
+          choco install curl pkgconfiglite -y
+
+          Write-Host "curl and pkg-config installed successfully!" -ForegroundColor Green
 
       - name: Install WiX Toolset 5.0.2 (CLI)
         shell: PowerShell
@@ -87,7 +76,7 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           # WiX CLI MSI does not always add itself to PATH in non-interactive installs,
           # so we locate it explicitly and then update PATH for subsequent steps.
           $wixDirs = @(
@@ -117,107 +106,106 @@ jobs:
           Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
           & $wixExe --version
 
-      - name: Build C++ Server with CMake
+      - name: Verify Build Tools
         shell: PowerShell
         run: |
-          $ErrorActionPreference = "Stop"
-          
-          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-          
-          cd src\cpp
-          
-          # Create build directory
-          if (Test-Path "build") {
-              Remove-Item -Recurse -Force "build"
-          }
-          mkdir build
-          cd build
-          
-          # Configure
-          cmake .. -G "Visual Studio 17 2022" -A x64
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Build
-          cmake --build . --config Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          # Verify binaries exist
-          if (-not (Test-Path "Release\lemonade-router.exe")) {
-              Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-          
-          if (-not (Test-Path "Release\lemonade-server.exe")) {
-              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-          
-          if (-not (Test-Path "Release\lemonade-tray.exe")) {
-              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
-              exit 1
-          }
-          
-          Write-Host "C++ build successful!" -ForegroundColor Green
+          Write-Host "Verifying build tools are available..." -ForegroundColor Cyan
+
+          # Check Python
+          python --version
+
+          # Check Meson
+          meson --version
+
+          # Check Ninja
+          ninja --version
+
+          Write-Host "All build tools verified successfully!" -ForegroundColor Green
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build Electron App
+      - name: Install Electron deps
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
-          Write-Host "Building Electron app..." -ForegroundColor Cyan
-          
+
+          Write-Host "Installing Electron app deps..." -ForegroundColor Cyan
+
           cd src\app
-          
+
           # Install dependencies
           Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
           npm install
-          if ($LASTEXITCODE -ne 0) { 
+          if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: npm install failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
+              exit $LASTEXITCODE
           }
-          
-          # Build the Electron app for Windows
-          Write-Host "Building Electron app for Windows..." -ForegroundColor Yellow
-          npm run build:win
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Host "ERROR: Electron app build failed!" -ForegroundColor Red
-              exit $LASTEXITCODE 
+
+      - name: Build C++ Server with Meson
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
+
+          # Create build directory
+          if (Test-Path "build") {
+              Remove-Item -Recurse -Force "build"
           }
-          
-          # Verify the build output exists
-          if (-not (Test-Path "dist-app\win-unpacked\Lemonade.exe")) {
-              Write-Host "ERROR: Electron app executable not found!" -ForegroundColor Red
+
+          # Configure meson build with OpenSSL environment
+          $env:CFLAGS = $env:CFLAGS
+          $env:CXXFLAGS = $env:CXXFLAGS
+          $env:LDFLAGS = $env:LDFLAGS
+          meson setup build --buildtype=release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Build
+          meson compile -C build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Verify binaries exist
+          if (-not (Test-Path "build\lemonade-router.exe")) {
+              Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
-          
-          Write-Host "Electron app build successful!" -ForegroundColor Green
+
+          if (-not (Test-Path "build\lemonade-server.exe")) {
+              Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          if (-not (Test-Path "build\lemonade-tray.exe")) {
+              Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
+              exit 1
+          }
+
+          Write-Host "C++ build successful!" -ForegroundColor Green
 
       - name: Build the Lemonade Server Installer
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           cd src\cpp
-          
+
           # Run the build installer script
           .\build_installer.ps1
-          
+
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
               exit 1
           }
-          
+
           if (-not (Test-Path "lemonade.msi")) {
               Write-Host "ERROR: Full installer not created!" -ForegroundColor Red
               exit 1
           }
-          
+
           Write-Host "Installers created successfully!" -ForegroundColor Green
 
       - name: Upload Lemonade Server Installers
@@ -240,11 +228,12 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get version from meson.build
         id: get_version
         uses: ./.github/actions/get-version
 
       - name: Build Linux .deb package (minimal)
+        id: build_deb_minimal
         uses: ./.github/actions/build-linux-deb
         with:
           include-electron: 'false'
@@ -253,7 +242,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/${{ steps.build_deb_minimal.outputs.package-name }}
           retention-days: 7
 
   build-lemonade-deb-full:
@@ -267,11 +256,12 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get version from meson.build
         id: get_version
         uses: ./.github/actions/get-version
 
       - name: Build Linux .deb package (full with Electron)
+        id: build_deb_full
         uses: ./.github/actions/build-linux-deb
         with:
           include-electron: 'true'
@@ -280,7 +270,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb-full
-          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/${{ steps.build_deb_full.outputs.package-name }}
           retention-days: 7
 
   # ========================================================================
@@ -372,12 +362,12 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           $venvPython = ".\.venv\Scripts\python.exe"
           $serverExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade-server.exe"
-          
+
           Write-Host "Running ${{ matrix.name }} tests..." -ForegroundColor Cyan
-          
+
           switch ("${{ matrix.test_type }}") {
               "llm" {
                   if ("${{ matrix.backend }}") {
@@ -393,12 +383,12 @@ jobs:
                   & $venvPython test/server_sd.py --server-binary $serverExe
               }
           }
-          
+
           if ($LASTEXITCODE -ne 0) {
               Write-Host "ERROR: ${{ matrix.name }} tests FAILED with exit code: $LASTEXITCODE" -ForegroundColor Red
               exit $LASTEXITCODE
           }
-          
+
           Write-Host "${{ matrix.name }} tests PASSED!" -ForegroundColor Green
 
       - name: Cleanup
@@ -457,11 +447,11 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e  # Exit on error
-          
+
           VENV_PYTHON=".venv/bin/python"
-          
+
           echo "Running ${{ matrix.name }} tests..."
-          
+
           case "${{ matrix.test_type }}" in
             llm)
               $VENV_PYTHON test/server_llm.py --wrapped-server llamacpp --backend ${{ matrix.backend }} --server-binary lemonade-server
@@ -470,7 +460,7 @@ jobs:
               $VENV_PYTHON test/server_sd.py --server-binary lemonade-server
               ;;
           esac
-          
+
           echo "${{ matrix.name }} tests PASSED!"
 
       - name: Print server logs on failure
@@ -483,7 +473,7 @@ jobs:
           else
             echo "Log file /tmp/lemonade-server.log not found"
           fi
-          
+
           echo ""
           echo "=== Router PID file (if exists) ==="
           if [ -f /tmp/lemonade-router.pid ]; then
@@ -491,7 +481,7 @@ jobs:
           else
             echo "PID file not found"
           fi
-          
+
           echo ""
           echo "=== Lock file status ==="
           ls -la /tmp/lemonade*.lock 2>/dev/null || echo "No lock files found"
@@ -575,7 +565,7 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e  # Exit on error
-          
+
           if [ "${{ matrix.test_type }}" = "cli" ]; then
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
@@ -585,7 +575,7 @@ jobs:
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY" --server-per-test
           fi
-          
+
           echo "${{ matrix.test_type }} tests PASSED!"
 
   # ========================================================================
@@ -641,4 +631,3 @@ jobs:
             lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
             lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           fail_on_unmatched_files: true
-

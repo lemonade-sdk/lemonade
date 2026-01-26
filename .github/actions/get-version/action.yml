@@ -1,5 +1,5 @@
 name: 'Get Lemonade Version'
-description: 'Extract version from CMakeLists.txt - single source of truth'
+description: 'Extract version from meson.build - single source of truth'
 outputs:
   version:
     description: 'The version string (e.g., 9.0.0)'
@@ -7,21 +7,20 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Extract version from CMakeLists.txt
+    - name: Extract version from meson.build
       id: extract
       shell: bash
       run: |
         set -e
-        
-        # Extract version from CMakeLists.txt
-        VERSION=$(grep -Po 'project\(lemon_cpp VERSION \K[0-9]+\.[0-9]+\.[0-9]+' src/cpp/CMakeLists.txt)
-        
+
+        # Extract version from meson.build
+        VERSION=$(head -10 meson.build | grep -oE "version: '[0-9]+\.[0-9]+\.[0-9]+'" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+
         if [ -z "$VERSION" ]; then
-          echo "ERROR: Could not extract version from CMakeLists.txt"
+          echo "ERROR: Could not extract version from meson.build"
           exit 1
         fi
-        
+
         echo "Extracted version: $VERSION"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "LEMONADE_VERSION=$VERSION" >> $GITHUB_ENV
-

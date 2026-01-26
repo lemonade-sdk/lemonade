@@ -18,7 +18,7 @@ if ($Help) {
     Write-Host "Prerequisites:"
     Write-Host "  - WiX Toolset 5.0.2 installed"
     Write-Host "  - Visual Studio 2019 or later"
-    Write-Host "  - CMake 3.20 or higher"
+    Write-Host "  - Python and Meson build system"
     exit 0
 }
 
@@ -51,23 +51,23 @@ $wixVersion = & wix --version 2>&1 | Select-String -Pattern "version ([\d\.]+)" 
 Write-Host "  Found: wix version $wixVersion" -ForegroundColor Green
 Write-Host ""
 
-# Check for CMake
-Write-Host "Checking for CMake..." -ForegroundColor Yellow
-$cmake = Get-Command cmake -ErrorAction SilentlyContinue
-if ($null -eq $cmake) {
-    Write-Host "ERROR: CMake not found in PATH!" -ForegroundColor Red
-    Write-Host "Please install CMake 3.20 or higher." -ForegroundColor Yellow
+# Check for Meson
+Write-Host "Checking for Meson..." -ForegroundColor Yellow
+$meson = Get-Command meson -ErrorAction SilentlyContinue
+if ($null -eq $meson) {
+    Write-Host "ERROR: Meson not found in PATH!" -ForegroundColor Red
+    Write-Host "Please install Meson build system." -ForegroundColor Yellow
     exit 1
 }
-Write-Host "  Found: $($cmake.Source)" -ForegroundColor Green
+Write-Host "  Found: $($meson.Source)" -ForegroundColor Green
 Write-Host ""
 
-# Step 1: Configure with CMake (if build directory doesn't exist)
+# Step 1: Configure with Meson (if build directory doesn't exist)
 if (-not (Test-Path $BuildDir)) {
-    Write-Host "Configuring project with CMake..." -ForegroundColor Yellow
-    cmake -S $ScriptDir -B $BuildDir
+    Write-Host "Configuring project with Meson..." -ForegroundColor Yellow
+    meson setup $BuildDir --buildtype=release
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: CMake configuration failed!" -ForegroundColor Red
+        Write-Host "ERROR: Meson configuration failed!" -ForegroundColor Red
         exit $LASTEXITCODE
     }
     Write-Host "  Configuration complete" -ForegroundColor Green
@@ -79,7 +79,7 @@ if (-not (Test-Path $BuildDir)) {
 
 # Step 2: Build the project
 Write-Host "Building Lemonade Server ($Configuration)..." -ForegroundColor Yellow
-cmake --build $BuildDir --config $Configuration
+meson compile -C $BuildDir
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Build failed!" -ForegroundColor Red
     exit $LASTEXITCODE
@@ -89,7 +89,7 @@ Write-Host ""
 
 # Step 3: Build both MSI installers
 Write-Host "Building WiX MSI installers..." -ForegroundColor Yellow
-cmake --build $BuildDir --config $Configuration --target wix_installers
+meson compile -C $BuildDir wix_installers
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: MSI build failed!" -ForegroundColor Red
     exit $LASTEXITCODE

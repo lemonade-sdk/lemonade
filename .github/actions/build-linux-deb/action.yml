@@ -16,25 +16,27 @@ runs:
       shell: bash
       run: |
         set -e
-        
+
         echo "Updating package lists..."
         sudo apt-get update
-        
+
         echo "Installing build dependencies..."
         sudo apt-get install -y \
           build-essential \
-          cmake \
           pkg-config \
           libcurl4-openssl-dev \
           libssl-dev \
           zlib1g-dev \
+          meson \
+          ninja-build \
           git
-        
+
         echo "Verifying installations..."
-        cmake --version
+        meson --version
+        ninja --version
         gcc --version
         pkg-config --version
-        
+
         echo "Build dependencies installed successfully!"
 
     - name: Setup Node.js
@@ -48,26 +50,26 @@ runs:
       shell: bash
       run: |
         set -e
-        
+
         echo "Building Electron app for Linux..."
-        
+
         cd src/app
-        
+
         # Install dependencies
         echo "Installing npm dependencies..."
         npm install
-        
+
         # Build the Electron app for Linux
         echo "Building Electron app for Linux..."
         npm run build:linux
-        
+
         # List what was created
         echo "Contents of dist-app:"
         ls -la dist-app/ || echo "dist-app directory not found"
-        
+
         echo "Contents of linux-unpacked:"
         ls -la dist-app/linux-unpacked/ || echo "linux-unpacked directory not found"
-        
+
         # Verify the build output exists (check both uppercase and lowercase)
         if [ -f "dist-app/linux-unpacked/lemonade" ]; then
             echo "Found: dist-app/linux-unpacked/lemonade"
@@ -78,59 +80,55 @@ runs:
             echo "Looking for 'lemonade' or 'Lemonade' in dist-app/linux-unpacked/"
             exit 1
         fi
-        
+
         echo "Electron app build successful!"
 
-    - name: Build C++ Server with CMake
+    - name: Build C++ Server with Meson
       shell: bash
       run: |
         set -e
-        
+
         echo "Building lemonade-router and lemonade-server for Linux..."
-        
-        cd src/cpp
-        
+
         # Create build directory
         if [ -d "build" ]; then
             echo "Removing existing build directory..."
             rm -rf build
         fi
-        mkdir build
-        cd build
-        
-        # Configure with explicit Release build type
-        echo "Configuring CMake..."
+
+        # Configure with explicit release build type
+        echo "Configuring Meson..."
         if [ "${{ inputs.include-electron }}" == "true" ]; then
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DINCLUDE_ELECTRON_APP=ON
+            meson setup build --buildtype=release -Delectron=true
         else
-            cmake .. -DCMAKE_BUILD_TYPE=Release
+            meson setup build --buildtype=release -Delectron=false
         fi
-        
+
         # Build using all available cores
         echo "Building binaries..."
-        cmake --build . -j$(nproc)
-        
+        meson compile -C build
+
         # Verify binaries exist
-        if [ ! -f "lemonade-router" ]; then
+        if [ ! -f "build/lemonade-router" ]; then
             echo "ERROR: lemonade-router not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
-        
-        if [ ! -f "lemonade-server" ]; then
+
+        if [ ! -f "build/lemonade-server" ]; then
             echo "ERROR: lemonade-server not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
-        
+
         echo "✓ Binaries found successfully"
-        
+
         echo "Verifying binary executability..."
-        ./lemonade-router --version
-        ./lemonade-server --version
-        
+        build/lemonade-router --version
+        build/lemonade-server --version
+
         echo "C++ build successful!"
 
     - name: Build .deb package
@@ -138,48 +136,69 @@ runs:
       shell: bash
       run: |
         set -e
-        
-        cd src/cpp/build
-        
-        echo "Creating .deb package with CPack..."
-        cpack -G DEB -V
-        
-        # List generated files
-        echo "Files in build directory:"
-        ls -lh *.deb 2>/dev/null || echo "No .deb files found in current directory"
-        
-        # Determine expected package name based on build type
+
+        # Determine package details based on build type
         if [ "${{ inputs.include-electron }}" == "true" ]; then
-            DEB_FILE="lemonade_${LEMONADE_VERSION}_amd64.deb"
             PACKAGE_TYPE="full"
+            PACKAGE_NAME="lemonade"
+            PACKAGE_DESC="Lemonade Server with Electron UI"
         else
-            DEB_FILE="lemonade-server-minimal_${LEMONADE_VERSION}_amd64.deb"
             PACKAGE_TYPE="minimal"
+            PACKAGE_NAME="lemonade-server-minimal"
+            PACKAGE_DESC="Lemonade Server (minimal)"
         fi
-        
-        echo "Looking for: $DEB_FILE"
-        
+
+        DEB_FILE="${PACKAGE_NAME}_${LEMONADE_VERSION}_amd64.deb"
+        DESTDIR="$(pwd)/deb-staging"
+        CONTROL_DIR="${DESTDIR}/DEBIAN"
+
+        echo "Creating .deb package: $DEB_FILE"
+
+        # Install to staging directory
+        cd build
+        echo "Installing to staging directory..."
+        DESTDIR="$DESTDIR" meson install
+
+        # Create DEBIAN control directory
+        mkdir -p "$CONTROL_DIR"
+
+        # Create control file
+        cat > "$CONTROL_DIR/control" << EOF
+        Package: ${PACKAGE_NAME}
+        Version: ${LEMONADE_VERSION}
+        Section: devel
+        Priority: optional
+        Architecture: amd64
+        Maintainer: Lemonade Developers <support@lemonade.com>
+        Description: ${PACKAGE_DESC}
+         Lemonade is a fast, lightweight server for running AI models.
+        EOF
+
+        # Build the .deb package
+        echo "Building .deb package..."
+        dpkg-deb --build "$DESTDIR" "$DEB_FILE"
+
+        # Verify package was created
         if [ ! -f "$DEB_FILE" ]; then
             echo "ERROR: .deb package not created!"
             echo "Contents of build directory:"
             ls -lR .
             exit 1
         fi
-        
+
         echo ".deb package ($PACKAGE_TYPE) created successfully!"
         ls -lh "$DEB_FILE"
-        
+
         # Show package info
         echo "Package information:"
         dpkg-deb --info "$DEB_FILE"
-        
+
         echo "Package contents:"
         if [ "${{ inputs.include-electron }}" == "true" ]; then
             dpkg-deb --contents "$DEB_FILE" | head -100
         else
             dpkg-deb --contents "$DEB_FILE"
         fi
-        
+
         # Output the package name for subsequent steps
         echo "package_name=$DEB_FILE" >> $GITHUB_OUTPUT
-

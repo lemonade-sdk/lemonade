@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/yhirose/cpp-httplib.git
+revision = v0.26.0
+depth = 1
+
+[provide]
+cpp-httplib = httplib_dep

@@ -1,5 +1,5 @@
 #include "lemon/system_info.h"
-#include "lemon/version.h"
+#include "version.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include <filesystem>

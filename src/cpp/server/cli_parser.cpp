@@ -1,6 +1,6 @@
 #include <lemon/cli_parser.h>
 #include <lemon/recipe_options.h>
-#include <lemon/version.h>
+#include <version.h>
 #include <iostream>
 #include <cctype>
 #include <cstdlib>

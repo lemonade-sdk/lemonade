@@ -4,7 +4,7 @@
 #include <lemon/cli_parser.h>
 #include <lemon/server.h>
 #include <lemon/single_instance.h>
-#include <lemon/version.h>
+#include <version.h>
 
 using namespace lemon;
 

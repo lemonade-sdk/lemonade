@@ -1,0 +1,14 @@
+[wrap-file]
+directory = zstd-1.5.6
+source_url = https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz
+source_filename = zstd-1.5.6.tar.gz
+source_hash = 8c29e06cf42aacc1eafc4077ae2ec6c6fcb96a626157e0593d5e82a34fd403c1
+patch_filename = zstd_1.5.6-1_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/zstd_1.5.6-1/get_patch
+patch_hash = a4483937d6136f470659da8f93f3a5adaf1c07fbf79eb4a9eb3c152f1dbea6b8
+source_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/zstd_1.5.6-1/zstd-1.5.6.tar.gz
+wrapdb_version = 1.5.6-1
+
+[provide]
+zstd = libzstd_dep
+libzstd = libzstd_dep

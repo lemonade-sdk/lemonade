@@ -1,7 +1,7 @@
 #include "lemon_tray/tray_app.h"
 #include "lemon_tray/platform/windows_tray.h"  // For set_menu_update_callback
 #include <lemon/single_instance.h>
-#include <lemon/version.h>
+#include <version.h>
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>

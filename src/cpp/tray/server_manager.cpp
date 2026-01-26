@@ -1,4 +1,4 @@
-#include "lemon/version.h"
+#include "version.h"
 #include "lemon/recipe_options.h"
 #include <iostream>
 #include <sstream>

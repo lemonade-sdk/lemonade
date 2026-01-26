@@ -4,7 +4,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/system_info.h"
-#include "lemon/version.h"
+#include "version.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>

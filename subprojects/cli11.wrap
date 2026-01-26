@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/CLIUtils/CLI11.git
+revision = v2.4.2
+depth = 1
+
+[provide]
+cli11 = CLI11_dep
