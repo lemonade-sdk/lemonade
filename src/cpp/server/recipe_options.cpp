@@ -76,8 +76,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     }
 }
 
-static const bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) || 
+static bool is_empty_option(json option) {
+    return (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == ""));
 }
 
@@ -131,20 +131,12 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     recipe_ = recipe;
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
-    
+
     for (auto key : to_copy) {
         if (options.contains(key) && !is_empty_option(options[key])) {
             options_[key] = options[key];
         }
     }
-}
-
-static const std::string inherit_string(const std::string& a, const std::string& b) {
-    return a.empty() ? a : b;
-}
-
-static const int inherit_int(int a, int b) {
-    return a != -1 ? a : b;
 }
 
 static std::string format_option_for_logging(const json& opt) {
@@ -166,10 +158,10 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
         if (resolve_defaults || options_.contains(key)) {
             if (!first) log_string += ", ";
             first = false;
-            log_string += key + "=" + format_option_for_logging(get_option(key)); 
+            log_string += key + "=" + format_option_for_logging(get_option(key));
         }
     }
-    
+
     return log_string;
 }
 
