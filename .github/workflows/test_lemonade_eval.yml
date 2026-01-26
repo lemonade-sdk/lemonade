@@ -6,7 +6,15 @@ name: Test Lemonade Eval
 on:
   push:
     branches: ["main"]
+    paths:
+      - '.github/workflows/test_lemonade_eval.yml'
+      - 'setup.py'
+      - 'src/lemonade/**'
   pull_request:
+    paths:
+      - '.github/workflows/test_lemonade_eval.yml'
+      - 'setup.py'
+      - 'src/lemonade/**'
   merge_group:
 
 permissions:

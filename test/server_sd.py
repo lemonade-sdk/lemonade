@@ -4,8 +4,9 @@ Stable Diffusion image generation tests for Lemonade Server.
 Tests the /images/generations endpoint with Stable Diffusion models.
 
 Usage:
-    python server_sd.py --server-binary lemonade-server
-    python server_sd.py --server-binary ./lemonade-server --server-per-test
+    python server_sd.py
+    python server_sd.py --server-per-test
+    python server_sd.py --server-binary /path/to/lemonade-server
 
 Note: Image generation with CPU backend takes ~2-3 minutes per image at 256x256.
 The Vulkan backend is faster but may have compatibility issues with some GPUs.
