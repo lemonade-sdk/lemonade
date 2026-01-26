@@ -209,28 +209,28 @@ function renderDownload() {
         ];
         
         installCmdDiv.innerHTML = `
-          <div class="lmn-install-method-header">Install via Snap:</div>
-          <pre><code class="language-bash" id="lmn-install-snap-block"></code></pre>
-          <div class="lmn-install-method-header">Or install via Debian package:</div>
+          <div class="lmn-install-method-header">Install via Debian package:</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
+          <div class="lmn-install-method-header">Or install via Snap (for a fully sandboxed portable experience):</div>
+          <pre><code class="language-bash" id="lmn-install-snap-block"></code></pre>
         `;
         
         setTimeout(() => {
-          // Render snap command(s)
-          const snapPre = document.getElementById('lmn-install-snap-block');
-          if (snapPre) {
-            snapPre.innerHTML = snapCommands.map((cmd, idx) => {
-              const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopySnapLine(event, ${idx})">📋</button></div>`;
-            }).join('');
-          }
-          
           // Render deb commands
           const pre = document.getElementById('lmn-install-pre-block');
           if (pre) {
             pre.innerHTML = commands.map((line, idx) => {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
+            }).join('');
+          }
+          
+          // Render snap command(s)
+          const snapPre = document.getElementById('lmn-install-snap-block');
+          if (snapPre) {
+            snapPre.innerHTML = snapCommands.map((cmd, idx) => {
+              const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopySnapLine(event, ${idx})">📋</button></div>`;
             }).join('');
           }
         }, 0);
