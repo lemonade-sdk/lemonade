@@ -487,7 +487,7 @@ const getGpuUsage = async () => {
   return null;
 };
 
-// Platform-specific VRAM usage detection (returns used VRAM in GB)
+// Platform-specific VRAM/GTT usage detection (returns used memory in GB)
 const getVramUsage = async () => {
   if (process.platform === 'linux') {
     // Linux: Read from AMD sysfs
@@ -498,10 +498,24 @@ const getVramUsage = async () => {
       for (const card of cards) {
         if (!card.match(/^card\d+$/)) continue;
 
-        // AMD GPUs expose mem_info_vram_used in bytes
-        const vramUsedPath = path.join(drmPath, card, 'device', 'mem_info_vram_used');
+        const devicePath = path.join(drmPath, card, 'device');
+
+        // Try dedicated VRAM first (discrete GPUs)
+        const vramUsedPath = path.join(devicePath, 'mem_info_vram_used');
         try {
           const content = await fs.promises.readFile(vramUsedPath, 'utf-8');
+          const bytes = parseInt(content.trim(), 10);
+          if (!isNaN(bytes)) {
+            return bytes / (1024 * 1024 * 1024); // Convert to GB
+          }
+        } catch {
+          // File doesn't exist, try GTT fallback
+        }
+
+        // Fallback to GTT memory (integrated GPUs / APUs)
+        const gttUsedPath = path.join(devicePath, 'mem_info_gtt_used');
+        try {
+          const content = await fs.promises.readFile(gttUsedPath, 'utf-8');
           const bytes = parseInt(content.trim(), 10);
           if (!isNaN(bytes)) {
             return bytes / (1024 * 1024 * 1024); // Convert to GB
@@ -511,7 +525,7 @@ const getVramUsage = async () => {
         }
       }
     } catch (error) {
-      console.error('Failed to read VRAM stats from sysfs:', error);
+      console.error('Failed to read VRAM/GTT stats from sysfs:', error);
     }
     return null;
 
