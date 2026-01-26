@@ -239,6 +239,15 @@ useEffect(() => {
     }
   }, [selectedModel, modelsData]);
 
+  // Auto-scroll to bottom when new images are generated
+  useEffect(() => {
+    if (imageHistory.length > 0) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [imageHistory.length]);
+
   const checkIfAtBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
@@ -1100,7 +1109,7 @@ const sendMessage = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // Clear all messages and reset state
     setMessages([]);
     setInputValue('');
@@ -1112,13 +1121,26 @@ const sendMessage = async () => {
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-    
+
     // Clear embedding/reranking state
     setEmbeddingInput('');
     setEmbeddingHistory([]);
     setRerankQuery('');
     setRerankDocuments('');
     setRerankHistory([]);
+
+    // Clear image generation state
+    setImagePrompt('');
+    setImageHistory([]);
+    setIsGeneratingImage(false);
+
+    // Clear transcription state
+    setTranscriptionFile(null);
+    setTranscriptionHistory([]);
+    setIsProcessingTranscription(false);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
   };
 
   const handleEmbedding = async () => {

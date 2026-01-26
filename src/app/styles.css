@@ -4215,6 +4215,7 @@ footer {
 .image-settings-panel {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 16px;
     padding: 12px 16px;
     background: #0f0f0f;
