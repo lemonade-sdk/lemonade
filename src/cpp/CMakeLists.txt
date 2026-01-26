@@ -21,7 +21,6 @@ if(WIN32)
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/win-unpacked")
     set(ELECTRON_EXE_NAME "Lemonade.exe")
 elseif(APPLE)
-    # [FIX] Point to mac-arm64 specifically to match your build structure
     set(ELECTRON_APP_UNPACKED_DIR "${ELECTRON_APP_BUILD_DIR}/mac-arm64")
     set(ELECTRON_EXE_NAME "Lemonade.app")
 else()
@@ -504,7 +503,7 @@ endif()
 # macOS Packaging & Notarization
 # ============================================================
 if(APPLE)
-    # 1. SETUP IDENTITIES
+    # SETUP IDENTITIES
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
     set(CPACK_PACKAGE_VENDOR "Lemonade")
     set(CPACK_PACKAGE_CONTACT "lemonade@amd.com")
@@ -530,7 +529,7 @@ if(APPLE)
         endif()
     endif()
 
-    # 2. Configure Plists & Entitlements
+    # Configure Plists & Entitlements
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist @ONLY)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/com.lemonade.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist @ONLY)
 
@@ -556,7 +555,7 @@ endif()
 add_subdirectory(tray)
 
 if(APPLE)
-    # 3. SIGNING LOGIC (Release Only)
+    # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         message(STATUS "Release Build: Configuring Hardened Runtime Signing for Router")
         
@@ -571,7 +570,7 @@ if(APPLE)
         # using the SIGNING_IDENTITY we defined above.
     endif()
 
-    # 4. Prepare Electron App
+    # Prepare Electron App
     set(ELECTRON_BUILD_COPY "${CMAKE_BINARY_DIR}/Lemonade.app")
     add_custom_target(prepare_electron_app
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${ELECTRON_BUILD_COPY}"
@@ -586,41 +585,40 @@ if(APPLE)
         "execute_process(COMMAND ${CMAKE_COMMAND} --build \"${CMAKE_BINARY_DIR}\" --target prepare_electron_app)\n"
     )
 
-    # 5. INSTALLATION (Component Structure)
+    # INSTALLATION (Component Structure)
     
-    # [1] Main Router -> /usr/local/bin
+    # Main Router -> /usr/local/bin
     install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
 
-    # [2] Tray/Server -> /usr/local/bin
+    # Tray/Server -> /usr/local/bin
     # (Since tray/CMakeLists.txt skips install on Apple, we must do it here)
     if(TARGET lemonade-server)
         install(TARGETS lemonade-server RUNTIME DESTINATION "usr/local/bin" COMPONENT Runtime)
     endif()
 
-    # [3] Resources -> /Library/Application Support/Lemonade/resources
+    # Resources -> /Library/Application Support/Lemonade/resources
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "Library/Application Support/Lemonade/resources" COMPONENT Resources)
 
-    # [4] App Bundle -> /Applications
+    # App Bundle -> /Applications
     install(DIRECTORY "${ELECTRON_BUILD_COPY}" 
         DESTINATION "Applications" 
         USE_SOURCE_PERMISSIONS 
         COMPONENT Applications
     )
     
-    # [5] Plists -> /Library/...
+    # Plists -> /Library/...
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "Library/LaunchDaemons" COMPONENT Runtime)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "Library/LaunchAgents" COMPONENT Runtime)
 
-    # [6] Placeholder -> /usr/local/share/lemonade-server
+    # Placeholder -> /usr/local/share/lemonade-server
     file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
     install(FILES "${CMAKE_BINARY_DIR}/.keep" DESTINATION "usr/local/share/lemonade-server" COMPONENT Runtime)
 
-    # 6. Packaging & Notarization
+    # ackaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
     set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
     
-    # [FIX] Force System installation
     set(CPACK_PRODUCTBUILD_DOMAIN "system") 
     
     if(INSTALLER_IDENTITY)
@@ -635,7 +633,7 @@ if(APPLE)
     set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
     set(CPACK_COMPONENT_APPLICATIONS_IS_ABSOLUTE ON)
 
-    # Fix license file extension for CPack
+    # license file extension for CPack
     configure_file("${CMAKE_SOURCE_DIR}/../../LICENSE" "${CMAKE_BINARY_DIR}/LICENSE.txt" COPYONLY)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_BINARY_DIR}/LICENSE.txt")
 
