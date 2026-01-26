@@ -185,6 +185,7 @@ function renderDownload() {
       let snapCommands, debFile;
       if (type === 'app') {
         // For App + Server, need to install both snaps
+        // Install server first, then the desktop app (which connects to the server)
         snapCommands = [
           'sudo snap install lemonade-server',
           'sudo snap install lemonade'
