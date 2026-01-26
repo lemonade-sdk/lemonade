@@ -16,8 +16,9 @@ Two test modes:
 2. Ephemeral mode (--ephemeral): Each command that needs a server starts its own
 
 Usage:
-    python server_cli.py --server-binary lemonade-server
-    python server_cli.py --server-binary lemonade-server --ephemeral
+    python server_cli.py
+    python server_cli.py --ephemeral
+    python server_cli.py --server-binary /path/to/lemonade-server
 """
 
 import unittest
@@ -27,13 +28,13 @@ import socket
 import sys
 import os
 import argparse
-import platform
 
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    get_default_server_binary,
 )
 
 
@@ -44,28 +45,13 @@ _config = {
 }
 
 
-def _get_default_server_binary():
-    """Get the default server binary path from the build directory."""
-    # Get the workspace root (tests_new/server_cli.py -> workspace root)
-    this_file = os.path.abspath(__file__)
-    tests_new_dir = os.path.dirname(this_file)
-    workspace_root = os.path.dirname(tests_new_dir)
-
-    if platform.system() == "Windows":
-        return os.path.join(
-            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
-        )
-    else:
-        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
-
-
 def parse_cli_args():
     """Parse command line arguments for CLI tests."""
     parser = argparse.ArgumentParser(description="Test lemonade-server CLI")
     parser.add_argument(
         "--server-binary",
         type=str,
-        default=_get_default_server_binary(),
+        default=get_default_server_binary(),
         help="Path to lemonade-server binary (default: CMake build output)",
     )
     parser.add_argument(
