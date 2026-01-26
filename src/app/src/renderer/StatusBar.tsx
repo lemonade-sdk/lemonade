@@ -118,6 +118,11 @@ const StatusBar: React.FC = () => {
     return `${seconds.toFixed(2)} s`;
   };
 
+  const formatTps = (tps: number | null): string => {
+    if (tps === null || tps === undefined) return 'N/A';
+    return `${tps.toFixed(1)}`;
+  };
+
   return (
     <div className="status-bar">
       <div className="status-bar-item">
@@ -127,6 +132,10 @@ const StatusBar: React.FC = () => {
       <div className="status-bar-item">
         <span className="status-bar-label">OUTPUT TOKENS:</span>
         <span className="status-bar-value">{formatTokens(serverStats.output_tokens)}</span>
+      </div>
+      <div className="status-bar-item">
+        <span className="status-bar-label">TPS:</span>
+        <span className="status-bar-value">{formatTps(serverStats.tokens_per_second)}</span>
       </div>
       <div className="status-bar-item">
         <span className="status-bar-label">TTFT:</span>
