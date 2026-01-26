@@ -108,6 +108,8 @@
    - Request support by opening a [GitHub issue](https://github.com/lemonade-sdk/lemonade/issues).
 
    If you are sure that a model should be listed, but you aren't seeing it, you can set the `LEMONADE_DISABLE_MODEL_FILTERING` environment variable to show all models supported by Lemonade on any PC configuration. But please note, this can show models that definitely won't work on your system.
+   
+   Alternatively if you are attempting to use GTT on your dGPU then you can set the `LEMONADE_ENABLE_DGPU_GTT` environment variable to filter using the combined memory pool. Please note ROCM does not support splitting memory across multiple pools, vulkan is likely required for this usecase.
 
 ### 5. **Is there a script or tool to convert models to Ryzen AI NPU format?**
 

@@ -92,6 +92,8 @@ json SystemInfo::get_device_dict() {
         auto amd_igpu = get_amd_igpu_device();
         devices["amd_igpu"] = {
             {"name", amd_igpu.name},
+            {"vram_gb", amd_igpu.vram_gb},
+            {"virtual_mem_gb", amd_igpu.virtual_gb},
             {"available", amd_igpu.available}
         };
         if (!amd_igpu.error.empty()) {
@@ -116,6 +118,9 @@ json SystemInfo::get_device_dict() {
             };
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (gpu.virtual_gb > 0) {
+                gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
             }
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
@@ -1316,39 +1321,29 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
             continue;
 
-
-        std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
-        std::string board_info_path = device_path + "board_info";
-        bool is_integrated = !fs::exists(board_info_path) && fs::is_regular_file(board_info_path);
+        bool is_integrated = get_amd_is_igpu(drm_render_minor);
+        if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
         gpu.available = true;
 
-        // Get VRAM for discrete GPUs
-        if (!is_integrated) {
-            std::string vram_file = device_path + "/mem_info_vram_total";
-            if (!fs::exists(vram_file))
-                continue;
-            std::ifstream vram_stream(vram_file);
-            std::string vram_str;
-            std::getline(vram_stream, vram_str);
-            uint64_t vram_bytes = std::stoull(vram_str);
-            gpu.vram_gb = std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-            
-            // Detect inference engines
-            std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
-            gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
-            
-            gpus.push_back(gpu);
-        }
+        // Get VRAM and GTT for GPUs
+        gpu.vram_gb = get_amd_vram(drm_render_minor);
+        gpu.virtual_gb = get_amd_gtt(drm_render_minor);
+        
+        // Detect inference engines
+        std::string device_type = is_integrated ? "amd_igpu" : "amd_dgpu";
+        gpu.inference_engines = detect_inference_engines(device_type, gfx_target_version);
+        
+        gpus.push_back(gpu);
+    }
 
-        if (gpus.empty()) {
-            GPUInfo gpu;
-            gpu.available = false;
-            gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
-            gpus.push_back(gpu);
-        }
+    if (gpus.empty()) {
+        GPUInfo gpu;
+        gpu.available = false;
+        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
+        gpus.push_back(gpu);
     }
 
     return gpus;
@@ -1416,81 +1411,58 @@ double LinuxSystemInfo::get_nvidia_vram() {
     return 0.0;
 }
 
-double LinuxSystemInfo::get_amd_vram_rocm_smi() {
-    FILE* pipe = popen("rocm-smi --showmeminfo vram --csv 2>/dev/null", "r");
-    if (!pipe) {
-        return 0.0;
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse CSV output for VRAM
-    std::istringstream iss(output);
-    std::string line;
-    while (std::getline(iss, line)) {
-        if (line.find("Total VRAM") != std::string::npos || 
-            line.find("vram") != std::string::npos) {
-            // Extract numbers
-            std::regex num_regex(R"(\d+)");
-            std::smatch match;
-            if (std::regex_search(line, match, num_regex)) {
-                try {
-                    double vram_value = std::stod(match[0].str());
-                    // Assume MB if large value, GB if small
-                    if (vram_value > 100) {
-                        return std::round(vram_value / 1024.0 * 10.0) / 10.0;
-                    } else {
-                        return vram_value;
-                    }
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-        }
-    }
-    
-    return 0.0;
-}
+double LinuxSystemInfo::get_ttm_gb() {
+    std::string ttm_path = "/sys/module/ttm/parameters/pages_limit";
+    std::ifstream sysfs_file(ttm_path);
 
-double LinuxSystemInfo::get_amd_vram_sysfs(const std::string& pci_id) {
-    // Try device-specific path first
-    std::string vram_path = "/sys/bus/pci/devices/" + pci_id + "/mem_info_vram_total";
-    std::ifstream file(vram_path);
-    
-    if (!file.is_open()) {
-        // Try wildcard path
-        FILE* pipe = popen("cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null | head -1", "r");
-        if (pipe) {
-            char buffer[128];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                pclose(pipe);
-                try {
-                    uint64_t vram_bytes = std::stoull(buffer);
-                    return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
-                } catch (...) {
-                    return 0.0;
-                }
-            }
-            pclose(pipe);
-        }
+    if (!sysfs_file.is_open()) {
         return 0.0;
     }
-    
-    std::string vram_str;
-    std::getline(file, vram_str);
-    file.close();
+
+    std::string page_limit_str;
+    std::getline(sysfs_file, page_limit_str);
+    sysfs_file.close();
     
     try {
-        uint64_t vram_bytes = std::stoull(vram_str);
-        return std::round(vram_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+        uint64_t page_limit = std::stoull(page_limit_str);
+        return std::round(page_limit / ((1024.0 * 1024.0 * 1024.0) / 4096) * 10.0) / 10.0;
+    } catch (...) {
+        return 0.0;
+    }   
+}
+
+bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
+    std::string device_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/";
+    std::string board_info_path = device_path + "board_info";
+    return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
+}
+
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
+    // Try device-specific path first
+    std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
+    
+    if (!fs::exists(sysfs_path))
+        return 0.0;
+
+    std::ifstream sysfs_file(sysfs_path);
+    std::string memory_str;
+    std::getline(sysfs_file, memory_str);
+    sysfs_file.close();
+
+    try {
+        uint64_t memory_bytes = std::stoull(memory_str);
+        return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
+}
+
+double LinuxSystemInfo::get_amd_gtt(const std::string& drm_render_minor){
+    return parse_memory_sysfs(drm_render_minor, "mem_info_gtt_total");
+}
+
+double LinuxSystemInfo::get_amd_vram(const std::string& drm_render_minor) {
+    return parse_memory_sysfs(drm_render_minor, "mem_info_vram_total");
 }
 
 json LinuxSystemInfo::get_system_info_dict() {
@@ -1504,20 +1476,23 @@ std::string LinuxSystemInfo::get_os_version() {
     // Get detailed Linux version (similar to Python's platform.platform())
     std::string result = "Linux";
     
-    // Get kernel version using uname
-    FILE* pipe = popen("uname -r 2>/dev/null", "r");
-    if (pipe) {
-        char buffer[128];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            std::string kernel = buffer;
-            // Remove newline
-            if (!kernel.empty() && kernel.back() == '\n') {
-                kernel.pop_back();
-            }
-            result += "-" + kernel;
-        }
-        pclose(pipe);
-    }
+    // Get kernel version from /proc/version
+    std::string kernel = "unknown_kernel";
+
+    std::ifstream file("/proc/version");
+    if (file.is_open()){
+        std::string line;
+        std::getline(file, line);
+
+        const std::string tag = "version ";
+        size_t pos = line.find(tag);
+        if (pos != std::string::npos){
+            pos += tag.size();
+            size_t end = line.find(' ', pos);
+            kernel = line.substr(pos, end - pos);
+        } 
+    } 
+    result += "-" + kernel;
     
     // Try to get distribution info from /etc/os-release
     std::ifstream os_release("/etc/os-release");
@@ -1582,46 +1557,24 @@ std::string LinuxSystemInfo::get_processor_name() {
 }
 
 std::string LinuxSystemInfo::get_physical_memory() {
-    FILE* pipe = popen("free -m 2>/dev/null", "r");
-    if (!pipe) {
-        return "ERROR - Failed to execute free command";
-    }
-    
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    pclose(pipe);
-    
-    // Parse output - second line contains memory info
-    std::istringstream iss(output);
-    std::string line;
-    int line_count = 0;
-    while (std::getline(iss, line)) {
-        line_count++;
-        if (line_count == 2) {  // Second line has memory data
-            std::istringstream line_stream(line);
-            std::string token;
-            int token_count = 0;
-            while (line_stream >> token) {
-                token_count++;
-                if (token_count == 2) {  // Second token is total memory in MB
-                    try {
-                        int mem_mb = std::stoi(token);
-                        double mem_gb = std::round(mem_mb / 1024.0 * 100.0) / 100.0;
-                        std::ostringstream oss;
-                        oss << std::fixed << std::setprecision(2) << mem_gb << " GB";
-                        return oss.str();
-                    } catch (...) {
-                        return "ERROR - Failed to parse memory info";
-                    }
-                }
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+
+    //Step through each token in the file 
+    while(file >> token) {
+        if(token == "MemTotal:") {
+            // Get the token after "MemTotal:"
+            if(double mem; file >> mem) {
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(2) << std::round(mem / 1024.0 / 1024.0 * 100.0) / 100.0 << " GB";
+                return oss.str();
             }
+            break;
         }
+        // Skip the line if key/token isn't found.
+        file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
-    
-    return "ERROR - Memory information not found";
+    return "ERROR - Physical memory not found";
 }
 
 #endif // __linux__
@@ -1788,14 +1741,14 @@ void SystemInfoCache::clear() {
 
 json SystemInfoCache::get_system_info_with_cache(bool verbose) {
     json system_info;
-    
+
     // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
     try {
         // Create cache instance and load cached data
         SystemInfoCache cache;
         bool cache_exists = fs::exists(cache.get_cache_file_path());
         json cached_data = cache.load_hardware_info();
-        
+
         // Create platform-specific system info instance
         auto sys_info = create_system_info();
         
@@ -1892,4 +1845,3 @@ json SystemInfoCache::get_system_info_with_cache(bool verbose) {
 
 
 } // namespace lemon
-

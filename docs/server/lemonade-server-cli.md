@@ -62,16 +62,17 @@ lemonade-server run MODEL_NAME [options]
 
 These settings can also be provided via environment variables that Lemonade Server recognizes regardless of launch method:
 
-| Environment Variable | Description |
-|---------------------|-------------|
-| `LEMONADE_HOST` | Host address for where to listen for connections |
-| `LEMONADE_PORT` | Port number to run the server on |
-| `LEMONADE_LOG_LEVEL` | Logging level |
-| `LEMONADE_LLAMACPP` | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`) |
-| `LEMONADE_CTX_SIZE` | Default context size for models |
-| `LEMONADE_LLAMACPP_ARGS` | Custom arguments to pass to llama-server |
-| `LEMONADE_EXTRA_MODELS_DIR` | Secondary directory to scan for GGUF model files |
-| `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities |
+| Environment Variable               | Description                                                                                                                                             |
+|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `LEMONADE_HOST`                    | Host address for where to listen for connections                                                                                                        |
+| `LEMONADE_PORT`                    | Port number to run the server on                                                                                                                        |
+| `LEMONADE_LOG_LEVEL`               | Logging level                                                                                                                                           |
+| `LEMONADE_LLAMACPP`                | Default LlamaCpp backend (`vulkan`, `rocm`, or `cpu`)                                                                                                   |
+| `LEMONADE_CTX_SIZE`                | Default context size for models                                                                                                                         |
+| `LEMONADE_LLAMACPP_ARGS`           | Custom arguments to pass to llama-server                                                                                                                |
+| `LEMONADE_EXTRA_MODELS_DIR`        | Secondary directory to scan for GGUF model files                                                                                                        |
+| `LEMONADE_DISABLE_MODEL_FILTERING` | Set to `1` to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities         |
+| `LEMONADE_ENABLE_DGPU_GTT`         | Set to `1` to include GTT for hardware-based model filtering |
 
 #### Custom Backend Binaries
 
