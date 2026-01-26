@@ -1055,16 +1055,69 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
     return 0.0;
 }
 
+
+
+double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
+    // Get the maximum POSSIBLE accessible memory of the device in question,
+    // taking into account the respective memory allocation behavior.
+
+    double virtual_mem_gb = 0.0;
+    double vram_gb = 0.0;
+
+    if (device.contains("vram_gb")) {
+        vram_gb = device["vram_gb"].get<double>();
+    }
+    if (device.contains("dynamic_mem_gb"))
+    {
+        virtual_mem_gb = device["dynamic_mem_gb"].get<double>();
+    }
+
+    switch (mem_alloc_behavior)
+    {
+    case MemoryAllocBehavior::Hardware:
+        return vram_gb;
+
+    case MemoryAllocBehavior::Virtual:
+        return virtual_mem_gb;
+
+    case MemoryAllocBehavior::Largest:
+        return vram_gb > virtual_mem_gb ? vram_gb : virtual_mem_gb;
+
+    case MemoryAllocBehavior::Unified:
+        return virtual_mem_gb + vram_gb;
+
+    default:
+        return vram_gb;
+    }
+}
+
+bool parse_TF_env_var(const char* env_var_name) {
+    const char* env = std::getenv(env_var_name);
+    return env && (std::string(env) == "1" ||
+                   std::string(env) == "true" ||
+                   std::string(env) == "TRUE" ||
+                   std::string(env) == "yes");
+}
+
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     const std::map<std::string, ModelInfo>& models) {
     
     // Check if model filtering is disabled via environment variable
-    const char* disable_filtering = std::getenv("LEMONADE_DISABLE_MODEL_FILTERING");
-    if (disable_filtering && (std::string(disable_filtering) == "1" || 
-                              std::string(disable_filtering) == "true" || 
-                              std::string(disable_filtering) == "yes")) {
+    bool disable_filtering = parse_TF_env_var("LEMONADE_DISABLE_MODEL_FILTERING");
+
+    // Check if dGPUs should use GTT
+    bool enable_dgpu_gtt = parse_TF_env_var("LEMONADE_ENABLE_DGPU_GTT");
+
+    if (disable_filtering) {
         filtered_out_models_.clear();
         return models;
+    }
+
+    if (enable_dgpu_gtt)
+    {
+      std::cout << "[ModelManager]: LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+                << "     Models are being filtered assuming GTT memory." << std::endl
+                << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
     
     std::map<std::string, ModelInfo> filtered;
@@ -1087,14 +1140,37 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     bool npu_available = is_npu_available(hardware);
     bool flm_available = is_flm_available(hardware);
     bool oga_available = is_oga_available(hardware);
-    
+
+    // Get largest VRAM object for memory-based filtering
+    double largest_mem_pool_gb = 0.0;
+    double curr_mem_pool_gb = 0.0;
+
+    for (const auto& [dev_type, devices] : hardware.items()) {
+        // Because we have mixed types this just makes every device_type an array.
+        nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
+
+        // Expand this later to accommodate mixed pools
+        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+        if (dev_type == "amd_igpu")
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+        if (enable_dgpu_gtt)
+            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
+
+        for (const auto& dev : dev_list) {
+            curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
+            largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
+        }
+    }
+
     // Get system RAM for memory-based filtering
     double system_ram_gb = 0.0;
     if (system_info.contains("Physical Memory") && system_info["Physical Memory"].is_string()) {
         system_ram_gb = parse_physical_memory_gb(system_info["Physical Memory"].get<std::string>());
     }
-    double max_model_size_gb = system_ram_gb * 0.8;  // 80% of system RAM
-    
+
+    // Use the largest of the two values
+    double max_model_size_gb = largest_mem_pool_gb > (system_ram_gb * 0.8) ? largest_mem_pool_gb : (system_ram_gb * 0.8);
+
     // Get processor and OS for user-friendly error messages
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
@@ -1115,6 +1191,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (system_ram_gb > 0.0) {
             std::cout << "  - System RAM: " << std::fixed << std::setprecision(1) << system_ram_gb 
                       << " GB (max model size: " << max_model_size_gb << " GB)" << std::endl;
+        }
+        if (largest_mem_pool_gb > 0.0) {
+            std::cout << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
         debug_printed = true;
     }
