@@ -2189,6 +2189,17 @@ body.install-options {
   font-size: 1.1em;
 }
 
+.lmn-install-method-header {
+  font-size: 1.05rem;
+  color: #555;
+  font-weight: 600;
+  margin: 1.5em 0 0.8em 0;
+}
+
+.lmn-install-method-header:first-child {
+  margin-top: 0;
+}
+
 .lmn-explore-header::before {
   content: "🚀";
 }
