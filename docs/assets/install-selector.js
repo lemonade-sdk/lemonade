@@ -182,12 +182,17 @@ function renderDownload() {
 
     if (distro === 'ubuntu') {
       // Ubuntu: Show snap and deb package commands
-      let snapPackage, debFile;
+      let snapCommands, debFile;
       if (type === 'app') {
-        snapPackage = 'lemonade';
+        // For App + Server, need to install both snaps
+        snapCommands = [
+          'sudo snap install lemonade-server',
+          'sudo snap install lemonade'
+        ];
         debFile = `lemonade_${version}_amd64.deb`;
       } else {
-        snapPackage = 'lemonade-server';
+        // For Server Only, just need the server snap
+        snapCommands = ['sudo snap install lemonade-server'];
         debFile = `lemonade-server-minimal_${version}_amd64.deb`;
       }
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${debFile}`;
@@ -197,7 +202,6 @@ function renderDownload() {
       }
       if (installCmdDiv) {
         installCmdDiv.style.display = 'block';
-        const snapCommand = `sudo snap install ${snapPackage}`;
         const commands = [
           `wget ${downloadUrl}`,
           `sudo dpkg -i ${debFile}`
@@ -211,11 +215,13 @@ function renderDownload() {
         `;
         
         setTimeout(() => {
-          // Render snap command
+          // Render snap command(s)
           const snapPre = document.getElementById('lmn-install-snap-block');
           if (snapPre) {
-            const safeLine = snapCommand.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            snapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopySnapLine(event)">📋</button></div>`;
+            snapPre.innerHTML = snapCommands.map((cmd, idx) => {
+              const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopySnapLine(event, ${idx})">📋</button></div>`;
+            }).join('');
           }
           
           // Render deb commands
@@ -328,13 +334,13 @@ function renderDownload() {
   }
 }
 
-window.lmnCopySnapLine = function(e) {
+window.lmnCopySnapLine = function(e, idx) {
   e.stopPropagation();
   const pre = document.getElementById('lmn-install-snap-block');
   if (!pre) return;
-  const span = pre.querySelector('.lmn-command-line span');
-  if (span) {
-    navigator.clipboard.writeText(span.textContent);
+  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
+  if (lines[idx] !== undefined) {
+    navigator.clipboard.writeText(lines[idx]);
     const btn = e.currentTarget;
     const old = btn.textContent;
     btn.textContent = '✔';
