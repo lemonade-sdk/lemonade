@@ -4,8 +4,9 @@ Whisper audio transcription tests for Lemonade Server.
 Tests the /audio/transcriptions endpoint with Whisper models.
 
 Usage:
-    python server_whisper.py --server-binary lemonade-server
-    python server_whisper.py --server-binary ./lemonade-server --server-per-test
+    python server_whisper.py
+    python server_whisper.py --server-per-test
+    python server_whisper.py --server-binary /path/to/lemonade-server
 """
 
 import os

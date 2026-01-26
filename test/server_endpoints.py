@@ -13,8 +13,9 @@ Tests endpoints that don't require specific inference backends:
 - /live
 
 Usage:
-    python server_endpoints.py --server-binary lemonade-server
-    python server_endpoints.py --server-binary ./lemonade-server --server-per-test
+    python server_endpoints.py
+    python server_endpoints.py --server-per-test
+    python server_endpoints.py --server-binary /path/to/lemonade-server
 """
 
 import json
@@ -26,6 +27,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     parse_args,
+    get_config,
     OpenAI,
 )
 from utils.test_models import (
@@ -48,12 +50,28 @@ def get_recipe_options_path():
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
+    # Track if model has been pulled in per-test mode (persists across tests)
+    _model_pulled = False
+
     @classmethod
     def setUpClass(cls):
         """Set up class - start server and ensure test model is pulled."""
         super().setUpClass()
 
+        # In per-test mode, server isn't started until setUp(), so defer pre-pull
+        if get_config().get("server_per_test", False):
+            print("\n[SETUP] Per-test mode: will pull model in setUp()")
+            return
+
         # Ensure the test model is pulled once for all tests
+        cls._ensure_model_pulled()
+
+    @classmethod
+    def _ensure_model_pulled(cls):
+        """Ensure the test model is pulled (only does work once)."""
+        if cls._model_pulled:
+            return
+
         print(f"\n[SETUP] Ensuring {ENDPOINT_TEST_MODEL} is pulled...")
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/pull",
@@ -62,8 +80,17 @@ class EndpointTests(ServerTestBase):
         )
         if response.status_code == 200:
             print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
+            cls._model_pulled = True
         else:
             print(f"[SETUP] Warning: pull returned {response.status_code}")
+
+    def setUp(self):
+        """Set up each test."""
+        super().setUp()
+
+        # In per-test mode, ensure model is pulled after server starts
+        if get_config().get("server_per_test", False):
+            self._ensure_model_pulled()
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
