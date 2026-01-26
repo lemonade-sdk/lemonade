@@ -740,14 +740,26 @@ void ModelManager::build_cache() {
 
     // Populate recipe options
     for (auto& [name, info] : all_models) {
+        // Start with image_defaults as base options for sd-cpp models
+        json base_options = json::object();
+        if (info.image_defaults.has_defaults) {
+            base_options["steps"] = info.image_defaults.steps;
+            base_options["cfg_scale"] = info.image_defaults.cfg_scale;
+            base_options["width"] = info.image_defaults.width;
+            base_options["height"] = info.image_defaults.height;
+        }
+
+        // User-saved recipe options override image_defaults
         if (JsonUtils::has_key(recipe_options_, name)) {
             std::cout << "[ModelManager] Found recipe options for model: " << name << std::endl;
-
-            auto options = recipe_options_[name];
-            info.recipe_options = RecipeOptions(info.recipe, options);
-        } else {
-            info.recipe_options = RecipeOptions(info.recipe, json::object());
+            auto saved_options = recipe_options_[name];
+            // Merge saved options over base options
+            for (auto& [key, value] : saved_options.items()) {
+                base_options[key] = value;
+            }
         }
+
+        info.recipe_options = RecipeOptions(info.recipe, base_options);
     }
     
     // Step 2: Filter by backend availability
