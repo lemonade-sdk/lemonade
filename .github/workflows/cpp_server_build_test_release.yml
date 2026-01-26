@@ -349,6 +349,8 @@ jobs:
     name: Test .exe - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-installer
+    # Skip inference tests on tag pushes (releases) - they block signing
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -467,6 +469,8 @@ jobs:
     name: Test .deb - ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     needs: build-lemonade-server-deb
+    # Skip inference tests on tag pushes (releases) - they take too long and block signing
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -655,8 +659,6 @@ jobs:
       - sign-msi-installers
       - build-lemonade-server-deb
       - build-lemonade-deb-full
-      - test-exe-inference
-      - test-deb-inference
       - test-cli-endpoints
     if: startsWith(github.ref, 'refs/tags/v')
     env:
