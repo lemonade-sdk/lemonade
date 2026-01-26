@@ -307,8 +307,12 @@ Same as .deb above
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── resources/                  # Configuration and data files
-│   └── backend_versions.json   # llama.cpp version configuration (user-editable)
+├── resources/                  # Configuration and data files (self-contained)
+│   ├── backend_versions.json   # llama.cpp/whisper version configuration
+│   ├── server_models.json      # Model registry (available models)
+│   └── static/                 # Web UI assets
+│       ├── index.html          # Server landing page (with template variables)
+│       └── favicon.ico         # Site icon
 │
 ├── installer/                  # WiX MSI installer (Windows)
 │   ├── Product.wxs.in          # WiX installer definition template
@@ -625,8 +629,9 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 ### Key Resources
 
 - **API Specification:** `docs/server/server_spec.md`
-- **Model Registry:** `src/lemonade_server/server_models.json`
-- **Web UI Files:** `src/lemonade/tools/server/static/`
+- **Model Registry:** `src/cpp/resources/server_models.json`
+- **Web UI Files:** `src/cpp/resources/static/`
+- **Backend Versions:** `src/cpp/resources/backend_versions.json`
 - **Python Reference:** `src/lemonade_server/` and `src/lemonade/tools/server/`
 
 ### Adding New Features

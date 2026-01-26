@@ -310,6 +310,8 @@ set(SOURCES
     server/backends/fastflowlm_server.cpp
     server/backends/ryzenaiserver.cpp
     server/backends/whisper_server.cpp
+    server/backends/sd_server.cpp
+    server/backends/backend_utils.cpp
 )
 
 # Add version resource file on Windows
@@ -371,11 +373,11 @@ endif()
 # ============================================================
 
 # Copy resources to the build directory during configuration
-file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade/tools/server/static
-     DESTINATION ${CMAKE_BINARY_DIR}/resources)
-file(COPY ${CMAKE_SOURCE_DIR}/../../src/lemonade_server/server_models.json
-     DESTINATION ${CMAKE_BINARY_DIR}/resources)
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/backend_versions.json
+# Resources are self-contained in src/cpp/resources/:
+#   - static/index.html, static/favicon.ico (web UI)
+#   - server_models.json (model registry)
+#   - backend_versions.json (backend version configuration)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/resources/
      DESTINATION ${CMAKE_BINARY_DIR}/resources)
 
 # Copy resources to the runtime directoriy after build

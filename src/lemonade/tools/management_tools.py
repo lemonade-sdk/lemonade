@@ -2,17 +2,13 @@ import argparse
 import abc
 import json
 from typing import List
+
 import lemonade.common.filesystem as fs
 import lemonade.common.exceptions as exp
 import lemonade.common.printing as printing
 from lemonade.tools.tool import ToolParser
 from lemonade.version import __version__ as lemonade_version
-from lemonade.common.system_info import (
-    get_system_info_dict,
-    get_device_info_dict,
-    get_system_info,
-)
-from lemonade.common.build import output_dir
+from lemonade.common.build import output_dir, get_system_info_from_server
 import lemonade.cache as lemonade_cache
 
 
@@ -125,7 +121,7 @@ class Cache(ManagementTool):
 
     @staticmethod
     def parser(add_help: bool = True) -> argparse.ArgumentParser:
-        # NOTE: `--cache-dir` is set as a global input to the lemonade CLI and
+        # NOTE: `--cache-dir` is set as a global input to the lemonade-eval CLI and
         # passed directly to the `run()` method
 
         parser = __class__.helpful_parser(
@@ -234,7 +230,8 @@ class Cache(ManagementTool):
             else:
                 raise exp.CacheError(
                     f"No build found with name: {build}. "
-                    "Try running `lemonade cache --list` to see the builds in your build cache."
+                    "Try running `lemonade-eval cache --list` to see the builds "
+                    "in your build cache."
                 )
 
         print()
@@ -292,11 +289,15 @@ class SystemInfo(ManagementTool):
                 print("    " * level + f"{k}: {v}")
 
     def run(self, _, format="table", verbose=False):
-        # Get basic system info
-        system_info_dict = get_system_info_dict()
+        # Get system info from Lemonade Server
+        system_info_dict = get_system_info_from_server()
 
-        # Always include devices
-        system_info_dict["Devices"] = get_device_info_dict()
+        if not system_info_dict:
+            printing.log_warning(
+                "No system information available. "
+                "Make sure Lemonade Server is running with 'lemonade-server serve'."
+            )
+            return
 
         # Filter out verbose-only information if not in verbose mode
         if not verbose:
@@ -304,10 +305,6 @@ class SystemInfo(ManagementTool):
             system_info_dict = {
                 k: v for k, v in system_info_dict.items() if k in essential_keys
             }
-        else:
-            # In verbose mode, add Python packages at the end
-            system_info = get_system_info()
-            system_info_dict["Python Packages"] = system_info.get_python_packages()
 
         if format == "json":
             print(json.dumps(system_info_dict, indent=2))

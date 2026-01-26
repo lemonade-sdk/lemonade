@@ -22,7 +22,8 @@ public:
            int max_llm_models = 1,
            int max_embedding_models = 1,
            int max_reranking_models = 1,
-           int max_audio_models = 1);
+           int max_audio_models = 1,
+           int max_image_models = 1);
     
     ~Router();
     
@@ -67,6 +68,9 @@ public:
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     json audio_transcriptions(const json& request);
+
+    // Image endpoints (OpenAI /v1/images/* compatible)
+    json image_generations(const json& request);
     
     // Forward streaming requests to the appropriate wrapped server
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
@@ -97,6 +101,7 @@ private:
     int max_embedding_models_;
     int max_reranking_models_;
     int max_audio_models_;
+    int max_image_models_;
     
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
