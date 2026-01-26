@@ -434,7 +434,10 @@ const getGpuUsage = async () => {
     // Linux: Read from sysfs (AMD GPUs expose gpu_busy_percent)
     try {
       const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch(() => []);
+      const cards = await fs.promises.readdir(drmPath).catch((err) => {
+        console.debug('GPU detection: Failed to read /sys/class/drm:', err.message);
+        return [];
+      });
 
       for (const card of cards) {
         if (!card.match(/^card\d+$/)) continue;
@@ -446,10 +449,11 @@ const getGpuUsage = async () => {
           if (!isNaN(percent)) {
             return percent;
           }
-        } catch {
-          // File doesn't exist, try next card
+        } catch (err) {
+          console.debug(`GPU detection: ${amdBusyPath} not available:`, err.code || err.message);
         }
       }
+      console.debug('GPU detection: No GPU with gpu_busy_percent found');
     } catch (error) {
       console.error('Failed to read GPU stats from sysfs:', error);
     }
@@ -461,10 +465,14 @@ const getGpuUsage = async () => {
       const psCommand = `(Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Average | Select-Object -ExpandProperty Average`;
       exec(`powershell -NoProfile -Command "${psCommand}"`, { timeout: 3000 }, (error, stdout) => {
         if (error) {
+          console.debug('GPU detection (Windows): PowerShell query failed:', error.message);
           resolve(null);
           return;
         }
         const percent = parseFloat(stdout.trim());
+        if (isNaN(percent)) {
+          console.debug('GPU detection (Windows): Could not parse GPU percentage from:', stdout.trim());
+        }
         resolve(isNaN(percent) ? null : Math.round(percent * 100) / 100);
       });
     });
@@ -474,16 +482,21 @@ const getGpuUsage = async () => {
     return new Promise((resolve) => {
       exec('ioreg -r -d 1 -c IOAccelerator', { timeout: 2000 }, (error, stdout) => {
         if (error) {
+          console.debug('GPU detection (macOS): ioreg query failed:', error.message);
           resolve(null);
           return;
         }
         const match = stdout.match(/"Device Utilization %"\s*=\s*(\d+)/i) ||
                       stdout.match(/"GPU Activity"\s*=\s*(\d+)/i);
+        if (!match) {
+          console.debug('GPU detection (macOS): No utilization data found in ioreg output');
+        }
         resolve(match ? parseFloat(match[1]) : null);
       });
     });
   }
 
+  console.debug('GPU detection: Unsupported platform:', process.platform);
   return null;
 };
 
@@ -493,7 +506,10 @@ const getVramUsage = async () => {
     // Linux: Read from AMD sysfs
     try {
       const drmPath = '/sys/class/drm';
-      const cards = await fs.promises.readdir(drmPath).catch(() => []);
+      const cards = await fs.promises.readdir(drmPath).catch((err) => {
+        console.debug('VRAM detection: Failed to read /sys/class/drm:', err.code || err.message);
+        return [];
+      });
 
       for (const card of cards) {
         if (!card.match(/^card\d+$/)) continue;
@@ -508,8 +524,8 @@ const getVramUsage = async () => {
           if (!isNaN(bytes)) {
             return bytes / (1024 * 1024 * 1024); // Convert to GB
           }
-        } catch {
-          // File doesn't exist, try GTT fallback
+        } catch (err) {
+          console.debug(`VRAM detection: ${vramUsedPath} not available:`, err.code || err.message);
         }
 
         // Fallback to GTT memory (integrated GPUs / APUs)
@@ -520,10 +536,11 @@ const getVramUsage = async () => {
           if (!isNaN(bytes)) {
             return bytes / (1024 * 1024 * 1024); // Convert to GB
           }
-        } catch {
-          // File doesn't exist, try next card
+        } catch (err) {
+          console.debug(`VRAM detection: ${gttUsedPath} not available:`, err.code || err.message);
         }
       }
+      console.debug('VRAM detection: No GPU with VRAM/GTT memory info found');
     } catch (error) {
       console.error('Failed to read VRAM/GTT stats from sysfs:', error);
     }
@@ -531,13 +548,16 @@ const getVramUsage = async () => {
 
   } else if (process.platform === 'win32') {
     // Windows: AMD VRAM monitoring not yet implemented
+    console.debug('VRAM detection (Windows): Not yet implemented');
     return null;
 
   } else if (process.platform === 'darwin') {
     // macOS: Metal doesn't expose VRAM usage in a standard way
+    console.debug('VRAM detection (macOS): Metal does not expose VRAM usage');
     return null;
   }
 
+  console.debug('VRAM detection: Unsupported platform:', process.platform);
   return null;
 };
 
@@ -547,7 +567,10 @@ const getNpuUsage = async () => {
     // Linux: Read from sysfs (AMD XDNA/Ryzen AI)
     try {
       const accelPath = '/sys/class/accel';
-      const devices = await fs.promises.readdir(accelPath).catch(() => []);
+      const devices = await fs.promises.readdir(accelPath).catch((err) => {
+        console.debug('NPU detection: Failed to read /sys/class/accel:', err.code || err.message);
+        return [];
+      });
 
       for (const device of devices) {
         const devicePath = path.join(accelPath, device, 'device');
@@ -564,11 +587,12 @@ const getNpuUsage = async () => {
             if (!isNaN(percent)) {
               return percent;
             }
-          } catch {
-            // File doesn't exist, try next path
+          } catch (err) {
+            console.debug(`NPU detection: ${busyPath} not available:`, err.code || err.message);
           }
         }
       }
+      console.debug('NPU detection: No NPU with busy_percent found');
     } catch (error) {
       console.error('Failed to read NPU stats from sysfs:', error);
     }
@@ -580,19 +604,25 @@ const getNpuUsage = async () => {
       const xrtSmiPath = path.join('C:', 'Windows', 'System32', 'AMD', 'xrt-smi.exe');
       exec(`"${xrtSmiPath}" examine -r aie`, { timeout: 3000 }, (error, stdout) => {
         if (error) {
+          console.debug('NPU detection (Windows): xrt-smi query failed:', error.message);
           resolve(null);
           return;
         }
         const match = stdout.match(/utilization[:\s]+(\d+(?:\.\d+)?)\s*%/i);
+        if (!match) {
+          console.debug('NPU detection (Windows): Could not parse NPU utilization from xrt-smi output');
+        }
         resolve(match ? parseFloat(match[1]) : null);
       });
     });
 
   } else if (process.platform === 'darwin') {
     // macOS: Apple Neural Engine has no public utilization API
+    console.debug('NPU detection (macOS): Apple Neural Engine has no public utilization API');
     return null;
   }
 
+  console.debug('NPU detection: Unsupported platform:', process.platform);
   return null;
 };
 
