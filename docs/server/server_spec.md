@@ -684,6 +684,18 @@ curl http://localhost:8000/api/v1/models?show_all=true
       "labels": ["reasoning"]
     },
     {
+      "id": "Gemma-3-4b-it-GGUF",
+      "created": 1744173590,
+      "object": "model",
+      "owned_by": "lemonade",
+      "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "size": 3.61,
+      "downloaded": true,
+      "suggested": true,
+      "labels": ["hot", "vision"]
+    },
+    {
       "id": "SD-Turbo",
       "created": 1744173590,
       "object": "model",
