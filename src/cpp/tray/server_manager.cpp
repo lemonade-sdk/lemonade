@@ -837,7 +837,7 @@ std::string ServerManager::make_http_request(
     int timeout_seconds)
 {
 
-    httplib::Client cli = make_http_client(10, timeout_seconds); // 10 second connection timeout
+    httplib::Client cli = make_http_client(timeout_seconds, 10); // 10 second connection timeout
     httplib::Result res;
     
     if (method == "GET") {
