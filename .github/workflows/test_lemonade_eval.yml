@@ -181,8 +181,16 @@ jobs:
         run: |
           pacman -Syu --noconfirm --noprogressbar archlinux-keyring
           pacman -Syu --noconfirm --noprogressbar base-devel python python-pip git cmake ninja pkgconf
+      - name: Check Python version
+        id: python-version
+        run: |
+          python_version=$(python --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+          echo "version=$python_version" >> $GITHUB_OUTPUT
+          echo "Python version: $python_version"
       - name: Lint and Test Lemonade
         uses: ./.github/actions/lemonade-ci
+        env:
+          SKIP_OGA_CPU: ${{ steps.python-version.outputs.version == '3.14' || steps.python-version.outputs.version == '3.13' }}
 
 # This file was originally licensed under Apache 2.0. It has been modified.
 # Modifications Copyright (c) 2025 AMD

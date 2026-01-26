@@ -23,7 +23,12 @@ runs:
         $venvPython -m pip install --upgrade pip
         $venvPip install pylint
         $venvPython -m pip check
-        $venvPip install -e .[oga-cpu]
+        if [[ "$SKIP_OGA_CPU" == "true" ]]; then
+          echo "Skipping oga-cpu installation (Python version not supported)"
+          $venvPip install -e .
+        else
+          $venvPip install -e .[oga-cpu]
+        fi
         if [[ -f "$venvLemonadeServerDev" ]]; then
           $venvLemonadeServerDev pull Qwen2.5-0.5B-Instruct-CPU
         fi
@@ -47,8 +52,10 @@ runs:
         venvLemonade="$VENV_LEMONADE"
         # Test CLI
         $venvLemonade -m -i facebook/opt-125m huggingface-load llm-prompt -p "hi" --max-new-tokens 10
-        # Test low-level APIs
-        $venvPython test/llm_api.py
+        # Test low-level APIs (skip oga_cpu_api if SKIP_OGA_CPU is set)
+        if [[ "$SKIP_OGA_CPU" != "true" ]]; then
+          $venvPython test/llm_api.py
+        fi
         # Test server CLI
         $venvPython test/server_cli.py
         # Test high-level APIs
