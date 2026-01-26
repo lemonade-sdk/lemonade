@@ -320,8 +320,7 @@ int TrayApp::run() {
                 }
                 
                 // Create server manager to communicate with running server
-                server_manager_ = std::make_unique<ServerManager>();
-                server_manager_->set_port(running_port);
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
                 server_config_.port = running_port;  // Update config to match running server
                 
                 // Use localhost to connect (works regardless of what the server is bound to)
@@ -351,7 +350,7 @@ int TrayApp::run() {
     
     // Create server manager
     DEBUG_LOG(this, "Creating server manager...");
-    server_manager_ = std::make_unique<ServerManager>();
+    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
     
     // Start server
     DEBUG_LOG(this, "Starting server...");
@@ -671,7 +670,7 @@ std::pair<int, int> TrayApp::get_server_info() {
 // Helper: Start ephemeral server
 bool TrayApp::start_ephemeral_server(int port) {
     if (!server_manager_) {
-        server_manager_ = std::make_unique<ServerManager>();
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
     }
     
     DEBUG_LOG(this, "Starting ephemeral server on port " << port << "...");
@@ -701,10 +700,7 @@ bool TrayApp::start_ephemeral_server(int port) {
     return true;
 }
 
-// Command: list
-int TrayApp::execute_list_command() {
-    DEBUG_LOG(this, "Listing available models...");
-    
+int TrayApp::server_call(std::function<int(std::unique_ptr<ServerManager> const &)> to_call) {
     // Check if server is running
     auto [pid, running_port] = get_server_info();
     bool server_was_running = (running_port != 0);
@@ -715,57 +711,63 @@ int TrayApp::execute_list_command() {
         if (!start_ephemeral_server(port)) {
             return 1;
         }
-    }
+    }   
     
-    // Get models from server with show_all=true to include download status
-    try {
-        if (!server_manager_) {
-            server_manager_ = std::make_unique<ServerManager>();
-        }
-        server_manager_->set_port(port);  // Use the detected or configured port
-        
-        // Request with show_all=true to get download status
-        std::string response = server_manager_->make_http_request("/api/v1/models?show_all=true");
-        auto models_json = nlohmann::json::parse(response);
-        
-        if (!models_json.contains("data") || !models_json["data"].is_array()) {
-            std::cerr << "Invalid response format from server" << std::endl;
-            if (!server_was_running) stop_server();
-            return 1;
-        }
-        
-        // Print models in a nice table format
-        std::cout << std::left << std::setw(40) << "Model Name"
-                  << std::setw(12) << "Downloaded"
-                  << "Details" << std::endl;
-        std::cout << std::string(100, '-') << std::endl;
-        
-        for (const auto& model : models_json["data"]) {
-            std::string name = model.value("id", "unknown");
-            bool is_downloaded = model.value("downloaded", false);
-            std::string downloaded = is_downloaded ? "Yes" : "No";
-            std::string details = model.value("recipe", "-");
-            
-            std::cout << std::left << std::setw(40) << name
-                      << std::setw(12) << downloaded
-                      << details << std::endl;
-        }
-        
-        std::cout << std::string(100, '-') << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error listing models: " << e.what() << std::endl;
-        if (!server_was_running) stop_server();
-        return 1;
+    if (!server_manager_) {
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, port);
     }
-    
+
+    int res = to_call(server_manager_);
+
     // Stop ephemeral server
     if (!server_was_running) {
         DEBUG_LOG(this, "Stopping ephemeral server...");
         stop_server();
     }
     
-    return 0;
+    return res;
+}
+
+// Command: list
+int TrayApp::execute_list_command() {
+    DEBUG_LOG(this, "Listing available models...");
+    
+    // Get models from server with show_all=true to include download status
+    return server_call([](std::unique_ptr<ServerManager> const &server_manager) {
+        try {
+            // Request with show_all=true to get download status
+            std::string response = server_manager->make_http_request("/api/v1/models?show_all=true");
+            auto models_json = nlohmann::json::parse(response);
+            
+            if (!models_json.contains("data") || !models_json["data"].is_array()) {
+                std::cerr << "Invalid response format from server" << std::endl;
+                return 1;
+            }
+            
+            // Print models in a nice table format
+            std::cout << std::left << std::setw(40) << "Model Name"
+                    << std::setw(12) << "Downloaded"
+                    << "Details" << std::endl;
+            std::cout << std::string(100, '-') << std::endl;
+            
+            for (const auto& model : models_json["data"]) {
+                std::string name = model.value("id", "unknown");
+                bool is_downloaded = model.value("downloaded", false);
+                std::string downloaded = is_downloaded ? "Yes" : "No";
+                std::string details = model.value("recipe", "-");
+                
+                std::cout << std::left << std::setw(40) << name
+                        << std::setw(12) << downloaded
+                        << details << std::endl;
+            }
+            
+            std::cout << std::string(100, '-') << std::endl;
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "Error listing models: " << e.what() << std::endl;
+            return 1;
+        }
+    });
 }
 
 // Command: pull
@@ -845,258 +847,209 @@ int TrayApp::execute_pull_command() {
     
     std::cout << (local_import ? "Registering model: " : "Pulling model: ") << tray_config_.model << std::endl;
     
-    // Check if server is running
-    auto [pid, running_port] = get_server_info();
-    bool server_was_running = (running_port != 0);
-    int port = server_was_running ? running_port : server_config_.port;
-    
-    // Start ephemeral server if needed
-    if (!server_was_running) {
-        if (!start_ephemeral_server(port)) {
-            return 1;
-        }
-    }
-    
-    // Pull model via API (SSE streaming for downloads, simple POST for local imports)
-    try {
-        // Build request body with all optional parameters
-        // Local imports don't need streaming (no download progress)
-        nlohmann::json request_body = {{"model", tray_config_.model}, {"stream", !local_import}};
-        
-        if (local_import) {
-            request_body["local_import"] = true;
-        }
-        if (!tray_config_.checkpoint.empty() && !local_import) {
-            // Only send checkpoint for remote downloads (local files already copied)
-            request_body["checkpoint"] = tray_config_.checkpoint;
-        }
-        if (!tray_config_.recipe.empty()) {
-            request_body["recipe"] = tray_config_.recipe;
-        }
-        if (tray_config_.is_reasoning) {
-            request_body["reasoning"] = true;
-        }
-        if (tray_config_.is_vision) {
-            request_body["vision"] = true;
-        }
-        if (tray_config_.is_embedding) {
-            request_body["embedding"] = true;
-        }
-        if (tray_config_.is_reranking) {
-            request_body["reranking"] = true;
-        }
-        if (!tray_config_.mmproj.empty()) {
-            request_body["mmproj"] = tray_config_.mmproj;
-        }
-        
-        // Use the same host the server is bound to (0.0.0.0 is special - use localhost instead)
-        std::string connect_host = (server_config_.host == "0.0.0.0") ? "localhost" : server_config_.host;
-        
-        httplib::Client cli(connect_host, port);
-        cli.set_connection_timeout(30, 0);
-        cli.set_read_timeout(86400, 0);  // 24 hour read timeout for large downloads
-        
-        // For local imports, use simple POST (no SSE streaming needed)
-        if (local_import) {
-            auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
+    return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+        // Pull model via API (SSE streaming for downloads, simple POST for local imports)
+        try {
+            // Build request body with all optional parameters
+            // Local imports don't need streaming (no download progress)
+            nlohmann::json request_body = {{"model", tray_config_.model}, {"stream", !local_import}};
             
-            if (!res) {
+            if (local_import) {
+                request_body["local_import"] = true;
+            }
+            if (!tray_config_.checkpoint.empty() && !local_import) {
+                // Only send checkpoint for remote downloads (local files already copied)
+                request_body["checkpoint"] = tray_config_.checkpoint;
+            }
+            if (!tray_config_.recipe.empty()) {
+                request_body["recipe"] = tray_config_.recipe;
+            }
+            if (tray_config_.is_reasoning) {
+                request_body["reasoning"] = true;
+            }
+            if (tray_config_.is_vision) {
+                request_body["vision"] = true;
+            }
+            if (tray_config_.is_embedding) {
+                request_body["embedding"] = true;
+            }
+            if (tray_config_.is_reranking) {
+                request_body["reranking"] = true;
+            }
+            if (!tray_config_.mmproj.empty()) {
+                request_body["mmproj"] = tray_config_.mmproj;
+            }
+            
+            httplib::Client cli = server_manager->make_http_client(86400, 30);
+
+            // For local imports, use simple POST (no SSE streaming needed)
+            if (local_import) {
+                auto res = cli.Post("/api/v1/pull", request_body.dump(), "application/json");
+                
+                if (!res) {
+                    throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
+                }
+                
+                if (res->status != 200) {
+                    try {
+                        auto error_json = nlohmann::json::parse(res->body);
+                        throw std::runtime_error(error_json.value("error", res->body));
+                    } catch (const nlohmann::json::exception&) {
+                        throw std::runtime_error("Server returned status " + std::to_string(res->status));
+                    }
+                }
+                
+                std::cout << "Model imported successfully: " << tray_config_.model << std::endl;
+                
+                return 0;
+            }
+            
+            // Use SSE streaming to receive progress events (for remote downloads)
+            std::string last_file;
+            int last_percent = -1;
+            bool success = false;
+            std::string error_message;
+            std::string buffer;  // Buffer for partial SSE messages
+            
+            httplib::Headers headers;
+            auto res = cli.Post("/api/v1/pull", headers, request_body.dump(), "application/json",
+                [&](const char* data, size_t len) {
+                    buffer.append(data, len);
+                    
+                    // Process complete SSE messages (end with \n\n)
+                    size_t pos;
+                    while ((pos = buffer.find("\n\n")) != std::string::npos) {
+                        std::string message = buffer.substr(0, pos);
+                        buffer.erase(0, pos + 2);
+                        
+                        // Parse SSE event
+                        std::string event_type;
+                        std::string event_data;
+                        
+                        std::istringstream stream(message);
+                        std::string line;
+                        while (std::getline(stream, line)) {
+                            if (line.substr(0, 6) == "event:") {
+                                event_type = line.substr(7);
+                                // Trim whitespace
+                                while (!event_type.empty() && event_type[0] == ' ') {
+                                    event_type.erase(0, 1);
+                                }
+                            } else if (line.substr(0, 5) == "data:") {
+                                event_data = line.substr(6);
+                                // Trim whitespace
+                                while (!event_data.empty() && event_data[0] == ' ') {
+                                    event_data.erase(0, 1);
+                                }
+                            }
+                        }
+                        
+                        if (!event_data.empty()) {
+                            try {
+                                auto json_data = nlohmann::json::parse(event_data);
+                                
+                                if (event_type == "progress") {
+                                    std::string file = json_data.value("file", "");
+                                    int file_index = json_data.value("file_index", 0);
+                                    int total_files = json_data.value("total_files", 0);
+                                    // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
+                                    uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
+                                    uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
+                                    int percent = json_data.value("percent", 0);
+                                    
+                                    // Only print when file changes or percent changes significantly
+                                    if (file != last_file) {
+                                        if (!last_file.empty()) {
+                                            std::cout << std::endl;  // New line after previous file
+                                        }
+                                        std::cout << "[" << file_index << "/" << total_files << "] " << file;
+                                        if (bytes_total > 0) {
+                                            std::cout << " (" << std::fixed << std::setprecision(1) 
+                                                    << (bytes_total / (1024.0 * 1024.0)) << " MB)";
+                                        }
+                                        std::cout << std::endl;
+                                        last_file = file;
+                                        last_percent = -1;
+                                    }
+                                    
+                                    // Update progress bar
+                                    if (bytes_total > 0 && percent != last_percent) {
+                                        std::cout << "\r  Progress: " << percent << "% (" 
+                                                << std::fixed << std::setprecision(1)
+                                                << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
+                                                << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
+                                        last_percent = percent;
+                                    }
+                                } else if (event_type == "complete") {
+                                    std::cout << std::endl;
+                                    success = true;
+                                } else if (event_type == "error") {
+                                    error_message = json_data.value("error", "Unknown error");
+                                }
+                            } catch (const std::exception&) {
+                                // Ignore JSON parse errors in SSE events
+                            }
+                        }
+                    }
+                    
+                    return true;  // Continue receiving
+                });
+            
+            // Check for errors - but ignore connection close if we got a success event
+            if (!res && !success) {
                 throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
             }
             
-            if (res->status != 200) {
-                try {
-                    auto error_json = nlohmann::json::parse(res->body);
-                    throw std::runtime_error(error_json.value("error", res->body));
-                } catch (const nlohmann::json::exception&) {
-                    throw std::runtime_error("Server returned status " + std::to_string(res->status));
-                }
+            if (!error_message.empty()) {
+                throw std::runtime_error(error_message);
             }
             
-            std::cout << "Model imported successfully: " << tray_config_.model << std::endl;
+            if (success) {
+                std::cout << "Model pulled successfully: " << tray_config_.model << std::endl;
+            } else if (!res) {
+                // Connection closed without success - this is an error
+                throw std::runtime_error("Connection closed unexpectedly");
+            } else {
+                std::cerr << "Pull completed without success confirmation" << std::endl;
+                return 1;
+            }
             
-            if (!server_was_running) stop_server();
             return 0;
-        }
-        
-        // Use SSE streaming to receive progress events (for remote downloads)
-        std::string last_file;
-        int last_percent = -1;
-        bool success = false;
-        std::string error_message;
-        std::string buffer;  // Buffer for partial SSE messages
-        
-        httplib::Headers headers;
-        auto res = cli.Post("/api/v1/pull", headers, request_body.dump(), "application/json",
-            [&](const char* data, size_t len) {
-                buffer.append(data, len);
-                
-                // Process complete SSE messages (end with \n\n)
-                size_t pos;
-                while ((pos = buffer.find("\n\n")) != std::string::npos) {
-                    std::string message = buffer.substr(0, pos);
-                    buffer.erase(0, pos + 2);
-                    
-                    // Parse SSE event
-                    std::string event_type;
-                    std::string event_data;
-                    
-                    std::istringstream stream(message);
-                    std::string line;
-                    while (std::getline(stream, line)) {
-                        if (line.substr(0, 6) == "event:") {
-                            event_type = line.substr(7);
-                            // Trim whitespace
-                            while (!event_type.empty() && event_type[0] == ' ') {
-                                event_type.erase(0, 1);
-                            }
-                        } else if (line.substr(0, 5) == "data:") {
-                            event_data = line.substr(6);
-                            // Trim whitespace
-                            while (!event_data.empty() && event_data[0] == ' ') {
-                                event_data.erase(0, 1);
-                            }
-                        }
-                    }
-                    
-                    if (!event_data.empty()) {
-                        try {
-                            auto json_data = nlohmann::json::parse(event_data);
-                            
-                            if (event_type == "progress") {
-                                std::string file = json_data.value("file", "");
-                                int file_index = json_data.value("file_index", 0);
-                                int total_files = json_data.value("total_files", 0);
-                                // Use uint64_t explicitly to avoid JSON type inference issues with large numbers
-                                uint64_t bytes_downloaded = json_data.value("bytes_downloaded", (uint64_t)0);
-                                uint64_t bytes_total = json_data.value("bytes_total", (uint64_t)0);
-                                int percent = json_data.value("percent", 0);
-                                
-                                // Only print when file changes or percent changes significantly
-                                if (file != last_file) {
-                                    if (!last_file.empty()) {
-                                        std::cout << std::endl;  // New line after previous file
-                                    }
-                                    std::cout << "[" << file_index << "/" << total_files << "] " << file;
-                                    if (bytes_total > 0) {
-                                        std::cout << " (" << std::fixed << std::setprecision(1) 
-                                                  << (bytes_total / (1024.0 * 1024.0)) << " MB)";
-                                    }
-                                    std::cout << std::endl;
-                                    last_file = file;
-                                    last_percent = -1;
-                                }
-                                
-                                // Update progress bar
-                                if (bytes_total > 0 && percent != last_percent) {
-                                    std::cout << "\r  Progress: " << percent << "% (" 
-                                              << std::fixed << std::setprecision(1)
-                                              << (bytes_downloaded / (1024.0 * 1024.0)) << "/"
-                                              << (bytes_total / (1024.0 * 1024.0)) << " MB)" << std::flush;
-                                    last_percent = percent;
-                                }
-                            } else if (event_type == "complete") {
-                                std::cout << std::endl;
-                                success = true;
-                            } else if (event_type == "error") {
-                                error_message = json_data.value("error", "Unknown error");
-                            }
-                        } catch (const std::exception&) {
-                            // Ignore JSON parse errors in SSE events
-                        }
-                    }
-                }
-                
-                return true;  // Continue receiving
-            });
-        
-        // Check for errors - but ignore connection close if we got a success event
-        if (!res && !success) {
-            throw std::runtime_error("HTTP request failed: " + httplib::to_string(res.error()));
-        }
-        
-        if (!error_message.empty()) {
-            throw std::runtime_error(error_message);
-        }
-        
-        if (success) {
-            std::cout << "Model pulled successfully: " << tray_config_.model << std::endl;
-        } else if (!res) {
-            // Connection closed without success - this is an error
-            throw std::runtime_error("Connection closed unexpectedly");
-        } else {
-            std::cerr << "Pull completed without success confirmation" << std::endl;
-            if (!server_was_running) stop_server();
+        } catch (const std::exception& e) {
+            std::cerr << "Error pulling model: " << e.what() << std::endl;
             return 1;
         }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error pulling model: " << e.what() << std::endl;
-        if (!server_was_running) stop_server();
-        return 1;
-    }
-    
-    // Stop ephemeral server
-    if (!server_was_running) {
-        DEBUG_LOG(this, "Stopping ephemeral server...");
-        stop_server();
-    }
-    
-    return 0;
+    });
 }
 
 // Command: delete
 int TrayApp::execute_delete_command() {
     std::cout << "Deleting model: " << tray_config_.model << std::endl;
     
-    // Check if server is running
-    auto [pid, running_port] = get_server_info();
-    bool server_was_running = (running_port != 0);
-    int port = server_was_running ? running_port : server_config_.port;
-    
-    // Start ephemeral server if needed
-    if (!server_was_running) {
-        if (!start_ephemeral_server(port)) {
+    return server_call([&](std::unique_ptr<ServerManager> const &server_manager) {
+        // Delete model via API
+        try {
+            nlohmann::json request_body = {{"model", tray_config_.model}};
+            std::string response = server_manager->make_http_request(
+                "/api/v1/delete", 
+                "POST", 
+                request_body.dump()
+            );
+            
+            auto response_json = nlohmann::json::parse(response);
+            if (response_json.value("status", "") == "success") {
+                std::cout << "Model deleted successfully: " << tray_config_.model << std::endl;
+            } else {
+                std::cerr << "Failed to delete model" << std::endl;
+                return 1;
+            }
+            
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "Error deleting model: " << e.what() << std::endl;
             return 1;
         }
-    }
-    
-    // Delete model via API
-    try {
-        if (!server_manager_) {
-            server_manager_ = std::make_unique<ServerManager>();
-        }
-        server_manager_->set_port(port);  // Use the detected or configured port
-        
-        nlohmann::json request_body = {{"model", tray_config_.model}};
-        std::string response = server_manager_->make_http_request(
-            "/api/v1/delete", 
-            "POST", 
-            request_body.dump()
-        );
-        
-        auto response_json = nlohmann::json::parse(response);
-        if (response_json.value("status", "") == "success") {
-            std::cout << "Model deleted successfully: " << tray_config_.model << std::endl;
-        } else {
-            std::cerr << "Failed to delete model" << std::endl;
-            if (!server_was_running) stop_server();
-            return 1;
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error deleting model: " << e.what() << std::endl;
-        if (!server_was_running) stop_server();
-        return 1;
-    }
-    
-    // Stop ephemeral server
-    if (!server_was_running) {
-        DEBUG_LOG(this, "Stopping ephemeral server...");
-        stop_server();
-    }
-    
-    return 0;
+    });
 }
 
 // Command: run
