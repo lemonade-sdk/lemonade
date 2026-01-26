@@ -732,6 +732,8 @@ const sendMessage = async () => {
       abortControllerRef.current = null;
       // Reset scroll tracking after streaming ends so next message can autoscroll
       userScrolledAwayRef.current = false;
+      // Notify StatusBar to refresh server stats
+      window.dispatchEvent(new CustomEvent('inference-complete'));
     }
   };
 
@@ -1017,6 +1019,8 @@ const sendMessage = async () => {
       abortControllerRef.current = null;
       // Reset scroll tracking after streaming ends so next message can autoscroll
       userScrolledAwayRef.current = false;
+      // Notify StatusBar to refresh server stats
+      window.dispatchEvent(new CustomEvent('inference-complete'));
     }
   };
 

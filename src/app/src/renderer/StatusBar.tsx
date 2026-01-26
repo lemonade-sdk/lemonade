@@ -70,9 +70,16 @@ const StatusBar: React.FC = () => {
     fetchStats();
     fetchSystemStats();
 
-    // Poll every 2 seconds
-    const statsInterval = setInterval(fetchStats, 2000);
-    const systemInterval = setInterval(fetchSystemStats, 2000);
+    // Listen for inference completion to refresh server stats
+    const handleInferenceComplete = () => {
+      fetchStats();
+    };
+    window.addEventListener('inference-complete', handleInferenceComplete);
+
+    // Poll server stats infrequently as fallback (every 30s)
+    const statsInterval = setInterval(fetchStats, 30000);
+    // Poll system stats more frequently (every 5s) since they change over time
+    const systemInterval = setInterval(fetchSystemStats, 5000);
 
     // Re-fetch when server URL changes
     const unsubscribe = onServerUrlChange(() => {
@@ -80,6 +87,7 @@ const StatusBar: React.FC = () => {
     });
 
     return () => {
+      window.removeEventListener('inference-complete', handleInferenceComplete);
       clearInterval(statsInterval);
       clearInterval(systemInterval);
       unsubscribe();
