@@ -24,21 +24,33 @@ This directory contains the C++ implementation of the Lemonade Server, providing
 - WiX 5.x (only required for building the installer)
 
 **Linux (Ubuntu/Debian):**
+
+Note: CMake 3.28+ is required. Ubuntu 24.04+ and Debian Trixie (testing/13)+ include this.
+For older versions, you may need to install a newer CMake manually.
+
 ```bash
-sudo apt install build-essential cmake libcurl4-openssl-dev libssl-dev pkg-config
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
+# Build dependencies
+sudo apt install build-essential g++ cmake git curl \
+  libcurl4-openssl-dev libssl-dev zlib1g-dev pkg-config
+
+# Optional: For running tests
+sudo apt install python3 python3-pip python3-venv
+
+# Verify CMake version (must be 3.28+)
+cmake --version
 ```
 
 **Linux (Fedora):**
 ```bash
-sudo dnf install @development-tools cmake libcurl-devel openssl-devel
+# Build dependencies
+sudo dnf install @development-tools gcc-c++ cmake git curl \
+  libcurl-devel openssl-devel zlib-devel pkgconf
+
+# Optional: For running tests
+sudo dnf install python3 python3-pip
 
 # If you then want to package the binaries into .rpm
 sudo dnf install rpm-build rpmdevtools
-
-# Note: Tray application is disabled on Linux (headless mode only)
-# This avoids LGPL dependencies and provides a cleaner server-only experience
 ```
 
 **macOS:**

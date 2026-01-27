@@ -1,4 +1,4 @@
-name: Arch Linux Build 🐧
+name: Linux Distro Builds 🐧
 
 on:
   push:
@@ -11,42 +11,100 @@ permissions:
   contents: read
 
 jobs:
-  build-arch-linux:
-    name: Build on Arch Linux
+  build-linux:
+    name: Build on ${{ matrix.distro }}
     runs-on: ubuntu-latest
     container:
-      image: archlinux:latest
+      image: ${{ matrix.image }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Arch
+            image: archlinux:latest
+            python: python
+          - distro: Debian
+            image: debian:trixie
+            python: python3
+          - distro: Fedora
+            image: fedora:latest
+            python: python3
 
     steps:
       - name: Install build dependencies
         run: |
-          echo "Updating package database..."
-          pacman -Syu --noconfirm
+          set -e
           
-          echo "Installing build dependencies..."
-          pacman -S --noconfirm --needed \
-            base-devel \
-            cmake \
-            git \
-            curl \
-            openssl \
-            zlib \
-            pkgconf \
-            python \
-            python-pip \
-            ca-certificates \
-            procps-ng
+          if [ "${{ matrix.distro }}" = "Arch" ]; then
+            echo "Updating Arch package database..."
+            pacman -Syu --noconfirm
+            
+            echo "Installing build dependencies..."
+            pacman -S --noconfirm --needed \
+              base-devel \
+              cmake \
+              git \
+              curl \
+              openssl \
+              zlib \
+              pkgconf \
+              python \
+              python-pip \
+              ca-certificates \
+              procps-ng
+          
+          elif [ "${{ matrix.distro }}" = "Debian" ]; then
+            echo "Updating Debian package database..."
+            apt-get update
+            
+            echo "Installing build dependencies..."
+            apt-get install -y \
+              build-essential \
+              g++ \
+              cmake \
+              git \
+              curl \
+              libcurl4-openssl-dev \
+              libssl-dev \
+              zlib1g-dev \
+              pkg-config \
+              python3 \
+              python3-pip \
+              python3-venv \
+              ca-certificates \
+              procps
+          
+          elif [ "${{ matrix.distro }}" = "Fedora" ]; then
+            echo "Updating Fedora package database..."
+            dnf update -y
+            
+            echo "Installing build dependencies..."
+            dnf install -y \
+              @development-tools \
+              gcc-c++ \
+              cmake \
+              git \
+              curl \
+              libcurl-devel \
+              openssl-devel \
+              zlib-devel \
+              pkgconf \
+              python3 \
+              python3-pip \
+              ca-certificates \
+              procps-ng
+          fi
           
           echo "Verifying installations..."
           cmake --version
           gcc --version
           g++ --version
           pkg-config --version
-          python --version
-          pip --version
+          ${{ matrix.python }} --version
           
           echo "Verifying process management tools..."
-          which pgrep pkill ps
+          command -v pgrep && command -v pkill && command -v ps
           
           echo "Verifying SSL certificates..."
           ls -la /etc/ssl/certs/ | head -10
@@ -66,7 +124,7 @@ jobs:
         run: |
           set -e
           
-          echo "Building lemonade-router and lemonade-server on Arch Linux..."
+          echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
           
           cd src/cpp
           
@@ -108,7 +166,7 @@ jobs:
           ./lemonade-router --version
           ./lemonade-server --version
           
-          echo "Arch Linux build successful!"
+          echo "${{ matrix.distro }} build successful!"
 
       - name: Verify system library linking
         run: |
@@ -123,15 +181,15 @@ jobs:
           ldd lemonade-server
           
           echo ""
-          echo "All dependencies resolved successfully on Arch Linux!"
+          echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
 
       - name: Setup Python virtual environment
         run: |
           echo "Creating Python virtual environment..."
-          python -m venv .venv
+          ${{ matrix.python }} -m venv .venv
           
           echo "Activating virtual environment and installing dependencies..."
-          source .venv/bin/activate
+          . .venv/bin/activate
           pip install --upgrade pip
           pip install -r test/requirements.txt
           
@@ -144,7 +202,7 @@ jobs:
         run: |
           set -e
           
-          source .venv/bin/activate
+          . .venv/bin/activate
           SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
           
           echo "Running CLI tests..."
@@ -159,7 +217,7 @@ jobs:
         run: |
           set -e
           
-          source .venv/bin/activate
+          . .venv/bin/activate
           SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
           
           echo "Running endpoint tests..."

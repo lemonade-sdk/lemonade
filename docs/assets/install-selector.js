@@ -89,7 +89,7 @@ window.lmnRender = function() {
   // Update active states and disabled states
   const cells = {
     os: ['win', 'linux', 'macos', 'docker'],
-    distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora'],
+    distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora', 'debian'],
     type: ['app', 'server'],
     fw: ['oga', 'llama', 'flm'],
     dev: ['npu', 'gpu', 'cpu']
@@ -267,6 +267,13 @@ function renderDownload() {
       if (installCmdDiv) installCmdDiv.style.display = 'none';
       if (cmdDiv) {
         cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Fedora, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
+      }
+      return;
+    } else if (distro === 'debian') {
+      if (downloadArea) downloadArea.style.display = 'none';
+      if (installCmdDiv) installCmdDiv.style.display = 'none';
+      if (cmdDiv) {
+        cmdDiv.innerHTML = `<div class="lmn-coming-soon">For Debian, please follow the build instructions as described in the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/README.md#building-from-source" target="_blank">README</a> file.</div>`;
       }
       return;
     }
@@ -513,6 +520,10 @@ function parseHashAndSetState() {
       lmnSet('os', 'linux');
       lmnSet('distro', 'arch');
       break;
+    case 'debian':
+      lmnSet('os', 'linux');
+      lmnSet('distro', 'debian');
+      break;
     case 'fedora':
       lmnSet('os', 'linux');
       lmnSet('distro', 'fedora');
@@ -547,9 +558,10 @@ window.lmnInit = function() {
           </tr>
           <tr id="lmn-install-distro" style="display: none;">
             <td class="lmn-label">Linux Distribution</td>
-            <td id="distro-ubuntu" class="lmn-active" colspan="2">Ubuntu 24.04+</td>          
+            <td id="distro-ubuntu" class="lmn-active">Ubuntu 24.04+</td>
             <td id="distro-arch">Arch Linux</td>            
             <td id="distro-fedora">Fedora</td>
+            <td id="distro-debian">Debian Trixie+</td>
           </tr>
           <tr id="lmn-install-type">
             <td class="lmn-label">Installation Type</td>
