@@ -1,0 +1,192 @@
+#!/usr/bin/env bpftrace
+/*
+ * gpu-kernel-tracer.bt
+ *
+ * Lightweight AMD GPU kernel dispatch and data transfer
+ * tracer using bpftrace kfunc probes into the amdgpu
+ * kernel module.
+ *
+ * Tracks:
+ *   - Job submit / schedule / start / completion
+ *   - Buffer object creation and migration
+ *   - Explicit DMA copies (LSDMA)
+ *
+ * Output: pipe-delimited records on stdout, one per
+ * line, intended for parsing by gpu-kernel-tracer.py.
+ *
+ * Usage:
+ *   sudo bpftrace gpu-kernel-tracer.bt
+ *
+ * Requires: kernel with BTF, amdgpu module loaded.
+ */
+
+BEGIN
+{
+    printf("TRACER_START|%lld\n", nsecs);
+}
+
+/*
+ * ── Job Lifecycle ────────────────────────────────
+ *
+ * Correlation key: job pointer (uint64 cast of
+ * struct amdgpu_job *).
+ *
+ * Flow:
+ *   amdgpu_job_submit  -> record submit time, ring
+ *   amdgpu_ib_schedule -> record num_ibs
+ *   amdgpu_fence_update_start_timestamp -> HW start
+ *   amdgpu_fence_process -> completion
+ */
+
+kfunc:amdgpu:amdgpu_job_submit
+{
+    $job = (uint64)args.job;
+    @submit_ns[$job] = nsecs;
+    @submit_pid[$job] = pid;
+    @submit_comm[$job] = comm;
+}
+
+kfunc:amdgpu:amdgpu_ib_schedule
+{
+    $job = (uint64)args.job;
+    $nibs = args.num_ibs;
+    @sched_ns[$job] = nsecs;
+    @sched_ring[$job] = args.ring->name;
+    @sched_nibs[$job] = $nibs;
+}
+
+kfunc:amdgpu:amdgpu_fence_update_start_timestamp
+{
+    $seq = args.seq;
+    @hw_start_ns[args.ring->name, $seq] = nsecs;
+    @hw_start_ktime[args.ring->name, $seq] =
+        args.timestamp;
+}
+
+kfunc:amdgpu:amdgpu_fence_process
+{
+    printf("FENCE_PROC|%lld|%s|%d|%s\n",
+        nsecs, args.ring->name, pid, comm);
+}
+
+tracepoint:gpu_scheduler:drm_sched_job_done
+{
+    printf("JOB_DONE|%lld|%llu|%llu|%d|%s\n",
+        nsecs,
+        args.fence_context,
+        args.fence_seqno,
+        pid,
+        comm);
+}
+
+kfunc:amdgpu:amdgpu_ring_commit
+{
+    printf("RING_COMMIT|%lld|%s|%d\n",
+        nsecs, args.ring->name, pid);
+}
+
+/*
+ * ── KFD Compute Active / Idle ───────────────────
+ *
+ * HIP/ROCm kernels use user-mode AQL queues and
+ * bypass the traditional GEM/CS path.  The kernel
+ * driver only sees compute-active / compute-idle
+ * transitions, not individual kernel dispatches.
+ * These probes give coarse "GPU busy with compute"
+ * boundaries.
+ */
+
+kfunc:amdgpu:kfd_inc_compute_active
+{
+    printf("COMPUTE_ACTIVE|%lld|%d|%s\n",
+        nsecs, pid, comm);
+}
+
+kfunc:amdgpu:kfd_dec_compute_active
+{
+    printf("COMPUTE_IDLE|%lld|%d|%s\n",
+        nsecs, pid, comm);
+}
+
+kfunc:amdgpu:amdgpu_amdkfd_submit_ib
+{
+    printf("KFD_SUBMIT_IB|%lld|%u|%u|%llu|%u|%d|%s\n",
+        nsecs,
+        args.engine,
+        args.vmid,
+        args.gpu_addr,
+        args.ib_len,
+        pid,
+        comm);
+}
+
+/*
+ * ── Data Transfer / Memory ───────────────────────
+ */
+
+kfunc:amdgpu:amdgpu_bo_create
+{
+    printf(
+        "BO_CREATE|%lld|%llu|%u|%u|%d|%s\n",
+        nsecs,
+        args.bp->size,
+        args.bp->type,
+        args.bp->preferred_domain,
+        pid,
+        comm);
+}
+
+kfunc:amdgpu:amdgpu_bo_move
+{
+    printf("BO_MOVE|%lld|%llu|%u|%d|%s\n",
+        nsecs,
+        args.bo->base.size,
+        args.new_mem->mem_type,
+        pid,
+        comm);
+}
+
+kfunc:amdgpu:amdgpu_lsdma_copy_mem
+{
+    printf(
+        "DMA_COPY|%lld|%llx|%llx|%llu|%d|%s\n",
+        nsecs,
+        args.src_addr,
+        args.dst_addr,
+        args.mem_size,
+        pid,
+        comm);
+}
+
+kfunc:amdgpu:amdgpu_bo_pin
+{
+    printf("BO_PIN|%lld|%llu|%d|%s\n",
+        nsecs,
+        args.bo->tbo.base.size,
+        pid,
+        comm);
+}
+
+/*
+ * ── Periodic summary of in-flight jobs ───────────
+ *
+ * Every 5 seconds, print counts of tracked maps so
+ * the Python wrapper knows tracing is alive.
+ */
+interval:s:5
+{
+    printf("HEARTBEAT|%lld\n", nsecs);
+}
+
+END
+{
+    printf("TRACER_END|%lld\n", nsecs);
+    clear(@submit_ns);
+    clear(@submit_pid);
+    clear(@submit_comm);
+    clear(@sched_ns);
+    clear(@sched_ring);
+    clear(@sched_nibs);
+    clear(@hw_start_ns);
+    clear(@hw_start_ktime);
+}
