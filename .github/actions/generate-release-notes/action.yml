@@ -58,6 +58,9 @@ runs:
         fi
         
         echo "AUTO_NOTES length: ${#AUTO_NOTES}"
+        echo "=== AUTO_NOTES content ==="
+        echo "$AUTO_NOTES"
+        echo "=== end AUTO_NOTES ==="
         
         # Extract What's Changed section and wrap in details tag
         WHATS_CHANGED=""
