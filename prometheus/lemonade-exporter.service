@@ -1,0 +1,18 @@
+[Unit]
+Description=Lemonade Server Prometheus Exporter
+After=network.target lemonade-server.service
+
+[Service]
+Type=simple
+User=stebates
+WorkingDirectory=/home/stebates/Projects/lemonade/prometheus
+ExecStart=/usr/bin/python3 \
+  /home/stebates/Projects/lemonade/prometheus/lemonade-exporter.py \
+  --lemonade-url http://localhost:8000 --port 9091
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

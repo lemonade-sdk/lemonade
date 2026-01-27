@@ -126,7 +126,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                 telemetry_.output_tokens = telemetry.output_tokens;
                 telemetry_.time_to_first_token = telemetry.time_to_first_token;
                 telemetry_.tokens_per_second = telemetry.tokens_per_second;
-                // Note: decode_token_times is not available from streaming proxy
+                telemetry_.decode_token_times = telemetry.decode_token_times;
             },
             INFERENCE_TIMEOUT_SECONDS
         );

@@ -1,0 +1,3027 @@
+{
+  "dashboard": {
+    "title": "Lemonade: CPU & GPU Monitoring Dashboard",
+    "tags": [
+      "cpu",
+      "gpu",
+      "amd",
+      "rocm"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 100,
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 3
+        },
+        "type": "table",
+        "title": "GPU Model",
+        "targets": [
+          {
+            "expr": "amd_gpu_average_package_power{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "center",
+              "displayMode": "color-text",
+              "inspect": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "card_series"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": ""
+                },
+                {
+                  "id": "custom.width",
+                  "value": 800
+                },
+                {
+                  "id": "custom.displayMode",
+                  "value": "color-text"
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Value"
+              },
+              "properties": [
+                {
+                  "id": "custom.hidden",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Time"
+              },
+              "properties": [
+                {
+                  "id": "custom.hidden",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^(gpu_id|card_model|card_vendor|hostname|instance|job|__name__|cluster_name|driver_version|gpu_compute_partition_type|gpu_memory_partition_type|gpu_partition_id|gpu_uuid|vbios_version)$/"
+              },
+              "properties": [
+                {
+                  "id": "custom.hidden",
+                  "value": true
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "showHeader": false,
+          "sortBy": [],
+          "cellHeight": "sm"
+        },
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Value": true,
+                "Time": true,
+                "gpu_id": true,
+                "card_model": true,
+                "card_vendor": true,
+                "hostname": true,
+                "instance": true,
+                "job": true
+              },
+              "indexByName": {
+                "card_series": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101,
+        "gridPos": {
+          "x": 12,
+          "y": 0,
+          "w": 12,
+          "h": 3
+        },
+        "type": "text",
+        "title": "ROCm Version",
+        "options": {
+          "content": "## ROCm Version\n\n**Version:** 7.2.0\n\n*Note: ROCm version is read from `/opt/rocm/.info/version`*",
+          "mode": "markdown"
+        }
+      },
+      {
+        "id": 1,
+        "gridPos": {
+          "x": 0,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "GPU Utilization",
+        "description": "Current GPU graphics activity percentage.\n\nShows how much of the GPU's compute units are actively processing workloads. Values near 100% indicate the GPU is fully utilized.",
+        "targets": [
+          {
+            "expr": "amd_gpu_gfx_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "GPU {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {
+          "x": 6,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "VRAM Usage",
+        "description": "Percentage of GPU VRAM currently in use.\n\nHigh values (>90%) may indicate memory pressure. Monitor this to ensure models and data fit within available VRAM.",
+        "targets": [
+          {
+            "expr": "(amd_gpu_used_vram{gpu_id=\"$gpu_id\"} / amd_gpu_total_vram{gpu_id=\"$gpu_id\"}) * 100",
+            "refId": "A",
+            "legendFormat": "VRAM %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 70,
+                  "color": "yellow"
+                },
+                {
+                  "value": 90,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {
+          "x": 12,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "GPU Temperature",
+        "description": "Current GPU edge temperature.\n\nNormal operating temperatures are typically 40-80°C. Temperatures above 90°C may indicate cooling issues or excessive load.",
+        "targets": [
+          {
+            "expr": "amd_gpu_edge_temperature{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "Temp"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                },
+                {
+                  "value": 60,
+                  "color": "green"
+                },
+                {
+                  "value": 80,
+                  "color": "yellow"
+                },
+                {
+                  "value": 95,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "celsius",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {
+          "x": 18,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Power & Energy",
+        "targets": [
+          {
+            "expr": "amd_gpu_average_package_power{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "Power"
+          },
+          {
+            "expr": "avg_over_time(amd_gpu_average_package_power{gpu_id=\"$gpu_id\"}[$__range]) * ($__range_ms / 1000)",
+            "refId": "B",
+            "legendFormat": "Total Energy"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "custom": {
+              "axisPlacement": "auto",
+              "scaleDistribution": {
+                "type": "linear",
+                "min": 0
+              },
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 100,
+                  "color": "yellow"
+                },
+                {
+                  "value": 200,
+                  "color": "orange"
+                },
+                {
+                  "value": 300,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "watt",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Total Energy"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "joule"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                },
+                {
+                  "id": "custom.hideFrom",
+                  "value": {
+                    "tooltip": false,
+                    "viz": true,
+                    "legend": true
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Power"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "watt"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                },
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "left"
+                },
+                {
+                  "id": "custom.scaleDistribution",
+                  "value": {
+                    "type": "linear",
+                    "min": 0,
+                    "max": 500
+                  }
+                },
+                {
+                  "id": "min",
+                  "value": 0
+                },
+                {
+                  "id": "max",
+                  "value": 500
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        },
+        "description": "Power: Current GPU power consumption.\nTotal Energy: Sum of power over time range (Average Power × Time Range).\n\nCalculated as: avg_over_time(power[$__range]) × ($__range_ms / 1000)"
+      },
+      {
+        "id": 5,
+        "gridPos": {
+          "x": 0,
+          "y": 8,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "GPU Utilization Over Time",
+        "description": "GPU graphics activity percentage over time.\n\nTrack GPU workload patterns and identify periods of high or low utilization. Useful for capacity planning and performance optimization.",
+        "targets": [
+          {
+            "expr": "amd_gpu_gfx_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "GPU {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {
+          "x": 8,
+          "y": 8,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "VRAM Usage Over Time",
+        "description": "GPU VRAM usage percentage and absolute values over time.\n\nUsed: Currently allocated VRAM in GB.\nTotal: Total available VRAM in GB.\n\nMonitor trends to detect memory leaks or plan for model loading strategies.",
+        "targets": [
+          {
+            "expr": "(amd_gpu_used_vram{gpu_id=\"$gpu_id\"} / amd_gpu_total_vram{gpu_id=\"$gpu_id\"}) * 100",
+            "refId": "A",
+            "legendFormat": "VRAM %"
+          },
+          {
+            "expr": "amd_gpu_used_vram{gpu_id=\"$gpu_id\"} / 1024 / 1024 / 1024",
+            "refId": "B",
+            "legendFormat": "Used (GB)"
+          },
+          {
+            "expr": "amd_gpu_total_vram{gpu_id=\"$gpu_id\"} / 1024 / 1024 / 1024",
+            "refId": "C",
+            "legendFormat": "Total (GB)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 70,
+                  "color": "yellow"
+                },
+                {
+                  "value": 90,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Used (GB)"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decgbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Total (GB)"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decgbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                },
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "gray"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": {
+          "x": 16,
+          "y": 8,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "GPU Temperature & Power",
+        "description": "GPU temperature and power consumption over time.\n\nTemp: Edge temperature (°C).\nJunction Temp: Hotspot temperature (°C) - typically higher than edge temp.\nPower: Average package power consumption (W).\n\nCorrelate temperature with power to identify thermal throttling or cooling issues.",
+        "targets": [
+          {
+            "expr": "amd_gpu_edge_temperature{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "Temp"
+          },
+          {
+            "expr": "amd_gpu_junction_temperature{gpu_id=\"$gpu_id\"}",
+            "refId": "B",
+            "legendFormat": "Junction Temp"
+          },
+          {
+            "expr": "amd_gpu_average_package_power{gpu_id=\"$gpu_id\"}",
+            "refId": "C",
+            "legendFormat": "Power (W)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "celsius",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Power (W)"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "watt"
+                },
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "right"
+                },
+                {
+                  "id": "custom.scaleDistribution",
+                  "value": {
+                    "type": "linear",
+                    "min": 0
+                  }
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 8,
+        "gridPos": {
+          "x": 0,
+          "y": 14,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "CPU Load (1min)",
+        "description": "1-minute average CPU load.\n\nLoad represents the average number of processes waiting for CPU time. Values above the number of CPU cores indicate system overload.",
+        "targets": [
+          {
+            "expr": "node_load1",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 2,
+                  "color": "yellow"
+                },
+                {
+                  "value": 4,
+                  "color": "orange"
+                },
+                {
+                  "value": 8,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 2
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 9,
+        "gridPos": {
+          "x": 6,
+          "y": 14,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "CPU Memory Usage",
+        "description": "Percentage of system RAM currently in use.\n\nHigh memory usage (>90%) may cause swapping and performance degradation. Monitor to ensure adequate RAM for workloads.",
+        "targets": [
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 70,
+                  "color": "yellow"
+                },
+                {
+                  "value": 90,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 10,
+        "gridPos": {
+          "x": 12,
+          "y": 14,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Disk Reads",
+        "description": "Current disk read rate.\n\nShows data being read from storage devices. High read rates may indicate data loading, model loading, or cache misses.",
+        "targets": [
+          {
+            "expr": "irate(node_disk_read_bytes_total{device=~\"nvme.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Rate {{device}}"
+          },
+          {
+            "expr": "node_disk_read_bytes_total{device=~\"nvme.*\"} - (node_disk_read_bytes_total{device=~\"nvme.*\"} @ start())",
+            "refId": "B",
+            "legendFormat": "Total {{device}}",
+            "hide": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Total /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Rate /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "Bps"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 11,
+        "gridPos": {
+          "x": 18,
+          "y": 14,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Disk Writes",
+        "description": "Current disk write rate.\n\nShows data being written to storage devices. High write rates may indicate logging, checkpointing, or data persistence operations.",
+        "targets": [
+          {
+            "expr": "irate(node_disk_written_bytes_total{device=~\"nvme.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Rate {{device}}"
+          },
+          {
+            "expr": "node_disk_written_bytes_total{device=~\"nvme.*\"} - (node_disk_written_bytes_total{device=~\"nvme.*\"} @ start())",
+            "refId": "B",
+            "legendFormat": "Total {{device}}",
+            "hide": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Total /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Rate /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "Bps"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 12,
+        "gridPos": {
+          "x": 0,
+          "y": 18,
+          "w": 12,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "CPU Load & Memory",
+        "description": "CPU load averages (1min, 5min, 15min) and memory usage percentage over time.\n\nLoad averages show system demand trends. Memory % shows RAM utilization. Monitor for capacity planning and performance issues.",
+        "targets": [
+          {
+            "expr": "node_load1",
+            "refId": "A",
+            "legendFormat": "Load 1min"
+          },
+          {
+            "expr": "node_load5",
+            "refId": "B",
+            "legendFormat": "Load 5min"
+          },
+          {
+            "expr": "node_load15",
+            "refId": "C",
+            "legendFormat": "Load 15min"
+          },
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "refId": "D",
+            "legendFormat": "Memory %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 2
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Memory %"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "percent"
+                },
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "right"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "gridPos": {
+          "x": 12,
+          "y": 18,
+          "w": 12,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Disk I/O",
+        "description": "Disk read and write rates over time.\n\nRead Rate: Data read from storage (MB/s).\nWrite Rate: Data written to storage (MB/s).\n\nHigh I/O rates may indicate heavy data processing, model loading, or logging activity.",
+        "targets": [
+          {
+            "expr": "irate(node_disk_read_bytes_total{device=~\"nvme.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Read {{device}}"
+          },
+          {
+            "expr": "irate(node_disk_written_bytes_total{device=~\"nvme.*\"}[5m])",
+            "refId": "B",
+            "legendFormat": "Write {{device}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 14,
+        "gridPos": {
+          "x": 0,
+          "y": 50,
+          "w": 24,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "VRAM Bandwidth & Data Transfer",
+        "description": "VRAM bandwidth utilization and cumulative data transfer over time.\n\nRead/Write Bandwidth: Current memory bandwidth usage (GB/s).\nTotal Read/Write/Transfer: Cumulative data moved over the time range (GB).\n\nHigh bandwidth indicates active GPU memory operations. Cumulative totals show overall data movement.",
+        "targets": [
+          {
+            "expr": "amd_gpu_memory_bandwidth_read_bytes_per_second{gpu_id=\"$gpu_id\"} / 1024 / 1024 / 1024",
+            "refId": "A",
+            "legendFormat": "Read Rate (GB/s)"
+          },
+          {
+            "expr": "amd_gpu_memory_bandwidth_write_bytes_per_second{gpu_id=\"$gpu_id\"} / 1024 / 1024 / 1024",
+            "refId": "B",
+            "legendFormat": "Write Rate (GB/s)"
+          },
+          {
+            "expr": "(amd_gpu_memory_bandwidth_read_bytes_per_second{gpu_id=\"$gpu_id\"} + amd_gpu_memory_bandwidth_write_bytes_per_second{gpu_id=\"$gpu_id\"}) / 1024 / 1024 / 1024",
+            "refId": "C",
+            "legendFormat": "Total Rate (GB/s)"
+          },
+          {
+            "expr": "avg_over_time(amd_gpu_memory_bandwidth_read_bytes_per_second{gpu_id=\"$gpu_id\"}[$__range]) * ($__range_ms / 1000) / 1024 / 1024 / 1024",
+            "refId": "D",
+            "legendFormat": "Total Read (GB)",
+            "hide": false
+          },
+          {
+            "expr": "avg_over_time(amd_gpu_memory_bandwidth_write_bytes_per_second{gpu_id=\"$gpu_id\"}[$__range]) * ($__range_ms / 1000) / 1024 / 1024 / 1024",
+            "refId": "E",
+            "legendFormat": "Total Write (GB)",
+            "hide": false
+          },
+          {
+            "expr": "avg_over_time((amd_gpu_memory_bandwidth_read_bytes_per_second{gpu_id=\"$gpu_id\"} + amd_gpu_memory_bandwidth_write_bytes_per_second{gpu_id=\"$gpu_id\"})[$__range]) * ($__range_ms / 1000) / 1024 / 1024 / 1024",
+            "refId": "F",
+            "legendFormat": "Total Transfer (GB)",
+            "hide": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "decgbytes",
+            "decimals": 2
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/Total (Read|Write|Transfer)/"
+              },
+              "properties": [
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "right"
+                },
+                {
+                  "id": "custom.drawStyle",
+                  "value": "bars"
+                },
+                {
+                  "id": "color",
+                  "value": {
+                    "mode": "fixed",
+                    "fixedColor": "gray"
+                  }
+                },
+                {
+                  "id": "unit",
+                  "value": "decgbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 102,
+        "gridPos": {
+          "x": 0,
+          "y": 31,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "UMC Activity",
+        "description": "Unified Memory Controller (UMC) activity percentage.\n\nUMC manages GPU memory subsystem. High activity indicates active memory operations. Monitor for memory bandwidth bottlenecks.",
+        "targets": [
+          {
+            "expr": "amd_gpu_umc_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "UMC {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 103,
+        "gridPos": {
+          "x": 8,
+          "y": 31,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "VCN Activity",
+        "description": "Video Core Next (VCN) activity percentage.\n\nVCN handles video encoding/decoding. Activity indicates video processing workloads. Typically low for AI inference workloads.",
+        "targets": [
+          {
+            "expr": "amd_gpu_vcn_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "VCN {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 104,
+        "gridPos": {
+          "x": 16,
+          "y": 31,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "MMA Activity",
+        "description": "Matrix Multiply Accelerator (MMA) activity percentage.\n\nMMA handles matrix operations used in AI/ML workloads. High activity indicates active inference or training operations.",
+        "targets": [
+          {
+            "expr": "amd_gpu_mma_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "MMA {{gpu_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 80,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 105,
+        "gridPos": {
+          "x": 0,
+          "y": 36,
+          "w": 24,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "GPU Activity Metrics Over Time",
+        "description": "Various GPU activity metrics over time.\n\nGFX: Graphics/compute activity.\nUMC: Memory controller activity.\nVCN: Video codec activity.\nMMA: Matrix multiply accelerator activity.\n\nCompare different activity types to understand GPU workload composition.",
+        "targets": [
+          {
+            "expr": "amd_gpu_gfx_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "A",
+            "legendFormat": "GFX Activity"
+          },
+          {
+            "expr": "amd_gpu_umc_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "B",
+            "legendFormat": "UMC Activity"
+          },
+          {
+            "expr": "amd_gpu_vcn_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "C",
+            "legendFormat": "VCN Activity"
+          },
+          {
+            "expr": "amd_gpu_mma_activity{gpu_id=\"$gpu_id\"}",
+            "refId": "D",
+            "legendFormat": "MMA Activity"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "percent",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 106,
+        "gridPos": {
+          "x": 0,
+          "y": 57,
+          "w": 6,
+          "h": 6
+        },
+        "type": "stat",
+        "title": "Network Receive",
+        "description": "Network receive rate over time.\n\nShows incoming network traffic. High rates may indicate API requests, model downloads, or data ingestion.",
+        "targets": [
+          {
+            "expr": "irate(node_network_receive_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Rate {{device}}"
+          },
+          {
+            "expr": "node_network_receive_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"} - (node_network_receive_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"} @ start())",
+            "refId": "B",
+            "legendFormat": "Total {{device}}",
+            "hide": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Total /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Rate /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "Bps"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 107,
+        "gridPos": {
+          "x": 6,
+          "y": 57,
+          "w": 6,
+          "h": 6
+        },
+        "type": "stat",
+        "title": "Network Transmit",
+        "description": "Network transmit rate over time.\n\nShows outgoing network traffic. High rates may indicate API responses, data exports, or streaming outputs.",
+        "targets": [
+          {
+            "expr": "irate(node_network_transmit_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "Rate {{device}}"
+          },
+          {
+            "expr": "node_network_transmit_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"} - (node_network_transmit_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"} @ start())",
+            "refId": "B",
+            "legendFormat": "Total {{device}}",
+            "hide": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Total /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "decbytes"
+                },
+                {
+                  "id": "decimals",
+                  "value": 2
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byRegexp",
+                "options": "/^Rate /"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "Bps"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 108,
+        "gridPos": {
+          "x": 12,
+          "y": 57,
+          "w": 12,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Network I/O",
+        "description": "Network receive and transmit rates over time.\n\nReceive Rate: Incoming traffic (MB/s).\nTransmit Rate: Outgoing traffic (MB/s).\n\nMonitor network activity to understand API usage patterns and bandwidth requirements.",
+        "targets": [
+          {
+            "expr": "irate(node_network_receive_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"}[5m])",
+            "refId": "A",
+            "legendFormat": "RX {{device}}"
+          },
+          {
+            "expr": "irate(node_network_transmit_bytes_total{device!~\"lo|docker.*|veth.*|virbr.*\"}[5m])",
+            "refId": "B",
+            "legendFormat": "TX {{device}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "Bps",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 109,
+        "gridPos": {
+          "x": 0,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Server Status",
+        "description": "Whether the Lemonade server is up and responding (1 = up, 0 = down).\n\nThis metric is based on successful health checks. If this shows 0, the server may be down, unreachable, or timing out.",
+        "targets": [
+          {
+            "expr": "lemonade_server_up",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [
+              {
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  }
+                },
+                "type": "value"
+              },
+              {
+                "options": {
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                },
+                "type": "value"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "red"
+                },
+                {
+                  "value": 1,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "center",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 110,
+        "gridPos": {
+          "x": 6,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Tokens Per Second",
+        "description": "Current token generation rate from the last request.\n\nShows how fast the server is generating tokens. Higher values indicate better performance. This is a per-request value, not an average.",
+        "targets": [
+          {
+            "expr": "lemonade_tokens_per_second",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                },
+                {
+                  "value": 10,
+                  "color": "green"
+                },
+                {
+                  "value": 50,
+                  "color": "yellow"
+                },
+                {
+                  "value": 100,
+                  "color": "orange"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 111,
+        "gridPos": {
+          "x": 12,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Time to First Token",
+        "description": "Time taken to generate the first token from the last request.\n\nLower values indicate faster response times. Includes prompt processing time. Typical values range from 0.1-2 seconds depending on model size and hardware.",
+        "targets": [
+          {
+            "expr": "lemonade_time_to_first_token_seconds",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 0.5,
+                  "color": "yellow"
+                },
+                {
+                  "value": 1.0,
+                  "color": "orange"
+                },
+                {
+                  "value": 2.0,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "s",
+            "decimals": 3
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 116,
+        "gridPos": {
+          "x": 0,
+          "y": 15,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Concurrent Users",
+        "description": "Estimated number of concurrent users based on request patterns.\n\nCalculated from requests within a sliding window. Useful for understanding server load and capacity planning.",
+        "targets": [
+          {
+            "expr": "lemonade_concurrent_users",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                },
+                {
+                  "value": 1,
+                  "color": "green"
+                },
+                {
+                  "value": 10,
+                  "color": "yellow"
+                },
+                {
+                  "value": 50,
+                  "color": "orange"
+                },
+                {
+                  "value": 100,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 117,
+        "gridPos": {
+          "x": 8,
+          "y": 15,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Total Sessions",
+        "description": "Total cumulative number of sessions processed.\n\nEach new request increments this counter. Useful for tracking overall server usage and workload volume over time.",
+        "targets": [
+          {
+            "expr": "lemonade_total_sessions_total",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                },
+                {
+                  "value": 1,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 118,
+        "gridPos": {
+          "x": 16,
+          "y": 15,
+          "w": 8,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Active Requests",
+        "description": "Estimated number of requests currently being processed.\n\nBased on request timestamps and estimated durations. High values indicate the server is handling multiple concurrent requests.",
+        "targets": [
+          {
+            "expr": "lemonade_active_requests",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                },
+                {
+                  "value": 1,
+                  "color": "green"
+                },
+                {
+                  "value": 10,
+                  "color": "yellow"
+                },
+                {
+                  "value": 50,
+                  "color": "orange"
+                },
+                {
+                  "value": 100,
+                  "color": "red"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 119,
+        "gridPos": {
+          "x": 0,
+          "y": 19,
+          "w": 12,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade llama.cpp Backend Throughput",
+        "description": "Prompt Throughput: Average tokens per second processed during prompt phase.\nGeneration Throughput: Average tokens per second generated during inference.\n\nHigher values indicate better performance. Prompt throughput is typically much higher than generation throughput.",
+        "targets": [
+          {
+            "expr": "lemonade_llamacpp_prompt_tokens_per_second",
+            "refId": "A",
+            "legendFormat": "{{model_name}} - Prompt"
+          },
+          {
+            "expr": "lemonade_llamacpp_predicted_tokens_per_second",
+            "refId": "B",
+            "legendFormat": "{{model_name}} - Generation"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 120,
+        "gridPos": {
+          "x": 12,
+          "y": 19,
+          "w": 12,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade llama.cpp Backend Requests",
+        "description": "Processing: Number of requests currently being processed by the backend.\nDeferred: Number of requests waiting in queue (deferred due to capacity limits).\n\nHigh deferred counts indicate the backend is at capacity. Monitor this to detect when additional backends or resources are needed.",
+        "targets": [
+          {
+            "expr": "lemonade_llamacpp_requests_processing",
+            "refId": "A",
+            "legendFormat": "{{model_name}} Processing"
+          },
+          {
+            "expr": "lemonade_llamacpp_requests_deferred",
+            "refId": "B",
+            "legendFormat": "{{model_name}} Deferred"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 121,
+        "gridPos": {
+          "x": 0,
+          "y": 25,
+          "w": 24,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade llama.cpp Generation Load Factor",
+        "description": "Generation load factor: ratio of generation time to wall clock time.\n\nValues range from 0.0 to 1.0+:\n- 0.0-0.5: Low load (generation time < 50% of wall clock)\n- 0.5-1.0: Moderate to high load\n- 1.0+: Very high load (multiple concurrent requests)\n\nCalculated as: increase(generation_time_total[5m]) / 300 - shows generation seconds per wall clock second over 5-minute window.",
+        "targets": [
+          {
+            "expr": "increase(lemonade_llamacpp_tokens_predicted_seconds_total[5m]) / 300",
+            "refId": "A",
+            "legendFormat": "{{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "percentunit",
+            "decimals": 2,
+            "min": 0
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 112,
+        "gridPos": {
+          "x": 18,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "type": "stat",
+        "title": "Lemonade Models Loaded",
+        "description": "Number of models currently loaded in memory.\n\nShows how many models are available for inference. Monitor to ensure models are loaded correctly and track memory usage.",
+        "targets": [
+          {
+            "expr": "lemonade_models_loaded",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "red"
+                },
+                {
+                  "value": 1,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 113,
+        "gridPos": {
+          "x": 0,
+          "y": 9,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade Last Request Tokens",
+        "description": "Token counts from the most recent request over time.\n\nInput: Tokens in the user's prompt.\nOutput: Tokens generated by the model.\nPrompt: Total prompt tokens (may include cached tokens).\n\nUseful for understanding request patterns and token usage.",
+        "targets": [
+          {
+            "expr": "lemonade_input_tokens_last",
+            "refId": "A",
+            "legendFormat": "Input"
+          },
+          {
+            "expr": "lemonade_output_tokens_last",
+            "refId": "B",
+            "legendFormat": "Output"
+          },
+          {
+            "expr": "lemonade_prompt_tokens_last",
+            "refId": "C",
+            "legendFormat": "Prompt"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "blue"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 114,
+        "gridPos": {
+          "x": 8,
+          "y": 9,
+          "w": 16,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade Performance Metrics",
+        "description": "Key performance metrics over time.\n\nTokens/sec: Generation rate from last request.\nTime to First Token: Latency to first token.\nOutput Rate: Average output token rate over 5 minutes.\n\nMonitor these to track server performance and identify bottlenecks.",
+        "targets": [
+          {
+            "expr": "lemonade_tokens_per_second",
+            "refId": "A",
+            "legendFormat": "Tokens/sec"
+          },
+          {
+            "expr": "lemonade_time_to_first_token_seconds",
+            "refId": "B",
+            "legendFormat": "Time to First Token (s)"
+          },
+          {
+            "expr": "rate(lemonade_output_tokens_total[5m])",
+            "refId": "C",
+            "legendFormat": "Output Rate (tokens/s)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 1
+          },
+          "overrides": [
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Time to First Token (s)"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "s"
+                },
+                {
+                  "id": "custom.axisPlacement",
+                  "value": "right"
+                },
+                {
+                  "id": "decimals",
+                  "value": 3
+                }
+              ]
+            },
+            {
+              "matcher": {
+                "id": "byName",
+                "options": "Output Rate (tokens/s)"
+              },
+              "properties": [
+                {
+                  "id": "unit",
+                  "value": "short"
+                },
+                {
+                  "id": "decimals",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 115,
+        "gridPos": {
+          "x": 0,
+          "y": 64,
+          "w": 24,
+          "h": 8
+        },
+        "type": "heatmap",
+        "title": "Lemonade Token Decode Time Histogram",
+        "description": "Distribution of token decode times.\n\nShows how long it takes to decode each token. Heatmap visualization with time buckets on Y-axis and time ranges on X-axis. Lower decode times indicate better performance.",
+        "targets": [
+          {
+            "expr": "sum(rate(lemonade_decode_token_time_seconds_bucket[5m])) by (le)",
+            "refId": "A",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "spectrum"
+            },
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "transparent"
+                },
+                {
+                  "value": 0,
+                  "color": "dark-blue"
+                }
+              ]
+            },
+            "unit": "short",
+            "decimals": 2
+          }
+        },
+        "options": {
+          "calculate": false,
+          "cellGap": 2,
+          "cellValues": {
+            "unit": "short"
+          },
+          "color": {
+            "exponent": 0.5,
+            "fill": "dark-orange",
+            "mode": "spectrum",
+            "reverse": false,
+            "scale": "exponential",
+            "scheme": "Spectral",
+            "steps": 64
+          },
+          "exemplars": {
+            "color": "rgba(255,0,255,0.7)"
+          },
+          "filterValues": {
+            "le": 1e-09
+          },
+          "legend": {
+            "show": true
+          },
+          "rowsFrame": {
+            "layout": "auto"
+          },
+          "tooltip": {
+            "show": true,
+            "yHistogram": false
+          },
+          "yAxis": {
+            "axisPlacement": "left",
+            "reverse": false,
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 122,
+        "gridPos": {
+          "x": 0,
+          "y": 72,
+          "w": 8,
+          "h": 6
+        },
+        "type": "stat",
+        "title": "Lemonade Cache Hit Rate",
+        "description": "KV cache hit rate from the last request (0.0-1.0).\n\nShows what fraction of prompt tokens were served from cache vs processed fresh. Higher values indicate better cache effectiveness, leading to faster responses and lower compute costs.\n\n- >0.8: Excellent cache performance\n- 0.5-0.8: Good cache performance\n- <0.5: Poor cache performance - investigate cache configuration",
+        "targets": [
+          {
+            "expr": "lemonade_cache_hit_rate",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "red"
+                },
+                {
+                  "value": 0.5,
+                  "color": "yellow"
+                },
+                {
+                  "value": 0.8,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "percentunit",
+            "decimals": 2
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "textMode": "value_and_name"
+        }
+      },
+      {
+        "id": 123,
+        "gridPos": {
+          "x": 8,
+          "y": 72,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade Backend Decode Call Rate",
+        "description": "Rate of llama_decode() calls per second for each backend model.\n\nShows backend activity level and generation frequency. Higher rates indicate more active token generation. Useful for comparing model utilization and identifying which models are handling the most requests.",
+        "targets": [
+          {
+            "expr": "rate(lemonade_llamacpp_n_decode_total[5m])",
+            "refId": "A",
+            "legendFormat": "{{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "ops",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 124,
+        "gridPos": {
+          "x": 16,
+          "y": 72,
+          "w": 8,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "Lemonade Token Processing Rates",
+        "description": "Overall token processing rates across all requests.\n\nInput Rate: Average input tokens per second (prompt processing).\nOutput Rate: Average output tokens per second (generation).\n\nShows aggregate system throughput over time. Useful for capacity planning, workload analysis, and tracking overall system performance trends.",
+        "targets": [
+          {
+            "expr": "rate(lemonade_input_tokens_total[5m])",
+            "refId": "A",
+            "legendFormat": "Input Rate"
+          },
+          {
+            "expr": "rate(lemonade_output_tokens_total[5m])",
+            "refId": "B",
+            "legendFormat": "Output Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "tokens/s",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      },
+      {
+        "id": 125,
+        "gridPos": {
+          "x": 0,
+          "y": 78,
+          "w": 24,
+          "h": 6
+        },
+        "type": "timeseries",
+        "title": "GPU Kernel Dispatch Rate",
+        "description": "Rate of GPU kernel dispatches per second.\n\nShows the frequency of GPU kernel launches (decode operations) over time. Higher rates indicate more active GPU computation. This metric tracks the llama_decode() kernel dispatches, providing insight into GPU workload intensity and generation activity.",
+        "targets": [
+          {
+            "expr": "rate(lemonade_llamacpp_n_decode_total[5m])",
+            "refId": "A",
+            "legendFormat": "{{model_name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false,
+                "legend": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                }
+              ]
+            },
+            "unit": "ops",
+            "decimals": 1
+          }
+        },
+        "options": {
+          "tooltip": {
+            "mode": "multi"
+          },
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": [
+        {
+          "current": {
+            "selected": true,
+            "text": "0",
+            "value": "0"
+          },
+          "hide": 0,
+          "label": "GPU ID",
+          "name": "gpu_id",
+          "options": [
+            {
+              "selected": true,
+              "text": "0",
+              "value": "0"
+            }
+          ],
+          "query": {
+            "query": "label_values(amd_gpu_average_package_power, gpu_id)",
+            "refId": "StandardVariableQuery"
+          },
+          "refresh": 1,
+          "regex": "",
+          "skipUrlSync": false,
+          "sort": 1,
+          "type": "query"
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "liveNow": false,
+    "weekStart": "",
+    "uid": "cpu-gpu-monitoring"
+  }
+}
