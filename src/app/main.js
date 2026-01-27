@@ -640,71 +640,6 @@ const getVramUsage = async () => {
   return null;
 };
 
-// Platform-specific NPU utilization detection
-const getNpuUsage = async () => {
-  if (process.platform === 'linux') {
-    // Linux: Read from sysfs (AMD XDNA/Ryzen AI)
-    try {
-      const accelPath = '/sys/class/accel';
-      const devices = await fs.promises.readdir(accelPath).catch((err) => {
-        console.debug('NPU detection: Failed to read /sys/class/accel:', err.code || err.message);
-        return [];
-      });
-
-      for (const device of devices) {
-        const devicePath = path.join(accelPath, device, 'device');
-        const possiblePaths = [
-          path.join(devicePath, 'npu_busy_percent'),
-          path.join(devicePath, 'device_busy_percent'),
-          path.join(accelPath, device, 'busy_percent'),
-        ];
-
-        for (const busyPath of possiblePaths) {
-          try {
-            const content = await fs.promises.readFile(busyPath, 'utf-8');
-            const percent = parseFloat(content.trim());
-            if (!isNaN(percent)) {
-              return percent;
-            }
-          } catch (err) {
-            console.debug(`NPU detection: ${busyPath} not available:`, err.code || err.message);
-          }
-        }
-      }
-      console.debug('NPU detection: No NPU with busy_percent found');
-    } catch (error) {
-      console.error('Failed to read NPU stats from sysfs:', error);
-    }
-    return null;
-
-  } else if (process.platform === 'win32') {
-    // Windows: Use xrt-smi for AMD Ryzen AI NPU
-    return new Promise((resolve) => {
-      const xrtSmiPath = path.join('C:', 'Windows', 'System32', 'AMD', 'xrt-smi.exe');
-      exec(`"${xrtSmiPath}" examine -r aie`, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          console.debug('NPU detection (Windows): xrt-smi query failed:', error.message);
-          resolve(null);
-          return;
-        }
-        const match = stdout.match(/utilization[:\s]+(\d+(?:\.\d+)?)\s*%/i);
-        if (!match) {
-          console.debug('NPU detection (Windows): Could not parse NPU utilization from xrt-smi output');
-        }
-        resolve(match ? parseFloat(match[1]) : null);
-      });
-    });
-
-  } else if (process.platform === 'darwin') {
-    // macOS: Apple Neural Engine has no public utilization API
-    console.debug('NPU detection (macOS): Apple Neural Engine has no public utilization API');
-    return null;
-  }
-
-  console.debug('NPU detection: Unsupported platform:', process.platform);
-  return null;
-};
-
 ipcMain.handle('get-system-stats', async () => {
   try {
     // Get memory info
@@ -722,15 +657,11 @@ ipcMain.handle('get-system-stats', async () => {
     // Get VRAM usage (platform-specific)
     const vramGb = await getVramUsage();
 
-    // Get NPU usage (platform-specific)
-    const npuPercent = await getNpuUsage();
-
     return {
       cpu_percent: cpuPercent !== null ? Math.min(cpuPercent, 100) : null,
       memory_gb: memoryGb,
       gpu_percent: gpuPercent,
       vram_gb: vramGb,
-      npu_percent: npuPercent,
     };
   } catch (error) {
     console.error('Failed to get system stats:', error);
@@ -739,7 +670,6 @@ ipcMain.handle('get-system-stats', async () => {
       memory_gb: 0,
       gpu_percent: null,
       vram_gb: null,
-      npu_percent: null,
     };
   }
 });

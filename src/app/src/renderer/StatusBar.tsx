@@ -13,7 +13,6 @@ interface SystemStats {
   memory_gb: number;
   gpu_percent: number | null;
   vram_gb: number | null;
-  npu_percent: number | null;
 }
 
 const StatusBar: React.FC = () => {
@@ -28,7 +27,6 @@ const StatusBar: React.FC = () => {
     memory_gb: 0,
     gpu_percent: null,
     vram_gb: null,
-    npu_percent: null,
   });
 
   const fetchStats = useCallback(async () => {
@@ -57,7 +55,6 @@ const StatusBar: React.FC = () => {
           memory_gb: stats.memory_gb ?? 0,
           gpu_percent: stats.gpu_percent ?? null,
           vram_gb: stats.vram_gb ?? null,
-          npu_percent: stats.npu_percent ?? null,
         });
       }
     } catch {
@@ -157,14 +154,6 @@ const StatusBar: React.FC = () => {
         <span className="status-bar-label">VRAM:</span>
         <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
       </div>
-      {/* NPU stats: hidden on Linux, shown on Windows only if XDNA2 NPU is detected */}
-      {window.api.platform !== 'linux' &&
-        !(window.api.platform === 'win32' && systemStats.npu_percent === null) && (
-        <div className="status-bar-item">
-          <span className="status-bar-label">NPU:</span>
-          <span className="status-bar-value">{formatPercent(systemStats.npu_percent)}</span>
-        </div>
-      )}
     </div>
   );
 };
