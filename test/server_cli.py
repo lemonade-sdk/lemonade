@@ -16,8 +16,9 @@ Two test modes:
 2. Ephemeral mode (--ephemeral): Each command that needs a server starts its own
 
 Usage:
-    python server_cli.py --server-binary lemonade-server
-    python server_cli.py --server-binary lemonade-server --ephemeral
+    python server_cli.py
+    python server_cli.py --ephemeral
+    python server_cli.py --server-binary /path/to/lemonade-server
 """
 
 import unittest
@@ -27,13 +28,13 @@ import socket
 import sys
 import os
 import argparse
-import platform
 
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    get_default_server_binary,
 )
 
 
@@ -44,28 +45,13 @@ _config = {
 }
 
 
-def _get_default_server_binary():
-    """Get the default server binary path from the build directory."""
-    # Get the workspace root (tests_new/server_cli.py -> workspace root)
-    this_file = os.path.abspath(__file__)
-    tests_new_dir = os.path.dirname(this_file)
-    workspace_root = os.path.dirname(tests_new_dir)
-
-    if platform.system() == "Windows":
-        return os.path.join(
-            workspace_root, "src", "cpp", "build", "Release", "lemonade-server.exe"
-        )
-    else:
-        return os.path.join(workspace_root, "src", "cpp", "build", "lemonade-server")
-
-
 def parse_cli_args():
     """Parse command line arguments for CLI tests."""
     parser = argparse.ArgumentParser(description="Test lemonade-server CLI")
     parser.add_argument(
         "--server-binary",
         type=str,
-        default=_get_default_server_binary(),
+        default=get_default_server_binary(),
         help="Path to lemonade-server binary (default: CMake build output)",
     )
     parser.add_argument(
@@ -201,7 +187,8 @@ class PersistentServerCLITests(CLITestBase):
 
         # Start server in background
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         cls._server_process = subprocess.Popen(
@@ -248,15 +235,14 @@ class PersistentServerCLITests(CLITestBase):
             f"Status should indicate server is running: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_003_list(self):
-    #     """Test list command to show available models."""
-    #     result = self.assertCommandSucceeds(["list"])
-    #     # List should produce some output (model names or empty message)
-    #     self.assertTrue(
-    #         len(result.stdout) > 0,
-    #         "List command should produce output",
-    #     )
+    def test_003_list(self):
+        """Test list command to show available models."""
+        result = self.assertCommandSucceeds(["list"])
+        # List should produce some output (model names or empty message)
+        self.assertTrue(
+            len(result.stdout) > 0,
+            "List command should produce output",
+        )
 
     def test_004_pull(self):
         """Test pull command to download a model."""
@@ -270,22 +256,21 @@ class PersistentServerCLITests(CLITestBase):
             f"Pull should not report errors: {result.stdout}",
         )
 
-    # https://github.com/lemonade-sdk/lemonade/issues/923
-    # def test_005_delete(self):
-    #     """Test delete command to remove a model."""
-    #     # First ensure model exists
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+    def test_005_delete(self):
+        """Test delete command to remove a model."""
+        # First ensure model exists
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
-    #     # Delete the model
-    #     result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
-    #     output = result.stdout.lower() + result.stderr.lower()
-    #     self.assertTrue(
-    #         "success" in output or "deleted" in output or "removed" in output,
-    #         f"Delete should indicate success: {result.stdout}",
-    #     )
+        # Delete the model
+        result = self.assertCommandSucceeds(["delete", ENDPOINT_TEST_MODEL])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "success" in output or "deleted" in output or "removed" in output,
+            f"Delete should indicate success: {result.stdout}",
+        )
 
-    #     # Re-pull for other tests
-    #     run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
+        # Re-pull for other tests
+        run_cli_command(["pull", ENDPOINT_TEST_MODEL], timeout=TIMEOUT_MODEL_OPERATION)
 
 
 class EphemeralCLITests(CLITestBase):
@@ -347,7 +332,8 @@ class EphemeralCLITests(CLITestBase):
 
         # Start server
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         server_process = subprocess.Popen(

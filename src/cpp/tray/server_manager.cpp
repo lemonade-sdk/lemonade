@@ -1,4 +1,3 @@
-#include "lemon_tray/server_manager.h"
 #include "lemon/version.h"
 #include "lemon/recipe_options.h"
 #include <iostream>
@@ -47,12 +46,14 @@
 
 // Use cpp-httplib for HTTP client (must be after Windows headers on Windows)
 // Note: Not using OpenSSL support since we only connect to localhost
-#include <httplib.h>
+#include "lemon_tray/server_manager.h"
 
 namespace lemon_tray {
 
-ServerManager::ServerManager()
+ServerManager::ServerManager(const std::string& host, int port)
     : server_pid_(0)
+    , host_(host)
+    , port_(port)
     , show_console_(false)
     , is_ephemeral_(false)
     , server_started_(false)
@@ -60,6 +61,8 @@ ServerManager::ServerManager()
     , process_handle_(nullptr)
 #endif
 {
+    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
+    api_key_ = api_key_env ? std::string(api_key_env) : "";
 }
 
 ServerManager::~ServerManager() {
@@ -105,10 +108,7 @@ bool ServerManager::start_server(
     is_ephemeral_ = is_ephemeral;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
-
-    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
-    api_key_ = api_key_env ? std::string(api_key_env) : "";
-
+    
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
         return false;
@@ -151,6 +151,34 @@ bool ServerManager::start_server(
     }
     
     DEBUG_LOG(this, "Checking if server is ready...");
+    try {
+        // Use 1 second timeout for quick check
+        make_http_request("/api/v1/models", "GET", "", 1);
+        
+        // Success! Server is ready immediately
+        if (!is_ephemeral) {
+            std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
+            // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
+            std::string display_host = get_connection_host();
+            std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
+            std::cout << "Connect your apps to the endpoint above." << std::endl;
+            std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
+        }
+        
+        server_started_ = true;
+        
+#ifndef _WIN32
+        // Write PID file on Linux for efficient server discovery
+        DEBUG_LOG(this, "About to write PID file (PID: " << server_pid_ << ", Port: " << port_ << ")");
+        write_pid_file();
+#endif
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        DEBUG_LOG(this, "Quick check failed (expected on first run): " << e.what());
+    }
+    
     // Step 3: Server is initializing, wait for it
     std::cout << "Setting things up..." << std::endl;
     
@@ -165,7 +193,7 @@ bool ServerManager::start_server(
             if (!is_ephemeral) {
                 std::cout << "Lemonade Server v" << LEMON_VERSION_STRING << " started on port " << port_ << std::endl;
                 // Display localhost for 0.0.0.0 since that's what users can actually visit in a browser
-                std::string display_host = (host_ == "0.0.0.0") ? "localhost" : host_;
+                std::string display_host = get_connection_host();
                 std::cout << "API endpoint: http://" << display_host << ":" << port_ << "/api/v1" << std::endl;
                 std::cout << "Connect your apps to the endpoint above." << std::endl;
                 std::cout << "Documentation: https://lemonade-server.ai/" << std::endl;
@@ -347,10 +375,6 @@ bool ServerManager::unload_model(const std::string& model_name) {
         }
         return false;
     }
-}
-
-std::string ServerManager::get_base_url() const {
-    return "http://127.0.0.1:" + std::to_string(port_);
 }
 
 // Platform-specific implementations
@@ -797,6 +821,19 @@ void ServerManager::remove_pid_file() {
 
 #endif
 
+httplib::Client ServerManager::make_http_client(int timeout_seconds, int connection_timeout) {
+    // Use the configured host to connect to the server
+    httplib::Client cli(get_connection_host(), port_);
+    cli.set_connection_timeout(connection_timeout, 0);
+    cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
+
+    if (api_key_ != "") {
+        cli.set_bearer_token_auth(api_key_);
+    } 
+    
+    return cli;
+}
+
 std::string ServerManager::make_http_request(
     const std::string& endpoint,
     const std::string& method,
@@ -804,17 +841,7 @@ std::string ServerManager::make_http_request(
     int timeout_seconds)
 {
 
-    // Use the configured host to connect to the server
-    // Special case: 0.0.0.0 is a bind address, not a connect address - use 127.0.0.1 instead
-    std::string connect_host = (host_ == "0.0.0.0") ? "127.0.0.1" : host_;
-    httplib::Client cli(connect_host, port_);
-    cli.set_connection_timeout(10, 0);  // 10 second connection timeout
-    cli.set_read_timeout(timeout_seconds, 0);  // Configurable read timeout
-
-    if (api_key_ != "") {
-        cli.set_bearer_token_auth(api_key_);
-    }
-    
+    httplib::Client cli = make_http_client(timeout_seconds, 10); // 10 second connection timeout
     httplib::Result res;
     
     if (method == "GET") {
@@ -837,7 +864,7 @@ std::string ServerManager::make_http_request(
                 error_msg = "Connection write error";
                 break;
             case httplib::Error::Connection:
-                error_msg = "Failed to connect to server at " + connect_host + ":" + std::to_string(port_);
+                error_msg = "Failed to connect to server at " + get_connection_host() + ":" + std::to_string(port_);
                 break;
             case httplib::Error::SSLConnection:
                 error_msg = "SSL connection error";

@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 9.1.4)
+project(lemon_cpp VERSION 9.2.0)
 
 # Prevent finding Homebrew libraries on macOS to use system ones
 if(APPLE)
@@ -33,38 +33,84 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include(FetchContent)
+# Try system packages first, fall back to FetchContent if not available
+# Define minimum version requirements based on FetchContent git tags
+set(MIN_NLOHMANN_JSON_VERSION "3.11.3")
+set(MIN_CLI11_VERSION "2.4.2")
+set(MIN_CURL_VERSION "8.5.0")
+set(MIN_ZSTD_VERSION "1.5.7")
+set(MIN_HTTPLIB_VERSION "0.26.0")
 
-# ============================================================
-# Common dependency declarations
-# ============================================================
+find_package(PkgConfig QUIET)
 
-# nlohmann/json (MIT License)
-FetchContent_Declare(json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
-)
+# Try to find system packages with version requirements
+find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
+    pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
+    pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+endif()
+find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
+find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
 
-# CLI11 (BSD 3-Clause License)
-FetchContent_Declare(CLI11
-    GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-    GIT_TAG v2.4.2
-)
+# Verify CLI11 version if found
+if(CLI11_INCLUDE_DIRS)
+    if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
+        file(STRINGS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp" CLI11_VERSION_LINE REGEX "^#define CLI11_VERSION ")
+        if(CLI11_VERSION_LINE)
+            string(REGEX REPLACE "^#define CLI11_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" "\\1" CLI11_VERSION "${CLI11_VERSION_LINE}")
+            if(CLI11_VERSION VERSION_LESS MIN_CLI11_VERSION)
+                message(STATUS "System CLI11 version ${CLI11_VERSION} is less than required ${MIN_CLI11_VERSION}")
+                unset(CLI11_INCLUDE_DIRS)
+            endif()
+        endif()
+    endif()
+endif()
 
-# libcurl (curl license - MIT/X derivate)
-FetchContent_Declare(curl
-    GIT_REPOSITORY https://github.com/curl/curl.git
-    GIT_TAG curl-8_5_0
-    EXCLUDE_FROM_ALL
-)
+# Determine which dependencies need to be fetched
+set(USE_SYSTEM_JSON ${nlohmann_json_FOUND})
+set(USE_SYSTEM_CURL ${CURL_FOUND})
+set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
+set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
+set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 
-# zstd (BSD License) - required by httplib for compression
-FetchContent_Declare(zstd
-    GIT_REPOSITORY https://github.com/facebook/zstd.git
-    GIT_TAG v1.5.7
-    SOURCE_SUBDIR build/cmake
-    EXCLUDE_FROM_ALL
-)
+if(USE_SYSTEM_JSON)
+    message(STATUS "Using system nlohmann_json (>= ${MIN_NLOHMANN_JSON_VERSION})")
+else()
+    message(STATUS "System nlohmann_json not found or version < ${MIN_NLOHMANN_JSON_VERSION}, will use FetchContent")
+endif()
+
+if(USE_SYSTEM_CURL)
+    message(STATUS "Using system libcurl (version ${CURL_VERSION}, >= ${MIN_CURL_VERSION})")
+else()
+    message(STATUS "System libcurl not found or version < ${MIN_CURL_VERSION}, will use FetchContent")
+endif()
+
+if(USE_SYSTEM_ZSTD)
+    message(STATUS "Using system zstd (version ${ZSTD_VERSION}, >= ${MIN_ZSTD_VERSION})")
+else()
+    message(STATUS "System zstd not found or version < ${MIN_ZSTD_VERSION}, will use FetchContent")
+endif()
+
+if(USE_SYSTEM_CLI11)
+    if(CLI11_VERSION)
+        message(STATUS "Using system CLI11 (version ${CLI11_VERSION}, >= ${MIN_CLI11_VERSION})")
+    else()
+        message(STATUS "Using system CLI11 (>= ${MIN_CLI11_VERSION})")
+    endif()
+else()
+    message(STATUS "System CLI11 not found or version < ${MIN_CLI11_VERSION}, will use FetchContent")
+endif()
+
+if(USE_SYSTEM_HTTPLIB)
+    if(HTTPLIB_VERSION)
+        message(STATUS "Using system cpp-httplib (version ${HTTPLIB_VERSION}, >= ${MIN_HTTPLIB_VERSION})")
+    else()
+        message(STATUS "Using system cpp-httplib (>= ${MIN_HTTPLIB_VERSION})")
+    endif()
+else()
+    message(STATUS "System cpp-httplib not found or version < ${MIN_HTTPLIB_VERSION}, will use FetchContent")
+endif()
 
 if(APPLE)
     # brotli (MIT License) - required by httplib for compression on macOS
@@ -75,13 +121,6 @@ if(APPLE)
     )
 endif()
 
-# cpp-httplib (MIT License)
-FetchContent_Declare(httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG v0.26.0
-)
-
-
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -91,43 +130,86 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
 # Link to MSVC library statically
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Fetch missing dependencies
+if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB)
+    include(FetchContent)
+endif()
+
 # === nlohmann/json ===
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-set(JSON_Install OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(json)
+if(NOT USE_SYSTEM_JSON)
+    FetchContent_Declare(json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v${MIN_NLOHMANN_JSON_VERSION}
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    set(JSON_Install OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(json)
+endif()
 
 # === CLI11 ===
-set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
-set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(CLI11)
+if(NOT USE_SYSTEM_CLI11)
+    FetchContent_Declare(CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG v${MIN_CLI11_VERSION}
+    )
+    set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
+    set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(CLI11)
+endif()
 
 # === curl ===
-set(BUILD_STATIC_LIBS ON CACHE INTERNAL "")
-set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
-set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
-set(CURL_DISABLE_INSTALL ON CACHE INTERNAL "")
-set(HTTP_ONLY ON CACHE INTERNAL "")  # Disable protocols other than HTTP/S
-# Configure platform-specific SSL backends
-if(WIN32)
-    set(CURL_STATIC_CRT ON CACHE INTERNAL "")  # Use static runtime on Windows
-    set(CURL_USE_SCHANNEL ON CACHE INTERNAL "")
-    set(CMAKE_USE_SCHANNEL ON CACHE INTERNAL "")
-elseif(APPLE)
-    set(CURL_USE_SECTRANSP ON CACHE INTERNAL "")
-else()
-    set(CURL_USE_OPENSSL ON CACHE INTERNAL "")
+if(NOT USE_SYSTEM_CURL)
+    string(REPLACE "." "_" CURL_TAG_VERSION "${MIN_CURL_VERSION}")
+    FetchContent_Declare(curl
+        GIT_REPOSITORY https://github.com/curl/curl.git
+        GIT_TAG curl-${CURL_TAG_VERSION}
+        EXCLUDE_FROM_ALL
+    )
+    set(BUILD_STATIC_LIBS ON CACHE INTERNAL "")
+    set(BUILD_CURL_EXE OFF CACHE INTERNAL "")
+    set(CURL_DISABLE_TESTS ON CACHE INTERNAL "")
+    set(CURL_DISABLE_INSTALL ON CACHE INTERNAL "")
+    set(HTTP_ONLY ON CACHE INTERNAL "")
+    if(WIN32)
+        set(CURL_STATIC_CRT ON CACHE INTERNAL "")
+        set(CURL_USE_SCHANNEL ON CACHE INTERNAL "")
+        set(CMAKE_USE_SCHANNEL ON CACHE INTERNAL "")
+    elseif(APPLE)
+        set(CURL_USE_SECTRANSP ON CACHE INTERNAL "")
+    else()
+        set(CURL_USE_OPENSSL ON CACHE INTERNAL "")
+    endif()
+    FetchContent_MakeAvailable(curl)
 endif()
-# Fetch curl (EXCLUDE_FROM_ALL prevents installation)
-FetchContent_MakeAvailable(curl)
 
 # === zstd ===
-set(ZSTD_BUILD_STATIC ON CACHE INTERNAL "")
-set(ZSTD_BUILD_PROGRAMS OFF CACHE INTERNAL "")
-set(ZSTD_BUILD_SHARED OFF CACHE INTERNAL "")
-set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
-# Fetch zstd (EXCLUDE_FROM_ALL prevents installation)
-FetchContent_MakeAvailable(zstd)
-add_library(zstd::libzstd ALIAS libzstd_static)  # Alias for httplib
+if(NOT USE_SYSTEM_ZSTD)
+    FetchContent_Declare(zstd
+        GIT_REPOSITORY https://github.com/facebook/zstd.git
+        GIT_TAG v${MIN_ZSTD_VERSION}
+        SOURCE_SUBDIR build/cmake
+        EXCLUDE_FROM_ALL
+    )
+    set(ZSTD_BUILD_STATIC ON CACHE INTERNAL "")
+    set(ZSTD_BUILD_PROGRAMS OFF CACHE INTERNAL "")
+    set(ZSTD_BUILD_SHARED OFF CACHE INTERNAL "")
+    set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(zstd)
+    add_library(zstd::libzstd ALIAS libzstd_static)
+else()
+    # Create an imported target for system zstd so httplib can find it
+    if(NOT TARGET zstd::libzstd)
+        add_library(zstd::libzstd UNKNOWN IMPORTED)
+        # Find the actual library file
+        find_library(ZSTD_LIBRARY NAMES zstd)
+        if(ZSTD_LIBRARY)
+            set_target_properties(zstd::libzstd PROPERTIES
+                IMPORTED_LOCATION "${ZSTD_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}"
+            )
+        endif()
+    endif()
+endif()
 
 if(APPLE)
     # === brotli ===
@@ -163,23 +245,19 @@ set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
 set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")           # Skip zstd checks
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip zstd checks
 set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")           # zstd is provided
+set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")                # Prevent installing
+FetchContent_MakeAvailable(httplib)
+# Patch httplib includes due to manual zstd fetching
+target_include_directories(httplib INTERFACE
+    ${zstd_SOURCE_DIR}/lib
+    ${zstd_SOURCE_DIR}/lib/common
+)
+
 # Use brotli for compression on macOS
 if(APPLE)
     set(HTTPLIB_REQUIRE_BROTLI OFF CACHE INTERNAL "")           # Skip brotli checks
     set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip brotli checks
     set(HTTPLIB_IS_USING_BROTLI ON CACHE INTERNAL "")           # brotli is provided
-endif()
-set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")                # Prevent installing
-FetchContent_MakeAvailable(httplib)
-# Patch httplib includes due to manual zstd and brotli fetching
-target_include_directories(httplib INTERFACE
-    ${zstd_SOURCE_DIR}/lib
-    ${zstd_SOURCE_DIR}/lib/common
-)
-if(APPLE)
-    target_include_directories(httplib INTERFACE
-        ${brotli_SOURCE_DIR}/c/include
-    )
 endif()
 
 
@@ -401,12 +479,41 @@ endif()
 # ============================================================
 
 # Common linking
-target_link_libraries(${EXECUTABLE_NAME} PRIVATE
-    httplib::httplib
-    nlohmann_json::nlohmann_json
-    CLI11::CLI11
-    libcurl
-)
+if(USE_SYSTEM_JSON)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE nlohmann_json::nlohmann_json)
+endif()
+
+if(USE_SYSTEM_HTTPLIB)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE cpp-httplib)
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE httplib::httplib)
+endif()
+
+if(USE_SYSTEM_CLI11)
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CLI11_INCLUDE_DIRS})
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE CLI11::CLI11)
+endif()
+
+if(USE_SYSTEM_CURL)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${CURL_LIBRARIES})
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${CURL_INCLUDE_DIRS})
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${CURL_CFLAGS_OTHER})
+else()
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE libcurl)
+endif()
+
+if(USE_SYSTEM_ZSTD)
+    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${ZSTD_LIBRARIES})
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${ZSTD_INCLUDE_DIRS})
+    target_compile_options(${EXECUTABLE_NAME} PRIVATE ${ZSTD_CFLAGS_OTHER})
+endif()
+
+if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
+    target_include_directories(${EXECUTABLE_NAME} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
+endif()
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
 if(APPLE)

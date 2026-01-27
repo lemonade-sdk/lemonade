@@ -25,6 +25,8 @@ using pid_t = DWORD;
 #include <sys/types.h>
 #endif
 
+#include <httplib.h>
+
 namespace lemon_tray {
 
 enum class LogLevel {
@@ -36,7 +38,7 @@ enum class LogLevel {
 
 class ServerManager {
 public:
-    ServerManager();
+    ServerManager(const std::string& host, int port);
     ~ServerManager();
     
     // Server lifecycle
@@ -67,6 +69,7 @@ public:
     bool set_log_level(LogLevel level);
     
     int get_port() const { return port_; }
+    std::string get_connection_host() const { return (host_ == "0.0.0.0") ? "localhost" : host_; }
     
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
@@ -82,9 +85,7 @@ public:
         const std::string& body = "",
         int timeout_seconds = 5
     );
-    
-    // Utility
-    std::string get_base_url() const;
+    httplib::Client make_http_client(int timeout_seconds, int connection_timeout);
     
 private:
     // Platform-specific process management
