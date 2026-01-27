@@ -1507,22 +1507,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             return;
         }
 
-        // Check if current model supports responses API (only oga-* recipes)
-        std::string loaded_recipe = router_->get_loaded_recipe();
-        if (loaded_recipe.find("oga-") == std::string::npos && loaded_recipe != "oga") {
-            std::cerr << "[Server ERROR] Responses API not supported for recipe: " << loaded_recipe << std::endl;
-            res.status = 422;
-            nlohmann::json error_response = {
-                {"error", {
-                    {"message", "Responses API not supported for recipe: " + loaded_recipe},
-                    {"type", "unsupported_recipe"},
-                    {"code", "responses_not_supported"}
-                }}
-            };
-            res.set_content(error_response.dump(), "application/json");
-            return;
-        }
-
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 

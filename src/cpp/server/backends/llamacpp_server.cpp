@@ -659,11 +659,8 @@ json LlamaCppServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
 }
 
-json LlamaCppServer::responses(const json& /*request*/) {
-    // Responses API is not supported for llamacpp backend
-    return ErrorResponse::from_exception(
-        UnsupportedOperationException("Responses API", "llamacpp")
-    );
+json LlamaCppServer::responses(const json& request) {
+    return forward_request("/v1/responses", request);
 }
 
 std::string LlamaCppServer::find_executable_in_install_dir(const std::string& install_dir) {
