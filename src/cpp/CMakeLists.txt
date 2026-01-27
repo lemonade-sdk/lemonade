@@ -62,23 +62,6 @@ if(CLI11_INCLUDE_DIRS)
     endif()
 endif()
 
-# Verify httplib version if found (when not found via pkg-config)
-if(HTTPLIB_INCLUDE_DIRS AND NOT HTTPLIB_FOUND)
-    if(EXISTS "${HTTPLIB_INCLUDE_DIRS}/httplib.h")
-        file(STRINGS "${HTTPLIB_INCLUDE_DIRS}/httplib.h" HTTPLIB_VERSION_LINE REGEX "^#define CPPHTTPLIB_VERSION \"[0-9]+\\.[0-9]+\\.[0-9]+\"")
-        if(HTTPLIB_VERSION_LINE)
-            string(REGEX REPLACE "^#define CPPHTTPLIB_VERSION \"([0-9]+\\.[0-9]+\\.[0-9]+)\"" "\\1" HTTPLIB_VERSION "${HTTPLIB_VERSION_LINE}")
-            if(HTTPLIB_VERSION VERSION_LESS MIN_HTTPLIB_VERSION)
-                message(STATUS "System cpp-httplib version ${HTTPLIB_VERSION} is less than required ${MIN_HTTPLIB_VERSION}")
-                unset(HTTPLIB_INCLUDE_DIRS)
-            else()
-                # Set HTTPLIB_FOUND if version is acceptable
-                set(HTTPLIB_FOUND TRUE)
-            endif()
-        endif()
-    endif()
-endif()
-
 # Determine which dependencies need to be fetched
 set(USE_SYSTEM_JSON ${nlohmann_json_FOUND})
 set(USE_SYSTEM_CURL ${CURL_FOUND})
