@@ -34,17 +34,30 @@ runs:
         PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
         echo "Previous release: ${PREVIOUS_TAG:-none}"
         
+        # Check if target tag exists, if not use HEAD
+        TAG_EXISTS=$(git tag -l "$TAG_NAME")
+        if [ -z "$TAG_EXISTS" ]; then
+          echo "Tag $TAG_NAME doesn't exist yet, using HEAD for preview"
+          TARGET_COMMIT="HEAD"
+        else
+          TARGET_COMMIT="$TAG_NAME"
+        fi
+        
         # Generate auto release notes from GitHub
         if [ -n "$PREVIOUS_TAG" ]; then
           AUTO_NOTES=$(gh api repos/$REPO/releases/generate-notes \
             -f tag_name="$TAG_NAME" \
+            -f target_commitish="$TARGET_COMMIT" \
             -f previous_tag_name="$PREVIOUS_TAG" \
             --jq '.body' 2>/dev/null || echo "")
         else
           AUTO_NOTES=$(gh api repos/$REPO/releases/generate-notes \
             -f tag_name="$TAG_NAME" \
+            -f target_commitish="$TARGET_COMMIT" \
             --jq '.body' 2>/dev/null || echo "")
         fi
+        
+        echo "AUTO_NOTES length: ${#AUTO_NOTES}"
         
         # Extract What's Changed section and wrap in details tag
         WHATS_CHANGED=""
