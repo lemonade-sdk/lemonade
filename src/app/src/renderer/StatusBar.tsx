@@ -157,10 +157,14 @@ const StatusBar: React.FC = () => {
         <span className="status-bar-label">VRAM:</span>
         <span className="status-bar-value">{formatVram(systemStats.vram_gb)}</span>
       </div>
-      <div className="status-bar-item">
-        <span className="status-bar-label">NPU:</span>
-        <span className="status-bar-value">{formatPercent(systemStats.npu_percent)}</span>
-      </div>
+      {/* NPU stats: hidden on Linux, shown on Windows only if XDNA2 NPU is detected */}
+      {window.api.platform !== 'linux' &&
+        !(window.api.platform === 'win32' && systemStats.npu_percent === null) && (
+        <div className="status-bar-item">
+          <span className="status-bar-label">NPU:</span>
+          <span className="status-bar-value">{formatPercent(systemStats.npu_percent)}</span>
+        </div>
+      )}
     </div>
   );
 };
