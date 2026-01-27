@@ -199,6 +199,19 @@ if(NOT USE_SYSTEM_ZSTD)
     set(ZSTD_BUILD_TESTS OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(zstd)
     add_library(zstd::libzstd ALIAS libzstd_static)
+else()
+    # Create an imported target for system zstd so httplib can find it
+    if(NOT TARGET zstd::libzstd)
+        add_library(zstd::libzstd UNKNOWN IMPORTED)
+        # Find the actual library file
+        find_library(ZSTD_LIBRARY NAMES zstd)
+        if(ZSTD_LIBRARY)
+            set_target_properties(zstd::libzstd PROPERTIES
+                IMPORTED_LOCATION "${ZSTD_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${ZSTD_INCLUDE_DIRS}"
+            )
+        endif()
+    endif()
 endif()
 
 # === httplib ===
