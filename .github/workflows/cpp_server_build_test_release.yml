@@ -580,6 +580,8 @@ jobs:
               echo "Running CLI tests..."
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY"
               $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --ephemeral
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --listen-all
+              $VENV_PYTHON test/server_cli.py --server-binary "$SERVER_BINARY" --api-key
           else
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --server-binary "$SERVER_BINARY"

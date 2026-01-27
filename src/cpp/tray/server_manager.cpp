@@ -105,7 +105,9 @@ bool ServerManager::start_server(
     is_ephemeral_ = is_ephemeral;
     extra_models_dir_ = extra_models_dir;
     host_ = host;
-    
+
+    DEBUG_LOG(this, "Starting server listening at " << host_ << ":" << port);
+
     if (!spawn_process()) {
         std::cerr << "Failed to spawn server process" << std::endl;
         return false;
@@ -113,7 +115,7 @@ bool ServerManager::start_server(
     
     // Step 1: Wait for server process to start (check health endpoint)
     DEBUG_LOG(this, "Waiting for server process to start...");
-    DEBUG_LOG(this, "Will check health at: http://" << host_ << ":" << port_ << "/api/v1/health");
+    DEBUG_LOG(this, "Will check health at: http://" << get_connection_host() << ":" << port_ << "/api/v1/health");
     
     bool process_started = false;
     for (int i = 0; i < 5; ++i) {  // Wait up to 5 seconds
