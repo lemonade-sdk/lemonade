@@ -100,6 +100,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [isProcessingTranscription, setIsProcessingTranscription] = useState(false);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Image generation model state
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [imageHistory, setImageHistory] = useState<Array<{
+    prompt: string;
+    imageData: string;  // base64 data
+    timestamp: number;
+  }>>([]);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+
+  // Image generation settings
+  interface ImageSettings {
+    steps: number;
+    cfgScale: number;
+    width: number;
+    height: number;
+    seed: number;
+  }
+
+  const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
+    steps: 20,
+    cfgScale: 7.0,
+    width: 512,
+    height: 512,
+    seed: -1,
+  };
+
+  const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
+
 useEffect(() => {
   fetchLoadedModel();
   const loadSettings = async () => {
@@ -196,6 +224,30 @@ useEffect(() => {
     }
   }, [editingIndex, editingValue]);
 
+  // Load model-specific image defaults when the selected model changes
+  useEffect(() => {
+    if (isImageGenerationModel() && selectedModel) {
+      const modelInfo = modelsData[selectedModel];
+      const defaults = modelInfo?.image_defaults;
+      setImageSettings({
+        steps: defaults?.steps ?? DEFAULT_IMAGE_SETTINGS.steps,
+        cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
+        width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
+        height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
+        seed: -1,  // Always reset seed to random
+      });
+    }
+  }, [selectedModel, modelsData]);
+
+  // Auto-scroll to bottom when new images are generated
+  useEffect(() => {
+    if (imageHistory.length > 0) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  }, [imageHistory.length]);
+
   const checkIfAtBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
@@ -270,16 +322,32 @@ const fetchLoadedModel = async () => {
 
   const isTranscriptionModel = (): boolean => {
     if (!selectedModel) return false;
-    
+
     const modelInfo = modelsData[selectedModel];
-    
+
     return modelInfo?.recipe === 'whispercpp';
   };
 
-  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' => {
+  const isImageGenerationModel = (): boolean => {
+    if (!selectedModel) return false;
+
+    const modelInfo = modelsData[selectedModel];
+
+    // Debug logging
+    console.log('[ImageDetection] selectedModel:', selectedModel);
+    console.log('[ImageDetection] modelInfo:', modelInfo);
+    console.log('[ImageDetection] recipe:', modelInfo?.recipe);
+    console.log('[ImageDetection] labels:', modelInfo?.labels);
+
+    return modelInfo?.recipe === 'sd-cpp' ||
+           modelInfo?.labels?.includes('image') || false;
+  };
+
+  const getModelType = (): 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' => {
     if (isEmbeddingModel()) return 'embedding';
     if (isRerankingModel()) return 'reranking';
     if (isTranscriptionModel()) return 'transcription';
+    if (isImageGenerationModel()) return 'image';
     return 'llm';
   };
 
@@ -1041,7 +1109,7 @@ const sendMessage = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     // Clear all messages and reset state
     setMessages([]);
     setInputValue('');
@@ -1053,13 +1121,26 @@ const sendMessage = async () => {
     setExpandedThinking(new Set());
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-    
+
     // Clear embedding/reranking state
     setEmbeddingInput('');
     setEmbeddingHistory([]);
     setRerankQuery('');
     setRerankDocuments('');
     setRerankHistory([]);
+
+    // Clear image generation state
+    setImagePrompt('');
+    setImageHistory([]);
+    setIsGeneratingImage(false);
+
+    // Clear transcription state
+    setTranscriptionFile(null);
+    setTranscriptionHistory([]);
+    setIsProcessingTranscription(false);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
   };
 
   const handleEmbedding = async () => {
@@ -1227,7 +1308,7 @@ const sendMessage = async () => {
       if (audioFileInputRef.current) {
         audioFileInputRef.current.value = '';
       }
-      
+
     } catch (error: any) {
       console.error('Failed to transcribe:', error);
       alert(`Failed to transcribe: ${error.message || 'Unknown error'}`);
@@ -1236,12 +1317,79 @@ const sendMessage = async () => {
     }
   };
 
+  const handleImageGeneration = async () => {
+    if (!imagePrompt.trim() || isGeneratingImage) return;
+
+    const currentPrompt = imagePrompt;
+    setIsGeneratingImage(true);
+    setImagePrompt(''); // Clear input immediately
+
+    try {
+      // Build request body with current settings
+      const requestBody: Record<string, unknown> = {
+        model: selectedModel,
+        prompt: currentPrompt,
+        size: `${imageSettings.width}x${imageSettings.height}`,
+        steps: imageSettings.steps,
+        cfg_scale: imageSettings.cfgScale,
+        response_format: 'b64_json'
+      };
+
+      // Only include seed if it's positive (otherwise random)
+      if (imageSettings.seed > 0) {
+        requestBody.seed = imageSettings.seed;
+      }
+
+      const response = await serverFetch('/images/generations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.data && data.data[0] && data.data[0].b64_json) {
+        setImageHistory(prev => [...prev, {
+          prompt: currentPrompt,
+          imageData: data.data[0].b64_json,
+          timestamp: Date.now()
+        }]);
+      } else {
+        throw new Error('Unexpected response format');
+      }
+
+    } catch (error: any) {
+      console.error('Failed to generate image:', error);
+      alert(`Failed to generate image: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const saveGeneratedImage = (imageData: string, prompt: string) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${imageData}`;
+    // Create filename from prompt (sanitized, max 30 chars)
+    const sanitizedPrompt = prompt.slice(0, 30).replace(/[^a-z0-9]/gi, '_');
+    const filename = `lemonade_${sanitizedPrompt}_${Date.now()}.png`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (!isVisible) return null;
 
   const modelType = getModelType();
-  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings' 
+  const headerTitle = modelType === 'embedding' ? 'Lemonade Embeddings'
                     : modelType === 'reranking' ? 'Lemonade Reranking'
                     : modelType === 'transcription' ? 'Lemonade Transcriber'
+                    : modelType === 'image' ? 'Lemonade Image Generator'
                     : 'LLM Chat';
 
   // Reusable components
@@ -1606,6 +1754,164 @@ const sendMessage = async () => {
                   onClick={handleTranscription} 
                   disabled={!transcriptionFile || isProcessingTranscription} 
                 />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Image Generation UI */}
+      {modelType === 'image' && (
+        <>
+          <div className="chat-messages" ref={messagesContainerRef}>
+            {imageHistory.length === 0 && (
+              <EmptyState title="Lemonade Image Generator" />
+            )}
+
+            {imageHistory.map((item, index) => (
+              <div key={index} className="image-generation-item">
+                <div className="image-prompt-display">
+                  <span className="prompt-label">Prompt:</span>
+                  <span className="prompt-text">{item.prompt}</span>
+                </div>
+
+                <div className="generated-image-container">
+                  <img
+                    src={`data:image/png;base64,${item.imageData}`}
+                    alt={item.prompt}
+                    className="generated-image"
+                  />
+                  <button
+                    className="save-image-button"
+                    onClick={() => saveGeneratedImage(item.imageData, item.prompt)}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Save Image
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {isGeneratingImage && (
+              <div className="image-generating-indicator">
+                <div className="generating-spinner"></div>
+                <span>Generating image...</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Image Settings Panel */}
+          <div className="image-settings-panel">
+            <div className="image-setting">
+              <label>Steps</label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={imageSettings.steps}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, steps: parseInt(e.target.value) || 1 }))}
+                disabled={isGeneratingImage}
+              />
+            </div>
+            <div className="image-setting">
+              <label>CFG Scale</label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                step="0.5"
+                value={imageSettings.cfgScale}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, cfgScale: parseFloat(e.target.value) || 1 }))}
+                disabled={isGeneratingImage}
+              />
+            </div>
+            <div className="image-setting">
+              <label>Width</label>
+              <select
+                value={imageSettings.width}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, width: parseInt(e.target.value) }))}
+                disabled={isGeneratingImage}
+              >
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div className="image-setting">
+              <label>Height</label>
+              <select
+                value={imageSettings.height}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, height: parseInt(e.target.value) }))}
+                disabled={isGeneratingImage}
+              >
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div className="image-setting">
+              <label>Seed</label>
+              <input
+                type="number"
+                min="-1"
+                value={imageSettings.seed}
+                onChange={(e) => setImageSettings(prev => ({ ...prev, seed: parseInt(e.target.value) || -1 }))}
+                disabled={isGeneratingImage}
+                placeholder="-1 = random"
+              />
+            </div>
+          </div>
+
+          <div className="chat-input-container">
+            <div className="chat-input-wrapper">
+              <textarea
+                ref={inputTextareaRef}
+                className="chat-input"
+                value={imagePrompt}
+                onChange={(e) => {
+                  setImagePrompt(e.target.value);
+                  adjustTextareaHeight(e.target);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleImageGeneration();
+                  }
+                }}
+                placeholder="Describe the image you want to generate..."
+                rows={1}
+                disabled={isGeneratingImage}
+              />
+              <div className="chat-controls">
+                <div className="chat-controls-left">
+                  <ModelSelector disabled={isGeneratingImage} />
+                </div>
+                <button
+                  className="chat-send-button"
+                  onClick={handleImageGeneration}
+                  disabled={!imagePrompt.trim() || isGeneratingImage}
+                  title="Generate"
+                >
+                  {isGeneratingImage ? (
+                    <TypingIndicator size="small" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        transform="translate(-1, 1)"
+                      />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
           </div>
