@@ -333,7 +333,7 @@ class EphemeralCLITests(CLITestBase):
         # Start server
         cmd = [_config["server_binary"], "serve"]
         # Add --no-tray on Windows or in CI environments (no display server in containers)
-        if os.name == "nt" or os.getenv("CI") or os.getenv("GITHUB_ACTIONS"):
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         server_process = subprocess.Popen(
