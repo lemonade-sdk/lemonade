@@ -69,7 +69,7 @@ public:
     bool set_log_level(LogLevel level);
     
     int get_port() const { return port_; }
-    std::string get_connection_host() const { return (host_ == "0.0.0.0") ? "localhost" : host_; }
+    std::string get_connection_host() const { return (host_ == "0.0.0.0") ? "127.0.0.1" : host_; }
     
     // API communication (returns JSON or throws exception)
     nlohmann::json get_health();
