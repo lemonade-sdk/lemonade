@@ -6,7 +6,12 @@
     "metal": "b7426",
     "cpu": "b7426"
   },
-  "whispercpp": "v1.8.2",
+  "whispercpp": {
+    "cpu": "v1.8.2",
+    "vulkan": "v1.8.2",
+    "rocm": "v1.8.2",
+    "npu": "v1.8.2"
+  },
   "flm": {
     "version": "v0.9.26",
     "min_npu_driver": "32.0.203.304"

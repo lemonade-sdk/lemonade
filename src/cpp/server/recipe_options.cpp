@@ -5,20 +5,22 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-static const json DEFAULTS = {{"ctx_size", 4096}, {"llamacpp_backend", "vulkan"}, {"llamacpp_args", ""}};
+static const json DEFAULTS = {{"ctx_size", 4096}, {"llamacpp_backend", "vulkan"}, {"llamacpp_args", ""}, {"whispercpp_backend", "cpu"}};
 static const json CLI_OPTIONS = {
     {"--ctx-size", {{"option_name", "ctx_size"}, {"help", "Context size for the model"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"help", "LlamaCpp backend to use (vulkan, rocm, metal, cpu)"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}}},
+    {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"help", "WhisperCpp backend to use (cpu, vulkan, rocm, npu)"}}},
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
+    } else if (recipe == "whispercpp") {
+        return {"whispercpp_backend"};
     } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
         return {"ctx_size"};
     } else {
-        // "whispercpp" has currently no option
         return {};
     }
 }

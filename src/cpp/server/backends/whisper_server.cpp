@@ -29,30 +29,43 @@ namespace lemon {
 namespace backends {
 
 // Helper to get whisper.cpp version from configuration
-static std::string get_whisper_version() {
+static std::string get_whisper_version(const std::string& backend) {
     std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
     try {
         json config = utils::JsonUtils::load_from_file(config_path);
 
-        if (!config.contains("whispercpp") || !config["whispercpp"].is_string()) {
-            // Default version if not in config
-            return "v1.8.2";
+        if (!config.contains("whispercpp") || !config["whispercpp"].is_object()) {
+            throw std::runtime_error("backend_versions.json is missing 'whispercpp' section");
         }
 
-        return config["whispercpp"].get<std::string>();
+        const auto& whispercpp_config = config["whispercpp"];
+
+        if (!whispercpp_config.contains(backend) || !whispercpp_config[backend].is_string()) {
+            throw std::runtime_error("backend_versions.json is missing version for backend: " + backend);
+        }
+
+        std::string version = whispercpp_config[backend].get<std::string>();
+        std::cout << "[WhisperServer] Using " << backend << " version from config: " << version << std::endl;
+        return version;
 
     } catch (const std::exception& e) {
-        std::cerr << "[WhisperServer] Warning: Could not load version from config: "
-                  << e.what() << std::endl;
-        std::cerr << "[WhisperServer] Using default version: v1.8.2" << std::endl;
-        return "v1.8.2";
+        std::cerr << "\n" << std::string(70, '=') << std::endl;
+        std::cerr << "ERROR: Failed to load whisper.cpp version from configuration" << std::endl;
+        std::cerr << std::string(70, '=') << std::endl;
+        std::cerr << "\nConfig file: " << config_path << std::endl;
+        std::cerr << "Backend: " << backend << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "\nThe backend_versions.json file is required and must contain valid" << std::endl;
+        std::cerr << "version information for all whisper.cpp backends." << std::endl;
+        std::cerr << std::string(70, '=') << std::endl << std::endl;
+        throw;
     }
 }
 
 // Helper to get the install directory for whisper-server
-static std::string get_whisper_install_dir() {
-    return (fs::path(get_downloaded_bin_dir()) / "whisper").string();
+static std::string get_whisper_install_dir(const std::string& backend) {
+    return (fs::path(get_downloaded_bin_dir()) / "whisper" / backend).string();
 }
 
 // Helper to extract ZIP files
@@ -128,8 +141,11 @@ std::string WhisperServer::find_executable_in_install_dir(const std::string& ins
     return "";
 }
 
-std::string WhisperServer::find_external_whisper_server() {
-    const char* whisper_bin_env = std::getenv("LEMONADE_WHISPERCPP_BIN");
+std::string WhisperServer::find_external_whisper_server(const std::string& backend) {
+    std::string upper_backend = backend;
+    std::transform(upper_backend.begin(), upper_backend.end(), upper_backend.begin(), ::toupper);
+    std::string env = "LEMONADE_WHISPERCPP_" + upper_backend + "_BIN";
+    const char* whisper_bin_env = std::getenv(env.c_str());
     if (!whisper_bin_env) {
         return "";
     }
@@ -139,43 +155,49 @@ std::string WhisperServer::find_external_whisper_server() {
     return fs::exists(whisper_bin) ? whisper_bin : "";
 }
 
-std::string WhisperServer::get_whisper_server_path() {
-    std::string exe_path = find_external_whisper_server();
+std::string WhisperServer::get_whisper_server_path(const std::string& backend) {
+    std::string exe_path = find_external_whisper_server(backend);
 
     if (!exe_path.empty()) {
         return exe_path;
     }
 
-    std::string install_dir = get_whisper_install_dir();
+    std::string install_dir = get_whisper_install_dir(backend);
     return find_executable_in_install_dir(install_dir);
 }
 
 void WhisperServer::install(const std::string& backend) {
     std::string install_dir;
     std::string version_file;
+    std::string backend_file;
     std::string expected_version;
-    std::string exe_path = find_external_whisper_server();
+    std::string exe_path = find_external_whisper_server(backend);
     bool needs_install = exe_path.empty();
 
-    if (needs_install) {
-        install_dir = get_whisper_install_dir();
-        version_file = (fs::path(install_dir) / "version.txt").string();
+    // Get expected version from config file
+    expected_version = get_whisper_version(backend);
 
-        // Get expected version from config
-        expected_version = get_whisper_version();
+    if (needs_install) {
+        install_dir = get_whisper_install_dir(backend);
+        version_file = (fs::path(install_dir) / "version.txt").string();
+        backend_file = (fs::path(install_dir) / "backend.txt").string();
 
         // Check if already installed with correct version
         exe_path = find_executable_in_install_dir(install_dir);
         needs_install = exe_path.empty();
 
-        if (!needs_install && fs::exists(version_file)) {
-            std::string installed_version;
+        if (!needs_install && fs::exists(version_file) && fs::exists(backend_file)) {
+            std::string installed_version, installed_backend;
 
-            std::ifstream vf(version_file);
-            std::getline(vf, installed_version);
-            vf.close();
+            // Read version info in a separate scope to ensure files are closed
+            {
+                std::ifstream vf(version_file);
+                std::ifstream bf(backend_file);
+                std::getline(vf, installed_version);
+                std::getline(bf, installed_backend);
+            }  // Files are closed here when ifstream objects go out of scope
 
-            if (installed_version != expected_version) {
+            if (installed_version != expected_version || installed_backend != backend) {
                 std::cout << "[WhisperServer] Upgrading from " << installed_version
                         << " to " << expected_version << std::endl;
                 needs_install = true;
@@ -185,25 +207,66 @@ void WhisperServer::install(const std::string& backend) {
     }
 
     if (needs_install) {
-        std::cout << "[WhisperServer] Installing whisper-server (version: "
-                 << expected_version << ")" << std::endl;
+        std::cout << "[WhisperServer] Installing whisper-server (backend: " << backend
+                 << ", version: " << expected_version << ")" << std::endl;
 
         // Create install directory
         fs::create_directories(install_dir);
 
         // Determine download URL
-        std::string repo = "ggml-org/whisper.cpp";
-        std::string filename;
+        std::string repo, filename;
+
+        if (backend == "npu") {
+            // NPU support from lemonade-sdk/whisper.cpp-npu
+            repo = "lemonade-sdk/whisper.cpp-npu";
 
 #ifdef _WIN32
-        filename = "whisper-bin-x64.zip";
+            filename = "whisper-" + expected_version + "-windows-npu-x64.zip";
 #elif defined(__linux__)
-        filename = "whisper-bin-x64.zip";  // Linux binary
-#elif defined(__APPLE__)
-        filename = "whisper-bin-arm64.zip";  // macOS Apple Silicon
+            filename = "whisper-" + expected_version + "-ubuntu-npu-x64.zip";
 #else
-        throw std::runtime_error("Unsupported platform for whisper.cpp");
+            throw std::runtime_error("NPU whisper.cpp only supported on Windows and Linux");
 #endif
+            std::cout << "[WhisperServer] Using NPU backend" << std::endl;
+
+        } else if (backend == "rocm") {
+            // ROCm support from lemonade-sdk/whispercpp-rocm
+            repo = "lemonade-sdk/whispercpp-rocm";
+
+#ifdef _WIN32
+            filename = "whisper-" + expected_version + "-windows-rocm-x64.zip";
+#elif defined(__linux__)
+            filename = "whisper-" + expected_version + "-ubuntu-rocm-x64.zip";
+#else
+            throw std::runtime_error("ROCm whisper.cpp only supported on Windows and Linux");
+#endif
+
+        } else if (backend == "vulkan") {
+            // Vulkan support from ggml-org/whisper.cpp
+            repo = "ggml-org/whisper.cpp";
+
+#ifdef _WIN32
+            filename = "whisper-bin-x64.zip";
+#elif defined(__linux__)
+            filename = "whisper-bin-x64.zip";
+#else
+            throw std::runtime_error("Vulkan whisper.cpp only supported on Windows and Linux");
+#endif
+
+        } else {  // cpu
+            // CPU-only builds from ggml-org/whisper.cpp
+            repo = "ggml-org/whisper.cpp";
+
+#ifdef _WIN32
+            filename = "whisper-bin-x64.zip";
+#elif defined(__linux__)
+            filename = "whisper-bin-x64.zip";
+#elif defined(__APPLE__)
+            filename = "whisper-bin-arm64.zip";  // macOS Apple Silicon
+#else
+            throw std::runtime_error("Unsupported platform for whisper.cpp");
+#endif
+        }
 
         std::string url = "https://github.com/" + repo + "/releases/download/" +
                          expected_version + "/" + filename;
@@ -264,10 +327,14 @@ void WhisperServer::install(const std::string& backend) {
 
         std::cout << "[WhisperServer] Executable verified at: " << exe_path << std::endl;
 
-        // Save version info
+        // Save version and backend info
         std::ofstream vf(version_file);
         vf << expected_version;
         vf.close();
+
+        std::ofstream bf(backend_file);
+        bf << backend;
+        bf.close();
 
 #ifndef _WIN32
         // Make executable on Linux/macOS
@@ -280,6 +347,107 @@ void WhisperServer::install(const std::string& backend) {
         std::cout << "[WhisperServer] Installation complete!" << std::endl;
     } else {
         std::cout << "[WhisperServer] Found whisper-server at: " << exe_path << std::endl;
+    }
+}
+
+// Helper to determine NPU compiled cache info based on model checkpoint
+static std::pair<std::string, std::string> get_npu_cache_info(const std::string& checkpoint) {
+    // Map model checkpoints to their corresponding NPU cache repo and .rai filename
+    // Returns: {huggingface_repo, rai_filename}
+    
+    // Extract the model filename from checkpoint (e.g., "ggerganov/whisper.cpp:ggml-small.bin" -> "ggml-small.bin")
+    std::string model_filename;
+    size_t colon_pos = checkpoint.find(':');
+    if (colon_pos != std::string::npos) {
+        model_filename = checkpoint.substr(colon_pos + 1);
+    } else {
+        model_filename = checkpoint;
+    }
+    
+    // Map common whisper models to their NPU cache repositories
+    if (model_filename.find("small") != std::string::npos) {
+        return {"amd/whisper-small-onnx-npu", "ggml-small-encoder-vitisai.rai"};
+    } else if (model_filename.find("large-v3-turbo") != std::string::npos || 
+               model_filename.find("large_v3_turbo") != std::string::npos) {
+        return {"amd/whisper-large-turbo-onnx-npu", "ggml-large-v3-turbo-encoder-vitisai.rai"};
+    } else if (model_filename.find("large-v3") != std::string::npos) {
+        return {"amd/whisper-large-v3-onnx-npu", "ggml-large-v3-encoder-vitisai.rai"};
+    } else if (model_filename.find("medium") != std::string::npos) {
+        return {"amd/whisper-medium-onnx-npu", "ggml-medium-encoder-vitisai.rai"};
+    } else if (model_filename.find("base") != std::string::npos) {
+        return {"amd/whisper-base-onnx-npu", "ggml-base-encoder-vitisai.rai"};
+    } else if (model_filename.find("tiny") != std::string::npos) {
+        return {"amd/whisper-tiny-onnx-npu", "ggml-tiny-encoder-vitisai.rai"};
+    }
+    
+    // Return empty if no NPU cache available for this model
+    return {"", ""};
+}
+
+// Helper to download NPU compiled cache (.rai file) for a model
+void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
+                                                 const std::string& checkpoint,
+                                                 bool do_not_upgrade) {
+    auto [cache_repo, cache_filename] = get_npu_cache_info(checkpoint);
+    
+    if (cache_repo.empty() || cache_filename.empty()) {
+        std::cout << "[WhisperServer] No NPU compiled cache available for this model" << std::endl;
+        return;
+    }
+    
+    std::cout << "[WhisperServer] Downloading NPU compiled cache: " << cache_filename << std::endl;
+    std::cout << "[WhisperServer] From repository: " << cache_repo << std::endl;
+    
+    // Determine where to place the .rai file (same directory as .bin file)
+    fs::path model_dir = fs::path(model_path).parent_path();
+    fs::path cache_path = model_dir / cache_filename;
+    
+    // Check if cache already exists
+    if (fs::exists(cache_path) && !do_not_upgrade) {
+        std::cout << "[WhisperServer] NPU cache already exists: " << cache_path << std::endl;
+        return;
+    }
+    
+    if (!model_manager_) {
+        throw std::runtime_error("ModelManager not available for NPU cache download");
+    }
+    
+    try {
+        // Use ModelManager to download the .rai file from HuggingFace
+        // We create a temporary model entry for the cache file
+        std::string cache_checkpoint = cache_repo + ":" + cache_filename;
+        
+        model_manager_->download_model(
+            cache_checkpoint,  // model_name (using checkpoint as name)
+            cache_checkpoint,  // checkpoint
+            "whispercpp",      // recipe
+            false,             // reasoning
+            false,             // vision
+            false,             // embedding
+            false,             // reranking
+            "",                // mmproj
+            do_not_upgrade
+        );
+        
+        // Get the downloaded cache path
+        ModelInfo cache_info = model_manager_->get_model_info(cache_checkpoint);
+        std::string downloaded_cache_path = cache_info.resolved_path;
+        
+        if (downloaded_cache_path.empty() || !fs::exists(downloaded_cache_path)) {
+            throw std::runtime_error("Failed to download NPU cache file");
+        }
+        
+        // If the cache was downloaded to a different location, copy/move it to the model directory
+        if (fs::path(downloaded_cache_path).parent_path() != model_dir) {
+            std::cout << "[WhisperServer] Moving NPU cache to model directory..." << std::endl;
+            fs::copy_file(downloaded_cache_path, cache_path, fs::copy_options::overwrite_existing);
+        }
+        
+        std::cout << "[WhisperServer] NPU cache ready at: " << cache_path << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[WhisperServer] Warning: Failed to download NPU cache: " << e.what() << std::endl;
+        std::cerr << "[WhisperServer] Continuing without NPU cache (may cause runtime errors)" << std::endl;
     }
 }
 
@@ -337,8 +505,13 @@ void WhisperServer::load(const std::string& model_name,
                         bool do_not_upgrade) {
     std::cout << "[WhisperServer] Loading model: " << model_name << std::endl;
 
-    // Install whisper-server if needed
-    install("");
+    // WhisperCpp Backend logging
+    std::cout << "[WhisperServer] Per-model settings: " << options.to_log_string() << std::endl;
+
+    std::string whispercpp_backend = options.get_option("whispercpp_backend");
+
+    // Install whisper-server if needed (use per-model backend)
+    install(whispercpp_backend);
 
     // Use pre-resolved model path
     std::string model_path = model_info.resolved_path;
@@ -347,10 +520,16 @@ void WhisperServer::load(const std::string& model_name,
     }
 
     std::cout << "[WhisperServer] Using model: " << model_path << std::endl;
+    std::cout << "[WhisperServer] Using backend: " << whispercpp_backend << std::endl;
     model_path_ = model_path;
 
+    // For NPU backend, download the compiled cache (.rai file) if needed
+    if (whispercpp_backend == "npu") {
+        download_npu_compiled_cache(model_path, model_info.checkpoint, do_not_upgrade);
+    }
+
     // Get whisper-server executable path
-    std::string exe_path = get_whisper_server_path();
+    std::string exe_path = get_whisper_server_path(whispercpp_backend);
     if (exe_path.empty()) {
         throw std::runtime_error("whisper-server executable not found");
     }
