@@ -30,18 +30,24 @@ runs:
         TAG_NAME="v$VERSION"
         echo "Generating release notes for $TAG_NAME"
         
-        # Get the previous tag for comparison
-        PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
-        echo "Previous release: ${PREVIOUS_TAG:-none}"
+        # Check if this tag already exists as a release
+        RELEASE_EXISTS=$(gh api repos/$REPO/releases/tags/$TAG_NAME --jq '.tag_name' 2>/dev/null || echo "")
         
-        # Check if target tag exists, if not use HEAD
-        TAG_EXISTS=$(git tag -l "$TAG_NAME")
-        if [ -z "$TAG_EXISTS" ]; then
-          echo "Tag $TAG_NAME doesn't exist yet, using HEAD for preview"
-          TARGET_COMMIT="HEAD"
-        else
+        if [ -n "$RELEASE_EXISTS" ]; then
+          # Tag exists - get the release before this one
+          echo "Tag $TAG_NAME exists, finding previous release..."
+          # Get all releases sorted by date, find the one before our target
+          PREVIOUS_TAG=$(gh api repos/$REPO/releases --jq "[.[] | select(.tag_name != \"$TAG_NAME\")] | .[0].tag_name" 2>/dev/null || echo "")
           TARGET_COMMIT="$TAG_NAME"
+        else
+          # Tag doesn't exist - use latest release as previous, HEAD as target
+          echo "Tag $TAG_NAME doesn't exist yet, using HEAD for preview"
+          PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          TARGET_COMMIT="HEAD"
         fi
+        
+        echo "Previous release: ${PREVIOUS_TAG:-none}"
+        echo "Target commit: $TARGET_COMMIT"
         
         # Generate auto release notes from GitHub
         if [ -n "$PREVIOUS_TAG" ]; then
