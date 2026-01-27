@@ -113,7 +113,7 @@ std::string WhisperServer::find_external_whisper_server() {
     }
 
     std::string whisper_bin = std::string(whisper_bin_env);
-    
+
     return fs::exists(whisper_bin) ? whisper_bin : "";
 }
 
@@ -128,7 +128,7 @@ std::string WhisperServer::get_whisper_server_path() {
     return find_executable_in_install_dir(install_dir);
 }
 
-void WhisperServer::install(const std::string& backend) {
+void WhisperServer::install(const std::string& /*backend*/) {
     std::string install_dir;
     std::string version_file;
     std::string expected_version;
@@ -262,7 +262,7 @@ void WhisperServer::install(const std::string& backend) {
 }
 
 std::string WhisperServer::download_model(const std::string& checkpoint,
-                                         const std::string& mmproj,
+                                         const std::string& /*mmproj*/,
                                          bool do_not_upgrade) {
     // Parse checkpoint: "ggml-org/whisper.cpp:ggml-large-v3.bin"
     std::string repo, filename;
@@ -312,8 +312,8 @@ std::string WhisperServer::download_model(const std::string& checkpoint,
 
 void WhisperServer::load(const std::string& model_name,
                         const ModelInfo& model_info,
-                        const RecipeOptions& options,
-                        bool do_not_upgrade) {
+                        const RecipeOptions& /*options*/,
+                        bool /*do_not_upgrade*/) {
     std::cout << "[WhisperServer] Loading model: " << model_name << std::endl;
 
     // Install whisper-server if needed
@@ -386,7 +386,7 @@ void WhisperServer::unload() {
 }
 
 // ICompletionServer implementation - not supported for Whisper
-json WhisperServer::chat_completion(const json& request) {
+json WhisperServer::chat_completion(const json& /*request*/) {
     return json{
         {"error", {
             {"message", "Whisper models do not support chat completion. Use audio transcription endpoints instead."},
@@ -396,7 +396,7 @@ json WhisperServer::chat_completion(const json& request) {
     };
 }
 
-json WhisperServer::completion(const json& request) {
+json WhisperServer::completion(const json& /*request*/) {
     return json{
         {"error", {
             {"message", "Whisper models do not support text completion. Use audio transcription endpoints instead."},
@@ -406,7 +406,7 @@ json WhisperServer::completion(const json& request) {
     };
 }
 
-json WhisperServer::responses(const json& request) {
+json WhisperServer::responses(const json& /*request*/) {
     return json{
         {"error", {
             {"message", "Whisper models do not support responses. Use audio transcription endpoints instead."},

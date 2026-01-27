@@ -17,10 +17,16 @@ namespace lemon::backends {
         std::string command;
 #ifdef _WIN32
         std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        system(mkdir_cmd.c_str());
+        if (system(mkdir_cmd.c_str()) != 0) {
+            std::cerr << "Failed to create directory: " << dest_dir << std::endl;
+            return false;
+        }
 #else
         std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        system(mkdir_cmd.c_str());
+        if (system(mkdir_cmd.c_str()) != 0) {
+            std::cerr << "Failed to create directory: " << dest_dir << std::endl;
+            return false;
+        }
 #endif
 #ifdef _WIN32
         // Check if 'tar' is available (Windows 10 build 17063+ ships with bsdtar)
@@ -31,10 +37,14 @@ namespace lemon::backends {
             command = "tar -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
         } else {
             std::cout << "[" << backend_name << "] Extracting ZIP via PowerShell to " << dest_dir << std::endl;
-            // PowerShell fallback
-            command = "powershell -Command \"try { Expand-Archive -Path '" + zip_path + 
-                    "' -DestinationPath '" + dest_dir + 
-                    "' -Force -ErrorAction Stop; exit 0 } catch { Write-Error $_.Exception.Message; exit 1 }\"";
+            // PowerShell fallback - use full path to avoid PATH issues
+            std::string powershell_path = "powershell";
+            const char* system_root = std::getenv("SystemRoot");
+            if (system_root) {
+                powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+            }
+            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path + 
+                    "' -DestinationPath '" + dest_dir + "' -Force\"";
         }
 #elif defined(__APPLE__) || defined(__linux__)
         // macOS & Linux Logic

@@ -18,21 +18,21 @@ int WrappedServer::choose_port() {
     return port_;
 }
 
-bool WrappedServer::wait_for_ready() {
+bool WrappedServer::wait_for_ready(int timeout_seconds) {
     // Try both /health and /v1/health (FLM uses /v1/health, llama-server uses /health)
     std::string health_url = get_base_url() + "/health";
     std::string health_url_v1 = get_base_url() + "/v1/health";
-    
+
     std::cout << "Waiting for " + server_name_ + " to be ready..." << std::endl;
-    
-    // Wait up to 5 minutes (large models can take time to load)
-    const int max_attempts = 3000; // 5 minutes at 100ms intervals
-    
+
+    // Calculate max attempts based on timeout
+    const int max_attempts = timeout_seconds * 10; // 100ms intervals
+
     for (int i = 0; i < max_attempts; i++) {
         // Check if process is still running
         if (!utils::ProcessManager::is_running(process_handle_)) {
             int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
-            std::cerr << "[ERROR] " << server_name_ << " process has terminated with exit code: " 
+            std::cerr << "[ERROR] " << server_name_ << " process has terminated with exit code: "
                      << exit_code << std::endl;
             std::cerr << "[ERROR] This usually means:" << std::endl;
             std::cerr << "  - Missing required drivers or dependencies" << std::endl;
@@ -40,22 +40,22 @@ bool WrappedServer::wait_for_ready() {
             std::cerr << "  - Try running the server manually to see the actual error" << std::endl;
             return false;
         }
-        
+
         // Try both health endpoints
-        if (utils::HttpClient::is_reachable(health_url, 1) || 
+        if (utils::HttpClient::is_reachable(health_url, 1) ||
             utils::HttpClient::is_reachable(health_url_v1, 1)) {
             std::cout << server_name_ + " is ready!" << std::endl;
             return true;
         }
-        
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        
+
         // Print progress every 10 seconds
         if (i % 100 == 0 && i > 0) {
             std::cout << "Still waiting for " + server_name_ + "..." << std::endl;
         }
     }
-    
+
     std::cerr << server_name_ + " failed to start within timeout" << std::endl;
     return false;
 }
@@ -72,13 +72,13 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     if (!is_process_running()) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
-    
+
     std::string url = get_base_url() + endpoint;
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
-    
+
     try {
         auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
-        
+
         if (response.status_code == 200) {
             return json::parse(response.body);
         } else {
@@ -89,7 +89,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             } catch (...) {
                 error_details = response.body;
             }
-            
+
             return ErrorResponse::create(
                 server_name_ + " request failed",
                 ErrorType::BACKEND_ERROR,
@@ -104,22 +104,22 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     }
 }
 
-void WrappedServer::forward_streaming_request(const std::string& endpoint, 
+void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink) {
     if (!is_process_running()) {
-        std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ + 
+        std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());
         return;
     }
-    
+
     std::string url = get_base_url() + endpoint;
-    
+
     try {
         // Use StreamingProxy to forward the SSE stream with telemetry callback
         // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
-        StreamingProxy::forward_sse_stream(url, request_body, sink, 
+        StreamingProxy::forward_sse_stream(url, request_body, sink,
             [this](const StreamingProxy::TelemetryData& telemetry) {
                 // Save telemetry to member variable
                 telemetry_.input_tokens = telemetry.input_tokens;
@@ -135,7 +135,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         std::cerr << "[WrappedServer ERROR] Streaming request failed: " << e.what() << std::endl;
         // Try to send error to client if possible
         try {
-            std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) + 
+            std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) +
                                    "\",\"type\":\"streaming_error\"}}\n\n";
             sink.write(error_msg.c_str(), error_msg.size());
         } catch (...) {

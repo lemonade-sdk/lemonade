@@ -1,5 +1,12 @@
 export const USER_MODEL_PREFIX = 'user.';
 
+export interface ImageDefaults {
+  steps?: number;
+  cfg_scale?: number;
+  width?: number;
+  height?: number;
+}
+
 export interface ModelInfo {
   checkpoint: string;
   recipe: string;
@@ -13,6 +20,7 @@ export interface ModelInfo {
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  image_defaults?: ImageDefaults;
   [key: string]: unknown;
 }
 
@@ -158,7 +166,17 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
       if (typeof model.vision === 'boolean') {
         modelInfo.vision = model.vision;
       }
-      
+
+      // Parse image_defaults if present (for sd-cpp models)
+      if (model.image_defaults && typeof model.image_defaults === 'object') {
+        modelInfo.image_defaults = {
+          steps: model.image_defaults.steps,
+          cfg_scale: model.image_defaults.cfg_scale,
+          width: model.image_defaults.width,
+          height: model.image_defaults.height,
+        };
+      }
+
       acc[model.id] = modelInfo;
       return acc;
     }, {} as ModelsData);

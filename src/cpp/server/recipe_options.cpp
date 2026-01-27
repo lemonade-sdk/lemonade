@@ -6,30 +6,60 @@ namespace lemon {
 using json = nlohmann::json;
 
 static const json DEFAULTS = {
-    {"ctx_size", 4096}, 
-    {"llamacpp_backend", "vulkan"}, 
-    {"llamacpp_args", ""}
+    {"ctx_size", 4096},
+    {"llamacpp_backend", "vulkan"},
+    {"llamacpp_args", ""},
+    // Image generation defaults (for sd-cpp recipe)
+    {"steps", 20},
+    {"cfg_scale", 7.0},
+    {"width", 512},
+    {"height", 512}
 };
 
 static const json CLI_OPTIONS = {
     {"--ctx-size", {
-        {"option_name", "ctx_size"}, 
-        {"type_name", "SIZE"}, 
-        {"envname", "LEMONADE_CTX_SIZE"}, 
+        {"option_name", "ctx_size"},
+        {"type_name", "SIZE"},
+        {"envname", "LEMONADE_CTX_SIZE"},
         {"help", "Context size for the model"}
     }},
     {"--llamacpp", {
-        {"option_name", "llamacpp_backend"}, 
+        {"option_name", "llamacpp_backend"},
         {"type_name", "BACKEND"},
         {"allowed_values", {"vulkan", "rocm", "metal", "cpu"}},
-        {"envname", "LEMONADE_LLAMACPP"}, 
+        {"envname", "LEMONADE_LLAMACPP"},
         {"help", "LlamaCpp backend to use"}
     }},
     {"--llamacpp-args", {
-        {"option_name", "llamacpp_args"}, 
-        {"type_name", "ARGS"}, 
-        {"envname", "LEMONADE_LLAMACPP_ARGS"}, 
+        {"option_name", "llamacpp_args"},
+        {"type_name", "ARGS"},
+        {"envname", "LEMONADE_LLAMACPP_ARGS"},
         {"help", "Custom arguments to pass to llama-server (must not conflict with managed args)"}
+    }},
+    // Image generation options (for sd-cpp recipe)
+    {"--steps", {
+        {"option_name", "steps"},
+        {"type_name", "N"},
+        {"envname", "LEMONADE_STEPS"},
+        {"help", "Number of inference steps for image generation"}
+    }},
+    {"--cfg-scale", {
+        {"option_name", "cfg_scale"},
+        {"type_name", "SCALE"},
+        {"envname", "LEMONADE_CFG_SCALE"},
+        {"help", "Classifier-free guidance scale for image generation"}
+    }},
+    {"--width", {
+        {"option_name", "width"},
+        {"type_name", "PX"},
+        {"envname", "LEMONADE_WIDTH"},
+        {"help", "Image width in pixels"}
+    }},
+    {"--height", {
+        {"option_name", "height"},
+        {"type_name", "PX"},
+        {"envname", "LEMONADE_HEIGHT"},
+        {"help", "Image height in pixels"}
     }},
 };
 
@@ -38,14 +68,16 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "oga-npu" || recipe == "oga-hybrid" || recipe == "oga-cpu" || recipe == "ryzenai" || recipe == "flm") {
         return {"ctx_size"};
+    } else if (recipe == "sd-cpp") {
+        return {"steps", "cfg_scale", "width", "height"};
     } else {
         // "whispercpp" has currently no option
         return {};
     }
 }
 
-static const bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) || 
+static bool is_empty_option(json option) {
+    return (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == ""));
 }
 
@@ -54,7 +86,10 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         const std::string opt_name = opt["option_name"];
         CLI::Option* o;
         json defval = DEFAULTS[opt_name];
-        if (defval.is_number()) {
+        if (defval.is_number_float()) {
+            o = app.add_option_function<double>(key, [opt_name, &storage = storage](double val) { storage[opt_name] = val; }, opt["help"]);
+            o->default_val((double) defval);
+        } else if (defval.is_number_integer()) {
             o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((int) defval);
         } else {
@@ -79,7 +114,9 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
             auto val = raw_options[opt_name];
             if (val != "") {
                 cli.push_back(key);
-                if (val.is_number()) {
+                if (val.is_number_float()) {
+                    cli.push_back(std::to_string((double) val));
+                } else if (val.is_number_integer()) {
                     cli.push_back(std::to_string((int) val));
                 } else {
                     cli.push_back(val);
@@ -94,7 +131,7 @@ std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) 
 RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     recipe_ = recipe;
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
-    
+
     for (auto key : to_copy) {
         if (options.contains(key) && !is_empty_option(options[key])) {
             options_[key] = options[key];
@@ -102,16 +139,9 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     }
 }
 
-static const std::string inherit_string(const std::string& a, const std::string& b) {
-    return a.empty() ? a : b;
-}
-
-static const int inherit_int(int a, int b) {
-    return a != -1 ? a : b;
-}
-
 static std::string format_option_for_logging(const json& opt) {
-    if (opt.is_number()) return std::to_string((int) opt);
+    if (opt.is_number_float()) return std::to_string((double) opt);
+    if (opt.is_number_integer()) return std::to_string((int) opt);
     if (opt == "") return "(none)";
     return opt;
 }
@@ -128,10 +158,10 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
         if (resolve_defaults || options_.contains(key)) {
             if (!first) log_string += ", ";
             first = false;
-            log_string += key + "=" + format_option_for_logging(get_option(key)); 
+            log_string += key + "=" + format_option_for_logging(get_option(key));
         }
     }
-    
+
     return log_string;
 }
 

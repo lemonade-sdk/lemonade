@@ -79,6 +79,23 @@ cmake --build . --config Release -j
   - `build/lemonade-server` - Console CLI client
 - **Resources:** Automatically copied to `build/Release/resources/` (web UI files, model registry, backend version configuration)
 
+### Building the Electron Desktop App (Optional)
+
+The tray menu's "Open app" option and the `lemonade-server run` command can launch the Electron desktop app. To include it in your build:
+
+```powershell
+# Build the Electron app (requires Node.js 20+)
+cd src\app
+npm install
+npm run build:win
+
+# Rebuild C++ to copy Electron files to build output
+cd ..\cpp\build
+cmake --build . --config Release
+```
+
+The tray app looks for `Lemonade.exe` in the same directory as the executable (development) or in `../app/` (installed). If not found, the "Open app" option is hidden but everything else works.
+
 ### RyzenAI Server Dependency
 
 The `lemonade-router` server has a runtime dependency on `ryzenai-server` for NPU/Hybrid model inference. This is handled automatically:
@@ -307,8 +324,12 @@ Same as .deb above
 src/cpp/
 ├── CMakeLists.txt              # Main build configuration
 ├── build_installer.ps1         # Installer build script
-├── resources/                  # Configuration and data files
-│   └── backend_versions.json   # llama.cpp version configuration (user-editable)
+├── resources/                  # Configuration and data files (self-contained)
+│   ├── backend_versions.json   # llama.cpp/whisper version configuration
+│   ├── server_models.json      # Model registry (available models)
+│   └── static/                 # Web UI assets
+│       ├── index.html          # Server landing page (with template variables)
+│       └── favicon.ico         # Site icon
 │
 ├── installer/                  # WiX MSI installer (Windows)
 │   ├── Product.wxs.in          # WiX installer definition template
@@ -625,8 +646,9 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 ### Key Resources
 
 - **API Specification:** `docs/server/server_spec.md`
-- **Model Registry:** `src/lemonade_server/server_models.json`
-- **Web UI Files:** `src/lemonade/tools/server/static/`
+- **Model Registry:** `src/cpp/resources/server_models.json`
+- **Web UI Files:** `src/cpp/resources/static/`
+- **Backend Versions:** `src/cpp/resources/backend_versions.json`
 - **Python Reference:** `src/lemonade_server/` and `src/lemonade/tools/server/`
 
 ### Adding New Features
