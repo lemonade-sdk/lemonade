@@ -17,16 +17,10 @@ namespace lemon::backends {
         std::string command;
 #ifdef _WIN32
         std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\" >nul 2>&1";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
+        system(mkdir_cmd.c_str());
 #else
         std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
-        if (system(mkdir_cmd.c_str()) != 0) {
-            std::cerr << "Failed to create directory: " << dest_dir << std::endl;
-            return false;
-        }
+        system(mkdir_cmd.c_str());
 #endif
 #ifdef _WIN32
         // Check if 'tar' is available (Windows 10 build 17063+ ships with bsdtar)
