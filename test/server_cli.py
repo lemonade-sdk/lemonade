@@ -187,7 +187,8 @@ class PersistentServerCLITests(CLITestBase):
 
         # Start server in background
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         cls._server_process = subprocess.Popen(
@@ -331,7 +332,8 @@ class EphemeralCLITests(CLITestBase):
 
         # Start server
         cmd = [_config["server_binary"], "serve"]
-        if os.name == "nt":
+        # Add --no-tray on Windows or in CI environments (no display server in containers)
+        if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
             cmd.append("--no-tray")
 
         server_process = subprocess.Popen(

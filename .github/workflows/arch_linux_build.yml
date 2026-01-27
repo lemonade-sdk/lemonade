@@ -1,0 +1,168 @@
+name: Arch Linux Build 🐧
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-arch-linux:
+    name: Build on Arch Linux
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          echo "Updating package database..."
+          pacman -Syu --noconfirm
+          
+          echo "Installing build dependencies..."
+          pacman -S --noconfirm --needed \
+            base-devel \
+            cmake \
+            git \
+            curl \
+            openssl \
+            zlib \
+            pkgconf \
+            python \
+            python-pip \
+            ca-certificates \
+            procps-ng
+          
+          echo "Verifying installations..."
+          cmake --version
+          gcc --version
+          g++ --version
+          pkg-config --version
+          python --version
+          pip --version
+          
+          echo "Verifying process management tools..."
+          which pgrep pkill ps
+          
+          echo "Verifying SSL certificates..."
+          ls -la /etc/ssl/certs/ | head -10
+          
+          echo "Testing HTTPS connectivity..."
+          curl -sI https://huggingface.co | head -5 || echo "Warning: HTTPS test failed"
+          
+          echo "Build dependencies installed successfully!"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Build C++ Server with CMake
+        run: |
+          set -e
+          
+          echo "Building lemonade-router and lemonade-server on Arch Linux..."
+          
+          cd src/cpp
+          
+          # Create build directory
+          if [ -d "build" ]; then
+              echo "Removing existing build directory..."
+              rm -rf build
+          fi
+          mkdir build
+          cd build
+          
+          # Configure with Release build type
+          echo "Configuring CMake..."
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          
+          # Build using all available cores
+          echo "Building binaries..."
+          cmake --build . -j$(nproc)
+          
+          # Verify binaries exist
+          if [ ! -f "lemonade-router" ]; then
+              echo "ERROR: lemonade-router not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          if [ ! -f "lemonade-server" ]; then
+              echo "ERROR: lemonade-server not found!"
+              echo "Build directory contents:"
+              ls -lh
+              exit 1
+          fi
+          
+          echo "Binaries found successfully"
+          ls -lh lemonade-router lemonade-server
+          
+          echo "Verifying binary executability..."
+          ./lemonade-router --version
+          ./lemonade-server --version
+          
+          echo "Arch Linux build successful!"
+
+      - name: Verify system library linking
+        run: |
+          echo "Checking library dependencies..."
+          cd src/cpp/build
+          
+          echo "=== lemonade-router dependencies ==="
+          ldd lemonade-router
+          
+          echo ""
+          echo "=== lemonade-server dependencies ==="
+          ldd lemonade-server
+          
+          echo ""
+          echo "All dependencies resolved successfully on Arch Linux!"
+
+      - name: Setup Python virtual environment
+        run: |
+          echo "Creating Python virtual environment..."
+          python -m venv .venv
+          
+          echo "Activating virtual environment and installing dependencies..."
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r test/requirements.txt
+          
+          echo "Python environment setup complete!"
+
+      - name: Run CLI tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+          
+          source .venv/bin/activate
+          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          
+          echo "Running CLI tests..."
+          python test/server_cli.py --server-binary "$SERVER_BINARY"
+          
+          echo "CLI tests PASSED!"
+
+      - name: Run endpoint tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+          
+          source .venv/bin/activate
+          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          
+          echo "Running endpoint tests..."
+          python test/server_endpoints.py --server-binary "$SERVER_BINARY"
+          
+          echo "Endpoint tests PASSED!"
