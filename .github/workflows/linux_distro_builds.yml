@@ -104,7 +104,7 @@ jobs:
           ${{ matrix.python }} --version
           
           echo "Verifying process management tools..."
-          which pgrep pkill ps
+          command -v pgrep && command -v pkill && command -v ps
           
           echo "Verifying SSL certificates..."
           ls -la /etc/ssl/certs/ | head -10
@@ -189,7 +189,7 @@ jobs:
           ${{ matrix.python }} -m venv .venv
           
           echo "Activating virtual environment and installing dependencies..."
-          source .venv/bin/activate
+          . .venv/bin/activate
           pip install --upgrade pip
           pip install -r test/requirements.txt
           
@@ -202,7 +202,7 @@ jobs:
         run: |
           set -e
           
-          source .venv/bin/activate
+          . .venv/bin/activate
           SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
           
           echo "Running CLI tests..."
@@ -217,7 +217,7 @@ jobs:
         run: |
           set -e
           
-          source .venv/bin/activate
+          . .venv/bin/activate
           SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
           
           echo "Running endpoint tests..."
