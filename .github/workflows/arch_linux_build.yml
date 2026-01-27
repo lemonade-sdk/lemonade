@@ -33,7 +33,9 @@ jobs:
             zlib \
             pkgconf \
             python \
-            python-pip
+            python-pip \
+            ca-certificates \
+            procps-ng
           
           echo "Verifying installations..."
           cmake --version
@@ -42,6 +44,15 @@ jobs:
           pkg-config --version
           python --version
           pip --version
+          
+          echo "Verifying process management tools..."
+          which pgrep pkill ps
+          
+          echo "Verifying SSL certificates..."
+          ls -la /etc/ssl/certs/ | head -10
+          
+          echo "Testing HTTPS connectivity..."
+          curl -sI https://huggingface.co | head -5 || echo "Warning: HTTPS test failed"
           
           echo "Build dependencies installed successfully!"
 
