@@ -137,6 +137,68 @@ jobs:
           
           echo "Python environment setup complete!"
 
+      - name: Debug server functionality
+        run: |
+          # Don't use set -e here - we want to see all debug output even if some fail
+          
+          SERVER_BINARY="$(pwd)/src/cpp/build/lemonade-server"
+          
+          echo "=== Testing basic server functionality ==="
+          
+          echo "1. Check what processes match 'lemonade' pattern before starting:"
+          ps aux | grep -i lemonade || echo "No lemonade processes found"
+          pgrep -fa lemonade || echo "pgrep found nothing"
+          
+          echo ""
+          echo "2. Start server in background and test connectivity:"
+          $SERVER_BINARY serve --no-tray --port 8001 &
+          SERVER_PID=$!
+          echo "Started server with PID: $SERVER_PID"
+          
+          echo "Waiting for server to be ready..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
+              echo "Server is responding on port 8001"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Server failed to respond after 30 seconds"
+              echo "Checking if process is still running..."
+              ps aux | grep $SERVER_PID || echo "Process not found"
+            fi
+            sleep 1
+          done
+          
+          echo ""
+          echo "3. Test server endpoints:"
+          curl -v http://localhost:8001/health || echo "Health check failed"
+          
+          echo ""
+          echo "4. Check processes after starting server:"
+          ps aux | grep -i lemonade || echo "No lemonade processes"
+          
+          echo ""
+          echo "5. Stop the server:"
+          kill $SERVER_PID 2>/dev/null || echo "Process already stopped"
+          sleep 2
+          
+          echo ""
+          echo "6. Verify server stopped:"
+          ps aux | grep -i lemonade | grep -v grep || echo "No lemonade processes (good)"
+          
+          echo ""
+          echo "7. Test external HTTPS connectivity (for pull command):"
+          curl -sI https://huggingface.co/api/models/amd/Llama-3.2-1B-Instruct-GGUF | head -5 || echo "HTTPS to HuggingFace failed"
+          
+          echo ""
+          echo "8. Check DNS and network configuration:"
+          cat /etc/hosts
+          cat /etc/resolv.conf || echo "No resolv.conf"
+          getent hosts localhost || echo "localhost lookup failed"
+          
+          echo ""
+          echo "=== Debug complete ==="
+
       - name: Run CLI tests
         env:
           LEMONADE_CI_MODE: "True"
