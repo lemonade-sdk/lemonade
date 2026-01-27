@@ -44,7 +44,7 @@ private:
     std::string find_executable_in_install_dir(const std::string& install_dir);
 
     // Server lifecycle helpers
-    bool wait_for_ready(int timeout_seconds = 60) override;
+    bool wait_for_ready(int timeout_seconds = 60);
 
     // Server state (port_ and process_handle_ inherited from WrappedServer)
     std::string model_path_;
