@@ -195,10 +195,6 @@ print(completion.choices[0].message.content)
 
 For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
 
-## lemonade-eval
-
-The [lemonade-eval](./docs/eval/README.md) CLI provides tools for accuracy testing, performance benchmarking, and device-specific model preparation (OGA/ONNX models for NPU/CPU).
-
 ## FAQ
 
 To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
