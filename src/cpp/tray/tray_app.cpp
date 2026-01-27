@@ -317,14 +317,14 @@ int TrayApp::run() {
             // If 'run' command and server is already running, connect to it and execute the run command
             if (tray_config_.command == "run") {
                 std::cout << "Lemonade Server is already running. Connecting to it..." << std::endl;
-
+                
                 // Get the running server's info
                 auto [pid, running_port] = get_server_info();
                 if (running_port == 0) {
                     std::cerr << "Error: Could not connect to running server" << std::endl;
                     return 1;
                 }
-
+                
                 // Create server manager to communicate with running server
                 server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
                 server_config_.port = running_port;  // Update config to match running server
@@ -337,9 +337,9 @@ int TrayApp::run() {
                 // Execute the run command (load model)
                 return execute_run_command();
             }
-
+            
             // For 'serve' command, don't allow duplicate servers
-            #ifdef _WIN32
+#ifdef _WIN32
             show_simple_notification("Server Already Running", "Lemonade Server is already running");
 #endif
             std::cerr << "Error: Another instance of lemonade-server serve is already running.\n"
@@ -380,8 +380,7 @@ int TrayApp::run() {
                 std::cout << "Connected to Lemonade Server on port " << running_port << std::endl;
 
                 // Create server manager to communicate with running server
-                server_manager_ = std::make_unique<ServerManager>();
-                server_manager_->set_port(running_port);
+                server_manager_ = std::make_unique<ServerManager>(server_config_.host, running_port);
                 server_config_.port = running_port;  // Update config to match running server
 
                 // Use localhost to connect (works regardless of what the server is bound to)
@@ -408,7 +407,7 @@ int TrayApp::run() {
                     std::cout << "Server service started on port " << running_port << std::endl;
 
                     // Create server manager to communicate with running server
-                    server_manager_ = std::make_unique<ServerManager>();
+                    server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
                     server_manager_->set_port(running_port);
                     server_config_.port = running_port;  // Update config to match running server
 
@@ -438,7 +437,7 @@ int TrayApp::run() {
         }
 
         // Create server manager to communicate with running server
-        server_manager_ = std::make_unique<ServerManager>();
+        server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
         server_manager_->set_port(running_port);
         server_config_.port = running_port;  // Update config to match running server
 
@@ -461,7 +460,8 @@ int TrayApp::run() {
     if (tray_config_.command != "tray") {
         // Create server manager
         DEBUG_LOG(this, "Creating server manager...");
-        server_manager_ = std::make_unique<ServerManager>();
+        if(!server_manager_)
+            server_manager_ = std::make_unique<ServerManager>(server_config_.host, server_config_.port);
 
         // Start server
         DEBUG_LOG(this, "Starting server...");
