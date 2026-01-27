@@ -1,0 +1,94 @@
+name: 'Generate Release Notes'
+description: 'Generate formatted release notes with download table and contributor info'
+inputs:
+  version:
+    description: 'The version string (e.g., 9.1.3)'
+    required: true
+  repo:
+    description: 'Repository in owner/repo format'
+    required: true
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+outputs:
+  release_notes_file:
+    description: 'Path to the release notes file'
+    value: ${{ steps.generate.outputs.release_notes_file }}
+runs:
+  using: "composite"
+  steps:
+    - name: Generate release notes
+      id: generate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        VERSION: ${{ inputs.version }}
+        REPO: ${{ inputs.repo }}
+      run: |
+        set -e
+        
+        TAG_NAME="v$VERSION"
+        echo "Generating release notes for $TAG_NAME"
+        
+        # Get the previous tag for comparison
+        PREVIOUS_TAG=$(gh api repos/$REPO/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+        echo "Previous release: ${PREVIOUS_TAG:-none}"
+        
+        # Generate auto release notes from GitHub
+        if [ -n "$PREVIOUS_TAG" ]; then
+          AUTO_NOTES=$(gh api repos/$REPO/releases/generate-notes \
+            -f tag_name="$TAG_NAME" \
+            -f previous_tag_name="$PREVIOUS_TAG" \
+            --jq '.body' 2>/dev/null || echo "")
+        else
+          AUTO_NOTES=$(gh api repos/$REPO/releases/generate-notes \
+            -f tag_name="$TAG_NAME" \
+            --jq '.body' 2>/dev/null || echo "")
+        fi
+        
+        # Extract What's Changed section and wrap in details tag
+        WHATS_CHANGED=""
+        if echo "$AUTO_NOTES" | grep -q "What's Changed"; then
+          WHATS_CHANGED_CONTENT=$(echo "$AUTO_NOTES" | sed -n "/## What's Changed/,/## New Contributors\|## Full Changelog\|^$/p" | grep "^\* " || echo "")
+          if [ -n "$WHATS_CHANGED_CONTENT" ]; then
+            WHATS_CHANGED=$(printf '%s\n\n%s\n%s\n\n%s\n\n%s' \
+              "## What's Changed" \
+              "<details>" \
+              "<summary>Click to expand changelog</summary>" \
+              "$WHATS_CHANGED_CONTENT" \
+              "</details>")
+          fi
+        fi
+        
+        # Extract New Contributors section
+        NEW_CONTRIBUTORS=""
+        if echo "$AUTO_NOTES" | grep -q "New Contributors"; then
+          NEW_CONTRIBUTORS=$(echo "$AUTO_NOTES" | sed -n "/## New Contributors/,/## Full Changelog\|^$/p" | head -20)
+        fi
+        
+        # Extract Full Changelog link
+        FULL_CHANGELOG=$(echo "$AUTO_NOTES" | grep "Full Changelog" | head -1 || echo "")
+        
+        # Build the release notes file
+        RELEASE_NOTES_FILE="release_notes.md"
+        
+        {
+          echo "## Quick Install"
+          echo ""
+          echo "| Operating System | Server Only | Full App (Server + GUI) |"
+          echo "|------------------|-------------|-------------------------|"
+          echo "| **Windows** | [lemonade-server-minimal.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-minimal.msi) | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) |"
+          echo "| **Ubuntu/Debian** | [lemonade-server-minimal_${VERSION}_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-minimal_${VERSION}_amd64.deb) | [lemonade_${VERSION}_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade_${VERSION}_amd64.deb) |"
+          echo ""
+          echo "> **Other platforms?** See our [Installation Options](https://lemonade-server.ai/install_options.html) for Docker, pip, and more."
+          echo ""
+          echo "---"
+          echo ""
+        } > "$RELEASE_NOTES_FILE"
+        
+        [ -n "$WHATS_CHANGED" ] && echo "$WHATS_CHANGED" >> "$RELEASE_NOTES_FILE" && echo "" >> "$RELEASE_NOTES_FILE"
+        [ -n "$NEW_CONTRIBUTORS" ] && echo "$NEW_CONTRIBUTORS" >> "$RELEASE_NOTES_FILE" && echo "" >> "$RELEASE_NOTES_FILE"
+        [ -n "$FULL_CHANGELOG" ] && echo "$FULL_CHANGELOG" >> "$RELEASE_NOTES_FILE"
+        
+        echo "release_notes_file=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT
+        cat "$RELEASE_NOTES_FILE"
