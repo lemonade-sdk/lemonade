@@ -1,0 +1,55 @@
+name: NPM Security Audit
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+  schedule:
+    # Run weekly on Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Navigate to app directory
+        run: cd src/app
+
+      - name: Install dependencies
+        working-directory: src/app
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: src/app
+        run: |
+          echo "Running npm audit..."
+          npm audit --audit-level=moderate
+
+      - name: Run npm audit (JSON output for artifacts)
+        if: failure()
+        working-directory: src/app
+        continue-on-error: true
+        run: |
+          npm audit --json > npm-audit-results.json
+
+      - name: Upload audit results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-results
+          path: src/app/npm-audit-results.json
+          retention-days: 30
