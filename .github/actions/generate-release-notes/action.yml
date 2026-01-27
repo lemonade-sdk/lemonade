@@ -83,7 +83,7 @@ runs:
         FULL_CHANGELOG=$(echo "$AUTO_NOTES" | grep "Full Changelog" | head -1 || echo "")
         
         # Extract unique contributors from the changelog
-        CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//')
+        CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
         
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
