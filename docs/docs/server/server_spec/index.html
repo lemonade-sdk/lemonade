@@ -503,34 +503,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../apps/lm-eval/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LM-Eval-Harness
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../apps/mindcraft/" class="md-nav__link">
         
   
@@ -3811,6 +3783,24 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SD-Turbo&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stabilityai/sd-turbo:sd_turbo.safetensors&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sd-cpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;image_defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
@@ -3828,7 +3818,14 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <li><code>size</code> - Model size in GB (omitted for models without size information)</li>
 <li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
 <li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
-<li><code>labels</code> - Array of tags describing the model (e.g., <code>"hot"</code>, <code>"reasoning"</code>, <code>"vision"</code>, <code>"embeddings"</code>, <code>"reranking"</code>, <code>"coding"</code>, <code>"tool-calling"</code>)</li>
+<li><code>labels</code> - Array of tags describing the model (e.g., <code>"hot"</code>, <code>"reasoning"</code>, <code>"vision"</code>, <code>"embeddings"</code>, <code>"reranking"</code>, <code>"coding"</code>, <code>"tool-calling"</code>, <code>"image"</code>)</li>
+<li><code>image_defaults</code> - (Image models only) Default generation parameters for the model:<ul>
+<li><code>steps</code> - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)</li>
+<li><code>cfg_scale</code> - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)</li>
+<li><code>width</code> - Default image width in pixels</li>
+<li><code>height</code> - Default image height in pixels</li>
+</ul>
+</li>
 </ul>
 <h3 id="get-apiv1modelsmodel_id"><code>GET /api/v1/models/{model_id}</code> <sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></h3>
 <p>Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.</p>
@@ -3936,7 +3933,7 @@ curl<span class="w"> </span>http://localhost:8000/api/v1/models?show_all<span cl
 <p>In case of an error, the status will be <code>error</code> and the message will contain the error message.</p>
 <p><strong>Register and Install a Model</strong></p>
 <p>Registration will place an entry for that model in the <code>user_models.json</code> file, which is located in the user's Lemonade cache (default: <code>~/.cache/lemonade</code>). Then, the model will be installed. Once the model is registered and installed, it will show up in the <code>models</code> endpoint alongside the built-in models and can be loaded.</p>
-<p>The <code>recipe</code> field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the <a href="../../lemonade_api/">Lemonade API README</a>. For information on GGUF recipes, see <a href="#gguf-support">llamacpp</a>.</p>
+<p>The <code>recipe</code> field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the <a href="../lemonade_api.md">Lemonade API README</a>. For information on GGUF recipes, see <a href="#gguf-support">llamacpp</a>.</p>
 <blockquote>
 <p>Note: the <code>model_name</code> for registering a new model must use the <code>user</code> namespace, to prevent collisions with built-in models. For example, <code>user.Phi-4-Mini-GGUF</code>.</p>
 </blockquote>

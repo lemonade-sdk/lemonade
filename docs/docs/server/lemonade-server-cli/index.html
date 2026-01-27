@@ -503,34 +503,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../apps/lm-eval/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    LM-Eval-Harness
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../apps/mindcraft/" class="md-nav__link">
         
   
@@ -1350,6 +1322,10 @@ lemonade-server<span class="w"> </span>run<span class="w"> </span>MODEL_NAME<spa
 <td><code>LEMONADE_DISABLE_MODEL_FILTERING</code></td>
 <td>Set to <code>1</code> to disable hardware-based model filtering (e.g., RAM amount, NPU availability) and show all models regardless of system capabilities</td>
 </tr>
+<tr>
+<td><code>LEMONADE_ENABLE_DGPU_GTT</code></td>
+<td>Set to <code>1</code> to include GTT for hardware-based model filtering</td>
+</tr>
 </tbody>
 </table>
 <h4 id="custom-backend-binaries">Custom Backend Binaries</h4>
@@ -1473,7 +1449,7 @@ lemonade-server<span class="w"> </span>pull<span class="w"> </span>user.nomic-em
 <span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--embedding
 </code></pre></div>
-<p>For more information about model formats and recipes, see the <a href="../../lemonade_api/">API documentation</a> and the <a href="../server_models/">server models guide</a>.</p>
+<p>For more information about model formats and recipes, see the <a href="../lemonade_api.md">API documentation</a> and the <a href="../server_models/">server models guide</a>.</p>
 <h2 id="lemonade-desktop-app">Lemonade Desktop App</h2>
 <p>The Lemonade Desktop App provides a graphical interface for chatting with models and managing the server. When installed via the full installer, <code>lemonade-app</code> is added to your PATH for easy command-line access.</p>
 <h3 id="launching-the-app">Launching the App</h3>
