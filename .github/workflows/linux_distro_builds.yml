@@ -25,7 +25,7 @@ jobs:
             image: archlinux:latest
             python: python
           - distro: Debian
-            image: debian:bookworm
+            image: debian:trixie
             python: python3
           - distro: Fedora
             image: fedora:latest
@@ -61,6 +61,7 @@ jobs:
             echo "Installing build dependencies..."
             apt-get install -y \
               build-essential \
+              g++ \
               cmake \
               git \
               curl \
@@ -81,6 +82,7 @@ jobs:
             echo "Installing build dependencies..."
             dnf install -y \
               @development-tools \
+              gcc-c++ \
               cmake \
               git \
               curl \
