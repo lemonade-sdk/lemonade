@@ -69,10 +69,17 @@ runs:
         # Extract Full Changelog link
         FULL_CHANGELOG=$(echo "$AUTO_NOTES" | grep "Full Changelog" | head -1 || echo "")
         
+        # Extract unique contributors from the changelog
+        CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//')
+        
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
         
         {
+          if [ -n "$CONTRIBUTORS" ]; then
+            echo "Thanks $CONTRIBUTORS for your awesome contributions to this release!"
+            echo ""
+          fi
           echo "## Quick Install"
           echo ""
           echo "| Operating System | Server Only | Full App (Server + GUI) |"
