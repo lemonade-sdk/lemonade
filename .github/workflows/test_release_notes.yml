@@ -1,0 +1,35 @@
+name: Test Release Notes Formatting 📝
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-release-notes:
+    name: Preview Release Notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        uses: ./.github/actions/get-version
+
+      - name: Generate release notes
+        uses: ./.github/actions/generate-release-notes
+        with:
+          version: ${{ steps.version.outputs.version }}
+          repo: ${{ github.repository }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-preview
+          path: release_notes.md
+          retention-days: 7
