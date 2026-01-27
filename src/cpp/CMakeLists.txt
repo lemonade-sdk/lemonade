@@ -234,24 +234,26 @@ if(APPLE)
 endif()
 
 # === httplib ===
-# Disable OpenSSL in httplib (not needed for localhost HTTP server)
-# All HTTPS downloads are handled by libcurl with native SSL backends:
-#   - Windows: Schannel (native)
-#   - macOS: SecureTransport (native)
-#   - Linux: OpenSSL (system library, not bundled)
-set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
-set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
-# Use zstd for compression
-set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")           # Skip zstd checks
-set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE INTERNAL "")  # Skip zstd checks
-set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")           # zstd is provided
-set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")                # Prevent installing
-FetchContent_MakeAvailable(httplib)
-# Patch httplib includes due to manual zstd fetching
-target_include_directories(httplib INTERFACE
-    ${zstd_SOURCE_DIR}/lib
-    ${zstd_SOURCE_DIR}/lib/common
-)
+if(NOT USE_SYSTEM_HTTPLIB)
+    FetchContent_Declare(httplib
+        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+        GIT_TAG v${MIN_HTTPLIB_VERSION}
+    )
+    set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
+    set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE INTERNAL "")
+    set(HTTPLIB_REQUIRE_ZSTD OFF CACHE INTERNAL "")
+    set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE INTERNAL "")
+    set(HTTPLIB_IS_USING_ZSTD ON CACHE INTERNAL "")
+    set(HTTPLIB_INSTALL OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(httplib)
+    if(NOT USE_SYSTEM_ZSTD)
+        target_include_directories(httplib INTERFACE
+            ${zstd_SOURCE_DIR}/lib
+            ${zstd_SOURCE_DIR}/lib/common
+        )
+    endif()
+endif()
+
 
 # Use brotli for compression on macOS
 if(APPLE)
