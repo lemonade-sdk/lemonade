@@ -580,6 +580,8 @@ const getGpuUsage = async () => {
 };
 
 // Platform-specific VRAM/GTT usage detection (returns used memory in GB)
+// For dGPU: returns dedicated VRAM only
+// For APU: returns VRAM + GTT combined (since GTT is primary GPU memory)
 const getVramUsage = async () => {
   if (process.platform === 'linux') {
     // Linux: Read from AMD sysfs
@@ -595,31 +597,60 @@ const getVramUsage = async () => {
 
         const devicePath = path.join(drmPath, card, 'device');
 
-        // Try dedicated VRAM first (discrete GPUs)
+        let vramUsed = 0;
+        let gttUsed = 0;
+        let isDGPU = false;
+
+        // Check for board_info to determine if this is a dGPU
+        // board_info is present on discrete GPUs but not APUs
+        try {
+          await fs.promises.access(path.join(devicePath, 'board_info'));
+          isDGPU = true;
+          console.debug(`VRAM detection: ${card} has board_info, detected as dGPU`);
+        } catch (err) {
+          console.debug(`VRAM detection: ${card} has no board_info, detected as APU:`, err.code || err.message);
+        }
+
+        // Read VRAM used
         const vramUsedPath = path.join(devicePath, 'mem_info_vram_used');
         try {
           const content = await fs.promises.readFile(vramUsedPath, 'utf-8');
-          const bytes = parseInt(content.trim(), 10);
-          if (!isNaN(bytes)) {
-            return bytes / (1024 * 1024 * 1024); // Convert to GB
-          }
+          vramUsed = parseInt(content.trim(), 10) || 0;
         } catch (err) {
           console.debug(`VRAM detection: ${vramUsedPath} not available:`, err.code || err.message);
         }
 
-        // Fallback to GTT memory (integrated GPUs / APUs)
+        // Read GTT used
         const gttUsedPath = path.join(devicePath, 'mem_info_gtt_used');
         try {
           const content = await fs.promises.readFile(gttUsedPath, 'utf-8');
-          const bytes = parseInt(content.trim(), 10);
-          if (!isNaN(bytes)) {
-            return bytes / (1024 * 1024 * 1024); // Convert to GB
-          }
+          gttUsed = parseInt(content.trim(), 10) || 0;
         } catch (err) {
           console.debug(`VRAM detection: ${gttUsedPath} not available:`, err.code || err.message);
         }
+
+        // Skip if no memory info found for this card
+        if (vramUsed === 0 && gttUsed === 0) {
+          console.debug(`VRAM detection: ${card} has no memory info, skipping`);
+          continue;
+        }
+
+        if (isDGPU) {
+          // Discrete GPU: report only dedicated VRAM
+          if (vramUsed > 0) {
+            console.debug(`VRAM detection: dGPU ${card}, VRAM used: ${(vramUsed / (1024 * 1024 * 1024)).toFixed(2)} GB`);
+            return vramUsed / (1024 * 1024 * 1024);
+          }
+        } else {
+          // APU: report VRAM + GTT combined (GTT is primary GPU memory carved from system RAM)
+          const totalUsed = vramUsed + gttUsed;
+          if (totalUsed > 0) {
+            console.debug(`VRAM detection: APU ${card}, VRAM+GTT used: ${(totalUsed / (1024 * 1024 * 1024)).toFixed(2)} GB (VRAM: ${(vramUsed / (1024 * 1024 * 1024)).toFixed(2)}, GTT: ${(gttUsed / (1024 * 1024 * 1024)).toFixed(2)})`);
+            return totalUsed / (1024 * 1024 * 1024);
+          }
+        }
       }
-      console.debug('VRAM detection: No GPU with VRAM/GTT memory info found');
+      console.debug('VRAM detection: No GPU with memory info found');
     } catch (error) {
       console.error('Failed to read VRAM/GTT stats from sysfs:', error);
     }
