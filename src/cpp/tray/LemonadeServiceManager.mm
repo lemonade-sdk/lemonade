@@ -93,7 +93,7 @@ void LemonadeServiceManager::stopServer() {
     // FIX: Wrap in `sh -c` and use ";" to ensure disable runs even if bootout fails.
     std::string combinedCmd =
         "sh -c '"
-        "/bin/launchctl bootout " + target + " >/dev/null 2>&1; ";
+        "/bin/launchctl bootout " + target + " >/dev/null 2>&1;'";
 
     if (ExecuteAsRoot(combinedCmd)) {
         NSLog(@"[Lemonade] Server stop command sent. Waiting for shutdown...");
@@ -173,7 +173,6 @@ void LemonadeServiceManager::disableServer() {
 
 void LemonadeServiceManager::performFullQuit() {
     NSLog(@"[Lemonade] Performing Full Quit...");
-    //stopServer();
     NSLog(@"[Lemonade] Full Quit Complete.");
 }
 

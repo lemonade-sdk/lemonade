@@ -96,7 +96,7 @@ bool ServerManager::start_server(
 
     server_binary_path_ = server_binary_path;
     port_ = port;
-    recipe_options_ = recipe_options,
+    recipe_options_ = recipe_options;
     max_llm_models_ = max_llm_models;
     max_embedding_models_ = max_embedding_models;
     max_reranking_models_ = max_reranking_models;

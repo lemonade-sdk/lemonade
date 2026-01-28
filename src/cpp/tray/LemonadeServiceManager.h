@@ -29,12 +29,6 @@ private:
     static std::string getLaunchctlOutput(const std::string& subCmd, const std::string& target);
     static std::string getTargetSpecifier(const std::string& serviceID);
     static bool ExecuteAsRoot(const std::string& command);
-    static bool checkServiceStatus(const std::string& serviceID);
-    static bool checkServiceEnabled(const std::string& serviceID);
-    static void enableService(const std::string& serviceID);
-    static void disableService(const std::string& serviceID);
-    static void kickstartService(const std::string& serviceID);
-    static void bootoutService(const std::string& serviceID);
     static bool runLaunchctlCommand(const std::string& subCmd, const std::string& target, const std::string& extraFlag);
     static bool runLaunchctlCommand(const std::string& subCmd, const std::string& target);
 };
