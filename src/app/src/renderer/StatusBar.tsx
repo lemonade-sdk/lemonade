@@ -146,10 +146,12 @@ const StatusBar: React.FC = () => {
         <span className="status-bar-label">CPU:</span>
         <span className="status-bar-value">{formatPercent(systemStats.cpu_percent)}</span>
       </div>
-      <div className="status-bar-item">
-        <span className="status-bar-label">GPU:</span>
-        <span className="status-bar-value">{formatPercent(systemStats.gpu_percent)}</span>
-      </div>
+      {window.api.platform !== 'win32' && (
+        <div className="status-bar-item">
+          <span className="status-bar-label">GPU:</span>
+          <span className="status-bar-value">{formatPercent(systemStats.gpu_percent)}</span>
+        </div>
+      )}
       {systemStats.vram_gb !== null && (
         <div className="status-bar-item">
           <span className="status-bar-label">VRAM:</span>
