@@ -509,13 +509,10 @@ function createWindow() {
 app.on('ready', () => {
   createWindow();
 
-  // Grant microphone permission for streaming audio capture
+  // Allow microphone access for streaming audio transcription.
+  // Only 'media' is auto-approved; all other permissions use Electron's default (deny).
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media') {
-      callback(true);
-    } else {
-      callback(true);
-    }
+    callback(permission === 'media');
   });
 
   // Window control handlers
