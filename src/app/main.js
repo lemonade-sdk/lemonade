@@ -310,35 +310,6 @@ const broadcastServerPortUpdated = (port) => {
   }
 };
 
-const findLemonadeServerBinary = () => {
-  const possiblePaths = [
-    '/usr/local/bin/lemonade-server',
-    '/usr/bin/lemonade-server',
-  ];
-
-  for (const path of possiblePaths) {
-    try {
-      if (fs.existsSync(path)) {
-        return path;
-      }
-    } catch (e) {
-      // Continue checking other paths
-    }
-  }
-
-  // If not found in common locations, try which command
-  try {
-    const which = require('child_process').spawnSync('which', ['lemonade-server']);
-    if (which.status === 0) {
-      return which.stdout.toString().trim();
-    }
-  } catch (e) {
-    // which command failed
-  }
-
-  return null;
-};
-
 const ensureTrayRunning = () => {
   return new Promise((resolve) => {
     if (process.platform !== 'darwin') {
