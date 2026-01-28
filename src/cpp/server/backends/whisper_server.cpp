@@ -287,7 +287,7 @@ void WhisperServer::install(const std::string& backend) {
             throw std::runtime_error("Downloaded file is too small, likely corrupted");
         }
 
-        // Extract
+        // Extract using BackendUtils (handles tar/PowerShell/unzip automatically)
         if (!backends::BackendUtils::extract_archive(zip_path, install_dir, "WhisperServer")) {
             fs::remove(zip_path);
             fs::remove_all(install_dir);
@@ -392,22 +392,24 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     
     try {
         // Use ModelManager to download the .rai file from HuggingFace
-        // We create a temporary model entry for the cache file
+        // Prefix with "user." to indicate it's a user-defined model
+        std::string cache_model_name = "user.whisper-npu-cache-" + cache_filename;
         std::string cache_checkpoint = cache_repo + ":" + cache_filename;
         
         model_manager_->download_model(
-            cache_checkpoint,  // model_name (using checkpoint as name)
+            cache_model_name,  // model_name with user. prefix
             cache_checkpoint,  // checkpoint
             "whispercpp",      // recipe
             false,             // reasoning
             false,             // vision
             false,             // embedding
             false,             // reranking
+            false,             // image
             "",                // mmproj
             do_not_upgrade
         );
         
-        // Get the downloaded cache path
+        // Get the downloaded cache path from the AMD HF repo
         ModelInfo cache_info = model_manager_->get_model_info(cache_checkpoint);
         std::string downloaded_cache_path = cache_info.resolved_path;
         
@@ -415,13 +417,39 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
             throw std::runtime_error("Failed to download NPU cache file");
         }
         
-        // If the cache was downloaded to a different location, copy/move it to the model directory
+        // The .rai file is downloaded to: ~/.cache/huggingface/hub/models--amd--whisper-small-onnx-npu/snapshots/.../
+        // whisper-server needs it alongside the .bin file in: ~/.cache/huggingface/hub/models--ggerganov--whisper.cpp/snapshots/.../
+        // Use hardlink (like HF cache does) to avoid duplication while keeping both locations valid
         if (fs::path(downloaded_cache_path).parent_path() != model_dir) {
-            std::cout << "[WhisperServer] Moving NPU cache to model directory..." << std::endl;
-            fs::copy_file(downloaded_cache_path, cache_path, fs::copy_options::overwrite_existing);
+            // Check if hardlink already exists
+            if (fs::exists(cache_path)) {
+                try {
+                    // Check if it's already a hardlink to the same file
+                    if (fs::equivalent(cache_path, downloaded_cache_path)) {
+                        std::cout << "[WhisperServer] NPU cache hardlink already exists at: " << cache_path << std::endl;
+                        return;
+                    }
+                } catch (...) {
+                    // equivalent() can throw if files are on different filesystems
+                }
+                // Remove old file/link
+                fs::remove(cache_path);
+            }
+            
+            std::cout << "[WhisperServer] Creating hardlink for NPU cache..." << std::endl;
+            try {
+                // Create hardlink (no admin rights needed, works cross-platform, no duplication)
+                fs::create_hard_link(downloaded_cache_path, cache_path);
+                std::cout << "[WhisperServer] NPU cache hardlink created: " << cache_path << std::endl;
+            } catch (const std::exception& hardlink_error) {
+                // Hardlink creation might fail if files are on different filesystems, fall back to copy
+                std::cout << "[WhisperServer] Hardlink creation failed (" << hardlink_error.what() << "), copying file instead..." << std::endl;
+                fs::copy_file(downloaded_cache_path, cache_path, fs::copy_options::overwrite_existing);
+                std::cout << "[WhisperServer] NPU cache copied to: " << cache_path << std::endl;
+            }
+        } else {
+            std::cout << "[WhisperServer] NPU cache already in correct location: " << cache_path << std::endl;
         }
-        
-        std::cout << "[WhisperServer] NPU cache ready at: " << cache_path << std::endl;
         
     } catch (const std::exception& e) {
         std::cerr << "[WhisperServer] Warning: Failed to download NPU cache: " << e.what() << std::endl;
