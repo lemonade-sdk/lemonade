@@ -13,6 +13,7 @@
 #include <httplib.h>
 #include "router.h"
 #include "model_manager.h"
+#include "websocket_server.h"
 
 namespace lemon {
 
@@ -114,7 +115,8 @@ private:
     
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
-    
+    std::unique_ptr<WebSocketServer> websocket_server_;
+
     bool running_;
 
     std::string api_key_;

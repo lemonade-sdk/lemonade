@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -508,7 +508,16 @@ function createWindow() {
 
 app.on('ready', () => {
   createWindow();
-  
+
+  // Grant microphone permission for streaming audio capture
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(true);
+    }
+  });
+
   // Window control handlers
   ipcMain.on('minimize-window', () => {
     if (mainWindow) mainWindow.minimize();

@@ -4267,3 +4267,167 @@ footer {
     -webkit-appearance: none;
     margin: 0;
 }
+
+/* ========================================
+   Streaming Transcription Styles
+   ======================================== */
+
+/* Transcription Mode Toggle */
+.transcription-mode-toggle {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #0f0f0f;
+    border-bottom: 1px solid #333;
+}
+
+.transcription-mode-toggle .mode-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #888;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.transcription-mode-toggle .mode-button:hover {
+    border-color: #555;
+    color: #ccc;
+}
+
+.transcription-mode-toggle .mode-button.active {
+    background: #1a1a1a;
+    border-color: #4caf50;
+    color: #4caf50;
+}
+
+.transcription-mode-toggle .mode-button svg {
+    opacity: 0.7;
+}
+
+.transcription-mode-toggle .mode-button.active svg {
+    opacity: 1;
+}
+
+/* Streaming Transcription Container */
+.streaming-transcription-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.streaming-model-selector {
+    display: flex;
+    justify-content: center;
+    padding: 12px 16px;
+    background: #0a0a0a;
+    border-bottom: 1px solid #222;
+}
+
+/* Transcription History Items (shared styles) */
+.transcription-history-item {
+    padding: 16px;
+    border-bottom: 1px solid #222;
+}
+
+.transcription-file-info {
+    margin-bottom: 12px;
+}
+
+.transcription-label {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: #888;
+}
+
+.transcription-result-container {
+    background: #1a1a1a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.transcription-result-header {
+    padding: 8px 12px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+}
+
+.transcription-result-header h4 {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.transcription-result {
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #fff;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Transcription File Display */
+.transcription-file-display {
+    padding: 12px;
+    background: #1a1a1a;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.transcription-file-info-display {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.transcription-file-info-display .file-name {
+    color: #fff;
+    font-size: 14px;
+}
+
+.transcription-file-info-display .file-size-indicator {
+    color: #666;
+    font-size: 12px;
+}
+
+.transcription-placeholder {
+    color: #666;
+    font-size: 14px;
+    font-style: italic;
+}
+
+.audio-file-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.audio-file-button:hover {
+    border-color: #555;
+    color: #ccc;
+}
+
+.audio-file-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
