@@ -423,7 +423,18 @@ window.api = {
     onSettingsUpdated: () => {},
     getServerPort: () => parseInt(window.location.port) || 8000,
     onServerPortUpdated: () => {},
-    getVersion: async () => ({ version: '9.2.0-web', electronVersion: 'N/A', chromeVersion: 'N/A', nodeVersion: 'N/A' }),
+    getVersion: async () => {
+        try {
+            const response = await fetch('/api/v1/health');
+            if (response.ok) {
+                const data = await response.json();
+                return data.version || 'Unknown';
+            }
+        } catch (e) {
+            console.warn('Failed to fetch version:', e);
+        }
+        return 'Unknown';
+    },
     downloadModel: () => console.log('Model downloads not available in web mode'),
     onDownloadProgress: () => {},
     getDownloads: async () => [],

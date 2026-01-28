@@ -32,6 +32,12 @@ else()
     set(ELECTRON_EXE_NAME "lemonade")
 endif()
 
+# ============================================================
+# Web App source paths
+# ============================================================
+get_filename_component(WEB_APP_SOURCE_DIR "${CMAKE_SOURCE_DIR}/src/web-app" ABSOLUTE)
+set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,7 +61,6 @@ if(PkgConfig_FOUND)
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
 find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
-
 # Verify CLI11 version if found
 if(CLI11_INCLUDE_DIRS)
     if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
@@ -523,7 +528,7 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
 find_program(NODE_EXECUTABLE node)
 find_program(NPM_EXECUTABLE npm)
 
-# Custom target to build the Electron app
+# Custom target to build the Electron app (must be called manually)
 if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
     if(WIN32)
         set(ELECTRON_BUILD_TARGET "build:win")
@@ -555,6 +560,56 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE)
 else()
     message(STATUS "Node.js or npm not found - Electron app build target disabled")
     message(STATUS "Install Node.js to enable: https://nodejs.org/")
+endif()
+
+# ============================================================
+# Web App Integration (Cross-Platform)
+# ============================================================
+
+# Option to control Web app build (enabled by default)
+option(BUILD_WEB_APP "Build the Web app" ON)
+
+# Custom target to build the Web app with proper dependency tracking
+if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND BUILD_WEB_APP)
+    # Create a stamp file to track build state
+    set(WEB_APP_STAMP "${CMAKE_CURRENT_BINARY_DIR}/web-app.stamp")
+    set(WEB_APP_BUILD_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/web-app-src")
+
+    # Get all source files in src/web-app (excluding node_modules and dist)
+    file(GLOB_RECURSE WEB_APP_SOURCES
+        CONFIGURE_DEPENDS
+        "${WEB_APP_SOURCE_DIR}/src/*"
+        "${WEB_APP_SOURCE_DIR}/*.json"
+        "${WEB_APP_SOURCE_DIR}/*.js"
+        "${WEB_APP_SOURCE_DIR}/*.ts"
+        "${WEB_APP_SOURCE_DIR}/*.tsx"
+        "${WEB_APP_SOURCE_DIR}/*.css"
+    )
+
+    # Add custom command to build web app (only runs if sources change)
+    add_custom_command(
+        OUTPUT ${WEB_APP_STAMP}
+        COMMAND ${CMAKE_COMMAND}
+            -DWEB_APP_SOURCE_DIR=${WEB_APP_SOURCE_DIR}
+            -DWEB_APP_BUILD_SOURCE_DIR=${WEB_APP_BUILD_SOURCE_DIR}
+            -DWEB_APP_BUILD_DIR=${WEB_APP_BUILD_DIR}
+            -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+            -DWEB_APP_STAMP=${WEB_APP_STAMP}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/src/web-app/BuildWebApp.cmake
+        DEPENDS ${WEB_APP_SOURCES}
+        COMMENT "Building Web app with npm"
+    )
+
+    # Add custom target that depends on the stamp file
+    add_custom_target(web-app ALL DEPENDS ${WEB_APP_STAMP})
+
+    message(STATUS "Web app will be built automatically only when sources change (disable with -DBUILD_WEB_APP=OFF)")
+else()
+    if(NOT NODE_EXECUTABLE OR NOT NPM_EXECUTABLE)
+        message(STATUS "Node.js or npm not found - Web app build target disabled")
+    else()
+        message(STATUS "Web app build disabled (enable with -DBUILD_WEB_APP=ON)")
+    endif()
 endif()
 
 # Add tray application subdirectory
