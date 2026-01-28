@@ -44,6 +44,7 @@ jobs:
             pacman -S --noconfirm --needed \
               base-devel \
               cmake \
+              ninja \
               git \
               curl \
               openssl \
@@ -63,6 +64,7 @@ jobs:
               build-essential \
               g++ \
               cmake \
+              ninja-build \
               git \
               curl \
               libcurl4-openssl-dev \
@@ -84,6 +86,7 @@ jobs:
               @development-tools \
               gcc-c++ \
               cmake \
+              ninja-build \
               git \
               curl \
               libcurl-devel \
@@ -98,6 +101,7 @@ jobs:
 
           echo "Verifying installations..."
           cmake --version
+          ninja --version
           gcc --version
           g++ --version
           pkg-config --version
@@ -131,39 +135,37 @@ jobs:
               echo "Removing existing build directory..."
               rm -rf build
           fi
-          mkdir build
-          cd build
-
-          # Configure with Release build type
-          echo "Configuring CMake..."
-          cmake .. -DCMAKE_BUILD_TYPE=Release
-
+          
+          # Configure and build with preset
+          echo "Configuring CMake with preset..."
+          cmake --preset default
+          
           # Build using all available cores
           echo "Building binaries..."
-          cmake --build . -j$(nproc)
-
+          cmake --build --preset default -j$(nproc)
+          
           # Verify binaries exist
-          if [ ! -f "lemonade-router" ]; then
+          if [ ! -f "build/lemonade-router" ]; then
               echo "ERROR: lemonade-router not found!"
               echo "Build directory contents:"
-              ls -lh
+              ls -lh build/
               exit 1
           fi
-
-          if [ ! -f "lemonade-server" ]; then
+          
+          if [ ! -f "build/lemonade-server" ]; then
               echo "ERROR: lemonade-server not found!"
               echo "Build directory contents:"
-              ls -lh
+              ls -lh build/
               exit 1
           fi
 
           echo "Binaries found successfully"
-          ls -lh lemonade-router lemonade-server
-
+          ls -lh build/lemonade-router build/lemonade-server
+          
           echo "Verifying binary executability..."
-          ./lemonade-router --version
-          ./lemonade-server --version
-
+          ./build/lemonade-router --version
+          ./build/lemonade-server --version
+          
           echo "${{ matrix.distro }} build successful!"
 
       - name: Verify system library linking

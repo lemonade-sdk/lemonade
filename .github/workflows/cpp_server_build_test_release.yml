@@ -26,7 +26,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Install CMake if not available
+      - name: Install CMake and Ninja if not available
         shell: PowerShell
         run: |
           # Check if CMake is already installed
@@ -63,6 +63,45 @@ jobs:
           } else {
               Write-Host "CMake is already installed:" -ForegroundColor Green
               cmake --version
+          }
+          
+          # Check if Ninja is already installed
+          $ninjaInstalled = Get-Command ninja -ErrorAction SilentlyContinue
+          
+          if (-not $ninjaInstalled) {
+              Write-Host "Ninja not found, installing..." -ForegroundColor Yellow
+              
+              # Download Ninja
+              $ninjaVersion = "1.11.1"
+              $ninjaUrl = "https://github.com/ninja-build/ninja/releases/download/v$ninjaVersion/ninja-win.zip"
+              $ninjaZip = "ninja-win.zip"
+              
+              Invoke-WebRequest -Uri $ninjaUrl -OutFile $ninjaZip
+              
+              # Extract to Program Files
+              $ninjaPath = "C:\Program Files\Ninja"
+              if (-not (Test-Path $ninjaPath)) {
+                  mkdir $ninjaPath
+              }
+              
+              Expand-Archive -Path $ninjaZip -DestinationPath $ninjaPath -Force
+              Remove-Item $ninjaZip
+              
+              # Add Ninja to PATH
+              $env:PATH = "$ninjaPath;$env:PATH"
+              echo $ninjaPath >> $env:GITHUB_PATH
+              
+              # Verify installation
+              ninja --version
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "ERROR: Ninja installation failed!" -ForegroundColor Red
+                  exit 1
+              }
+              
+              Write-Host "Ninja installed successfully and added to PATH!" -ForegroundColor Green
+          } else {
+              Write-Host "Ninja is already installed:" -ForegroundColor Green
+              ninja --version
           }
 
       - name: Install WiX Toolset 5.0.2 (CLI)
@@ -130,22 +169,20 @@ jobs:
           }
           mkdir build
           cd build
-
-          # Configure
-          cmake .. -G "Visual Studio 17 2022" -A x64
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+          
+          # Configure with preset
+          cmake --preset default
           # Build
           cmake --build . --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify binaries exist
-          if (-not (Test-Path "Release\lemonade-router.exe")) {
+          if (-not (Test-Path "lemonade-router.exe")) {
               Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
-
-          if (-not (Test-Path "Release\lemonade-server.exe")) {
+          
+          if (-not (Test-Path "lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
