@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Lemonade Web App (Browser-only)",
   "scripts": {
+    "build": "npm run build:renderer:prod",
     "build:renderer:prod": "webpack --mode production"
   },
   "keywords": [
