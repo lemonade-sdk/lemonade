@@ -377,6 +377,86 @@ void Server::setup_static_files(httplib::Server &web_server) {
         std::cout << "[Server] Static files mounted from: " << static_dir << std::endl;
     }
 
+    // Web app UI endpoint - serve the React web app
+    std::string web_app_dir = utils::get_resource_path("resources/web-app");
+
+    // Check if web app directory exists
+    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
+        // Create a handler for serving web app index.html for SPA routing
+        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
+            std::string index_path = web_app_dir + "/index.html";
+            std::ifstream file(index_path);
+
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
+                return;
+            }
+
+            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Add base tag to fix relative paths
+            std::string base_tag = "<base href=\"/web-app/\">";
+            size_t head_start_pos = html.find("<head>");
+            if (head_start_pos != std::string::npos) {
+                html.insert(head_start_pos + 6, base_tag);
+            }
+
+            // Set no-cache headers
+            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.set_header("Pragma", "no-cache");
+            res.set_header("Expires", "0");
+            res.set_content(html, "text/html");
+        };
+
+        // Serve the web app's index.html at /web-app and /web-app/
+        web_server.Get("/web-app/?", serve_web_app_html);
+
+        // Serve all other files from the web app directory (JS, CSS, fonts, assets, etc.)
+        web_server.Get(R"(/web-app/(.+))", [web_app_dir](const httplib::Request& req, httplib::Response& res) {
+            // Extract the file path from the request
+            std::string file_path = req.matches[1].str();
+            std::string full_path = web_app_dir + "/" + file_path;
+
+            // Serve the file
+            std::ifstream file(full_path, std::ios::binary);
+            if (!file.is_open()) {
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Read file content
+            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            file.close();
+
+            // Determine content type based on extension
+            std::string content_type = "application/octet-stream";
+            size_t dot_pos = file_path.rfind('.');
+            if (dot_pos != std::string::npos) {
+                std::string ext = file_path.substr(dot_pos);
+                if (ext == ".js") content_type = "text/javascript";
+                else if (ext == ".css") content_type = "text/css";
+                else if (ext == ".html") content_type = "text/html";
+                else if (ext == ".woff") content_type = "font/woff";
+                else if (ext == ".woff2") content_type = "font/woff2";
+                else if (ext == ".ttf") content_type = "font/ttf";
+                else if (ext == ".svg") content_type = "image/svg+xml";
+                else if (ext == ".png") content_type = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
+                else if (ext == ".json") content_type = "application/json";
+            }
+
+            res.set_content(content, content_type);
+        });
+
+        std::cout << "[Server] Web app UI available at /web-app from: " << web_app_dir << std::endl;
+    } else {
+        std::cout << "[Server] Web app directory not found at: " << web_app_dir << std::endl;
+        std::cout << "[Server] Web app UI will not be available. Build with: cd src/web-app && npm run build" << std::endl;
+    }
+
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
     web_server.set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
