@@ -511,6 +511,23 @@ The `lemonade-router` executable is a pure HTTP server without any command-based
 #   --help, -h               Show help
 ```
 
+### LiteLLM Compatibility
+
+Lemonade supports LiteLLM integration via `/v1/...` endpoints:
+
+```python
+import litellm
+
+response = litellm.completion(
+    model="openai/Gemma-3-4b-it-GGUF",
+    messages=[{"role": "user", "content": "Hello"}],
+    api_base="http://localhost:8000/v1",
+    api_key="lemonade"  # or set LEMONADE_API_KEY env var
+)
+```
+
+The `/v1/` endpoints are aliases of the `/api/v1/` endpoints, providing compatibility with OpenAI-compatible clients that expect the standard `/v1/` prefix.
+
 ### lemonade-server.exe (Console CLI Client)
 
 The `lemonade-server` executable is the command-line interface for terminal users:

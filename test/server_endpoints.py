@@ -132,6 +132,82 @@ class EndpointTests(ServerTestBase):
 
         session.close()
 
+    def test_000a_litellm_endpoints_registered(self):
+        """Verify /v1/ endpoints are registered for LiteLLM compatibility."""
+        # LiteLLM expects endpoints at /v1/... (not /api/v1/...)
+        litellm_endpoints = [
+            "chat/completions",
+            "completions",
+            "embeddings",
+            "models",
+            "health",
+        ]
+
+        session = requests.Session()
+
+        # Ensure 404 for non-existent /v1/ endpoint
+        url = f"http://localhost:{PORT}/v1/nonexistent"
+        response = session.head(url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+
+        # Check that LiteLLM endpoints are registered at /v1/
+        for endpoint in litellm_endpoints:
+            url = f"http://localhost:{PORT}/v1/{endpoint}"
+            response = session.head(url, timeout=TIMEOUT_DEFAULT)
+            self.assertNotEqual(
+                response.status_code,
+                404,
+                f"LiteLLM endpoint /v1/{endpoint} is not registered",
+            )
+
+        session.close()
+        print(f"[OK] All {len(litellm_endpoints)} LiteLLM /v1/ endpoints registered")
+
+    def test_000b_litellm_models_endpoint(self):
+        """Test /v1/models endpoint returns same data as /api/v1/models."""
+        # Get models from /api/v1/models
+        response_api = requests.get(
+            f"http://localhost:{PORT}/api/v1/models", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response_api.status_code, 200)
+
+        # Get models from /v1/models (LiteLLM style)
+        response_v1 = requests.get(
+            f"http://localhost:{PORT}/v1/models", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response_v1.status_code, 200)
+
+        # Both should return the same data
+        data_api = response_api.json()
+        data_v1 = response_v1.json()
+
+        self.assertEqual(
+            data_api, data_v1, "/v1/models should return same data as /api/v1/models"
+        )
+        print("[OK] /v1/models returns same data as /api/v1/models")
+
+    def test_000c_litellm_health_endpoint(self):
+        """Test /v1/health endpoint returns same data as /api/v1/health."""
+        # Get health from /api/v1/health
+        response_api = requests.get(
+            f"http://localhost:{PORT}/api/v1/health", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response_api.status_code, 200)
+
+        # Get health from /v1/health (LiteLLM style)
+        response_v1 = requests.get(
+            f"http://localhost:{PORT}/v1/health", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response_v1.status_code, 200)
+
+        # Both should return valid health data
+        data_api = response_api.json()
+        data_v1 = response_v1.json()
+
+        self.assertEqual(data_api["status"], "ok")
+        self.assertEqual(data_v1["status"], "ok")
+        print("[OK] /v1/health endpoint works correctly")
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(f"http://localhost:{PORT}/live", timeout=TIMEOUT_DEFAULT)

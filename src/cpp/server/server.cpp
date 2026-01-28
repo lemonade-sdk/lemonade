@@ -94,7 +94,7 @@ Server::~Server() {
 }
 
 void Server::log_request(const httplib::Request& req) {
-    if (req.path != "/api/v0/health" && req.path != "/api/v1/health") {
+    if (req.path != "/api/v0/health" && req.path != "/api/v1/health" && req.path != "/v1/health") {
         std::cout << "[Server PRE-ROUTE] " << req.method << " " << req.path << std::endl;
         std::cout.flush();
     }
@@ -132,17 +132,19 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Setup CORS for all routes
     setup_cors(web_server);
     
-    // Helper lambda to register routes for both v0 and v1
-    auto register_get = [this, &web_server](const std::string& endpoint, 
+    // Helper lambda to register routes for both v0 and v1, plus /v1/ for LiteLLM compatibility
+    auto register_get = [this, &web_server](const std::string& endpoint,
                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Get("/api/v0/" + endpoint, handler);
         web_server.Get("/api/v1/" + endpoint, handler);
+        web_server.Get("/v1/" + endpoint, handler);  // LiteLLM compatibility
     };
     
-    auto register_post = [this, &web_server](const std::string& endpoint, 
+    auto register_post = [this, &web_server](const std::string& endpoint,
                                 std::function<void(const httplib::Request&, httplib::Response&)> handler) {
         web_server.Post("/api/v0/" + endpoint, handler);
         web_server.Post("/api/v1/" + endpoint, handler);
+        web_server.Post("/v1/" + endpoint, handler);  // LiteLLM compatibility
         // Also register as GET for HEAD request support (HEAD uses GET handler)
         // Return 405 Method Not Allowed (endpoint exists but wrong method)
         web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
@@ -150,6 +152,10 @@ void Server::setup_routes(httplib::Server &web_server) {
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
         web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
+            res.status = 405;
+            res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
+        });
+        web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
             res.status = 405;
             res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
         });
@@ -170,6 +176,9 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_by_id(req, res);
     });
     web_server.Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_by_id(req, res);
+    });
+    web_server.Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
     
