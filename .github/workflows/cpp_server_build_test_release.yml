@@ -26,7 +26,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Install CMake and Ninja if not available
+      - name: Install CMake if not available
         shell: PowerShell
         run: |
           # Check if CMake is already installed
@@ -63,45 +63,6 @@ jobs:
           } else {
               Write-Host "CMake is already installed:" -ForegroundColor Green
               cmake --version
-          }
-          
-          # Check if Ninja is already installed
-          $ninjaInstalled = Get-Command ninja -ErrorAction SilentlyContinue
-          
-          if (-not $ninjaInstalled) {
-              Write-Host "Ninja not found, installing..." -ForegroundColor Yellow
-              
-              # Download Ninja
-              $ninjaVersion = "1.11.1"
-              $ninjaUrl = "https://github.com/ninja-build/ninja/releases/download/v$ninjaVersion/ninja-win.zip"
-              $ninjaZip = "ninja-win.zip"
-              
-              Invoke-WebRequest -Uri $ninjaUrl -OutFile $ninjaZip
-              
-              # Extract to Program Files
-              $ninjaPath = "C:\Program Files\Ninja"
-              if (-not (Test-Path $ninjaPath)) {
-                  mkdir $ninjaPath
-              }
-              
-              Expand-Archive -Path $ninjaZip -DestinationPath $ninjaPath -Force
-              Remove-Item $ninjaZip
-              
-              # Add Ninja to PATH
-              $env:PATH = "$ninjaPath;$env:PATH"
-              echo $ninjaPath >> $env:GITHUB_PATH
-              
-              # Verify installation
-              ninja --version
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "ERROR: Ninja installation failed!" -ForegroundColor Red
-                  exit 1
-              }
-              
-              Write-Host "Ninja installed successfully and added to PATH!" -ForegroundColor Green
-          } else {
-              Write-Host "Ninja is already installed:" -ForegroundColor Green
-              ninja --version
           }
 
       - name: Install WiX Toolset 5.0.2 (CLI)
@@ -162,32 +123,32 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-          
+
           # Create build directory
           if (Test-Path "build") {
               Remove-Item -Recurse -Force "build"
           }
-          mkdir build
-          cd build
-          
+
           # Configure with preset
-          cmake --preset default
+          cmake --preset windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           # Build
-          cmake --build . --config Release
+          cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify binaries exist
-          if (-not (Test-Path "lemonade-router.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-router.exe")) {
               Write-Host "ERROR: lemonade-router.exe not found!" -ForegroundColor Red
               exit 1
           }
-          
-          if (-not (Test-Path "lemonade-server.exe")) {
+
+          if (-not (Test-Path "build\Release\lemonade-server.exe")) {
               Write-Host "ERROR: lemonade-server.exe not found!" -ForegroundColor Red
               exit 1
           }
 
-          if (-not (Test-Path "Release\lemonade-tray.exe")) {
+          if (-not (Test-Path "build\Release\lemonade-tray.exe")) {
               Write-Host "ERROR: lemonade-tray.exe not found!" -ForegroundColor Red
               exit 1
           }
@@ -236,10 +197,10 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-          
+
           # Run the build installer script
           .\src\cpp\build_installer.ps1
-          
+
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
@@ -258,8 +219,8 @@ jobs:
         with:
           name: Lemonade_Server_MSI
           path: |
-            src\cpp\lemonade-server-minimal.msi
-            src\cpp\lemonade.msi
+            lemonade-server-minimal.msi
+            lemonade.msi
           retention-days: 7
 
   build-lemonade-server-deb:
@@ -286,7 +247,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-server-deb
-          path: src/cpp/build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade-server-minimal_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   build-lemonade-deb-full:
@@ -313,7 +274,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lemonade-deb-full
-          path: src/cpp/build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
+          path: build/lemonade_${{ env.LEMONADE_VERSION }}_amd64.deb
           retention-days: 7
 
   # ========================================================================

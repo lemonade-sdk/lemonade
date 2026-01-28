@@ -24,6 +24,7 @@ runs:
         sudo apt-get install -y \
           build-essential \
           cmake \
+          ninja-build \
           pkg-config \
           libcurl4-openssl-dev \
           libssl-dev \
@@ -32,6 +33,7 @@ runs:
 
         echo "Verifying installations..."
         cmake --version
+        ninja --version
         gcc --version
         pkg-config --version
 
@@ -88,48 +90,44 @@ runs:
 
         echo "Building lemonade-router and lemonade-server for Linux..."
 
-        cd src/cpp
-
         # Create build directory
         if [ -d "build" ]; then
             echo "Removing existing build directory..."
             rm -rf build
         fi
-        mkdir build
-        cd build
 
-        # Configure with explicit Release build type
+        # Configure with preset
         echo "Configuring CMake..."
         if [ "${{ inputs.include-electron }}" == "true" ]; then
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DINCLUDE_ELECTRON_APP=ON
+            cmake --preset default -DINCLUDE_ELECTRON_APP=ON
         else
-            cmake .. -DCMAKE_BUILD_TYPE=Release
+            cmake --preset default
         fi
 
-        # Build using all available cores
+        # Build
         echo "Building binaries..."
-        cmake --build . -j$(nproc)
+        cmake --build --preset default
 
         # Verify binaries exist
-        if [ ! -f "lemonade-router" ]; then
+        if [ ! -f "build/lemonade-router" ]; then
             echo "ERROR: lemonade-router not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
 
-        if [ ! -f "lemonade-server" ]; then
+        if [ ! -f "build/lemonade-server" ]; then
             echo "ERROR: lemonade-server not found!"
             echo "Build directory contents:"
-            ls -lh
+            ls -lh build/
             exit 1
         fi
 
         echo "✓ Binaries found successfully"
 
         echo "Verifying binary executability..."
-        ./lemonade-router --version
-        ./lemonade-server --version
+        ./build/lemonade-router --version
+        ./build/lemonade-server --version
 
         echo "C++ build successful!"
 
@@ -139,7 +137,7 @@ runs:
       run: |
         set -e
 
-        cd src/cpp/build
+        cd build
 
         echo "Creating .deb package with CPack..."
         cpack -G DEB -V
