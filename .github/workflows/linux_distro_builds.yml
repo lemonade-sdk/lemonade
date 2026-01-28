@@ -125,9 +125,7 @@ jobs:
           set -e
 
           echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
-
-          cd src/cpp
-
+          
           # Create build directory
           if [ -d "build" ]; then
               echo "Removing existing build directory..."
@@ -171,8 +169,8 @@ jobs:
       - name: Verify system library linking
         run: |
           echo "Checking library dependencies..."
-          cd src/cpp/build
-
+          cd build
+          
           echo "=== lemonade-router dependencies ==="
           ldd lemonade-router
 

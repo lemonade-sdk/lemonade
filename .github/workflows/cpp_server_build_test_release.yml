@@ -123,9 +123,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Write-Host "Building lemonade-router and lemonade-server..." -ForegroundColor Cyan
-
-          cd src\cpp
-
+          
           # Create build directory
           if (Test-Path "build") {
               Remove-Item -Recurse -Force "build"
@@ -201,12 +199,10 @@ jobs:
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-
-          cd src\cpp
-
+          
           # Run the build installer script
-          .\build_installer.ps1
-
+          .\src\cpp\build_installer.ps1
+          
           # Verify installers were created
           if (-not (Test-Path "lemonade-server-minimal.msi")) {
               Write-Host "ERROR: Minimal installer not created!" -ForegroundColor Red
