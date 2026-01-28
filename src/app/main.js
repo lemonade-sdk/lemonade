@@ -508,15 +508,20 @@ const getCpuUsage = async () => {
 };
 
 // Platform-specific GPU utilization detection
+// On multi-GPU systems, returns the highest utilization (likely the active GPU)
 const getGpuUsage = async () => {
   if (process.platform === 'linux') {
     // Linux: Read from sysfs (AMD GPUs expose gpu_busy_percent)
+    // Check all GPUs and return the highest utilization
     try {
       const drmPath = '/sys/class/drm';
       const cards = await fs.promises.readdir(drmPath).catch((err) => {
         console.debug('GPU detection: Failed to read /sys/class/drm:', err.message);
         return [];
       });
+
+      let highestUsage = null;
+      let highestCard = null;
 
       for (const card of cards) {
         if (!card.match(/^card\d+$/)) continue;
@@ -526,11 +531,19 @@ const getGpuUsage = async () => {
           const content = await fs.promises.readFile(amdBusyPath, 'utf-8');
           const percent = parseFloat(content.trim());
           if (!isNaN(percent)) {
-            return percent;
+            if (highestUsage === null || percent > highestUsage) {
+              highestUsage = percent;
+              highestCard = card;
+            }
           }
         } catch (err) {
           console.debug(`GPU detection: ${amdBusyPath} not available:`, err.code || err.message);
         }
+      }
+
+      if (highestUsage !== null) {
+        console.debug(`GPU detection: Highest usage on ${highestCard}: ${highestUsage}%`);
+        return highestUsage;
       }
       console.debug('GPU detection: No GPU with gpu_busy_percent found');
     } catch (error) {
